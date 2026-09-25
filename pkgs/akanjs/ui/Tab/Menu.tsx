@@ -14,7 +14,7 @@ export interface MenuProps {
   menu: string;
   children: ReactNode;
   scrollToTop?: boolean;
-  tooltip?: string;
+  tooltip?: ReactNode;
 }
 export const Menu = ({
   className,
@@ -59,7 +59,7 @@ export const Menu = ({
           switchTab(menu);
           if (scrollToTop) window.scrollTo({ top: 0, behavior: "smooth" });
         }}
-        {...agentAttrs(switchTab)}
+        {...agentAttrs(switchTab, menu)}
         role="tab"
         type="button"
       >

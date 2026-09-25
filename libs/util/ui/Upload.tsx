@@ -2,7 +2,7 @@
 import { usePage } from "@libs/util/client";
 import { useCamera } from "@libs/util/webkit";
 import { cn, Device } from "akanjs/client";
-import type { ProtoFile } from "akanjs/constant";
+import type { ProtoLightFile } from "akanjs/constant";
 import { BottomSheet, type BottomSheetRef, Image } from "akanjs/ui";
 import { type ChangeEvent, useRef, useState } from "react";
 import { AiFillFileImage, AiFillFileText, AiOutlineDelete, AiOutlineLoading } from "react-icons/ai";
@@ -51,8 +51,8 @@ export const Upload = ({ onChange, multiple, accept, className, uploadClassName,
 
 interface FileProps {
   multiple?: boolean;
-  file: ProtoFile | null;
-  render?: (file: ProtoFile) => React.ReactNode;
+  file: ProtoLightFile | null;
+  render?: (file: ProtoLightFile) => React.ReactNode;
   onChange?: (e: File | FileList) => void | Promise<void>;
   onRemove?: (e: any) => void;
   children?: React.ReactNode;
@@ -175,8 +175,8 @@ Upload.File = File;
 
 interface FileListProps {
   multiple?: boolean;
-  fileList?: ProtoFile[];
-  render?: (file: ProtoFile) => React.ReactNode;
+  fileList?: ProtoLightFile[];
+  render?: (file: ProtoLightFile) => React.ReactNode;
   onChange?: (e: File | File[]) => void | Promise<void>;
   onRemove?: (e: any) => void;
   children?: React.ReactNode;
@@ -372,10 +372,10 @@ Upload.FileList = FileList;
 
 interface UploadImageProps {
   type: "image" | "crop";
-  protoFile: ProtoFile | null;
+  protoFile: ProtoLightFile | null;
   styleType: "circle" | "square";
   renderEmpty?: (onSelectImage: () => void) => React.ReactNode;
-  renderComplete?: (file: ProtoFile) => React.ReactNode;
+  renderComplete?: (file: ProtoLightFile) => React.ReactNode;
   onSave: (file: File | FileList) => void | Promise<void>;
   onRemove: (file: File | FileList) => void;
   className?: string;
@@ -597,11 +597,11 @@ Upload.Image = UploadImage;
 
 interface UploadImagesProps {
   multiple?: boolean;
-  fileList?: ProtoFile[];
+  fileList?: ProtoLightFile[];
 
   disabled?: boolean;
   styleType: "circle" | "square";
-  render?: (file: ProtoFile) => React.ReactNode;
+  render?: (file: ProtoLightFile) => React.ReactNode;
   onSave: (file: File | FileList) => void | Promise<void>;
   onRemove: (file: File | FileList) => void;
 }

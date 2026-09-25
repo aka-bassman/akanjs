@@ -89,6 +89,10 @@ const makeSignal = () => {
       async (data: Record<string, unknown>) => new StoreTestFull({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", ...data }),
     ),
     updateStoreTestItem: mock(async (id: string, data: Record<string, unknown>) => new StoreTestFull({ id, ...data })),
+    mergeStoreTestItem: mock(
+      async (idOrModel: string | { id: string }, data: Record<string, unknown>) =>
+        new StoreTestFull({ id: typeof idOrModel === "string" ? idOrModel : idOrModel.id, title: "merged", ...data }),
+    ),
     removeStoreTestItem: mock(
       async (id: string) => new StoreTestFull({ id, title: "removed", removedAt: new Date() } as never),
     ),
@@ -101,13 +105,27 @@ const makeSignal = () => {
     ]),
     storeTestItemInsight: mock(async () => new StoreTestInsight({ count: 2 })),
     storeTestItemListByTitle: mock(async () => [
-      new StoreTestLight({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada" }),
-      new StoreTestLight({ id: "bbbbbbbbbbbbbbbbbbbbbbbb", title: "Ben" }),
+      new StoreTestLight({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada", createdAt: new Date(300) } as never),
+      new StoreTestLight({ id: "bbbbbbbbbbbbbbbbbbbbbbbb", title: "Ben", createdAt: new Date(100) } as never),
     ]),
     storeTestItemInsightByTitle: mock(async () => new StoreTestInsight({ count: 2 })),
   };
+  const sortValueMap = new Map([["storeTestItem", { latest: { createdAt: -1 as const } }]]);
+  const rooms: { args: unknown[]; handleEvent: (event: unknown) => void; onResync?: () => void; open: boolean }[] = [];
+  const recordRoom = (...argData: unknown[]) => {
+    const handleEvent = argData.at(-2) as (event: unknown) => void;
+    const policy = argData.at(-1) as { onResync?: () => void };
+    const room = { args: argData.slice(0, -2), handleEvent, onResync: policy?.onResync, open: true };
+    rooms.push(room);
+    return () => {
+      room.open = false;
+    };
+  };
+  calls.subscribeStoreTestItemLiveByTitle = mock(recordRoom) as never;
+  calls.subscribeStoreTestItemLiveBySearch = mock(recordRoom) as never;
   const fetch = new Proxy(calls, {
     get(target, key: string) {
+      if (key === "sortValueMap") return sortValueMap;
       target[key] ??= mock(async () => null);
       return target[key];
     },
@@ -117,11 +135,19 @@ const makeSignal = () => {
     endpoint: {},
     slice: {
       "": { args: [{ type: "search", name: "query", refName: "String", nullable: true }] },
-      byTitle: { args: [{ type: "param", name: "title", refName: "String" }] },
+      byTitle: { args: [{ type: "param", name: "title", refName: "String" }], live: { sort: ["latest"] } },
       byTags: { args: [{ type: "search", name: "tags", refName: "String", arrDepth: 1, nullable: true }] },
+      bySearch: {
+        args: [
+          { type: "param", name: "title", refName: "String" },
+          { type: "search", name: "text", refName: "String", nullable: true },
+        ],
+        live: { sort: ["latest"], pauseOn: ["text"] },
+      },
     },
   };
   return {
+    rooms,
     refName: "storeTestItem",
     _slice: { [SLICE_META]: {} },
     cnst: storeTestConstant,
@@ -129,7 +155,7 @@ const makeSignal = () => {
     serializedSignal,
     slices: [],
     calls,
-  } as unknown as ClientSignal<"storeTestItem"> & { calls: typeof calls };
+  } as unknown as ClientSignal<"storeTestItem"> & { calls: typeof calls; rooms: typeof rooms };
 };
 
 describe("store factory", () => {
@@ -384,7 +410,7 @@ describe("signal generated store contract", () => {
     await instance.do.selectStoreTestItemByTitle(new StoreTestLight({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada" }));
     expect(instance.get().storeTestItemSelectionByTitle).toBeInstanceOf(DataList);
     await instance.do.setPageOfStoreTestItemByTitle(2);
-    await instance.do.addPageOfStoreTestItemByTitle(3);
+    await instance.do.loadMoreOfStoreTestItemByTitle();
     await instance.do.setLimitOfStoreTestItemByTitle(10);
     await instance.do.setQueryArgsOfStoreTestItemByTitle("Ben");
     await instance.do.setQueryArgsOfStoreTestItemByTitle((prev: string) => [`${prev}!`]);
@@ -395,6 +421,100 @@ describe("signal generated store contract", () => {
       queryArgsOfStoreTestItemByTitle: ["Ben!"],
       sortOfStoreTestItemByTitle: "titleAsc",
     });
+  });
+
+  test("keeps the newest page request and drops a slower one that answers after it", async () => {
+    setupEnv();
+    const signal = makeSignal();
+    const gates: Array<() => void> = [];
+    signal.calls.storeTestItemListByTitle = mock(
+      async () =>
+        await new Promise<InstanceType<typeof StoreTestLight>[]>((resolve) => {
+          const page = gates.length + 1;
+          gates.push(() => resolve([new StoreTestLight({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: `page${page}` })]));
+        }),
+    );
+    class RaceStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(RaceStore);
+    const instance = new StoreInstance(makeRoot("raceRoot", RaceStore));
+
+    const first = instance.do.initStoreTestItemByTitle("Ada");
+    gates[0]?.();
+    await first;
+
+    // Page 2 then page 3, and page 2 answers last — the slower response must not become the visible list.
+    const toPage2 = instance.do.setPageOfStoreTestItemByTitle(2);
+    const toPage3 = instance.do.setPageOfStoreTestItemByTitle(3);
+    gates[2]?.();
+    await toPage3;
+    gates[1]?.();
+    await toPage2;
+
+    expect(instance.get().pageOfStoreTestItemByTitle).toBe(3);
+    const rows = [...(instance.get().storeTestItemListByTitle as DataList<InstanceType<typeof StoreTestLight>>)];
+    expect(rows.map((row) => row.title)).toEqual(["page3"]);
+    expect(instance.get().storeTestItemListLoadingByTitle).toBe(false);
+  });
+
+  test("loads more from the tail of the list, not from a page number", async () => {
+    setupEnv();
+    const signal = makeSignal();
+    const rowsOf = (from: number, count: number) =>
+      new Array(count)
+        .fill(null)
+        .map((_, i) => new StoreTestLight({ id: `${from + i}`.padStart(24, "0"), title: `row${from + i}` } as never));
+    signal.calls.storeTestItemListByTitle = mock(async (_title: string, skip: number, limit: number) =>
+      rowsOf(skip, Math.min(limit, 5 - skip)),
+    );
+    class MoreStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(MoreStore);
+    const instance = new StoreInstance(makeRoot("moreRoot", MoreStore));
+    const titles = () =>
+      [...(instance.get().storeTestItemListByTitle as DataList<InstanceType<typeof StoreTestLight>>)].map(
+        (row) => row.title,
+      );
+
+    await instance.do.initStoreTestItemByTitle("Ada", { limit: 2 });
+    expect(titles()).toEqual(["row0", "row1"]);
+    expect(instance.get().hasMoreOfStoreTestItemByTitle).toBe(true);
+
+    await instance.do.loadMoreOfStoreTestItemByTitle();
+    expect(signal.calls.storeTestItemListByTitle).toHaveBeenLastCalledWith("Ada", 2, 2, "latest", undefined);
+    expect(titles()).toEqual(["row0", "row1", "row2", "row3"]);
+    // The window did not move, which is what keeps live placement — first page only — working past the first "more".
+    expect(instance.get().pageOfStoreTestItemByTitle).toBe(1);
+    expect(instance.get().isCumulativeOfStoreTestItemByTitle).toBe(true);
+
+    await instance.do.loadMoreOfStoreTestItemByTitle();
+    expect(titles()).toEqual(["row0", "row1", "row2", "row3", "row4"]);
+    expect(instance.get().hasMoreOfStoreTestItemByTitle).toBe(false);
+
+    // Nothing left to ask for, so the action is a no-op rather than a request that returns nothing.
+    signal.calls.storeTestItemListByTitle.mockClear();
+    await instance.do.loadMoreOfStoreTestItemByTitle();
+    expect(signal.calls.storeTestItemListByTitle).not.toHaveBeenCalled();
+
+    // A refresh of an accumulated list refetches all of it, rather than collapsing it back to one window.
+    await instance.do.refreshStoreTestItemByTitle({ invalidate: true });
+    expect(signal.calls.storeTestItemListByTitle).toHaveBeenLastCalledWith("Ada", 0, 5, "latest", expect.any(Object));
+    expect(titles()).toEqual(["row0", "row1", "row2", "row3", "row4"]);
+  });
+
+  test("clears the list spinner when a page request fails", async () => {
+    setupEnv();
+    const signal = makeSignal();
+    class FailStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(FailStore);
+    const instance = new StoreInstance(makeRoot("failRoot", FailStore));
+
+    await instance.do.initStoreTestItemByTitle("Ada");
+    signal.calls.storeTestItemListByTitle = mock(async () => {
+      throw new Error("network gone");
+    });
+
+    await expect(instance.do.setPageOfStoreTestItemByTitle(2)).rejects.toThrow("network gone");
+    // The framework toasts the error; what must not survive it is a spinner nothing will ever turn off.
+    expect(instance.get().storeTestItemListLoadingByTitle).toBe(false);
   });
 
   test("seeds the edit form with a cloned map, not an empty object", async () => {
@@ -418,7 +538,7 @@ describe("signal generated store contract", () => {
     expect(storeTestConstant.input.purify(form() as never)).toMatchObject({ settings: { theme: "light" } });
   });
 
-  test("stamps every sibling slice stale on create and clears it on refresh", async () => {
+  test("stamps every slice stale on every write and clears it on refresh", async () => {
     setupEnv();
     const signal = makeSignal();
     class StaleStore extends store(signal, () => ({})) {}
@@ -426,8 +546,16 @@ describe("signal generated store contract", () => {
     const instance = new StoreInstance(makeRoot("staleRoot", StaleStore));
 
     const staleAtKeys = ["storeTestItemStaleAt", "storeTestItemStaleAtByTitle", "storeTestItemStaleAtByTags"];
-    staleAtKeys.forEach((key) => {
-      expect((instance.get()[key] as Date).getTime()).toBe(0);
+    const staleAts = () => staleAtKeys.map((key) => instance.get()[key] as Date);
+    const expectRestamped = async (previous: Date[], write: () => unknown) => {
+      await write();
+      staleAts().forEach((staleAt, idx) => {
+        expect(staleAt).not.toBe(previous[idx]);
+      });
+      return staleAts();
+    };
+    staleAts().forEach((staleAt) => {
+      expect(staleAt.getTime()).toBe(0);
     });
 
     const before = Date.now();
@@ -435,10 +563,10 @@ describe("signal generated store contract", () => {
       { title: "created", count: 0, tags: [] },
       { sliceName: "storeTestItemByTitle" },
     );
-    // The issuing slice got the optimistic splice, so only its siblings are marked stale.
-    expect((instance.get().storeTestItemStaleAtByTitle as Date).getTime()).toBe(0);
-    expect((instance.get().storeTestItemStaleAt as Date).getTime()).toBeGreaterThanOrEqual(before);
-    expect((instance.get().storeTestItemStaleAtByTags as Date).getTime()).toBeGreaterThanOrEqual(before);
+    // The issuing slice is stamped too: its list took the optimistic splice, but the payload it hydrated from did not.
+    staleAts().forEach((staleAt) => {
+      expect(staleAt.getTime()).toBeGreaterThanOrEqual(before);
+    });
 
     // A refresh restamps initAt past staleAt, which is what Load.Units reads to stop refetching.
     await instance.do.refreshStoreTestItem({ invalidate: true });
@@ -446,11 +574,19 @@ describe("signal generated store contract", () => {
       (instance.get().storeTestItemStaleAt as Date).getTime(),
     );
 
-    const staleAtByTags = instance.get().storeTestItemStaleAtByTags as Date;
-    await instance.do.newStoreTestItem({ title: "formed", tags: [] });
-    await instance.do.createStoreTestItemInForm({ sliceName: "storeTestItemByTags" });
-    expect(instance.get().storeTestItemStaleAtByTags).toBe(staleAtByTags);
-    expect((instance.get().storeTestItemStaleAtByTitle as Date).getTime()).toBeGreaterThanOrEqual(before);
+    let previous = staleAts();
+    previous = await expectRestamped(previous, async () => {
+      await instance.do.newStoreTestItem({ title: "formed", tags: [] });
+      await instance.do.createStoreTestItemInForm({ sliceName: "storeTestItemByTags" });
+    });
+    previous = await expectRestamped(previous, () =>
+      instance.do.updateStoreTestItem("aaaaaaaaaaaaaaaaaaaaaaaa", { title: "updated", count: 0, tags: [] }),
+    );
+    previous = await expectRestamped(previous, () =>
+      instance.do.setStoreTestItem(new StoreTestLight({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "pushed" }) as never),
+    );
+    previous = await expectRestamped(previous, () => instance.do.mergeStoreTestItem("aaaaaaaaaaaaaaaaaaaaaaaa", {}));
+    await expectRestamped(previous, () => instance.do.removeStoreTestItem("aaaaaaaaaaaaaaaaaaaaaaaa"));
   });
 });
 
@@ -535,5 +671,242 @@ describe("StoreRegistry and root assembly", () => {
     const setterIsVoid: Exact<ReturnType<typeof built.do.setReturnedValue>, void> = true;
 
     expect([syncIsVoid, asyncIsVoid, argsSurvive, setterIsVoid]).toEqual([true, true, true, true]);
+  });
+});
+
+describe("live sync store action", () => {
+  const liveState = (instance: StoreInstance) => {
+    const state = instance.get() as Record<string, any>;
+    return {
+      ids: [...(state.storeTestItemListByTitle as DataList<{ id: string }>)].map((item) => item.id),
+      titles: [...(state.storeTestItemListByTitle as DataList<{ id: string; title: string }>)].map(
+        (item) => item.title,
+      ),
+      count: (state.storeTestItemInsightByTitle as { count: number }).count,
+      staleAt: (state.storeTestItemStaleAtByTitle as Date).getTime(),
+      lastPage: state.lastPageOfStoreTestItemByTitle as number,
+    };
+  };
+  const arrange = async () => {
+    setupEnv();
+    const signal = makeSignal();
+    class LiveStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(LiveStore);
+    const instance = new StoreInstance(makeRoot(`liveRoot${Math.random()}`, LiveStore));
+    await instance.do.initStoreTestItemByTitle("Ada");
+    return { instance, signal };
+  };
+  const light = (id: string, title: string, createdAt: number) => ({ id, title, createdAt: new Date(createdAt) });
+
+  test("an update replaces a row the window holds and ignores one it does not", async () => {
+    const { instance } = await arrange();
+    await instance.do.applyLiveStoreTestItemByTitle({
+      op: "update",
+      id: "aaaaaaaaaaaaaaaaaaaaaaaa",
+      light: light("aaaaaaaaaaaaaaaaaaaaaaaa", "Ada Lovelace", 300),
+    });
+    expect(liveState(instance).titles).toEqual(["Ada Lovelace", "Ben"]);
+    expect(liveState(instance).count).toBe(2);
+
+    await instance.do.applyLiveStoreTestItemByTitle({
+      op: "update",
+      id: "cccccccccccccccccccccccc",
+      light: light("cccccccccccccccccccccccc", "Cyd", 400),
+    });
+    expect(liveState(instance).titles).toEqual(["Ada Lovelace", "Ben"]);
+  });
+
+  test("a leave drops the row and lowers the count", async () => {
+    const { instance } = await arrange();
+    const before = liveState(instance).staleAt;
+    await instance.do.applyLiveStoreTestItemByTitle({ op: "leave", id: "aaaaaaaaaaaaaaaaaaaaaaaa" });
+    expect(liveState(instance).ids).toEqual(["bbbbbbbbbbbbbbbbbbbbbbbb"]);
+    expect(liveState(instance).count).toBe(1);
+    expect(liveState(instance).staleAt).toBeGreaterThanOrEqual(before);
+
+    // A row the window never held changes nothing, including the count.
+    await instance.do.applyLiveStoreTestItemByTitle({ op: "leave", id: "cccccccccccccccccccccccc" });
+    expect(liveState(instance).count).toBe(1);
+  });
+
+  test("an enter places the row by the declared sort and raises the count", async () => {
+    const { instance } = await arrange();
+    await instance.do.applyLiveStoreTestItemByTitle({
+      op: "enter",
+      id: "cccccccccccccccccccccccc",
+      light: light("cccccccccccccccccccccccc", "Cyd", 200),
+    });
+    expect(liveState(instance).titles).toEqual(["Ada", "Cyd", "Ben"]);
+    expect(liveState(instance).count).toBe(3);
+    expect(liveState(instance).lastPage).toBe(1);
+  });
+
+  test("keeps placing rows after the list has loaded more", async () => {
+    setupEnv();
+    const signal = makeSignal();
+    const server = [400, 300, 200, 100].map(
+      (at) =>
+        new StoreTestLight({ id: `${at}`.padStart(24, "0"), title: `row${at}`, createdAt: new Date(at) } as never),
+    );
+    signal.calls.storeTestItemListByTitle = mock(async (_title: string, skip: number, limit: number) =>
+      server.slice(skip, skip + limit),
+    );
+    class LoadMoreLiveStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(LoadMoreLiveStore);
+    const instance = new StoreInstance(makeRoot("loadMoreLiveRoot", LoadMoreLiveStore));
+    await instance.do.initStoreTestItemByTitle("Ada", { limit: 2 });
+    await instance.do.loadMoreOfStoreTestItemByTitle();
+    expect(liveState(instance).titles).toEqual(["row400", "row300", "row200", "row100"]);
+
+    // The bug this replaced: paging by number moved `pageOf<Model>` off 1, and placement is refused anywhere
+    // else — so one "more" used to switch live sync off for good, silently.
+    await instance.do.applyLiveStoreTestItemByTitle({
+      op: "enter",
+      id: "cccccccccccccccccccccccc",
+      light: light("cccccccccccccccccccccccc", "Cyd", 250),
+    });
+    expect(liveState(instance).titles).toEqual(["row400", "row300", "Cyd", "row200", "row100"]);
+
+    // Nothing falls off the end to make room: every one of those rows is on screen.
+    expect(liveState(instance).count).toBe(3);
+  });
+
+  test("a row past the tail waits for the rows the server still holds", async () => {
+    setupEnv();
+    const signal = makeSignal();
+    const server = [400, 300].map(
+      (at) =>
+        new StoreTestLight({ id: `${at}`.padStart(24, "0"), title: `row${at}`, createdAt: new Date(at) } as never),
+    );
+    signal.calls.storeTestItemListByTitle = mock(async (_title: string, skip: number, limit: number) =>
+      server.slice(skip, skip + limit),
+    );
+    class TailStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(TailStore);
+    const instance = new StoreInstance(makeRoot("tailRoot", TailStore));
+    await instance.do.initStoreTestItemByTitle("Ada", { limit: 1 });
+    await instance.do.loadMoreOfStoreTestItemByTitle();
+    expect(instance.get().hasMoreOfStoreTestItemByTitle).toBe(true);
+
+    const oldest = {
+      op: "enter" as const,
+      id: "cccccccccccccccccccccccc",
+      light: light("cccccccccccccccccccccccc", "Cyd", 50),
+    };
+    await instance.do.applyLiveStoreTestItemByTitle(oldest);
+    expect(liveState(instance).titles).toEqual(["row400", "row300"]);
+
+    // Once the server says it has nothing left, the slot past the tail is this list's to fill.
+    await instance.do.loadMoreOfStoreTestItemByTitle();
+    expect(instance.get().hasMoreOfStoreTestItemByTitle).toBe(false);
+    await instance.do.applyLiveStoreTestItemByTitle(oldest);
+    expect(liveState(instance).titles).toEqual(["row400", "row300", "Cyd"]);
+  });
+
+  test("the same enter twice does not count the row twice", async () => {
+    const { instance } = await arrange();
+    const event = {
+      op: "enter" as const,
+      id: "cccccccccccccccccccccccc",
+      light: light("cccccccccccccccccccccccc", "Cyd", 200),
+    };
+    await instance.do.applyLiveStoreTestItemByTitle(event);
+    await instance.do.applyLiveStoreTestItemByTitle(event);
+    expect(liveState(instance).titles).toEqual(["Ada", "Cyd", "Ben"]);
+    expect(liveState(instance).count).toBe(3);
+  });
+
+  test("an enter on a sort the slice did not allowlist counts and refetches instead of guessing", async () => {
+    const { instance } = await arrange();
+    await instance.do.setSortOfStoreTestItemByTitle("titleAsc");
+    const before = liveState(instance).staleAt;
+    await instance.do.applyLiveStoreTestItemByTitle({
+      op: "enter",
+      id: "cccccccccccccccccccccccc",
+      light: light("cccccccccccccccccccccccc", "Cyd", 200),
+    });
+    expect(liveState(instance).ids).not.toContain("cccccccccccccccccccccccc");
+    expect(liveState(instance).count).toBe(3);
+    expect(liveState(instance).staleAt).toBeGreaterThanOrEqual(before);
+  });
+
+  test("a local create on a live slice places the row and is not counted twice", async () => {
+    const { instance, signal } = await arrange();
+    const created = "cccccccccccccccccccccccc";
+    signal.calls.createStoreTestItem = mock(
+      async (data: Record<string, unknown>) =>
+        new StoreTestFull({ id: created, ...data, createdAt: new Date(200) } as never),
+    );
+    await instance.do.newStoreTestItem({ title: "Cyd", count: 0, tags: [] });
+    await instance.do.createStoreTestItemInForm({ sliceName: "storeTestItemByTitle" });
+    // Placed by the sort rather than at the head, which is what the head insertion used to do.
+    expect(liveState(instance).titles).toEqual(["Ada", "Cyd", "Ben"]);
+    expect(liveState(instance).count).toBe(3);
+
+    // The server publishes this create back into the room the creator is in, so the same row arrives again.
+    await instance.do.applyLiveStoreTestItemByTitle({ op: "enter", id: created, light: light(created, "Cyd", 200) });
+    expect(liveState(instance).count).toBe(3);
+    expect(liveState(instance).ids.filter((id) => id === created)).toHaveLength(1);
+  });
+
+  test("watching a live slice opens its generated room and closes it on release", async () => {
+    const { instance, signal } = await arrange();
+    await instance.do.watchLiveStoreTestItemByTitle(["Ada"]);
+    expect(signal.rooms).toHaveLength(1);
+    expect(signal.rooms[0].args).toEqual(["Ada"]);
+    expect(signal.rooms[0].open).toBe(true);
+
+    // The room is what carries events into the list, so this is the wiring the browser actually exercises.
+    signal.rooms[0].handleEvent({ op: "leave", id: "aaaaaaaaaaaaaaaaaaaaaaaa" });
+    expect(liveState(instance).ids).toEqual(["bbbbbbbbbbbbbbbbbbbbbbbb"]);
+
+    // Same args again shares the one room rather than opening a second that double-applies every event.
+    await instance.do.watchLiveStoreTestItemByTitle(["Ada"]);
+    expect(signal.rooms).toHaveLength(1);
+
+    await instance.do.watchLiveStoreTestItemByTitle(["Ben"]);
+    expect(signal.rooms[0].open).toBe(false);
+    expect(signal.rooms).toHaveLength(2);
+    expect(signal.rooms[1].args).toEqual(["Ben"]);
+
+    await instance.do.watchLiveStoreTestItemByTitle(null);
+    expect(signal.rooms[1].open).toBe(false);
+  });
+
+  test("a filled pauseOn argument opens no room, and clearing it opens one", async () => {
+    const { instance, signal } = await arrange();
+    // Text in the box makes the filter build a query the router cannot answer, so there is no room to open.
+    await instance.do.watchLiveStoreTestItemBySearch(["Ada", "lovelace"]);
+    expect(signal.rooms).toHaveLength(0);
+
+    await instance.do.watchLiveStoreTestItemBySearch(["Ada", null]);
+    expect(signal.rooms).toHaveLength(1);
+    // The trailing null is trimmed and re-expanded, which is what the list query sends too; the fetch handler
+    // serializes the hole to an explicit null so the room id matches the server's.
+    expect(signal.rooms[0].args).toEqual(["Ada", undefined]);
+
+    // And filling it again releases the room rather than leaving one open on stale arguments.
+    await instance.do.watchLiveStoreTestItemBySearch(["Ada", "lovelace"]);
+    expect(signal.rooms[0].open).toBe(false);
+    expect(signal.rooms).toHaveLength(1);
+  });
+
+  test("a room that comes back after a drop reloads the list", async () => {
+    const { instance, signal } = await arrange();
+    await instance.do.watchLiveStoreTestItemByTitle(["Ada"]);
+    signal.calls.storeTestItemListByTitle.mockClear();
+    signal.rooms[0].onResync?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(signal.calls.storeTestItemListByTitle).toHaveBeenCalled();
+  });
+
+  test("an invalidate stamps the list stale and touches nothing else", async () => {
+    const { instance } = await arrange();
+    const before = liveState(instance);
+    await instance.do.applyLiveStoreTestItemByTitle({ op: "invalidate", id: "cccccccccccccccccccccccc" });
+    const after = liveState(instance);
+    expect(after.ids).toEqual(before.ids);
+    expect(after.count).toBe(before.count);
+    expect(after.staleAt).toBeGreaterThanOrEqual(before.staleAt);
   });
 });

@@ -41,6 +41,8 @@ export const McpErrorCode = {
   methodNotFound: -32601,
   invalidParams: -32602,
   internal: -32603,
+  /** Implementation-defined (`-32000`..`-32019` is what JSON-RPC leaves to a server below MCP's reserved band). */
+  rateLimited: -32010,
   headerMismatch: -32020,
   unsupportedProtocolVersion: -32022,
 } as const;

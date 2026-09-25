@@ -43,6 +43,8 @@ const drainSize = 200;
 export class CascadeRunner {
   readonly #modules = new Map<string, CascadeModule>();
   readonly #plans = new Map<string, CascadePlan>();
+  /** `removeWithAny` edges: the owner is unknowable at boot, so every model's removal has to sweep them. */
+  readonly #anyEdges: WithEdge[] = [];
   readonly #bulk = new Set<string>();
   readonly #context = new AsyncLocalStorage<CascadeContext>();
   readonly #logger = new Logger("Cascade");
@@ -71,7 +73,8 @@ export class CascadeRunner {
 
   async run(refName: string, doc: Record<string, unknown>) {
     const plan = this.#plans.get(refName);
-    if (!plan?.refEdges.length && !plan?.withEdges.length) return;
+    if (!plan) return;
+    if (!plan.refEdges.length && !plan.withEdges.length && !this.#anyEdges.length) return;
     const parent = this.#context.getStore();
     const seen = parent?.seen ?? new Set<string>();
     const depth = (parent?.depth ?? 0) + 1;
@@ -83,7 +86,9 @@ export class CascadeRunner {
     }
     await this.#context.run({ seen, depth }, async () => {
       for (const edge of plan.refEdges) await this.#removeRef(edge, doc, seen);
-      if (id) for (const edge of plan.withEdges) await this.#removeWith(edge, refName, id, seen);
+      if (!id) return;
+      for (const edge of plan.withEdges) await this.#removeWith(edge, refName, id, seen);
+      for (const edge of this.#anyEdges) await this.#removeWith(edge, refName, id, seen);
     });
   }
 
@@ -139,6 +144,10 @@ export class CascadeRunner {
 
   #collectWithEdges(childRef: string, mod: CascadeModule) {
     for (const [key, path] of mod.constant.full.cascade.removeWith) {
+      if (path.anyOwner) {
+        this.#anyEdges.push({ refName: childRef, key, typeKey: path.typeKey });
+        continue;
+      }
       for (const owner of this.#resolveOwners(childRef, key, path)) {
         this.#plans.get(owner)?.withEdges.push({ refName: childRef, key, typeKey: path.typeKey });
       }
@@ -167,6 +176,9 @@ export class CascadeRunner {
   #hasRemoveSideEffect(refName: string) {
     const mod = this.#modules.get(refName);
     if (!mod) return true;
+    // A wildcard child may name any model as its owner, so a query-level removal of any model is a removal whose
+    // children were never looked for. One declaration turns the whole app back to one document at a time.
+    if (this.#anyEdges.length) return true;
     if (mod.schema.preHooks.get("remove")?.length || mod.schema.postHooks.get("remove")?.length) return true;
     if ((mod.srvRef as unknown as { [LIBS_REMOVE_HOOK]?: boolean })[LIBS_REMOVE_HOOK]) return true;
     const proto = mod.srvRef.prototype as { _preRemove?: unknown; _postRemove?: unknown };
@@ -188,10 +200,21 @@ export class CascadeRunner {
         lines.push(`${refName} removeWith ${edge.refName}.${path} (${this.#strategy(edge.refName)})`);
       }
     }
+    for (const edge of this.#anyEdges) {
+      lines.push(`<any> removeWith ${edge.refName}.${edge.key}+${edge.typeKey} (${this.#strategy(edge.refName)})`);
+    }
     if (!lines.length) return;
     const bulk = lines.filter((line) => line.endsWith("(bulk)")).length;
     this.#logger.verbose(`${lines.length} cascade edge(s), ${bulk} in one query`);
     for (const line of lines) this.#logger.verbose(line);
+    // Loud, because it is the answer to "why does this app remove everything one document at a time", and the
+    // declaration that caused it is one word in one model nobody is looking at.
+    if (!this.#anyEdges.length) return;
+    const wildcards = this.#anyEdges.map((edge) => `${edge.refName}.${edge.key}`).join(", ");
+    this.#logger.verbose(
+      `${this.#anyEdges.length} wildcard removeWith edge(s) (${wildcards}): every removal probes them, ` +
+        `and no cascade removes in one query`,
+    );
   }
 
   #strategy(refName: string) {

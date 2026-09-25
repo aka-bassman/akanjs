@@ -1,9 +1,10 @@
 import { usePage } from "@apps/akan/client";
 import { Code } from "@apps/akan/ui";
+import { page } from "akanjs/client";
 import { badgeRecipe, buttonRecipe, Link } from "akanjs/ui";
 import { BsArrowRight, BsCheckCircle, BsCloud, BsCodeSlash, BsTerminal } from "react-icons/bs";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const personaCards = [
     {
@@ -681,4 +682,4 @@ export default function Page() {
       </section>
     </main>
   );
-}
+});

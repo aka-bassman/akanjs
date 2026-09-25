@@ -18,49 +18,143 @@
 
 Caching
 
-Server Caching
+cache adaptor
 
-Caching is a small key-value shortcut in front of expensive work. Use it for data that is safe to reuse for a short time, such as verification codes, counters, summaries, or computed options.
+The engine that holds cached values: a SQLite file or Redis, picked by the database mode.
 
-Document cache is close to one model.
+A namespace in front of the key, such as `previewTokens`. Topic plus key names one value.
 
-Service memory is useful for service-level state or shared helper values.
+`expireAt` is the moment a value disappears, as a Dayjs; `ttl` is its lifetime in milliseconds.
 
-The provider can be sqlite/libsql or redis depending on runtime mode.
+replica
+
+One of several server processes running the same app.
 
 Document Cache
 
-Use model cache inside the document layer when the cached value naturally belongs to that model. Keep the namespace small and delete it when the source changes.
-
-Cache a short-lived code
+A key–value store every model class carries. Reach for it when the key is a record id.
 
 Service Memory
 
-Use `memory()` when a service needs a small value that survives across calls. It can be a single value, a map, or local process memory.
+A value or map a service keeps between calls, shared by every replica on the same cache.
 
-Service-level cache
+Local Memory
+
+A plain field on this process only. Fastest, but not shared, and gone after a restart.
+
+Endpoint Cache
+
+Reuses a query's whole answer for every caller for the milliseconds you declare.
+
+Database mode
+
+Cache engine
+
+Where it lives
+
+`single` (default)
+
+SQLite file
+
+`local/apps/<app>/` in dev, `sqlite/` in production. `AKAN_SOLID_DB_PATH` sets the file.
+
+`REDIS_URI` if set; otherwise localhost when local and the in-cluster `redis-svc` in cloud.
+
+Stores a string, number or Buffer. Without `expireAt` it stays until you delete it.
+
+Reads the value back. A missing or expired key reads empty.
+
+Removes the value right away.
+
+One shared value, read and written through three async methods.
+
+A shared async key–value map.
+
+A plain field on this process, read and assigned directly; on a `Map`, a real `Map`.
+
+The value type of a `Map` memory. Required when the first argument is `Map`.
+
+Keep a plain field on this process instead of in the cache adaptor.
+
+value of ref
+
+What a single value reads before its first write; without one it reads `null`.
+
+How long each write lives, unless that `set` passes its own `{ expireAt }`.
+
+Maps the stored value to what code reads. Give it with `set` or not at all; not with `local`.
+
+The inverse of `get`: turns what code writes back into the stored value.
+
+When
+
+Seen by
+
+Use
+
+The key is a model id.
+
+Every replica on the same cache
+
+The value belongs to a service workflow.
+
+Each replica may keep its own copy.
+
+This process only
+
+A query answers every caller the same.
+
+Every caller, one entry per argument set
+
+Injection Types
+
+Every `serve()` injector, with `memory()` in detail.
+
+The Options Object
+
+The endpoint `cache` option next to `timeout` and `guards`.
+
+The setting that picks SQLite or Redis for the cache.
+
+Server Caching
+
+A cache keeps a short-lived copy of a value so the server can skip expensive work. Use it for data that is safe to reuse for a while: verification codes, counters, summaries and computed options.
+
+Words used on this page
+
+Term
+
+Four ways to cache
+
+Where cached values live
+
+Save a preview token for ten minutes, then accept it once:
+
+Methods
+
+Method
+
+Here are all three kinds in one service:
+
+Declared as
+
+What you get
+
+Options
+
+Rules
 
 Which One?
 
-Use document cache when the key is a model id.
-
-Use service memory when the value belongs to a service workflow.
-
-Use local memory only for values that do not need to be shared between replicas.
+Pick by who owns the value and who needs to see it.
 
 Tips
 
-Prefer short TTLs first. You can extend them after the behavior is stable.
-
-Make cache keys boring: namespace plus id is usually enough.
-
-Delete or refresh cache right after updating the source data.
-
-Never treat cache as the source of truth. It is only a fast copy.
+Read next
 
 ## Code Examples
 
-### Code
+### apps/blog/lib/article/article.document.ts
 
 ```ts
 export class ArticleModel extends into(Article, ArticleFilter, cnst.article, () => ({})) {
@@ -79,13 +173,13 @@ export class ArticleModel extends into(Article, ArticleFilter, cnst.article, () 
 }
 ```
 
-### Code
+### apps/blog/lib/article/article.service.ts
 
 ```ts
 export class ArticleService extends serve(db.article, ({ memory }) => ({
   latestArticleId: memory(String),
-  articleSummaries: memory(Map, { of: String }),
-  localHitCount: memory(Number, { local: true, default: 0 }),
+  articleSummaries: memory(Map, { of: String, ttl: 60 * 60 * 1000 }),
+  localHitCount: memory(Int, { local: true, default: 0 }),
 })) {
   async rememberSummary(articleId: string, summary: string) {
     await this.latestArticleId.set(articleId);

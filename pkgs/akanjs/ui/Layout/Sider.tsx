@@ -6,15 +6,22 @@ import { type ReactNode, useEffect, useState } from "react";
 import { AiOutlineMenu } from "react-icons/ai";
 import { BiX } from "react-icons/bi";
 import { useSpring } from "react-spring";
+import { agentAttrs } from "../agentAttrs";
 import { buttonRecipe } from "../Button";
 
 export interface SiderProps {
   className?: string;
   bgClassName?: string;
+  /** Element that opens the drawer. Defaults to the framework's hamburger button. */
+  trigger?: ReactNode;
+  /** Whole top row of the drawer, replacing the row the close button sits in. */
+  header?: ReactNode;
+  /** Element that closes the drawer, inside the default header row. */
+  close?: ReactNode;
   children?: ReactNode;
 }
 
-export const Sider = ({ className, bgClassName, children }: SiderProps) => {
+export const Sider = ({ className, bgClassName, trigger, header, close, children }: SiderProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const path = st.use.path({ agent: false });
   const openMenu = st
@@ -43,16 +50,13 @@ export const Sider = ({ className, bgClassName, children }: SiderProps) => {
 
   return (
     <>
-      <button
-        aria-label="Open menu"
-        className={buttonRecipe({ variant: "ghost", size: "icon" })}
-        onClick={() => {
-          setIsOpen(true);
-        }}
-        type="button"
-      >
-        <AiOutlineMenu />
-      </button>
+      <div className="contents" onClick={() => void openMenu()} {...agentAttrs(openMenu)}>
+        {trigger ?? (
+          <button aria-label="Open menu" className={buttonRecipe({ variant: "ghost", size: "icon" })} type="button">
+            <AiOutlineMenu />
+          </button>
+        )}
+      </div>
 
       {isOpen ? (
         <animated.div
@@ -74,18 +78,21 @@ export const Sider = ({ className, bgClassName, children }: SiderProps) => {
         )}
         style={siderAnimation}
       >
-        <div className="flex shrink-0 items-center justify-end p-2">
-          <button
-            aria-label="Close menu"
-            className={buttonRecipe({ variant: "ghost", size: "icon" }, "rounded-full text-foreground/50")}
-            onClick={() => {
-              setIsOpen(false);
-            }}
-            type="button"
-          >
-            <BiX className="text-2xl" />
-          </button>
-        </div>
+        {header ?? (
+          <div className="flex shrink-0 items-center justify-end p-2">
+            <div className="contents" onClick={() => void closeMenu()} {...agentAttrs(closeMenu)}>
+              {close ?? (
+                <button
+                  aria-label="Close menu"
+                  className={buttonRecipe({ variant: "ghost", size: "icon" }, "rounded-full text-foreground/50")}
+                  type="button"
+                >
+                  <BiX className="text-2xl" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
       </animated.div>
     </>

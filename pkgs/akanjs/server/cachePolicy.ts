@@ -1,3 +1,4 @@
+import { originFromRequest } from "akanjs/common";
 import { type AkanDynamicUsage, type AkanRequestPolicy, parseCookieHeader } from "akanjs/fetch";
 
 export const DEFAULT_ROUTE_CACHE_TTL_SECONDS = 30;
@@ -93,18 +94,7 @@ export function combineMinRevalidate(...values: Array<number | false | null | un
 }
 
 export function getClientFacingOrigin(request: Request, url = new URL(request.url)): string {
-  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  const host = forwardedHost ?? request.headers.get("host")?.split(",")[0]?.trim();
-  const proto = forwardedProto ?? url.protocol.slice(0, -1);
-  if (host && proto) {
-    try {
-      return new URL(`${proto}://${host}`).origin;
-    } catch {
-      /* fall through to parsed request origin */
-    }
-  }
-  return url.origin;
+  return originFromRequest(request.headers, url);
 }
 
 export function isPublicRouteCacheableRequest(request: Request): boolean {

@@ -8,7 +8,7 @@ import {
   type PromiseOrObject,
   Upload,
 } from "akanjs/base";
-import { clientAddressFromHeaders, clientPortFromHeaders, normalizeIpAddress } from "akanjs/common";
+import { clientPortFromHeaders, normalizeIpAddress, TrustedProxy } from "akanjs/common";
 import {
   type ConstantCls,
   type ConstantFieldTypeInput,
@@ -18,20 +18,20 @@ import {
 } from "akanjs/constant";
 import type { Adaptor, AdaptorCls, DatabaseService, InjectRegistry, LiveRegistry } from "akanjs/service";
 import type { Internal, InternalCls, InternalInfo, MiddlewareCls } from ".";
+import { CrossSiteGuard } from "./CrossSiteGuard";
+import { EndpointCache } from "./endpointCache";
 import type { EndpointInfo, EndpointType } from "./endpointInfo";
-import { Exception } from "./exception";
-import { guardOf } from "./guard";
-// Deliberately past the barrel: `./mcp` re-exports `McpDocument`, which would drag `akanjs/fetch` into the
-// signal graph. `Msg` itself imports nothing.
-import { Msg } from "./mcp/Msg";
-import { isTraceEnabled, runWithTrace, SignalTrace, traceSpan } from "./trace";
+import { Exception, isExceptionLike } from "./exception";
+import { type GuardCls, guardOf } from "./guard";
+import { SignalFailure } from "./SignalFailure";
+import { getCurrentTrace, runTraced, SignalTrace, type TraceOrigin, traceSpan } from "./trace";
 
 export type SignalTransportType = "http" | "websocket";
 
 /** What `Bun.Server.requestIP` reports for the socket a request arrived on. */
 export type HttpPeerResolver = (req: Request) => { address: string; port: number } | null;
 
-const httpEndpointTypes = new Set<EndpointType>(["query", "mutation", "prompt"]);
+const httpEndpointTypes = new Set<EndpointType>(["query", "mutation"]);
 
 interface WebSocketRequest {
   ws: Bun.ServerWebSocket<unknown>;
@@ -40,21 +40,11 @@ interface WebSocketRequest {
 }
 type RuntimeRecord = Record<string, unknown>;
 type MiddlewareHandler = (context: SignalContext, next: () => Promise<unknown>) => PromiseOrObject<unknown>;
-
-interface ExceptionLike {
-  statusCode: number;
-  toJSON(): object;
-}
-
-const isExceptionLike = (error: unknown): error is ExceptionLike => {
-  return (
-    error instanceof Exception ||
-    (error instanceof Error &&
-      "statusCode" in error &&
-      typeof (error as { statusCode?: unknown }).statusCode === "number" &&
-      typeof (error as { toJSON?: unknown }).toJSON === "function")
-  );
-};
+/**
+ * Every relation subtree one response has resolved, by model class and then document id. Request-scoped: the
+ * outermost `resolveReturn` starts it and every recursion threads it down, so nothing survives the response.
+ */
+type ResolveCache = Map<ConstantFieldTypeInput, Map<string, Promise<unknown>>>;
 
 export class SignalContext<
   Ctx extends HttpExecutionContext | WebSocketExecutionContext = HttpExecutionContext | WebSocketExecutionContext,
@@ -65,6 +55,12 @@ export class SignalContext<
   ctx: Ctx;
   endpointInfo: EndpointInfo;
   adaptor: Adaptor;
+  /**
+   * Which surface the call came in on. The transport for a plain request, `mcp` for one an agent made through the
+   * MCP endpoint. Held on the context rather than read off the trace: `SignalTrace.create` may answer `null`, and a
+   * guard that asked the trace whether a model is driving the call would fail open exactly there.
+   */
+  readonly origin: TraceOrigin;
   args: unknown[] = [];
   internalArgs: unknown[] = [];
   trace: SignalTrace | null = null;
@@ -72,6 +68,7 @@ export class SignalContext<
   #env: Env;
   #live: LiveRegistry;
   #middleware: Map<string, MiddlewareCls>;
+  static #reported = new WeakSet<object>();
   constructor(
     key: string,
     reqOrWsReq: Bun.BunRequest | WebSocketRequest,
@@ -83,6 +80,7 @@ export class SignalContext<
       live,
       middleware,
       ctx,
+      origin,
     }: {
       endpointInfo: EndpointInfo;
       adaptor: Adaptor;
@@ -96,10 +94,13 @@ export class SignalContext<
        * internalArg reads the request through this context, so the transport has to stay the same one.
        */
       ctx?: Ctx;
+      /** Who is calling, for the log record; defaults to the transport, and MCP names itself. */
+      origin?: TraceOrigin;
     },
   ) {
     this.key = key;
     this.transport = httpEndpointTypes.has(endpointInfo.type) ? "http" : "websocket";
+    this.origin = origin ?? this.transport;
     this.endpointInfo = endpointInfo;
     if (ctx) this.ctx = ctx;
     else if (this.transport === "http") this.ctx = new HttpExecutionContext(reqOrWsReq as Bun.BunRequest) as Ctx;
@@ -109,7 +110,11 @@ export class SignalContext<
     this.#env = env;
     this.#live = live;
     this.#middleware = middleware;
-    if (isTraceEnabled()) this.trace = new SignalTrace(key, endpointInfo.type);
+    // A caller that already opened the trace (`SignalContext.run`) owns its life; only a bare construction
+    // starts one here, and `exec()` then closes it.
+    this.trace = getCurrentTrace() ?? SignalTrace.create(key, endpointInfo.type, origin ?? this.transport);
+    if (this.trace && this.transport === "http")
+      this.trace.applyDebugHeader((reqOrWsReq as { headers?: Headers }).headers?.get?.("x-akan-debug"));
   }
 
   getAdaptor<T extends Adaptor>(adaptorCls: AdaptorCls<T>): T {
@@ -125,6 +130,13 @@ export class SignalContext<
     return service as T;
   }
   async init() {
+    // Before the body is read, because a refused request must not have its arguments parsed or its files buffered.
+    // Only a mutation: a query is a GET whose response no cross-origin caller can read, and a websocket frame
+    // rides a socket whose handshake already carried the check the browser makes for it.
+    if (this.endpointInfo.type === "mutation" && this.transport === "http") {
+      const httpCtx = this.getHttpContext();
+      CrossSiteGuard.assertOrigin(httpCtx.req, httpCtx.url, this.key);
+    }
     if (this.trace) {
       const start = performance.now();
       this.args = await this.ctx.getArgs(this.endpointInfo);
@@ -134,20 +146,21 @@ export class SignalContext<
     }
     return this;
   }
+  /**
+   * In declaration order, not in parallel. Every guard has to pass either way, so the only thing concurrency
+   * bought was that a call refused by two of them named whichever lost the race — a log line that changed
+   * between identical requests. Sequential also stops at the first refusal instead of running the rest.
+   */
   async #checkGuards() {
-    const guards = this.endpointInfo.signalOption.guards ?? [];
-    if (guards.length === 0) return;
-    await Promise.all(
-      guards.map(async (GuardCls) => {
-        const canPass = await guardOf(GuardCls).canPass(this);
-        if (!canPass) throw new Exception.Forbidden(`Access denied by guard: ${GuardCls.name}`);
-      }),
-    );
+    for (const GuardCls of this.endpointInfo.signalOption.guards ?? []) {
+      if (!(await guardOf(GuardCls).canPass(this)))
+        throw new Exception.Forbidden(`Access denied by guard: ${GuardCls.name}`);
+    }
   }
   /**
    * Re-checks this context's guards outside of a request, for a websocket room that is already
    * subscribed. Only global middlewares run: they carry the account resolution this depends on,
-   * while endpoint middlewares (cache/timeout/retry) would observe a call that never executes.
+   * while endpoint middlewares would observe a call that never executes.
    */
   async authorize(): Promise<boolean> {
     try {
@@ -169,26 +182,51 @@ export class SignalContext<
     const guards = (this.endpointInfo.signalOption.guards ?? []).filter((GuardCls) => GuardCls.scope === "account");
     if (guards.length === 0) return true;
     try {
+      // Without the logging middleware: a refusal is the expected answer for most of a catalogue, and it would
+      // otherwise be written as an `Error …` line on every listing.
       await this.#withMiddleware(
         async () => {
           for (const GuardCls of guards) {
-            if (!(await guardOf(GuardCls).canPass(this)))
+            if (!(await this.#canListWith(GuardCls)))
               throw new Exception.Forbidden(`Access denied by guard: ${GuardCls.name}`);
           }
         },
-        { endpointMiddlewares: false },
+        { endpointMiddlewares: false, skip: ["logging"] },
       )();
       return true;
     } catch {
       return false;
     }
   }
+  /**
+   * An account guard has no arguments here, so one that throws anything but a refusal reached for them anyway —
+   * a resource guard mismarked. The entry stays hidden (fail-closed), but the guard is named once per endpoint,
+   * because otherwise the only trace is a tool that is missing for everyone.
+   */
+  async #canListWith(GuardCls: GuardCls): Promise<boolean> {
+    try {
+      return await guardOf(GuardCls).canPass(this);
+    } catch (error) {
+      if (!isExceptionLike(error)) this.#warnMismarkedGuard(GuardCls, error);
+      throw error;
+    }
+  }
+  static #mismarkedWarned = new WeakMap<GuardCls, Set<string>>();
+  #warnMismarkedGuard(GuardCls: GuardCls, error: unknown) {
+    const keys = SignalContext.#mismarkedWarned.get(GuardCls) ?? new Set<string>();
+    if (keys.has(this.key)) return;
+    keys.add(this.key);
+    SignalContext.#mismarkedWarned.set(GuardCls, keys);
+    this.adaptor.logger.warn(
+      `Guard ${GuardCls.name} threw while listing "${this.key}" with no arguments: ${String(error)}. A guard that reads the call's arguments is \`static scope = "resource"\`; until then the entry is hidden from every listing.`,
+    );
+  }
   #withMiddleware(
     coreExec: () => Promise<unknown>,
-    { endpointMiddlewares = true }: { endpointMiddlewares?: boolean } = {},
+    { endpointMiddlewares = true, skip = [] as string[] }: { endpointMiddlewares?: boolean; skip?: string[] } = {},
   ): () => Promise<unknown> {
     const middlewares = [
-      ...this.#middleware.values(),
+      ...[...this.#middleware.entries()].filter(([name]) => !skip.includes(name)).map(([, cls]) => cls),
       ...(endpointMiddlewares ? (this.endpointInfo.signalOption.middlewares ?? []) : []),
     ];
     if (middlewares.length === 0) return coreExec;
@@ -236,21 +274,18 @@ export class SignalContext<
     return handler;
   }
   async exec() {
-    if (!this.trace) return await this.#exec();
-    return await runWithTrace(this.trace, async () => {
-      try {
-        return await this.#exec();
-      } finally {
-        this.trace?.finalize();
-      }
-    });
+    if (!this.trace || getCurrentTrace() === this.trace) return await this.#exec();
+    return await runTraced(this.trace, async () => await this.#exec());
   }
   async #exec() {
     if (!this.endpointInfo.execFn) throw new Exception.Error("Exec function is not set");
     const coreExec = async () => {
       if (!this.endpointInfo.execFn) throw new Exception.Error("Exec function is not set");
-      if (this.trace) await traceSpan("guards", () => this.#checkGuards());
-      else await this.#checkGuards();
+      if (this.trace) {
+        await traceSpan("guards", () => this.#checkGuards());
+        const account = this.get<{ id?: unknown }>("account");
+        if (typeof account?.id === "string") this.trace.setAttr("userId", account.id);
+      } else await this.#checkGuards();
       if (this.endpointInfo.internalArgs.length > 0) {
         this.internalArgs = await Promise.all(
           this.endpointInfo.internalArgs.map((arg) => {
@@ -261,21 +296,15 @@ export class SignalContext<
           }),
         );
       }
-      if (!this.trace) return await this.endpointInfo.execFn.call(this.adaptor, ...this.args, ...this.internalArgs);
-      return await traceSpan(
-        "handler",
-        async () => await this.endpointInfo.execFn?.call(this.adaptor, ...this.args, ...this.internalArgs),
-      );
+      const handle = async () => await this.endpointInfo.execFn?.call(this.adaptor, ...this.args, ...this.internalArgs);
+      return await EndpointCache.through(this, this.trace ? () => traceSpan("handler", handle) : handle);
     };
     const next = this.#withMiddleware(coreExec);
-    const raw = this.trace ? await traceSpan("execChain", () => next()) : await next();
-    if (this.endpointInfo.type === "pubsub") return;
-    if (raw instanceof Response) return raw;
-    // A prompt declares `PromptMessage[]` but rides the `Any` carrier, so `resolveReturn` and `makeResponse` both
-    // hand the value straight back and nothing downstream would notice a malformed one. Normalizing here rather
-    // than in the MCP dispatcher is what makes the HTTP route and `prompts/get` return the same shape — the web
-    // preview is only a preview if it is.
-    const result = this.endpointInfo.type === "prompt" ? Msg.normalize(raw) : raw;
+    const result = this.trace ? await traceSpan("execChain", () => next()) : await next();
+    // A pubsub's return is not a response — nothing is serialized and nothing is sent. It is handed back for the
+    // one caller that needs it: a live slice's exec returns the resolved query the room is then routed by.
+    if (this.endpointInfo.type === "pubsub") return result;
+    if (result instanceof Response) return result;
     if (!this.trace) {
       const resolved = await SignalContext.resolveReturn(result, {
         signalContext: this,
@@ -297,14 +326,45 @@ export class SignalContext<
     );
     return await traceSpan("serialize", async () => this.ctx.makeResponse(resolved, this.endpointInfo));
   }
+  /** Whether `run` already logged this failure, so a transport's catch does not log it a second time. */
+  static wasReported(error: unknown) {
+    return typeof error === "object" && error !== null && SignalContext.#reported.has(error);
+  }
+  /**
+   * Runs `fn` as one traced call of `key`, so every log it writes — the 500 log included, which is why the
+   * catch is in here and not in the transport — carries the same traceId. Rethrows after logging.
+   */
+  static async run<T>(
+    endpoint: Adaptor,
+    endpointInfo: EndpointInfo,
+    key: string,
+    origin: TraceOrigin,
+    fn: () => Promise<T>,
+    { trace = true }: { trace?: boolean } = {},
+  ): Promise<T> {
+    return await runTraced(trace ? SignalTrace.create(key, endpointInfo.type, origin) : null, async () => {
+      try {
+        return await fn();
+      } catch (error) {
+        if (!isExceptionLike(error)) {
+          const message = error instanceof Error ? error.message : String(error);
+          const stack = error instanceof Error ? error.stack : undefined;
+          endpoint.logger.error(`Error ${endpointInfo.type}-${key}:\n${stack ?? message}`);
+          if (typeof error === "object" && error !== null) SignalContext.#reported.add(error);
+        }
+        throw error;
+      }
+    });
+  }
   static async try(
     endpoint: Adaptor,
     endpointInfo: EndpointInfo,
     key: string,
     fn: () => Promise<Response | undefined>,
+    options: { trace?: boolean } = {},
   ): Promise<Response | undefined> {
     try {
-      return await fn();
+      return await SignalContext.run(endpoint, endpointInfo, key, "http", fn, options);
     } catch (error) {
       if (endpointInfo.type === "message" || endpointInfo.type === "pubsub") throw error;
       if (isExceptionLike(error)) {
@@ -317,19 +377,7 @@ export class SignalContext<
           { status: error.statusCode, headers: { "Content-Type": "application/json" } },
         );
       }
-      const message = error instanceof Error ? error.message : String(error);
-      const stack = error instanceof Error ? error.stack : undefined;
-      endpoint.logger.error(`Error ${endpointInfo.type}-${key}:\n${stack ?? message}`);
-      return new Response(
-        JSON.stringify({
-          error: message,
-          statusCode: 500,
-          path: endpointInfo.getPath(key),
-          timestamp: new Date().toISOString(),
-          stack: error instanceof Error ? error.stack : undefined,
-        }),
-        { status: 500, headers: { "Content-Type": "application/json" } },
-      );
+      return SignalFailure.response(error, { path: endpointInfo.getPath(key) });
     }
   }
   static async resolveReturn(
@@ -340,12 +388,15 @@ export class SignalContext<
       arrDepth,
       registry,
       live,
+      cache = new Map(),
     }: {
       signalContext: SignalContext | null;
       returnRef: ConstantFieldTypeInput;
       arrDepth: number;
       registry: InjectRegistry;
       live: LiveRegistry;
+      /** Omitted by the outermost call, which starts an empty one; every recursion threads it down. */
+      cache?: ResolveCache;
     },
   ): Promise<unknown> {
     if (value === null || value === undefined) return value;
@@ -353,56 +404,181 @@ export class SignalContext<
     else if (arrDepth)
       return await Promise.all(
         (value as unknown[]).map((v) =>
-          SignalContext.resolveReturn(v, { signalContext, returnRef, arrDepth: arrDepth - 1, registry, live }),
+          SignalContext.resolveReturn(v, { signalContext, returnRef, arrDepth: arrDepth - 1, registry, live, cache }),
         ),
       );
     const valueRecord = value as RuntimeRecord;
     const resolvedValue = {} as RuntimeRecord;
-    await Promise.all(
-      Object.entries((returnRef as ConstantCls)[FIELD_META]).map(async ([key, field]) => {
-        if (field.fieldType === "hidden" || field.fieldType === "secret") return;
-        else if (field.fieldType === "resolve") {
-          const refName = ConstantRegistry.getRefName(returnRef as ConstantCls);
-          const internal = live.internal.get(`${refName}Internal`);
-          if (!internal) throw new Error(`Internal ${refName} is not registered`);
-          const internalCls = internal.constructor as InternalCls;
-          const internalInfo = internalCls[INTERNAL_META][key] as InternalInfo<"resolveField"> | undefined;
-          if (!internalInfo) throw new Error(`Internal info ${key} is not found`);
-          const resolveFieldContext = new ResolveFieldContext(valueRecord, { signalContext, internalInfo, internal });
-          const resolved = await resolveFieldContext.exec();
-          resolvedValue[key] = await SignalContext.resolveReturn(resolved, {
+    // Only a field that loads or computes gets a promise. Awaiting every field cost one promise and one
+    // microtask hop per field per document, and a model is mostly fields that are a plain copy.
+    const pending: Promise<void>[] = [];
+    const assign = (key: string, resolved: Promise<unknown>) =>
+      pending.push(
+        resolved.then((v) => {
+          resolvedValue[key] = v;
+        }),
+      );
+    for (const [key, field] of Object.entries((returnRef as ConstantCls)[FIELD_META])) {
+      if (field.fieldType === "hidden" || field.fieldType === "secret") continue;
+      else if (field.fieldType === "resolve")
+        assign(
+          key,
+          SignalContext.#resolveComputed(key, valueRecord, {
+            signalContext,
+            returnRef,
+            field,
+            registry,
+            live,
+            cache,
+          }),
+        );
+      else if (!field.isClass) resolvedValue[key] = valueRecord[key];
+      else if (field.isScalar)
+        assign(
+          key,
+          SignalContext.resolveReturn(valueRecord[key], {
             signalContext,
             returnRef: field.modelRef,
             arrDepth: field.arrDepth,
             registry,
             live,
-          });
-        } else if (!field.isClass) resolvedValue[key] = valueRecord[key];
-        else if (field.isScalar) {
-          resolvedValue[key] = await SignalContext.resolveReturn(valueRecord[key], {
+            cache,
+          }),
+        );
+      else
+        assign(
+          key,
+          SignalContext.#resolveRelation(valueRecord[key], {
             signalContext,
-            returnRef: field.modelRef,
+            modelRef: field.modelRef,
             arrDepth: field.arrDepth,
+            nullable: field.nullable,
             registry,
             live,
-          });
-        } else {
-          const refName = ConstantRegistry.getRefName(field.modelRef);
-          const service = live.service.get(refName) as unknown as DatabaseService;
-          if (!service) throw new Error(`Service ${refName} is not registered`);
-          const loaded = await SignalContext.loadNested(valueRecord[key], service, field);
-          const resolved = await SignalContext.resolveReturn(loaded, {
-            signalContext,
-            returnRef: field.modelRef,
-            arrDepth: field.arrDepth,
-            registry,
-            live,
-          });
-          resolvedValue[key] = resolved;
-        }
-      }),
-    );
+            cache,
+          }),
+        );
+    }
+    if (pending.length) await Promise.all(pending);
     return resolvedValue;
+  }
+  static async #resolveComputed(
+    key: string,
+    valueRecord: RuntimeRecord,
+    {
+      signalContext,
+      returnRef,
+      field,
+      registry,
+      live,
+      cache,
+    }: {
+      signalContext: SignalContext | null;
+      returnRef: ConstantFieldTypeInput;
+      field: ConstantCls[typeof FIELD_META][string];
+      registry: InjectRegistry;
+      live: LiveRegistry;
+      cache: ResolveCache;
+    },
+  ): Promise<unknown> {
+    const refName = ConstantRegistry.getRefName(returnRef as ConstantCls);
+    const internal = live.internal.get(`${refName}Internal`);
+    if (!internal) throw new Error(`Internal ${refName} is not registered`);
+    const internalCls = internal.constructor as InternalCls;
+    const internalInfo = internalCls[INTERNAL_META][key] as InternalInfo<"resolveField"> | undefined;
+    if (!internalInfo) throw new Error(`Internal info ${key} is not found`);
+    const resolveFieldContext = new ResolveFieldContext(valueRecord, { signalContext, internalInfo, internal });
+    const resolved = await resolveFieldContext.exec();
+    return await SignalContext.resolveReturn(resolved, {
+      signalContext,
+      returnRef: field.modelRef,
+      arrDepth: field.arrDepth,
+      registry,
+      live,
+      cache,
+    });
+  }
+  static async #resolveRelation(
+    value: unknown,
+    {
+      signalContext,
+      modelRef,
+      arrDepth,
+      nullable,
+      registry,
+      live,
+      cache,
+    }: {
+      signalContext: SignalContext | null;
+      modelRef: ConstantFieldTypeInput;
+      arrDepth: number;
+      nullable: boolean;
+      registry: InjectRegistry;
+      live: LiveRegistry;
+      cache: ResolveCache;
+    },
+  ): Promise<unknown> {
+    if (arrDepth) {
+      if (value === null || value === undefined) {
+        if (nullable) return null;
+        throw new Error(`Document ${value} is not found`);
+      }
+      return await Promise.all(
+        (value as unknown[]).map((item) =>
+          SignalContext.#resolveRelation(item, {
+            signalContext,
+            modelRef,
+            arrDepth: arrDepth - 1,
+            nullable,
+            registry,
+            live,
+            cache,
+          }),
+        ),
+      );
+    }
+    const refName = ConstantRegistry.getRefName(modelRef as ConstantCls);
+    const service = live.service.get(refName) as unknown as DatabaseService;
+    if (!service) throw new Error(`Service ${refName} is not registered`);
+    // The cached load is deliberately nullable, so one entry serves a nullable and a non-nullable reference to
+    // the same document alike and the refusal below stays each field's own.
+    const resolved =
+      value === null || value === undefined
+        ? null
+        : await SignalContext.#resolveOnce(cache, modelRef, String(value), async () => {
+            const loaded = await SignalContext.loadNested(value, service, { arrDepth: 0, nullable: true });
+            return await SignalContext.resolveReturn(loaded, {
+              signalContext,
+              returnRef: modelRef,
+              arrDepth: 0,
+              registry,
+              live,
+              cache,
+            });
+          });
+    if (resolved === null && !nullable) throw new Error(`Document ${value} is not found`);
+    return resolved;
+  }
+  /**
+   * The resolved subtree for one document, computed once per response.
+   *
+   * A listing whose rows share a relation — twenty users with the same avatar — otherwise loads, `toJSON`s and
+   * walks that document once per row, and every copy is identical by construction. The promise is what is
+   * stored, not the value, so rows that ask together coalesce onto the first load instead of racing it.
+   */
+  static #resolveOnce(
+    cache: ResolveCache,
+    modelRef: ConstantFieldTypeInput,
+    id: string,
+    load: () => Promise<unknown>,
+  ): Promise<unknown> {
+    const byId = cache.get(modelRef) ?? new Map<string, Promise<unknown>>();
+    if (!cache.has(modelRef)) cache.set(modelRef, byId);
+    const cached = byId.get(id);
+    if (cached) return cached;
+    const resolving = load();
+    byId.set(id, resolving);
+    return resolving;
   }
   static async loadNested(
     value: unknown,
@@ -460,14 +636,14 @@ export class SignalContext<
   getClientIp(): string | null {
     if (this.transport === "http") {
       const { req } = this.getHttpContext();
-      const forwarded = clientAddressFromHeaders(req.headers);
-      if (forwarded) return forwarded;
+      // A registered resolver that answers `null` names an addressless socket — the unix socket a child is reached
+      // over — and `TrustedProxy` reads that as a local hop; an absent resolver stays `undefined`, an unknown peer.
       const peer = SignalContext.#httpPeer?.(req);
-      return peer ? normalizeIpAddress(peer.address) : null;
+      return TrustedProxy.clientAddress(req.headers, peer === undefined ? undefined : (peer?.address ?? null));
     }
     const { ws } = this.getWebSocketContext<{ headers?: Headers }>();
-    const forwarded = ws.data.headers ? clientAddressFromHeaders(ws.data.headers) : null;
-    return forwarded ?? (ws.remoteAddress ? normalizeIpAddress(ws.remoteAddress) : null);
+    if (!ws.data.headers) return ws.remoteAddress ? normalizeIpAddress(ws.remoteAddress) : null;
+    return TrustedProxy.clientAddress(ws.data.headers, ws.remoteAddress);
   }
   /** The caller's source port as the nearest proxy recorded it, else this socket's own. */
   getClientPort(): number | null {
@@ -482,6 +658,56 @@ export class SignalContext<
     if (this.transport !== "websocket") throw new Error("Transport is not websocket");
     else if (this.endpointInfo.type !== "pubsub") throw new Error("Endpoint is not pubsub");
     return `${key}${this.args.length ? "-" : ""}${this.args.join("-")}`;
+  }
+  /**
+   * A live room's id, which appends the caller's resolved internal arguments to the client-visible one.
+   *
+   * Without them every subscriber of an `inSelf` slice shares one room and receives each other's rows. It cannot
+   * be done for pubsub in general: an ordinary room's publisher computes the same id from the arguments it
+   * publishes with and has no access to a subscriber's `Self`, so widening the id there would put subscriber and
+   * publisher in different rooms. A live room's only publisher is the router, which holds this id already.
+   *
+   * The token is the argument's own id where it has one — that is what `Self` yields, and a room name never
+   * leaves the server — and a digest otherwise, so a credential handed in as an internal argument is not spelled
+   * out in a room name that gets logged.
+   */
+  getLiveRoomId(key: string) {
+    const base = this.getRoomId(key);
+    if (!this.internalArgs.length) return base;
+    return `${base}::${this.internalArgs.map((arg) => SignalContext.#liveRoomToken(arg)).join(".")}`;
+  }
+  static #liveRoomToken(value: unknown): string {
+    if (value === null || value === undefined) return "~";
+    if (typeof value === "object") {
+      const id = (value as { id?: unknown }).id;
+      if (typeof id === "string") return id;
+      return `h${SignalContext.#digest(JSON.stringify(value))}`;
+    }
+    const token = String(value);
+    return /^[A-Za-z0-9_@.:+-]{1,64}$/.test(token) ? token : `h${SignalContext.#digest(token)}`;
+  }
+  /** FNV-1a. Not a security boundary — only a stable, short, room-safe token for a value that is not an id. */
+  static #digest(value: string): string {
+    let hash = 0x811c9dc5;
+    for (let idx = 0; idx < value.length; idx += 1) {
+      hash ^= value.charCodeAt(idx);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash.toString(36);
+  }
+  /**
+   * Resolves the declared internal arguments without running guards or the handler.
+   *
+   * An unsubscribe has to name the same room the subscribe joined, and that id depends on these — but there is
+   * nothing to authorize about leaving a room, and re-running the handler to compute a name would issue the
+   * slice's query again for nothing.
+   */
+  async resolveInternalArgs() {
+    if (this.internalArgs.length || !this.endpointInfo.internalArgs.length) return this.internalArgs;
+    this.internalArgs = await Promise.all(
+      this.endpointInfo.internalArgs.map(async (arg) => (await new arg.argRef().getArg(this)) ?? null),
+    );
+    return this.internalArgs;
   }
   getEnv() {
     return this.#env;
@@ -520,7 +746,6 @@ export class HttpExecutionContext<Appended = unknown> {
   async getArgs(endpointInfo: EndpointInfo): Promise<unknown[]> {
     if (endpointInfo.args.length === 0) return [];
     this.params = this.req.params;
-    // TODO: Optimize the efficiency of this code
     const hasBodyArgs = endpointInfo.args.some((arg) => arg.type === "body");
     const hasUploadArgs = hasBodyArgs && endpointInfo.args.some((arg) => arg.type === "body" && arg.argRef === Upload);
     if (endpointInfo.type === "mutation" && hasBodyArgs && this.req.body) {
@@ -539,7 +764,10 @@ export class HttpExecutionContext<Appended = unknown> {
             this.body[key] = value as string;
           }
         }
-      } else this.body = (await this.req.json()) as RuntimeRecord;
+      } else {
+        CrossSiteGuard.assertJsonBody(this.req.headers.get("content-type"));
+        this.body = (await this.req.json()) as RuntimeRecord;
+      }
     }
 
     const args = endpointInfo.args.map((arg) => {
@@ -548,12 +776,14 @@ export class HttpExecutionContext<Appended = unknown> {
           return deserialize(arg.argRef, arg.arrDepth, this.params[arg.name], {
             key: arg.name,
             nullable: arg.option?.nullable,
+            enum: arg.enum,
           });
         case "body":
           if (arg.argRef === Upload) return this.body[arg.name];
           return deserialize(arg.argRef, arg.arrDepth, this.body[arg.name], {
             key: arg.name,
             nullable: arg.option?.nullable,
+            enum: arg.enum,
           });
         case "search": {
           const raw = arg.arrDepth ? this.url.searchParams.getAll(arg.name) : this.url.searchParams.get(arg.name);
@@ -561,6 +791,7 @@ export class HttpExecutionContext<Appended = unknown> {
           const result = deserialize(arg.argRef, arg.arrDepth, value, {
             key: arg.name,
             nullable: arg.option?.nullable,
+            enum: arg.enum,
           });
           this.searchParams[arg.name] = result;
           return result;
@@ -603,11 +834,13 @@ export class WebSocketExecutionContext<Appended = unknown> {
           return deserialize(arg.argRef, arg.arrDepth, this.data[idx], {
             key: arg.name,
             nullable: arg.option?.nullable,
+            enum: arg.enum,
           });
         case "room":
           return deserialize(arg.argRef, arg.arrDepth, this.data[idx], {
             key: arg.name,
             nullable: arg.option?.nullable,
+            enum: arg.enum,
           });
         default:
           return undefined;

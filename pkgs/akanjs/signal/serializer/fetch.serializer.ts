@@ -13,10 +13,12 @@ import type {
   SerializedFilter,
   SerializedReturns,
   SerializedSignal,
+  SerializedSignalMcp,
   SerializedSlice,
   SliceCls,
   SliceInfo,
 } from "akanjs/signal";
+import { refusesAgents } from "../guard";
 
 export class FetchSerializer {
   static logger = new Logger("FetchSerializer");
@@ -68,7 +70,10 @@ export class FetchSerializer {
       ...(endpointInfo.signalOption.path ? { path: endpointInfo.signalOption.path } : {}),
       ...(endpointInfo.signalOption.method ? { method: endpointInfo.signalOption.method } : {}),
       ...(endpointInfo.signalOption.fileUpload ? { fileUpload: true } : {}),
+      ...(endpointInfo.signalOption.timeout ? { timeout: endpointInfo.signalOption.timeout } : {}),
       ...(guards?.length ? { guards } : {}),
+      ...(endpointInfo.signalOption.mcp === false ? { mcp: false as const } : {}),
+      ...(refusesAgents(endpointInfo.signalOption.guards) ? { agents: false as const } : {}),
     };
   }
 
@@ -99,7 +104,7 @@ export class FetchSerializer {
         getFilterArgInfos(filterInfo).map(FetchSerializer.#serializeFilterArg),
       ]),
     );
-    return { filter, sortKeys: Object.keys(filterMeta.sort) };
+    return { filter, sortKeys: Object.keys(filterMeta.sort), sorts: filterMeta.sort as SerializedFilter["sorts"] };
   }
   static #serializeSlice(sliceInfo: SliceInfo): SerializedSlice {
     const guards = sliceInfo.signalOption.guards?.map((g) => g.name);
@@ -107,6 +112,16 @@ export class FetchSerializer {
       args: sliceInfo.args.map(FetchSerializer.#serializeArg),
       ...(sliceInfo.signalOption.path ? { path: sliceInfo.signalOption.path } : {}),
       ...(guards?.length ? { guards } : {}),
+      ...(sliceInfo.signalOption.mcp === false ? { mcp: false as const } : {}),
+      ...(refusesAgents(sliceInfo.signalOption.guards) ? { agents: false as const } : {}),
+      ...(sliceInfo.liveOption
+        ? {
+            live: {
+              sort: sliceInfo.liveOption.sort,
+              ...(sliceInfo.liveOption.pauseOn.length ? { pauseOn: sliceInfo.liveOption.pauseOn } : {}),
+            },
+          }
+        : {}),
     };
   }
 
@@ -148,8 +163,31 @@ export class FetchSerializer {
       ...(sliceCls.removeGuards !== sliceCls.cruGuards && sliceCls.removeGuards.filter((g) => g.name !== "None").length
         ? { removeGuards: sliceCls.removeGuards.map((g) => g.name) }
         : {}),
+      ...FetchSerializer.#serializeSliceMcp(sliceCls),
+      ...FetchSerializer.#serializeSliceAgents(sliceCls),
       endpoint,
     };
+  }
+
+  /** The generated verbs a person-only guard protects, shaped like `mcp` so the client stamps both the same way. */
+  static #serializeSliceAgents(sliceCls: SliceCls): { agents?: SerializedSignalMcp } {
+    const agents: SerializedSignalMcp = {
+      ...(refusesAgents(sliceCls.getGuards) ? { get: false as const } : {}),
+      ...(refusesAgents(sliceCls.createGuards) ? { create: false as const } : {}),
+      ...(refusesAgents(sliceCls.updateGuards) ? { update: false as const } : {}),
+      ...(refusesAgents(sliceCls.removeGuards) ? { remove: false as const } : {}),
+    };
+    return Object.keys(agents).length ? { agents } : {};
+  }
+
+  /** Only the verbs kept off the shelf travel: `true` is the default, so emitting it would grow every payload. */
+  static #serializeSliceMcp(sliceCls: SliceCls): { mcp?: SerializedSignalMcp } {
+    const mcp = Object.fromEntries(
+      Object.entries(sliceCls.mcp ?? {})
+        .filter(([, published]) => !published)
+        .map(([verb]) => [verb, false]),
+    ) as SerializedSignalMcp;
+    return Object.keys(mcp).length ? { mcp } : {};
   }
 
   static serializeServiceSignal(endpointCls: EndpointCls): SerializedSignal {
@@ -161,8 +199,18 @@ export class FetchSerializer {
     return { endpoint };
   }
 
-  static serializeRegistry({ endpointCls, sliceCls }: LiveRegistry): { signal: { [key: string]: SerializedSignal } } {
+  /**
+   * A container that never finished initializing has empty registries rather than none, so a caller reaching a
+   * devtools or MCP route before boot completed gets an empty catalogue. Destructuring the registry used to
+   * throw before the loop, which surfaced as `Cannot destructure property 'endpointCls' from null` on a route
+   * whose honest answer is "nothing is registered yet".
+   */
+  static serializeRegistry(live: LiveRegistry | null | undefined): {
+    signal: { [key: string]: SerializedSignal };
+  } {
     const serializedSignals: { [key: string]: SerializedSignal } = {};
+    if (!live) return { signal: serializedSignals };
+    const { endpointCls, sliceCls } = live;
     for (const [baseName, endpoint] of endpointCls.entries()) {
       const cnst = endpoint.srv.cnst;
       if (cnst) {

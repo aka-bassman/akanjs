@@ -10,7 +10,7 @@ import {
   createTempLib,
   createTempPackage,
   writeText,
-} from "../testHelpers";
+} from "@akanjs/devkit/testHelpers";
 import { ApplicationCommand } from "./application.command";
 import { ApplicationRunner } from "./application.runner";
 import { ApplicationScript } from "./application.script";
@@ -163,7 +163,7 @@ describe("ApplicationCommand", () => {
 });
 
 describe("ApplicationScript", () => {
-  test("start skips dependency install for single database mode", async () => {
+  test("startOne skips dependency install for single database mode", async () => {
     const script = CommandContainer.get(ApplicationScript);
     const { app, getMissingDatabaseModeDependencySpecs, recorder } = createStartApp();
     script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
@@ -181,7 +181,7 @@ describe("ApplicationScript", () => {
       },
     });
 
-    await script.start(app as never, { write: false });
+    await script.startOne(app as never, { write: false });
 
     expect(getMissingDatabaseModeDependencySpecs).toHaveBeenCalledWith("single");
     expect(recorder.names()).not.toContain("confirmInstall");
@@ -190,7 +190,7 @@ describe("ApplicationScript", () => {
     expect(recorder.names()).toContain("runner.start");
   });
 
-  test("start confirms and installs missing multiple-mode dependencies before dbup", async () => {
+  test("startOne confirms and installs missing multiple-mode dependencies before dbup", async () => {
     const script = CommandContainer.get(ApplicationScript);
     const installSpecs = ["@libsql/client@^0.17.3", "bullmq@^5.76.10", "ioredis@^5.10.1", "protobufjs@^8.4.0"];
     const { app, recorder } = createStartApp({
@@ -212,7 +212,7 @@ describe("ApplicationScript", () => {
       },
     });
 
-    await script.start(app as never, { write: false });
+    await script.startOne(app as never, { write: false });
 
     expect(recorder.calls).toContainEqual({
       name: "confirmInstall",
@@ -230,7 +230,7 @@ describe("ApplicationScript", () => {
     expect(recorder.names().indexOf("dbup")).toBeLessThan(recorder.names().indexOf("runner.start"));
   });
 
-  test("start aborts before install and startup when dependency install is declined", async () => {
+  test("startOne aborts before install and startup when dependency install is declined", async () => {
     const script = CommandContainer.get(ApplicationScript);
     const installSpecs = ["@libsql/client@^0.17.3"];
     const { app, recorder } = createStartApp({
@@ -252,7 +252,7 @@ describe("ApplicationScript", () => {
       },
     });
 
-    await expect(script.start(app as never, { write: false })).rejects.toThrow(
+    await expect(script.startOne(app as never, { write: false })).rejects.toThrow(
       "Database mode 'multiple' requires missing dependencies",
     );
 
@@ -265,7 +265,7 @@ describe("ApplicationScript", () => {
     expect(recorder.names()).not.toContain("runner.start");
   });
 
-  test("start does not reinstall existing database-mode dependencies", async () => {
+  test("startOne does not reinstall existing database-mode dependencies", async () => {
     const script = CommandContainer.get(ApplicationScript);
     const { app, recorder } = createStartApp({ databaseMode: "multiple" });
     script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
@@ -283,7 +283,7 @@ describe("ApplicationScript", () => {
       },
     });
 
-    await script.start(app as never, { write: false });
+    await script.startOne(app as never, { write: false });
 
     expect(recorder.names()).not.toContain("confirmInstall");
     expect(recorder.names()).not.toContain("workspace.spawn");
@@ -291,7 +291,7 @@ describe("ApplicationScript", () => {
     expect(recorder.names()).toContain("runner.start");
   });
 
-  test("start uses AKAN_DATABASE_MODE override for dependency install", async () => {
+  test("startOne uses AKAN_DATABASE_MODE override for dependency install", async () => {
     const previousDatabaseMode = process.env.AKAN_DATABASE_MODE;
     process.env.AKAN_DATABASE_MODE = "cluster";
     try {
@@ -316,7 +316,7 @@ describe("ApplicationScript", () => {
         },
       });
 
-      await script.start(app as never, { write: false });
+      await script.startOne(app as never, { write: false });
 
       expect(getMissingDatabaseModeDependencySpecs).toHaveBeenCalledWith("cluster");
       expect(recorder.calls).toContainEqual({

@@ -22,89 +22,101 @@
 
 File Management
 
+The name the user picked, handed back as the download name.
+
+The browser's type for the file, such as `image/png`.
+
+Where storage serves the bytes, empty until the upload finishes.
+
+The file size in bytes.
+
+`uploading` while the bytes move, `active` once storage answers with a URL.
+
+Upload progress from 0 to 100.
+
+Not a field but an enum: the folder a file goes to, since it becomes part of the storage path.
+
+Use the record id in the storage path, so filenames never collide.
+
+Takes `(fileList, parentId?)` and posts the files, with `type` set to the model's name.
+
+Takes `(fileList, index?)`, fills a File field of the form, and re-reads it every 3 s.
+
+Form controls in `@libs/shared/ui` that call `add<Model>Files` for the `slice` you pass.
+
+The files, in the order they were picked.
+
+A JSON array with one `{ lastModifiedAt, size }` per file.
+
+The owning model's name, such as `user`.
+
+The id of the form being edited, left out when there is none.
+
+Local disk
+
+Object storage
+
 What You Build
 
-A minimal file feature has one simple idea: store the real file in storage, and store only the file record in the database.
+A file feature splits one upload in two. The bytes go to storage, and the database keeps a File record that says where they are.
 
-A File model saves filename, url, size, status, and progress.
-
-An upload endpoint receives `Upload` from the client.
-
-A service writes the file stream to storage and updates the File record.
-
-For local development, a small endpoint can serve files back as a stream.
+Where
 
 Minimal File Model
 
-Start with only the fields your UI needs. You can add image size, blur preview, origin URL, or other metadata later.
+Start with only the fields your UI needs. Image size, a blur preview or the origin URL can come later.
+
+Field
+
+The constant file declares them, with the five classes every model has:
+
+The service needs two writes on the model, one per progress tick and one when storage answers:
 
 Upload Endpoint
 
-The endpoint should stay boring. Receive files, choose a purpose folder, and delegate the real work to the service.
+Keep the endpoint boring. It takes the files and a purpose, and hands the real work to the service:
 
 File Service
 
-The service is the heart of the feature. It creates a File record first, uploads the real file, then saves the final URL back to the record.
-
-Create a record with `uploading` status.
-
-Use the record id in the storage path to avoid filename collisions.
-
-When upload finishes, save the returned URL and set status to `active`.
+The service is the heart of the feature. For each file it does three things:
 
 Use In UI
 
-After upload, the UI usually uses the returned File record. For images, show `file.url`. For documents, use it as a download link.
+1. Upload and re-read in the store
+
+One action uploads and keeps the record; the other refreshes it while it uploads:
+
+2. Show it in a component
+
+An image shows as a preview, and every file gets a download link:
 
 Auto-attach To A Model Field
 
-Mark one upload mutation with `{ fileUpload: true }`. The framework then auto-generates the `add{Model}Files` fetch helper and the form-field upload action (`add{Field}FilesOn{Model}`) that the `Field` and `Upload` components use, so a model's file field uploads and attaches automatically.
+You get
 
-Mark exactly one REST upload mutation; the marker rides the serialized signal to the client.
-
-The multipart form uses the fixed fields `files`, `metas`, `type`, `parentId`.
+The four fields
 
 Remove The File With Its Owner
 
-Add `cascade: "removeRef"` to a File relation and removing the owner removes the file too. The cascade calls the File service, not the File model, so `FileService._postRemove` runs and the stored object is deleted from blob or object storage. Nothing else is needed — the storage call already lives in that hook.
-
-Works on an array field too, and only on a relation. A String, an ID, or a scalar fails the class build: none of them names a document to remove.
-
-Nothing checks whether another document still points at the same file. Files are deduped by origin, so declaring removeRef asserts that this field owns its file exclusively.
-
-The document removal is soft, but deleting the stored object is not. A cascade cannot be undone.
-
-Query-level removal fires no hooks and therefore no cascade. removeManyByQuery stamps removedAt in one atomic update; remove documents one at a time when they cascade.
-
 Grow Later
 
-Start with local storage. When the feature works, move to S3, R2, MinIO, or another storage by changing the storage adapter, not every upload API.
+Start on local disk. Once the feature works, move to S3, R2 or MinIO by swapping the storage adaptor, not by rewriting the upload API.
 
-Local: easy to debug and good for development.
-
-Cloud: better for production and shared access.
-
-Same service: keep upload logic behind `storageApi`.
+Applying your own adaptor is one line in the app's option file:
 
 Tips
 
-Keep the database record and the real file separate. The DB stores how to find the file.
-
-Use the File id in the storage path so two users can upload files with the same name.
-
-Progress is optional at first, but very helpful for large files.
-
-When deleting a file, remove both the File record and the storage object.
-
 ## Code Examples
 
-### file.constant.ts
+### apps/myapp/lib/file/file.constant.ts
 
 ```ts
 import { enumOf, Int } from "akanjs/base";
 import { via } from "akanjs/constant";
 
 export class FileStatus extends enumOf("fileStatus", ["uploading", "active"] as const) {}
+
+export class FilePurpose extends enumOf("filePurpose", ["profile", "attachment"] as const) {}
 
 export class FileInput extends via((field) => ({
   filename: field(String),
@@ -118,31 +130,78 @@ export class FileObject extends via(FileInput, (field) => ({
   progress: field(Int, { default: 0 }),
 })) {}
 
-export class LightFile extends via(FileObject, ["filename", "url", "size", "status"] as const, (resolve) => ({})) {}
+export class LightFile extends via(
+  FileObject,
+  ["filename", "url", "size", "status"] as const,
+  (resolve) => ({}),
+) {}
+
 export class File extends via(FileObject, LightFile, (resolve) => ({})) {}
+
+export class FileInsight extends via(File, (field) => ({})) {}
 ```
 
-### file.signal.ts
+### apps/myapp/lib/file/file.document.ts
 
 ```ts
+import { by, from, into } from "akanjs/document";
+import * as cnst from "../cnst";
+
+export class FileFilter extends from(cnst.File, (filter) => ({
+  query: {},
+  sort: {},
+})) {}
+
+export class File extends by(cnst.File) {}
+
+export class FileModel extends into(File, FileFilter, cnst.file, () => ({})) {
+  async progressUpload(id: string, loaded: number | undefined, total: number) {
+    const progress = Math.floor(((loaded ?? 0) / (total || 1)) * 100);
+    await this.File.updateById(id, { progress });
+  }
+  async finishUpload(id: string, url: string) {
+    await this.File.updateById(id, { url, progress: 100, status: "active" });
+  }
+}
+```
+
+### apps/myapp/lib/file/file.signal.ts
+
+```ts
+import { Admin, User } from "@libs/shared/srvkit";
 import { Upload } from "akanjs/base";
-import { endpoint } from "akanjs/signal";
+import { endpoint, internal, None, slice } from "akanjs/signal";
+
+import * as cnst from "../cnst";
+import * as srv from "../srv";
+
+export class FileInternal extends internal(srv.file, () => ({})) {}
+
+export class FileSlice extends slice(
+  srv.file,
+  { guards: { root: Admin, get: User, cru: None } },
+  () => ({}),
+) {}
 
 export class FileEndpoint extends endpoint(srv.file, ({ mutation }) => ({
-  uploadFiles: mutation([cnst.File])
+  uploadFiles: mutation([cnst.File], { guards: [User] })
     .body("files", [Upload])
-    .body("purpose", String, { example: "profile" })
+    .body("purpose", cnst.FilePurpose)
     .exec(async function (files, purpose) {
       return await this.fileService.uploadFiles(files, purpose);
     }),
 })) {}
 ```
 
-### file.service.ts
+### apps/myapp/lib/file/file.service.ts
 
 ```ts
-export class FileService extends serve(db.file, ({ use }) => ({
-  storageApi: use<StorageApi>(),
+import { serve, StorageAdaptorRole } from "akanjs/service";
+
+import * as db from "../db";
+
+export class FileService extends serve(db.file, ({ plug }) => ({
+  storage: plug(StorageAdaptorRole),
 })) {
   async uploadFiles(files: File[], purpose: string) {
     return await Promise.all(files.map((file) => this.uploadFile(file, purpose)));
@@ -158,17 +217,15 @@ export class FileService extends serve(db.file, ({ use }) => ({
       progress: 0,
     });
 
-    const path = `${purpose}/${record.id}-${file.name}`;
-
-    this.storageApi.uploadDataFromStream({
-      path,
+    this.storage.uploadDataFromStream({
+      path: `${purpose}/${record.id}`,
       body: file.stream(),
       mimetype: file.type,
       updateProgress: async ({ loaded }) => {
         await this.fileModel.progressUpload(record.id, loaded, file.size);
       },
       uploadSuccess: async (url) => {
-        await this.fileModel.finishUpload(record.id, url, {});
+        await this.fileModel.finishUpload(record.id, url);
       },
     });
 
@@ -177,51 +234,96 @@ export class FileService extends serve(db.file, ({ use }) => ({
 }
 ```
 
-### Call fetch.uploadFiles
+### apps/myapp/lib/file/file.store.ts
 
 ```ts
-const onChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-  const files = [...(event.target.files ?? [])];
-  if (!files.length) return;
-  const [file] = await fetch.uploadFiles(files, "profile");
-  return file;
+import { store } from "akanjs/store";
+
+import type * as cnst from "../cnst";
+import { fetch, sig } from "../useClient";
+
+export class FileStore extends store(sig.file, () => ({
+  // state
+  uploadedFile: null as cnst.File | null,
+})) {
+  // action
+  async uploadProfileFile(fileList: FileList | File[]) {
+    if (!fileList.length) return;
+    const [file] = await fetch.uploadFiles(fileList, "profile");
+    this.set({ uploadedFile: file ?? null });
+  }
+  async refreshUploadedFile() {
+    const { uploadedFile } = this.get();
+    if (uploadedFile?.status !== "uploading") return;
+    this.set({ uploadedFile: await fetch.file(uploadedFile.id) });
+  }
+}
+```
+
+### apps/myapp/lib/file/File.Util.tsx
+
+```ts
+"use client";
+import { st, usePage } from "@apps/myapp/client";
+import { Image } from "akanjs/ui";
+import { useInterval } from "akanjs/webkit";
+
+export const Upload = () => {
+  const { l } = usePage();
+  const uploadedFile = st.use.uploadedFile();
+  useInterval(st.do.refreshUploadedFile, 1000);
+  return (
+    <div className="flex flex-col gap-2">
+      <input
+        type="file"
+        onChange={(e) => void st.do.uploadProfileFile(e.target.files ?? [])}
+      />
+      {uploadedFile?.status === "active" ? (
+        <>
+          {uploadedFile.mimetype.startsWith("image/") ? (
+            <Image src={uploadedFile.url} alt={uploadedFile.filename} />
+          ) : null}
+          <a href={uploadedFile.url} download={uploadedFile.filename}>
+            {l.trans({ en: "Download", ko: "다운로드" })}
+          </a>
+        </>
+      ) : null}
+    </div>
+  );
 };
 ```
 
-### Preview or download
+### apps/myapp/lib/file/file.signal.ts
 
 ```ts
-const [file] = await fetch.uploadFiles([selectedFile], "profile");
+import { Every } from "@libs/shared/srvkit";
+import { dayjs, ID, Upload } from "akanjs/base";
 
-return (
-  <div>
-    <img src={file.url} alt={file.filename} />
-    <a href={file.url} download={file.filename}>
-      Download
-    </a>
-  </div>
-);
-```
-
-### file.signal.ts
-
-```ts
 export class FileEndpoint extends endpoint(srv.file, ({ mutation }) => ({
-  addFiles: mutation([cnst.File], { fileUpload: true })
+  addFiles: mutation([cnst.File], { guards: [Every], fileUpload: true, mcp: false })
     .body("files", [Upload])
-    .body("metas", String, { example: `[{"lastModifiedAt":"2024-01-14T15:32:47.766Z","size":0}]` })
+    .body("metas", String, {
+      example: `[{"lastModifiedAt":"2024-01-14T15:32:47.766Z","size":0}]`,
+    })
     .body("type", String, { example: "user" })
     .body("parentId", ID, { nullable: true })
     .exec(async function (files, metas, type, parentId) {
-      const parsedMetas = JSON.parse(metas).map((meta) => ({ ...meta, lastModifiedAt: dayjs(meta.lastModifiedAt) }));
+      const rawMetas = JSON.parse(metas) as { lastModifiedAt: string; size: number }[];
+      const parsedMetas = rawMetas.map((meta) => ({
+        ...meta,
+        lastModifiedAt: dayjs(meta.lastModifiedAt),
+      }));
       return await this.fileService.addFiles(files, parsedMetas, type, parentId);
     }),
 })) {}
 ```
 
-### user.constant.ts
+### apps/myapp/lib/user/user.constant.ts
 
 ```ts
+import { via } from "akanjs/constant";
+import { File } from "../file/file.constant";
+
 export class UserInput extends via((field) => ({
   nickname: field(String, { default: "" }),
   image: field(File, { cascade: "removeRef" }).optional(),
@@ -229,15 +331,33 @@ export class UserInput extends via((field) => ({
 })) {}
 ```
 
-### file.service.ts — where the storage call already lives
+### apps/myapp/lib/file/file.service.ts
 
 ```ts
-export class FileService extends serve(db.file, ({ use }) => ({ storageApi: use<StorageApi>() })) {
+export class FileService extends serve(db.file, ({ plug }) => ({
+  storage: plug(StorageAdaptorRole),
+})) {
   override async _postRemove(file: db.File) {
-    await this.storageApi.deleteData(file.url);
+    await this.storage.deleteData(file.url);
     return file;
   }
 }
+```
+
+### apps/myapp/lib/option.ts
+
+```ts
+import { AkanOption } from "akanjs/server";
+import { StorageAdaptorRole } from "akanjs/service";
+import { S3Storage } from "../srvkit";
+import type { LibOptions } from "./srv";
+
+export type ModulesOptions = LibOptions & {
+  [key: string]: unknown;
+};
+
+export const option = new AkanOption<ModulesOptions>()
+  .applyAdaptor(StorageAdaptorRole, S3Storage);
 ```
 
 ## Agent Notes

@@ -1,6 +1,6 @@
-import { router } from "akanjs/client";
+import { page, router } from "akanjs/client";
 
-export default async function Page() {
+export default page().render(() => {
   router.redirect("/cheatsheet/general/auth");
   return <div>Docs</div>;
-}
+});

@@ -1,10 +1,10 @@
 "use client";
 import { cn } from "akanjs/client";
+import type { Align, MarkdownBlock, MarkdownItem, TableBlock } from "akanjs/common";
+import { MarkdownBlocks } from "akanjs/common";
 import type { ReactNode } from "react";
 import { createOverridable } from "../UiOverride";
-import { type MarkdownBlock, MarkdownBlocks, type MarkdownItem } from "./markdownBlocks";
 import { spans } from "./markdownSpans";
-import type { Align, TableBlock } from "./markdownTable";
 
 const alignClass: { [key in Align]: string } = { left: "text-left", center: "text-center", right: "text-right" };
 

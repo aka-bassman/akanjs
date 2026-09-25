@@ -12,12 +12,20 @@ import {
   SELECTION_CHANGE_COMMAND,
   type TextFormatType,
 } from "lexical";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import type { EditorFeatureKey } from "../feature";
+import { formatFeatures, type GuardedFormat } from "../textFormat";
 import { safeExternalUrl } from "../url";
 import type { ToolbarState } from "./floatingToolbarPlugin.type";
 
-const MARKS: { format: TextFormatType; label: string; title: string }[] = [
+interface Mark {
+  format: GuardedFormat;
+  label: string;
+  title: string;
+}
+
+const MARKS: Mark[] = [
   { format: "bold", label: "B", title: "Bold (⌘B)" },
   { format: "italic", label: "I", title: "Italic (⌘I)" },
   { format: "underline", label: "U", title: "Underline (⌘U)" },
@@ -30,11 +38,16 @@ const MARKS: { format: TextFormatType; label: string; title: string }[] = [
  * selection with mark toggles (bold/italic/underline/strike/code) and inline
  * link editing. Hidden while collapsed, unfocused, or mid-IME-composition so it
  * never flickers during Korean input.
+ *
+ * Each control is gated on the feature it applies, so a field given none of them renders no toolbar
+ * at all and the caller never has to switch `toolbar` off by hand to match its `features`.
  */
-export const FloatingToolbarPlugin = () => {
+export const FloatingToolbarPlugin = ({ features }: { features: ReadonlySet<EditorFeatureKey> }) => {
   const [editor] = useLexicalComposerContext();
   const [state, setState] = useState<ToolbarState | null>(null);
   const [linkEditing, setLinkEditing] = useState(false);
+  const marks = useMemo(() => MARKS.filter((mark) => features.has(formatFeatures[mark.format])), [features]);
+  const canLink = features.has("link");
 
   const updateToolbar = useCallback(() => {
     // Never surface the toolbar while a composition is in flight.
@@ -62,7 +75,7 @@ export const FloatingToolbarPlugin = () => {
     const rect = domRange.getBoundingClientRect();
 
     const formats = new Set<TextFormatType>();
-    for (const { format } of MARKS) if (selection.hasFormat(format)) formats.add(format);
+    for (const { format } of marks) if (selection.hasFormat(format)) formats.add(format);
 
     // Detect an enclosing link on either endpoint node.
     const node = selection.anchor.getNode();
@@ -70,7 +83,7 @@ export const FloatingToolbarPlugin = () => {
     const linkUrl = linkParent && $isLinkNode(linkParent) ? linkParent.getURL() : null;
 
     setState({ rect, formats, linkUrl });
-  }, [editor]);
+  }, [editor, marks]);
 
   useEffect(() => {
     const onUpdate = () => editor.getEditorState().read(updateToolbar);
@@ -88,7 +101,7 @@ export const FloatingToolbarPlugin = () => {
       editor.registerCommand(
         KEY_MODIFIER_COMMAND,
         (event: KeyboardEvent) => {
-          if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey)) return false;
+          if (!canLink || event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey)) return false;
           const selection = $getSelection();
           if (!$isRangeSelection(selection) || selection.isCollapsed()) return false;
           event.preventDefault();
@@ -98,7 +111,7 @@ export const FloatingToolbarPlugin = () => {
         COMMAND_PRIORITY_LOW,
       ),
     );
-  }, [editor, updateToolbar]);
+  }, [editor, updateToolbar, canLink]);
 
   // Reposition/hide on scroll & resize since the rect is viewport-relative.
   useEffect(() => {
@@ -112,11 +125,13 @@ export const FloatingToolbarPlugin = () => {
     };
   }, [editor, state, updateToolbar]);
 
-  if (!state) return null;
+  if (!state || (!marks.length && !canLink)) return null;
 
   return createPortal(
     <FloatingToolbar
       state={state}
+      marks={marks}
+      canLink={canLink}
       linkEditing={linkEditing}
       onToggleMark={(format) => editor.dispatchCommand(FORMAT_TEXT_COMMAND, format)}
       onStartLinkEdit={() => setLinkEditing(true)}
@@ -139,6 +154,8 @@ export const FloatingToolbarPlugin = () => {
 
 interface FloatingToolbarProps {
   state: ToolbarState;
+  marks: Mark[];
+  canLink: boolean;
   linkEditing: boolean;
   onToggleMark: (format: TextFormatType) => void;
   onStartLinkEdit: () => void;
@@ -152,6 +169,8 @@ const TOOLBAR_GAP = 8;
 
 export const FloatingToolbar = ({
   state,
+  marks,
+  canLink,
   linkEditing,
   onToggleMark,
   onStartLinkEdit,
@@ -185,7 +204,7 @@ export const FloatingToolbar = ({
         />
       ) : (
         <>
-          {MARKS.map((mark) => (
+          {marks.map((mark) => (
             <button
               key={mark.format}
               type="button"
@@ -199,19 +218,23 @@ export const FloatingToolbar = ({
               {mark.label}
             </button>
           ))}
-          <span className="mx-1 h-5 w-px bg-foreground/20" />
-          <button
-            type="button"
-            title="Link (⌘K)"
-            className={buttonRecipe({ variant: "ghost", size: "xs" }, [
-              "min-h-7 px-2",
-              state.linkUrl && "bg-muted text-foreground",
-            ])}
-            onClick={onStartLinkEdit}
-          >
-            Link
-          </button>
-          {state.linkUrl ? (
+          {canLink ? (
+            <>
+              {marks.length ? <span className="mx-1 h-5 w-px bg-foreground/20" /> : null}
+              <button
+                type="button"
+                title="Link (⌘K)"
+                className={buttonRecipe({ variant: "ghost", size: "xs" }, [
+                  "min-h-7 px-2",
+                  state.linkUrl && "bg-muted text-foreground",
+                ])}
+                onClick={onStartLinkEdit}
+              >
+                Link
+              </button>
+            </>
+          ) : null}
+          {canLink && state.linkUrl ? (
             <button
               type="button"
               title="Remove link"

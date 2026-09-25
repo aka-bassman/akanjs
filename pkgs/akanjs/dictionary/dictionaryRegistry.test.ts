@@ -69,6 +69,21 @@ describe("DictionaryRegistry", () => {
     expect(keys).toContain("registryService.signal.ping.desc");
   });
 
+  test("names the configured locales no dictionary declared", () => {
+    makeTrans({
+      registryService: serviceModule() as never,
+      registryWide: {
+        dict: serviceDictionary(["en", "ko", "zhChs"] as [string, string, string]).translate({
+          ready: ["Ready", "준비됨", "已就绪"],
+        }),
+      } as never,
+    });
+    expect(DictionaryRegistry.getLocaleGaps(["en", "ko"])).toEqual([]);
+    expect(DictionaryRegistry.getLocaleGaps(["en", "ko", "zhChs"])).toEqual([
+      { locale: "zhChs", total: 2, missing: ["registryService"] },
+    ]);
+  });
+
   test("round-trips through JSON", () => {
     makeTrans({ registryService: serviceModule() as never, registryItem: modelModule() as never });
     const payload = {

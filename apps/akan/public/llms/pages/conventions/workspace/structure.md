@@ -15,45 +15,134 @@
 
 Structure
 
+Runs as one product
+
+customer site · admin portal · brand app
+
+A product you run and deploy on its own.
+
+business code one app uses
+
+Its pages, modules and UI stay inside that app.
+
+Shared by several apps
+
+auth · upload · billing · notification
+
+A common domain that more than one product needs.
+
+shared utilities and UI
+
+Helpers and components that several apps import.
+
+Akan itself, or an installable package
+
+framework · CLI · devkit · runtime
+
+Code that belongs to Akan itself, and package-level tooling.
+
+a standalone package
+
+Code that should behave like a package you install.
+
+Workspace-wide settings such as `AKAN_PUBLIC_ENV` and the serve domain, kept out of git.
+
+Root dependencies and the `bun run` scripts such as `dev`, `lint`, `test` and `build`.
+
+TypeScript settings and the `@apps/*` and `@libs/*` import aliases.
+
+One set of format, import and lint rules for every app, lib and package.
+
+Bun's own config, which adds the Tailwind plugin and the `AKAN_PUBLIC_*` browser env prefix.
+
+Coding-agent guide; `CLAUDE.md` points to `AGENTS.md`, which `akan agent install` refreshes.
+
+A new workspace folder with its first app, agent rules and MCP config.
+
+A runnable app in `apps/<app-name>/`.
+
+A library that apps can share, in `libs/<lib-name>/`.
+
+`pkgs/<pkg-name>/`, plus a `<pkg-name>` import alias in `tsconfig.json`.
+
+One target
+
+One app, lib or package; a package is linted without a sync.
+
+Whole workspace
+
+Syncs every app and lib, then lints every app, lib and package.
+
+Syncs every lib, then every app, without linting.
+
 Workspace Anatomy
 
-An Akan workspace is a Bun-first monorepo. At the workspace root, the first-level entries tell you whether something is a runnable app, shared product library, framework package, or root tooling config.
+An Akan workspace is one Bun-first monorepo. The top-level folder a piece of code sits in says what it is: a product you run, a library apps share, or a package.
 
-Runnable and deployable products. Put customer sites, admin portals, brand apps, and app-specific business code here.
+A workspace root looks like this:
 
-Shared product libraries used by multiple apps. Put common domains, utilities, UI, auth, upload, billing, or notification features here.
+Which folder does my code go in?
 
-Framework, CLI, devkit, runtime, and package-level tooling. Use this when code belongs to Akan itself or should behave like an installable package.
+Code
 
-Repo-wide formatting and linting rules. This keeps TypeScript, JSX, imports, and style decisions consistent across apps, libs, and pkgs.
+Goes here
 
-Bun runtime and package manager configuration used by workspace commands and package workflows.
+Not here
+
+Files at the root
+
+File
 
 Workspace Commands
 
-Workspace commands operate at the monorepo level. They help you create a workspace, lint one target, lint the whole workspace, or sync dependencies and configuration across apps and libraries.
+Workspace commands act on the monorepo as a whole. They create the workspace and its apps, libraries and packages, then keep them linted and in sync.
+
+The ones you will use most:
+
+bunx create-akan-workspace@latest # a new workspace and its first app akan create-application myapp # adds apps/myapp akan create-library shared # adds libs/shared akan create-package --name renderer # adds pkgs/renderer akan lint myapp # sync and lint one app, lib or package akan lint-all # sync and lint everything akan sync-all # sync every lib, then every app
+
+Creating
+
+Command
+
+What you get
+
+Lint and sync
+
+Runs
+
+Skipped
+
+Workspace CLI
+
+Every option of `create-workspace`, `lint`, `lint-all` and `sync-all`.
+
+Format & Lint
+
+What `akan lint` checks, and how to fix the first errors you meet.
+
+Folder Rule
+
+The folders inside an app or library, and when code moves outward.
 
 ## Code Examples
 
-### Workspace root
+### my-workspace/
 
 ```bash
 .
 ├── apps/
+│   └── myapp/
 ├── libs/
+│   └── shared/
 ├── pkgs/
+├── .env
+├── package.json
+├── tsconfig.json
 ├── biome.json
-└── bunfig.toml
-```
-
-### Workspace command examples
-
-```bash
-akan create-application
-akan create-library
-akan create-package
-akan lint <app/lib/pkg-name>
-akan lintAll
+├── bunfig.toml
+├── AGENTS.md
+└── CLAUDE.md
 ```
 
 ## Agent Notes

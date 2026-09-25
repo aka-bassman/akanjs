@@ -1,6 +1,6 @@
 import { recipe, tv } from "./factory";
 
-/** 입력 표면 look — Input/TextArea/Select 가 공유하는 필드 셸. kind 로 한 줄 필드(field)/멀티라인(area), tone 으로 강조/오류 상태를 고른다. */
+/** 입력 표면 look — Input/TextArea/DatePicker 가 공유하는 필드 셸. kind 로 한 줄 필드(field)/멀티라인(area), tone 으로 강조/오류 상태를 고른다. */
 export const inputRecipe = recipe(
   tv({
     base: "w-full rounded-field border border-input bg-background text-foreground focus:border-primary focus:outline-none",

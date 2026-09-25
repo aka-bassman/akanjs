@@ -1,7 +1,7 @@
 import type { AkanWebConfig, AkanWebOption } from "akanjs";
-import { type BackendEnv, type BaseEnv, getEnv } from "akanjs/base";
-import { Logger, websocketBinaryFrameContract } from "akanjs/common";
-import { DictionaryLookup } from "akanjs/dictionary";
+import { type BackendEnv, type BaseEnv, getApiPrefix, getEnv, getWsPrefix, normalizeRoutePrefix } from "akanjs/base";
+import { Logger, logSeverity, parseBasePaths, websocketBinaryFrameContract } from "akanjs/common";
+import { DictionaryLookup, DictionaryRegistry } from "akanjs/dictionary";
 import type {
   Adaptor,
   AdaptorCls,
@@ -13,6 +13,7 @@ import type {
   SolidConfig,
 } from "akanjs/service";
 import type { ServerSignal, ServerSignalCls, WebsocketPublishData } from "akanjs/signal";
+import { CrossSiteGuard } from "../signal/CrossSiteGuard";
 import { AgentRelayAccess } from "../signal/guards";
 import { createOpenApiDocument } from "../signal/openapi";
 import { FetchSerializer } from "../signal/serializer";
@@ -26,8 +27,13 @@ import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { isPortInUseError } from "./lifecycle/portInUse";
 import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { ShutdownManager } from "./lifecycle/shutdownManager";
+import { HubFileSink } from "./logging/hubFileSink";
+import { LogControlSocket } from "./logging/logControlSocket";
+import { LogForwarder } from "./logging/logForwarder";
+import { LogHub } from "./logging/logHub";
+import { LogStreamRoute } from "./logging/logStreamRoute";
 import { RotatingLogWriter } from "./logging/rotatingLogWriter";
-import { type McpAuthOption, McpRouter } from "./mcp";
+import { type McpAuthOption, type McpRateLimitOption, McpRouter } from "./mcp";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { WebProxyRunner } from "./proxy";
 import { SignalResolver } from "./resolver";
@@ -59,6 +65,18 @@ export interface AkanServerOptions {
    * services, signals, routes and schedules do not exist. Omitted or empty mounts every enabled module.
    */
   modules?: string[];
+  /**
+   * The inverse of `modules`: mount everything except these and whatever reaches them. Written for a lib the
+   * app depends on but does not serve — `server.ts` is generated from the dependency graph, so a lib cannot be
+   * dropped by editing it. Applied after `modules`, so a module named by both stays out.
+   */
+  disableModules?: string[];
+  /**
+   * The same, by owning lib: every module the named libs registered stays out, along with everything that
+   * reaches one. This is the spelling for a lib the app depends on but does not serve — it does not drift as
+   * the lib gains modules.
+   */
+  disableLibs?: string[];
 }
 
 export interface McpServerOption {
@@ -100,8 +118,26 @@ export interface McpServerOption {
    * half turns this off and halves what each of those calls costs the model. `AKAN_MCP_LEGACY_TEXT=false`.
    */
   legacyTextBlock?: boolean;
+  /**
+   * How much of a result's shape each tool advertises: `shallow` (default) names nested models instead of inlining
+   * them, `full` inlines the whole closure, `none` publishes no `outputSchema` and keeps the text block on. The
+   * listing is re-sent to every agent that connects, and the nested closures were most of it. `AKAN_MCP_OUTPUT_SCHEMA`.
+   */
+  outputSchema?: "full" | "shallow" | "none";
   /** OAuth resource-server identity: which issuers a client may authenticate with, and the scopes to demand. */
   auth?: McpAuthOption;
+  /**
+   * Per-caller budget for `tools/call`, `resources/read` and `prompts/get`: 120 calls a minute and 8 in flight by
+   * default, counted per process. `false` takes it off. `AKAN_MCP_RATE_LIMIT` (`<calls>` or `<calls>/<seconds>`,
+   * `off` to disable) and `AKAN_MCP_CONCURRENT`.
+   */
+  rateLimit?: McpRateLimitOption | false;
+  /**
+   * Characters of screen data one page prompt may attach before its lists are cut, 60,000 by default. A page's
+   * `{ limit: 0 }` is right for a screen and wrong for a model's window, so the cap is the server's, not the
+   * page's. `AKAN_MCP_PROMPT_BUDGET`.
+   */
+  promptBudget?: number;
 }
 
 interface AkanAppPrepared {
@@ -140,8 +176,8 @@ export class AkanServer {
   readonly name: string;
   readonly libs: AkanLib[];
   readonly env: BackendEnv;
-  prefix = "/api";
-  websocketPrefix = "/ws";
+  prefix = getApiPrefix();
+  websocketPrefix = getWsPrefix();
   openapi = AkanServer.#isOpenApiEnvEnabled();
   mcp = AkanServer.#isEnvOn("AKAN_MCP", "AKAN_PUBLIC_MCP");
   mcpReadOnly = AkanServer.#isEnvEnabled("AKAN_MCP_READONLY", "AKAN_PUBLIC_MCP_READONLY");
@@ -151,6 +187,8 @@ export class AkanServer {
   /** Resolved at `init`: what this process actually serves, after env and artifact availability. */
   web: AkanWebConfig = getWebConfigFromEnv();
   modules: string[];
+  disableModules: string[];
+  disableLibs: string[];
   shutdownTimeoutMs = AkanServer.#defaultShutdownTimeoutMs();
 
   #di: DiLifecycle;
@@ -166,6 +204,11 @@ export class AkanServer {
   readonly #solo = !process.env.AKAN_CHILD_SOCKET;
   #logWriter: RotatingLogWriter | null = null;
   #removeLogSink: (() => void) | null = null;
+  #logHub: LogHub | null = null;
+  #logControl: LogControlSocket | null = null;
+  #logForwarder: LogForwarder | null = null;
+  #hubFileSink: HubFileSink | null = null;
+  #logStream: LogStreamRoute | null = null;
   #lastMetrics: AkanMetricsReport = {};
   constructor(
     name = "AkanServer",
@@ -185,23 +228,32 @@ export class AkanServer {
     this.openapi = options?.openapi ?? this.openapi;
     // Each lib's `option.ts` in mount order, the app's last, and an option passed here over all of them.
     libs.forEach((lib) => {
-      const mcp = lib.option.getMcp();
+      const mcp = lib.option.getMcp(this.env);
       if (mcp !== undefined) this.setMcp(mcp);
       const agentAccess = lib.option.getAgentAccess();
       if (agentAccess !== undefined) AgentRelayAccess.use(agentAccess);
+      const crossSite = lib.option.getCrossSite();
+      if (crossSite !== undefined) CrossSiteGuard.configure(crossSite);
     });
     this.setMcp(options?.mcp ?? this.mcp);
     this.serverMode = serverMode;
     // `AKAN_MODULES` is how a gateway hands its own `modules` option to the child that mounts the container.
     this.modules = options?.modules ?? AkanServer.#envList("AKAN_MODULES") ?? [];
-    this.#di = new DiLifecycle({ env: this.env, modules: this.modules }, ...libs);
+    this.disableModules = options?.disableModules ?? AkanServer.#envList("AKAN_DISABLE_MODULES") ?? [];
+    this.disableLibs = options?.disableLibs ?? AkanServer.#envList("AKAN_DISABLE_LIBS") ?? [];
+    this.#di = new DiLifecycle(
+      { env: this.env, modules: this.modules, disableModules: this.disableModules, disableLibs: this.disableLibs },
+      ...libs,
+    );
   }
   setPrefix(prefix: string) {
-    this.prefix = prefix;
+    if (this.status !== "stopped") throw new Error("Route prefix must be set before app initialization.");
+    this.prefix = AkanServer.#requireRoutePrefix(prefix, "prefix");
     return this;
   }
   setWebsocketPrefix(websocketPrefix: string) {
-    this.websocketPrefix = websocketPrefix;
+    if (this.status !== "stopped") throw new Error("Websocket prefix must be set before app initialization.");
+    this.websocketPrefix = AkanServer.#requireRoutePrefix(websocketPrefix, "websocketPrefix");
     return this;
   }
   setOpenApi(openapi = true) {
@@ -217,7 +269,10 @@ export class AkanServer {
   }
   setMcp(mcp: boolean | McpServerOption = true) {
     if (this.status !== "stopped") throw new Error("MCP config must be set before app initialization.");
-    this.mcp = typeof mcp === "boolean" ? mcp : (mcp.enabled ?? true);
+    // An object without `enabled` only configures the surface, and the env switch only ever narrows: `libs/shared`
+    // hands over its auth settings this way, which used to turn `/mcp` back on under `AKAN_MCP=false`.
+    const requested = typeof mcp === "boolean" ? mcp : (mcp.enabled ?? this.mcp);
+    this.mcp = requested && !AkanServer.#isEnvOff("AKAN_MCP", "AKAN_PUBLIC_MCP");
     if (typeof mcp === "boolean") return this;
     const { enabled: _enabled, readOnly, auth, ...rest } = mcp;
     if (readOnly !== undefined) this.mcpReadOnly = readOnly;
@@ -290,6 +345,7 @@ export class AkanServer {
   async init({ routes: initRoutes = true, web }: { routes?: boolean; web?: AkanWebOption } = {}) {
     if (this.status !== "stopped") throw new Error("AkanServer is not able to init. It is already running.");
     this.status = "initializing";
+    this.#assertPrefixClearsBasePaths();
     const { routes, wsRoutes, routeOptions } = await this.#di.initializeAll();
     if (!initRoutes) {
       this.#prepared = null;
@@ -302,7 +358,7 @@ export class AkanServer {
         routes,
         routeOptions,
         wsRoutes,
-        builtinRoutes: this.#createBuiltinRoutes(),
+        builtinRoutes: this.#createBuiltinRoutes(null),
         renderEnvRoutes: {},
         hmrHub: null,
         builderRpc: null,
@@ -314,7 +370,7 @@ export class AkanServer {
     };
     if (!requestedWeb.ssr) {
       this.web = requestedWeb;
-      this.logger.info("web off: serving api only (AKAN_SSR=false, or a build with `web: false`)");
+      this.logger.debug("web off: serving api only (AKAN_SSR=false, or a build with `web: false`)");
       return noWeb();
     }
     const { WebRouter } = await import("./webRouter");
@@ -338,7 +394,7 @@ export class AkanServer {
       routes,
       routeOptions,
       wsRoutes,
-      builtinRoutes: this.#createBuiltinRoutes(),
+      builtinRoutes: this.#createBuiltinRoutes(webRouter),
       renderEnvRoutes,
       hmrHub,
       builderRpc,
@@ -354,6 +410,8 @@ export class AkanServer {
       throw new Error("AkanServer is not able to listen. Call `init` first.");
     }
     this.status = "starting";
+    Logger.role = this.serverMode;
+    await this.#startLogTransport();
     this.#startFileLogging();
     const port = process.env.AKAN_CHILD_SOCKET
       ? undefined
@@ -366,6 +424,7 @@ export class AkanServer {
       ...ApiRouter.buildWebsocketHandlers({
         wsRoutes,
         registry: this.#di.registry,
+        live: this.#di.live,
         hmrHub,
         hmrState: webRouter ? { state: webRouter.renderState } : null,
         logger: this.logger,
@@ -443,7 +502,7 @@ export class AkanServer {
       server?.publish(roomId, JSON.stringify(publishData));
       wsServer?.publish(roomId, JSON.stringify(publishData));
     };
-    SignalResolver.setLocalPublish(localPublish, websocket);
+    SignalResolver.setLocalPublish(localPublish, websocket, this.#di.live);
     this.#localPublish = localPublish;
 
     this.status = "running";
@@ -471,12 +530,15 @@ export class AkanServer {
     await this.init({ routes: shouldListen, web });
     if (!shouldListen) {
       const websocket = this.#di.getWebsocketAdaptor();
-      if (websocket) SignalResolver.setLocalPublish((roomId, data) => this.#localPublish?.(roomId, data), websocket);
+      if (websocket)
+        SignalResolver.setLocalPublish((roomId, data) => this.#localPublish?.(roomId, data), websocket, this.#di.live);
       this.status = "running";
       if (!isNoListenCommand) {
+        Logger.role = this.serverMode;
         this.#startMetricsReporting();
         this.#di.registerSchedule(this.serverMode);
         this.#registerParentIpc();
+        await this.#startLogTransport();
         process.send?.({
           type: "ready",
           pid: process.pid,
@@ -511,10 +573,12 @@ export class AkanServer {
 
       this.#prepared?.webRouter?.dispose();
       await this.#withShutdownTimeout(this.#di.destroyAll());
-      await this.#stopFileLogging();
       this.#prepared = null;
       this.status = "stopped";
       this.logger.info(`Shutdown completed successfully in ${Date.now() - now}ms`);
+      // Last, so the line above still has a hub — and in ndjson mode a stdout — to reach.
+      await this.#stopLogTransport();
+      await this.#stopFileLogging();
     } catch (error) {
       this.logger.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);
       this.status = "stopped";
@@ -550,7 +614,10 @@ export class AkanServer {
         sentAt: message.sentAt,
         pid: process.pid,
       } satisfies AkanIpcMessage);
-    else if (message.type === "shutdown") {
+    else if (message.type === "log.level") {
+      this.#logForwarder?.setMinSev(message.minSev);
+      this.#prepared?.webRouter?.setLogLevel(message.minSev);
+    } else if (message.type === "shutdown") {
       void this.stop()
         .then(() => process.exit(0))
         .catch(() => process.exit(1));
@@ -594,7 +661,30 @@ export class AkanServer {
     );
   }
 
-  #createBuiltinRoutes(): HttpRoutes {
+  /**
+   * Names, once at boot, every configured locale the dictionaries never wrote.
+   *
+   * A dictionary declares its own locale tuple and a lib ships that tuple to every app that mounts it, so an app
+   * that configures a third locale cannot widen it from the outside — the framework's own `base.*` keys included.
+   * Those keys then resolve through the default-locale fallback, which is a readable screen and therefore a
+   * silent one: the only other symptom is text that never turned into the new language.
+   */
+  #reportLocaleCoverage() {
+    for (const { locale, missing, total } of DictionaryRegistry.getLocaleGaps()) {
+      const listed = missing.slice(0, 10).join(", ");
+      const rest = missing.length > 10 ? `, and ${missing.length - 10} more` : "";
+      this.logger.warn(
+        `Locale "${locale}" is configured but ${missing.length}/${total} dictionaries do not declare it, so their keys fall back to the default locale: ${listed}${rest}`,
+      );
+    }
+  }
+
+  /**
+   * Takes the web router as an argument rather than reading `this.#prepared`: this runs while the `#prepared`
+   * literal is still being built, so the field is `null` here on every first boot — which is how page prompts
+   * shipped unadvertised once.
+   */
+  #createBuiltinRoutes(webRouter: WebRouter | null): HttpRoutes {
     const { appName } = getEnv();
     const openapiRoutes: HttpRoutes = this.openapi
       ? {
@@ -624,21 +714,27 @@ export class AkanServer {
             ...this.mcpOption,
             readOnly: this.mcpReadOnly,
             auth: this.mcpAuth,
+            pagePrompts: webRouter?.pagePrompts(),
           })
         : null;
     const mcpRoutes: HttpRoutes = mcpRouter?.createRoutes() ?? {};
+    this.#logStream ??= this.#solo ? LogStreamRoute.fromEnv(() => this.#logHub) : null;
     const soloRoutes: HttpRoutes = this.#solo
-      ? createSoloAppRoutes(() => ({
-          role: this.serverMode,
-          running: this.status === "running",
-          status: this.status,
-          port: this.#server?.port ?? null,
-          metrics: this.#lastMetrics,
-        }))
+      ? createSoloAppRoutes(
+          () => ({
+            role: this.serverMode,
+            running: this.status === "running",
+            status: this.status,
+            port: this.#server?.port ?? null,
+            metrics: this.#lastMetrics,
+          }),
+          this.#logStream,
+        )
       : {};
     // Builds the catalogue here rather than on the first agent request, so what MCP published — and what it
     // refused despite an author opting in — is in the boot log of the process that decided it.
     mcpRouter?.report();
+    this.#reportLocaleCoverage();
     // Registered only when the gate passes, so outside `local` the paths do not exist at all and fall
     // through to the SSR catch-all as a natural 404 rather than a handler that answers "forbidden".
     const devtoolsRoutes = new DevtoolsRouter({
@@ -658,6 +754,13 @@ export class AkanServer {
     if (!this.#solo || this.#logWriter) return;
     this.#logWriter = RotatingLogWriter.fromRuntimeDir(resolveRuntimeDir());
     if (!this.#logWriter) return;
+    if (this.#logHub && Logger.isNdjson) {
+      this.#hubFileSink = new HubFileSink(this.#logHub, this.#logWriter, {
+        minSev: logSeverity[Logger.fileLevel],
+        json: Logger.format === "ndjson-only",
+      });
+      return;
+    }
     this.#removeLogSink = Logger.addSink((entry) => {
       this.#logWriter?.write(this.serverMode, entry.plainMessage);
     });
@@ -666,9 +769,54 @@ export class AkanServer {
   async #stopFileLogging() {
     this.#removeLogSink?.();
     this.#removeLogSink = null;
+    this.#hubFileSink?.close();
+    this.#hubFileSink = null;
     const writer = this.#logWriter;
     this.#logWriter = null;
     await writer?.close();
+  }
+
+  /**
+   * Solo owns the hub and the control socket the gateway would have owned; a spawned child forwards its own
+   * records — and the RSC worker's, which reach it over the worker IPC — up to the gateway instead.
+   */
+  async #startLogTransport() {
+    if (this.#logHub || this.#logForwarder) return;
+    const webRouter = this.#prepared?.webRouter ?? null;
+    if (this.#solo) {
+      const hub = LogHub.attach();
+      this.#logHub = hub;
+      hub.onFloorChange((minSev) => webRouter?.setLogLevel(minSev));
+      webRouter?.onLogRecords((records, dropped) => {
+        hub.ingestMany(records);
+        if (dropped) this.logger.warn(`RSC worker dropped ${dropped} log records (ipc backpressure)`);
+      });
+      const control = new LogControlSocket(hub, resolveRuntimeDir());
+      try {
+        await control.start();
+        this.#logControl = control;
+      } catch (error) {
+        this.logger.warn(
+          `Log control socket unavailable at ${control.path}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      return;
+    }
+    // A child of an ndjson gateway writes no text line the gateway could relay; its forwarder starts at the
+    // stdout level on its own, so nothing is lost before the gateway's `log.level` arrives.
+    if (Logger.isNdjson) Logger.consoleOutput = false;
+    const forwarder = new LogForwarder((message) => process.send?.(message));
+    this.#logForwarder = forwarder;
+    webRouter?.onLogRecords((records) => forwarder.pushMany(records));
+  }
+
+  async #stopLogTransport() {
+    await this.#logControl?.stop();
+    this.#logControl = null;
+    this.#logHub?.close();
+    this.#logHub = null;
+    this.#logForwarder?.close();
+    this.#logForwarder = null;
   }
 
   /**
@@ -684,7 +832,27 @@ export class AkanServer {
   #getOpenApiServers() {
     const serverHttpUri = (this.env as { serverHttpUri?: string }).serverHttpUri;
     if (!serverHttpUri) return undefined;
-    return [{ url: serverHttpUri.replace(/\/api\/?$/, "") }];
+    const withoutPrefix = serverHttpUri.replace(/\/$/, "");
+    return [{ url: withoutPrefix.endsWith(this.prefix) ? withoutPrefix.slice(0, -this.prefix.length) : withoutPrefix }];
+  }
+
+  static #requireRoutePrefix(value: string, field: string) {
+    const normalized = normalizeRoutePrefix(value);
+    if (!normalized) throw new Error(`${field} must be a path segment such as "/api"; "${value}" is not one.`);
+    return normalized;
+  }
+
+  /**
+   * A basePath is a whole route subtree served by the SSR catch-all, so a signal prefix that shadows one — or that
+   * a basePath shadows — silently loses every route on the losing side rather than failing anywhere a reader
+   * would look.
+   */
+  #assertPrefixClearsBasePaths() {
+    const basePaths = parseBasePaths(process.env.AKAN_PUBLIC_BASE_PATHS);
+    const first = this.prefix.split("/")[1];
+    const collision = basePaths.find((basePath) => basePath === first);
+    if (!collision) return;
+    throw new Error(`Route prefix "${this.prefix}" collides with the "${collision}" basePath; give the API its own.`);
   }
 
   static #splitLibsAndOptions(libsOrOptions: (AkanLib | AkanServerOptions)[]) {
@@ -700,7 +868,11 @@ export class AkanServer {
         !("database" in value) &&
         !("service" in value) &&
         !("scalar" in value) &&
-        ("openapi" in value || "mcp" in value || "modules" in value),
+        ("openapi" in value ||
+          "mcp" in value ||
+          "modules" in value ||
+          "disableModules" in value ||
+          "disableLibs" in value),
     );
   }
 
@@ -763,15 +935,39 @@ export class AkanServer {
   static #mcpOptionFromEnv(): Omit<McpServerOption, "enabled" | "readOnly" | "auth"> {
     const allowedOrigins = AkanServer.#envList("AKAN_MCP_ALLOWED_ORIGINS");
     const pageSize = Number(process.env.AKAN_MCP_PAGE_SIZE);
+    const promptBudget = Number(process.env.AKAN_MCP_PROMPT_BUDGET);
     return {
       ...AkanServer.#mcpPathFromEnv(),
       ...(process.env.AKAN_MCP_VERSION ? { version: process.env.AKAN_MCP_VERSION } : {}),
       ...(process.env.AKAN_MCP_INSTRUCTIONS ? { instructions: process.env.AKAN_MCP_INSTRUCTIONS } : {}),
       ...(allowedOrigins?.length ? { allowedOrigins } : {}),
       ...(Number.isInteger(pageSize) && pageSize > 0 ? { pageSize } : {}),
+      ...(Number.isInteger(promptBudget) && promptBudget > 0 ? { promptBudget } : {}),
       ...(process.env.AKAN_MCP_LANGUAGE ? { language: process.env.AKAN_MCP_LANGUAGE } : {}),
       ...(AkanServer.#isEnvOff("AKAN_MCP_LEGACY_TEXT") ? { legacyTextBlock: false } : {}),
+      ...AkanServer.#mcpOutputSchemaFromEnv(),
+      ...AkanServer.#mcpRateLimitFromEnv(),
     };
+  }
+
+  /** `AKAN_MCP_RATE_LIMIT=off` disables; `120` is per minute, `120/30` per thirty seconds; `AKAN_MCP_CONCURRENT` caps in-flight calls. */
+  static #mcpRateLimitFromEnv(): Pick<McpServerOption, "rateLimit"> {
+    const raw = process.env.AKAN_MCP_RATE_LIMIT?.trim().toLowerCase();
+    if (raw === "off" || raw === "false" || raw === "0") return { rateLimit: false };
+    const option: McpRateLimitOption = {};
+    if (raw) {
+      const [calls, seconds] = raw.split("/").map((part) => Number(part));
+      if (Number.isInteger(calls) && calls > 0) option.calls = calls;
+      if (Number.isInteger(seconds) && seconds > 0) option.windowMs = seconds * 1000;
+    }
+    const concurrent = Number(process.env.AKAN_MCP_CONCURRENT);
+    if (Number.isInteger(concurrent) && concurrent >= 0) option.concurrent = concurrent;
+    return Object.keys(option).length ? { rateLimit: option } : {};
+  }
+
+  static #mcpOutputSchemaFromEnv(): Pick<McpServerOption, "outputSchema"> {
+    const value = process.env.AKAN_MCP_OUTPUT_SCHEMA;
+    return value === "full" || value === "shallow" || value === "none" ? { outputSchema: value } : {};
   }
 
   /**

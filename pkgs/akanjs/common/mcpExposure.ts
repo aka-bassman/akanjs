@@ -16,9 +16,15 @@ export interface McpExposureEndpoint {
   args: { name: string; refName: string; type: string; arrDepth?: number; nullable?: boolean }[];
   guards?: string[];
   fileUpload?: boolean;
+  mcp?: boolean;
+  /** `false` when a guard declares `static agents = false`: no model may ever pass, whatever else the guards say. */
+  agents?: boolean;
 }
 
 export interface McpExposureOption {
+  /** The model the endpoint belongs to and the name it is published under: one rule reads the key, not the shape. */
+  refName: string;
+  key: string;
   /**
    * The read-only deployment valve, which is server configuration. The browser explorer cannot know it and so
    * badges what the code decided; the boot log is where a read-only deployment says what it dropped.
@@ -56,13 +62,27 @@ export const mcpHintsOf = (key: string, endpoint: { type: string }) => {
 };
 
 /** The sentence explaining why this endpoint is not in the catalogue, or `null` when it is. */
-export const mcpRefusalOf = (endpoint: McpExposureEndpoint, { readOnly }: McpExposureOption = {}): string | null => {
+export const mcpRefusalOf = (
+  endpoint: McpExposureEndpoint,
+  { refName, key, readOnly }: McpExposureOption,
+): string | null => {
+  // First, because it is the one answer nobody has to derive: somebody stated it. Curation, not authorization —
+  // HTTP serves this endpoint exactly as before, and its guards are still what decide who may call it.
+  if (endpoint.mcp === false)
+    return "it declares `mcp: false`, so it is deliberately off the agent shelf. HTTP still serves it.";
+  // Also stated, one level down: a guard that admits no model. Publishing the entry would offer every agent a tool
+  // it can only be refused, and hiding it per caller at listing time would still leave it in the document.
+  if (endpoint.agents === false)
+    return `its guards (${(endpoint.guards ?? []).join(", ")}) admit no agent — an act reserved for a person, so it is off the agent shelf. HTTP still serves it.`;
   // The whole exposure policy, and the first gate because it applies to every kind. Publishing follows the guards:
   // an endpoint with none has had no decision made about who may reach it, and a catalogue entry is the one place
   // that omission stops being invisible. `guards: [Public]` is the same access, written down, and publishes.
   if (!endpoint.guards?.length)
     return "it declares no guards, and exposure follows them — write `guards: [Public]` if anonymous access is the intent.";
-  if (endpoint.type === "prompt") return mcpPromptRefusalOf(endpoint);
+  // `light<Model>` reads the same document as `<Model>` under the same guards, in a shape trimmed for a page's
+  // payload rather than for a model. Publishing both spends two entries of every catalogue listing on one read.
+  if (key === `light${capitalize(refName)}`)
+    return `it reads the same document as \`${refName}\` in a smaller shape — call \`${refName}\` instead.`;
   if (endpoint.type === "pubsub" || endpoint.type === "message")
     return `\`${endpoint.type}\` rides the websocket, and its internal arguments read a socket an MCP request does not have.`;
   if (readOnly && endpoint.type !== "query")
@@ -78,29 +98,5 @@ export const mcpRefusalOf = (endpoint: McpExposureEndpoint, { readOnly }: McpExp
   const opaque = endpoint.args.find((arg) => !isMcpDescribableArg(arg) && arg.type !== "search" && !arg.nullable);
   if (opaque)
     return `its required argument \`${opaque.name}\` is typed \`Any\`, which is left out of the published schema — expose a named filter slice instead.`;
-  return null;
-};
-
-/**
- * A prompt is a read exposed on the same terms as a query, so every rejection here is one thing: an argument
- * `prompts/get` cannot carry. Its `arguments` is a flat string map — one string per name, and no schema beside it
- * — which rules out the argument *kinds* the builder already refuses and, just as surely, two argument *types* it
- * accepts. A tool escapes both because it publishes a real JSON Schema.
- */
-export const mcpPromptRefusalOf = (endpoint: McpExposureEndpoint): string | null => {
-  const carried = endpoint.args.find((arg) => arg.type === "body" || arg.type === "msg" || arg.type === "room");
-  if (carried)
-    return `a prompt's arguments travel as a flat string map, so its \`${carried.type}\` argument \`${carried.name}\` cannot be carried.`;
-  // One name carries one string, which `McpExecutionContext` then lifts into a one-element list. So a list
-  // argument is published as an argument that can never hold a second value — take a delimited string and split
-  // it, or expose this as a tool, whose schema can say `array`.
-  const list = endpoint.args.find((arg) => arg.arrDepth);
-  if (list)
-    return `a prompt argument is one string, so its list argument \`${list.name}\` could never carry more than one value.`;
-  // The tool path can leave an `Any` argument out of its schema and read it as omitted. A prompt has no schema to
-  // leave it out of: the name is published either way, with nothing anywhere to say what belongs in it.
-  const opaque = endpoint.args.find((arg) => !isMcpDescribableArg(arg));
-  if (opaque)
-    return `its argument \`${opaque.name}\` is typed \`Any\`, and a prompt has no schema in which to describe one.`;
   return null;
 };

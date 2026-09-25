@@ -6,8 +6,6 @@ import { ApplicationBuildReporter } from "./applicationBuildReporter";
 import { resolveSignalTestPreloadPath } from "./applicationTestPreload";
 import { TypeScriptDependencyScanner } from "./dependencyScanner";
 import { AppExecutor, WorkspaceExecutor } from "./executors";
-import { extractDependencies } from "./extractDeps";
-import { getModelFileData } from "./getModelFileData";
 import type { PackageJson, TsConfigJson } from "./types";
 
 const tempRoots: string[] = [];
@@ -25,65 +23,6 @@ const write = async (filePath: string, content: string) => {
 
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
-
-describe("extractDependencies", () => {
-  const packageJson: PackageJson = {
-    name: "fixture",
-    version: "1.0.0",
-    description: "fixture",
-    dependencies: {
-      react: "19.0.0",
-      "@scope/pkg": "1.0.0",
-      lodash: "4.0.0",
-    },
-    devDependencies: {
-      typescript: "6.0.0",
-      vite: "5.0.0",
-    },
-  };
-
-  test("extracts runtime package versions from imports and requires", () => {
-    const deps = extractDependencies(
-      [
-        {
-          path: "index.ts",
-          text: [
-            'import React from "react";',
-            'import { value } from "@scope/pkg/subpath";',
-            'import type { Type } from "typescript";',
-            'const lodash = require("lodash/fp");',
-            'const fs = require("node:fs");',
-            'const path = require("path");',
-            "",
-          ].join("\n"),
-        },
-        { path: "style.css", text: '@import "vite";' },
-      ],
-      packageJson,
-      ["vite"],
-    );
-
-    expect(deps).toEqual({
-      "@scope/pkg": "1.0.0",
-      lodash: "4.0.0",
-      react: "19.0.0",
-      typescript: "6.0.0",
-      vite: "5.0.0",
-    });
-  });
-
-  test("reports missing dependency sections and missing versions", () => {
-    expect(() =>
-      extractDependencies([{ path: "index.ts", text: 'import React from "react";' }], {
-        name: "broken",
-        version: "1.0.0",
-        description: "broken",
-      }),
-    ).toThrow("No dependencies found");
-
-    expect(() => extractDependencies([], packageJson, ["missing"])).toThrow("No version found for missing");
-  });
 });
 
 describe("resolveSignalTestPreloadPath", () => {
@@ -249,49 +188,6 @@ describe("scan convention", () => {
     const app = AppExecutor.from(workspace, appName);
 
     await expect(app.scan({ write: false })).resolves.toBeDefined();
-  });
-});
-
-describe("getModelFileData", () => {
-  test("reads model files and derives imported local, scalar, and lib models", async () => {
-    const root = await makeTempRoot();
-    const cwd = process.cwd();
-    process.chdir(root);
-    try {
-      await write(
-        path.join(root, "apps/demo/lib/post/post.constant.ts"),
-        [
-          'import { cnst as shared } from "@libs/shared";',
-          'import { User } from "../user/user.constant";',
-          'import { Money } from "../_money/money.constant";',
-          "export const Post = {};",
-          "",
-        ].join("\n"),
-      );
-      await write(
-        path.join(root, "apps/demo/lib/post/Post.Unit.tsx"),
-        "export default function Unit() { return null; }\n",
-      );
-      await write(
-        path.join(root, "apps/demo/lib/post/Post.View.tsx"),
-        "export default function View() { return null; }\n",
-      );
-
-      const data = await getModelFileData("apps/demo", "post");
-      expect(data).toMatchObject({
-        moduleType: "app",
-        moduleName: "demo",
-        modelName: "post",
-        importModelNames: ["user"],
-        hasImportScalar: true,
-        importLibNames: ["shared"],
-      });
-      expect(data.constantFileStr).toContain("export const Post");
-      expect(data.unitFileStr).toContain("Unit");
-      expect(data.viewFileStr).toContain("View");
-    } finally {
-      process.chdir(cwd);
-    }
   });
 });
 

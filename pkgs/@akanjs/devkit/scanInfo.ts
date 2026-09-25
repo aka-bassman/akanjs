@@ -518,22 +518,25 @@ export class LibInfo extends ScanInfo {
 export class PkgInfo {
   readonly exec: PkgExecutor;
   readonly name: string;
-  private scanResult: PkgScanResult;
+  #scanResult: PkgScanResult;
 
   static async scanExecutor(exec: PkgExecutor) {
     const [tsconfig, rootPackageJson] = await Promise.all([exec.getTsConfig(), exec.workspace.getPackageJson()]);
     const scanner = await createDependencyScanner(exec);
     const npmSet = new Set(Object.keys({ ...rootPackageJson.dependencies, ...rootPackageJson.devDependencies }));
+    const workspacePathOf = (resolve: string) => resolve.replace(/^\.\//, "");
     const pkgPathSet = new Set(
       Object.keys(tsconfig.compilerOptions.paths ?? {})
-        .filter((path) => tsconfig.compilerOptions.paths?.[path]?.some((resolve) => resolve.startsWith("pkgs/")))
+        .filter((path) =>
+          tsconfig.compilerOptions.paths?.[path]?.some((resolve) => workspacePathOf(resolve).startsWith("pkgs/")),
+        )
         .map((path) => path.replace("/*", "")),
     );
     const [npmDepSet, pkgPathDepSet] = await scanner.getImportSets([npmSet, pkgPathSet]);
     const pkgDeps = [...pkgPathDepSet]
       .map((path) => {
         const pathSplitLength = path.split("/").length;
-        return (tsconfig.compilerOptions.paths?.[path]?.[0] ?? "*")
+        return workspacePathOf(tsconfig.compilerOptions.paths?.[path]?.[0] ?? "*")
           .split("/")
           .slice(1, 1 + pathSplitLength)
           .join("/");
@@ -560,10 +563,10 @@ export class PkgInfo {
   constructor(exec: PkgExecutor, scanResult: PkgScanResult) {
     this.exec = exec;
     this.name = exec.name;
-    this.scanResult = scanResult;
+    this.#scanResult = scanResult;
   }
   getScanResult() {
-    return this.scanResult;
+    return this.#scanResult;
   }
 }
 

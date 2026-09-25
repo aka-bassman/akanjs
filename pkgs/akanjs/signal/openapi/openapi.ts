@@ -1,5 +1,4 @@
 import { FetchClient } from "akanjs/fetch";
-import { Msg } from "../mcp";
 import { type JsonSchema, JsonSchemaBuilder } from "../schema";
 import type { SerializedArg, SerializedEndpoint, SerializedSignal } from "../types";
 
@@ -33,22 +32,15 @@ export interface OpenApiDocument {
 }
 
 /**
- * Every endpoint type this app answers over HTTP, which is what an API contract has to list.
- *
- * `prompt` is a plain `GET` mounted whether or not the app enabled MCP, so leaving it out described an app that
- * serves fewer routes than it does — and left this document disagreeing with the API explorer, which shows the
- * same route. The websocket types (`pubsub`, `message`) have no HTTP surface to describe and are absent for that
- * reason rather than by omission.
+ * Every endpoint type this app answers over HTTP, which is what an API contract has to list. The websocket types
+ * (`pubsub`, `message`) have no HTTP surface to describe and are absent for that reason rather than by omission.
  */
 const httpMethods = {
   query: "get",
   mutation: "post",
-  prompt: "get",
 } as const;
 
 const schema = new JsonSchemaBuilder();
-/** Not a model, so it is handed to `referencedSchemas` beside them — and travels only if a prompt route cites it. */
-const promptMessageSchemaName = "PromptMessage";
 
 export const createOpenApiDocument = (
   serializedSignal: Record<string, SerializedSignal>,
@@ -84,10 +76,7 @@ export const createOpenApiDocument = (
     ...(options.servers?.length ? { servers: options.servers } : {}),
     paths,
     components: {
-      schemas: schema.referencedSchemas(paths, {
-        ...schema.allModelSchemas(),
-        [promptMessageSchemaName]: Msg.schema,
-      }),
+      schemas: schema.referencedSchemas(paths, schema.allModelSchemas()),
       ...(hasProtectedOperation
         ? {
             securitySchemes: {
@@ -197,13 +186,7 @@ const createResponseContent = (endpoint: SerializedEndpoint) =>
       }
     : {
         "application/json": {
-          // Every prompt answers the same fixed shape, which its declared `Any` return cannot say. Reading the
-          // return type here described the route as returning anything at all — `{}` — so a reader of this
-          // document learnt that the route exists and nothing about what comes back from it.
-          schema:
-            endpoint.type === "prompt"
-              ? { type: "array", items: { $ref: `#/components/schemas/${promptMessageSchemaName}` } }
-              : schema.returns(endpoint.returns),
+          schema: schema.returns(endpoint.returns),
         },
       };
 

@@ -39,7 +39,7 @@ Now let's define the Delivery model with a relationship to IcecreamOrder. The ke
 
 Let's understand the key relationship pattern:
 
-This defines a one-to-many relationship by embedding an array of LightIcecreamOrder. The "Light" version contains only essential fields (serveType, size, toppings, status) - perfect for embedding without duplicating entire documents.
+This defines a one-to-many relationship by embedding an array of LightIcecreamOrder. The "Light" version contains only essential fields (serveType, size, toppings, status), which keeps embedded documents small without duplicating entire documents.
 
 Embedded vs Referenced
 
@@ -53,7 +53,7 @@ Key service patterns for related data:
 
 Injects the IcecreamOrderService so DeliveryService can interact with orders. This enables cross-model operations.
 
-A lifecycle hook that runs after a delivery is created. It iterates through all linked orders and marks them as finished - perfect for cascading updates.
+A lifecycle hook that runs after a delivery is created. It iterates through all linked orders and marks them as finished, which keeps cascading updates consistent.
 
 Prevents updates to deliveries by throwing an Err. Once a delivery is created, it becomes immutable - ensuring data integrity.
 
@@ -87,25 +87,9 @@ Key features of this integrated page:
 
 Organizes related content into switchable panels. Users can easily navigate between orders and deliveries.
 
-Loads both icecreamOrder and delivery data in parallel for optimal performance.
+Both slice queries leave at call time and each Tab.Panel gets its own promise, so the two tabs load in parallel and neither waits for the other.
 
 Summary
-
-🎉 What You've Accomplished:
-
-Created a Delivery module with one-to-many relationship to IcecreamOrder
-
-Used LightModel pattern for efficient embedded references
-
-Implemented _postCreate hook for cascading updates across related data
-
-Built Field.Children component for selecting related records
-
-Displayed embedded related data without additional queries
-
-Organized multiple models with Tab navigation
-
-Best Practices
 
 Use LightModel for embedded data to avoid document bloat
 
@@ -115,7 +99,7 @@ Use lifecycle hooks for maintaining data consistency
 
 Create dedicated slices for relationship selection UIs
 
-Congratulations! You've completed all the core tutorials. You now have a solid foundation for building complex applications with akanjs. Explore the System Architecture section to dive deeper into how everything works together.
+All core tutorials are complete. Explore the System Architecture section to see how everything works together.
 
 ## Code Examples
 
@@ -205,7 +189,7 @@ export class DeliveryService extends serve(db.delivery, ({ use, service }) => ({
 
 ```ts
 "use client";
-import { Field, Layout, buttonRecipe } from "akanjs/ui";
+import { Field, Layout } from "akanjs/ui";
 import { cnst, fetch, st, usePage } from "@apps/koyo/client";
 
 interface GeneralProps {
@@ -236,7 +220,8 @@ export const General = ({ className }: GeneralProps) => {
 ### apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts
 
 ```ts
-import { ID } from "akanjs/base"; // [!code collapse:13]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:14]
+import { ID } from "akanjs/base";
 import { endpoint, internal, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
@@ -250,7 +235,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder, // [!code collapse:2]
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init() // [!code collapse:11]
       .search("statuses", [cnst.IcecreamOrderStatus])
@@ -487,7 +472,7 @@ import { Load } from "akanjs/ui";
 import { cnst, Delivery, fetch } from "@apps/koyo/client";
 import type { ClientInit, ClientView } from "akanjs/fetch";
 import { st, usePage } from "@apps/koyo/client"; // [!code ++:2]
-import { Model } from "akanjs/ui";
+import { Model, buttonRecipe } from "akanjs/ui";
 // [!code collapse:25]
 interface CardProps {
   className?: string;
@@ -549,17 +534,16 @@ export const New = ({ className }: NewProps) => {
 ### apps/koyo/page/_index.tsx
 
 ```ts
-import { Load, Model } from "akanjs/ui"; // [!code collapse:2]
+import { Model, buttonRecipe } from "akanjs/ui"; // [!code collapse:3]
 import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 import { Tab } from "akanjs/ui"; // [!code ++:2]
 import { Delivery } from "@apps/koyo/client";
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
-  const [{ icecreamOrderInitInPublic }, { deliveryInitInPublic }] = await Promise.all([ // [!code highlight:6]
-    fetch.initIcecreamOrderInPublic(),
-    fetch.initDeliveryInPublic(),
-  ]);
+  const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
+  const { deliveryInitInPublic } = fetch.initDeliveryInPublic(); // [!code highlight]
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
   return (
     <div className="space-y-4">
@@ -582,7 +566,7 @@ export default async function Page() {
             <div className="text-5xl font-bold">{l("icecreamOrder.modelName")}</div>
             <IcecreamOrder.Util.PublicQueryMaker />
             <Model.New
-              className={buttonRecipe({ variant: "primary" })}
+              trigger={<button className={buttonRecipe({ variant: "primary" })}>{l("base.new")}</button>}
               slice={fetch.slice.icecreamOrderInPublic}
               renderTitle="name"
               partial={icecreamOrderForm}
@@ -591,7 +575,7 @@ export default async function Page() {
             </Model.New>
           </div>
           <IcecreamOrder.Zone.Insight slice={fetch.slice.icecreamOrderInPublic} />
-          <IcecreamOrder.Zone.Card className="space-y-2" init={icecreamOrderInitInPublic} />
+          <IcecreamOrder.Zone.Card className="space-y-2" init={icecreamOrderInitInPublic} slice={fetch.slice.icecreamOrderInPublic} />
         </Tab.Panel>
         <Tab.Panel menu="delivery" className="p-2">
           <div className="flex items-center gap-4 font-black">
@@ -603,7 +587,7 @@ export default async function Page() {
       </Tab>
     </div>
   );
-}
+});
 ```
 
 ## Agent Notes

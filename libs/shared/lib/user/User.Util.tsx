@@ -547,16 +547,18 @@ interface ActivateProps {
   className?: string;
   userId: string;
   redirect?: string;
+  /** 별도 약관 화면 없이 가입을 끝내는 경우, 이 버튼이 곧 동의 표시가 되는 약관 목록. */
+  agreePolicies?: string[];
 }
-export const Activate = ({ className, userId, redirect }: ActivateProps) => {
+export const Activate = ({ className, userId, redirect, agreePolicies }: ActivateProps) => {
   st.tool("activateUser", { confirm: true })
     .desc("Finish signing up and open the account.")
-    .exec(() => st.do.activateUser(userId, { redirect }));
+    .exec(() => st.do.activateUser(userId, { redirect, agreePolicies }));
   return (
     <button
       className={cn(buttonRecipe({ variant: "primary" }), className)}
       onClick={() => {
-        void st.do.activateUser(userId, { redirect });
+        void st.do.activateUser(userId, { redirect, agreePolicies });
       }}
     >
       시작하기

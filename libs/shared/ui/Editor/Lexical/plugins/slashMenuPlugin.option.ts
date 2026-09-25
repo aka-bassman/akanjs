@@ -1,6 +1,7 @@
 import { MenuOption } from "@lexical/react/LexicalTypeaheadMenuPlugin";
 import type { LexicalEditor } from "lexical";
 
+import type { EditorFeatureKey } from "../feature";
 import type { SlashGroup } from "./slashMenuPlugin.type";
 
 /** One entry in the slash menu. `keywords` widen search matching beyond the title. */
@@ -9,6 +10,8 @@ export class SlashOption extends MenuOption {
   readonly description: string;
   readonly group: SlashGroup;
   readonly keywords: string[];
+  /** The editor feature this inserts. Absent leaves the entry always available — the paragraph reset, and every plugin entry. */
+  readonly feature?: EditorFeatureKey;
   readonly run: (editor: LexicalEditor) => void;
 
   constructor(
@@ -18,6 +21,7 @@ export class SlashOption extends MenuOption {
       description: string;
       group: SlashGroup;
       keywords?: string[];
+      feature?: EditorFeatureKey;
       run: (editor: LexicalEditor) => void;
     },
   ) {
@@ -26,6 +30,7 @@ export class SlashOption extends MenuOption {
     this.description = config.description;
     this.group = config.group;
     this.keywords = config.keywords ?? [];
+    this.feature = config.feature;
     this.run = config.run;
   }
 }

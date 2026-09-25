@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { interpolateTranslation } from "../common/interpolateTranslation";
 import { pathGetLoose } from "../common/pathGetLoose";
 
 type EnvMode = "browser" | "server";
@@ -47,6 +48,7 @@ beforeAll(() => {
         if (!acc || typeof acc !== "object") return fallback;
         return (acc as Record<string, unknown>)[key] ?? fallback;
       }, obj),
+    interpolateTranslation,
     pathGetLoose,
   }));
   mock.module("akanjs/fetch", () => ({
@@ -121,6 +123,26 @@ describe("makePageProto", () => {
     expect(page.l("user.hello" as never, { name: "민" })).toBe("안녕 민");
     expect(page.l._("user.missing")).toBe("user.missing");
     expect(page.l.trans({ en: "English", ko: "Korean" })).toBe("Korean");
+  });
+
+  test("falls back to the default locale for a key and for an inline trans record", async () => {
+    envState.mode = "browser";
+    installWindow("/dashboard");
+    const { Translator } = await import("./translator");
+    const { makePageProto } = await import("./makePageProto");
+    const { usePage } = makePageProto(dictionary);
+
+    Translator.setActiveLocale("zhChs");
+    Translator.setActivePath("/dashboard");
+    const page = usePage();
+    Translator.markHydrated();
+
+    expect(page.lang).toBe("zhChs");
+    expect(page.l("user.hello" as never, { name: "Ada" })).toBe("Hello Ada");
+    expect(page.l.trans({ en: "English", ko: "Korean" })).toBe("English");
+    // `l.trans` types `en` and `ko` as required, so only a locale-widened app reaches the last resort — the
+    // default locale is one the record never names.
+    expect(page.l.trans({ ko: "Korean" } as unknown as Record<"en" | "ko", string>)).toBe("Korean");
   });
 
   test("uses server-seeded browser path until hydration completes", async () => {

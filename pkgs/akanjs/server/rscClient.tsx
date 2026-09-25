@@ -82,6 +82,7 @@ type RscFetchResult =
       outletKey: string;
       headSnapshot: AkanHeadSnapshotV1;
     }
+  | { type: "not-found" }
   | { type: "redirected"; status?: number };
 const MAX_RSC_CACHE_ENTRIES = 32;
 let documentNavigationFallbackInFlight = false;
@@ -90,6 +91,22 @@ class RscRedirectNavigationStarted extends Error {
   constructor(readonly location: string) {
     super("[rscClient] RSC redirect navigation started");
     this.name = "RscRedirectNavigationStarted";
+  }
+}
+
+/**
+ * A navigation whose target resolves to nothing. Thrown instead of committing the payload, and deliberately not
+ * converted into a document navigation: the page the user is on is a working page, and trading it for a 404 — or,
+ * before this, for the empty tree `0:null` decodes to — throws away everything mounted on it, an in-page agent's
+ * session included. The route stays where it is and the caller is told.
+ *
+ * Recognised across bundles by `name` rather than `instanceof`: the RSC client is inlined into more than one
+ * browser bundle, so the class identity a given file holds is not always the one that threw.
+ */
+class RscRouteNotFound extends Error {
+  constructor(readonly href: string) {
+    super(`[rscClient] no route at ${href}`);
+    this.name = "RscRouteNotFound";
   }
 }
 
@@ -229,6 +246,7 @@ async function fetchRsc(
     shouldApplyNavigation,
   });
   if (responseResult.type === "redirected") return responseResult;
+  if (responseResult.type === "not-found") return responseResult;
   if (responseResult.type === "patch") {
     const patchResult = await validateRscPatchForGuardedCommit({
       partialCommitEnabled: isAkanRscPartialCommitEnabled(),
@@ -366,6 +384,12 @@ function Root(): ReactNode {
         shouldApplyNavigation: () => navId === navigationSeq,
       });
       if (next.type === "redirected") return;
+      // Nothing is committed: a refresh of a route that has since gone leaves what is on screen, which is the last
+      // tree that did render, rather than emptying the document.
+      if (next.type === "not-found") {
+        console.warn(`[rscClient] refresh target ${target} no longer resolves; keeping the current page`);
+        return;
+      }
       if (next.type === "patched") return;
       observeRscNavigationNode({
         cache: rscCache,
@@ -448,6 +472,7 @@ function Root(): ReactNode {
           shouldApplyNavigation: () => navId === navigationSeq,
         });
         if (fetched.type === "redirected") return;
+        if (fetched.type === "not-found") throw new RscRouteNotFound(target);
         if (fetched.type === "patched") {
           if (navId !== navigationSeq) return;
           if (
@@ -479,6 +504,7 @@ function Root(): ReactNode {
             shouldApplyNavigation: () => navId === navigationSeq,
           });
           if (fallback.type === "redirected") return;
+          if (fallback.type === "not-found") throw new RscRouteNotFound(target);
           if (fallback.type === "patched") throw new Error("[rscClient] full fallback unexpectedly returned a patch");
           nextNode = fallback.node;
         } else {
@@ -521,6 +547,9 @@ function Root(): ReactNode {
       if (committed) rememberCommittedRouteState(nextNode);
     } catch (error) {
       if (error instanceof RscRedirectNavigationStarted) return;
+      // Rethrown ahead of the fallback on purpose: a document navigation here would land on the very 404 this
+      // refusal exists to avoid. Nothing was committed and history was never touched, so the page is untouched.
+      if (error instanceof RscRouteNotFound) throw error;
       if (navId === navigationSeq) hardNavigateAfterRscFailure(target, options.replace, error);
     }
   };
@@ -529,7 +558,11 @@ function Root(): ReactNode {
 }
 
 window.addEventListener("popstate", () => {
-  void globalThis.__AKAN_RSC_NAVIGATE__?.(window.location.href, { replace: true, scrollToTop: false });
+  // The address bar has already moved, so refusing would leave the tree and the URL describing different pages.
+  // The document route renders a real not-found page, which the RSC route has no way to return.
+  void globalThis
+    .__AKAN_RSC_NAVIGATE__?.(window.location.href, { replace: true, scrollToTop: false })
+    ?.catch((error: unknown) => hardNavigateAfterRscFailure(window.location.href, true, error));
   window.setTimeout(() => {
     if (globalThis.__AKAN_DEV_SYNC_NAVIGATION_APPLYING__) return;
     const href = globalThis.__AKAN_GET_SYNC_ROUTE_HREF__?.(window.location.href) ?? window.location.href;

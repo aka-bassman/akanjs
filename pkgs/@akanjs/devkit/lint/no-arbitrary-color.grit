@@ -3,7 +3,7 @@ language js(typescript, jsx)
 
 // Arbitrary-value color literals (`bg-[#3b82f6]`, `text-[rgb(0,0,0)]`) bypass the semantic
 // token layer, so they ignore data-theme switching and theme contrast validation. Grit port
-// of styleGuard's `arbitrary-color` rule (frontendBuild/styleGuard.ts) — keep in sync.
+// Cases: lint/__fixtures__/no-arbitrary-color/{bad,good}.tsx
 // Variable references (`bg-[--brand]`, `text-[var(--fg)]`) do not match, by design.
 or {
   JsxString() as $s,

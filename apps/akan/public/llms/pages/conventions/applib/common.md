@@ -8,102 +8,149 @@
 
 ## Headings
 
-- Common Overview (#common-overview)
-- What Belongs In Common (#what-belongs)
-- Barrel, Optimized Import, And Shape (#barrel-optimization)
-- Server And Client Usage (#server-client-usage)
+- Common Utility Overview (#common-overview)
+- What Belongs In common/ (#what-belongs)
+- Barrel And File Shape (#barrel-optimization)
+- Using It On Both Sides (#server-client-usage)
 - Practical Rules (#practical-rules)
 
 ## Content
 
 Common Utils (common/)
 
-Common Overview
+Pure, isomorphic, zero-dependency; imports only sibling common/* and akanjs/base, not Err.
 
-The common folder contains logic that can run in both server and client environments. Use it for pure helpers, shared formatting, validation, metadata builders, and transforms that should not depend on browser-only or server-only APIs.
+Touches window, navigator or Capacitor, or is a React hook.
 
-Use srvkit for server-only logic, webkit for browser or web-rendering logic, and common for cross-runtime logic shared by services, signals, pages, and components.
+Touches node:*, Bun, process.env, a secret, or a server SDK.
 
-What Belongs In Common
+Renders JSX and is not bound to one model; a model-bound component goes in its module.
 
-Formatters
+A build-time or CLI-time AkanPlugin, registered in akan.config.ts.
 
-Formatting logic used in both service output and UI display, such as bytes, packets, money, or short labels.
+Formatter
 
-Validators
+Formatting that a service's output and the UI share, such as bytes, money or short labels.
 
-Validation or predicate helpers that should behave the same on the server and in the browser.
+Validator
 
-Random/string utilities
+A validation or predicate that must give the same answer on the server and in the browser.
 
-Small deterministic or generic helpers such as random codes, padding, shuffling, or short string transforms.
+Random and string utility
 
-Metadata builders
+A small generic helper: random codes, padding, shuffling or a short string transform.
 
-Small objects or builder classes that describe query, filter, or display metadata without binding to one runtime.
+Metadata builder
 
-Content transforms
+A small object or builder that describes a query, filter or display without running it.
 
-Pure transforms that convert stored content into another shape, such as extracting plain text from editor JSON.
+Content transform
 
-Barrel, Optimized Import, And Shape
+A pure transform of stored content, such as rich-editor JSON into plain text.
 
-The common folder is also a barrel folder like ui and webkit. Export shared helpers from index.ts, then import from the barrel. Akan can optimize imports so pages include only the common helpers they actually use.
+Both sides have it
 
-Prefer one file, one export, and file name equals export name. This keeps cross-runtime helpers easy to find and easy to optimize.
+A sibling file and `akanjs/base` are the only value imports a common file makes.
 
-Server And Client Usage
+Standard JavaScript built-ins exist in Bun and in every browser.
 
-A common helper can be used from both service code and page/client code. Keep the helper free from window, document, Bun, fs, process.env, or vendor SDK assumptions unless those APIs are available in both runtimes.
+Erased before bundling, so the type may come from any package.
+
+Only the browser has it
+
+Browser globals do not exist on the server.
+
+The native-app bridge is browser-only, and a React hook needs a client component.
+
+Only the server has it
+
+Server runtime APIs that a browser bundle cannot load.
+
+Server settings and secrets must never reach the browser bundle.
+
+server SDK
+
+A vendor client for payment, mail or storage.
+
+Server
+
+Browser
+
+Common Utility Overview
+
+Reach for it when both sides need the same formatting, validation, metadata or transform, so the two never disagree.
+
+Which folder?
+
+Folder
+
+What Belongs In common/
+
+Five kinds of helper usually live here. Each needs nothing but its arguments, so it gives the same answer on either side:
+
+Kind
+
+Barrel And File Shape
+
+Using It On Both Sides
+
+A common helper runs wherever it is imported: in Bun for a service, in the browser for a store or a client component. So it may use only what both sides have:
+
+What the helper uses
+
+Put it here
+
+Not here
+
+One helper, both sides
+
+File
+
+Runs on
+
+Call
 
 Practical Rules
 
-Use common when the same logic must work in both service/signal code and page/component code.
+Where a helper goes
 
-Use srvkit instead when the helper needs server-only APIs.
-
-Use webkit instead when the helper needs browser-only APIs.
-
-Keep common helpers small, pure, and imported from the barrel.
+Inside a common file
 
 ## Code Examples
 
-### common/randomCode.ts
+### libs/util/common/index.ts
 
 ```ts
-export const randomCode = (length = 6) => {
-  return Math.floor(Math.random() * 10 ** length)
-    .toString()
-    .padStart(length, "0");
+export * from "./isHttpUri";
+export * from "./pad";
+export * from "./randomCode";
+export * from "./shortenUnit";
+export * from "./validate";
+```
+
+### libs/shared/lib/user/user.service.ts
+
+```ts
+import { withRedirectQuery } from "@libs/shared/common";
+import { randomCode, randomString } from "@libs/util/common";
+```
+
+### libs/shared/common/redirectQuery.ts
+
+```ts
+export const withRedirectQuery = (
+  redirect: string,
+  params: Record<string, string>,
+) => {
+  const queryIndex = redirect.indexOf("?");
+  const path = queryIndex === -1 ? redirect : redirect.slice(0, queryIndex);
+  const query = new URLSearchParams(
+    queryIndex === -1 ? "" : redirect.slice(queryIndex + 1),
+  );
+  for (const [key, value] of Object.entries(params)) query.set(key, value);
+  const search = query.toString();
+  return search ? `${path}?${search}` : path;
 };
-```
-
-### common/index.ts
-
-```ts
-export { randomCode } from "./randomCode";
-```
-
-### order.service.ts
-
-```ts
-import { randomCode } from "@libs/util/common";
-
-export class OrderService extends serve(db.order, () => ({})) {
-  createOrderCode() {
-    return randomCode(8);
-  }
-}
-```
-
-### page.tsx
-
-```ts
-import { randomCode } from "@libs/util/common";
-
-export function PreviewCode() {
-  return <span>{randomCode(8)}</span>;
-}
 ```
 
 ## Agent Notes

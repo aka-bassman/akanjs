@@ -8,66 +8,185 @@
 
 ## Headings
 
-- Service Module Overview (#service-module-overview)
-- When To Use It (#when-to-use)
+- Service Module Overview (#service-module)
+- The Eight That Exist (#real-modules)
+- The Two Poles (#two-poles)
 - Service File Map (#file-map)
-- Folder Shape (#folder-shape)
+- Ship The Empty Files (#empty-scaffolds)
+- Model Module Or Service Module (#which-one)
 
 ## Content
 
 Overview
 
-Server-only security workflow for encryption, JWT signing, and token verification.
+Where It Lives
 
-Search feature module with service methods, endpoints, client store, and admin Zone UI.
+What It Owns
 
-Shared file-access service that reads blob data through a typed endpoint.
+An action or a capability instead of a table. Nothing to list, edit, or keep until tomorrow.
 
-Describes the service workflow intent, domain rules, integration boundaries, and agent notes.
+What It Leaves Out
 
-Implements the workflow itself and injects runtime values or other services.
+No document file, no filters, no slices, no generated CRUD: there is no table behind it.
 
-Exposes the workflow through endpoint, internal task, cron, or custom route signals.
+How It Is Called
 
-Names endpoint labels, endpoint arguments, and service UI phrases.
+The same path a model module uses, minus the document layer.
 
-Owns service feature state, fetch calls, loading flags, and UI-facing actions.
+JWT signing and verification, AES encryption, refresh-token minting. Server-only: no store, no UI.
 
-Packages small client controls for the service feature when they are reusable.
+The OAuth 2.1 authorization server that issues the tokens `/mcp` accepts.
 
-Composes a full service feature section for admin pages or app pages.
+Serves the Akan.js docs to agents over MCP. It reads a generated folder and writes nothing.
+
+Streams a public blob back as an HTTP `Response` from a custom path. Four files, one endpoint.
+
+A library's root container: an empty batch service and a client store other modules share.
+
+An app's root container. `_akan` is still the empty scaffold; `_minimal` adds four bench endpoints.
+
+The store is the empty scaffold.
+
+Feature modules
+
+Tests its service: `doc.service.test.ts`.
+
+Root containers
+
+The Floor
+
+Its service holds two secrets and hands back signed or encrypted strings. Nothing on screen renders it, so there is no store and no component.
+
+What it owns, and four rules
+
+Endpoint labels
+
+About 75 lines holding two secrets
+
+Boots the barrel and calls it
+
+The Ceiling
+
+Eight rules and a workflow chain
+
+About 500 lines: PKCE, rotation, revocation
+
+10 endpoints, 5 of them at the origin root
+
+The protocol, end to end
+
+A title, one sentence on what it owns, and `## Rules`: invariants the code cannot show.
+
+Built with `serviceDictionary`: endpoint labels, error keys and UI phrases.
+
+The workflow itself, built with `serve()` naming the module, even when the body is empty.
+
+Two classes, `<X>Internal` and `<X>Endpoint`. No Slice, because there is no table to page through.
+
+Only when the feature has client state. Four of the eight have one; two are empty scaffolds.
+
+Boots the barrel and calls the endpoints through `fetch`. `_security` and `_oauth` have one.
+
+Rare: none of the eight has one. The two UI pages of this section explain why.
+
+The builder callback returns an empty object, not nothing.
+
+A root container with no methods still declares its service.
+
+Exactly two comments, `// state` and `// action`, mark where each half goes.
+
+Model Module
+
+A stored table with a document file, filters, slices, generated CRUD and the five UI roles.
+
+Service Module
+
+No table, no document file, no slice. An action, a protocol, an integration, or a library's own root.
+
+Scalar Module
+
+A value embedded in something else and never stored on its own. A service module's state takes this shape.
 
 Service Module Overview
 
-A service module is a feature, workflow, or integration folder. It is useful when the code does not start from a document model, but still needs server logic, typed APIs, client state, and sometimes UI.
+Signing a token, streaming a stored file back to a browser, running an OAuth handshake to its end: none of these is a record. A folder built around a stored model would give you five files to leave empty and one to fill.
 
-Service module folders usually start with an underscore. The files inside drop that underscore: `_search` owns `search.service.ts`, `search.signal.ts`, `search.store.ts`, and `Search.Zone.tsx`.
+A service module is that folder without the model.
 
-When To Use It
+One call through a service module
 
-Use a normal module when the feature is centered on a business object such as User, Story, or Order. Use a service module when the feature is centered on an action or platform capability such as search, security, local files, or shared utilities.
+A page, a store, an MCP client
+
+The runtime itself
+
+the workflow
+
+Another module's service
+
+An adapter in srvkit/
+
+The outside world
+
+The Eight That Exist
+
+This workspace has eight service modules, and reading them is faster than reading a description. They range from a server-only primitive to a whole authorization server, plus the empty root container each app and lib carries.
+
+Module
+
+Only four files are in every one of them. Here is which of the eight carry the optional ones:
+
+Has the file
+
+No file
+
+Why the control usually belongs in ui/ or the page instead.
+
+When a capability earns a section of its own, and when it is just a page.
+
+The Two Poles
 
 Service File Map
 
-A service module only needs the files that the feature actually uses. Start with service.abstract.md for workflow intent, then add service, signal, dictionary, store, Util, or Zone files as the feature grows.
+Four files are always there. The rest arrive when the feature earns them, and both lists follow the order of this section's pages.
 
-Folder Shape
+Always There
 
-Start small. A server-only module might only have service and signal files. Add dictionary, store, Util, or Zone files when the feature becomes visible to users or admins.
+File
+
+Only When Needed
+
+Ship The Empty Files
+
+The Empty Forms You Will Meet
+
+Model Module Or Service Module
+
+One question decides it: is there a row you would want to list, filter, and still find next week?
+
+The next page is the abstract file, where the rules you just decided on are written down. After that the pages follow the call path:
+
+What the module owns, and its rules.
+
+Endpoint labels, errors and phrases.
+
+The workflow and what it injects.
+
+Internal and Endpoint, without a Slice.
+
+Client state, only when the feature has any.
 
 ## Code Examples
 
-### _search service module
+### libs/util/lib/_util/util.signal.ts
 
 ```ts
-libs/util/lib/_search/
-  search.abstract.md     // workflow intent
-  search.service.ts      // workflow
-  search.signal.ts       // API
-  search.dictionary.ts   // text
-  search.store.ts        // client state
-  Search.Util.tsx        // small controls
-  Search.Zone.tsx        // page section
+import { endpoint, internal } from "akanjs/signal";
+
+import * as srv from "../srv";
+
+export class UtilInternal extends internal(srv.util, () => ({})) {}
+
+export class UtilEndpoint extends endpoint(srv.util, () => ({})) {}
 ```
 
 ## Agent Notes

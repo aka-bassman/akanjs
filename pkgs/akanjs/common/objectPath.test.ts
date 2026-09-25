@@ -32,6 +32,37 @@ describe("object and path helpers", () => {
     expect(pathGet("user.profile.name", null, ".", "unknown")).toBe("unknown");
   });
 
+  test("reads bracket paths, so what writeOn can write can be read back", () => {
+    const obj = { cutFrames: [{ content: "a wide shot" }, { content: "a slow pan" }] };
+
+    // `pathSet` has always taken both spellings; a read that took only one is a path an agent can write and not read.
+    expect(pathGet("cutFrames[1].content", obj)).toBe("a slow pan");
+    expect(pathGet("cutFrames.1.content", obj)).toBe("a slow pan");
+    expect(pathGet(["cutFrames", 1, "content"], obj)).toBe("a slow pan");
+  });
+
+  test("reads map entries, the way pathSet writes them", () => {
+    const obj = { prompts: new Map([["photo", { text: "a cinematic still" }]]) };
+
+    expect(pathGet("prompts.photo.text", obj)).toBe("a cinematic still");
+    expect(pathGet("prompts.missing", obj, ".", "none")).toBe("none");
+  });
+
+  test("a round trip through both spellings lands on one value", () => {
+    const obj: Record<string, unknown> = {};
+
+    pathSet(obj, "cutFrames[2].content", "a wide shot");
+    expect(pathGet("cutFrames.2.content", obj)).toBe("a wide shot");
+    pathSet(obj, "cutFrames.2.content", "a slow pan");
+    expect(pathGet("cutFrames[2].content", obj)).toBe("a slow pan");
+  });
+
+  test("a caller that named its own separator keeps the plain split", () => {
+    const obj = { "a.b": { c: 1 } };
+
+    expect(pathGet("a.b/c", obj, "/")).toBe(1);
+  });
+
   test("sets nested object and array paths in place", () => {
     const obj: Record<string, unknown> = {};
 
@@ -79,19 +110,19 @@ describe("object and path helpers", () => {
       modelLike,
     };
 
-    expect(deepObjectify(source)).toEqual({
+    expect(deepObjectify(source) as unknown).toEqual({
       date,
       day: dayjs(date),
       nested: [{ id: "a" }],
       modelLike,
     });
-    expect(deepObjectify(source, { serializable: true, convertDate: "string" })).toEqual({
+    expect(deepObjectify(source, { serializable: true, convertDate: "string" }) as unknown).toEqual({
       date: "2025-01-01T00:00:00.000Z",
       day: "2025-01-01T00:00:00.000Z",
       nested: [{ id: "a" }],
       modelLike: { __ModelType__: "User", id: "u1" },
     });
-    expect(deepObjectify(date, { convertDate: "number" })).toBe(date.getTime());
+    expect(deepObjectify(date, { convertDate: "number" }) as unknown).toBe(date.getTime());
   });
 
   test("deep objectifies maps and sets into clones, and into plain data when serializable", () => {

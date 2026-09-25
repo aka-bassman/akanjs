@@ -2,9 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { McpUriTemplate } from "./McpUriTemplate";
 
 describe("McpUriTemplate", () => {
-  test("builds the three addressable shapes", () => {
+  test("builds the two addressable shapes", () => {
     expect(McpUriTemplate.model("agentSession")).toBe("akan://agentSession/{agentSessionId}");
-    expect(McpUriTemplate.light("agentSession")).toBe("akan://agentSession/light/{agentSessionId}");
     expect(McpUriTemplate.list("user", "byStatuses", ["statuses", "limit"])).toBe(
       "akan://user/list/byStatuses{?statuses,limit}",
     );
@@ -24,10 +23,8 @@ describe("McpUriTemplate", () => {
       endpointKey: "user",
       args: { userId: "6712ab34cd56ef7890123456" },
     });
-    expect(McpUriTemplate.parse("akan://user/light/6712ab34cd56ef7890123456")).toEqual({
-      endpointKey: "lightUser",
-      args: { userId: "6712ab34cd56ef7890123456" },
-    });
+    // The light read is not published, so the shape it held is gone rather than routed to a tool nothing lists.
+    expect(McpUriTemplate.parse("akan://user/light/6712ab34cd56ef7890123456")).toBeNull();
   });
 
   test("preserves camelCase in the authority", () => {
@@ -53,21 +50,22 @@ describe("McpUriTemplate", () => {
     });
   });
 
-  test("rejects anything that is not one of the three shapes", () => {
+  test("rejects anything that is not one of the two shapes", () => {
     expect(McpUriTemplate.parse("https://example.com/user/1")).toBeNull();
     expect(McpUriTemplate.parse("akan://user")).toBeNull();
     expect(McpUriTemplate.parse("akan://user//1")).toBeNull();
     expect(McpUriTemplate.parse("akan://user/1/2/3")).toBeNull();
-    // `light` and `list` are reserved, so a two-segment uri may not use one as an id — `…/list` reads as the
-    // root list rather than as a document whose id is the word.
-    expect(McpUriTemplate.parse("akan://user/light")).toBeNull();
+    expect(McpUriTemplate.parse("akan://user/anything/1")).toBeNull();
+    // `list` is reserved, so a two-segment uri may not use it as an id: it reads as the root list rather than as
+    // a document whose id is the word.
+    expect(McpUriTemplate.parse("akan://user/list")?.endpointKey).toBe("userList");
   });
 
   test("reads an undecodable escape as unknown rather than throwing", () => {
     // `decodeURIComponent` throws `URIError` on these, and the router's catch would turn a caller's typo into a
     // 500 with a stack in the log — on a method an agent may call with any string.
     expect(McpUriTemplate.parse("akan://user/%")).toBeNull();
-    expect(McpUriTemplate.parse("akan://user/light/%E0%A4%A")).toBeNull();
+    expect(McpUriTemplate.parse("akan://user/list/%E0%A4%A")).toBeNull();
     // The query half never needed the guard: `URLSearchParams` reads a bad escape as literal text.
     expect(McpUriTemplate.parse("akan://user/list?q=%ZZ")?.args).toEqual({ q: "%ZZ" });
   });

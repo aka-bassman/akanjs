@@ -115,7 +115,7 @@ export class TestServer {
   }
   async #init() {
     const now = Date.now();
-    this.#logger.log(`Test System #${this.workerId} Initializing...`);
+    this.#logger.info(`Test System #${this.workerId} Initializing...`);
     this.#rememberProcessEnv();
     TestServer.applyProcessEnv(this.#env, { workerId: this.workerId, port: this.#port, serverMode: this.#serverMode });
     const { databaseFilePath, solidFilePath } = await this.#makeDatabaseFiles();
@@ -142,12 +142,12 @@ export class TestServer {
     };
     this.#server = new AkanServer(this.#env.appName, this.#env, this.#serverMode, ...this.#libs);
     await this.#server.start({ listen: this.#listen, web: this.#web });
-    this.#logger.log(`Test System #${this.workerId} Initialized, SQLite: ${this.#databaseMode}`);
+    this.#logger.info(`Test System #${this.workerId} Initialized, SQLite: ${this.#databaseMode}`);
     this.#startAt = Date.now();
-    this.#logger.log(`Test System #${this.workerId} Activation Time: ${this.#startAt - now}ms`);
+    this.#logger.info(`Test System #${this.workerId} Activation Time: ${this.#startAt - now}ms`);
   }
   async cleanup() {
-    this.#logger.log("SQLite test database cleanup is handled by server termination.");
+    this.#logger.info("SQLite test database cleanup is handled by server termination.");
   }
   async terminate() {
     const now = Date.now();
@@ -161,10 +161,10 @@ export class TestServer {
     }
     this.#restoreProcessEnv();
     if (elapsed < MIN_ACTIVATION_TIME) {
-      this.#logger.log(`waiting for ${MIN_ACTIVATION_TIME - elapsed}`);
+      this.#logger.info(`waiting for ${MIN_ACTIVATION_TIME - elapsed}`);
       await sleep(MIN_ACTIVATION_TIME - elapsed);
     }
-    this.#logger.log(`System Terminated in ${Date.now() - now}ms`);
+    this.#logger.info(`System Terminated in ${Date.now() - now}ms`);
   }
   #rememberProcessEnv() {
     this.#previousEnv.clear();

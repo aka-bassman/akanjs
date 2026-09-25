@@ -3,9 +3,9 @@ language js(typescript, jsx)
 
 // Vocabulary closure (`@theme { --color-*: initial }` in akanjs/ui/styles.css) strips the raw
 // Tailwind palette, so classes like `bg-blue-500` generate NO css and silently render as
-// currentColor/transparent. This rule surfaces that silent breakage at lint time. It is the
-// grit port of styleGuard's `raw-palette` rule (frontendBuild/styleGuard.ts) — keep the two
-// regexes in sync. Matching string/template nodes (not raw text) skips comments for free.
+// currentColor/transparent. This rule surfaces that silent breakage at lint time. Matching
+// string/template nodes (not raw text) skips comments for free.
+// Cases: lint/__fixtures__/no-raw-palette-class/{bad,good}.tsx
 //
 // Bare `bg-neutral` is a semantic token and allowed; the numeric suffix (`bg-neutral-500`)
 // is what marks a raw palette class. black/white stay in the vocabulary for overlays.

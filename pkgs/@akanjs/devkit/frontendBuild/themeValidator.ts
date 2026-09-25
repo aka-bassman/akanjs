@@ -1,13 +1,17 @@
 /**
- * themeValidator — 시맨틱 토큰 페어의 WCAG 콘트라스트 자동 검사 (의존성 0).
+ * WCAG contrast checking over the semantic token pairs. No dependencies, pure functions, and no akanjs
+ * runtime import — it has to run inside the lint path.
  *
- * 토큰 구조(`--x` ↔ `--x-foreground`)라서 가능해진 검사. AI 가 생성한 팔레트가 "안 읽히는 사이트"가
- * 되는 것을 원천 차단한다. akanjs 런타임을 import 하지 않는다 — 순수 함수만.
+ * The `--x` / `--x-foreground` pairing is what makes the check possible at all: it says which two values
+ * are going to end up on top of each other. That is the guard against a generated palette shipping a site
+ * nobody can read.
  *
- * 임계값(WCAG 2.1):
- *   - 본문/주요 표면 페어(background·primary·secondary·accent·neutral·card·popover): 4.5:1 (AA normal text)
- *   - 상태/보조 페어(info·success·warning·destructive·open·muted): 3:1 (UI 컴포넌트 / 큰 텍스트 / 보조 표면)
- * 현행 styles.css 기본 팔레트(light/dark)는 이 임계값을 모두 통과한다.
+ * Thresholds (WCAG 2.1):
+ *   - body and primary surfaces (background, primary, secondary, accent, neutral, card, popover): 4.5:1,
+ *     the AA floor for normal text
+ *   - status and secondary pairs (info, success, warning, destructive, open, muted): 3:1, the AA floor for
+ *     UI components and large text
+ * The shipped light/dark palette in styles.css clears all of them.
  */
 
 export interface ThemeContrastViolation {
@@ -42,13 +46,13 @@ const PAIRS: PairDef[] = [
   { base: "open", fg: "open-foreground", threshold: 3 },
 ];
 
-// 검사 대상 스코프. 그 외 셀렉터(.campaign-x 스코프 토큰 등)는 페어 검사에서 제외.
+// Only these scopes are paired up; tokens scoped to something else (`.campaign-x`, …) are left alone.
 const THEME_SCOPES = new Set([":root", '[data-theme="dark"]', '[data-theme="light"]']);
 
 export type ThemeTokensByScope = Record<string, Record<string, string>>;
 
 export class ThemeValidator {
-  /** CSS 문자열에서 토큰을 추출해 알려진 테마 스코프 전체를 검사한다. */
+  /** Extracts tokens from the css text and checks every scope it recognizes. */
   validate(css: string): ThemeContrastViolation[] {
     const tokensByScope = ThemeValidator.parseThemeTokens(css);
     const violations: ThemeContrastViolation[] = [];
@@ -67,7 +71,7 @@ export class ThemeValidator {
       if (!bg || !front) continue;
       const bgRgb = ThemeValidator.parseHex(bg);
       const fgRgb = ThemeValidator.parseHex(front);
-      if (!bgRgb || !fgRgb) continue; // var()/비-hex 값은 검사 불가 → 건너뜀
+      if (!bgRgb || !fgRgb) continue; // a var() or non-hex value has no ratio to compute
       const ratio = ThemeValidator.contrastRatio(bgRgb, fgRgb);
       if (ratio >= threshold) continue;
       violations.push({
@@ -77,20 +81,21 @@ export class ThemeValidator {
         foreground: front,
         ratio: Math.round(ratio * 100) / 100,
         threshold,
-        suggestion: `${scope}의 --${base}(${bg})와 --${fg}(${front}) 대비가 ${ratio.toFixed(2)}:1 로 최소 ${threshold}:1 미만입니다. 한쪽을 더 밝게/어둡게 조정해 대비를 확보하세요.`,
+        suggestion: `In ${scope}, --${base} (${bg}) against --${fg} (${front}) is ${ratio.toFixed(2)}:1, under the ${threshold}:1 minimum. Lighten or darken one of them until it clears.`,
       });
     }
     return violations;
   }
 
   /**
-   * `:root` / `[data-theme="…"]` 블록에서 `--token: value` 를 파싱한다. 그룹 셀렉터
-   * (`:root, [data-theme="dark"] { … }`)는 각 셀렉터에 동일 토큰을 분배. 동일 스코프 재등장 시 나중 값이 이긴다
-   * (프레임워크-먼저 / 앱-나중 순서로 넘기면 앱 override 가 반영됨).
+   * Reads `--token: value` out of `:root` / `[data-theme="…"]` blocks. A grouped selector
+   * (`:root, [data-theme="dark"] { … }`) distributes the same tokens to each selector, and a scope that
+   * appears twice keeps the later value — so passing framework css first and the app's second reflects the
+   * app's overrides.
    */
   static parseThemeTokens(css: string): ThemeTokensByScope {
     const result: ThemeTokensByScope = {};
-    // 중첩 없는 단순 규칙 블록만 매칭(@theme/@keyframes 등 at-rule 은 셀렉터에 @ 포함이라 제외).
+    // Flat rule blocks only; an at-rule (@theme, @keyframes) carries `@` in the selector and is skipped.
     const blockRe = /(?:^|})\s*([^{}@]+?)\s*\{([^{}]*)\}/g;
     for (const block of css.matchAll(blockRe)) {
       const selectors = block[1].split(",").map((s) => s.trim());
@@ -109,11 +114,11 @@ export class ThemeValidator {
   }
 
   static #normalizeScope(selector: string): string {
-    // 따옴표 정규화: [data-theme=dark] / [data-theme='dark'] → [data-theme="dark"]
+    // Quote normalization: [data-theme=dark] / [data-theme='dark'] -> [data-theme="dark"]
     return selector.replace(/\[data-theme=['"]?([\w-]+)['"]?\]/g, '[data-theme="$1"]').trim();
   }
 
-  /** #rgb / #rgba / #rrggbb / #rrggbbaa → [r,g,b] (alpha 무시). 비-hex 는 null. */
+  /** #rgb / #rgba / #rrggbb / #rrggbbaa -> [r,g,b], alpha ignored. Null for anything not hex. */
   static parseHex(value: string): [number, number, number] | null {
     const v = value.trim();
     if (!v.startsWith("#")) return null;

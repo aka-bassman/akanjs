@@ -5,10 +5,8 @@ export type AbstractKind = "domain" | "service" | "scalar" | "other";
 /** One `*.abstract.md` file: the agent-facing summary a module carries next to its source. */
 export class AbstractDoc {
   static readonly suffix = ".abstract.md";
-  /** `akan quality` warns above this and points at `akan compact`. */
+  /** `akan quality` warns above this. */
   static readonly maxLines = 300;
-  /** `akan compact` floor, and the line budget it compacts down to, so a compacted file is never a candidate again. */
-  static readonly compactMinLines = 40;
   // Abstracts only live in facet folders; globbing the sys root instead would walk node_modules.
   static readonly #facetRoots = "{lib,ui,webkit,srvkit,common,plugin}";
 

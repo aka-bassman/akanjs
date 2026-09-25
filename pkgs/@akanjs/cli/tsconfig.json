@@ -1,5 +1,5 @@
 {
   "extends": "../../../tsconfig.json",
   "files": [],
-  "include": ["**/*.ts", "**/*.tsx"]
+  "include": ["**/*.ts", "**/*.tsx", "../../akanjs/server/types/*.d.ts"]
 }

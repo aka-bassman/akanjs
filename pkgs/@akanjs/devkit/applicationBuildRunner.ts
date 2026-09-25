@@ -7,7 +7,13 @@ import type {
   ApplicationBuildResult,
 } from "./applicationBuildReporter";
 import type { App } from "./commandDecorators";
-import { AllRoutesBuilder, CsrArtifactBuilder, precompressArtifacts, SsrBaseArtifactBuilder } from "./frontendBuild";
+import {
+  AllRoutesBuilder,
+  CsrArtifactBuilder,
+  FontPruner,
+  precompressArtifacts,
+  SsrBaseArtifactBuilder,
+} from "./frontendBuild";
 import { Spinner } from "./spinner";
 
 export interface TypecheckOptions {
@@ -15,7 +21,7 @@ export interface TypecheckOptions {
   incremental?: boolean;
 }
 
-export type BuildPhaseId = "prepare" | "typecheck" | "backend" | "ssr" | "csr" | "compress" | "metadata";
+export type BuildPhaseId = "prepare" | "typecheck" | "backend" | "ssr" | "csr" | "assets" | "compress" | "metadata";
 
 export type BuildPhaseResult = ApplicationBuildPhaseResult & { id: BuildPhaseId };
 export type BuildResult = ApplicationBuildResult;
@@ -37,6 +43,7 @@ const BUILD_PHASE_EMOJIS: Record<BuildPhaseId, string> = {
   backend: "📦",
   ssr: "🧭",
   csr: "🎨",
+  assets: "✂️",
   compress: "🗜️",
   metadata: "📝",
 };
@@ -52,6 +59,11 @@ const SSR_RENDER_EXTERNALS = [
   "react-server-dom-webpack/client.node",
   "react-server-dom-webpack/client.browser",
 ] as const;
+
+// Identifier mangling renames every class, and `this.constructor.name` is what names a service's logger, an
+// `Exception`, a guard, and every frame of a stack trace — for ~2% of boot on server bytes nothing downloads.
+// `minify.keepNames` typechecks and does nothing as of Bun 1.4.2.
+export const AKAN_BACKEND_MINIFY = { whitespace: true, syntax: true, identifiers: false } as const;
 
 export const AKAN_OPTIONAL_BACKEND_EXTERNALS = [
   "@libsql/client",
@@ -77,7 +89,7 @@ export class ApplicationBuildRunner {
   async build({ spinner = false }: BuildOptions = {}): Promise<BuildResult> {
     // serial build is needed because of Bun.build is unstable for parallel build
     const phaseOptions = { spinner };
-    const { web } = await this.#app.getConfig();
+    const { web, assets } = await this.#app.getConfig();
     await this.#runPhase("prepare", "Preparing output directory", () => this.#app.prepareCommand("build"), undefined, {
       spinner,
     });
@@ -106,6 +118,16 @@ export class ApplicationBuildRunner {
       "Building CSR assets",
       async () => (web.csr ? await this.#buildCsr() : null),
       (result) => result?.outputDir ?? (web.csr ? "skipped" : "disabled by akan.config.ts web.csr"),
+      phaseOptions,
+    );
+    await this.#runPhase(
+      "assets",
+      "Trimming unread static assets",
+      async () => (assets.pruneFonts ? await new FontPruner(this.#app, assets).prune() : null),
+      (result) =>
+        result
+          ? `${result.removed.length} font file(s) dropped, ${ApplicationBuildRunner.formatBytes(result.freedBytes)} freed; ${result.kept.length} kept`
+          : "disabled by akan.config.ts assets.pruneFonts",
       phaseOptions,
     );
     await this.#runPhase(
@@ -186,7 +208,7 @@ export class ApplicationBuildRunner {
       entrypoints: backendEntryPoints,
       outdir: this.#app.dist.cwdPath,
       target: "bun",
-      minify: true,
+      minify: AKAN_BACKEND_MINIFY,
       naming: { entry: "[name].[ext]", chunk: "chunk-[hash].[ext]" },
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
       plugins: backendExternals.length > 0 ? [this.#createExternalSpecifiersPlugin(backendExternals)] : [],
@@ -197,7 +219,7 @@ export class ApplicationBuildRunner {
           entrypoints: [this.#resolveRscWorkerBuildEntry()],
           outdir: this.#app.dist.cwdPath,
           target: "bun",
-          minify: true,
+          minify: AKAN_BACKEND_MINIFY,
           naming: { entry: "[name].[ext]", chunk: "chunk-[hash].[ext]" },
           conditions: ["react-server"],
           // `akan build` must embed production react-server-dom regardless of the shell's NODE_ENV.
@@ -209,7 +231,7 @@ export class ApplicationBuildRunner {
       entrypoints: [this.#resolveConsoleRuntimeBuildEntry()],
       outdir: this.#app.dist.cwdPath,
       target: "bun",
-      minify: true,
+      minify: AKAN_BACKEND_MINIFY,
       naming: { entry: "console-runtime.[ext]", chunk: "chunk-[hash].[ext]" },
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
     });
@@ -224,11 +246,12 @@ export class ApplicationBuildRunner {
   async #writeConsoleShim() {
     await Bun.write(
       path.join(this.#app.dist.cwdPath, "console.js"),
-      `import { cnst, db, dict, option, server, sig, srv } from "./server.js";
-import { assertAkanConsoleAllowed, startAkanConsole } from "./console-runtime.js";
+      `process.env.AKAN_COMMAND_TYPE = "console";
+const { cnst, db, dict, option, server, sig, srv } = await import("./server.js");
+const { assertAkanConsoleAllowed, startAkanConsole } = await import("./console-runtime.js");
 
 const run = async () => {
-  assertAkanConsoleAllowed(server.env);
+  assertAkanConsoleAllowed();
   await server.start({ listen: false, web: false });
   try {
     await startAkanConsole(server, { globals: { cnst, db, dict, option, sig, srv } });

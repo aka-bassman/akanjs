@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { Translator } from "../client/translator";
 
 type RenderHookResult<T> = {
   get current(): T;
@@ -21,6 +22,7 @@ const cameraState = {
   permissions: { camera: "prompt" as Permission, photos: "prompt" as Permission },
   requested: 0,
   photoSource: "",
+  promptLabels: {} as Record<string, string>,
   cancelled: false,
 };
 const contactsState = {
@@ -130,6 +132,8 @@ beforeAll(() => {
       getItem: async () => null,
     },
     isMobileDevice: () => true,
+    // The real one, so the assertion below is that the dictionary key is what reaches the native picker.
+    Translator,
   }));
 });
 
@@ -143,8 +147,14 @@ const installCapacitorBridge = () => {
             cameraState.requested += 1;
             return cameraState.permissions;
           },
-          getPhoto: async (options: { source: string }) => {
+          getPhoto: async (options: { source: string } & Record<string, string>) => {
             cameraState.photoSource = options.source;
+            cameraState.promptLabels = {
+              promptLabelHeader: options.promptLabelHeader,
+              promptLabelPhoto: options.promptLabelPhoto,
+              promptLabelPicture: options.promptLabelPicture,
+              promptLabelCancel: options.promptLabelCancel,
+            };
             if (cameraState.cancelled) throw "User cancelled photos app";
             return { dataUrl: "data:image/png;base64,test" };
           },
@@ -294,6 +304,13 @@ describe("native hooks", () => {
     const hook = renderHook(() => useCamera());
 
     expect(await hook.current.getPhoto("prompt")).toEqual({ dataUrl: "data:image/png;base64,test" });
+    // The OS draws this sheet from strings, so a hard-coded label shipped one language to every visitor.
+    expect(cameraState.promptLabels).toEqual({
+      promptLabelHeader: "base.cameraPromptHeader",
+      promptLabelPhoto: "base.cameraPromptPhoto",
+      promptLabelPicture: "base.cameraPromptPicture",
+      promptLabelCancel: "base.cameraPromptCancel",
+    });
     expect(cameraState.photoSource).toBe("PHOTOS");
     expect(cameraState.requested).toBe(1);
 

@@ -223,7 +223,7 @@ const resolveNodePackageExport = async (workspaceRoot: string, specifier: string
     const subpath = specifier === packageName ? "." : `.${specifier.slice(packageName.length)}`;
     const exported = resolvePackageExport(pkgJson.exports, subpath);
     const rel = exported ?? (subpath === "." ? (pkgJson.module ?? pkgJson.main ?? "index.js") : null);
-    if (!rel || !rel.startsWith(".")) return null;
+    if (!rel?.startsWith(".")) return null;
     const entryFile = await resolveFileCandidate(path.resolve(pkgDir, rel));
     if (!entryFile) return null;
     const pkgEntryName = specifier;

@@ -166,7 +166,7 @@ export class DataList<Light extends { id: string }> {
     return this.values.flatMap(fn);
   }
   sort(fn: (a: Light, b: Light) => number) {
-    return new DataList(this.values.sort(fn));
+    return new DataList([...this.values].sort(fn));
   }
   filter(fn: (value: Light, idx: number) => boolean) {
     return new DataList(this.values.filter(fn));

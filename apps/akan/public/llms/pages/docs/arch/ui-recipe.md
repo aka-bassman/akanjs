@@ -19,75 +19,189 @@
 
 UI Recipe Layer
 
+A function that returns the class string for one look, built with recipe(tv({ … })).
+
+One named axis of a recipe (variant, size, side) and the values it can take.
+
+A color named for its role (primary, background, destructive) instead of its value.
+
+A named place (button, badge, input) where a route's _overrides.tsx can swap a recipe.
+
+CSS variables in styles.css. Theme-aware, server/client agnostic. What is this color?
+
+Variant factories that compose tokens. Server-safe, no use client. How does it look?
+
+Consume recipes and add interaction and state; use client only when needed. How does it behave?
+
+A class set you would otherwise repeat
+
+Repeated or variant-like surface
+
+A status pill, a hero, a bubble or a tile: extract a recipe.
+
+Class chosen from a fixed set by data
+
+Tone, size, side or status decides the class: make it a variant of a recipe.
+
+Styling a server component or raw element
+
+A recipe is server-safe, so a server page can call it directly.
+
+A class you write once
+
+Genuinely one-off className
+
+Keep it inline. Do not over-abstract.
+
+Inside the route subtree
+
+Framework client components
+
+Button, Badge, Input, Dropdown, Pagination … read the slot, so they re-skin.
+
+Server components (Unit, View)
+
+They keep the canonical recipe.
+
+A raw call in your own JSX keeps the canonical recipe; import your own recipe there instead.
+
+Q1. Does the theme differ?
+
+Color · radius · font
+
+Override token values in the app's page/styles.css.
+
+Keep the Akan defaults.
+
+Q2. Does a component look differ?
+
+Same structure, different skin
+
+Write an app recipe and inject it through the recipes of _overrides.tsx.
+
+Use it as it is.
+
+Q3. Does structure or behavior differ?
+
+For example, modal → drawer
+
+Write a component override that reassembles the headless parts.
+
+Not needed.
+
+A surface the lib does not have?
+
+A chat bubble, a tile
+
+Add a new app recipe. It is an extension with no lib counterpart, so nothing conflicts.
+
+Use the lib's recipe.
+
 Recipe Layer
 
-A recipe is a variant factory (built on tailwind-variants) that sits between the token layer and the components. Tokens answer 'what is this color'; a recipe answers 'what does this component look like' by composing semantic-token classes into named variants; the component answers 'how does it behave'. Each layer only knows the one below it.
+A primary button needs about a dozen classes. Written out on every button, those dozen classes drift apart, and changing the look means editing every copy. A recipe names that look once, and every button asks for it by name.
 
-The three UI layers
+Technically, a recipe is a variant factory built on tailwind-variants, and it sits between the token layer and the components. Each layer answers one question and knows only the layer below it:
 
-Semantic tokens (CSS variables). Theme-aware, server/client agnostic. 'What is this color.'
+Layer
 
-Variant factories composing tokens. Server-safe (no 'use client'). 'How does it look.'
+What it does
 
-Consume recipes; add interaction/state. 'use client' only when needed. 'How does it behave.'
+Words used on this page
 
-A recipe module never carries 'use client'. Because it is a plain function returning a className string, both server components and client components can call it — a server page can style a raw <Link> or <div> with buttonRecipe() directly.
+Term
+
+Why a recipe works on both sides
+
+One recipe, callable from both sides
+
+buttonRecipe carries no use client, so a server component and a client component can both call it and get the same class string.
 
 Framework Recipes
 
-akanjs/ui ships buttonRecipe and badgeRecipe from a server-safe module. Call them anywhere to style raw elements, and pass extra classes as the second argument — the recipe merges them for you with tailwind-merge, so you never wrap it in cn(). The Button and Badge components consume the same recipes internally.
+akanjs/ui ships buttonRecipe, badgeRecipe and inputRecipe from a server-safe module, and the Button, Badge and Input components use the same recipes inside. So a raw element styled with a recipe looks exactly like the component.
 
-buttonRecipe variants: primary, secondary, accent, outline, ghost, destructive, success, warning, info, link — plus size xs/sm/md/lg/icon.
+Pass the variants as the first argument and any extra classes as the second. The recipe merges them with tailwind-merge for you, so you never wrap it in cn():
 
-badgeRecipe variants: default, primary, secondary, accent, success, warning, info, error, outline.
+What each framework recipe accepts
 
-Every variant class is a semantic token (bg-primary, text-success-foreground …), so it stays theme-aware automatically.
+Axes and values
 
-Recipes live in their own folder (akanjs/ui/recipe/, one recipe per file) precisely so they are not client-only. If a recipe were exported from a 'use client' component file, calling it from a server component would throw 'client-only export'. The separate recipe layer removes that boundary.
+Bold values are the defaults. outline is a flag: it keeps the variant's color and draws it as an outline.
+
+Every variant class is a semantic token (bg-primary, text-success-foreground …), so every value follows the theme automatically.
+
+Recipes live in their own folder (akanjs/ui/recipe/, one recipe per file) precisely so they are not client-only. Exported from a 'use client' component file, a recipe called from a server component would throw 'client-only export'. The separate folder removes that boundary.
 
 App-Level Recipes
 
-When a surface repeats across your app — a gradient hero, an icon tile, a chat bubble — do not inline the same class string everywhere. Add one file per recipe under the app's ui/Recipe/ (server-safe; the folder is PascalCase because the generated ui barrel exports PascalCase names only) and import it from the ui barrel. This mirrors the framework's ui/recipe/ at the app level, and the folder's index.ts also re-exports the framework recipes so one import path covers both.
+Your app has repeating surfaces the framework knows nothing about: a gradient hero, an icon tile, a chat bubble. Instead of inlining the same class string everywhere, give each one an app recipe:
+
+Add one file per recipe under the app's ui/Recipe/. App ui folders are PascalCase, so it is ui/Recipe/ even though the framework's is the lowercase ui/recipe/.
+
+Build the factory with recipe(tv({ base, variants })). Both are re-exported from akanjs/ui.
+
+Name it <name>Recipe and keep the file free of 'use client'.
+
+Import it from the ui barrel. The folder's index.ts also re-exports the framework recipes, so one import path covers both.
 
 The page then stops repeating class strings and reads its variant from data:
 
-Convention: build each factory with recipe(tv({ base, variants })) (both re-exported from akanjs/ui), name it <name>Recipe, and keep the file free of 'use client'. Call it as xRecipe(variants, className?) — the second arg is merged internally, no cn() needed. App ui folders are PascalCase, so the folder is ui/Recipe/ even though the framework's is the lowercase ui/recipe/.
+Call it the same way as a framework recipe: xRecipe(variants, className?). The second argument is merged internally, so no cn() is needed.
 
 When To Reach For A Recipe
 
-Recipes earn their keep when a class set is reused, conditionally composed, or needed from a server component. One-off classes should stay inline.
+Recipes earn their keep when a class set is reused, conditionally composed, or needed from a server component. One-off classes should stay inline. Find your case in the left column:
 
-Repeated or variant-like surface (status pill, hero, bubble, tile) → extract a recipe.
+Situation
 
-A class chosen from a fixed set by data (tone, size, side, status) → a recipe variant.
+New recipe
 
-Styling needed from a server component or a raw element → a recipe (server-safe).
+Variant
 
-A genuinely one-off className → keep it inline; do not over-abstract.
+Inline
+
+Reach for this
+
+Not this
 
 Recipe Override
 
 Recipe Override — Re-skin Without Rebuilding
 
-A route's _overrides.tsx can swap a recipe slot (button, badge, input). Every framework client component that consumes that recipe (Button, Badge, Input, Dropdown, Pagination …) re-skins across the whole route subtree — while its behavior (async states, focus trap, a11y) stays exactly as the framework ships it. Only the className factory changes. Server components (Unit/View) and raw xRecipe(...) calls in your own JSX keep the canonical recipe.
+Sometimes one section of the app needs a different look, say a neon admin area, but the components should behave exactly as before. A recipe override changes the look and nothing else.
 
-The swap recipe must accept the framework recipe's full variant surface so every call site keeps working. It reaches framework components (which read the slot); a raw buttonRecipe(...) call in your own JSX is not affected — import your own recipe there instead.
+A route's _overrides.tsx can swap a recipe slot (button, badge, input). Every framework client component that consumes that recipe re-skins across the whole route subtree, while its behavior (async states, focus trap, a11y) stays exactly as the framework ships it. Only the className factory changes.
+
+First, write a recipe with the same variant surface as the one it replaces:
+
+Then bind it to the slot in the section's _overrides.tsx. The screens under it do not change a line:
+
+What the swap reaches
+
+Caller
+
+New look
+
+Canonical
+
+Uses this recipe
+
+Not this one
+
+The swap recipe must accept the framework recipe's full variant surface, so every call site keeps working. It only reaches components that read the slot; where you call buttonRecipe(...) yourself, import your own recipe instead.
 
 Customization Decision
 
-Two Questions, One Invariant
+Three Questions, One Invariant
 
-Customization is decided once at design-system setup, not per screen. The screen code — a plain <Button> — never changes across any answer; only config files do. Diff your design spec against the /lab catalog once, then classify each delta.
+Customization is decided once, at design-system setup, not per screen. Compare your design spec with the /lab catalog once, then run each difference through the questions below.
 
-Q1. Theme differs (color · radius · font)? → override token values in app page/styles.css. Else → akan defaults.
+Yes →
 
-Q2. Component look differs? → write an app recipe, inject via _overrides.tsx recipes. Else → use as-is.
+No →
 
-Q3. Structure or behavior differs (modal → drawer)? → component override (reassemble headless parts). Else → not needed.
-
-A surface lib doesn't have (chat bubble, tile)? → add a new app recipe (extension — no lib counterpart, so no conflict).
-
-App recipes extend (surfaces lib lacks); they never re-define a lib component in parallel. To change a lib component's look, use recipe override — do not create a parallel button recipe. And when the same className tweak repeats, promote it to a recipe override (app-wide) or a variant.
+App recipes extend: they add surfaces the lib lacks, and never re-define a lib component in parallel. To change a lib component's look, use a recipe override, not a parallel button recipe. When the same className tweak repeats, promote it to a recipe override (app-wide) or a variant.
 
 ## Code Examples
 
@@ -142,7 +256,9 @@ import { chatBubbleRecipe } from "@apps/myapp/ui";
 ### apps/myapp/ui/Recipe/neonButton.ts
 
 ```typescript
-// buttonRecipe 와 같은 variant/size 표면을 유지해야 슬롯에 주입 가능.
+import { recipe, tv } from "akanjs/ui";
+
+// Keep buttonRecipe's variant/size surface so the slot can accept it.
 export const neonButtonRecipe = recipe(
   tv({
     base: "rounded-none border-2 font-mono uppercase tracking-widest",
@@ -161,7 +277,7 @@ export const neonButtonRecipe = recipe(
 import { neonButtonRecipe } from "@apps/myapp/ui";
 import { override } from "akanjs/ui";
 
-// 이 라우트 서브트리의 모든 <Button> 이 네온으로 — 호출 코드는 그대로.
+// Every <Button> in this route subtree turns neon — call sites stay the same.
 export default override({ recipes: { button: neonButtonRecipe } });
 ```
 

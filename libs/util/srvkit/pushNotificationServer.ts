@@ -100,8 +100,8 @@ export class PushNotificationServer extends adapt("pushNotificationServer", ({ e
     try {
       const admin = await loadFirebase();
       const sendId = await admin.messaging().send(generatedMessage);
-      if (message.topic) this.logger.log(`Sent ${message.topic} to topic push notification.`);
-      else this.logger.log(`Sent ${message.token} to token push notification.`);
+      if (message.topic) this.logger.info(`Sent ${message.topic} to topic push notification.`);
+      else this.logger.info(`Sent ${message.token} to token push notification.`);
 
       return sendId;
     } catch (error) {

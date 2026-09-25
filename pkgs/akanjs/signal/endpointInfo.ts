@@ -1,5 +1,4 @@
 import {
-  Any,
   arraiedModel,
   type Cls,
   type Dayjs,
@@ -20,22 +19,9 @@ import type {
 } from "akanjs/constant";
 import type { ServiceModel } from "akanjs/service";
 import type { InternalArgCls } from "./internalArg";
-import type { PromptResult } from "./mcp";
 import type { ArgType, SignalOption, SrvMap } from "./types";
 
-export type EndpointType = "query" | "mutation" | "pubsub" | "message" | "prompt";
-
-/**
- * A prompt travels as `Any` because `PrimitiveRegistry.has(Any)` is true, so `resolveReturn` and `makeResponse`
- * hand the messages back untouched. Registering a scalar for `PromptMessage` would buy nothing the builder's
- * `exec` constraint does not already give, and would push a client-side model into every app that never uses one.
- *
- * It does not follow that a prompt's payload is unmasked. What a return ref masks is the value's own fields, and
- * a prompt's are fixed by the protocol; the document inside an attachment is a JSON string by the time any return
- * ref could reach it. So masking is declared at the attachment instead — `Msg.mask` — where the model is named
- * and a payload that lost its class on the way still masks correctly.
- */
-const promptCarrier = Any;
+export type EndpointType = "query" | "mutation" | "pubsub" | "message";
 
 export interface EndpointArgProps<Optional extends boolean = false> {
   nullable?: Optional;
@@ -154,7 +140,6 @@ export class EndpointInfo<
     _ServerArg = DocumentModel<_ArgType>,
   >(name: ArgName, arg: Arg, option?: EndpointArgProps<Optional>) {
     if (this.execFn) throw new Error("Query function is already set");
-    this.#assertPromptArg("body");
     this.argNames.push(name);
     this.args.push(EndpointInfo.getArgInfo("body", name, arg, option));
     return this as unknown as EndpointInfo<
@@ -180,7 +165,6 @@ export class EndpointInfo<
   >(name: string, arg: Arg, option?: Omit<EndpointArgProps, "nullable">) {
     if (this.execFn) throw new Error("Query function is already set");
     else if (this.args.at(-1)?.option?.nullable) throw new Error("Last argument is nullable");
-    this.#assertPromptArg("room");
     this.argNames.push(name);
     this.args.push(EndpointInfo.getArgInfo("room", name, arg, option));
     return this as unknown as EndpointInfo<
@@ -207,7 +191,6 @@ export class EndpointInfo<
   >(name: string, arg: Arg, option?: EndpointArgProps<Optional>) {
     if (this.execFn) throw new Error("Query function is already set");
     else if (this.args.at(-1)?.option?.nullable) throw new Error("Last argument is nullable");
-    this.#assertPromptArg("msg");
     this.argNames.push(name);
     this.args.push(EndpointInfo.getArgInfo("msg", name, arg, option));
     return this as unknown as EndpointInfo<
@@ -246,14 +229,6 @@ export class EndpointInfo<
       ServerReturns,
       Nullable
     >;
-  }
-  /**
-   * `prompts/get` sends `arguments` as `{ [key: string]: string }` — there is no place in the request for an
-   * object body, and no socket behind a prompt for a room or a message. `param` and `search` survive because
-   * both already travel as text in a URL.
-   */
-  #assertPromptArg(argType: ArgType) {
-    if (this.type === "prompt") throw new Error(`A prompt takes .param() and .search() only, not .${argType}()`);
   }
   _addArgs(args: ArgInfo<EndpointArgProps<boolean>>[]) {
     for (const arg of args) {
@@ -299,6 +274,22 @@ export class EndpointInfo<
       Nullable
     >;
   }
+  /**
+   * Retypes a slice's own arguments as this room's arguments, keeping each one's nullability.
+   *
+   * Not `_addArgs`, which would route a `search` argument back to `.search()`. And not `.room()` per argument:
+   * that refuses a nullable argument in anything but the last position, which is the right rule for a URL and a
+   * meaningless one for a room — the arguments travel as a positional array with explicit nulls, so a missing one
+   * is unambiguous. Nullability is preserved because dropping it would make an absent optional argument fail to
+   * deserialize on the way in.
+   */
+  _addRoomArgs(args: ArgInfo<EndpointArgProps<boolean>>[]) {
+    for (const arg of args) {
+      this.argNames.push(arg.name);
+      this.args.push({ ...arg, type: "room" });
+    }
+    return this;
+  }
   _addInternalArgs(args: InternalArgInfo<boolean>[]) {
     for (const arg of args) this.with(arg.argRef, arg.option);
     return this;
@@ -309,9 +300,7 @@ export class EndpointInfo<
       ...args: [...ServerArgs, ...InternalArgs]
     ) => ReqType extends "pubsub"
       ? Promise<void> | void
-      : ReqType extends "prompt"
-        ? PromiseOrObject<PromptResult>
-        : PromiseOrObject<DocumentModel<FieldToValue<Returns>> | (Nullable extends true ? null | undefined : never)>,
+      : PromiseOrObject<DocumentModel<FieldToValue<Returns>> | (Nullable extends true ? null | undefined : never)>,
   >(
     execFn: ExecFn,
   ): EndpointInfo<
@@ -352,9 +341,9 @@ export class EndpointInfo<
   }
 }
 
-// TODO: signal type 에 따라 기본 internal arg들 배정해주기
-// TODO: pubsub은 exec 없어도 되게하기
-// TODO: exec 없으면 타입에러 뜨게하기
+// TODO: assign the default internal args per endpoint type, so a `pubsub` need not name `Ws` by hand
+// TODO: let a `pubsub` declare no `exec` — subscribing is the whole behaviour for a room with no query
+// TODO: make a missing `exec` a type error rather than a null `execFn` the resolver skips at boot
 export type BuildEndpoint<SrvModule extends ServiceModel = ServiceModel> = {
   query: <Returns extends ConstantFieldTypeInput = ConstantFieldTypeInput, Nullable extends boolean = false>(
     returnRef: Returns,
@@ -372,13 +361,6 @@ export type BuildEndpoint<SrvModule extends ServiceModel = ServiceModel> = {
     returnRef: Returns,
     signalOption?: SignalOption<Returns, Nullable>,
   ) => EndpointInfo<"message", SrvMap<SrvModule>, [], [], [], [], Returns, never, never, Nullable>;
-  /**
-   * Declares an MCP prompt. It takes no return type because the return is always `PromptMessage[]`, and no
-   * `.body()` because `prompts/get` sends its arguments as a flat string map — see `param`.
-   */
-  prompt: (
-    signalOption?: SignalOption<typeof promptCarrier, false>,
-  ) => EndpointInfo<"prompt", SrvMap<SrvModule>, [], [], [], [], typeof promptCarrier, never, never, false>;
 };
 
 export const buildEndpoint = {
@@ -398,8 +380,6 @@ export const buildEndpoint = {
     returnRef: Returns,
     signalOption?: SignalOption<Returns, Nullable>,
   ) => new EndpointInfo("message", returnRef, signalOption),
-  prompt: (signalOption?: SignalOption<typeof promptCarrier, false>) =>
-    new EndpointInfo("prompt", promptCarrier, signalOption),
 } as unknown as BuildEndpoint<any>;
 
 export type EndpointBuilder<SrvModule extends ServiceModel = ServiceModel> = (builder: BuildEndpoint<SrvModule>) => {

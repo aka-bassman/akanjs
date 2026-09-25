@@ -1,6 +1,6 @@
 "use client";
 import { cn, usePage } from "akanjs/client";
-import { type ComponentType, createElement } from "react";
+import { type ComponentType, createElement, Fragment, type ReactNode } from "react";
 
 import { buttonRecipe } from "./Button";
 import { createOverridable, useUiOverride, useUiRecipe } from "./UiOverride";
@@ -18,6 +18,11 @@ export interface ToggleSelectProps<I extends string | number | boolean | null> {
   onChange: (value: I, idx: number) => void;
   onClear?: () => void;
   disabled?: boolean;
+  /** Draws one cell. `onToggle` is the cell's own action — put it on whatever the cell renders. */
+  renderItem?: (
+    item: { label: string; value: I; disabled?: boolean },
+    state: { selected: boolean; disabled: boolean; onToggle: () => void },
+  ) => ReactNode;
 }
 const DefaultToggleSelect = <I extends string | number | boolean | null>({
   className,
@@ -29,6 +34,7 @@ const DefaultToggleSelect = <I extends string | number | boolean | null>({
   onChange,
   onClear,
   disabled,
+  renderItem,
 }: ToggleSelectProps<I>) => {
   const { l } = usePage();
   const toggleBtn = (useUiRecipe("button") ?? buttonRecipe)({ variant: "outline", size: "sm" });
@@ -57,15 +63,18 @@ const DefaultToggleSelect = <I extends string | number | boolean | null>({
       {options.map((option, idx: number) => {
         const isSelected = value === option.value;
         const isDisabled = (disabled ?? false) || (option.disabled ?? false);
-        return (
+        const onToggle = () => {
+          if (nullable && isSelected) onClear?.();
+          else onChange(option.value, idx);
+        };
+        return renderItem ? (
+          <Fragment key={idx}>{renderItem(option, { selected: isSelected, disabled: isDisabled, onToggle })}</Fragment>
+        ) : (
           <button
             key={idx}
             disabled={isDisabled}
             className={cn(toggleBtn, isSelected && selectedCls, isDisabled && "cursor-not-allowed", btnClassName)}
-            onClick={() => {
-              if (nullable && isSelected) onClear?.();
-              else onChange(option.value, idx);
-            }}
+            onClick={onToggle}
           >
             {option.label}
           </button>

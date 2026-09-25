@@ -518,19 +518,35 @@ export interface FieldObject {
  */
 type WithoutTextRole<Option> = Option extends unknown ? Omit<Option, "text"> : never;
 
+/**
+ * A wildcard owner is read off the row at removal time, so `removeWithAny` without a `refPath` names nothing to
+ * read it from — and the price of that action (no cascade in the app removes in one query) is one nobody should
+ * pay for a declaration that cascades nothing. Pairing the two in the option type refuses it at the call site;
+ * `CascadePaths` keeps the same refusal for the macro and bundled paths that reach it without a typecheck.
+ */
+type CascadeOption =
+  | { cascade?: "removeRef" | "removeWith"; refPath?: string }
+  | { cascade: "removeWithAny"; refPath: string };
+
+type WithCascadePair<Option> = Omit<Option, "cascade" | "refPath"> & CascadeOption;
+
 type FieldOption<
   Value extends ConstantFieldTypeInput,
   MapValue = Value extends MapConstructor ? typeof PrimitiveScalar : never,
   Metadata extends { [key: string]: any } = { [key: string]: any },
   _FieldToValue = FieldToValue<Value, MapValue> | null | undefined,
 > =
-  | Omit<
-      ConstantFieldProps<ConstantFieldKind, _FieldToValue, MapValue, Metadata>,
-      "enum" | "meta" | "nullable" | "fieldType" | "select"
+  | WithCascadePair<
+      Omit<
+        ConstantFieldProps<ConstantFieldKind, _FieldToValue, MapValue, Metadata>,
+        "enum" | "meta" | "nullable" | "fieldType" | "select"
+      >
     >
-  | Omit<
-      ConstantFieldProps<ConstantFieldKind, SingleValue<_FieldToValue>, MapValue, Metadata>,
-      "enum" | "meta" | "nullable" | "fieldType" | "select"
+  | WithCascadePair<
+      Omit<
+        ConstantFieldProps<ConstantFieldKind, SingleValue<_FieldToValue>, MapValue, Metadata>,
+        "enum" | "meta" | "nullable" | "fieldType" | "select"
+      >
     >[];
 
 export type PlainTypeToFieldType<PlainType> = PlainType extends [infer First, ...infer Rest]

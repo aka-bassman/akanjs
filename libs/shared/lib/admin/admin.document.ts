@@ -9,6 +9,8 @@ import { dayjs } from "akanjs/base";
 import { by, documentQueryHelper, from, into, type SchemaOf } from "akanjs/document";
 import * as cnst from "../cnst";
 
+const BCRYPT_DIGEST = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
+
 export class AdminFilter extends from(cnst.Admin, (filter) => ({
   query: {
     byAccountId: filter()
@@ -23,10 +25,7 @@ export class AdminFilter extends from(cnst.Admin, (filter) => ({
   },
   sort: {},
 })) {}
-
 export class Admin extends by(cnst.Admin) {
-  declare isModified: (field?: string) => boolean;
-
   addRole(role: cnst.AdminRole["value"]) {
     if (!this.roles.includes(role)) this.roles = [...this.roles, role];
     return this;
@@ -45,12 +44,13 @@ export class AdminModel extends into(Admin, AdminFilter, cnst.admin, ({ byField 
   adminAccountIdLoader: byField("accountId"),
 })) {
   static override _onSchema(schema: SchemaOf<AdminModel, Admin>) {
-    schema.pre<Admin>("save", async function (next) {
-      if (!this.isModified("password") || !this.password) {
-        return;
-      }
-      const encryptedPassword = await hashPassword(this.password);
-      this.password = encryptedPassword;
+    // `isModified()` reports false on a create — the store hydrates the new row as its own original — so
+    // guarding on it stored the root admin's password in cleartext, which `isPasswordMatch` then accepts through
+    // its plaintext fallback. Hash anything that is not already a bcrypt digest instead; that covers both paths
+    // and re-hashes a legacy cleartext row on its next save.
+    schema.pre<Admin>("save", async function () {
+      if (!this.password || BCRYPT_DIGEST.test(this.password)) return;
+      this.password = await hashPassword(this.password);
     });
     schema.index({ accountId: "text" });
   }
@@ -67,13 +67,20 @@ export class AdminModel extends into(Admin, AdminFilter, cnst.admin, ({ byField 
     });
     return adminSecret as { id: string; roles: cnst.AdminRole["value"][]; password: string };
   }
-  async createRefreshSession(adminId: string, refreshTokenHash: string, expiresAt: Date, userAgent?: string) {
+  async createRefreshSession(
+    adminId: string,
+    refreshTokenHash: string,
+    expiresAt: Date,
+    userAgent?: string,
+    clientId?: string,
+  ) {
     return await createRefreshSession(this.adminCache, {
       subject: "admin",
       subjectId: adminId,
       refreshTokenHash,
       expiresAt,
       userAgent,
+      clientId,
     });
   }
   async rotateRefreshSession(refreshTokenHash: string, nextRefreshTokenHash: string, nextExpiresAt: Date) {

@@ -15,13 +15,10 @@ export interface McpResourceTarget {
 export class McpUriTemplate {
   static readonly scheme = "akan";
   /** Reserved second segment: a model id may never take one of these values, and none is a valid ObjectId. */
-  static readonly #reserved = new Set(["light", "list"]);
+  static readonly #reserved = new Set(["list"]);
 
   static model(refName: string) {
     return `${McpUriTemplate.scheme}://${refName}/{${refName}Id}`;
-  }
-  static light(refName: string) {
-    return `${McpUriTemplate.scheme}://${refName}/light/{${refName}Id}`;
   }
   /**
    * The model's own unfiltered list is the bare `…/list`, never `…/list/<token>`. A named slice occupies the
@@ -33,6 +30,28 @@ export class McpUriTemplate {
   static list(refName: string, sliceKey: string, argNames: string[]) {
     const base = `${McpUriTemplate.scheme}://${refName}/list${sliceKey ? `/${sliceKey}` : ""}`;
     return argNames.length ? `${base}{?${argNames.join(",")}}` : base;
+  }
+
+  /**
+   * The uri a template names for one call's arguments — the inverse of `parse`, so what a page fetched can be
+   * attached under the address an agent may read it back from. A list argument repeats its key; an absent
+   * optional one is left out.
+   */
+  static expand(template: string, args: Record<string, unknown>): string {
+    const queryAt = template.indexOf("{?");
+    const path = (queryAt === -1 ? template : template.slice(0, queryAt)).replace(/\{([^}]+)\}/g, (_, name: string) =>
+      encodeURIComponent(String(args[name] ?? "")),
+    );
+    if (queryAt === -1) return path;
+    const names = template.slice(queryAt + 2, template.indexOf("}", queryAt)).split(",");
+    const search = new URLSearchParams();
+    for (const name of names) {
+      const value = args[name];
+      if (value === undefined || value === null) continue;
+      for (const item of Array.isArray(value) ? value : [value]) search.append(name, String(item));
+    }
+    const query = search.toString();
+    return query ? `${path}?${query}` : path;
   }
 
   static parse(uri: string): McpResourceTarget | null {
@@ -51,8 +70,6 @@ export class McpUriTemplate {
       return { endpointKey: refName, args: { [`${refName}Id`]: second } };
     if (segments.length === 2 && second === "list")
       return { endpointKey: `${refName}List`, args: McpUriTemplate.#searchArgs(search) };
-    if (segments.length === 3 && second === "light" && third)
-      return { endpointKey: `light${capitalize(refName)}`, args: { [`${refName}Id`]: third } };
     if (segments.length === 3 && second === "list" && third)
       return { endpointKey: `${refName}List${capitalize(third)}`, args: McpUriTemplate.#searchArgs(search) };
     return null;

@@ -1,5 +1,4 @@
 import { OverrideDemo } from "@apps/minimal/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
-  return <OverrideDemo />;
-}
+export default page().render(() => <OverrideDemo />);

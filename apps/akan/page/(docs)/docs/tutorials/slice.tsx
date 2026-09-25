@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -35,7 +36,8 @@ export default function Page() {
             className="w-full"
             title="apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts"
             code={`
-import { ID } from "akanjs/base"; // [!code collapse:13]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:14]
+import { ID } from "akanjs/base";
 import { endpoint, internal, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
@@ -49,7 +51,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder, // [!code collapse:2]
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init().exec(function () {
       return this.icecreamOrderService.queryAny();
@@ -193,15 +195,13 @@ export const dictionary = modelDictionary(["en", "ko"])
             className="w-full"
             title="apps/koyo/page/dashboard.tsx"
             code={`
-import { Load, buttonRecipe } from "akanjs/ui";
 import { fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
-  const [{ icecreamOrderInitInWaiting }, { icecreamOrderInitInPickup }] = await Promise.all([
-    fetch.initIcecreamOrderInWaiting(),
-    fetch.initIcecreamOrderInPickup(),
-  ]);
+  const { icecreamOrderInitInWaiting } = fetch.initIcecreamOrderInWaiting();
+  const { icecreamOrderInitInPickup } = fetch.initIcecreamOrderInPickup();
   return (
     <div className="flex size-full gap-2 p-4">
       <div className="w-2/3">
@@ -224,7 +224,7 @@ export default async function Page() {
       </div>
     </div>
   );
-}
+});
 `}
           />
           <div>
@@ -323,32 +323,29 @@ export const dictionary = modelDictionary(["en", "ko"])
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📦</span>
-                <strong className="text-primary">Load.Page</strong>
+              <div className="mb-2">
+                <strong className="text-primary">{"fetch.initIcecreamOrderIn*()"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
                 {l.trans({
-                  en: `The Load.Page component handles data loading before rendering. It fetches both waiting and pickup orders simultaneously using Promise.all for optimal performance.`,
-                  ko: `Load.Page 컴포넌트는 렌더링 전에 데이터 로딩을 처리합니다. Promise.all을 사용하여 대기 중인 주문과 픽업 주문을 동시에 가져와 최적의 성능을 제공합니다.`,
+                  en: `Notice there is no await. Both slice queries leave the moment they are called, and destructuring the result gives one promise per field instead of a resolved object. Each promise goes straight to the Zone that renders it, so the pickup board and the waiting board arrive independently — a slow query on one never delays the other, and the page heading is on the wire before either lands.`,
+                  ko: `await가 없다는 점에 주목하세요. 두 슬라이스 쿼리는 호출되는 순간 이미 출발하고, 결과를 구조분해하면 해소된 객체가 아니라 필드별 promise를 얻습니다. 각 promise는 그것을 렌더링하는 Zone에 그대로 전달되므로 픽업 보드와 대기 보드가 서로 독립적으로 도착합니다 — 한쪽 쿼리가 느려도 다른 쪽이 기다리지 않고, 페이지 제목은 둘 중 어느 것도 도착하기 전에 이미 전송됩니다.`,
                 })}
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🎯</span>
+              <div className="mb-2">
                 <strong className="text-primary">IcecreamOrder.Zone.Card</strong>
               </div>
               <div className="text-foreground/70 text-sm">
                 {l.trans({
-                  en: `Zone components connect slice data to UI rendering. By passing the init data and slice, the Zone automatically subscribes to real-time updates for that specific slice.`,
-                  ko: `Zone 컴포넌트는 슬라이스 데이터를 UI 렌더링에 연결합니다. init 데이터와 slice를 전달하면 Zone이 자동으로 해당 슬라이스의 실시간 업데이트를 구독합니다.`,
+                  en: `Zone components connect slice data to UI rendering. init is the window the route already resolved, and slice names the store slice the Zone hydrates and that its controls write back to.`,
+                  ko: `Zone 컴포넌트는 슬라이스 데이터를 UI 렌더링에 연결합니다. init은 라우트가 이미 해소한 윈도우이고, slice는 Zone이 하이드레이션하고 컨트롤이 다시 기록할 스토어 슬라이스를 지정합니다.`,
                 })}
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🚫</span>
+              <div className="mb-2">
                 <strong className="text-primary">{"showControls={false}"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -368,8 +365,8 @@ export const dictionary = modelDictionary(["en", "ko"])
         <Docs.Description>
           <div>
             {l.trans({
-              en: `For a real-time dashboard, the data needs to stay fresh. When a staff member changes an order status, customers watching the display should see it update automatically. The Zone component combined with useInterval creates this "live" experience - just like how airport departure boards constantly refresh to show the latest flight information.`,
-              ko: `실시간 대시보드에서는 데이터가 항상 최신 상태여야 합니다. 직원이 주문 상태를 변경하면 디스플레이를 보고 있는 고객들이 자동으로 업데이트되는 것을 봐야 합니다. Zone 컴포넌트와 useInterval을 결합하면 이러한 "라이브" 경험을 만들 수 있습니다 - 공항 출발 게시판이 최신 비행 정보를 보여주기 위해 지속적으로 새로고침되는 것처럼요.`,
+              en: `For a real-time dashboard, the data needs to stay fresh. When a staff member changes an order status, customers watching the display should see it update on their own. The Zone component combined with useInterval refreshes the board on a timer - just like how airport departure boards re-read the schedule every few seconds.`,
+              ko: `실시간 대시보드에서는 데이터가 항상 최신 상태여야 합니다. 직원이 주문 상태를 변경하면 디스플레이를 보고 있는 고객들이 알아서 업데이트되는 것을 봐야 합니다. Zone 컴포넌트와 useInterval을 결합하면 보드가 타이머에 맞춰 새로고침됩니다 - 공항 출발 게시판이 몇 초마다 시간표를 다시 읽는 것처럼요.`,
             })}
           </div>
           <div>
@@ -383,7 +380,7 @@ export const dictionary = modelDictionary(["en", "ko"])
             title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Unit.tsx"
             code={`
 import { cn, type ModelProps } from "akanjs/client"; // [!code collapse:4]
-import { Model } from "akanjs/ui";
+import { Model, buttonRecipe } from "akanjs/ui";
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
 
 interface CardProps extends ModelProps<"icecreamOrder", cnst.LightIcecreamOrder> { // [!code ++:4]
@@ -440,8 +437,8 @@ export const Card = ({ icecreamOrder, showControls = true }: CardProps) => {
           />
           <div>
             {l.trans({
-              en: `The Unit component now accepts a showControls prop that determines whether to display action buttons. This simple flag allows the same card component to be used in both staff management views (with controls) and customer dashboard views (without controls).`,
-              ko: `Unit 컴포넌트는 이제 액션 버튼 표시 여부를 결정하는 showControls prop을 받습니다. 이 간단한 플래그를 통해 같은 카드 컴포넌트를 직원 관리 뷰(컨트롤 포함)와 고객 대시보드 뷰(컨트롤 없음) 모두에서 사용할 수 있습니다.`,
+              en: `The Unit component now accepts a showControls prop that determines whether to display action buttons. This simple flag allows the same Unit card component to be used in both staff management views (with controls) and customer dashboard views (without controls).`,
+              ko: `Unit 컴포넌트는 이제 액션 버튼 표시 여부를 결정하는 showControls prop을 받습니다. 이 간단한 플래그를 통해 같은 Unit 카드 컴포넌트를 직원 관리 뷰(컨트롤 포함)와 고객 대시보드 뷰(컨트롤 없음) 모두에서 사용할 수 있습니다.`,
             })}
           </div>
           <div>
@@ -522,20 +519,18 @@ export const View = ({ view }: ViewProps) => {
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">⏱️</span>
+              <div className="mb-2">
                 <strong className="text-primary">useInterval</strong>
               </div>
               <div className="text-foreground/70 text-sm">
                 {l.trans({
-                  en: `The useInterval hook refreshes the slice data every 3 seconds. This ensures the dashboard stays current without manual user interaction - perfect for displays that need to show live order status.`,
-                  ko: `useInterval 훅은 3초마다 슬라이스 데이터를 새로고침합니다. 이렇게 하면 사용자의 수동 상호작용 없이도 대시보드가 최신 상태를 유지합니다 - 실시간 주문 상태를 보여줘야 하는 디스플레이에 완벽합니다.`,
+                  en: `This is a plain 3-second poll: every mounted Zone re-runs the slice query whether anything changed or not, which is enough for one shop's board. Live sync is the real answer - a slice that declares .live() pushes each change to its subscribers, and Load.Units subscribes on its own with no interval at all.`,
+                  ko: `이것은 단순한 3초 폴링입니다. 마운트된 Zone마다 변경 여부와 무관하게 슬라이스 쿼리를 다시 실행하며, 가게 한 곳의 보드에는 이 정도로 충분합니다. 진짜 답은 live sync입니다 - 슬라이스가 .live()를 선언하면 변경분이 구독자에게 푸시되고, Load.Units가 알아서 구독하므로 interval이 아예 필요 없습니다.`,
                 })}
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🔄</span>
+              <div className="mb-2">
                 <strong className="text-primary">refreshIcecreamOrder</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -546,8 +541,7 @@ export const View = ({ view }: ViewProps) => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📋</span>
+              <div className="mb-2">
                 <strong className="text-primary">Load.Units</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -576,8 +570,7 @@ export const View = ({ view }: ViewProps) => {
           </div>
           <div className="my-4 space-y-4">
             <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">1️⃣</span>
+              <div className="mb-2">
                 <strong className="text-primary">
                   {l.trans({ en: "One Slice, One Purpose", ko: "하나의 슬라이스, 하나의 목적" })}
                 </strong>
@@ -590,8 +583,7 @@ export const View = ({ view }: ViewProps) => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">2️⃣</span>
+              <div className="mb-2">
                 <strong className="text-primary">
                   {l.trans({ en: "Zone Matches Slice", ko: "존은 슬라이스와 매칭" })}
                 </strong>
@@ -604,8 +596,7 @@ export const View = ({ view }: ViewProps) => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">3️⃣</span>
+              <div className="mb-2">
                 <strong className="text-primary">
                   {l.trans({ en: "Props Control Behavior", ko: "Props로 동작 제어" })}
                 </strong>
@@ -618,8 +609,7 @@ export const View = ({ view }: ViewProps) => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">4️⃣</span>
+              <div className="mb-2">
                 <strong className="text-primary">
                   {l.trans({ en: "Dictionary for All Labels", ko: "모든 레이블에 Dictionary 사용" })}
                 </strong>
@@ -631,48 +621,6 @@ export const View = ({ view }: ViewProps) => {
                 })}
               </div>
             </div>
-          </div>
-          <div className="my-6 rounded-lg bg-linear-to-r from-background to-border p-6">
-            <div className="mb-3 font-bold text-lg text-primary">
-              {l.trans({ en: "🎉 What You've Accomplished:", ko: "🎉 달성한 것들:" })}
-            </div>
-            <ul className="space-y-2 text-foreground/70 text-sm">
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Created multiple slices for different data views",
-                  ko: "다양한 데이터 뷰를 위한 여러 슬라이스 생성",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Built a real-time customer dashboard",
-                  ko: "실시간 고객 대시보드 구축",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Connected slices to Zone components",
-                  ko: "슬라이스를 Zone 컴포넌트에 연결",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Implemented automatic data refresh",
-                  ko: "자동 데이터 새로고침 구현",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Learned slice component best practices",
-                  ko: "슬라이스 컴포넌트 모범 사례 학습",
-                })}
-              </li>
-            </ul>
           </div>
           <div>
             {l.trans({
@@ -687,4 +635,4 @@ export const View = ({ view }: ViewProps) => {
       <DocsToc />
     </Scroll>
   );
-}
+});

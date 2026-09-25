@@ -2,12 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AkanPlugin } from "akanjs";
+import { normalizeRoutePrefix } from "akanjs/base";
 import { type AkanI18nConfig, resolveAkanI18nConfig } from "akanjs/common";
 import type { AkanImageConfig } from "akanjs/server";
 import type { App, Lib } from "../commandDecorators";
 import { LibExecutor, WorkspaceExecutor } from "../executors";
 import type { BaseDevEnv, PackageJson } from "../types";
 import {
+  type AkanApiConfig,
+  type AkanAssetsConfig,
   type AkanMobileConfig,
   type AkanMobileTargetConfig,
   type AkanRouteConfig,
@@ -21,6 +24,7 @@ import {
   type DockerConfig,
   type DockerOption,
   type DockerRun,
+  type LibAssetsConfig,
   type LibConfigResult,
   type LibDockerConfig,
 } from "./types";
@@ -111,6 +115,7 @@ const DEFAULT_AKAN_IMAGE_CONFIG: AkanImageConfig = {
   maximumRedirects: 3,
   fetchTimeoutMs: 7000,
   maxRemoteBytes: 25 * 1024 * 1024,
+  maxConcurrency: 0,
 };
 
 const normalizeIndexPath = (indexPath: string | undefined): string | undefined => {
@@ -179,12 +184,19 @@ type AppConfigDeclaration = Omit<DeepPartial<AppConfigResult>, "docker" | "web">
 export interface LibContributions {
   externalLibs: string[];
   docker: LibDockerConfig;
+  /** Keep globs rewritten to the app's own `public/`, where `akan sync` mounts each lib's assets. */
+  keepFonts?: string[];
 }
 
 const emptyLibContributions = (): LibContributions => ({
   externalLibs: [],
   docker: { preRuns: [], postRuns: [] },
+  keepFonts: [],
 });
+
+const normalizeKeepFonts = (keepFonts: string[] | undefined) => [
+  ...new Set((keepFonts ?? []).map((glob) => glob.trim().replace(/^\/+/, "")).filter(Boolean)),
+];
 
 /** First occurrence wins, so a step a lib and its app both declare becomes one layer. */
 const dedupeDockerRuns = (runs: DockerRun[]): DockerRun[] => {
@@ -206,11 +218,13 @@ export class AkanAppConfig implements AppConfigResult {
   optimizeImports: string[];
   images: AkanImageConfig;
   i18n: AkanI18nConfig;
+  api: AkanApiConfig;
   publicEnv: string[];
   mobile: AkanMobileConfig;
   /** True only when the app's akan.config.ts explicitly declares a `mobile` section (vs. the synthesized default). */
   hasMobileConfig: boolean;
   secrets: string[];
+  assets: AkanAssetsConfig;
   /** Raw setting; resolved against the app's lib deps at sync time (see `AppExecutor.syncPages`). */
   syncPageLibs: string[] | boolean;
   baseDevEnv: BaseDevEnv;
@@ -249,8 +263,21 @@ export class AkanAppConfig implements AppConfigResult {
     this.i18n = resolveAkanI18nConfig(config?.i18n);
     process.env.AKAN_PUBLIC_DEFAULT_LOCALE = this.i18n.defaultLocale;
     process.env.AKAN_PUBLIC_LOCALES = this.i18n.locales.join(",");
+    this.api = {
+      prefix: normalizeRoutePrefix(config?.api?.prefix) ?? "/api",
+      websocketPrefix: normalizeRoutePrefix(config?.api?.websocketPrefix) ?? "/ws",
+    };
+    process.env.AKAN_PUBLIC_API_PREFIX = this.api.prefix;
+    process.env.AKAN_PUBLIC_WS_PREFIX = this.api.websocketPrefix;
     this.publicEnv = (config?.publicEnv as string[] | undefined) ?? ([] as string[]);
     this.secrets = (config?.secrets as string[] | undefined) ?? ([] as string[]);
+    this.assets = {
+      pruneFonts: config?.assets?.pruneFonts ?? true,
+      keepFonts: [
+        ...normalizeKeepFonts(config?.assets?.keepFonts as string[] | undefined),
+        ...(libContributions.keepFonts ?? []),
+      ],
+    };
     this.syncPageLibs = (config?.syncPageLibs as string[] | boolean | undefined) ?? false;
     this.hasMobileConfig = Boolean(config.mobile);
     this.mobile = this.#resolveMobileConfig(config.mobile);
@@ -401,6 +428,9 @@ export class AkanAppConfig implements AppConfigResult {
     const imageScript = this.#getDockerImageScript(image, DEFAULT_DOCKER_IMAGE);
     // The image default matches what the build actually produced; a deployment narrows it further with its
     // own env, and can never widen it past the artifacts that are in the image.
+    // File logging is off in the image: a container's writable layer is ephemeral and nothing collects a
+    // file from it, so the rotating files would only fill the node disk (50MB x 100 at `trace`). stdout is
+    // the collection path; a deployment that wants the files back sets `AKAN_LOG_TO_FILE=1`.
     const webEnvLines = [
       ...(this.web.ssr ? [] : ["ENV AKAN_SSR=false"]),
       ...(this.web.csr ? [] : ["ENV AKAN_CSR=false"]),
@@ -425,7 +455,10 @@ ENV AKAN_PUBLIC_ENV=${this.baseDevEnv.env}
 ${this.basePaths.size ? `ENV AKAN_PUBLIC_BASE_PATHS=${[...this.basePaths].join(",")}` : ""}
 ENV AKAN_PUBLIC_DEFAULT_LOCALE=${this.i18n.defaultLocale}
 ENV AKAN_PUBLIC_LOCALES=${this.i18n.locales.join(",")}
+ENV AKAN_PUBLIC_API_PREFIX=${this.api.prefix}
+ENV AKAN_PUBLIC_WS_PREFIX=${this.api.websocketPrefix}
 ENV AKAN_PUBLIC_OPERATION_MODE=cloud
+ENV AKAN_LOG_TO_FILE=0
 ${webEnvLines}
 CMD [${command.map((c) => `"${c}"`).join(",")}]`;
   }
@@ -477,6 +510,10 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
         preRuns: libConfigs.flatMap((libConfig) => libConfig?.docker.preRuns ?? []),
         postRuns: libConfigs.flatMap((libConfig) => libConfig?.docker.postRuns ?? []),
       },
+      //* A lib writes the glob against its own `public/`; `akan sync` mounts that at `public/libs/<lib>`.
+      keepFonts: libConfigs.flatMap((libConfig) =>
+        (libConfig?.assets.keepFonts ?? []).map((glob) => `libs/${libConfig?.lib.name}/${glob}`),
+      ),
     };
   }
   #resolveProductionDependencyVersion(lib: string) {
@@ -588,12 +625,14 @@ export class AkanLibConfig implements LibConfigResult {
   lib: Lib;
   externalLibs: string[];
   docker: LibDockerConfig;
+  assets: LibAssetsConfig;
   /** Live-only: plugins declared in this lib's `akan.config.ts` (never serialized). */
   plugins: AkanPlugin[];
   constructor(lib: Lib, config: DeepPartial<LibConfigResult>, plugins: AkanPlugin[] = []) {
     this.lib = lib;
     this.externalLibs = config?.externalLibs ?? [];
     this.docker = { preRuns: config?.docker?.preRuns ?? [], postRuns: config?.docker?.postRuns ?? [] };
+    this.assets = { keepFonts: normalizeKeepFonts(config?.assets?.keepFonts as string[] | undefined) };
     this.plugins = plugins;
   }
   static async from(lib: Lib, { bustImportCache = false }: { bustImportCache?: boolean } = {}) {

@@ -65,6 +65,7 @@ describe("AkanAppConfig", () => {
       expect.arrayContaining(["@apps/portal/ui", "@libs/shared/server", "akanjs/common", "akanjs/server"]),
     );
     expect(config.dockerfile).toContain("ENV AKAN_PUBLIC_APP_NAME=portal");
+    expect(config.dockerfile).toContain("ENV AKAN_LOG_TO_FILE=0");
     expect(process.env.AKAN_PUBLIC_DEFAULT_LOCALE).toBe("en");
   });
 

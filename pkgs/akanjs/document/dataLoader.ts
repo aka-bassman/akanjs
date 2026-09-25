@@ -1,9 +1,5 @@
 import type { QueryOf } from "akanjs/constant";
 
-export const Id = String;
-export const ObjectId = String;
-export const Mixed = Object;
-
 type LoaderItem = Record<string, unknown>;
 type LoaderModel = {
   find: (query: QueryOf<unknown>) => Promise<LoaderItem[]> | { then: Promise<LoaderItem[]>["then"] };
@@ -15,7 +11,12 @@ type BatchLoadFn<Key, Value> = (
 ) => PromiseLike<ReadonlyArray<Value | Error>> | ReadonlyArray<Value | Error>;
 
 interface DataLoaderOptions<Key, CacheKey> {
-  cache?: boolean;
+  /**
+   * How long a loaded key is answered from memory: `false` (the default) remembers nothing past its own batch,
+   * a number keeps each key for that many milliseconds, and `true` keeps it for the life of the loader. A model's
+   * loaders live as long as the process, so anything but `false` serves a stale document after it changes.
+   */
+  cache?: boolean | number;
   cacheKeyFn?: (key: Key) => CacheKey;
   batch?: boolean;
   batchScheduleFn?: (callback: () => void) => void;
@@ -31,20 +32,27 @@ interface BatchItem<Key, Value> {
 
 /** Minimal DataLoader-compatible batch loader used by Akan document resolvers. */
 export class DataLoader<Key, Value, CacheKey = Key> {
+  static readonly #minSweepSize = 1024;
   readonly name?: string;
   readonly #batchLoadFn: BatchLoadFn<Key, Value>;
-  readonly #cache: boolean;
+  readonly #ttl: number;
   readonly #cacheKeyFn: (key: Key) => CacheKey;
   readonly #batch: boolean;
   readonly #batchScheduleFn: (callback: () => void) => void;
   readonly #maxBatchSize: number;
-  readonly #promiseCache = new Map<CacheKey, Promise<Value>>();
+  readonly #promiseCache = new Map<CacheKey, { promise: Promise<Value>; expiresAt: number }>();
+  #sweepAt = DataLoader.#minSweepSize;
   #queue: BatchItem<Key, Value>[] = [];
   #scheduled = false;
 
   constructor(batchLoadFn: BatchLoadFn<Key, Value>, options: DataLoaderOptions<Key, CacheKey> = {}) {
     this.#batchLoadFn = batchLoadFn;
-    this.#cache = options.cache !== false;
+    this.#ttl =
+      options.cache === true
+        ? Number.POSITIVE_INFINITY
+        : typeof options.cache === "number" && options.cache > 0
+          ? options.cache
+          : 0;
     this.#cacheKeyFn = options.cacheKeyFn ?? ((key) => key as unknown as CacheKey);
     this.#batch = options.batch !== false;
     this.#batchScheduleFn = options.batchScheduleFn ?? ((callback) => queueMicrotask(callback));
@@ -54,17 +62,21 @@ export class DataLoader<Key, Value, CacheKey = Key> {
 
   load(key: Key): Promise<Value> {
     const cacheKey = this.#cacheKeyFn(key);
-    if (this.#cache) {
-      const cached = this.#promiseCache.get(cacheKey);
-      if (cached) return cached;
-    }
+    const cached = this.#cached(cacheKey);
+    if (cached) return cached;
 
     const promise = new Promise<Value>((resolve, reject) => {
       this.#queue.push({ key, resolve, reject });
       if (this.#batch) this.#schedule();
       else this.#dispatch();
     });
-    if (this.#cache) this.#promiseCache.set(cacheKey, promise);
+    if (this.#ttl > 0) {
+      this.#remember(cacheKey, promise);
+      // A failed load is not an answer worth keeping: the next caller asks the store again.
+      promise.catch(() => {
+        if (this.#promiseCache.get(cacheKey)?.promise === promise) this.#promiseCache.delete(cacheKey);
+      });
+    }
     return promise;
   }
 
@@ -84,11 +96,29 @@ export class DataLoader<Key, Value, CacheKey = Key> {
   }
 
   prime(key: Key, value: Value | Error): this {
-    if (!this.#cache) return this;
+    if (this.#ttl <= 0) return this;
     const cacheKey = this.#cacheKeyFn(key);
-    if (this.#promiseCache.has(cacheKey)) return this;
-    this.#promiseCache.set(cacheKey, value instanceof Error ? Promise.reject(value) : Promise.resolve(value));
+    if (this.#cached(cacheKey)) return this;
+    this.#remember(cacheKey, value instanceof Error ? Promise.reject(value) : Promise.resolve(value));
     return this;
+  }
+
+  #cached(cacheKey: CacheKey): Promise<Value> | undefined {
+    if (this.#ttl <= 0) return undefined;
+    const entry = this.#promiseCache.get(cacheKey);
+    if (!entry) return undefined;
+    if (entry.expiresAt > Date.now()) return entry.promise;
+    this.#promiseCache.delete(cacheKey);
+    return undefined;
+  }
+
+  // Swept whenever the map doubles, so a process-long loader holds about one TTL window of keys, not every key seen.
+  #remember(cacheKey: CacheKey, promise: Promise<Value>) {
+    this.#promiseCache.set(cacheKey, { promise, expiresAt: Date.now() + this.#ttl });
+    if (this.#promiseCache.size < this.#sweepAt) return;
+    const now = Date.now();
+    for (const [key, entry] of this.#promiseCache) if (entry.expiresAt <= now) this.#promiseCache.delete(key);
+    this.#sweepAt = Math.max(DataLoader.#minSweepSize, this.#promiseCache.size * 2);
   }
 
   #schedule() {
@@ -163,7 +193,7 @@ export const createLoader = <Key, Value>(model: LoaderModel, fieldName = "id", d
       });
       return data as unknown as Promise<Value[]>;
     },
-    { name: "dataloader", cache: false },
+    { name: "dataloader" },
   );
 };
 export const createArrayLoader = <K, V>(model: LoaderModel, fieldName = "id", defaultQuery: QueryOf<unknown> = {}) => {
@@ -198,7 +228,7 @@ export const createArrayElementLoader = <K, V>(
       });
       return data as unknown as Promise<V[]>;
     },
-    { name: "dataloader", cache: false },
+    { name: "dataloader" },
   );
 };
 
@@ -218,7 +248,7 @@ export const createQueryLoader = <Key, Value>(
       });
       return data as unknown as Promise<Value[]>;
     },
-    { name: "dataloader", cache: false },
+    { name: "dataloader" },
   );
 };
 

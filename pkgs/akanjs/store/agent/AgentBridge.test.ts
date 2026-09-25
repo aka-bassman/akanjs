@@ -117,4 +117,10 @@ describe("AgentBridge live keys", () => {
     expect(bridge.readableKeys()).toContain("pageOfBridgeNote");
     instance.releaseLive("pageOfBridgeNote", "notes");
   });
+
+  test("a refusal names what this view can read instead, so a wrong key costs one call rather than the turn", () => {
+    expect(() => bridge.read("nothingHere")).toThrow("Readable here: bridgeNoteForm, draft.");
+    expect(() => bridge.read("pageOfBridgeNote")).toThrow("Readable here: bridgeNoteForm, draft.");
+    expect(() => bridge.read("bridgeNoteForm", "empty")).toThrow("This screen reads no state keys.");
+  });
 });

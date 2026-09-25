@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -55,18 +56,6 @@ export class AlarmApi {
     this.#logger.warn(\`\${this.name}: \${message}\`);
   }
 }`}
-          />
-          <div>
-            {l.trans({
-              en: `Then, export the module in the /srvkit/index.ts file.`,
-              ko: `그런 다음, /srvkit/index.ts 파일에서 모듈을 내보냅니다.`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/srvkit/index.ts"
-            code={`
-export * from "./alarmApi";`}
           />
           <Docs.Alert>
             <div>
@@ -310,7 +299,8 @@ export class IcecreamOrderModel extends into(IcecreamOrder, IcecreamOrderFilter,
             className="w-full"
             title="apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts"
             code={`
-import { ID } from "akanjs/base"; // [!code collapse:7]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:8]
+import { ID } from "akanjs/base";
 import { endpoint, internal, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
@@ -324,7 +314,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 // [!code collapse:33]
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder,
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init().exec(function () {
       return this.icecreamOrderService.queryAny();
@@ -386,4 +376,4 @@ export class IcecreamOrderEndpoint extends endpoint(srv.icecreamOrder, ({ query,
       <DocsToc />
     </Scroll>
   );
-}
+});

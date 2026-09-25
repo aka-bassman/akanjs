@@ -1,8 +1,6 @@
 import { LabForms } from "@apps/minimal/ui";
-import type { PageConfig } from "akanjs/client";
+import { page } from "akanjs/client";
 
-export default function Page() {
-  return <LabForms />;
-}
-
-export const pageConfig = { topInset: 48, transition: "stack" } satisfies PageConfig;
+export default page()
+  .config({ topInset: 48, transition: "stack" })
+  .render(() => <LabForms />);

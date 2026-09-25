@@ -1,9 +1,7 @@
 import type { BackendEnv, Cls, PromiseOrObject } from "akanjs/base";
 import { Logger } from "akanjs/common";
-import { type CacheAdaptor, CacheAdaptorRole } from "akanjs/service";
-import dayjs from "dayjs";
+import { Exception } from "./exception";
 import type { SignalContext } from "./signalContext";
-import { traceCache } from "./trace";
 
 export interface Middleware<Env extends BackendEnv = BackendEnv> {
   use(env: Env): PromiseOrObject<(context: SignalContext, next: () => Promise<unknown>) => PromiseOrObject<unknown>>;
@@ -48,72 +46,32 @@ export class Logging extends middleware("logging") {
   }
 }
 
-export class Cache extends middleware("cache") {
-  override async use() {
-    return async (context: SignalContext, next: () => Promise<unknown>) => {
-      const cache = context.getAdaptor(CacheAdaptorRole) as unknown as CacheAdaptor;
-      const topic = "cache";
-      const key = `${context.key}:${JSON.stringify(context.args)}`;
-
-      const cached = await cache.get<string>(topic, key);
-      if (cached) {
-        context.adaptor.logger.debug(`Cache hit ${context.key}`);
-        try {
-          const parsed = JSON.parse(cached);
-          traceCache(true);
-          return parsed;
-        } catch (parseError) {
-          context.adaptor.logger.warn(`Cache parse error ${context.key}: ${String(parseError)}`);
-          await cache.delete(topic, key);
-        }
-      }
-      traceCache(false);
-
-      // Execute - middleware는 makeResponse 이전에 실행됨
-      const result = await next();
-
-      context.adaptor.logger.debug(`Caching result type ${context.key}: ${typeof result} / ${Array.isArray(result)}`);
-
-      const serialized = JSON.stringify(result);
-      await cache.set(topic, key, serialized, { expireAt: dayjs().add(60, "second") });
-
-      return result;
-    };
-  }
-}
-
+/**
+ * Bounds an endpoint that declared a `timeout`, and nothing else — this is registered by default, so a default
+ * of its own would put a deadline on every endpoint in the app that nobody asked for.
+ *
+ * XXX losing the race does not cancel the work: `next()` keeps running with nobody holding its result, so a
+ * handler that writes is still going to write. The deadline answers the caller; it does not undo the call.
+ */
 export class Timeout extends middleware("timeout") {
   override async use() {
     return async (context: SignalContext, next: () => Promise<unknown>) => {
-      const timeout = context.endpointInfo.signalOption.timeout ?? 5000;
-      return Promise.race([
-        next(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error(`Request timeout after ${timeout}ms`)), timeout)),
-      ]);
-    };
-  }
-}
-
-export class Retry extends middleware("retry") {
-  override async use() {
-    return async (context: SignalContext, next: () => Promise<unknown>) => {
-      const maxRetries = 3;
-      let lastError: Error | null = null;
-
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-          return await next();
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
-          console.warn(`[${context.key}] Retry ${attempt + 1}/${maxRetries}:`, lastError.message);
-
-          if (attempt < maxRetries - 1) {
-            // Exponential backoff
-            await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 100));
-          }
-        }
+      const timeout = context.endpointInfo.signalOption.timeout;
+      if (!timeout || !Number.isFinite(timeout) || timeout <= 0) return await next();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          next(),
+          // The key rather than prose: this is the same answer the client gives when its own budget runs out,
+          // and the caller reads it out of the dictionary in their own language either way.
+          new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Exception(504, "base.error.gatewayTimeout")), timeout);
+          }),
+        ]);
+      } finally {
+        // Not clearing it held the event loop for the whole budget on every call that answered in time.
+        clearTimeout(timer);
       }
-      throw lastError;
     };
   }
 }

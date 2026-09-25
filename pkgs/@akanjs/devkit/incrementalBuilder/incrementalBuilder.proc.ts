@@ -1,9 +1,10 @@
 import path from "node:path";
 // Module paths, never a barrel. The `@akanjs/devkit` root re-exports all 41 modules, which would drag
-// @trapezedev/project, the @langchain stack, ssh2, ink and the cloud stack in; and `frontendBuild`'s own
+// @trapezedev/project, ssh2, ink and the cloud stack in; and `frontendBuild`'s own
 // barrel reaches `cssCompiler`/`ssrBaseArtifactBuilder`, which pull tailwindcss + @tailwindcss/node
 // (~40MB) into a process that then holds them for the whole dev session. Phase 2 moved css compilation
 // into the batch worker, so this process has no use for them — `entryModuleGraph.test.ts` keeps it that way.
+import { CodegenLock } from "@akanjs/devkit/codegenLock";
 import type { App } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, type PageRoot, WorkspaceExecutor } from "@akanjs/devkit/executors";
 import { AutoImportSync } from "@akanjs/devkit/frontendBuild/autoImportSync";
@@ -186,6 +187,11 @@ class IncrementalBuilder {
     this.#shuttingDown = true;
     const started = Date.now();
     this.#logger.debug(`shutdown requested (${reason}); draining ${this.#inFlight} work item(s)`);
+    // Stopped before the drain, or a save landing mid-drain would enqueue a batch behind the queue tail
+    // this method already awaited — and `process.exit(0)` would cut that batch off partway through
+    // writing its artifacts. The replacement rebuilds every artifact from its boot build anyway, so the
+    // batch is not lost; a half-written one would be.
+    this.#watcher?.stop();
     if (this.#cssRebuildTimer) {
       // Only reachable if a css batch landed between the idle report and this request: the fresh
       // boot build recompiles css from scratch anyway, so dropping the debounce loses nothing.
@@ -294,22 +300,27 @@ class IncrementalBuilder {
     //* Insert framework imports that are used but omitted (e.g. `Int` in *.constant.ts, `fetch` in
     //* *.store.ts) before regenerating barrels. Edits land on files already in this batch, so they
     //* rebuild in this same generation; the write is idempotent so it does not re-trigger the watcher.
-    const autoImport = await this.#autoImportSync.syncForBatch(batch.files);
+    const [autoImport, indexSync] = await CodegenLock.run(
+      this.#app.workspace.workspaceRoot,
+      `hmr-batch:${this.#app.name}`,
+      async () => {
+        const auto = await this.#autoImportSync.syncForBatch(batch.files);
+        return [auto, await this.#generatedIndexSync.syncForBatch(batch.files)] as const;
+      },
+    );
     for (const error of autoImport.errors) this.#logger.error(error);
     if (autoImport.changedFiles.length > 0)
       this.#logger.verbose(`[auto-import] inserted imports into ${autoImport.changedFiles.length} file(s)`);
-    const indexSync = await this.#generatedIndexSync.syncForBatch(batch.files);
     //* Both passes above write source files, and this generation's build consumes what they wrote. Hand
     //* them to the watcher so its verification scan does not read them back as a user edit and spend a
     //* second generation rebuilding identical content.
     await this.#watcher?.absorb([...autoImport.changedFiles, ...indexSync.changedFiles]);
-    const { files, kinds, expandedBatch, event, hasSyncErrors } = prepareDevWatchBatch({
+    const { files, kinds, expandedBatch, devPlan, event, hasSyncErrors } = prepareDevWatchBatch({
       generation,
       batch,
       indexSync,
       changePlanner: this.#changePlanner,
     });
-    const devPlan = event.devPlan;
     this.#logger.verbose(
       `[hmr] batch generation=${generation} kinds=${kinds.join(",")} files=${files.length} generated=${indexSync.changedFiles.length} roles=${devPlan.roles.join(",") || "(none)"} actions=${devPlan.actions.join(",") || "(none)"}`,
     );

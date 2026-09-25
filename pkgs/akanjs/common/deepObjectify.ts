@@ -31,9 +31,10 @@ export const deepObjectify = <T = unknown>(obj: T | null | undefined, option: De
   } else if (obj && typeof obj === "object") {
     const val: Record<string, unknown> = {};
     const objRecord = obj as Record<string, unknown>;
-    Object.keys(obj).forEach((key) => {
+    // `for...in`, not `Object.keys`: an Akan model keeps its Date fields as enumerable prototype accessors.
+    for (const key in objRecord) {
       if (typeof objRecord[key] !== "function") val[key] = objectifyChild(objRecord[key], option);
-    });
+    }
     return val as T;
   } else {
     return obj as unknown as T;

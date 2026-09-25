@@ -1,0 +1,8 @@
+# <%= model %> Service Abstract
+
+<One sentence: the workflow or integration this service owns, stated as fact.>
+
+## Rules
+
+- <An invariant the code obeys but cannot explain: a lifetime, a refusal, an ordering, and its reason.>
+- <Two to five of them. If the service moves something through states, end the file with one arrow line.>

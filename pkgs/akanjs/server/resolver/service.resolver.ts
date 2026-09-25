@@ -10,11 +10,11 @@ import {
   type DocumentUpdateInput,
   documentQueryHelper,
   type FindQueryOption,
-  fillMissingFilterArgs,
   getFilterInfoByKey,
   getFilterMeta,
   type ListQueryOption,
   type SaveEventType,
+  splitFilterArgs,
   type UpdateChain,
 } from "akanjs/document";
 import type { DatabaseService, ServiceCls } from "akanjs/service";
@@ -71,14 +71,14 @@ export class ServiceResolver {
       listenPre(
         this: DatabaseService,
         type: SaveEventType,
-        listener: (doc: Doc, type: CRUDEventType) => PromiseOrObject<void>,
+        listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
       ) {
         return this.__databaseModel.listenPre(type, listener);
       },
       listenPost(
         this: DatabaseService,
         type: SaveEventType,
-        listener: (doc: Doc, type: CRUDEventType) => PromiseOrObject<void>,
+        listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
       ) {
         return this.__databaseModel.listenPost(type, listener);
       },
@@ -127,21 +127,11 @@ export class ServiceResolver {
     const className = capitalize(database.refName);
     Object.assign(srvRef.prototype, ServiceResolver.#getDefaultDbServiceMethods(database.refName, className, cascade));
     const getQueryDataFromKey = (queryKey: string, args: any): { query: any; queryOption: any } => {
-      const lastArg = args.at(-1);
-      const hasQueryOption =
-        lastArg &&
-        typeof lastArg === "object" &&
-        (typeof lastArg.select === "object" ||
-          typeof lastArg.skip === "number" ||
-          typeof lastArg.limit === "number" ||
-          typeof lastArg.sort === "string");
       const filterInfo = getFilterInfoByKey(database.filter, queryKey);
       const queryFn = filterInfo.queryFn;
       if (!queryFn) throw new Error(`No query function for key: ${queryKey}`);
-      const queryArgs = fillMissingFilterArgs(filterInfo, hasQueryOption ? args.slice(0, -1) : args);
-      const query = queryFn(...queryArgs, documentQueryHelper);
-      const queryOption = hasQueryOption ? lastArg : {};
-      return { query, queryOption };
+      const { queryArgs, queryOption } = splitFilterArgs(filterInfo, args);
+      return { query: queryFn(...queryArgs, documentQueryHelper), queryOption };
     };
     const filterMeta = getFilterMeta(database.filter);
     const queryKeys = Object.keys(filterMeta.query);
@@ -189,7 +179,7 @@ export class ServiceResolver {
           return this.__insight(query);
         },
         [`query${capitalize(queryKey)}`]: function (this: DatabaseService, ...args: any) {
-          return queryFn(...fillMissingFilterArgs(filterInfo, args), documentQueryHelper);
+          return queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
         },
         [`remove${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
           const { query } = getQueryDataFromKey(queryKey, args);

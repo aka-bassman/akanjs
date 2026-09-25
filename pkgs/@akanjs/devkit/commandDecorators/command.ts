@@ -1,11 +1,17 @@
 import path from "node:path";
-import type { confirm as inquirerConfirm, input as inquirerInput, select as inquirerSelect } from "@inquirer/prompts";
+import type {
+  checkbox as inquirerCheckbox,
+  confirm as inquirerConfirm,
+  input as inquirerInput,
+  select as inquirerSelect,
+} from "@inquirer/prompts";
 import { Logger } from "akanjs/common";
 import chalk from "chalk";
 import { type Command, program } from "commander";
+import { AppSelectionMemory } from "../appSelectionMemory";
 import { AppExecutor, Executor, LibExecutor, ModuleExecutor, PkgExecutor, WorkspaceExecutor } from "../executors";
 // Import the owning modules directly, never the root barrel: `..` re-exports all 41 devkit modules,
-// so a barrel import here drags ink, @trapezedev/project, ssh2, @langchain/* and the cloud stack into
+// so a barrel import here drags ink, @trapezedev/project, ssh2 and the cloud stack into
 // every process that registers a command (measured: 236MB vs 3MB).
 import { FileSys } from "../fileSys";
 import { getDirname } from "../getDirname";
@@ -65,6 +71,8 @@ const handleOption = (programCommand: Command, argMeta: ArgMeta) => {
     `-${flag}, --${kebabName}${type === "boolean" ? " [boolean]" : ` <${kebabName}>`}`,
     `${desc}${ask ? ` (${ask})` : ""}${example ? ` (example: ${example})` : ""}${choices ? ` (choices: ${choices.map((choice) => choice.name).join(", ")})` : ""}`,
   );
+  if (type === "boolean" && argMeta.argsOption.default === true)
+    programCommand.option(`--no-${kebabName}`, `turn off --${kebabName}`);
   return programCommand;
 };
 const handleArgument = (programCommand: Command, argMeta: ArgMeta) => {
@@ -103,6 +111,27 @@ const prompts = async () => await import("@inquirer/prompts");
 const select = ((config, context) => prompts().then((m) => m.select(config, context))) as typeof inquirerSelect;
 const confirm = ((config, context) => prompts().then((m) => m.confirm(config, context))) as typeof inquirerConfirm;
 const input = ((config, context) => prompts().then((m) => m.input(config, context))) as typeof inquirerInput;
+const checkbox = ((config, context) => prompts().then((m) => m.checkbox(config, context))) as typeof inquirerCheckbox;
+
+/**
+ * Rejects a value that is not one of the declared choices, in commander's own wording.
+ *
+ * Only a static choice list can be checked: a `DynamicEnum` resolves against the command context, which
+ * is not populated until the internal args are resolved, and it is the interactive `select` that consumes
+ * it. Comparison is stringly on purpose — the value still carries commander's raw string here, while a
+ * numeric choice list holds numbers.
+ */
+const assertEnumChoice = (argMeta: ArgMeta, value: unknown) => {
+  const enumChoices = argMeta.argsOption.enum;
+  if (!enumChoices || typeof enumChoices === "function") return;
+  const choices = normalizeEnumChoices(enumChoices);
+  if (choices.some((choice) => String(choice.value) === String(value))) return;
+  const label =
+    argMeta.type === "Option" ? `option '--${camelToKebabCase(argMeta.name)}'` : `argument '${argMeta.name}'`;
+  throw new Error(
+    `${label} argument '${String(value)}' is invalid. Allowed choices are ${choices.map((choice) => choice.name).join(", ")}.`,
+  );
+};
 
 const resolveEnumChoices = async (argMeta: ArgMeta, context: CommandContext) => {
   const enumChoices = argMeta.argsOption.enum;
@@ -111,13 +140,15 @@ const resolveEnumChoices = async (argMeta: ArgMeta, context: CommandContext) => 
   return enumChoices;
 };
 
-const getOptionValue = async (argMeta: ArgMeta, opt: Record<string, unknown>, context: CommandContext) => {
+export const getOptionValue = async (argMeta: ArgMeta, opt: Record<string, unknown>, context: CommandContext) => {
   const {
     name,
     argsOption: { enum: enumChoices, default: defaultValue, type, desc, nullable, example, ask },
   } = argMeta;
-  if (opt[argMeta.name] !== undefined) return convertArgValue(opt[argMeta.name] as string, type ?? "string");
-  else if (defaultValue !== undefined) return defaultValue;
+  if (opt[argMeta.name] !== undefined) {
+    assertEnumChoice(argMeta, opt[argMeta.name]);
+    return convertArgValue(opt[argMeta.name] as string, type ?? "string");
+  } else if (defaultValue !== undefined) return defaultValue;
 
   if (enumChoices) {
     const choices = normalizeEnumChoices((await resolveEnumChoices(argMeta, context)) ?? []);
@@ -139,13 +170,15 @@ const getOptionValue = async (argMeta: ArgMeta, opt: Record<string, unknown>, co
   }
 };
 
-const getArgumentValue = async (argMeta: ArgMeta, value: string | undefined) => {
+export const getArgumentValue = async (argMeta: ArgMeta, value: string | undefined) => {
   const {
     name,
     argsOption: { default: defaultValue, type, desc, nullable, example, ask },
   } = argMeta;
-  if (value !== undefined) return convertArgValue(value, type ?? "string");
-  else if (defaultValue !== undefined) return defaultValue;
+  if (value !== undefined) {
+    assertEnumChoice(argMeta, value);
+    return convertArgValue(value, type ?? "string");
+  } else if (defaultValue !== undefined) return defaultValue;
   else if (nullable) return null;
 
   const message = ask
@@ -182,6 +215,46 @@ const assertCurrentDirectoryIsWorkspaceRoot = async () => {
       "Move to the directory that contains package.json, tsconfig.json, and .env, then run the command again.",
     ].join("\n"),
   );
+};
+
+/** A variadic positional arrives as an array, and each entry may itself be a comma-separated list. */
+const parseAppNameList = (value: string | string[] | undefined): string[] =>
+  (Array.isArray(value) ? value : value === undefined ? [] : [value])
+    .flatMap((entry) => entry.split(","))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+/**
+ * The `Apps` token: named apps, `all`, or a checkbox when the command line names none. Kept out of
+ * `getInternalArgumentValue` because it is the only internal arg whose positional is variadic, so it is
+ * the only one whose raw value is an array.
+ */
+export const getAppsArgumentValue = async (
+  value: string | string[] | undefined,
+  workspace: WorkspaceExecutor,
+): Promise<AppExecutor[]> => {
+  const appNames = await workspace.getApps();
+  if (appNames.length === 0) throw new Error("No apps found in this workspace (apps/<appName>/akan.config.ts)");
+  const requested = parseAppNameList(value);
+  if (requested.includes("all")) return appNames.map((name) => AppExecutor.from(workspace, name));
+  if (requested.length) {
+    const unknown = requested.filter((name) => !appNames.includes(name));
+    if (unknown.length)
+      throw new Error(
+        `Unknown app${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}. Available: ${appNames.join(", ")}, all`,
+      );
+    return [...new Set(requested)].map((name) => AppExecutor.from(workspace, name));
+  }
+  if (appNames.length === 1 && appNames[0]) return [AppExecutor.from(workspace, appNames[0])];
+  const remembered = new Set(await AppSelectionMemory.read(workspace.workspaceRoot));
+  const picked = await checkbox<string>({
+    message: "Select the apps to run (space to toggle, enter to confirm)",
+    choices: appNames.map((name) => ({ name, value: name, checked: remembered.has(name) })),
+    // Enter with nothing ticked is a mis-keypress far more often than an intent to run nothing.
+    required: true,
+  });
+  await AppSelectionMemory.write(workspace.workspaceRoot, picked);
+  return picked.map((name) => AppExecutor.from(workspace, name));
 };
 
 export const getInternalArgumentValue = async (
@@ -329,6 +402,11 @@ It may cause unexpected behavior. Run \`akan update\` to update latest akanjs.`,
               `[sys-name:module-name]`,
               `${argMeta.type} in this workspace (apps|libs)/<sys-name>/lib/<module-name>`,
             );
+          } else if (argMeta.type === "Apps") {
+            programCommand = programCommand.argument(
+              `[apps...]`,
+              `apps in this workspace apps/<appName>, or all (space- or comma-separated; omit to pick interactively)`,
+            );
           } else {
             const sysType = argMeta.type.toLowerCase();
             programCommand = programCommand.argument(
@@ -357,6 +435,11 @@ It may cause unexpected behavior. Run \`akan update\` to update latest akanjs.`,
               commandArgs[argMeta.idx] = await getOptionValue(argMeta, opt, commandContext);
             else if (argMeta.type === "Argument")
               commandArgs[argMeta.idx] = await getArgumentValue(argMeta, cmdArgs[argMeta.idx] as string);
+            else if (argMeta.type === "Apps")
+              commandArgs[argMeta.idx] = await getAppsArgumentValue(
+                cmdArgs[argMeta.idx] as string | string[] | undefined,
+                workspace,
+              );
             else
               commandArgs[argMeta.idx] = await getInternalArgumentValue(
                 argMeta as InternalArgMeta,
@@ -366,6 +449,12 @@ It may cause unexpected behavior. Run \`akan update\` to update latest akanjs.`,
             // set app name to env
             if (commandArgs[argMeta.idx] instanceof AppExecutor)
               process.env.AKAN_PUBLIC_APP_NAME = (commandArgs[argMeta.idx] as AppExecutor).name;
+            //? Only when exactly one app resolved. Publishing a name while several are in play would make
+            //? every env-derived answer in this process belong to whichever app happened to be last.
+            else if (Array.isArray(commandArgs[argMeta.idx])) {
+              const apps = commandArgs[argMeta.idx] as AppExecutor[];
+              if (apps.length === 1 && apps[0]) process.env.AKAN_PUBLIC_APP_NAME = apps[0].name;
+            }
             assignCommandContext(commandContext, argMeta, commandArgs[argMeta.idx]);
             if ((opt as { verbose?: boolean }).verbose) Executor.setVerbose(true);
           }

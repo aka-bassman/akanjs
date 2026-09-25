@@ -76,7 +76,7 @@ Now create the service layer to expose these operations:
 
 Connect Service
 
-Now comes the magic - connecting the inventory system to our existing ice cream order flow. When a customer places an order, the system should automatically deduct the used ingredients from inventory. This is like how a real POS system updates stock counts in real-time as sales are made.
+Now let's connect the inventory system to our existing ice cream order flow. When a customer places an order, the system should automatically deduct the used ingredients from inventory. This is like how a real POS system updates stock counts in real-time as sales are made.
 
 Inject the InventoryService into IcecreamOrderService and use the _preCreate hook to deduct stock:
 
@@ -84,7 +84,7 @@ Key aspects of this integration:
 
 Dependency injection allows IcecreamOrderService to access InventoryService methods
 
-A lifecycle hook that runs before creating a new order. Perfect for validation and side effects like inventory deduction.
+A lifecycle hook that runs before creating a new order. Used for validation and side effects like inventory deduction.
 
 Usage Calculation
 
@@ -102,13 +102,13 @@ Now create the frontend store to manage inventory state:
 
 Interact on UI
 
-Now let's bring everything together in the UI. The customer-facing order form needs to check inventory and disable options that are out of stock. Staff also need a dashboard to monitor inventory levels and refill when needed. This creates a complete inventory management system!
+Now let's bring everything together in the UI. The customer-facing order form needs to check inventory and disable options that are out of stock. Staff also need a dashboard to monitor inventory levels and refill when needed.
 
 First, update the order template to check inventory before displaying options:
 
 Key features of the inventory-aware template:
 
-Called in useEffect to load inventory data when the component mounts. Shows a loading spinner until data is ready.
+The form only reads the store, and shows a spinner until the value is there. Inventory.Zone.Today, which the route mounts below, is what calls loadTodaysInventory - a mount-time fetch inside a Template is what akan quality ssr reports as client-mount-load.
 
 Out of Stock Check
 
@@ -128,21 +128,7 @@ Create a Zone component for real-time inventory monitoring:
 
 Finally, put it all together in the main page with both inventory dashboard and order management:
 
-🎉 What You've Accomplished:
-
-Created a reusable Stock scalar for inventory items
-
-Built an Inventory module with daily records
-
-Implemented stock usage and refill business logic
-
-Connected inventory to order creation flow
-
-Created visual dashboard with real-time updates
-
-Disabled out-of-stock options in customer UI
-
-In the next tutorial, we'll explore Insight - a powerful feature for aggregating and analyzing data across your models. This will allow you to create analytics dashboards and gain business intelligence from your ice cream shop data.
+In the next tutorial, we'll explore Insight, which aggregates and analyzes data across your models. This will allow you to create analytics dashboards and gain business intelligence from your ice cream shop data.
 
 ## Code Examples
 
@@ -399,7 +385,8 @@ export class IcecreamOrderService extends serve(db.icecreamOrder, ({ use, servic
 ### apps/koyo/lib/inventory/inventory.signal.ts
 
 ```ts
-import { endpoint, internal, Public, slice } from "akanjs/signal"; // [!code collapse:17]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:18]
+import { endpoint, internal, Public, slice } from "akanjs/signal";
 import * as cnst from "../cnst";
 import * as srv from "../srv";
 
@@ -407,7 +394,7 @@ export class InventoryInternal extends internal(srv.inventory, ({ interval }) =>
 
 export class InventorySlice extends slice(
   srv.inventory,
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin } },
   (init) => ({
     inPublic: init().exec(function () {
       return this.inventoryService.queryAny();
@@ -500,10 +487,9 @@ export class InventoryStore extends store(sig.inventory, () => ({
 ```ts
 "use client"; // [!code collapse:4]
 import { cn } from "akanjs/client";
-import { Field, Layout, buttonRecipe } from "akanjs/ui";
+import { Field, Layout } from "akanjs/ui";
 import { cnst, st, usePage } from "@apps/koyo/client";
-import { Loading } from "akanjs/ui"; // [!code ++:2]
-import { useEffect } from "react";
+import { Loading } from "akanjs/ui"; // [!code ++]
 // [!code collapse:5]
 interface GeneralProps {
   className?: string;
@@ -513,10 +499,7 @@ interface GeneralProps {
 export const General = ({ className, showServeType = true }: GeneralProps) => {
   const { l } = usePage();
   const icecreamOrderForm = st.use.icecreamOrderForm();
-  const todaysInventory = st.use.todaysInventory(); // [!code ++:7]
-  useEffect(() => {
-    void st.do.loadTodaysInventory();
-  }, []);
+  const todaysInventory = st.use.todaysInventory(); // [!code ++:4]
   if (!todaysInventory) return <Loading.Area />;
   else if (!todaysInventory.isInStock("yogurtIcecream"))
     return <div className="flex size-full items-center justify-center text-xl">{l("inventory.outOfStock")}</div>;
@@ -623,7 +606,6 @@ export class InventoryInsight extends via(Inventory, (field) => ({})) {}
 
 ```ts
 "use client";
-import { cn } from "akanjs/client";
 import { st, usePage } from "@apps/koyo/client";
 import { buttonRecipe } from "akanjs/ui";
 import { BiRefresh } from "react-icons/bi";
@@ -810,13 +792,14 @@ export const Today = ({ className }: TodayProps) => {
 ### apps/koyo/page/_index.tsx
 
 ```ts
-import { Load, Model } from "akanjs/ui"; // [!code collapse:2]
+import { Model, buttonRecipe } from "akanjs/ui"; // [!code collapse:3]
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 import { Inventory } from "@apps/koyo/client"; // [!code ++]
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
-  const { icecreamOrderInitInPublic } = await fetch.initIcecreamOrderInPublic();
+  const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
         
   return (
@@ -829,7 +812,7 @@ export default async function Page() {
       <div className="flex items-center gap-4 text-5xl font-black"> // [!code collapse:16]
         <div className="text-5xl font-bold">{l("icecreamOrder.modelName")}</div>
         <Model.New
-          className={buttonRecipe({ variant: "primary" })}
+          trigger={<button className={buttonRecipe({ variant: "primary" })}>{l("base.new")}</button>}
           slice={fetch.slice.icecreamOrderInPublic}
           renderTitle="name"
           partial={icecreamOrderForm}
@@ -844,7 +827,7 @@ export default async function Page() {
       />
     </div>
   );
-}
+});
 ```
 
 ## Agent Notes

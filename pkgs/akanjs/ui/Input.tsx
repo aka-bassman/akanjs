@@ -17,9 +17,6 @@ import { agentAttrs } from "./agentAttrs";
 import { inputRecipe } from "./recipe";
 import { createOverridable, useUiRecipe } from "./UiOverride";
 
-// 입력 표면은 서버-안전 recipe 레이어(./recipe)의 inputRecipe 가 단일 소스다 — 여기서 클래스를 재작성하지 않는다.
-// 각 컴포넌트는 recipes.input 슬롯을 먼저 조회하고 canonical inputRecipe 로 폴백한다 (Button 과 동일한 해석 라인).
-
 export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & {
   /** Visual input style. */
   inputStyleType?: "bordered" | "borderless" | "underline";
@@ -29,8 +26,6 @@ export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "
   value: string;
   /** Allow empty value without warning status. */
   nullable?: boolean;
-  /** Session storage key used to persist typed text. */
-  cacheKey?: string;
   /** Optional leading icon. */
   icon?: React.ReactNode;
   iconClassName?: string;
@@ -50,7 +45,6 @@ const DefaultInput = ({
   nullable,
   inputRef,
   value,
-  cacheKey,
   inputStyleType = "bordered",
   icon,
   iconClassName,
@@ -103,11 +97,6 @@ const DefaultInput = ({
     }
   };
 
-  useEffect(() => {
-    if (!cacheKey) return;
-    sessionStorage.setItem(cacheKey, value);
-  }, [value]);
-
   return (
     <div className={cn("relative isolate flex items-center", className)}>
       {icon ? <div className={cn("flex items-center justify-center", iconClassName)}>{icon}</div> : null}
@@ -117,9 +106,6 @@ const DefaultInput = ({
         ref={inputRef}
         value={value}
         onChange={(e) => {
-          if (cacheKey) {
-            sessionStorage.setItem(cacheKey, e.target.value);
-          }
           onChange?.(e.target.value, e);
         }}
         onBlur={(e) => {
@@ -152,7 +138,6 @@ export type TextAreaProps = Omit<
   nullable?: boolean;
   inputClassName?: string;
   inputWrapperClassName?: string;
-  cacheKey?: string;
   onPressEnter?: (value: string, event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onChange?: (value: string, e?: ChangeEvent<HTMLTextAreaElement>) => void;
   validate: (value: string) => boolean | string;
@@ -164,7 +149,6 @@ const DefaultTextArea = ({
   value,
   inputClassName,
   inputWrapperClassName,
-  cacheKey,
   onPressEnter,
   onPressEscape,
   onChange,
@@ -197,14 +181,6 @@ const DefaultTextArea = ({
     if (onPressEnter && e.key === "Enter") onPressEnter(e.currentTarget.value, e);
   };
 
-  useEffect(() => {
-    if (!cacheKey) return;
-    const value = sessionStorage.getItem(cacheKey);
-    if (value) {
-      onChange?.(value);
-    }
-  }, []);
-
   return (
     <div className={cn("relative mb-5", className)}>
       <textarea
@@ -213,9 +189,6 @@ const DefaultTextArea = ({
         ref={inputRef}
         value={value}
         onChange={(e) => {
-          if (cacheKey) {
-            sessionStorage.setItem(cacheKey, e.target.value);
-          }
           onChange?.(e.target.value, e);
         }}
         onKeyDown={handleKeyDown}
@@ -245,7 +218,6 @@ export type PasswordProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" 
   iconClassName?: string;
   inputClassName?: string;
   inputWrapperClassName?: string;
-  cacheKey?: string;
   onPressEnter?: (value: any, event: KeyboardEvent<HTMLInputElement>) => void;
   onPressEscape?: (e: KeyboardEvent<HTMLInputElement>) => void;
   onChange?: (value: string, e?: ChangeEvent<HTMLInputElement>) => void;
@@ -259,7 +231,6 @@ const DefaultPassword = ({
   iconClassName,
   inputClassName,
   inputWrapperClassName,
-  cacheKey,
   onPressEnter,
   onPressEscape,
   onChange,
@@ -294,13 +265,6 @@ const DefaultPassword = ({
     if (onPressEscape && e.key === "Escape") onPressEscape(e);
   };
 
-  useEffect(() => {
-    if (!cacheKey) return;
-    const value = sessionStorage.getItem(cacheKey);
-    if (value) {
-      onChange?.(value);
-    }
-  }, []);
   return (
     <div className={cn("relative isolate pb-2", className)}>
       <div className={cn("relative flex items-center justify-between", inputWrapperClassName)}>
@@ -320,9 +284,6 @@ const DefaultPassword = ({
           }}
           onKeyDown={handleKeyDown}
           onChange={(e) => {
-            if (cacheKey) {
-              sessionStorage.setItem(cacheKey, e.target.value);
-            }
             onChange?.(e.target.value, e);
           }}
           className={cn(
@@ -356,7 +317,6 @@ const DefaultPassword = ({
 export type EmailProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "type" | "onChange"> & {
   inputStyleType?: "bordered" | "borderless" | "underline";
   value: string;
-  cacheKey?: string;
   nullable?: boolean;
   icon?: React.ReactNode;
   iconClassName?: string;
@@ -372,7 +332,6 @@ const DefaultEmail = ({
   className,
   nullable,
   value,
-  cacheKey,
   onPressEnter,
   onPressEscape,
   onChange,
@@ -415,14 +374,6 @@ const DefaultEmail = ({
     }
   };
 
-  useEffect(() => {
-    if (!cacheKey) return;
-    const value = sessionStorage.getItem(cacheKey);
-    if (value) {
-      onChange?.(value);
-    }
-  }, []);
-
   return (
     <div className={cn("relative isolate mb-5", className)}>
       <div className={cn("flex items-center", inputWrapperClassName)}>
@@ -442,9 +393,6 @@ const DefaultEmail = ({
             if (firstFocus && value) setFirstFocus(false);
           }}
           onChange={(e) => {
-            if (cacheKey) {
-              sessionStorage.setItem(cacheKey, e.target.value);
-            }
             onChange?.(e.target.value, e);
           }}
           className={cn(
@@ -467,7 +415,6 @@ export type NumberProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | 
   value: number | null;
   nullable?: boolean;
   icon?: React.ReactNode;
-  cacheKey?: string;
   iconClassName?: string;
   inputClassName?: string;
   inputWrapperClassName?: string;
@@ -485,7 +432,6 @@ const DefaultNumber = ({
   nullable,
   value,
   icon,
-  cacheKey,
   iconClassName,
   inputClassName,
   inputWrapperClassName,
@@ -504,7 +450,7 @@ const DefaultNumber = ({
   const validateResult = validate ? validate(value) : undefined;
   const inputBase = (useUiRecipe("input") ?? inputRecipe)();
   const generateFormat = () => {
-    return isNaN(value ?? 0) ? "" : formatter ? formatter(value?.toString() ?? "") : (value?.toString() ?? "");
+    return Number.isNaN(value ?? 0) ? "" : formatter ? formatter(value?.toString() ?? "") : (value?.toString() ?? "");
   };
 
   const [firstFocus, setFirstFocus] = useState(true);
@@ -538,7 +484,7 @@ const DefaultNumber = ({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const numberValue = parseFloat(e.currentTarget.value.replace(/[^\d-]/g, ""));
     if (e.key === "Enter") {
-      if (isNaN(numberValue)) {
+      if (Number.isNaN(numberValue)) {
         e.currentTarget.value = "";
         setFormatValue("");
         onChange(null);
@@ -561,7 +507,7 @@ const DefaultNumber = ({
       onPressEnter?.(numberValue, e);
     }
     if (e.key === "Escape") {
-      if (isNaN(numberValue)) {
+      if (Number.isNaN(numberValue)) {
         e.currentTarget.value = "";
         setFormatValue("");
         onChange(null);
@@ -578,15 +524,7 @@ const DefaultNumber = ({
   };
 
   useEffect(() => {
-    if (cacheKey) {
-      const value = sessionStorage.getItem(cacheKey);
-      if (value) {
-        setFormatValue(value);
-        onChange(parser ? parseFloat(value) : parseFloat(value));
-      }
-    } else {
-      setFormatValue(generateFormat());
-    }
+    setFormatValue(generateFormat());
   }, []);
 
   useEffect(() => {
@@ -620,7 +558,6 @@ const DefaultNumber = ({
             const parsedValue = parser ? parser(e.target.value) : e.target.value;
             setFormatValue(formatter ? formatter(parsedValue) : e.target.value);
             onChange(parser ? parseFloat(parsedValue) : parseFloat(e.target.value), e);
-            if (cacheKey) sessionStorage.setItem(cacheKey, parsedValue);
           }}
           className={cn(
             inputBase,

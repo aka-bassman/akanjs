@@ -19,125 +19,207 @@
 
 Overview
 
-Describes business intent, domain rules, workflows, data meaning, related modules, and agent notes that should be read before implementation changes.
+The `Light<Model>` class: the few fields a list or card needs. Server and client both hold it.
 
-Defines the business data shape: fields, enums, model layers, helpers, hidden/secret fields, and resolved fields.
+The `<Model>` class: every field of one record. Detail screens use it.
 
-Defines user-facing language for fields, insights, queries, slices, endpoints, errors, and UI text.
+A server query that fills a list in the client store.
 
-Defines persistence behavior: filters, document methods, model-level helpers, indexes, and schema hooks.
+One query, mutation, message or pubsub a caller can reach.
 
-Owns business workflows and coordinates generated document methods, injected services, and database operations.
+A class that decides whether the caller may run an endpoint.
 
-Exposes APIs, slices, realtime messages, pubsub channels, internal tasks, guards, and resolved field handlers.
+Wrappers that fill the store from route data and draw the loading and empty states.
 
-Coordinates client state, form state, list state, generated fetch calls, toast messages, and UI-facing actions.
+What the module owns, the 2–5 rules code cannot show, and any workflow. Read it first.
 
-Renders form pieces and interaction fragments bound to store form state and generated setters.
+The data shape: fields, enums, the five model layers, helpers, hidden/secret and resolved fields.
 
-Renders reusable light-model display pieces such as cards, rows, avatars, columns, and compact summaries.
+Words users read: fields, insights, queries, sorts, enums, slices, endpoints, errors, UI text.
 
-Renders full-model detail UI for detail pages, view modals, and sections that need complete model data.
+How stored documents behave: filters, document methods, model helpers, indexes, schema hooks.
 
-Packages small client helper UI such as action buttons, toolboxes, dialogs, query panels, and navigation helpers.
+Business workflows, built from document methods, injected services and database operations.
 
-Composes page sections with Load.Units, Load.View, Unit/View display, Util controls, and section-level UI state.
+Where server work starts: slices, endpoints, message, pubsub, tasks, guards, resolved fields.
 
-Start with the business intent and durable domain rules.
+Client state: form and list state, generated fetch calls, toasts, and the actions UI calls.
 
-Start with the business shape and generated model layers.
+The form. Its fields bind to the store's form state through the generated setters.
 
-Give those fields, actions, errors, and UI phrases user-facing names.
+One piece of a light model: a card, row, avatar, column or compact summary.
 
-Describe how stored documents are queried, changed, indexed, and loaded.
+One full model in detail: detail pages, view modals, sections that need every field.
 
-Implement business workflows using document helpers and other services.
+Small client controls: action buttons, toolboxes, dialogs, query panels, navigation helpers.
 
-Expose server behavior as typed slices, endpoints, realtime channels, and tasks.
+Write down the business intent and the domain rules that should last.
 
-Connect generated fetch APIs to client state, form state, and UI actions.
+Define the business shape: fields, enums and the model layers.
 
-Render forms, lists, detail views, actions, and page sections.
+Give those fields, actions, errors and UI phrases the names users see.
 
-New Model
+Describe how stored documents are queried, changed, indexed and loaded.
 
-Use this path when defining a business object from scratch.
+Build business workflows from document helpers and other services.
 
-New List Page
+Expose server behaviour as typed slices, endpoints, realtime channels and tasks.
 
-Use this path when a page needs list data, filtering, pagination, and cards.
+Connect the generated fetch API to client state, form state and UI actions.
 
-New Detail Or Edit Page
+Draw forms, lists, detail views, actions and page sections.
 
-Use this path when showing full data or editing an existing model.
+What
 
-New Action
+Where
 
-Use this path when a user click should run a business workflow.
+What goes there
 
-Put them in service, document, or constant helpers. Do not hide them inside render code.
+Business rules
 
-Put slices, endpoints, guards, internal args, realtime, and tasks in signal.
+Service workflows, document methods and constant helpers. Never inside render code.
 
-Put fetch calls, form state, list state, toast messages, and UI actions in store.
+API and access
 
-Use Unit for repeated light-model display and View for full-model detail display.
+Slices, endpoints, guards, internal args, realtime channels and tasks.
 
-Use Zone to compose Load wrappers, Unit/View, Util controls, and section layout.
+Client coordination
 
-Use Util for toolboxes, action buttons, dialog triggers, query panels, and navigation helpers.
+Fetch calls, form and list state, toasts and UI actions.
+
+Display
+
+Unit repeats a light model; View shows one full model in detail.
+
+Page sections
+
+Load wrappers, Unit/View, Util controls and the section's layout.
+
+Small controls
+
+Toolboxes, action buttons, dialog triggers, query panels and navigation helpers.
+
+New model
+
+List
+
+Detail/edit
+
+Action
+
+defining a business object from scratch.
+
+a page needs list data, filtering, pagination and cards.
+
+showing a model's full data, or editing an existing one.
+
+a user's click should run a business workflow.
+
+Logic files
+
+Every path starts here, with the rules the change must keep.
+
+The new object's fields and model layers.
+
+Names for the new fields, errors and UI text.
+
+Filters, document methods and indexes for the stored data.
+
+The workflow the new model or the click runs.
+
+A slice for a list, the `get` guard behind `view<Model>` for detail, an endpoint for an action.
+
+The state the screen reads. For an action, the store action a button calls.
+
+UI files
+
+The section that takes the route's data and fills the list or the detail.
+
+One card or row of the list.
+
+The detail of one full record.
+
+The edit form. For an action, the button can live here or in Util.
+
+The action's button when it is a control of its own.
 
 Module Overview
 
-An Akan module is one business feature folder. It keeps the model shape, language, persistence behavior, business workflows, APIs, client state, and UI pieces close together.
+An Akan module is one folder for one business feature. The model's shape, its wording, storage, workflows, API, client state and UI all sit side by side in it.
 
-This overview is a map. Use it to understand which file to open next, then move to each detail page for patterns and examples.
+This page is a map for choosing which file to open next. Syntax and examples live on each file's own page.
+
+An Example Module
+
+Words used on this page
+
+Term
 
 Module File Map
 
-Most modules are easier to understand when split into two groups: data/server files and UI/client files. Each card links to the matching guide.
+A module's files fall into two groups: seven lowercase logic files and five PascalCase UI files. Each card opens that file's guide.
 
-Data And Server Files
+Logic Files
 
-UI And Client Files
+UI Files
 
 Server To Client Flow
 
-A module usually grows from data shape to persistence, then to API, client state, and UI. You do not need every file for every feature, but this order keeps ownership clear.
+A module usually grows from the data shape to storage, then to the API, client state and UI. Not every feature needs every file, but this order keeps each file's job clear.
+
+As a diagram, the chain ends in UI, which splits into the five UI roles:
+
+One module, data to UI
+
+the form
+
+one row or card
+
+one full record
+
+one control
+
+the section
 
 Role Boundaries
 
-When a module becomes confusing, it is usually because logic moved into the wrong file. Use these boundaries before adding code.
+When a module gets confusing, it is usually because logic moved into the wrong file. Check where it belongs before adding code.
 
 Recommended Reading Paths
 
-Start from the task you are trying to build. The first file in each path is the best place to inspect or design the change.
+: when
+
+File, in reading order
+
+Read for this task
+
+Not needed
 
 Practical Rules
 
-Keep the overview short. Put detailed syntax and examples in each file-specific guide.
-
-Let generated types and helpers connect files instead of copying shapes by hand.
-
-Design server behavior before UI when a feature changes stored data.
-
-Use UI files for composition and presentation, not hidden business decisions.
-
-When a section gets large, move display into Unit/View and controls into Util before expanding Zone.
+Four habits that keep a module easy to follow:
 
 ## Code Examples
 
-### module flow
+### libs/shared/lib/banner/
 
-```ts
-constant -> dictionary -> document -> service -> signal -> store -> UI files
-
-UI files:
-Template -> forms
-Unit -> list item display
-View -> full detail display
-Util -> small controls
-Zone -> page section composition
+```bash
+libs/shared/lib/banner/
+├── banner.abstract.md
+├── banner.constant.ts
+├── banner.dictionary.ts
+├── banner.document.ts
+├── banner.service.ts
+├── banner.signal.ts
+├── banner.signal.spec.ts
+├── banner.signal.test.ts
+├── banner.store.ts
+├── Banner.Template.tsx
+├── Banner.Unit.tsx
+├── Banner.Util.tsx
+├── Banner.View.tsx
+├── Banner.Zone.tsx
+└── index.ts
 ```
 
 ## Agent Notes

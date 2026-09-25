@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
+import { cleanupCliTempWorkspace, createTempModule, writeText } from "@akanjs/devkit/testHelpers";
 import {
   createWorkflowStepRegistry,
   type WorkflowApplyReport,
@@ -13,7 +14,6 @@ import { ModuleRunner } from "../module/module.runner";
 import { ModuleScript } from "../module/module.script";
 import { PrimitiveScript } from "../primitive/primitive.script";
 import { ScalarScript } from "../scalar/scalar.script";
-import { cleanupCliTempWorkspace, createTempModule, writeText } from "../testHelpers";
 import { WorkflowRunner } from "./workflow.runner";
 
 const tempRoots: string[] = [];
@@ -783,6 +783,61 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
     expect(report.status).toBe("failed");
     expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toContain("workflow-step-unsupported");
     expect(report.nextActions.map((action) => action.command)).toContain("akan workflow explain add-mutation");
+  });
+
+  test("runs every add-mutation and add-slice step, leaving the UI surfaces as a review", async () => {
+    const { root, workspace, module } = await createTempModule("task");
+    tempRoots.push(root);
+    await new ModuleRunner().createModuleTemplate(module);
+    const runner = new WorkflowRunner();
+    const registry = createWorkflowStepRegistry({
+      workspace,
+      createModule: (sys, name) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, name),
+      createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
+      createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
+      addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
+      addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
+      addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
+      addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
+    });
+    const inputs = {
+      app: "demo",
+      module: "task",
+      field: null,
+      type: null,
+      values: null,
+      default: null,
+      scalar: null,
+      surface: null,
+      mutation: null,
+      slice: null,
+    };
+    const applyWorkflow = async (workflow: string, extra: Record<string, string>) => {
+      const planPath = path.join(root, `.akan/workflows/plans/${workflow}.json`);
+      await runner.plan(workflow, { ...inputs, ...extra }, { format: "json", out: planPath });
+      return JSON.parse(await runner.apply(planPath, { format: "json", workspace, registry })) as WorkflowApplyReport;
+    };
+
+    const mutationReport = await applyWorkflow("add-mutation", { mutation: "archive" });
+    const sliceReport = await applyWorkflow("add-slice", { slice: "inOwner" });
+
+    for (const report of [mutationReport, sliceReport]) {
+      expect(report.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("workflow-step-unsupported");
+      expect(report.status).toBe("passed");
+    }
+    expect(mutationReport.recommendations).toContainEqual(
+      expect.objectContaining({ code: "add-mutation-action-surface-review", kind: "manual-action" }),
+    );
+    expect(sliceReport.recommendations).toContainEqual(
+      expect.objectContaining({
+        code: "add-slice-view-surface-review",
+        action: expect.stringContaining("fetch.initTaskInOwner()"),
+      }),
+    );
+    const signalSource = await module.readFile("task.signal.ts");
+    expect(signalSource).toContain("archive: mutation(Boolean, { guards: [None] })");
+    expect(signalSource).toContain("inOwner: init({ guards: [None] })");
+    expect(signalSource).toMatch(/import \{[^}]*\bNone\b[^}]*\} from "akanjs\/signal";/);
   });
 
   test("validates a workflow plan and stores a run report", async () => {

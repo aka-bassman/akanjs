@@ -9,8 +9,8 @@
 ## Headings
 
 - Realtime (#overview)
-- Use message (#message)
-- Use pubsub (#pubsub)
+- Send With message (#message)
+- Broadcast With pubsub (#pubsub)
 - Chat Flow (#flow)
 - Design Rooms (#room)
 - Tips (#tips)
@@ -19,79 +19,100 @@
 
 Realtime
 
-Realtime features keep a WebSocket connection open so the app can send small events quickly. Use it for chat, games, live editors, dashboards, and presence.
+Tool
 
-`message` is a client-to-server event.
+Direction
 
-`pubsub` is a server-to-room broadcast.
+Use it for
 
-`room` decides who should receive the event.
+Browser → server
 
-Use message
+e.g. read receipts, cursor moves, typing status, game input
 
-Use `message` for small actions from the browser to the server: read receipt, cursor move, typing status, or game input.
+Server → everyone subscribed to the room
 
-Read receipt
+e.g. a new chat message, a notification
 
-Use pubsub
+Database → every screen showing the list
 
-Use `pubsub` when the server needs to send one event to everyone in a room. A new chat message is the simplest example.
+e.g. a list of saved rows, such as a chat history
 
-Chat broadcast
+Sends the message and returns nothing.
+
+Runs `fn` with each answer this browser gets and returns a function that stops listening.
+
+Joins the chat's room, runs `fn` on every publish, and returns an unsubscribe function.
+
+Realtime keeps one WebSocket open, so the server and the browser trade small events without a new request each time. Chat, games, live editors, dashboards and presence all run on it.
+
+Send With message
+
+Broadcast With pubsub
+
+Calling From the Browser
+
+Call
+
+What it does
 
 Chat Flow
 
-For data that must be saved, write to the database first and publish after the service succeeds.
+A chat message reaches the screen in four steps. The list itself never needs a hand-written subscription.
 
-Save then publish
+1. Save, Then Publish
 
-On the client, subscribe to the room and update local UI state when a new message arrives. Keep the subscription close to the screen that owns the list.
+For data that must be saved, write to the database first and publish after the service succeeds:
 
-Client subscription
+2. Declare a Live Slice
+
+3. Load the Snapshot in the Route
+
+4. Draw It With Load.Units
 
 Design Rooms
 
-Use a narrow room key such as `chatId`, `gameId`, or `documentId`.
-
-Avoid one huge room for all users unless everyone truly needs the event.
-
-Use guards so only allowed users can send or subscribe.
+The room key decides who receives an event, so keep it as narrow as the audience.
 
 Tips
 
-Keep payloads small. Send ids and small patches instead of full pages.
-
-Use `message` for commands and `pubsub` for notifications.
-
-If losing the event is dangerous, save it first and publish after saving.
-
-For games or cursors, throttle very frequent events on the client.
-
 ## Code Examples
 
-### Code
+### apps/myapp/lib/chat/chat.signal.ts
 
 ```ts
+import { Self, User } from "@libs/shared/srvkit";
+import { ID } from "akanjs/base";
+import { endpoint } from "akanjs/signal";
+
+import * as srv from "../srv";
+
 export class ChatEndpoint extends endpoint(srv.chat, ({ message }) => ({
   readMessage: message(Boolean, { guards: [User] })
     .msg("chatId", ID)
     .msg("messageId", ID)
-    .exec(async function (chatId, messageId) {
-      await this.chatService.markAsRead(chatId, messageId);
+    .with(Self)
+    .exec(async function (chatId, messageId, self) {
+      await this.chatService.markAsRead(chatId, messageId, self.id);
       return true;
     }),
 })) {}
 ```
 
-### Code
+### apps/myapp/lib/chat/chat.signal.ts
 
 ```ts
+import { User } from "@libs/shared/srvkit";
+import { ID } from "akanjs/base";
+import { endpoint, Ws } from "akanjs/signal";
+
+import * as cnst from "../cnst";
+import * as srv from "../srv";
+
 export class ChatEndpoint extends endpoint(srv.chat, ({ pubsub }) => ({
-  messageAdded: pubsub(cnst.ChatMessage)
+  messageAdded: pubsub(cnst.ChatMessage, { guards: [User] })
     .room("chatId", ID)
     .with(Ws)
     .exec(async function (chatId, ws) {
-      // The room key decides which connected users receive this event.
       const markAway = () => this.chatService.markAway(chatId, ws.socketId);
       ws.on("unsubscribe", markAway);
       ws.on("disconnect", markAway);
@@ -99,37 +120,93 @@ export class ChatEndpoint extends endpoint(srv.chat, ({ pubsub }) => ({
 })) {}
 ```
 
-### Code
+### apps/myapp/lib/chat/chat.service.ts
 
 ```ts
-async addMessage(chatId: string, content: string, senderId: string) {
-  const message = await this.chatModel.createMessage({
-    chat: chatId,
-    sender: senderId,
-    content,
-  });
-  await this.chatSignal.messageAdded(chatId, message);
-  return message;
+import { serve } from "akanjs/service";
+
+import * as db from "../db";
+import type * as sig from "../sig";
+import type * as srv from "../srv";
+
+export class ChatService extends serve(db.chat, ({ service, signal }) => ({
+  chatMessageService: service<srv.ChatMessageService>(),
+  chatSignal: signal<sig.Chat>(),
+})) {
+  async addMessage(chatId: string, content: string, senderId: string) {
+    const chatMessage = await this.chatMessageService.createChatMessage({
+      chat: chatId,
+      sender: senderId,
+      content,
+    });
+    await this.chatSignal.messageAdded(chatId, chatMessage);
+    return chatMessage;
+  }
 }
 ```
 
-### Code
+### apps/myapp/lib/chatMessage/chatMessage.signal.ts
+
+```ts
+import { Admin, User } from "@libs/shared/srvkit";
+import { ID } from "akanjs/base";
+import { slice } from "akanjs/signal";
+
+import * as srv from "../srv";
+
+export class ChatMessageSlice extends slice(
+  srv.chatMessage,
+  { guards: { root: Admin, get: User, cru: User } },
+  (init) => ({
+    inChat: init({ guards: [User] })
+      .param("chatId", ID)
+      .live()
+      .exec(function (chatId) {
+        return this.chatMessageService.queryInChat(chatId);
+      }),
+  }),
+) {}
+```
+
+### apps/myapp/page/chat/[chatId]/_index.tsx
+
+```ts
+import { ChatMessage, fetch } from "@apps/myapp/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+
+export default page()
+  .param("chatId", ID)
+  .render(async ({ chatId }) => {
+    const [{ chatMessageInitInChat }] = await Promise.all([
+      fetch.initChatMessageInChat(chatId),
+    ]);
+    return <ChatMessage.Zone.List init={chatMessageInitInChat} />;
+  });
+```
+
+### apps/myapp/lib/chatMessage/ChatMessage.Zone.tsx
 
 ```ts
 "use client";
+import { ChatMessage, type cnst } from "@apps/myapp/client";
+import type { ClientInit } from "akanjs/fetch";
+import { Load } from "akanjs/ui";
 
-export const ChatMessages = ({ chatId }: { chatId: string }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-
-  useEffect(() => {
-    const unsubscribe = fetch.subscribeMessageAdded(chatId, (message) => {
-      setMessages((prev) => [...prev, message]);
-    });
-
-    return () => unsubscribe();
-  }, [chatId]);
-
-  return <Chat.MessageList messages={messages} />;
+interface ListProps {
+  className?: string;
+  init: ClientInit<"chatMessage", cnst.LightChatMessage>;
+}
+export const List = ({ className, init }: ListProps) => {
+  return (
+    <Load.Units
+      className={className}
+      init={init}
+      renderItem={(chatMessage) => (
+        <ChatMessage.Unit.Row key={chatMessage.id} chatMessage={chatMessage} />
+      )}
+    />
+  );
 };
 ```
 

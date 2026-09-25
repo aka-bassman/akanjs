@@ -8,5 +8,6 @@ export * from "./filterMeta";
 export * from "./into";
 export * from "./loaderInfo";
 export * from "./noDocumentError";
+export * from "./queryEvaluator";
 export * from "./schema";
 export * from "./types";

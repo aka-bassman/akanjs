@@ -21,7 +21,7 @@ export const convToAntdColumn = (column: DataColumn<any>) => {
       key: column.key as string,
       dataIndex: column.key as string,
       title: capitalize(column.key as string),
-      responsive: column.responsive ? (["xs", "sm", "md", "xl"] as const) : undefined,
+      responsive: column.responsive ? (["md", "lg", "xl"] as const) : undefined,
       render: column.render,
     };
   else if (

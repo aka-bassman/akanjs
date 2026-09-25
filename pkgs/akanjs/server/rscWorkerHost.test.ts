@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AkanMetricsReport } from "akanjs/service";
 import { LruTtlCache } from "./cachePolicy";
-import { shouldRenderLocaleAlternates } from "./metadata";
+import { shouldRenderLocaleAlternates } from "./head";
 import type { AkanRouterStateV1, AkanRscPatchMetadata } from "./routeState";
 import {
   type CachedRscResult,
@@ -178,11 +178,10 @@ describe("RscWorker host pending chunk cap", () => {
 });
 
 describe("RscWorker locale alternates policy", () => {
-  test("skips automatic alternates for special routes or explicit metadata languages", () => {
+  test("skips automatic alternates for special routes", () => {
     expect(shouldRenderLocaleAlternates({})).toBe(true);
     expect(shouldRenderLocaleAlternates({ isSpecialRoute: true })).toBe(false);
-    expect(shouldRenderLocaleAlternates({ hasExplicitLanguageAlternates: true })).toBe(false);
-    expect(shouldRenderLocaleAlternates({ isSpecialRoute: false, hasExplicitLanguageAlternates: false })).toBe(true);
+    expect(shouldRenderLocaleAlternates({ isSpecialRoute: false })).toBe(true);
   });
 });
 

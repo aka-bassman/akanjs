@@ -7,6 +7,11 @@ import { FileSys } from "./fileSys";
 import type { PackageJson, TsConfigJson } from "./types";
 
 const testFileRegex = /\.(?:test|spec)\.[cm]?[tj]sx?$/;
+// `__fixtures__` holds deliberately invalid sample sources for the lint-rule suites; tsconfig `exclude` and
+// biome's `!` override already skip them, and their imports are violations rather than real dependencies.
+const skipDirs = ["node_modules", "dist", "build", ".git", ".next", "public", "ios", "android", "__fixtures__"];
+const isSkippedPath = (filePath: string) =>
+  skipDirs.some((dir) => filePath.includes(`/${dir}/`) || filePath.startsWith(`${dir}/`));
 const builtinModuleSet = new Set([...builtinModules, ...builtinModules.map((mod) => `node:${mod}`)]);
 const stripShebang = (source: string) => source.replace(/^#!.*(?:\r?\n|$)/, "");
 
@@ -17,10 +22,10 @@ export class TypeScriptDependencyScanner {
   #visitedFiles = new Set<string>();
   readonly #tsTranspiler = new Bun.Transpiler({ loader: "ts" });
   readonly #tsxTranspiler = new Bun.Transpiler({ loader: "tsx" });
-  private readonly directory: string;
-  private readonly rootPackageJson: PackageJson;
-  private readonly ig: ReturnType<typeof ignore>;
-  private readonly workspaceRoot: string;
+  readonly #directory: string;
+  readonly #rootPackageJson: PackageJson;
+  readonly #ig: ReturnType<typeof ignore>;
+  readonly #workspaceRoot: string;
 
   constructor(
     directory: string,
@@ -30,10 +35,10 @@ export class TypeScriptDependencyScanner {
       gitignorePatterns = [],
     }: { workspaceRoot: string; tsconfig: TsConfigJson; rootPackageJson: PackageJson; gitignorePatterns?: string[] },
   ) {
-    this.directory = directory;
-    this.rootPackageJson = rootPackageJson;
-    this.ig = ignore().add(gitignorePatterns);
-    this.workspaceRoot = workspaceRoot;
+    this.#directory = directory;
+    this.#rootPackageJson = rootPackageJson;
+    this.#ig = ignore().add(gitignorePatterns);
+    this.#workspaceRoot = workspaceRoot;
   }
 
   async getMonorepoDependencies(
@@ -41,7 +46,7 @@ export class TypeScriptDependencyScanner {
     { pkgs = [], libs = [] }: { pkgs?: string[]; libs?: string[] } = {},
   ): Promise<{ pkgDeps: string[]; libDeps: string[]; npmDeps: string[]; npmDevDeps: string[] }> {
     const npmSet = new Set(
-      Object.keys({ ...this.rootPackageJson.dependencies, ...this.rootPackageJson.devDependencies }),
+      Object.keys({ ...this.#rootPackageJson.dependencies, ...this.#rootPackageJson.devDependencies }),
     );
     const pkgPathSet = new Set(pkgs);
     const libPathSet = new Set(libs.map((lib) => `@libs/${lib}`));
@@ -68,11 +73,11 @@ export class TypeScriptDependencyScanner {
   ): Promise<{ npmDeps: string[]; npmDevDeps: string[]; missingDeps: string[] }> {
     const runtimeDeps = new Set<string>();
     const devDeps = new Set<string>();
-    const sourceFiles = await this.#findTypeScriptFiles(this.directory, {
+    const sourceFiles = await this.#findTypeScriptFiles(this.#directory, {
       excludeBuildFiles: true,
       excludeTestFiles: true,
     });
-    const cssFiles = await this.#findCssFiles(this.directory);
+    const cssFiles = await this.#findCssFiles(this.#directory);
 
     for (const filePath of sourceFiles) {
       const fileContent = await FileSys.readText(filePath);
@@ -86,7 +91,7 @@ export class TypeScriptDependencyScanner {
       this.#addNormalizedImports(runtimeDeps, this.#extractCssPluginImports(fileContent), projectName);
     }
 
-    const buildFilePath = path.join(this.directory, "build.ts");
+    const buildFilePath = path.join(this.#directory, "build.ts");
     if (await FileSys.fileExists(buildFilePath)) {
       const fileContent = await FileSys.readText(buildFilePath);
       const { imports, typeImports } = this.#extractImports(fileContent, buildFilePath);
@@ -95,7 +100,7 @@ export class TypeScriptDependencyScanner {
 
     for (const dep of runtimeDeps) devDeps.delete(dep);
 
-    const rootDeps = { ...this.rootPackageJson.dependencies, ...this.rootPackageJson.devDependencies };
+    const rootDeps = { ...this.#rootPackageJson.dependencies, ...this.#rootPackageJson.devDependencies };
     const missingDeps: string[] = [];
     for (const dep of [...runtimeDeps, ...devDeps]) {
       if (rootDeps[dep] || (await this.#hasWorkspacePackage(dep))) continue;
@@ -109,7 +114,7 @@ export class TypeScriptDependencyScanner {
   }
 
   async #hasWorkspacePackage(dep: string) {
-    const packageJsonPath = path.join(this.workspaceRoot, "pkgs", dep, "package.json");
+    const packageJsonPath = path.join(this.#workspaceRoot, "pkgs", dep, "package.json");
     if (!(await Bun.file(packageJsonPath).exists())) return false;
     try {
       const packageJson = await FileSys.readJson<PackageJson>(packageJsonPath);
@@ -156,9 +161,9 @@ export class TypeScriptDependencyScanner {
     this.#fileTypeDependencies.clear();
     this.#visitedFiles.clear();
 
-    const files = await this.#findTypeScriptFiles(this.directory);
+    const files = await this.#findTypeScriptFiles(this.#directory);
 
-    for (const file of files) await this.#analyzeFile(file, this.directory);
+    for (const file of files) await this.#analyzeFile(file, this.#directory);
 
     return this.#fileDependencies;
   }
@@ -171,17 +176,16 @@ export class TypeScriptDependencyScanner {
     }: { excludeBuildFiles?: boolean; excludeTestFiles?: boolean } = {},
   ): Promise<string[]> {
     const files: string[] = [];
-    const skipDirs = ["node_modules", "dist", "build", ".git", ".next", "public", "ios", "android"];
 
     const glob = new Bun.Glob("**/*.{ts,tsx}");
     for await (const filePath of glob.scan({ cwd: directory, onlyFiles: true })) {
-      if (skipDirs.some((dir) => filePath.includes(`/${dir}/`) || filePath.startsWith(`${dir}/`))) continue;
+      if (isSkippedPath(filePath)) continue;
       if (excludeBuildFiles && filePath === "build.ts") continue;
       if (excludeTestFiles && testFileRegex.test(filePath)) continue;
 
       const fullPath = path.join(directory, filePath);
-      const relativePath = path.relative(this.workspaceRoot, fullPath);
-      if (this.ig.ignores(relativePath)) continue;
+      const relativePath = path.relative(this.#workspaceRoot, fullPath);
+      if (this.#ig.ignores(relativePath)) continue;
 
       files.push(fullPath);
     }
@@ -190,14 +194,13 @@ export class TypeScriptDependencyScanner {
 
   async #findCssFiles(directory: string): Promise<string[]> {
     const files: string[] = [];
-    const skipDirs = ["node_modules", "dist", "build", ".git", ".next", "public", "ios", "android"];
     const glob = new Bun.Glob("**/*.css");
     for await (const filePath of glob.scan({ cwd: directory, onlyFiles: true })) {
-      if (skipDirs.some((dir) => filePath.includes(`/${dir}/`) || filePath.startsWith(`${dir}/`))) continue;
+      if (isSkippedPath(filePath)) continue;
 
       const fullPath = path.join(directory, filePath);
-      const relativePath = path.relative(this.workspaceRoot, fullPath);
-      if (this.ig.ignores(relativePath)) continue;
+      const relativePath = path.relative(this.#workspaceRoot, fullPath);
+      if (this.#ig.ignores(relativePath)) continue;
 
       files.push(fullPath);
     }

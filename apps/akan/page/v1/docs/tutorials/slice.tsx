@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Docs } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -532,8 +533,8 @@ export const View = ({ view }: ViewProps) => {
               </div>
               <div className="text-blue-700 text-sm">
                 {l.trans({
-                  en: `The useInterval hook refreshes the slice data every 3 seconds. This ensures the dashboard stays current without manual user interaction - perfect for displays that need to show live order status.`,
-                  ko: `useInterval 훅은 3초마다 슬라이스 데이터를 새로고침합니다. 이렇게 하면 사용자의 수동 상호작용 없이도 대시보드가 최신 상태를 유지합니다 - 실시간 주문 상태를 보여줘야 하는 디스플레이에 완벽합니다.`,
+                  en: `The useInterval hook refreshes the slice data every 3 seconds. This keeps the dashboard current without manual user interaction, which is what a display showing live order status needs.`,
+                  ko: `useInterval 훅은 3초마다 슬라이스 데이터를 새로고침합니다. 이렇게 하면 사용자의 수동 상호작용 없이도 대시보드가 최신 상태를 유지합니다.`,
                 })}
               </div>
             </div>
@@ -636,48 +637,6 @@ export const View = ({ view }: ViewProps) => {
               </div>
             </div>
           </div>
-          <div className="my-6 rounded-lg bg-gradient-to-r from-pink-100 to-blue-100 p-6">
-            <div className="mb-3 font-bold text-lg text-pink-800">
-              {l.trans({ en: "🎉 What You've Accomplished:", ko: "🎉 달성한 것들:" })}
-            </div>
-            <ul className="space-y-2 text-pink-700 text-sm">
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Created multiple slices for different data views",
-                  ko: "다양한 데이터 뷰를 위한 여러 슬라이스 생성",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Built a real-time customer dashboard",
-                  ko: "실시간 고객 대시보드 구축",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Connected slices to Zone components",
-                  ko: "슬라이스를 Zone 컴포넌트에 연결",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Implemented automatic data refresh",
-                  ko: "자동 데이터 새로고침 구현",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Learned slice component best practices",
-                  ko: "슬라이스 컴포넌트 모범 사례 학습",
-                })}
-              </li>
-            </ul>
-          </div>
           <div>
             {l.trans({
               en: `In the next tutorial, we'll explore how to create dynamic page navigation and user experiences using Pages in Akan.js. This will allow customers to navigate through multi-step ordering flows and interactive interfaces.`,
@@ -688,7 +647,7 @@ export const View = ({ view }: ViewProps) => {
       </Scroll.Slide>
       <div className="my-4 h-px w-full bg-border" />
 
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
+      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 xl:flex" />
     </Scroll>
   );
-}
+});

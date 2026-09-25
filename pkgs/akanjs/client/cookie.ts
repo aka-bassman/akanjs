@@ -1,7 +1,14 @@
 import { getEnv } from "akanjs/base";
-import { decodeJwtPayload, Logger } from "akanjs/common";
+import {
+  authTokenKey,
+  decodeJwtPayload,
+  isOwnAuthToken,
+  Logger,
+  legacyAuthTokenKey,
+  readAuthToken,
+} from "akanjs/common";
 import type { Account } from "akanjs/fetch";
-import { cookies as serverCookies, headers as serverHeaders } from "akanjs/fetch";
+import { parseCookieHeader, cookies as serverCookies, headers as serverHeaders } from "akanjs/fetch";
 import { loadCapacitorCore } from "./capacitor";
 import { storage } from "./storage";
 import { fetch } from "./useClient";
@@ -10,23 +17,6 @@ interface CookieOptions {
   path?: string;
   sameSite?: "strict" | "lax" | "none";
   secure?: boolean;
-}
-
-function parseCookieHeader(cookieHeader: string): Map<string, { name: string; value: string }> {
-  const entries = cookieHeader
-    .split(";")
-    .map((c) => c.trim())
-    .filter(Boolean)
-    .map((c) => {
-      const eqIdx = c.indexOf("=");
-      if (eqIdx === -1) return null;
-      const name = c.slice(0, eqIdx).trim();
-      const raw = c.slice(eqIdx + 1).trim();
-      const value = typeof raw === "string" && raw.startsWith("j:") ? (JSON.parse(raw.slice(2)) as string) : raw;
-      return [name, { name, value }] as const;
-    })
-    .filter((e): e is NonNullable<typeof e> => e !== null);
-  return new Map(entries);
 }
 
 export const cookies = (): Map<string, { name: string; value: string }> => {
@@ -53,23 +43,19 @@ export const setCookie = (
     .catch(() => undefined);
 };
 
-export const getCookie = (key: string): string | undefined => {
-  if (getEnv().side === "server") return cookies().get(key)?.value;
-  //capacitor 문서에서 document.cookie로 가져오라고 되어었음.
-  else
-    return document.cookie
-      .split(";")
-      .find((c) => c.trim().startsWith(`${key}=`))
-      ?.split("=")[1];
-};
+/**
+ * Reads through `cookies()` on both sides, which is the only way the two agree: a hand-rolled
+ * `split("=")[1]` truncates a value at its first `=` (base64 padding) and never decodes the `j:` form the
+ * server branch does. Capacitor's own docs say to read `document.cookie`, and `cookies()` does.
+ */
+export const getCookie = (key: string): string | undefined => cookies().get(key)?.value;
 
 export const removeCookie = (key: string, options: { path: string } = { path: "/" }) => {
-  if (getEnv().side === "server") return cookies().delete(key);
-  else {
-    // biome-ignore lint/suspicious/noDocumentCookie: Akan auth helpers intentionally manage browser cookies.
-    document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-    // void CapacitorCookies.deleteCookie({ key });
-  }
+  // Nothing to do on the server: the response is what carries a Set-Cookie, and this helper has no hold on it.
+  // Deleting from `cookies()` mutated a Map built one line earlier and thrown away, which read as a removal.
+  if (getEnv().side === "server") return;
+  // biome-ignore lint/suspicious/noDocumentCookie: Akan auth helpers intentionally manage browser cookies.
+  document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=${options.path};`;
 };
 export const headers = (): Map<string, string> => {
   if (getEnv().side !== "server") return new Map();
@@ -79,9 +65,29 @@ export const headers = (): Map<string, string> => {
 export const getHeader = (key: string): string | undefined => {
   return headers().get(key);
 };
-/** Decodes the current JWT into account data when it belongs to this app/environment. */
+
+export { authTokenKey };
+
+/** The auth token this app holds in the cookie jar, under the app-scoped key or a legacy global one. */
+export const getAuthToken = (): string | undefined => readAuthToken(getCookie);
+
+/** The auth token this app holds in client storage — localStorage under SSR, Capacitor Preferences on CSR. */
+export const getStoredAuthToken = async (): Promise<string | undefined> => {
+  const scoped = await storage.getItem(authTokenKey());
+  if (scoped) return scoped;
+  const legacy = await storage.getItem(legacyAuthTokenKey);
+  return legacy && isOwnAuthToken(legacy) ? legacy : undefined;
+};
+
+/**
+ * Decodes the current JWT into account data when it belongs to this app/environment.
+ *
+ * The two credentials read here are exactly the two the server honours — the app-scoped auth cookie and
+ * `Authorization: Bearer` (`AccountMiddleware`). It used to fall back to a bare `jwt` *header*, which nothing
+ * sends and no guard accepts, so a request carrying one read as signed in here and anonymous at the endpoint.
+ */
 export const getAccount = <AddData = unknown>(): Account<AddData> => {
-  const jwt = getCookie("jwt") ?? getHeader("jwt");
+  const jwt = getAuthToken() ?? getHeader("authorization")?.replace(/^Bearer\s+/i, "");
   const defaultAccount = { appName: getEnv().appName, environment: getEnv().environment } as Account<AddData>;
   if (!jwt) return defaultAccount;
   const account = decodeJwtPayload<Account<AddData>>(jwt);
@@ -97,21 +103,36 @@ interface SetAuthOption {
 /** Sets the active auth token on fetch, cookie storage, and client storage. */
 export const setAuth = ({ jwt }: SetAuthOption) => {
   fetch.setJwt(jwt);
-  setCookie("jwt", jwt);
-  void storage.setItem("jwt", jwt);
+  setCookie(authTokenKey(), jwt);
+  void storage.setItem(authTokenKey(), jwt);
+  // The global key is shared with every app on this host, so leaving ours behind would keep feeding the
+  // migration fallback a token the scoped key already supersedes.
+  removeCookie(legacyAuthTokenKey);
+  void storage.removeItem(legacyAuthTokenKey);
 };
 
 interface InitAuthOption {
   jwt?: string;
 }
 export const initAuth = ({ jwt }: InitAuthOption = {}) => {
-  const token = jwt ?? cookies().get("jwt")?.value;
+  const stored = getAuthToken();
+  const token = jwt ?? stored;
+  if (token && !isOwnAuthToken(token)) {
+    // A neighbouring app's token decodes fine here and fails every guard, so adopting it trades this app's
+    // credential for one that can only 401. It reaches this branch from `?jwt=` or a stale scoped cookie.
+    Logger.warn("JWT ignored: it was minted for another app or environment");
+    if (token === stored) resetAuth();
+    return;
+  }
   if (token) setAuth({ jwt: token });
-  Logger.verbose(`JWT set from cookie: ${token}`);
+  // Whether, never which: a record at this level reaches the rotating log file and every live subscriber.
+  Logger.verbose(`JWT ${token ? "restored from cookie" : "not found in cookie"}`);
 };
 
 export const resetAuth = () => {
   fetch.setJwt(null);
-  removeCookie("jwt");
-  void storage.removeItem("jwt");
+  removeCookie(authTokenKey());
+  removeCookie(legacyAuthTokenKey);
+  void storage.removeItem(authTokenKey());
+  void storage.removeItem(legacyAuthTokenKey);
 };

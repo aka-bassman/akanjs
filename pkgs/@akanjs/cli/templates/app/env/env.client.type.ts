@@ -5,12 +5,8 @@ interface Dict {
 }
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dict = {}) {
   return `
-import type { ClientEnv } from "akanjs/base";
-
-export type AppClientEnv = ClientEnv & {
-  cloudflare?: {
-    siteKey: string;
-  };
+export type AppClientEnv = {
+  // apply public envs here
 };
   `;
 }

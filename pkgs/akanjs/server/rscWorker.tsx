@@ -22,6 +22,8 @@ import {
 } from "akanjs/fetch";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-server-dom-webpack/server.node";
+import type { PagePromptRunInput } from "../signal/mcp/pagePrompt";
+import { getCurrentTrace, runTraced, SignalTrace } from "../signal/trace";
 import type { ClientManifest } from "./artifact";
 import {
   LruTtlCache,
@@ -39,7 +41,8 @@ import {
   mergeAkanHeadSnapshots,
   renderAkanHeadSnapshot,
   shouldRenderLocaleAlternates,
-} from "./metadata";
+} from "./head";
+import { LogForwarder } from "./logging/logForwarder";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { RouteElementComposer } from "./routeElementComposer";
 import {
@@ -54,6 +57,7 @@ import {
 } from "./routeState";
 import { type PagesContext, RouteTreeBuilder } from "./routeTreeBuilder";
 import { encodeAkanRedirectDigest } from "./rscHttp";
+import { RscPagePrompts } from "./rscPagePrompts";
 import { isAkanRscPartialCommitEnabled } from "./rscPartialCommit";
 import { resolveAkanRscHeadSafePatchDecision } from "./rscPatchSafety";
 import {
@@ -110,7 +114,29 @@ interface InvalidateCacheMsg {
   tags?: string[];
   paths?: string[];
 }
-type InMsg = InitMsg | RenderMsg | CancelMsg | ReloadMsg | UpdateCssAssetsMsg | InvalidateCacheMsg;
+interface LogLevelMsg {
+  type: "log-level";
+  minSev: number | null;
+}
+interface PagePromptsMsg {
+  type: "page-prompts";
+  requestId: string;
+}
+interface PagePromptRunMsg {
+  type: "page-prompt.run";
+  requestId: string;
+  input: PagePromptRunInput;
+}
+type InMsg =
+  | InitMsg
+  | RenderMsg
+  | CancelMsg
+  | ReloadMsg
+  | UpdateCssAssetsMsg
+  | InvalidateCacheMsg
+  | LogLevelMsg
+  | PagePromptsMsg
+  | PagePromptRunMsg;
 type RenderControl =
   | { type: "redirect"; location: string; method: "replace" | "push"; status: RedirectStatus }
   | { type: "not-found" }
@@ -179,7 +205,8 @@ export function isAkanNotFoundError(error: unknown): error is AkanNotFoundError 
 }
 
 export class RscRenderer {
-  readonly #logger = new Logger("scWorker");
+  readonly #logger = new Logger("RscWorker");
+  readonly #logForwarder: LogForwarder;
   #clientManifest: ClientManifest = {};
   #pathRoutes: PathRoute[] = [];
   #fallbackRoutes: LayoutFallbackRoute[] = [];
@@ -219,12 +246,20 @@ export class RscRenderer {
   #resultCacheMisses = 0;
   #resultCacheBypass = 0;
   readonly #send: (message: unknown) => void;
+  readonly #pagePrompts = new RscPagePrompts({
+    routes: () => this.#pathRoutes,
+    run: (request, routeId, fn) => this.#runWithRequest(request, routeId, fn),
+    defaultLocale: () => this.#i18n.defaultLocale,
+  });
 
   constructor() {
     if (typeof process.send !== "function") {
       throw new Error("rscWorker must be run as a Bun subprocess with ipc enabled");
     }
     this.#send = process.send.bind(process) as (message: unknown) => void;
+    Logger.role = "rsc-worker";
+    if (Logger.isNdjson) Logger.consoleOutput = false;
+    this.#logForwarder = new LogForwarder((message) => this.#send(message));
     process.on("message", (msg: InMsg) => this.#handleMessage(msg));
     // The IPC channel closes when the parent replica dies (including SIGKILL); exit instead of
     // lingering as an orphaned renderer.
@@ -267,6 +302,24 @@ export class RscRenderer {
         this.#logger.verbose(`received invalidate-cache reason=${msg.reason ?? "(none)"}`);
         this.#invalidateResultCache(msg);
         return;
+      case "log-level":
+        this.#logForwarder.setMinSev(msg.minSev);
+        return;
+      case "page-prompts":
+        void this.#answer(msg.requestId, "page-prompts.result", () => this.#pagePrompts.list());
+        return;
+      case "page-prompt.run":
+        void this.#answer(msg.requestId, "page-prompt.result", () => this.#pagePrompts.run(msg.input));
+        return;
+    }
+  }
+
+  /** A request whose answer is one JSON value: it rides a single reply rather than the render stream. */
+  async #answer(requestId: string, type: string, fn: () => Promise<unknown>): Promise<void> {
+    try {
+      this.#send({ type, requestId, result: await fn() });
+    } catch (error) {
+      this.#send({ type: "error", requestId, message: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -391,13 +444,13 @@ export class RscRenderer {
     } = { url: null, match: null };
     try {
       const request = new Request(url, { method, headers });
-      await this.#runWithRequest(request, async () => {
-        const urlObj = new URL(url);
+      const urlObj = new URL(url);
+      const match = RouteTreeBuilder.match(urlObj.pathname, this.#pathRoutes);
+      const routeId = match?.pathRoute.path ?? "__not_found__";
+      await this.#runWithRequest(request, routeId, async () => {
         activeRoute.url = urlObj;
         this.#stats.lastRenderedPath = urlObj.pathname;
-        const match = RouteTreeBuilder.match(urlObj.pathname, this.#pathRoutes);
         activeRoute.match = match;
-        const routeId = match?.pathRoute.path ?? "__not_found__";
         updateRequestPolicy({ routeId });
         this.#stats.lastRenderRouteId = routeId;
         this.#stats.lastRenderKind = match ? "route" : "not-found";
@@ -843,6 +896,32 @@ export class RscRenderer {
     this.#send({ type: "metrics", metrics });
   }
 
+  /**
+   * An error raised after the first Flight chunk has left the worker can no longer become a status code or a
+   * system error page — `sendLateRedirect` is the only control the host can still act on, so the render
+   * control is dropped. Logging here is the only record that the request failed at all; without it a page
+   * whose boundary died mid-stream is indistinguishable from one that rendered.
+   */
+  #reportRenderError(error: unknown, pathname?: string): void {
+    const description = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    const scope = pathname ? ` path=${pathname}` : "";
+    if (RscRenderer.#isExpectedRequestAbort(error)) {
+      this.#logger.debug(`[rsc] render aborted${scope}: ${description}`);
+      return;
+    }
+    this.#logger.error(`[rsc] render failed${scope}: ${description}`);
+  }
+
+  /** A client that navigated away, or a stream the host cancelled: expected, and not the replica's problem. */
+  static #isExpectedRequestAbort(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    return (
+      error.name === "AbortError" ||
+      error.message === "Connection closed." ||
+      error.message.includes("The connection was closed")
+    );
+  }
+
   async #renderFlightElement(
     element: ReactNode,
     clientManifest: ClientManifest,
@@ -881,6 +960,7 @@ export class RscRenderer {
           return error.digest;
         }
         controlRef.current = { type: "error", error };
+        this.#reportRenderError(error, options.trace?.pathname);
         return error instanceof Error ? error.message : String(error);
       },
     });
@@ -895,6 +975,10 @@ export class RscRenderer {
     const sendMeta = () => {
       if (!options.requestId || sentMeta) return;
       sentMeta = true;
+      if (options.status !== undefined) {
+        const trace = getCurrentTrace();
+        if (trace) trace.status = options.status;
+      }
       this.#send({
         type: "meta",
         requestId: options.requestId,
@@ -1189,15 +1273,16 @@ export class RscRenderer {
     );
   }
 
-  #runWithRequest<T>(request: Request, fn: () => Promise<T>): Promise<T> {
+  #runWithRequest<T>(request: Request, routeId: string, fn: () => Promise<T>): Promise<T> {
     // The flight render executes components while its stream pumps, where Bun's ALS arrives empty even though
     // run() wraps the whole handler — so keep a request fallback pushed until the render settles, the same
     // discipline ssrFromRscRenderer's runPump uses. The stack is global and last-push-wins, so concurrent
     // renders can shadow each other; the real fix is pumping the flight render inside the ALS scope itself.
     const cleanup = pushRequestFallback(request);
     const run = () => Promise.resolve(fn()).finally(() => cleanup());
-    if (requestStorage) return Promise.resolve(requestStorage.run(request, run));
-    return run();
+    const traced = () => runTraced(SignalTrace.create(routeId, "page", "page"), run);
+    if (requestStorage) return Promise.resolve(requestStorage.run(request, traced));
+    return traced();
   }
 
   async #renderFallbackDocument({
@@ -1237,15 +1322,13 @@ export class RscRenderer {
     if (!body) return null;
     const routeHead =
       "resolveHead" in route
-        ? await RouteElementComposer.resolveHeadWithMetadata({
+        ? await RouteElementComposer.resolveHeadWithSnapshot({
             pathRoute: route,
             params,
             searchParams,
           })
-        : { node: undefined, hasExplicitLanguageAlternates: false };
-    const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead, {
-      hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates,
-    });
+        : { node: undefined };
+    const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead, {});
     return (
       <html lang={params.lang ?? RscRenderer.#getLocale(pathname, this.#i18n)} suppressHydrationWarning>
         <head key="head">
@@ -1255,10 +1338,7 @@ export class RscRenderer {
           {routeHeadSnapshot
             ? renderAkanHeadSnapshot(routeHeadSnapshot)
             : (routeHead.node ?? this.#renderDefaultHead())}
-          {!routeHeadSnapshot &&
-          shouldRenderLocaleAlternates({ hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates })
-            ? this.#renderLocaleAlternates(url)
-            : null}
+          {routeHeadSnapshot ? null : this.#renderLocaleAlternates(url)}
           {this.#renderStylesheet(pathname)}
         </head>
         <body key="body">{body}</body>
@@ -1279,14 +1359,13 @@ export class RscRenderer {
       basePath: this.#getBasePath(url),
     });
     setRequestFrameState(pathRoute.pageState);
-    const routeHead = await RouteElementComposer.resolveHeadWithMetadata({
+    const routeHead = await RouteElementComposer.resolveHeadWithSnapshot({
       pathRoute,
       params: match.params,
       searchParams,
     });
     const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead, {
       isSpecialRoute: pathRoute.isSpecialRoute,
-      hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates,
     });
     const body = RouteElementComposer.compose({
       pathRoute,
@@ -1303,11 +1382,7 @@ export class RscRenderer {
           {routeHeadSnapshot
             ? renderAkanHeadSnapshot(routeHeadSnapshot)
             : (routeHead.node ?? this.#renderDefaultHead())}
-          {!routeHeadSnapshot &&
-          shouldRenderLocaleAlternates({
-            isSpecialRoute: pathRoute.isSpecialRoute,
-            hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates,
-          })
+          {!routeHeadSnapshot && shouldRenderLocaleAlternates({ isSpecialRoute: pathRoute.isSpecialRoute })
             ? this.#renderLocaleAlternates(url)
             : null}
           {this.#renderStylesheet(url.pathname)}
@@ -1397,21 +1472,20 @@ export class RscRenderer {
     match: { pathRoute: PathRoute; params: Record<string, string> },
     searchParams: Record<string, string | string[]>,
   ): Promise<ResolvedHead["headSnapshot"]> {
-    const routeHead = await RouteElementComposer.resolveHeadWithMetadata({
+    const routeHead = await RouteElementComposer.resolveHeadWithSnapshot({
       pathRoute: match.pathRoute,
       params: match.params,
       searchParams,
     });
     return this.#createRouteHeadSnapshot(url, routeHead, {
       isSpecialRoute: match.pathRoute.isSpecialRoute,
-      hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates,
     });
   }
 
   #createRouteHeadSnapshot(
     url: URL,
     routeHead: ResolvedHead,
-    options: { isSpecialRoute?: boolean; hasExplicitLanguageAlternates?: boolean },
+    options: { isSpecialRoute?: boolean },
   ): ResolvedHead["headSnapshot"] {
     if (!routeHead.headSnapshot) return undefined;
     return mergeAkanHeadSnapshots(

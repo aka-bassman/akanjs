@@ -11,6 +11,7 @@
 - Edge Computing (#overview)
 - Call Another Server (#call-remote)
 - Send Commands (#commands)
+- Errors Come Back (#errors)
 - Listen To Status (#subscribe)
 - Wrap A Remote Node (#remote-object)
 - Very Fast Data (#fast-data)
@@ -20,76 +21,114 @@
 
 Edge Computing
 
-Edge computing in Akan means this: one Akan server can call another Akan server with the same generated `fetch` object you already use in the app.
+Cloud server
 
-Cloud server: decides what should happen.
+Decides what should happen and sends commands to the edge.
 
-Edge server: does work close to the device or user.
+Edge server
 
-Akan fetch: connects both sides with typed signal calls.
+Does the work close to the device or user, and reports status back.
+
+Connects both sides with typed signal calls; only `{ origin }` differs from a local call.
+
+The server that receives the call: scheme, host and API prefix.
+
+Milliseconds before the caller gives up; overrides the endpoint's `timeout`, and `false` waits.
+
+Sent as `Authorization: Bearer <token>`, so the remote guards judge that account.
+
+Runs after the room is subscribed again following a dropped connection.
+
+The remote endpoint threw an `Err`
+
+The same `Err`, with its key, `data` and status code
+
+The connection was refused or the host did not resolve
+
+No answer before the timeout
+
+A proxy in front answered 502, 503 or 504 with its own page
+
+A separate transport
+
+Broadcast With pubsub
+
+Declare a room, guard it, and subscribe to it.
+
+Error Handling
+
+Declare error keys and pick a status code for each.
+
+Declare Endpoint
+
+Endpoint options, including `timeout` for slow work.
+
+Part
 
 Call Another Server
 
-The important part is the last option: `{ origin }`. It tells fetch which server should receive the signal call.
+A health check that pings one edge server:
 
-Include the server global API prefix (for example `/api`) in the origin, because fetch sends the call to it as-is.
-
-Ping an edge server
+Options for a remote call
 
 Send Commands
 
-Use normal query or mutation calls when the cloud wants the edge server to do something. The call still has typed arguments and typed return values.
+Errors Come Back
 
-Remote command
+One error crossing two servers:
+
+One error, two servers
+
+What the caller catches
+
+When
+
+Thrown on the caller
 
 Listen To Status
 
-Use subscriptions when the edge server keeps sending status. Save the unsubscribe function so you can clean up later.
-
-Subscribe and cleanup
-
 Wrap A Remote Node
 
-When you talk to the same edge server many times, make a small class that remembers the origin and unsubscribe functions.
-
-Small wrapper
+When you talk to the same edge server many times, wrap it in a small class that remembers its origin and its unsubscribe functions:
 
 Very Fast Data
 
-Keep Akan fetch for commands and status. If you need huge video or binary streams, you can add another transport just for that data.
+Use
 
-Commands: `fetch.startJob(...)`
-
-Status: `fetch.subscribeJobStatus(...)`
-
-Large streams: use a dedicated path only when needed.
+Data
 
 Tips
 
-Start with a normal signal. If it works locally, it can usually be called remotely by changing `{ origin }`.
-
-Keep edge server origins in the database so cloud logic can loop over them.
-
-Always clean up subscriptions. Long-running workers can leak connections otherwise.
+Related pages
 
 ## Code Examples
 
-### Code
+### apps/myapp/lib/_edge/edge.service.ts
 
 ```ts
-const origin = "https://edge.example.com/api";
+import { getApiPrefix } from "akanjs/base";
+import { serve } from "akanjs/service";
 
-const result = await fetch.ping({ origin });
-
-if (result === "ping") {
-  console.info("edge server is alive");
+export class EdgeService extends serve("edge" as const, () => ({})) {
+  async isEdgeAlive(edgeHost: string) {
+    const origin = `https://${edgeHost}${getApiPrefix()}`;
+    try {
+      const result = await fetch.ping({ origin, timeout: 3000 });
+      if (result !== "ping") return false;
+    } catch {
+      this.logger.warn(`edge server ${edgeHost} did not answer`);
+      return false;
+    }
+    this.logger.info(`edge server ${edgeHost} is alive`);
+    return true;
+  }
 }
 ```
 
-### Code
+### apps/myapp/lib/_edge/edge.service.ts
 
 ```ts
-const edgeOrigin = "https://edge.example.com/api";
+const edgeOrigin = `https://${edgeHost}${getApiPrefix()}`;
 
 await fetch.startJob(jobId, { origin: edgeOrigin });
 await fetch.stopJob(jobId, { origin: edgeOrigin });
@@ -98,29 +137,55 @@ await fetch.stopJob(jobId, { origin: edgeOrigin });
 ### Code
 
 ```ts
+// edge server
+throw new Err("job.error.applyTimeout", { jobId, timeout: 3000 });
+
+// cloud server — the same Err is thrown by this call
+await fetch.startJob(jobId, { origin: edgeOrigin });
+```
+
+### apps/myapp/lib/_edge/edge.service.ts
+
+```ts
 const unsubscribe = fetch.subscribeJobStatus(
   (status) => {
-    console.info(status);
+    this.logger.info(`job status: ${status}`);
   },
-  { origin: "https://edge.example.com/api" },
+  { origin: edgeOrigin },
 );
 
-// When the page or worker closes:
+// When the job or the worker ends:
 unsubscribe();
 ```
 
-### Code
+### apps/myapp/srvkit/RemoteEdge.ts
 
 ```ts
-class RemoteEdge {
-  constructor(private origin: string) {}
+import { getApiPrefix } from "akanjs/base";
+
+export class RemoteEdge {
+  readonly #origin: string;
+  readonly #unsubscribes: (() => void)[] = [];
+
+  constructor(host: string) {
+    this.#origin = `https://${host}${getApiPrefix()}`;
+  }
 
   ping() {
-    return fetch.ping({ origin: this.origin });
+    return fetch.ping({ origin: this.#origin });
   }
 
   start(jobId: string) {
-    return fetch.startJob(jobId, { origin: this.origin });
+    return fetch.startJob(jobId, { origin: this.#origin });
+  }
+
+  watchStatus(onStatus: (status: string) => void) {
+    const stop = fetch.subscribeJobStatus(onStatus, { origin: this.#origin });
+    this.#unsubscribes.push(stop);
+  }
+
+  close() {
+    for (const unsubscribe of this.#unsubscribes.splice(0)) unsubscribe();
   }
 }
 ```

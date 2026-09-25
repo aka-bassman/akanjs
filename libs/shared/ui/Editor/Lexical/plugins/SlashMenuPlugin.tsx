@@ -5,8 +5,10 @@ import type { TextNode } from "lexical";
 import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
+import type { EditorFeatureKey } from "../feature";
 import type { MentionSource } from "../mention.type";
 import type { EditorSlashOption } from "../plugin";
+import { useLocalOnlyTrigger } from "../typeaheadTrigger";
 import { useEditorUpload } from "../UploadContext";
 import type { SlashOption } from "./slashMenuPlugin.option";
 import type { SlashGroup } from "./slashMenuPlugin.type";
@@ -29,22 +31,23 @@ const GROUP_ORDER: SlashGroup[] = ["text", "list", "media", "structure", "refere
  * or media insertion.
  */
 interface SlashMenuPluginProps {
+  features: ReadonlySet<EditorFeatureKey>;
   extraOptions?: readonly EditorSlashOption[];
   mentionSources?: readonly MentionSource[];
 }
 
-export const SlashMenuPlugin = ({ extraOptions = [], mentionSources = [] }: SlashMenuPluginProps) => {
+export const SlashMenuPlugin = ({ features, extraOptions = [], mentionSources = [] }: SlashMenuPluginProps) => {
   const [editor] = useLexicalComposerContext();
   const upload = useEditorUpload();
   const [query, setQuery] = useState<string | null>(null);
   const allOptions = useMemo(
-    () => buildOptions(upload, extraOptions, mentionSources),
-    [upload, extraOptions, mentionSources],
+    () => buildOptions({ upload, features, extraOptions, mentionSources }),
+    [upload, features, extraOptions, mentionSources],
   );
 
   // `/` opens the menu at a word boundary; query is a single token (no spaces),
   // matching the Lexical playground convention so the menu closes on space.
-  const triggerFn = useBasicTypeaheadTriggerMatch("/", { minLength: 0 });
+  const triggerFn = useLocalOnlyTrigger(useBasicTypeaheadTriggerMatch("/", { minLength: 0 }));
 
   const options = useMemo(() => {
     if (!query) return allOptions;

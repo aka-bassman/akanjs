@@ -1,4 +1,4 @@
-import type { BuilderEvent, ChangeBatch } from "akanjs/server";
+import type { BuilderEvent, ChangeBatch, DevChangePlan } from "akanjs/server";
 import type { DevChangePlanner, GeneratedIndexSyncResult } from "../frontendBuild";
 
 export interface PrepareDevWatchBatchOptions {
@@ -12,6 +12,8 @@ export interface PreparedDevWatchBatch {
   files: string[];
   kinds: ("code" | "css" | "config")[];
   expandedBatch: ChangeBatch;
+  /** The same plan the event carries, where `devPlan` is optional — read it here, not off the event. */
+  devPlan: DevChangePlan;
   event: Extract<BuilderEvent, { type: "invalidate" }>;
   hasSyncErrors: boolean;
 }
@@ -35,13 +37,15 @@ export const prepareDevWatchBatch = ({
   });
 
   if (indexSync.errors.length > 0 && !devPlan.actions.includes("report-error")) {
-    devPlan.actions = [...devPlan.actions, "report-error"].sort();
+    const withReport: DevChangePlan["actions"] = [...devPlan.actions, "report-error"];
+    devPlan.actions = withReport.sort();
   }
 
   return {
     files,
     kinds,
     expandedBatch,
+    devPlan,
     event: { type: "invalidate", kinds, files, generation, devPlan },
     hasSyncErrors: indexSync.errors.length > 0,
   };

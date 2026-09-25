@@ -10,6 +10,9 @@ import type { LauncherProps as AgentLauncherProps } from "../Agent/Launcher";
 import type { CodeProps as AgentCodeProps, MarkdownProps as AgentMarkdownProps } from "../Agent/Markdown";
 import type { MenuProps as AgentMenuProps } from "../Agent/Menu";
 import type { QuestionProps as AgentQuestionProps } from "../Agent/Question";
+import type { QueuedProps as AgentQueuedProps } from "../Agent/Queued";
+import type { StepsProps as AgentStepsProps } from "../Agent/Steps";
+import type { ToolCardProps as AgentToolCardProps } from "../Agent/ToolCard";
 import type { BadgeProps } from "../Badge";
 import type { ButtonProps } from "../Button";
 import type { DatePickerProps, RangePickerProps, TimePickerProps } from "../DatePicker";
@@ -23,12 +26,14 @@ import type { SkeletonProps } from "../Loading/Skeleton";
 import type { SpinProps } from "../Loading/Spin";
 import type { MenuProps } from "../Menu";
 import type { ModalProps } from "../Modal";
+import type { DraftBarViewProps } from "../Model/DraftBar";
 import type { PaginationProps } from "../Pagination";
 import type { PopconfirmProps } from "../Popconfirm";
 import type { ItemProps as RadioItemProps, RadioProps } from "../Radio";
 import type { BadgeVariants, ButtonVariants, InputSurfaceVariants } from "../recipe";
 import type { SelectProps } from "../Select";
 import type { TableProps } from "../Table";
+import type { ToastItemProps, ToastProps } from "../Toast";
 import type { MultiProps as ToggleSelectMultiProps, ToggleSelectProps } from "../ToggleSelect";
 import type { TooltipProps } from "../Tooltip";
 import type { UnauthorizedProps } from "../Unauthorized";
@@ -57,18 +62,26 @@ export interface AkanUiOverrides {
   Menu: ComponentType<MenuProps>;
   Tooltip: ComponentType<TooltipProps>;
   Unauthorized: ComponentType<UnauthorizedProps>;
+  // The recovered-form banner an edit shell draws. The shell keeps the draft state and publishes the restore and
+  // discard tools, so a replacement re-skins the notice without reaching into the store or re-declaring those.
+  DraftBar: ComponentType<DraftBarViewProps>;
   AgentChat: ComponentType<AgentChatProps>;
 
   // In-page chat, one slot per part. `AgentChat` replaces the whole panel; these replace what it renders, so an
   // app re-skins the transcript or the composer without re-implementing the loop, the slash commands, or the
-  // approval gate. `AgentCode` is the seam a syntax highlighter binds to — the fence's language reaches it.
+  // approval gate. `AgentSteps` is one agent turn — everything between two user messages — which is the grain a
+  // folded scaffold needs and the one thing a per-message slot cannot see. `AgentCode` is the seam a syntax
+  // highlighter binds to — the fence's language reaches it.
   AgentLauncher: ComponentType<AgentLauncherProps>;
   AgentBubble: ComponentType<AgentBubbleProps>;
+  AgentSteps: ComponentType<AgentStepsProps>;
   AgentComposer: ComponentType<AgentComposerProps>;
   AgentApproval: ComponentType<AgentApprovalProps>;
   AgentQuestion: ComponentType<AgentQuestionProps>;
+  AgentQueued: ComponentType<AgentQueuedProps>;
   AgentMenu: ComponentType<AgentMenuProps>;
   AgentMarkdown: ComponentType<AgentMarkdownProps>;
+  AgentToolCard: ComponentType<AgentToolCardProps>;
   AgentCode: ComponentType<AgentCodeProps>;
 
   // Generic components. The public export keeps its full generic signature; the slot stores the widest
@@ -92,6 +105,12 @@ export interface AkanUiOverrides {
   DatePicker: ComponentType<DatePickerProps>;
   DatePickerRangePicker: ComponentType<RangePickerProps>;
   DatePickerTimePicker: ComponentType<TimePickerProps>;
+
+  // Compound `Toast` — the stack and one card. `System`'s `Messages` is not a slot: it keeps the `msg.*`
+  // wiring, the store read, the body-level portal and the dismiss timers, so a replacement re-skins the
+  // surface without re-implementing when a toast appears and goes away.
+  Toast: ComponentType<ToastProps>;
+  ToastItem: ComponentType<ToastItemProps>;
 
   // `ToggleSelect` — generic base (widest instantiation) plus the `.Multi` leaf.
   ToggleSelect: ComponentType<ToggleSelectProps<string | number | boolean | null>>;

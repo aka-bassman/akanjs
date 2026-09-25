@@ -18,6 +18,7 @@ import {
   makeSignoutResponse,
   makeSsoRedirectResponse,
   type NaverResponse,
+  readRefreshTokenCookie,
   Self,
   SelfOrAdmin,
   type SerAccount,
@@ -41,12 +42,14 @@ export class UserSlice extends slice(
 ) {}
 
 export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ query, mutation }) => ({
-  addBadgeCount: mutation(cnst.User, { guards: [SelfOrAdmin] })
+  // The unread badge the app shell draws. It counts what the person has looked at, so an agent moving it
+  // rewrites the record of what they read.
+  addBadgeCount: mutation(cnst.User, { guards: [SelfOrAdmin], mcp: false })
     .param("userId", ID)
     .exec(async function (userId) {
       return await this.userService.addBadgeCount(userId);
     }),
-  subBadgeCount: mutation(cnst.User, { guards: [SelfOrAdmin] })
+  subBadgeCount: mutation(cnst.User, { guards: [SelfOrAdmin], mcp: false })
     .param("userId", ID)
     .exec(async function (userId) {
       return await this.userService.subBadgeCount(userId);
@@ -99,7 +102,9 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .exec(async function (appliedImages, self) {
       return await this.userService.setAppliedImages(self.id, appliedImages);
     }),
-  setLeaveInfoOfSelf: mutation(cnst.User, { guards: [User] })
+  // One step of the account-removal flow the page drives; on its own it records a reason for a departure that
+  // has not happened.
+  setLeaveInfoOfSelf: mutation(cnst.User, { guards: [User], mcp: false })
     .body("leaveInfo", cnst.LeaveInfo)
     .with(Self)
     .exec(async function (leaveInfo, self) {
@@ -244,19 +249,20 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
 
   //*================================================================*//
   //*====================== Admin Control Area ======================*//
-  addUserRole: mutation(cnst.User, { guards: [Admin] })
+  addUserRole: mutation(cnst.User, { guards: [Admin], mcp: false })
     .param("userId", ID)
     .body("role", cnst.UserRole)
     .exec(async function (userId, role) {
       return await this.userService.addUserRole(userId, role);
     }),
-  subUserRole: mutation(cnst.User, { guards: [Admin] })
+  subUserRole: mutation(cnst.User, { guards: [Admin], mcp: false })
     .param("userId", ID)
     .body("role", cnst.UserRole)
     .exec(async function (userId, role) {
       return await this.userService.subUserRole(userId, role);
     }),
-  restrictUser: mutation(Boolean, { guards: [Admin] })
+  // Restricting and releasing an account is a moderation decision with a person behind it.
+  restrictUser: mutation(Boolean, { guards: [Admin], mcp: false })
     .param("userId", ID)
     .body("reason", String)
     .body("until", Date, { nullable: true })
@@ -264,7 +270,7 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
       await this.userService.restrictUser(userId, reason, until);
       return true;
     }),
-  releaseUser: mutation(Boolean, { guards: [Admin] })
+  releaseUser: mutation(Boolean, { guards: [Admin], mcp: false })
     .param("userId", ID)
     .exec(async function (userId) {
       await this.userService.releaseUser(userId);
@@ -275,28 +281,32 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .exec(async function (userId) {
       return await this.userService.getRestrictInfo(userId);
     }),
-  setAccountIdByAdmin: mutation(Boolean, { guards: [Admin] })
+  setAccountIdByAdmin: mutation(Boolean, { guards: [Admin], mcp: false })
     .param("userId", ID)
     .body("accountId", String)
     .exec(async function (userId, accountId) {
       await this.userService.setAccountId(userId, accountId);
       return true;
     }),
-  setPasswordByAdmin: mutation(Boolean, { guards: [Admin] })
+  // The next four change somebody else's credentials, so on an agent shelf they are account takeover with the
+  // operator's own token. They stay page actions; `mcp: false` is curation, and HTTP serves them as before.
+  setPasswordByAdmin: mutation(Boolean, { guards: [Admin], mcp: false })
     .param("userId", ID)
     .body("password", String)
     .exec(async function (userId, password) {
       await this.userService.setPassword(userId, password);
       return true;
     }),
-  setPhoneByAdmin: mutation(Boolean, { guards: [Admin] })
+  setPhoneByAdmin: mutation(Boolean, { guards: [Admin], mcp: false })
     .param("userId", ID)
     .body("phone", String)
     .exec(async function (userId, phone) {
       await this.userService.setPhone(userId, phone);
       return true;
     }),
-  getAccessTokenByAdmin: query(cnst.util.AccessToken, { guards: [Admin] })
+  // Mints a token for someone else, so on an agent shelf it is a way around every other guard in the catalogue:
+  // one call and the rest of the session acts as that account. Impersonation stays an operator action over HTTP.
+  getAccessTokenByAdmin: query(cnst.util.AccessToken, { guards: [Admin], mcp: false })
     .param("userId", ID)
     .exec(async function (userId) {
       return makeAccessTokenResponse(await this.userService.getAccessTokenByAdmin(userId)) as never;
@@ -369,14 +379,15 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
       await this.userService.setNotiSettingOfUser(userId, notiSetting);
       return true;
     }),
-  addNotiDeviceTokenOfSelf: mutation(Boolean, { guards: [User] })
+  // A device's push token, registered by the running client. There is no device on the other end of an MCP call.
+  addNotiDeviceTokenOfSelf: mutation(Boolean, { guards: [User], mcp: false })
     .body("notiDeviceToken", String)
     .with(Self)
     .exec(async function (notiDeviceToken, self) {
       await this.userService.addNotiDeviceTokenOfUser(self.id, notiDeviceToken);
       return true;
     }),
-  subNotiDeviceTokenOfSelf: mutation(Boolean, { guards: [User] })
+  subNotiDeviceTokenOfSelf: mutation(Boolean, { guards: [User], mcp: false })
     .body("notiDeviceToken", String)
     .with(Self)
     .exec(async function (notiDeviceToken, self) {
@@ -402,6 +413,7 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
         "github",
         req.cookies.toJSON() as unknown as SsoCookie,
         req.account as SerAccount | undefined,
+        githubUser.displayName,
       );
       return makeSsoRedirectResponse(redirect, cookie);
     }),
@@ -419,6 +431,7 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
         "google",
         req.cookies.toJSON() as unknown as SsoCookie,
         req.account as SerAccount | undefined,
+        googleUser.displayName,
       );
       return makeSsoRedirectResponse(redirect, cookie);
     }),
@@ -436,6 +449,7 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
         "facebook",
         req.cookies.toJSON() as unknown as SsoCookie,
         req.account as SerAccount | undefined,
+        [facebookUser.name.givenName, facebookUser.name.familyName].filter(Boolean).join(" "),
       );
       return makeSsoRedirectResponse(redirect, cookie);
     }),
@@ -454,12 +468,13 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .with(Req)
     .exec(async function (request) {
       const req = request as Bun.BunRequest & { user?: KakaoResponse; account?: SerAccount };
-      const { email: accountId } = req.user ?? (await extractKakaoProfile(getSsoCode(req), getSsoOrigin(req)));
+      const { email: accountId, name } = req.user ?? (await extractKakaoProfile(getSsoCode(req), getSsoOrigin(req)));
       const { cookie, redirect } = await this.userService.handleSsoCallback(
         accountId,
         "kakao",
         req.cookies.toJSON() as unknown as SsoCookie,
         req.account as SerAccount | undefined,
+        name,
       );
       return makeSsoRedirectResponse(redirect, cookie);
     }),
@@ -470,12 +485,13 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .with(Req)
     .exec(async function (request) {
       const req = request as Bun.BunRequest & { user?: NaverResponse; account?: SerAccount };
-      const { email: accountId } = req.user ?? (await extractNaverProfile(getSsoCode(req), getSsoOrigin(req)));
+      const { email: accountId, name } = req.user ?? (await extractNaverProfile(getSsoCode(req), getSsoOrigin(req)));
       const { cookie, redirect } = await this.userService.handleSsoCallback(
         accountId,
         "naver",
         req.cookies.toJSON() as unknown as SsoCookie,
         req.account as SerAccount | undefined,
+        name,
       );
       return makeSsoRedirectResponse(redirect, cookie);
     }),
@@ -486,14 +502,8 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .with(Account)
     .with(Req)
     .exec(async function (refreshToken, account, request) {
-      const token = refreshToken ?? (request as Bun.BunRequest).cookies.get("userRefreshToken");
+      const token = refreshToken ?? readRefreshTokenCookie(request.cookies, "user");
       if (!token) throw new Err("user.error.noRefreshToken");
-      const accessToken = await this.userService.refreshUserToken(token, account);
-      return new Response(JSON.stringify(accessToken), {
-        headers: {
-          "Content-Type": "application/json",
-          "Set-Cookie": `userRefreshToken=${encodeURIComponent(accessToken.refreshToken ?? "")}; Path=/; SameSite=Lax; HttpOnly`,
-        },
-      }) as never;
+      return makeAccessTokenResponse(await this.userService.refreshUserToken(token, account)) as never;
     }),
 })) {}

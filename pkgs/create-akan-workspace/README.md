@@ -64,11 +64,11 @@ Navigate to http://localhost:4200 to see your app running!
 After creating your workspace, explore the full power of Akan.js CLI:
 
 ```bash
-# AI-powered module creation
+# Scaffold a domain module
 akan create-module
 
-# Set up AI assistant
-akan set-llm
+# Run the dev server
+akan start <app-name>
 
 # Build for production
 akan build <app-name>

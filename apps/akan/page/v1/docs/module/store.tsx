@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Docs, type IntroItem } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   const baseVariables: IntroItem[] = [
@@ -51,7 +52,7 @@ export default function Page() {
     { name: "refresh<Slice>(initForm?): Promise<void>", desc: "Reload list with strict consistency." },
     { name: "select<Slice>(model, options?): void", desc: "Update selection state." },
     { name: "setPageOf<Slice>(page, options?): Promise<void>", desc: "Change page and reload." },
-    { name: "addPageOf<Slice>(page, options?): Promise<void>", desc: "Load next page and append." },
+    { name: "loadMoreOf<Slice>(options?): Promise<void>", desc: "Append the rows after the ones loaded." },
     { name: "setLimitOf<Slice>(limit, options?): Promise<void>", desc: "Change list limit and reload." },
     { name: "setQueryArgsOf<Slice>(...args): Promise<void>", desc: "Change query arguments and reload." },
     { name: "setSortOf<Slice>(sort, options?): Promise<void>", desc: "Change sort and reload." },
@@ -400,7 +401,7 @@ export class ProductStore extends store(sig.product, { ... }) {
       </Scroll.Slide>
       <div className="my-4 h-px w-full bg-border" />
 
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
+      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 xl:flex" />
     </Scroll>
   );
-}
+});

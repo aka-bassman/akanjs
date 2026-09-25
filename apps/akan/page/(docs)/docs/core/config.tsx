@@ -1,9 +1,306 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { Code, Divider, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
-export default function Page() {
+const configKeys = [
+  {
+    key: "routes",
+    type: "AkanRouteConfig[]",
+    en: "Public domains for the app, optionally split per client with basePath.",
+    ko: "앱이 사용할 공개 도메인이며, basePath로 클라이언트를 나눌 수 있습니다.",
+  },
+  {
+    key: "api",
+    type: "{ prefix, websocketPrefix }",
+    default: "/api, /ws",
+    en: "Where signal endpoints and the websocket upgrade are mounted. Baked into every client bundle.",
+    ko: "signal 엔드포인트와 웹소켓 업그레이드가 마운트될 경로입니다. 모든 클라이언트 번들에 구워집니다.",
+  },
+  {
+    key: "web",
+    type: "boolean | { csr: boolean }",
+    default: "true",
+    en: "Which web surfaces the build produces and the app mounts at boot.",
+    ko: "빌드가 만들고 앱이 부팅 때 마운트하는 웹 표면을 정합니다.",
+  },
+  {
+    key: "i18n",
+    type: "{ defaultLocale, locales }",
+    default: 'en, ["en", "ko"]',
+    en: "The locale segment every route sits under. defaultLocale must be one of locales.",
+    ko: "모든 라우트가 놓이는 locale 세그먼트입니다. defaultLocale은 locales 안에 있어야 합니다.",
+  },
+  {
+    key: "mobile",
+    type: "AkanMobileConfig",
+    en: "Native app identity plus one entry per mobile package that Android and iOS commands read.",
+    ko: "Android·iOS 명령이 읽는 네이티브 앱 정보와 모바일 패키지별 target 정의입니다.",
+  },
+  {
+    key: "images",
+    type: "AkanImageConfig",
+    default: "webp, quality 75",
+    en: "Allow-list, sizes, and limits for the image optimizer. A remote host not listed is refused.",
+    ko: "이미지 최적화의 허용 목록·크기·제한입니다. 목록에 없는 원격 호스트는 거부됩니다.",
+  },
+  {
+    key: "publicEnv",
+    type: "string[]",
+    default: "[]",
+    en: "Extra process.env names the browser build may inline, beyond the built-in AKAN_PUBLIC_* pattern.",
+    ko: "기본 AKAN_PUBLIC_* 패턴 외에 브라우저 빌드가 인라인해도 되는 process.env 이름입니다.",
+  },
+  {
+    key: "secrets",
+    type: "string[]",
+    default: "[]",
+    en: "Globs for files that cannot live inside env.server.*.ts. Shipped by upload-env and git-ignored.",
+    ko: "env.server.*.ts 안에 담을 수 없는 파일의 glob입니다. upload-env가 함께 보내고 git-ignore됩니다.",
+  },
+  {
+    key: "assets",
+    type: "{ pruneFonts, keepFonts }",
+    default: "true, []",
+    en: "How akan build trims the public/ copy it ships. Source trees are never touched.",
+    ko: "akan build가 배포용 public/ 복사본을 어떻게 줄일지 정합니다. 원본 트리는 건드리지 않습니다.",
+  },
+  {
+    key: "syncPageLibs",
+    type: "string[] | boolean",
+    default: "false",
+    en: "Which library page folders this app mounts as its own routes.",
+    ko: "이 앱이 자기 라우트로 마운트할 라이브러리 page 폴더를 정합니다.",
+  },
+  {
+    key: "plugins",
+    type: "AkanPlugin[]",
+    default: "[]",
+    en: "Akan plugins this app contributes, read live by the CLI.",
+    ko: "이 앱이 등록하는 Akan 플러그인이며, CLI가 실행 시점에 읽습니다.",
+  },
+  {
+    key: "docker",
+    type: "string | DockerImageConfig",
+    default: "oven/bun:1-slim",
+    en: "A whole Dockerfile as a string, or the parts akan build assembles one from.",
+    ko: "Dockerfile 전체 문자열이거나, akan build가 Dockerfile을 조립할 재료입니다.",
+  },
+  {
+    key: "defaultDatabaseMode",
+    type: "single | multiple | cluster",
+    default: "single",
+    en: "Fallback for AKAN_DATABASE_MODE; also picks the drivers in the production package.json.",
+    ko: "AKAN_DATABASE_MODE가 없을 때 쓰는 모드이며, 프로덕션 package.json의 드라이버 패키지도 정합니다.",
+  },
+  {
+    key: "externalLibs",
+    type: "string[]",
+    default: "[]",
+    en: "Packages kept as production runtime dependencies instead of being bundled.",
+    ko: "번들에 넣지 않고 프로덕션 런타임 의존성으로 유지할 패키지입니다.",
+  },
+  {
+    key: "barrelImports",
+    type: "string[]",
+    default: "akanjs + workspace",
+    en: "Barrel paths Akan flattens while scanning and bundling.",
+    ko: "스캔과 번들링에서 Akan이 펼치는 barrel 경로입니다.",
+  },
+  {
+    key: "optimizeImports",
+    type: "string[]",
+    default: "built-in list",
+    en: "Extra packages whose imports the client build rewrites to the exact source file.",
+    ko: "클라이언트 빌드가 정확한 원본 파일 import로 바꿔 줄 추가 패키지입니다.",
+  },
+];
+
+const mobileFields = [
+  {
+    key: "appName",
+    type: "string",
+    default: "the app name",
+    en: "Display name of the native app.",
+    ko: "네이티브 앱 표시 이름입니다.",
+  },
+  {
+    key: "appId",
+    type: "string",
+    default: "com.<repo>.<app>",
+    en: "Native package identifier: Android applicationId and iOS bundle id.",
+    ko: "네이티브 패키지 식별자이며, Android applicationId와 iOS bundle id로 쓰입니다.",
+  },
+  {
+    key: "version",
+    type: "string",
+    default: "0.0.1",
+    en: "User-facing app version, written to Android versionName and iOS MARKETING_VERSION.",
+    ko: "사용자에게 보이는 앱 버전이며, Android versionName과 iOS MARKETING_VERSION에 기록됩니다.",
+  },
+  {
+    key: "buildNum",
+    type: "number",
+    default: "1",
+    en: "Store build number, written to Android versionCode and iOS CURRENT_PROJECT_VERSION.",
+    ko: "스토어 제출 빌드 번호이며, Android versionCode와 iOS CURRENT_PROJECT_VERSION에 기록됩니다.",
+  },
+  {
+    key: "targets",
+    type: "Record<string, Target>",
+    default: "one target",
+    en: "Named mobile packages built from the same Akan app.",
+    ko: "같은 Akan 앱에서 만드는 이름 있는 모바일 패키지입니다.",
+  },
+  {
+    key: "targets.*.basePath",
+    type: "string",
+    en: "The client this native package opens; it must be a basePath declared in routes.",
+    ko: "이 네이티브 패키지가 여는 클라이언트이며, routes에 선언된 basePath여야 합니다.",
+  },
+  {
+    key: "targets.*.indexPath",
+    type: "string",
+    en: "Start and fallback CSR path: app startup, deep-link stack recovery, back-button fallback.",
+    ko: "시작·fallback CSR 경로이며, 모바일 시작, 딥링크 스택 복원, 뒤로가기 fallback에 씁니다.",
+  },
+  {
+    key: "targets.*.permissions",
+    type: "camera | contacts | location | push | speech",
+    default: "[]",
+    en: "Native permission hints; each activates the matching plugin's native configuration.",
+    ko: "네이티브 권한 힌트이며, 각 값이 해당 플러그인의 네이티브 설정을 켭니다.",
+  },
+  {
+    key: "targets.*.assets",
+    type: "{ icon, splash }",
+    en: "App icon and splash source paths, relative to the app root.",
+    ko: "앱 루트 기준의 앱 아이콘·splash 이미지 경로입니다.",
+  },
+  {
+    key: "targets.*.files",
+    type: "{ ios, android }",
+    en: "Native file copy map from a path in the generated project to an app-relative source file.",
+    ko: "생성된 네이티브 프로젝트 안의 경로를 앱 기준 원본 파일에 매핑하는 복사 맵입니다.",
+  },
+  {
+    key: "targets.*.deepLinks",
+    type: "AkanMobileTargetDeepLinks",
+    en: "Native URL schemes and verified HTTPS app links for this target.",
+    ko: "이 target이 받을 네이티브 URL scheme과 검증된 HTTPS 앱 링크입니다.",
+  },
+  {
+    key: "deepLinks.schemes",
+    type: "string[]",
+    en: "Custom URL schemes such as example://.",
+    ko: "example:// 같은 커스텀 URL scheme입니다.",
+  },
+  {
+    key: "deepLinks.domains",
+    type: "string[]",
+    en: "App-link and universal-link hosts, normalized to the bare host.",
+    ko: "app link·universal link 호스트이며, 호스트만 남도록 정규화됩니다.",
+  },
+  {
+    key: "deepLinks.ios.teamId",
+    type: "string",
+    en: "Apple Developer Team ID for apple-app-site-association; universal links need it.",
+    ko: "apple-app-site-association에 쓰는 Apple Developer Team ID이며, universal link에 필요합니다.",
+  },
+  {
+    key: "deepLinks.android.sha256CertFingerprints",
+    type: "string[]",
+    en: "assetlinks.json signing fingerprints: debug for a local build, release for Play Store.",
+    ko: "assetlinks.json에 쓰는 서명 인증서 fingerprint이며, debug는 로컬 빌드, release는 Play Store 빌드용입니다.",
+  },
+  {
+    key: "plugins",
+    type: "Record<string, unknown>",
+    en: "Passthrough Capacitor plugins config, merged target over root.",
+    ko: "Capacitor plugins config로 그대로 전달되며, root 위에 target을 얹어 병합합니다.",
+  },
+  {
+    key: "android",
+    type: "Record<string, unknown>",
+    en: "Passthrough Capacitor android config, merged target over root.",
+    ko: "Capacitor android config로 그대로 전달되며, root 위에 target을 얹어 병합합니다.",
+  },
+  {
+    key: "ios",
+    type: "Record<string, unknown>",
+    en: "Passthrough Capacitor ios config, merged target over root.",
+    ko: "Capacitor ios config로 그대로 전달되며, root 위에 target을 얹어 병합합니다.",
+  },
+];
+
+const buildFields = [
+  {
+    key: "externalLibs",
+    type: "string[]",
+    default: "[]",
+    en: "Unbundled packages, installed in production at the workspace-pinned version.",
+    ko: "번들하지 않는 패키지이며, 프로덕션에서 워크스페이스가 고정한 버전으로 설치됩니다.",
+  },
+  {
+    key: "optimizeImports",
+    type: "string[]",
+    default: "built-in list",
+    en: "Extra packages the client build imports by exact file, so an icon set does not ship whole.",
+    ko: "클라이언트 빌드가 정확한 원본 파일로 import할 추가 패키지이며, 아이콘 세트를 통째로 싣지 않게 합니다.",
+  },
+  {
+    key: "barrelImports",
+    type: "string[]",
+    default: "akanjs + workspace",
+    en: "Extra barrels to flatten while scanning and bundling, for ones outside the workspace.",
+    ko: "스캔과 번들링에서 펼칠 추가 barrel 경로이며, 워크스페이스 밖의 barrel에만 씁니다.",
+  },
+  {
+    key: "defaultDatabaseMode",
+    type: "single | multiple | cluster",
+    default: "single",
+    en: "multiple adds the libsql, queue, and protobuf drivers; cluster swaps libsql for postgres.",
+    ko: "multiple은 libsql·queue·protobuf 드라이버를 더하고, cluster는 libsql 대신 postgres를 씁니다.",
+  },
+  {
+    key: "assets.pruneFonts",
+    type: "boolean",
+    default: "true",
+    en: "Drops unreferenced fonts from dist's public/ copy; an optimize-on font's source goes too.",
+    ko: "참조되지 않는 폰트를 dist의 public/ 복사본에서 제거합니다. optimize가 켜진 폰트의 원본도 제거됩니다.",
+  },
+  {
+    key: "assets.keepFonts",
+    type: "string[]",
+    default: "[]",
+    en: "Font globs kept whatever the scan concludes, such as a URL assembled at runtime.",
+    ko: "스캔 결과와 무관하게 남길 폰트 glob이며, 런타임에 조립되는 URL 같은 경우에 씁니다.",
+  },
+  {
+    key: "syncPageLibs",
+    type: "string[] | boolean",
+    default: "false",
+    en: "true mounts every dependency lib with a page folder, an array only those; false unlinks all.",
+    ko: "true는 page 폴더가 있는 모든 의존 라이브러리를, 배열은 적은 것만 마운트하고, false는 기존 링크를 모두 제거합니다.",
+  },
+  {
+    key: "plugins",
+    type: "AkanPlugin[]",
+    default: "[]",
+    en: "Read live by the CLI for runtime packages, native project setup, and public/ assets.",
+    ko: "CLI가 실행 시점에 읽어 런타임 패키지, 네이티브 프로젝트 설정, public/ 에셋을 처리합니다.",
+  },
+  {
+    key: "docker",
+    type: "string | DockerImageConfig",
+    default: "oven/bun:1-slim",
+    en: "A whole Dockerfile, or its parts: image, preRuns and postRuns around bun install, command.",
+    ko: "Dockerfile 전체이거나 그 재료입니다. image, bun install 앞뒤의 preRuns·postRuns, command입니다.",
+  },
+];
+
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -16,63 +313,60 @@ export default function Page() {
               ko: "akan.config.ts는 앱 단위 설정 파일입니다. 처음부터 모든 옵션을 이해할 필요는 없습니다. 빈 파일로 시작하고, 앱에 필요한 필드만 하나씩 추가하면 됩니다.",
             })}
           </div>
-        </Docs.Description>
-        <div className="grid grid-cols-2 gap-1 p-2 md:grid-cols-3 lg:grid-cols-6">
-          {[
-            { name: "routes", desc: l.trans({ en: "Domains", ko: "도메인" }) },
-            { name: "mobile", desc: l.trans({ en: "App identity", ko: "앱 정보" }) },
-            { name: "env/", desc: l.trans({ en: "Env values", ko: "환경별 값" }) },
-            { name: "images", desc: l.trans({ en: "Image rules", ko: "이미지 규칙" }) },
-            { name: "publicEnv", desc: l.trans({ en: "Browser env", ko: "브라우저 환경변수" }) },
-            { name: "secrets", desc: l.trans({ en: "Secret files", ko: "시크릿 파일" }) },
-            { name: "advanced", desc: l.trans({ en: "Build options", ko: "빌드 옵션" }) },
-          ].map(({ name, desc }) => (
-            <div key={name} className={panelRecipe({ padding: "row" })}>
-              <div className="font-mono font-semibold text-primary">{name}</div>
-              <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
-            </div>
-          ))}
-        </div>
-        <div className="space-y-1">
-          {[
-            {
-              title: l.trans({ en: "Start small", ko: "작게 시작" }),
-              desc: l.trans({
-                en: "Most defaults are already prepared, so an empty config is valid.",
-                ko: "대부분의 기본값은 준비되어 있으므로 빈 config도 유효합니다.",
-              }),
-            },
-            {
-              title: l.trans({ en: "Add only what changes", ko: "필요한 것만 추가" }),
-              desc: l.trans({
-                en: "Define only the parts your app actually needs to customize.",
-                ko: "앱에서 실제로 바꿔야 하는 부분만 선언하면 됩니다.",
-              }),
-            },
-            {
-              title: l.trans({ en: "One source of truth", ko: "하나의 기준점" }),
-              desc: l.trans({
-                en: "CLI commands, production builds, and mobile commands all read this file.",
-                ko: "CLI 명령, 프로덕션 빌드, 모바일 명령이 모두 이 파일을 기준으로 동작합니다.",
-              }),
-            },
-          ].map(({ title, desc }) => (
-            <div key={title} className={panelRecipe({ padding: "row" })}>
-              <span className="font-bold text-foreground">{title}: </span>
-
-              <span className="text-foreground/70 text-sm">{desc}</span>
-            </div>
-          ))}
-        </div>
-        <Code.Snippet
-          className="w-full"
-          title="apps/minimal/akan.config.ts"
-          code={`import type { AppConfig } from "akanjs";
+          <Code.Snippet
+            className="w-full"
+            title="apps/minimal/akan.config.ts"
+            code={`import type { AppConfig } from "akanjs";
 
 const config: AppConfig = {};
 
 export default config;`}
-        />
+          />
+          <div>
+            {l.trans({
+              en: "This is the whole key set. Every one of them has a default that a working app can live with, and the slides below cover the ones you are most likely to change:",
+              ko: "설정 가능한 키는 아래가 전부입니다. 모두 앱이 그대로 동작하는 기본값을 갖고 있으며, 그중 자주 바꾸게 되는 것들을 이어지는 슬라이드에서 다룹니다:",
+            })}
+          </div>
+          <Docs.OptionTable
+            items={configKeys.map(({ key, type, default: fallback, en, ko }) => ({
+              key,
+              type,
+              default: fallback,
+              desc: l.trans({ en, ko }),
+            }))}
+          />
+          <div className="space-y-1 pl-2">
+            {[
+              {
+                title: l.trans({ en: "Start small", ko: "작게 시작" }),
+                desc: l.trans({
+                  en: "Most defaults are already prepared, so an empty config is valid.",
+                  ko: "대부분의 기본값은 준비되어 있으므로 빈 config도 유효합니다.",
+                }),
+              },
+              {
+                title: l.trans({ en: "Add only what changes", ko: "필요한 것만 추가" }),
+                desc: l.trans({
+                  en: "Define only the parts your app actually needs to customize.",
+                  ko: "앱에서 실제로 바꿔야 하는 부분만 선언하면 됩니다.",
+                }),
+              },
+              {
+                title: l.trans({ en: "One source of truth", ko: "하나의 기준점" }),
+                desc: l.trans({
+                  en: "CLI commands, production builds, and mobile commands all read this file.",
+                  ko: "CLI 명령, 프로덕션 빌드, 모바일 명령이 모두 이 파일을 기준으로 동작합니다.",
+                }),
+              },
+            ].map(({ title, desc }) => (
+              <div key={title}>
+                <span className="font-bold text-foreground">{title}: </span>
+                <span className="text-foreground/70 text-sm">{desc}</span>
+              </div>
+            ))}
+          </div>
+        </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
@@ -136,12 +430,9 @@ export default config;`}
           <Code.Snippet
             className="w-full"
             title="env/env.client.local.ts"
-            code={`import { getEnv } from "akanjs/base";
-
-import type { AppClientEnv } from "./env.client.type";
+            code={`import type { AppClientEnv } from "./env.client.type";
 
 export const env: AppClientEnv = {
-  ...getEnv(),
   google: {
     mapKey: "local-map-key",
   },
@@ -150,12 +441,11 @@ export const env: AppClientEnv = {
           <Code.Snippet
             className="w-full"
             title="env/env.server.local.ts"
-            code={`import { getEnv } from "akanjs/base";
-
-import type { ModulesOptions } from "../lib/option";
+            code={`import type { ModulesOptions } from "../lib/option";
+import { libEnv } from "./env.server.type";
 
 export const env: ModulesOptions = {
-  ...getEnv(),
+  ...libEnv,
   hostname: null,
   security: {
     verifies: [["password", "phone"]],
@@ -164,45 +454,39 @@ export const env: ModulesOptions = {
 };`}
           />
         </div>
-        <div className="space-y-1">
-          {[
+        <Docs.IntroTable
+          type={l.trans({ en: "File", ko: "파일" })}
+          items={[
             {
-              title: "env.client.*",
+              name: "env.client.*",
               desc: l.trans({
-                en: "Values used by browser or client-side code. Keep only public-safe values here, such as map keys, site keys, or feature switches.",
-                ko: "브라우저나 클라이언트 코드에서 사용하는 값입니다. 지도 키, 사이트 키, 기능 스위치처럼 공개되어도 되는 값만 둡니다.",
+                en: "Public-safe values for client code, such as map keys, site keys, or feature switches.",
+                ko: "클라이언트 코드가 쓰는 공개 가능한 값입니다. 지도 키, 사이트 키, 기능 스위치 같은 값입니다.",
               }),
             },
             {
-              title: "env.server.*",
+              name: "env.server.*",
               desc: l.trans({
-                en: "Values used only by server-side modules. Put server options, connection settings, and private service configuration here.",
-                ko: "서버 모듈에서만 사용하는 값입니다. 서버 옵션, 연결 설정, 비공개 서비스 설정을 여기에 둡니다.",
+                en: "Server-only values: server options, connection settings, private service configuration.",
+                ko: "서버 모듈에서만 쓰는 값입니다. 서버 옵션, 연결 설정, 비공개 서비스 설정을 둡니다.",
               }),
             },
             {
-              title: "local·testing·debug·develop·main",
-
+              name: ["local", "testing", "debug", "develop", "main"],
               desc: l.trans({
-                en: "Each suffix is selected by AKAN_PUBLIC_ENV. Use local for your machine, testing for tests, debug/develop for shared stages, and main for production.",
-                ko: "각 suffix는 AKAN_PUBLIC_ENV 값으로 선택됩니다. local은 내 PC, testing은 테스트, debug/develop은 공유 개발 단계, main은 운영 환경에 사용합니다.",
+                en: "Suffixes chosen by AKAN_PUBLIC_ENV: your machine, tests, two shared stages, production.",
+                ko: "AKAN_PUBLIC_ENV로 고르는 suffix이며, 순서대로 내 PC, 테스트, 공유 개발 단계 둘, 운영 환경입니다.",
               }),
             },
             {
-              title: "env.*.type.ts",
+              name: "env.*.type.ts",
               desc: l.trans({
-                en: "Type files define the shape of env values, so missing or misspelled settings can be caught while coding.",
-                ko: "type 파일은 env 값의 형태를 정의합니다. 필요한 값이 빠지거나 이름이 틀린 설정을 코딩 중에 잡을 수 있습니다.",
+                en: "The shape of env values, so a missing or misspelled setting is caught while coding.",
+                ko: "env 값의 형태를 정의해, 빠지거나 이름이 틀린 설정을 코딩 중에 잡습니다.",
               }),
             },
-          ].map(({ title, desc }) => (
-            <div key={title} className={panelRecipe({ padding: "row" })}>
-              <span className="font-mono font-semibold text-primary">{title}: </span>
-
-              <span className="text-foreground/70 text-sm">{desc}</span>
-            </div>
-          ))}
-        </div>
+          ]}
+        />
         <Docs.Alert type="warning">
           {l.trans({
             en: "Client env and publicEnv are different. env.client.* stores app values for each environment, while publicEnv only allows selected process.env names to be exposed to browser builds.",
@@ -246,44 +530,45 @@ export const option = new AkanOption<ModulesOptions>()
   .setAgentAccess(SignedIn)
   .setMcp({ instructions: "Domain tools for the app. Start from taskInTodo." });`}
         />
-        <div className="space-y-1">
-          {[
+        <Docs.IntroTable
+          type={l.trans({ en: "Stage", ko: "단계" })}
+          items={[
             {
-              title: "setLlm",
+              name: "setLlm",
               desc: l.trans({
-                en: "apiKey, model, and host for whichever adaptor holds LlmAdaptorRole. Take the key from the env object rather than writing it here — env.server.* is gitignored, this file is not.",
-                ko: "LlmAdaptorRole을 차지한 어댑터가 쓸 apiKey·model·host입니다. 키는 이 파일에 적지 말고 env 객체에서 받으세요. env.server.*는 gitignore 대상이지만 이 파일은 아닙니다.",
+                en: "apiKey, model, and host for whichever adaptor holds LlmAdaptorRole.",
+                ko: "LlmAdaptorRole을 차지한 어댑터가 쓸 apiKey·model·host입니다.",
               }),
             },
             {
-              title: "setAgentAccess",
+              name: "setAgentAccess",
               desc: l.trans({
-                en: "Who may spend the LLM key through the runAgentTurn relay, named as the guards any other endpoint would name. Several are ANDed. With none the call is refused — the same answer None gives — because the framework has no account model to gate on.",
-                ko: "runAgentTurn 릴레이로 LLM 키를 쓸 수 있는 caller를, 다른 엔드포인트와 똑같이 가드로 지정합니다. 여러 개는 AND로 묶입니다. 프레임워크에는 기준으로 삼을 계정 모델이 없어, 가드가 없으면 호출은 None 가드와 같이 거절됩니다.",
+                en: "Guards (ANDed) for spending the LLM key via runAgentTurn; with none, every call is refused.",
+                ko: "runAgentTurn으로 LLM 키를 쓰려면 통과해야 할 가드이며 AND로 묶입니다. 없으면 모든 호출이 거절됩니다.",
               }),
             },
             {
-              title: "setMcp",
+              name: "setMcp",
               desc: l.trans({
-                en: "MCP server settings — instructions, readOnly, path, pageSize, language, auth. Not main.ts: the gateway there only spawns children, while this file is handed to the process that mounts /mcp.",
-                ko: "MCP 서버 설정입니다. instructions·readOnly·path·pageSize·language·auth를 받습니다. main.ts가 아닙니다. main.ts의 gateway는 child를 띄우기만 하고, 이 파일이 /mcp를 마운트하는 프로세스에 전달됩니다.",
+                en: "MCP server settings such as instructions, readOnly, and auth.",
+                ko: "instructions·readOnly·auth 같은 MCP 서버 설정입니다.",
               }),
             },
             {
-              title: "use · applyMiddleware · applyAdaptor · applyWebProxy",
+              name: ["use", "applyMiddleware", "applyAdaptor", "applyWebProxy"],
               desc: l.trans({
-                en: "The registration half: env-derived singletons a service reaches with use<T>(), signal middleware, a predefined adaptor role rebound to the app's own implementation, and web proxies.",
-                ko: "등록 쪽입니다. service가 use<T>()로 잡는 env 기반 싱글턴, signal middleware, 미리 정의된 adaptor role을 앱 구현으로 다시 묶는 override, web proxy를 등록합니다.",
+                en: "Register env-derived use<T>() singletons, signal middleware, adaptor overrides, web proxies.",
+                ko: "service가 use<T>()로 잡는 env 기반 싱글턴, signal middleware, adaptor override, web proxy를 등록합니다.",
               }),
             },
-          ].map(({ title, desc }) => (
-            <div key={title} className={panelRecipe({ padding: "row" })}>
-              <span className="font-mono font-semibold text-primary">{title}: </span>
-
-              <span className="text-foreground/70 text-sm">{desc}</span>
-            </div>
-          ))}
-        </div>
+          ]}
+        />
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: "Read the LLM key from the env object, never write it in option.ts: env.server.* is gitignored, this file is not.",
+            ko: "LLM 키는 option.ts에 적지 말고 env 객체에서 읽으세요. env.server.*는 gitignore 대상이지만 이 파일은 아닙니다.",
+          })}
+        </Docs.Alert>
         <Docs.Alert type="info">
           {l.trans({
             en: "Each of these has an env spelling too (AKAN_MCP_*, AKAN_AGENT), for a deployment that must configure what the source does not. A value written in option.ts wins over the env of the same name.",
@@ -319,30 +604,105 @@ const config: AppConfig = {
 
 export default config;`}
         />
-        <div className="space-y-1">
-          <div className={panelRecipe()}>
-            <div className="font-mono font-semibold text-primary">basePath</div>
-            <div className="mt-2 text-foreground/70 text-sm">
-              {l.trans({
-                en: "Optional client name for this route. Akan normalizes /store/ to store.",
-                ko: "이 route가 열 클라이언트 이름입니다. Akan은 /store/처럼 적은 값을 store로 정리합니다.",
-              })}
-            </div>
-          </div>
-          <div className={panelRecipe()}>
-            <div className="font-mono font-semibold text-primary">domains</div>
-            <div className="mt-2 text-foreground/70 text-sm">
-              {l.trans({
-                en: "A map of environment names to domains. debug, develop, and main exist by default, and custom branches such as qa can be added.",
-                ko: "환경 이름별 도메인 목록입니다. debug, develop, main은 기본으로 있고, qa 같은 커스텀 브랜치도 추가할 수 있습니다.",
-              })}
-            </div>
-          </div>
-        </div>
+        <Docs.OptionTable
+          items={[
+            {
+              key: "basePath",
+              type: "string",
+              desc: l.trans({
+                en: "The client this route opens and its first page folder; without one, the route is the app.",
+                ko: "이 route가 여는 클라이언트이자 첫 page 폴더입니다. basePath가 없는 route는 앱 자체입니다.",
+              }),
+            },
+            {
+              key: "domains",
+              type: "Record<branch, string[]>",
+              default: "{}",
+              desc: l.trans({
+                en: "Hosts that open this route, keyed by branch: debug, develop, main, or any key you add.",
+                ko: "이 route를 여는 호스트이며 branch를 키로 씁니다. debug·develop·main은 항상 있고, 다른 키는 branch를 추가합니다.",
+              }),
+            },
+          ]}
+        />
         <Docs.Alert type="warning">
           {l.trans({
             en: "If you declare basePath, the page folder must follow the same name. See Multi Client for the full page layout rule.",
             ko: "basePath를 선언했다면 page 폴더도 같은 이름을 따라야 합니다. 자세한 page 배치 규칙은 Multi Client 페이지를 참고하세요.",
+          })}
+        </Docs.Alert>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="web-surfaces" title={l.trans({ en: "Web Surfaces And Prefixes", ko: "웹 표면과 경로 접두사" })}>
+        <Docs.Title>{l.trans({ en: "Web Surfaces And Prefixes", ko: "웹 표면과 경로 접두사" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "web decides which web surfaces the build produces, and api decides where the server mounts its endpoints. Both are declared here rather than only in main.ts, because both are baked into the client bundles: a prebuilt CSR shell or a mobile package never reaches a server that could tell it otherwise.",
+              ko: "web은 빌드가 어떤 웹 표면을 만들지 정하고, api는 서버가 엔드포인트를 어디에 마운트할지 정합니다. 둘 다 main.ts만이 아니라 여기에 선언합니다. 두 값 모두 클라이언트 번들에 구워지며, 미리 빌드된 CSR 셸이나 모바일 패키지는 이를 알려 줄 서버에 닿지 못하기 때문입니다.",
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title="apps/myapp/akan.config.ts"
+          code={`import type { AppConfig } from "akanjs";
+
+const config: AppConfig = {
+  web: { csr: false },
+  api: { prefix: "/backend", websocketPrefix: "/socket" },
+};
+
+export default config;`}
+        />
+        <Docs.OptionTable
+          items={[
+            {
+              key: "web",
+              type: "boolean | { csr: boolean }",
+              default: "true",
+              desc: l.trans({
+                en: "true builds SSR and CSR, false is API-only, and { csr: false } drops only the CSR shell.",
+                ko: "true는 SSR과 CSR을 모두 빌드하고, false는 API 전용이며, { csr: false }는 CSR 셸만 뺍니다.",
+              }),
+            },
+            {
+              key: "api.prefix",
+              type: "string",
+              default: "/api",
+              desc: l.trans({
+                en: "Where signal endpoints are mounted; read it back with getApiPrefix() from akanjs/base.",
+                ko: "signal 엔드포인트가 마운트될 경로이며, akanjs/base의 getApiPrefix()로 읽습니다.",
+              }),
+            },
+            {
+              key: "api.websocketPrefix",
+              type: "string",
+              default: "/ws",
+              desc: l.trans({
+                en: "Where the websocket upgrade sits; read it back with getWsPrefix().",
+                ko: "웹소켓 업그레이드가 놓이는 경로이며, getWsPrefix()로 읽습니다.",
+              }),
+            },
+          ]}
+        />
+        <div>
+          {l.trans({
+            en: "Never write either prefix as a literal; new AkanApp({ prefix, websocketPrefix }) still overrides both for the server and every page it renders.",
+            ko: "두 접두사를 문자열로 직접 적지 마세요. new AkanApp({ prefix, websocketPrefix })는 서버와 그 서버가 렌더링하는 모든 페이지에서 두 값을 여전히 덮어씁니다.",
+          })}
+        </div>
+        <div>
+          {l.trans({
+            en: "AKAN_SSR and AKAN_CSR narrow the same choice at boot, and can only narrow it: a deployment cannot switch on a surface the build left out. akan start ignores web entirely, so the dev surface stays whole.",
+            ko: "AKAN_SSR과 AKAN_CSR은 같은 선택을 부팅 시점에 좁히며, 좁히기만 합니다. 빌드가 빼놓은 표면을 배포가 다시 켤 수는 없습니다. akan start는 web을 무시하므로 개발 화면은 그대로 유지됩니다.",
+          })}
+        </div>
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: "A mobile app ships the CSR shell, so web: { csr: false } and a mobile section do not go together — drop the mobile section or leave CSR on.",
+            ko: "모바일 앱은 CSR 셸을 싣고 나가므로 web: { csr: false }와 mobile 섹션은 함께 쓸 수 없습니다. mobile 섹션을 빼거나 CSR을 켠 채로 두세요.",
           })}
         </Docs.Alert>
       </Scroll.Slide>
@@ -353,8 +713,8 @@ export default config;`}
         <Docs.Description>
           <div>
             {l.trans({
-              en: "mobile describes the native app identity used by Android and iOS commands. Think of it as the name, package id, and version information that will appear in native app projects.",
-              ko: "mobile은 Android와 iOS 명령에서 사용할 네이티브 앱 정보를 설명합니다. 네이티브 앱 프로젝트에 들어갈 이름, 패키지 ID, 버전 정보를 적는 곳이라고 생각하면 됩니다.",
+              en: "mobile describes the native app identity used by Android and iOS commands. Think of it as the name, package id, and version information that will appear in native app projects. Values at the mobile root are defaults; a target overrides the ones it names.",
+              ko: "mobile은 Android와 iOS 명령에서 사용할 네이티브 앱 정보를 설명합니다. 네이티브 앱 프로젝트에 들어갈 이름, 패키지 ID, 버전 정보를 적는 곳이라고 생각하면 됩니다. mobile 루트의 값은 기본값이고, target이 적은 값이 그 위를 덮습니다.",
             })}
           </div>
         </Docs.Description>
@@ -381,7 +741,7 @@ export default config;`}
             "app/google-services.json": "public/google-services.json",
           },
           ios: {
-            "App/GoogleService-Info.plist": "public/GoogleService-Info.plist",
+            "App/App/GoogleService-Info.plist": "public/GoogleService-Info.plist",
           },
         },
         deepLinks: {
@@ -406,151 +766,20 @@ export default config;`}
   },
 };`}
         />
-        <div className="space-y-1">
-          {[
-            {
-              title: "appName",
-              desc: l.trans({
-                en: "Display name used for the native app. At the mobile root it becomes the default for every target; inside a target it overrides the display name for that package.",
-                ko: "네이티브 앱 표시 이름입니다. mobile root에서는 모든 target의 기본값이 되고, target 내부에서는 해당 패키지 표시 이름을 override합니다.",
-              }),
-            },
-            {
-              title: "appId",
-              desc: l.trans({
-                en: "Native package identifier, such as com.example.app. Android uses it as applicationId/package name and iOS uses it as bundle id. Firebase Android/iOS app registration must use the same value.",
-                ko: "com.example.app 같은 네이티브 패키지 식별자입니다. Android는 applicationId/package name으로, iOS는 bundle id로 사용합니다. Firebase Android/iOS 앱 등록도 같은 값을 써야 합니다.",
-              }),
-            },
-            {
-              title: "version",
-              desc: l.trans({
-                en: "User-facing native app version, mapped to Android versionName and iOS MARKETING_VERSION. Target value overrides the mobile root value.",
-                ko: "사용자에게 보이는 네이티브 앱 버전입니다. Android versionName과 iOS MARKETING_VERSION에 반영됩니다. target 값은 mobile root 값을 override합니다.",
-              }),
-            },
-            {
-              title: "buildNum",
-              desc: l.trans({
-                en: "Store build number, mapped to Android versionCode and iOS CURRENT_PROJECT_VERSION. Increase it for each native store release.",
-                ko: "스토어 제출용 빌드 번호입니다. Android versionCode와 iOS CURRENT_PROJECT_VERSION에 반영됩니다. 네이티브 스토어 릴리즈마다 증가시키세요.",
-              }),
-            },
-            {
-              title: "targets",
-              desc: l.trans({
-                en: "Named mobile packages built from the same Akan app. Each target can select a basePath, fallback indexPath, identity overrides, permissions, files, assets, and deepLinks.",
-                ko: "하나의 Akan 앱에서 만드는 이름 있는 모바일 패키지들입니다. 각 target은 basePath, fallback indexPath, 앱 식별 정보 override, permissions, files, assets, deepLinks를 가질 수 있습니다.",
-              }),
-            },
-            {
-              title: "target.basePath",
-              desc: l.trans({
-                en: "Client/basePath opened by this native package. Use it when one Akan app ships separate customer/admin/partner mobile apps. It should match a configured route basePath.",
-                ko: "이 네이티브 패키지가 여는 client/basePath입니다. 하나의 Akan 앱에서 고객/관리자/파트너 모바일 앱을 나눌 때 사용합니다. 설정된 route basePath와 맞아야 합니다.",
-              }),
-            },
-            {
-              title: "target.indexPath",
-              desc: l.trans({
-                en: "Initial or fallback CSR path for the target. Akan uses it for mobile startup, deep link stack recovery, and back-button fallback.",
-                ko: "target의 초기 또는 fallback CSR path입니다. 모바일 시작 경로, 딥링크 stack 복원, back 버튼 fallback에 사용합니다.",
-              }),
-            },
-            {
-              title: "target.permissions",
-              desc: l.trans({
-                en: "Native permission hints used by devkit. Supported values are camera, contacts, location, and push. Declare push before using usePushNotification on native apps.",
-                ko: "devkit이 사용하는 네이티브 권한 힌트입니다. 지원 값은 camera, contacts, location, push입니다. 네이티브에서 usePushNotification을 쓰려면 push를 선언하세요.",
-              }),
-            },
-            {
-              title: "target.assets",
-              desc: l.trans({
-                en: "Optional app icon and splash image source paths, relative to the app root. Use icon and splash when the native package needs custom branding.",
-                ko: "앱 루트 기준의 선택적 앱 아이콘/splash 이미지 source path입니다. 네이티브 패키지 브랜딩이 필요할 때 icon과 splash를 사용합니다.",
-              }),
-            },
-            {
-              title: "target.files",
-              desc: l.trans({
-                en: "Native file copy map. Keys are generated native project paths and values are app-relative source paths. Use it for google-services.json, GoogleService-Info.plist, or other native config files.",
-                ko: "네이티브 파일 복사 매핑입니다. key는 생성된 네이티브 프로젝트의 대상 경로이고 value는 앱 기준 source path입니다. google-services.json, GoogleService-Info.plist 같은 네이티브 설정 파일에 사용합니다.",
-              }),
-            },
-            {
-              title: "deepLinks",
-              desc: l.trans({
-                en: "Native URL schemes and verified HTTPS app links for a mobile target. iOS app links require teamId; Android app links require SHA-256 certificate fingerprints for release verification.",
-                ko: "모바일 target에 사용할 네이티브 URL scheme과 검증된 HTTPS 앱 링크입니다. iOS app link에는 teamId가 필요하고, Android app link에는 릴리즈 검증용 SHA-256 인증서 fingerprint가 필요합니다.",
-              }),
-            },
-            {
-              title: "deepLinks.schemes",
-              desc: l.trans({
-                en: "Custom URL schemes such as example://. Use simple lower-case app schemes and avoid schemes owned by other apps.",
-                ko: "example:// 같은 커스텀 URL scheme입니다. 단순한 소문자 앱 scheme을 사용하고 다른 앱이 소유한 scheme은 피하세요.",
-              }),
-            },
-            {
-              title: "deepLinks.domains",
-              desc: l.trans({
-                en: "HTTPS app-link/universal-link domains. Akan can serve association files, but iOS still needs teamId and Android release verification needs SHA-256 fingerprints.",
-                ko: "HTTPS app link/universal link 도메인입니다. Akan이 association file을 서빙할 수 있지만, iOS에는 teamId가 필요하고 Android 릴리즈 검증에는 SHA-256 fingerprint가 필요합니다.",
-              }),
-            },
-            {
-              title: "deepLinks.ios.teamId",
-              desc: l.trans({
-                en: "Apple Developer Team ID used for apple-app-site-association. Required for universal links on real iOS apps.",
-                ko: "apple-app-site-association에 사용하는 Apple Developer Team ID입니다. 실제 iOS 앱의 universal link에 필요합니다.",
-              }),
-            },
-            {
-              title: "deepLinks.android.sha256CertFingerprints",
-              desc: l.trans({
-                en: "Signing certificate SHA-256 fingerprints used by assetlinks.json. Use debug fingerprints for local testing and release fingerprints for Play Store builds.",
-                ko: "assetlinks.json에 사용하는 서명 인증서 SHA-256 fingerprint입니다. 로컬 테스트에는 debug fingerprint, Play Store 빌드에는 release fingerprint를 사용하세요.",
-              }),
-            },
-            {
-              title: "mobile.plugins / android / ios",
-              desc: l.trans({
-                en: "Passthrough Capacitor config fields. Use them only when a Capacitor plugin requires native configuration not covered by Akan's higher-level fields.",
-                ko: "Capacitor config로 그대로 전달되는 필드입니다. Akan의 상위 설정으로 표현되지 않는 네이티브 플러그인 설정이 필요할 때만 사용하세요.",
-              }),
-            },
-          ].map(({ title, desc }) => (
-            <div key={title} className={panelRecipe({ padding: "row" })}>
-              <span className="font-mono font-semibold text-primary">{title}: </span>
-
-              <span className="text-foreground/70 text-sm">{desc}</span>
-            </div>
-          ))}
-        </div>
-        <Code.Snippet
-          className="w-full"
-          title="mobile target files"
-          code={`const config: AppConfig = {
-  mobile: {
-    appName: "Shop",
-    appId: "com.example.shop",
-    targets: {
-      default: {
-        permissions: ["push"],
-        files: {
-          android: {
-            "app/google-services.json": "public/google-services.json",
-          },
-          ios: {
-            "App/GoogleService-Info.plist": "public/GoogleService-Info.plist",
-          },
-        },
-      },
-    },
-  },
-};`}
+        <Docs.OptionTable
+          items={mobileFields.map(({ key, type, default: fallback, en, ko }) => ({
+            key,
+            type,
+            default: fallback,
+            desc: l.trans({ en, ko }),
+          }))}
         />
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: "indexPath is read per target only, so one written at the mobile root is dropped. Firebase app registration must use the same appId.",
+            ko: "indexPath는 target 안에서만 읽히므로, mobile 루트에 쓴 값은 버려집니다. Firebase 앱 등록도 같은 appId를 써야 합니다.",
+          })}
+        </Docs.Alert>
         <Docs.Alert type="info">
           <span>
             {l.trans({
@@ -558,7 +787,10 @@ export default config;`}
               ko: "files는 네이티브 target path를 앱 기준 source file에 매핑합니다. google-services.json, GoogleService-Info.plist 같은 Firebase push 설정 파일에 유용합니다. 서버 service account JSON은 client/native file mapping에 넣지 마세요. 플랫폼별 설정 절차는 ",
             })}
           </span>
-          <Link href="/cheatsheet/dev/mobile" className="text-primary underline underline-offset-4 hover:no-underline">
+          <Link
+            href="/cheatsheet/mobile/setup"
+            className="text-primary underline underline-offset-4 hover:no-underline"
+          >
             {l.trans({ en: "Mobile Development", ko: "모바일 개발" })}
           </Link>
           <span>{l.trans({ en: ".", ko: " 문서를 참고하세요." })}</span>
@@ -622,28 +854,18 @@ export default config;`}
           </div>
           <div>
             {l.trans({
-              en: "akan upload-env archives every matched file, and akan download-env restores them. Patterns are resolved relative to the app directory, and Akan syncs them into a managed block in the root .gitignore, so one declaration both deploys and git-ignores the files.",
-              ko: "akan upload-env는 매칭된 모든 파일을 아카이브하고, akan download-env는 이를 복원합니다. 패턴은 앱 디렉터리 기준으로 resolve되며, Akan이 root .gitignore의 managed block에 동기화하므로 한 번의 선언으로 배포와 git-ignore가 함께 처리됩니다.",
+              en: "akan upload-env archives every matched file, and akan download-env restores them. Patterns are resolved relative to the app directory, and one declaration both deploys and git-ignores the files.",
+              ko: "akan upload-env는 매칭된 모든 파일을 아카이브하고, akan download-env는 이를 복원합니다. 패턴은 앱 디렉터리 기준으로 resolve되며, 한 번의 선언으로 배포와 git-ignore가 함께 처리됩니다.",
             })}
           </div>
         </Docs.Description>
-        <div className="space-y-1">
-          <Code.Snippet
-            className="w-full"
-            title="secrets"
-            code={`const config: AppConfig = {
+        <Code.Snippet
+          className="w-full"
+          title="secrets"
+          code={`const config: AppConfig = {
   secrets: ["secrets/**/*", "certs/*.pem"],
 };`}
-          />
-          <Code.Snippet
-            className="w-full"
-            title=".gitignore (auto-synced on upload-env)"
-            code={`# akan:secrets (managed by akan.config.ts — do not edit)
-apps/api/certs/*.pem
-apps/api/secrets/**/*
-# akan:secrets:end`}
-          />
-        </div>
+        />
         <Docs.Alert type="warning">
           {l.trans({
             en: "publicEnv exposes variable names to the browser; secrets does the opposite. Only glob patterns live in config — the matched files stay local and git-ignored, so never commit their contents.",
@@ -658,65 +880,52 @@ apps/api/secrets/**/*
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Some config fields are mainly for the build system and production runtime. Most apps do not need to touch them, but they are useful when a package must stay external, imports need optimization, or the Docker image needs customization.",
-              ko: "일부 config 필드는 주로 빌드 시스템과 프로덕션 런타임을 위한 설정입니다. 대부분의 앱은 건드릴 필요가 없지만, 특정 패키지를 런타임 의존성으로 유지하거나 import 최적화, Docker 이미지 커스터마이징이 필요할 때 사용합니다.",
+              en: "The rest of the config is for the build system and the production image. Most apps never touch it, but it is where a package stays external, a font survives pruning, a library's routes join the app, and the image gains a system dependency.",
+              ko: "나머지 설정은 빌드 시스템과 프로덕션 이미지를 위한 것입니다. 대부분의 앱은 건드릴 일이 없지만, 특정 패키지를 외부 의존성으로 남기거나, 폰트를 정리 대상에서 빼거나, 라이브러리 라우트를 앱에 합치거나, 이미지에 시스템 의존성을 더할 때 사용합니다.",
             })}
           </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
           title="Build and runtime fields"
-          code={`const config: AppConfig = {
+          code={`import { pushNotificationPlugin } from "./plugin/pushNotification.plugin";
+
+const config: AppConfig = {
   externalLibs: ["shiki"],
   optimizeImports: ["custom-icons"],
   barrelImports: ["@acme/ui"],
   defaultDatabaseMode: "single",
+  assets: { pruneFonts: true, keepFonts: ["fonts/Assistant-*.woff2"] },
+  syncPageLibs: ["shared"],
+  plugins: [pushNotificationPlugin],
   docker: {
     image: { amd64: "oven/bun:amd64", arm64: "oven/bun:arm64" },
-    preRuns: ["echo before"],
+    preRuns: ["apt-get install -y ffmpeg"],
     postRuns: ["echo after"],
     command: ["bun", "main.js"],
   },
 };`}
         />
-        <div className="space-y-1">
-          {[
-            {
-              title: "externalLibs",
-              desc: l.trans({
-                en: "Packages kept as production runtime dependencies instead of only being bundled.",
-                ko: "번들에만 포함하지 않고 프로덕션 런타임 의존성으로 유지할 패키지입니다.",
-              }),
-            },
-            {
-              title: "optimizeImports",
-              desc: l.trans({
-                en: "Extra packages whose imports should be optimized by the client build.",
-                ko: "클라이언트 빌드에서 import 최적화를 적용할 추가 패키지입니다.",
-              }),
-            },
-            {
-              title: "barrelImports",
-              desc: l.trans({
-                en: "Barrel import paths that Akan can flatten while scanning and bundling.",
-                ko: "스캔과 번들링 중 Akan이 펼쳐서 처리할 barrel import 경로입니다.",
-              }),
-            },
-            {
-              title: "defaultDatabaseMode",
-              desc: l.trans({
-                en: "Fallback database mode for commands that do not receive AKAN_DATABASE_MODE from the environment.",
-                ko: "환경변수 AKAN_DATABASE_MODE가 주어지지 않은 명령에서 사용할 기본 데이터베이스 모드입니다.",
-              }),
-            },
-          ].map(({ title, desc }) => (
-            <div key={title} className={panelRecipe({ padding: "row" })}>
-              <span className="font-mono font-semibold text-primary">{title}: </span>
-
-              <span className="text-foreground/70 text-sm">{desc}</span>
-            </div>
-          ))}
+        <Docs.OptionTable
+          items={buildFields.map(({ key, type, default: fallback, en, ko }) => ({
+            key,
+            type,
+            default: fallback,
+            desc: l.trans({ en, ko }),
+          }))}
+        />
+        <div>
+          {l.trans({
+            en: "A library contributes to three of these: its own externalLibs, docker.preRuns and docker.postRuns, and assets.keepFonts carry into every app that mounts it. The generated image installs ca-certificates and tzdata and nothing else, which is why an app that needs ffmpeg or a headless browser declares it.",
+            ko: "라이브러리가 이 중 셋에 값을 더합니다. 라이브러리 자신의 externalLibs, docker.preRuns·docker.postRuns, assets.keepFonts는 그 라이브러리를 마운트하는 모든 앱에 함께 적용됩니다. 생성되는 이미지에는 ca-certificates와 tzdata만 설치되므로, ffmpeg나 헤드리스 브라우저가 필요한 앱은 직접 선언해야 합니다.",
+          })}
         </div>
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: "A docker written as a string is the whole Dockerfile, taken verbatim. Nothing is merged into it — including the preRuns and postRuns your libraries declared, which are silently dropped rather than silently unapplied.",
+            ko: "docker를 문자열로 쓰면 그것이 Dockerfile 전체이며 그대로 사용됩니다. 아무것도 병합되지 않습니다. 라이브러리가 선언한 preRuns와 postRuns도 포함이며, 적용되지 않은 채 남지 않고 아예 버려집니다.",
+          })}
+        </Docs.Alert>
       </Scroll.Slide>
       <Divider />
 
@@ -730,7 +939,7 @@ apps/api/secrets/**/*
             })}
           </div>
         </Docs.Description>
-        <div className="space-y-1">
+        <div className="space-y-1 pl-2">
           {[
             {
               title: l.trans({ en: "Environment values", ko: "환경별 값" }),
@@ -749,8 +958,8 @@ apps/api/secrets/**/*
             {
               title: l.trans({ en: "Mobile", ko: "모바일" }),
               desc: l.trans({
-                en: "appName defaults to the app name, appId defaults to com.appName.app, version defaults to 0.0.1, and buildNum defaults to 1.",
-                ko: "appName은 앱 이름, appId는 com.appName.app, version은 0.0.1, buildNum은 1이 기본값입니다.",
+                en: "appName defaults to the app name, appId defaults to com.<repoName>.<appName>, version defaults to 0.0.1, and buildNum defaults to 1. Pin a real reverse-DNS appId before you ship: a placeholder such as com.example.app has almost always been claimed in Apple's portal already.",
+                ko: "appName은 앱 이름, appId는 com.<repoName>.<appName>, version은 0.0.1, buildNum은 1이 기본값입니다. 출시 전에는 조직의 실제 reverse-DNS appId를 지정해야 합니다. com.example.app 같은 placeholder id는 Apple 포털에서 이미 선점되어 있는 경우가 대부분입니다.",
               }),
             },
             {
@@ -763,14 +972,13 @@ apps/api/secrets/**/*
             {
               title: l.trans({ en: "i18n", ko: "다국어" }),
               desc: l.trans({
-                en: "Only configure i18n when your app needs to change the default locale behavior.",
-                ko: "기본 locale 동작을 바꿔야 할 때만 i18n을 설정하면 됩니다.",
+                en: "Locales default to en and ko with en first. Change it only to move the default locale or to serve a different set — defaultLocale must be one of locales.",
+                ko: "locale 기본값은 en과 ko이며 기본 locale은 en입니다. 기본 locale을 옮기거나 다른 목록을 제공할 때만 바꿉니다. defaultLocale은 locales 안에 있어야 합니다.",
               }),
             },
           ].map(({ title, desc }) => (
-            <div key={title} className={panelRecipe({ padding: "row" })}>
+            <div key={title}>
               <span className="font-bold text-foreground">{title}: </span>
-
               <span className="text-foreground/70 text-sm">{desc}</span>
             </div>
           ))}
@@ -785,4 +993,4 @@ apps/api/secrets/**/*
       <DocsToc />
     </Scroll>
   );
-}
+});

@@ -18,6 +18,7 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dic
 import { modelDictionary } from "akanjs/dictionary";
 
 import type { ${dict.Model}, ${dict.Model}Insight } from "./${dict.model}.constant";
+import type { ${dict.Model}Filter } from "./${dict.model}.document";
 import type { ${dict.Model}Endpoint, ${dict.Model}Slice } from "./${dict.model}.signal";
 
 export const dictionary = modelDictionary(["en", "ko"])
@@ -25,9 +26,11 @@ export const dictionary = modelDictionary(["en", "ko"])
     t(["${modelLabelEn}", "${modelLabelKo}"]).desc(["${modelDescEn}", "${modelDescKo}"])
   )
   .model<${dict.Model}>((t) => ({
-    name: t(["Name", "이름"]),
+    name: t(["Name", "이름"]).desc(["Name", "이름"]),
   }))
   .insight<${dict.Model}Insight>((t) => ({}))
+  .query<${dict.Model}Filter>((fn) => ({}))
+  .sort<${dict.Model}Filter>((t) => ({}))
   .slice<${dict.Model}Slice>((fn) => ({
     inPublic: fn(["${dict.Model} In Public", "${dict.Model} 공개"]).arg((t) => ({})),
   }))

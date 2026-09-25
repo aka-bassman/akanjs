@@ -4,14 +4,10 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { a
   return {
     filename: "_index.tsx",
     content: `import { fetch, Task, usePage } from "@apps/${dict.appName}/client";
+import { page } from "akanjs/client";
 import { Link, buttonRecipe } from "akanjs/ui";
 
-// ===== page/task/_index.tsx =====
-// Convention: Akan.js file-based routing — _index.tsx is the index page for /task.
-// Server-side data loading via loader() at the page level; passes init/view props to Zone components.
-// Uses usePage().l() for i18n — the framework convention for dictionary-based translations.
-
-export default async function Page() {
+export default page().render(async () => {
   const { l } = usePage();
   const { taskInitInPublic } = await fetch.initTaskInPublic();
   return (
@@ -29,6 +25,6 @@ export default async function Page() {
       <Task.Zone.Card className="flex flex-col gap-3" init={taskInitInPublic} />
     </main>
   );
-}`,
+});`,
   };
 }

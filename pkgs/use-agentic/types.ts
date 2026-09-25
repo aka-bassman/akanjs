@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 export type JsonSchema = Record<string, unknown>;
 
 /** `true` asks with a default message, a string is the message, a function decides from the arguments. */
@@ -6,7 +8,24 @@ export type ToolConfirm = boolean | string | ((args: Record<string, unknown>) =>
 /** Re-checked at the moment of execution; a string is the refusal reason the agent reads. */
 export type ToolGuard = (args: Record<string, unknown>) => true | string;
 
-export interface ToolEntry {
+/**
+ * What a card tool renders while its call waits, and the two ways the user ends that wait. `submit` is the call's
+ * result, `cancel` is its refusal; whichever comes first settles the call and takes the card off the screen, so a
+ * second call of either does nothing.
+ */
+export interface ToolCardControl {
+  args: Record<string, unknown>;
+  submit: (value: unknown) => void;
+  cancel: (reason?: string) => void;
+}
+
+/**
+ * Called, not mounted — the host invokes it inside its own render, so the returned tree keeps no state of its
+ * own between renders. Put anything stateful in a component the function returns.
+ */
+export type ToolCard = (control: ToolCardControl) => ReactNode;
+
+interface ToolEntryBase {
   name: string;
   description?: string;
   parameters?: JsonSchema;
@@ -17,7 +36,37 @@ export interface ToolEntry {
   settle?: boolean;
   confirm?: ToolConfirm;
   guard?: ToolGuard;
+}
+
+export interface ToolActionEntry extends ToolEntryBase {
   run: (args: Record<string, unknown>) => unknown;
+  card?: never;
+}
+
+/**
+ * A call the **user** answers rather than the screen: the host parks the call, renders `card`, and what the card
+ * submits is what the model reads back. `confirm` is not read for one — the card in front of the user is already
+ * the asking, and a gate before it would ask them twice for one thing.
+ */
+export interface ToolCardEntry extends ToolEntryBase {
+  card: ToolCard;
+  run?: never;
+}
+
+export type ToolEntry = ToolActionEntry | ToolCardEntry;
+
+/**
+ * That a call is happening, for a host drawing it on the screen rather than in a transcript.
+ *
+ * Emitted around the execution alone — after the approval card settled, and never for a call a guard or an
+ * approval refused before it ran, so a host may treat `start` as "this is being done to the page right now".
+ */
+export interface ToolActivity {
+  callId: string;
+  name: string;
+  args: Record<string, unknown>;
+  phase: "start" | "end";
+  error?: string;
 }
 
 /** One call an agent made through the surface, in the order it made them. */
@@ -119,6 +168,13 @@ export interface ToolCallResult {
 }
 
 /**
+ * Why an assistant turn ended. `length` is the provider's own ceiling rather than the model's choice, so the turn
+ * is incomplete — a truncated answer and a turn cut off before its tool call finished both arrive this way, and
+ * neither is distinguishable from `end` without it.
+ */
+export type TurnStop = "end" | "toolUse" | "length";
+
+/**
  * A file the user handed the conversation rather than the screen — which is why it rides a message instead of a
  * tool, the same reason `askUser` belongs to the session and not to the surface.
  *
@@ -138,6 +194,42 @@ export interface MessageAttachment {
   data?: string;
   url?: string;
   text?: string;
+  /**
+   * Opaque to the framework, which only carries it: whatever the host needs to find this file again — a file id,
+   * a storage key. Without one a host that stores its uploads keeps a map of its own beside the transcript, keyed
+   * on name and size, which is the same guess `Attachment.same` has to make and is wrong for two crops of one
+   * export. It is not shown to the model; a tool the host publishes is what turns it back into a file.
+   */
+  ref?: string;
+}
+
+/**
+ * Data the user pointed at while they were talking, rather than a file they handed over — a record, or one field
+ * of one, named in the message the way they named it. It rides a message for the same reason an attachment does:
+ * what somebody referred to while asking is part of the asking, and the turn context is rebuilt from the screen
+ * every turn, so a screen-shaped carrier forgets what was pointed at three turns ago.
+ *
+ * **`value` is a snapshot, deliberately.** It is what the data was when the user sent the message, and it is never
+ * re-read on a later turn. Re-reading would be wrong twice over: it rewrites what the person was looking at when
+ * they spoke, and the common case is an agent that then *edits* the very field it was pointed at, which would
+ * leave the reference showing the result and no record of what was being changed from. `refName`, `refId` and
+ * `path` are the way back to the current value — a tool re-reads it when the answer needs it.
+ *
+ * **`value` arrives masked, and nothing downstream can mask it again.** Masking needs the model class
+ * (`mask(model, value)`), which no wire carries, so whichever model the host names when it stages the reference is
+ * the whole of the decision about what leaves the browser.
+ */
+export interface MessageReference {
+  /** The host's own `refName`, unchanged — the vocabulary its published tools already speak. */
+  refName: string;
+  refId: string;
+  /** What the chip draws and what the token in the text spells, so the two can never disagree. */
+  label: string;
+  /** A dotted path into the document, in `pathSet`'s vocabulary. Absent means the whole of it. */
+  path?: string;
+  value?: unknown;
+  /** Read by the model in place of a value there is none of — clipped, unreadable, or gone from a restored chat. */
+  note?: string;
 }
 
 export interface ChatMessage {
@@ -145,6 +237,8 @@ export interface ChatMessage {
   text?: string;
   /** Files the message carries. Content, not instructions — a backend frames them the way it frames context. */
   attachments?: MessageAttachment[];
+  /** Data the message points at. Content, framed like attachments and for the same reason. */
+  references?: MessageReference[];
   toolCalls?: ToolCallRequest[];
   toolResults?: ToolCallResult[];
   /** A failed or capped turn, recorded in the transcript rather than thrown past it. */
@@ -171,7 +265,7 @@ export interface ContextBlock {
 export type RunnerEvent =
   | { type: "text"; delta: string }
   | { type: "toolCall"; id: string; name: string; args: Record<string, unknown> }
-  | { type: "done"; stop: "end" | "toolUse" }
+  | { type: "done"; stop: TurnStop }
   /**
    * `data` accompanies a message that is a code rather than a sentence — the values whoever resolves the code
    * interpolates into its text. A host that does not know the code shows the message as it stands.

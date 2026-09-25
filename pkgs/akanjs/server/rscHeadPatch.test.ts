@@ -92,7 +92,7 @@ function installFakeDocument(head: FakeHead): void {
 }
 
 afterEach(() => {
-  delete (globalThis as typeof globalThis & { document?: Document }).document;
+  Reflect.deleteProperty(globalThis, "document");
 });
 
 describe("RSC head snapshot patch", () => {

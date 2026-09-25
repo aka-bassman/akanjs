@@ -1,132 +1,95 @@
 "use client";
-import { cn, msg, usePage } from "akanjs/client";
+import { msg, usePage } from "akanjs/client";
 import { st } from "akanjs/store";
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  AiOutlineCheckCircle,
-  AiOutlineClose,
-  AiOutlineExclamationCircle,
-  AiOutlineInfoCircle,
-  AiOutlineLoading3Quarters,
-  AiOutlineWarning,
-} from "react-icons/ai";
 
-type MessageType = "success" | "error" | "info" | "warning" | "loading";
+import { Toast, type ToastMessage } from "../Toast";
 
-interface MessageProps {
-  content: ReactNode;
-  type?: MessageType;
-  duration: number; // in seconds
-  keyForMessage: string;
-}
-
-interface TimeOutType {
-  key: string;
-  timeoutId: NodeJS.Timeout;
-}
 interface MsgOption {
   key?: string;
   duration?: number;
   data?: Record<string, string | number>;
 }
 
-const messageTone: { [key in MessageType]: { card: string; chip: string; icon: ReactNode } } = {
-  info: { card: "border-info/35", chip: "bg-info/15 text-info", icon: <AiOutlineInfoCircle /> },
-  success: { card: "border-success/35", chip: "bg-success/15 text-success", icon: <AiOutlineCheckCircle /> },
-  warning: { card: "border-warning/35", chip: "bg-warning/15 text-warning", icon: <AiOutlineWarning /> },
-  error: {
-    card: "border-destructive/35",
-    chip: "bg-destructive/15 text-destructive",
-    icon: <AiOutlineExclamationCircle />,
-  },
-  loading: {
-    card: "border-border",
-    chip: "bg-muted text-foreground/60",
-    icon: <AiOutlineLoading3Quarters className="animate-spin" />,
-  },
-};
+interface ArmedMessage {
+  message: Omit<ToastMessage, "leaving">;
+  timeoutId: ReturnType<typeof setTimeout>;
+}
 
-let timeOuts: TimeOutType[] = [];
-
-const Message = ({ content, type = "info" as MessageType, duration, keyForMessage }: MessageProps) => {
-  const [preBlind, setPreBlind] = useState(false);
-  useEffect(() => {
-    if (!content) return;
-    // 기존의 timeouts에 key가 있으면, 기존의 timeout을 제거하고 새로운 timeout을 추가한다.
-    const existingTimeOut = timeOuts.find((item) => item.key === keyForMessage);
-    if (existingTimeOut) {
-      clearTimeout(existingTimeOut.timeoutId);
-      removeTimeOut(keyForMessage);
-    }
-
-    const timeoutId = setTimeout(() => {
-      setPreBlind(true);
-    }, duration * 1000);
-    addTimeOut(keyForMessage, timeoutId);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [content, keyForMessage, type]);
-
-  useEffect(() => {
-    if (!preBlind) return;
-    setTimeout(() => {
-      st.do.hideMessage(keyForMessage);
-      removeTimeOut(keyForMessage);
-    }, 100);
-  }, [preBlind]);
-
-  const addTimeOut = (key: string, timeoutId: NodeJS.Timeout) => {
-    const filteredTimeOuts = timeOuts.filter((item) => item.key !== key);
-    timeOuts = [...filteredTimeOuts, { key, timeoutId }];
-  };
-
-  const removeTimeOut = (key: string) => {
-    timeOuts = timeOuts.filter((item) => item.key !== key);
-  };
-
-  const tone = messageTone[type];
-  return (
-    <div
-      data-state={preBlind}
-      className="pointer-events-auto w-full animate-fadeInDown15-150ms data-[state=true]:animate-smaller"
-    >
-      <div
-        className={cn(
-          "flex w-full items-start gap-3 rounded-box border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur-sm",
-          tone.card,
-        )}
-      >
-        <div className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-base", tone.chip)}>
-          {tone.icon}
-        </div>
-        <span className="min-w-0 flex-1 self-center break-words text-sm leading-snug">{content}</span>
-        <button
-          aria-label="Dismiss"
-          className="-mr-1 shrink-0 self-center rounded-full p-1 text-foreground/30 transition-colors hover:text-foreground/70"
-          onClick={() => {
-            setPreBlind(true);
-          }}
-          type="button"
-        >
-          <AiOutlineClose className="text-sm" />
-        </button>
-      </div>
-    </div>
-  );
-};
+// How long a message may take to play its exit before it is dropped anyway: a `Toast`/`ToastItem` override
+// that renders no exit animation never fires `onClosed`, and the message would sit there forever.
+const exitGraceMs = 2000;
 
 export const Messages = () => {
   const messages = st.use.messages({ agent: false });
   const pageState = st.use.pageState({ agent: false });
   const { l } = usePage();
   const [portalElement, setPortalElement] = useState<HTMLElement | null>(null);
+  const [leavingKeys, setLeavingKeys] = useState<string[]>([]);
+  const timers = useRef(new Map<string, ArmedMessage>());
+
+  const dropMessage = (key: string) => {
+    const armed = timers.current.get(key);
+    if (armed) {
+      clearTimeout(armed.timeoutId);
+      timers.current.delete(key);
+    }
+    setLeavingKeys((keys) => keys.filter((leavingKey) => leavingKey !== key));
+    st.do.hideMessage(key);
+  };
+
+  const startLeaving = (key: string) => {
+    const armed = timers.current.get(key);
+    if (armed) {
+      clearTimeout(armed.timeoutId);
+      timers.current.set(key, { message: armed.message, timeoutId: setTimeout(() => dropMessage(key), exitGraceMs) });
+    }
+    setLeavingKeys((keys) => (keys.includes(key) ? keys : [...keys, key]));
+  };
+
   useEffect(() => {
     if (typeof document === "undefined") return;
     setPortalElement(document.body);
   }, []);
+
+  useEffect(() => {
+    const running = timers.current;
+    const rearmed: string[] = [];
+    for (const message of messages) {
+      const armed = running.get(message.key);
+      // `showMessage` replaces the object when an existing key is shown again, so object identity — not the
+      // list — is what says a countdown restarts. Re-arming on every list change would restart the timer of
+      // every toast already on screen whenever a new one arrives.
+      if (armed?.message === message) continue;
+      if (armed) {
+        clearTimeout(armed.timeoutId);
+        rearmed.push(message.key);
+      }
+      running.set(message.key, {
+        message,
+        timeoutId: setTimeout(() => startLeaving(message.key), message.duration * 1000),
+      });
+    }
+    for (const [key, armed] of [...running]) {
+      if (messages.some((message) => message.key === key)) continue;
+      clearTimeout(armed.timeoutId);
+      running.delete(key);
+    }
+    setLeavingKeys((keys) => {
+      const alive = keys.filter((key) => !rearmed.includes(key) && messages.some((message) => message.key === key));
+      return alive.length === keys.length ? keys : alive;
+    });
+  }, [messages]);
+
+  useEffect(() => {
+    const running = timers.current;
+    return () => {
+      for (const armed of running.values()) clearTimeout(armed.timeoutId);
+      running.clear();
+    };
+  }, []);
+
   useEffect(() => {
     Object.assign(msg, {
       info: (msgKey: `${string}.${string}`, option = {} as MsgOption) => {
@@ -172,24 +135,19 @@ export const Messages = () => {
     });
   }, []);
   if (!messages.length || !portalElement) return null;
+  const toastMessages: ToastMessage[] = messages.map((message) => ({
+    ...message,
+    leaving: leavingKeys.includes(message.key),
+  }));
   // Portalled to the body like Dialog's modal: the page tree sits under `#pageContainers`, which is
   // `isolation: isolate`, so a z-index declared inside it can never rise above a body-level overlay.
   return createPortal(
-    <div
-      id="toast"
-      className="pointer-events-none fixed top-0 left-1/2 z-[100] flex h-fit w-full max-w-md -translate-x-1/2 flex-col items-center gap-2 px-4 pt-3"
-      style={{ marginTop: pageState.topSafeArea }}
-    >
-      {messages.map((message) => (
-        <Message
-          content={message.content}
-          type={message.type}
-          duration={message.duration}
-          key={message.key}
-          keyForMessage={message.key}
-        />
-      ))}
-    </div>,
+    <Toast
+      messages={toastMessages}
+      topSafeArea={pageState.topSafeArea}
+      onClose={startLeaving}
+      onClosed={dropMessage}
+    />,
     portalElement,
   );
 };

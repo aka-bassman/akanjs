@@ -59,6 +59,8 @@ export type ClientEnv = BaseEnv & {
   side: "server" | "client";
   renderMode: "ssr" | "csr";
   websocket: boolean;
+  apiPrefix: string;
+  wsPrefix: string;
   clientHost: string;
   clientPort: number;
   clientHttpProtocol: "http:" | "https:";
@@ -72,6 +74,43 @@ export type ClientEnv = BaseEnv & {
 };
 
 let cachedEnv: ClientEnv | undefined;
+
+type RoutePrefixOverride = { api?: string; ws?: string };
+
+const globalWithPrefix = globalThis as typeof globalThis & { __AKAN_PREFIX__?: RoutePrefixOverride };
+
+/** Leading slash, no trailing slash. A blank value — or a bare `/`, which would swallow every page route — is no prefix at all and falls through to the next source. */
+export const normalizeRoutePrefix = (value: string | undefined | null): string | undefined => {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const normalized = `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
+  return normalized === "/" ? undefined : normalized;
+};
+
+/**
+ * Three sources, narrowest first. The global is what a server-rendered page's bootstrap script writes, so the
+ * browser follows the process that rendered it. `AKAN_API_PREFIX` is deliberately outside the `AKAN_PUBLIC_*`
+ * namespace: only that namespace is inlined into client bundles at build time, so a name inside it could never
+ * act as a runtime override. `AKAN_PUBLIC_API_PREFIX` is the build-time default, and the only one a prebuilt CSR
+ * or mobile bundle can read. Written out rather than looked up by key — a computed `process.env[...]` is opaque
+ * to the bundler's define pass, and the public value would stop being inlined.
+ */
+export const getApiPrefix = (): string =>
+  normalizeRoutePrefix(globalWithPrefix.__AKAN_PREFIX__?.api) ??
+  normalizeRoutePrefix(process.env.AKAN_API_PREFIX) ??
+  normalizeRoutePrefix(process.env.AKAN_PUBLIC_API_PREFIX) ??
+  "/api";
+
+export const getWsPrefix = (): string =>
+  normalizeRoutePrefix(globalWithPrefix.__AKAN_PREFIX__?.ws) ??
+  normalizeRoutePrefix(process.env.AKAN_WS_PREFIX) ??
+  normalizeRoutePrefix(process.env.AKAN_PUBLIC_WS_PREFIX) ??
+  "/ws";
+
+/** `AkanApp` rewrites `process.env` for the replica it runs in-process, after this module may already have cached. */
+export const resetEnvCache = () => {
+  cachedEnv = undefined;
+};
 
 const missingPublicEnv = (key: string) =>
   `getEnv() cannot run at build time: akan build does not inject ${key}. Call it from a runtime function instead of at module scope (e.g. env(() => getEnv()) in adapt(), a method body, or a default thunk).`;
@@ -125,9 +164,14 @@ export const getEnv = (): ClientEnv => {
           ? (window.location.host.split(":")[0] ?? "unknown")
           : "localhost");
 
+  // A server-side origin that resolved to `localhost` is this process calling itself over the loopback, so the
+  // port has to be the one it actually bound: `AkanApp` binds `PORT`, and a container run with `PORT=80` left the
+  // 8282 default pointing at nothing — every SSR/RSC fetch then failed with `base.error.serverUnreachable`. A
+  // `SERVER_HOST` naming another host is not a self-call, so it keeps the explicit port.
+  const selfServerPort = serverHost === "localhost" ? process.env.PORT : undefined;
   const serverPort =
     side === "server"
-      ? parseInt(process.env.AKAN_PUBLIC_SERVER_PORT ?? "8282")
+      ? parseInt(process.env.AKAN_PUBLIC_SERVER_PORT ?? selfServerPort ?? "8282")
       : parseInt(window.location.port || (window.location.protocol === "https:" ? "443" : "80"));
 
   const serverHttpProtocol: "http:" | "https:" =
@@ -141,7 +185,9 @@ export const getEnv = (): ClientEnv => {
         : side === "client"
           ? (window.location.protocol as "http:" | "https:")
           : ("http:" as const));
-  const serverHttpUri = `${serverHttpProtocol}//${serverHost}${serverPort === 443 ? "" : `:${serverPort}`}/api`;
+  const apiPrefix = getApiPrefix();
+  const wsPrefix = getWsPrefix();
+  const serverHttpUri = `${serverHttpProtocol}//${serverHost}${serverPort === 443 ? "" : `:${serverPort}`}${apiPrefix}`;
   const serverWsProtocol = serverHttpProtocol === "http:" ? "ws:" : "wss:";
   const serverWsUri = `${serverWsProtocol}//${serverHost}${serverPort === 443 ? "" : `:${serverPort}`}`;
 
@@ -150,6 +196,8 @@ export const getEnv = (): ClientEnv => {
     side,
     renderMode,
     websocket: true,
+    apiPrefix,
+    wsPrefix,
     clientHost,
     clientPort,
     clientHttpProtocol,

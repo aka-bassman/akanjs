@@ -25,6 +25,10 @@ export class SummaryStore extends store(sig.summary, () => ({
   async getActiveSummary() {
     this.set({ summary: await fetch.getActiveSummary(), summaryLoading: false });
   }
+  async recountSummary() {
+    this.set({ summaryLoading: true });
+    this.set({ summary: await fetch.recountSummary(), summaryLoading: false });
+  }
   async getSummaryListInPeriod({
     from,
     to,

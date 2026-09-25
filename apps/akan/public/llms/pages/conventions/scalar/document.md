@@ -9,39 +9,91 @@
 ## Headings
 
 - scalar.document.ts (#document-overview)
-- Basic Wrapper (#basic-wrapper)
-- Small Helper Example (#helper-example)
-- When To Use It (#when-to-use)
+- The Whole File (#basic-wrapper)
+- Helpers Go On The Constant (#helper-example)
+- When You Use It (#when-to-use)
 
 ## Content
 
 scalar.document.ts
 
-A scalar document file is optional. Add it when a scalar value needs a small method that reads its own fields and returns a useful result.
+The constant class that server and browser both load: fields, defaults and helpers.
 
-If the scalar only needs fields and labels, the constant and dictionary files may be enough.
+Builds a server-side class with the same fields as the constant class.
 
-Basic Wrapper
+The value's type in server code: its stored fields, without methods.
 
-Import the constant file as `cnst`, then wrap the constant class with `by(cnst.Price)`. This gives the document class the same fields as the constant class.
+The value itself, for server and browser
 
-Small Helper Example
+Fields and defaults
 
-A useful scalar document method is usually short. It reads the scalar fields and returns a display value, boolean, or small calculated result.
+The value's shape, such as `amount: field(Float, { default: 0 })`.
 
-When To Use It
+Enum classes such as `Currency`, declared above the scalar class.
 
-Use a scalar document method when the same display or calculation appears in multiple places. For example, `Price.getLabel()` can be reused in product cards, order summaries, and invoices.
+Helper methods
 
-Good: formatting a price label from `amount` and `currency`.
+Display, predicate and small calculation methods such as `getLabel()`.
 
-Good: summarizing an address from `city` and `street`.
+Labels
 
-Avoid: loading other records or calling a backend service from the scalar method.
+Labels and descriptions
+
+An `[en, ko]` label and description for every field and enum value.
+
+Server only
+
+The one-line wrapper that gives server code the `db.Price` type.
+
+When you need…
+
+File
+
+Example
+
+A service method that takes or returns the value
+
+One price label reused in product cards, order summaries and invoices
+
+An address summary built from `city` and `street`
+
+A calculation across two values, such as a distance
+
+Loading other records or calling a backend service
+
+Where helper methods live, with instance and `static` examples.
+
+A database module's document, where chain methods do belong.
+
+Words used on this page
+
+Name
+
+The Whole File
+
+Helpers Go On The Constant
+
+A helper that reads the scalar's fields, such as a label, a flag or a small calculation, belongs on the constant class. The document class keeps only the wrapper.
+
+What you write
+
+Lives in this file
+
+Not here
+
+When You Use It
+
+Where each need goes
+
+Reach for a helper when the same display or calculation shows up in several places. Anything that loads data stays in a service.
+
+Common mistakes
+
+Read next
 
 ## Code Examples
 
-### price.document.ts
+### apps/<app>/lib/__scalar/price/price.document.ts
 
 ```ts
 import { by } from "akanjs/document";
@@ -51,16 +103,33 @@ import * as cnst from "./price.constant";
 export class Price extends by(cnst.Price) {}
 ```
 
-### price.document.ts
+### apps/<app>/lib/__scalar/price/price.constant.ts
 
 ```ts
-import { by } from "akanjs/document";
+import { Float } from "akanjs/base";
+import { via } from "akanjs/constant";
 
-import * as cnst from "./price.constant";
-
-export class Price extends by(cnst.Price) {
+export class Price extends via((field) => ({
+  amount: field(Float, { default: 0 }),
+  currency: field(String, { default: "KRW" }),
+})) {
   getLabel() {
     return `${this.amount.toLocaleString()} ${this.currency}`;
+  }
+}
+```
+
+### libs/shared/lib/user/user.service.ts
+
+```ts
+import { serve } from "akanjs/service";
+
+import * as db from "../db";
+
+export class UserService extends serve(db.user, () => ({})) {
+  async setLeaveInfo(userId: string, leaveInfo: db.LeaveInfo) {
+    const user = await this.userModel.getUser(userId);
+    return await user.set({ leaveInfo }).save();
   }
 }
 ```

@@ -77,6 +77,40 @@ which is the one case where replacing it again cannot help; it says that too, an
 | `AKAN_MEMORY_LOG_INTERVAL_MS` | `60000` | How often that report is written. |
 | `AKAN_MEMORY_GC_ON_REPORT` | off | `=1` forces a GC before each report, so the number is retained memory rather than garbage. Costs a full GC per report. |
 
+## Several apps at once
+
+`akan start a,b` runs one dev host per app under a supervisor, so **every number above multiplies by the number
+of apps** — there is no shared builder and no shared RSC worker. Measured on this repo, right after both apps
+finished booting:
+
+| process | akan | minimal |
+|---|---|---|
+| dev host | 101MB | 94MB |
+| incremental builder | 596MB | 532MB |
+| backend | 35MB | 38MB |
+| RSC worker | 190MB | 81MB |
+
+Plus ~51MB for the supervisor itself: **~1.7GB for two apps at their peak.** The builders are almost all of
+that, and they are also the part that goes away — `AKAN_DEV_IDLE_SUSPEND_MS` releases each one independently, so
+a session where you are editing one app settles to roughly one builder plus ~190MB per idle app. **Multi-app is
+sized against idle suspend being on**; setting it to `0` keeps every builder resident for the whole session.
+
+Two things bound the peak rather than the floor:
+
+- **`--concurrency` (default: what the machine allows).** Apps boot in waves, and the next wave starts only
+  once the previous one reports ready. A cold boot build is the builder's peak, so booting `n` apps at once
+  means `n` overlapping peaks — which is what OOM-kills a container that would have been fine with them
+  staggered. Unset, the wave is `min(apps, half the memory budget / 900MB per app, cores / 4)`, never below
+  one, and the session prints which — so a laptop boots its apps together and a 1.2GB container still
+  staggers them. The memory budget is the smaller of the host's RAM and `AKAN_MEMORY_LIMIT` / the cgroup
+  limit; `os.freemem()` is not consulted, because it counts free pages rather than reclaimable ones and
+  reports ~0.3GB on an idle 48GB laptop.
+- **`AKAN_MEMORY_LIMIT` is per process, not per session.** Each dev host derives its builder and RSC-worker
+  ceilings from it independently, so a limit sized for one app does not become a budget for four. Divide it
+  yourself, or leave it unset on a laptop. The one place it is read as a session ceiling is the boot wave
+  above, and only downward: a session cannot outgrow the container it runs in, whatever each process inside
+  it was told it may take.
+
 ## Sizing a small sandbox
 
 A worked example, for a 1.2GB container:

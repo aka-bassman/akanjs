@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import type { AkanWebConfig } from "akanjs";
 import { getEnv } from "akanjs/base";
 import {
@@ -8,11 +7,13 @@ import {
   DEFAULT_AKAN_I18N,
   getBasePathFromPathname,
   Logger,
+  type LogRecord,
   parseAkanI18nEnv,
   resolveSubRouteHosts,
 } from "akanjs/common";
 import { type AkanRequestStore, createRequestStore, parseCookieHeader } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
+import type { PagePromptSource } from "../signal/mcp/pagePrompt";
 import {
   type BuilderRpc,
   type ClientManifest,
@@ -54,6 +55,7 @@ import { type RscRedirectMethod, type RscRedirectStatus, type RscRenderResult, R
 import { createDefaultSitemapXml, getSitemapBasePath } from "./sitemap";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
 import type { RscTraceMetadata, SsrManifest } from "./ssrTypes";
+import { resolveStaticPath } from "./staticPath";
 import { createSubRouteIndexResponse, createSystemPageResponse, getSystemPageHomeHref } from "./systemPages";
 import { type BaseBuildArtifact, type HttpRoutes, type RenderState, resolveWebConfig } from "./types";
 
@@ -63,18 +65,6 @@ export const DEFAULT_HTML_RESULT_CACHE_MAX_BODY_BYTES = 2 * 1024 * 1024;
 const ROUTE_CACHE_SWEEP_INTERVAL_MS = 60_000;
 const APPLE_APP_SITE_ASSOCIATION_PATH = "/.well-known/apple-app-site-association";
 const ANDROID_ASSET_LINKS_PATH = "/.well-known/assetlinks.json";
-const FIREBASE_MESSAGING_SW_PATH = "/firebase-messaging-sw.js";
-const FIREBASE_WEB_SDK_VERSION = "12.13.0";
-
-interface FirebaseClientEnvConfig {
-  apiKey: string;
-  authDomain?: string;
-  projectId: string;
-  storageBucket?: string;
-  messagingSenderId: string;
-  appId: string;
-  vapidKey?: string;
-}
 
 export function createRscRedirectResponse(
   location: string,
@@ -416,16 +406,14 @@ export class WebRouter {
     <script type="module" src="/csr.js"></script>
   </body>
 </html>`;
-              return new Response(this.#withCsrHmr(htmlText), {
-                headers: { "Content-Type": "text/html; charset=utf-8" },
-              });
+              return new Response(this.#withCsrHmr(htmlText), { headers: WebRouter.#htmlResponseHeaders(200) });
             },
           }
         : {}),
       [`${clientServePrefix}/*`]: async (req) => {
         this.#requestStats.staticAsset += 1;
         const url = new URL(req.url);
-        const filePath = WebRouter.#safeResolve(clientOutputDir, url.pathname.slice(clientServePrefix.length + 1));
+        const filePath = resolveStaticPath(clientOutputDir, url.pathname.slice(clientServePrefix.length + 1));
         if (!filePath) return new Response("Not Found", { status: 404 });
         return WebRouter.#fileResponse(req, filePath, {
           contentType: Bun.file(filePath).type || "application/javascript",
@@ -436,7 +424,7 @@ export class WebRouter {
         this.#requestStats.staticAsset += 1;
         const url = new URL(req.url);
         if (this.#prodMode) {
-          const filePath = WebRouter.#safeResolve(this.#artifactDir, url.pathname.slice("/_akan/".length));
+          const filePath = resolveStaticPath(this.#artifactDir, url.pathname.slice("/_akan/".length));
           if (filePath) {
             return WebRouter.#fileResponse(req, filePath, {
               contentType: "text/css; charset=utf-8",
@@ -454,7 +442,7 @@ export class WebRouter {
       "/_akan/fonts/*": (req) => {
         this.#requestStats.staticAsset += 1;
         const url = new URL(req.url);
-        const filePath = WebRouter.#safeResolve(this.#artifactDir, url.pathname.slice("/_akan/".length));
+        const filePath = resolveStaticPath(this.#artifactDir, url.pathname.slice("/_akan/".length));
         if (!filePath) return new Response("Not Found", { status: 404 });
         return WebRouter.#fileResponse(req, filePath, {
           contentType: Bun.file(filePath).type || "font/woff2",
@@ -525,16 +513,16 @@ export class WebRouter {
         WebRouter.#deepLinkAssociationResponse(ANDROID_ASSET_LINKS_PATH, this.#artifact, {
           cacheControl: this.#prodMode ? "public, max-age=3600" : "no-store",
         }) ?? new Response("Not Found", { status: 404 }),
-      [FIREBASE_MESSAGING_SW_PATH]: async () => {
-        this.#requestStats.staticAsset += 1;
-        const firebaseConfig = await WebRouter.#resolveFirebaseClientConfig();
-        return new Response(WebRouter.#createFirebaseMessagingServiceWorker(firebaseConfig), {
-          headers: {
-            "Content-Type": "application/javascript; charset=utf-8",
-            "Cache-Control": "no-store",
-          },
-        });
-      },
+      // Everything under `/.well-known/` is fetched by a machine reading a fixed document, so the `/*` SSR
+      // fallback's 404 *page* is both useless to the caller and a full route render — Chrome asks for
+      // `appspecific/com.chrome.devtools.json` on every load with DevTools open. Exact well-known routes
+      // (the deep-link pair above, MCP's OAuth metadata in `builtinRoutes`) still win: Bun matches a static
+      // route ahead of a wildcard.
+      "/.well-known/*": () =>
+        new Response("Not Found", {
+          status: 404,
+          headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+        }),
       "/*": async (req) => {
         const url = new URL(req.url);
         if (WebRouter.#isImageOptimizerPath(url.pathname)) {
@@ -549,12 +537,10 @@ export class WebRouter {
             const csrHtml = await this.#resolveCsrHtml(csrOutputDir, url.pathname);
             if (!csrHtml) return this.#csrUnavailableResponse(url.pathname);
             const html = await Bun.file(csrHtml).text();
-            return new Response(this.#withCsrHmr(html), {
-              headers: { "Content-Type": "text/html; charset=utf-8" },
-            });
+            return new Response(this.#withCsrHmr(html), { headers: WebRouter.#htmlResponseHeaders(200) });
           }
 
-          const csrAssetPath = path.extname(url.pathname) ? WebRouter.#safeResolve(csrOutputDir, url.pathname) : null;
+          const csrAssetPath = path.extname(url.pathname) ? resolveStaticPath(csrOutputDir, url.pathname) : null;
           if (csrAssetPath && (await Bun.file(csrAssetPath).exists())) {
             this.#requestStats.staticAsset += 1;
             return WebRouter.#fileResponse(req, csrAssetPath, {
@@ -564,7 +550,7 @@ export class WebRouter {
           }
         }
 
-        const filePath = WebRouter.#safeResolve(publicDir, url.pathname);
+        const filePath = resolveStaticPath(publicDir, url.pathname);
         if (filePath) {
           if (await Bun.file(filePath).exists()) {
             this.#requestStats.staticAsset += 1;
@@ -612,12 +598,9 @@ export class WebRouter {
           const htmlCacheEntry = htmlCacheDecision.entry;
           const cachedHtml = htmlCacheEntry ? this.#getCachedHtml(htmlCacheEntry.key) : null;
           if (cachedHtml) {
-            return new Response(cachedHtml, {
-              headers: {
-                "Content-Type": "text/html; charset=utf-8",
-                "X-Akan-Cache": "HIT",
-              },
-            });
+            const cachedHeaders = WebRouter.#htmlResponseHeaders(200);
+            cachedHeaders.set("X-Akan-Cache", "HIT");
+            return new Response(cachedHtml, { headers: cachedHeaders });
           }
           const rscResult = await this.#rsc.renderWithMeta(req, {
             clientManifest: manifest.clientManifest,
@@ -733,6 +716,22 @@ export class WebRouter {
     this.#rsc.kill();
     this.#hub = null;
   }
+  setLogLevel(minSev: number | null) {
+    this.#rsc.setLogLevel(minSev);
+  }
+
+  /** Page prompts live with the pages, in the RSC worker; the MCP router reaches them through this. */
+  pagePrompts(): PagePromptSource {
+    return {
+      list: () => this.#rsc.listPagePrompts(),
+      run: (input) => this.#rsc.runPagePrompt(input),
+    };
+  }
+
+  onLogRecords(listener: (records: LogRecord[], dropped: number) => void) {
+    this.#rsc.onLogRecords = listener;
+  }
+
   getMetrics(): AkanMetricsReport {
     const ssrStats = SsrFromRscRenderer.getChunkRegistryStats();
     return {
@@ -990,7 +989,7 @@ export class WebRouter {
   static #htmlResponseHeaders(status: number): Headers {
     const headers = new Headers({ "Content-Type": "text/html; charset=utf-8" });
     if (status >= 400) headers.set("Cache-Control", "no-store");
-    return headers;
+    return WebRouter.#applySecurityHeaders(headers, { html: true });
   }
   #withCsrHmr(html: string): string {
     if (this.#prodMode) return html;
@@ -1086,79 +1085,6 @@ export class WebRouter {
     return process.env.AKAN_APP_DIR ?? path.dirname(Bun.main);
   }
 
-  static async #resolveFirebaseClientConfig(): Promise<FirebaseClientEnvConfig | null> {
-    const envPath = path.join(WebRouter.#resolveAppDir(), "env", "env.client.ts");
-    if (!fs.existsSync(envPath)) return null;
-    try {
-      const envUrl = pathToFileURL(envPath);
-      envUrl.searchParams.set("t", String(Date.now()));
-      const envModule = (await import(envUrl.href)) as { env?: { firebase?: unknown } };
-      return WebRouter.#normalizeFirebaseClientConfig(envModule.env?.firebase);
-    } catch {
-      return null;
-    }
-  }
-
-  static #normalizeFirebaseClientConfig(config: unknown): FirebaseClientEnvConfig | null {
-    if (!config || typeof config !== "object") return null;
-    const value = config as Partial<Record<keyof FirebaseClientEnvConfig, unknown>>;
-    if (
-      typeof value.apiKey !== "string" ||
-      typeof value.projectId !== "string" ||
-      typeof value.messagingSenderId !== "string" ||
-      typeof value.appId !== "string"
-    ) {
-      return null;
-    }
-    return {
-      apiKey: value.apiKey,
-      ...(typeof value.authDomain === "string" ? { authDomain: value.authDomain } : {}),
-      projectId: value.projectId,
-      ...(typeof value.storageBucket === "string" ? { storageBucket: value.storageBucket } : {}),
-      messagingSenderId: value.messagingSenderId,
-      appId: value.appId,
-    };
-  }
-
-  static #createFirebaseMessagingServiceWorker(config: FirebaseClientEnvConfig | null): string {
-    const configJson = JSON.stringify(config);
-    return `/* Generated by Akan.js. Do not edit. */
-const firebaseConfig = ${configJson};
-
-if (firebaseConfig) {
-  importScripts("https://www.gstatic.com/firebasejs/${FIREBASE_WEB_SDK_VERSION}/firebase-app-compat.js");
-  importScripts("https://www.gstatic.com/firebasejs/${FIREBASE_WEB_SDK_VERSION}/firebase-messaging-compat.js");
-
-  firebase.initializeApp(firebaseConfig);
-  const messaging = firebase.messaging();
-
-  const notificationUrl = (payload) =>
-    payload?.data?.url || payload?.fcmOptions?.link || payload?.notification?.click_action;
-
-  messaging.onBackgroundMessage((payload) => {
-    const title = payload?.notification?.title || "";
-    const options = {
-      body: payload?.notification?.body,
-      icon: payload?.notification?.icon,
-      image: payload?.notification?.image,
-      data: {
-        url: notificationUrl(payload),
-        FCM_MSG: payload,
-      },
-    };
-    self.registration.showNotification(title, options);
-  });
-}
-
-self.addEventListener("notificationclick", (event) => {
-  const url = event.notification?.data?.url || event.notification?.data?.FCM_MSG?.data?.url;
-  event.notification?.close();
-  if (!url) return;
-  event.waitUntil(clients.openWindow(url));
-});
-`;
-  }
-
   static #normalizeArtifact(artifact: BaseBuildArtifact, artifactDir: string): BaseBuildArtifact {
     const normalizedArtifactDir = path.resolve(artifactDir);
     const pagesBundlePath = WebRouter.#resolveArtifactPath(artifact.pagesBundlePath, normalizedArtifactDir);
@@ -1247,7 +1173,7 @@ self.addEventListener("notificationclick", (event) => {
       i18n: artifact.i18n,
     });
     const filename = basePath ? `${basePath}.html` : "index.html";
-    const filePath = WebRouter.#safeResolve(csrOutputDir, filename);
+    const filePath = resolveStaticPath(csrOutputDir, filename);
     return filePath && fs.existsSync(filePath) ? filePath : null;
   }
 
@@ -1294,18 +1220,22 @@ self.addEventListener("notificationclick", (event) => {
       if (details.length === 0) return null;
       return WebRouter.#jsonResponse({ applinks: { apps: [], details } }, cacheControl);
     }
+    //? The Android debug buildType appends applicationIdSuffix ".debug"; only a non-main server vouches for it.
+    const packageSuffixes = process.env.AKAN_PUBLIC_ENV === "main" ? [""] : ["", ".debug"];
     const assetLinks = associations
       .filter(
         (association) => association.domains.length > 0 && (association.androidSha256CertFingerprints?.length ?? 0) > 0,
       )
-      .map((association) => ({
-        relation: ["delegate_permission/common.handle_all_urls"],
-        target: {
-          namespace: "android_app",
-          package_name: association.appId,
-          sha256_cert_fingerprints: association.androidSha256CertFingerprints,
-        },
-      }));
+      .flatMap((association) =>
+        packageSuffixes.map((suffix) => ({
+          relation: ["delegate_permission/common.handle_all_urls"],
+          target: {
+            namespace: "android_app",
+            package_name: `${association.appId}${suffix}`,
+            sha256_cert_fingerprints: association.androidSha256CertFingerprints,
+          },
+        })),
+      );
     if (assetLinks.length === 0) return null;
     return WebRouter.#jsonResponse(assetLinks, cacheControl);
   }
@@ -1332,10 +1262,27 @@ self.addEventListener("notificationclick", (event) => {
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   }
 
+  /**
+   * Headers every response carries, whatever it is.
+   *
+   * `nosniff` because `Bun.file().type` falls back to `application/octet-stream` for an extension it does not
+   * know, and a sniffing browser then guesses again — on a `public/` tree the app serves from its own origin,
+   * that guess is script execution. `Referrer-Policy` because route paths carry ids.
+   *
+   * `X-Frame-Options` is on the HTML only: framing an image or a stylesheet means nothing, and the header is
+   * what stops a page authenticated by a `SameSite=None` cookie from being clickjacked inside somebody else's.
+   */
+  static #applySecurityHeaders(headers: Headers, { html = false } = {}): Headers {
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    if (html) headers.set("X-Frame-Options", "SAMEORIGIN");
+    return headers;
+  }
+
   static #baseAssetHeaders(options: { contentType: string; cacheControl?: string }): Headers {
     const headers = new Headers({ "Content-Type": options.contentType });
     if (options.cacheControl) headers.set("Cache-Control", options.cacheControl);
-    return headers;
+    return WebRouter.#applySecurityHeaders(headers);
   }
 
   static #weakEtag(size: number, mtimeMs: number): string {
@@ -1356,22 +1303,5 @@ self.addEventListener("notificationclick", (event) => {
     if (!ifModifiedSince) return false;
     const sinceMs = Date.parse(ifModifiedSince);
     return Number.isFinite(sinceMs) && sinceMs >= lastModifiedMs;
-  }
-
-  static #safeResolve(baseDir: string, urlPath: string): string | null {
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(urlPath);
-    } catch {
-      return null;
-    }
-    if (decoded.includes("\0")) return null;
-    const normalizedBase = path.resolve(baseDir);
-    const rel = decoded.replace(/^[/\\]+/, "");
-    const resolved = path.resolve(normalizedBase, rel);
-    if (resolved === normalizedBase) return resolved;
-    const baseWithSep = normalizedBase.endsWith(path.sep) ? normalizedBase : normalizedBase + path.sep;
-    if (!resolved.startsWith(baseWithSep)) return null;
-    return resolved;
   }
 }

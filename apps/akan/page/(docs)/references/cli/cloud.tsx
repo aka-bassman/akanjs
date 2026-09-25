@@ -1,94 +1,537 @@
 import { usePage } from "@apps/akan/client";
-import { type CommandReferenceItem, CommandReferenceSlide, Divider, Docs, DocsToc } from "@apps/akan/ui";
+import {
+  type CommandReferenceItem,
+  CommandReferenceSlide,
+  Divider,
+  Docs,
+  DocsToc,
+  type IntroItem,
+  type MatrixGroup,
+  type ReferenceRow,
+} from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
+
+  const termRows: IntroItem[] = [
+    {
+      name: <span className="font-sans">Akan Cloud</span>,
+      desc: l.trans({
+        en: "The service at `https://cloud.akanjs.com` that holds your account, env values and tunnels.",
+        ko: "`https://cloud.akanjs.com`에서 계정, env 값, 터널을 관리하는 서비스입니다.",
+      }),
+    },
+    {
+      name: <span className="font-sans">{l.trans({ en: "env values", ko: "env 값" })}</span>,
+      desc: l.trans({
+        en: "Each app's and library's `env/env.client.<env>.ts` and `env/env.server.<env>.ts`, kept out of git.",
+        ko: "앱과 라이브러리마다 있는 `env/env.client.<env>.ts`, `env/env.server.<env>.ts` 파일로, git에 올리지 않습니다.",
+      }),
+    },
+    {
+      name: "AKAN_WORKSPACE_ID",
+      desc: l.trans({
+        en: "The cloud workspace id in the root `.env`, which decides where env values are kept.",
+        ko: "루트 `.env`에 적는 클라우드 워크스페이스 id로, env 값을 보관할 곳을 정합니다.",
+      }),
+    },
+    {
+      name: <span className="font-sans">{l.trans({ en: "SCP server", ko: "SCP 서버" })}</span>,
+      desc: l.trans({
+        en: "A server of your own, reached over SSH, that keeps env values when there is no cloud workspace.",
+        ko: "클라우드 워크스페이스가 없을 때 env 값을 보관하는 자체 서버로, SSH로 접속합니다.",
+      }),
+    },
+  ];
+
+  const connectionGroups: MatrixGroup[] = [
+    {
+      label: l.trans({ en: "Account", ko: "계정" }),
+      rows: [
+        {
+          name: "login",
+          desc: l.trans({
+            en: "Signs in through the browser and saves the session.",
+            ko: "브라우저로 로그인하고 세션을 저장합니다.",
+          }),
+          marks: { cloud: true },
+        },
+        {
+          name: "logout",
+          desc: l.trans({
+            en: "Deletes the saved session without contacting the cloud.",
+            ko: "클라우드에 연락하지 않고 저장된 세션만 지웁니다.",
+          }),
+          marks: { local: true },
+        },
+      ],
+    },
+    {
+      label: l.trans({ en: "Framework", ko: "프레임워크" }),
+      rows: [
+        {
+          name: "update",
+          desc: l.trans({
+            en: "Installs from npm, or from a local registry with `--registry local`.",
+            ko: "npm에서 설치하고, `--registry local`이면 로컬 레지스트리에서 설치합니다.",
+          }),
+          marks: { npm: true },
+        },
+      ],
+    },
+    {
+      label: l.trans({ en: "Env values", ko: "env 값" }),
+      rows: [
+        {
+          name: "download-env",
+          desc: l.trans({
+            en: "Pulls env values from Akan Cloud or an SCP server, whichever the workspace uses.",
+            ko: "워크스페이스가 쓰는 쪽(Akan Cloud 또는 SCP 서버)에서 env 값을 내려받습니다.",
+          }),
+          marks: { cloud: true, scp: true },
+        },
+        {
+          name: "upload-env",
+          desc: l.trans({
+            en: "Pushes the local env values to that same place for the next `download-env`.",
+            ko: "로컬 env 값을 같은 곳에 올려, 다음 `download-env`가 받게 합니다.",
+          }),
+          marks: { cloud: true, scp: true },
+        },
+      ],
+    },
+  ];
+
+  const sharedRules = [
+    l.trans({
+      en: (
+        <>
+          <strong>Run them from the workspace root.</strong> Like most <code>akan</code> commands, they need the folder
+          that holds <code>package.json</code>, <code>tsconfig.json</code> and <code>.env</code>.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>워크스페이스 루트에서 실행합니다.</strong> 대부분의 <code>akan</code> 명령처럼{" "}
+          <code>package.json</code>, <code>tsconfig.json</code>, <code>.env</code>가 있는 폴더에서 실행해야 합니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>
+            <code>--host</code> points at another cloud.
+          </strong>{" "}
+          Every command that talks to Akan Cloud takes it, so a self-hosted cloud works with the same commands.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>
+            <code>--host</code>로 다른 클라우드를 가리킵니다.
+          </strong>{" "}
+          Akan Cloud와 통신하는 명령은 모두 이 옵션을 받으므로, 직접 운영하는 클라우드도 같은 명령으로 씁니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>One sign-in per host, per machine.</strong> The session lives in <code>~/.akan/config.json</code>, so
+          every workspace on this machine shares it.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>로그인은 컴퓨터마다, 호스트마다 하나입니다.</strong> 세션은 <code>~/.akan/config.json</code>에
+          저장되므로 이 컴퓨터의 모든 워크스페이스가 함께 씁니다.
+        </>
+      ),
+    }),
+  ];
+
+  const storeRows = [
+    {
+      store: "Akan Cloud",
+      when: l.trans({ en: "`AKAN_WORKSPACE_ID` is set", ko: "`AKAN_WORKSPACE_ID`가 있을 때" }),
+      where: l.trans({
+        en: "The cloud workspace with that id, after signing in if needed.",
+        ko: "그 id의 클라우드 워크스페이스이며, 필요하면 먼저 로그인합니다.",
+      }),
+    },
+    {
+      store: l.trans({ en: "SCP server", ko: "SCP 서버" }),
+      when: l.trans({ en: "`AKAN_WORKSPACE_ID` is empty", ko: "`AKAN_WORKSPACE_ID`가 비어 있을 때" }),
+      where: l.trans({
+        en: "`~/secrets/<repo>/env.tar` on a server you pick from a list.",
+        ko: "목록에서 고른 서버의 `~/secrets/<repo>/env.tar`입니다.",
+      }),
+    },
+  ];
+
+  const hostOption: ReferenceRow = {
+    name: "--host",
+    type: "String",
+    defaultValue: "https://cloud.akanjs.com",
+    enumOrFlag: "-",
+    desc: l.trans({
+      en: "Akan Cloud to use; `http://localhost:8283` in the framework repo (`USE_AKANJS_PKGS=true`).",
+      ko: "사용할 Akan Cloud 주소로, 프레임워크 저장소(`USE_AKANJS_PKGS=true`)에서는 `http://localhost:8283`입니다.",
+    }),
+  };
+  const envHostOption: ReferenceRow = {
+    ...hostOption,
+    desc: l.trans({
+      en: "Akan Cloud to use when `AKAN_WORKSPACE_ID` is set; ignored for an SCP server.",
+      ko: "`AKAN_WORKSPACE_ID`가 있을 때 쓸 Akan Cloud 주소로, SCP 서버를 쓸 때는 무시합니다.",
+    }),
+  };
+  const envStoreNote: ReferenceRow = {
+    name: l.trans({ en: "where", ko: "보관 위치" }),
+    desc: l.trans({
+      en: "Akan Cloud when the root `.env` sets `AKAN_WORKSPACE_ID`, otherwise an SCP server.",
+      ko: "루트 `.env`에 `AKAN_WORKSPACE_ID`가 있으면 Akan Cloud, 없으면 SCP 서버입니다.",
+    }),
+  };
 
   const commands: CommandReferenceItem[] = [
     {
       name: "login",
-      signature: "akan login",
-      desc: "Login to Akan Cloud services for the current workspace.\nUse it before cloud-assisted flows that require credentials, account state, or remote project access.",
-      examples: "akan login",
+      signature: "akan login [--host <host>]",
+      desc: l.trans({
+        en: "Sign in to Akan Cloud from this machine.\nThe CLI opens a sign-in page in the browser and waits until you finish there.",
+        ko: "이 컴퓨터에서 Akan Cloud에 로그인합니다.\nCLI가 브라우저에 로그인 페이지를 열고, 그곳에서 로그인을 마칠 때까지 기다립니다.",
+      }),
+      options: [hostOption],
+      notes: [
+        {
+          name: l.trans({ en: "browser", ko: "브라우저" }),
+          desc: l.trans({
+            en: "Prints the sign-in URL and a QR code and opens it; visit the URL yourself if no browser opens.",
+            ko: "로그인 URL과 QR 코드를 출력하고 브라우저로 열며, 브라우저가 열리지 않으면 URL에 직접 접속합니다.",
+          }),
+        },
+        {
+          name: l.trans({ en: "time limit", ko: "제한 시간" }),
+          desc: l.trans({
+            en: "Gives up after 10 minutes without a sign-in, so run it again.",
+            ko: "10분 안에 로그인하지 않으면 멈추므로, 다시 실행합니다.",
+          }),
+        },
+        {
+          name: l.trans({ en: "already signed in", ko: "이미 로그인됨" }),
+          desc: l.trans({
+            en: "Prints the account's nickname and exits without opening the browser.",
+            ko: "계정 닉네임을 출력하고, 브라우저를 열지 않은 채 끝납니다.",
+          }),
+        },
+        {
+          name: l.trans({ en: "saved to", ko: "저장 위치" }),
+          desc: l.trans({
+            en: "`~/.akan/config.json`, one session per host, readable only by you.",
+            ko: "`~/.akan/config.json`에 호스트마다 세션 하나를 저장하며, 본인만 읽을 수 있습니다.",
+          }),
+        },
+        {
+          name: l.trans({ en: "used by", ko: "쓰는 명령" }),
+          desc: l.trans({
+            en: "`akan tunnel` and `akan start --share` need it, while the env commands sign in on their own.",
+            ko: "`akan tunnel`과 `akan start --share`에 필요하며, env 명령은 필요하면 스스로 로그인합니다.",
+          }),
+        },
+      ],
+      examples: `akan login
+akan login --host https://cloud.example.com`,
     },
     {
       name: "logout",
-      signature: "akan logout",
-      desc: "Logout from Akan Cloud services for the current workspace.\nUse it to clear the active cloud session when switching accounts or removing cloud access from the local environment.",
-      examples: "akan logout",
-    },
-    {
-      name: "set-llm",
-      signature: "akan set-llm",
-      desc: "Configure an LLM API key used by cloud-assisted or AI-assisted commands.\nThe command stores the workspace-level LLM setting so project questions and generation helpers use the intended provider.",
-      examples: "akan set-llm",
-    },
-    {
-      name: "reset-llm",
-      signature: "akan reset-llm",
-      desc: "Reset the workspace LLM configuration back to the default behavior.\nUse it when a custom provider or key should no longer be used by AI-assisted command flows.",
-      examples: "akan reset-llm",
-    },
-    {
-      name: "ask",
-      signature: "akan ask [--question <question>]",
-      desc: "Ask the configured AI assistant a question about the current project.\nPass `--question` for a non-interactive request, or omit it to enter the command's prompt-based question flow.",
-      options: [
+      signature: "akan logout [--host <host>]",
+      desc: l.trans({
+        en: "Sign out of Akan Cloud on this machine.\nUse it to switch accounts, or to take this machine's cloud access away.",
+        ko: "이 컴퓨터의 Akan Cloud 로그인을 해제합니다.\n계정을 바꾸거나, 이 컴퓨터의 클라우드 접근을 없앨 때 씁니다.",
+      }),
+      options: [hostOption],
+      notes: [
         {
-          name: "--question",
-          type: "String",
-          defaultValue: "-",
-          enumOrFlag: "ask prompt",
-          desc: "Question to ask. Prompts interactively when omitted.",
+          name: l.trans({ en: "clears", ko: "지우는 것" }),
+          desc: l.trans({
+            en: "Only the session saved for that `--host`, leaving other hosts signed in.",
+            ko: "그 `--host`에 저장된 세션만 지우고, 다른 호스트의 세션은 그대로 둡니다.",
+          }),
+        },
+        {
+          name: l.trans({ en: "not signed in", ko: "로그인 안 됨" }),
+          desc: l.trans({
+            en: "Prints that no session was found and changes nothing.",
+            ko: "세션이 없다고 알리고 아무것도 바꾸지 않습니다.",
+          }),
         },
       ],
-      examples: `akan ask --question "How should I add a new module?"
-akan ask`,
+      examples: `akan logout
+akan logout --host https://cloud.example.com`,
     },
     {
       name: "update",
-      signature: "akan update [--tag <tag>]",
-      desc: "Update Akan.js framework packages using the selected release tag.\nUse `latest` for normal updates and prerelease tags such as `beta`, `rc`, or `canary` only when intentionally testing that channel.",
+      signature: "akan update [--tag <tag>] [--registry <npm|local>]",
+      desc: l.trans({
+        en: "Move the global `akan` CLI and this workspace's Akan.js packages to the newest version of a release tag.\nUse `latest` for normal updates, and `beta`, `rc` or `canary` only when you mean to test that channel.",
+        ko: "전역 `akan` CLI와 이 워크스페이스의 Akan.js 패키지를 릴리스 태그의 최신 버전으로 올립니다.\n보통은 `latest`를 쓰고, `beta`, `rc`, `canary`는 그 채널을 일부러 시험할 때만 씁니다.",
+      }),
       options: [
         {
           name: "--tag",
           type: "String",
           defaultValue: "latest",
           enumOrFlag: "latest | dev | canary | beta | rc | alpha",
-          desc: "Akan.js update tag.",
+          desc: l.trans({ en: "Release channel to install from.", ko: "설치할 릴리스 채널입니다." }),
+        },
+        {
+          name: "--registry",
+          type: "String",
+          defaultValue: "npm",
+          enumOrFlag: "npm | local",
+          desc: l.trans({
+            en: "`local` is `AKAN_NPM_REGISTRY`, or `http://127.0.0.1:4873` when it is unset.",
+            ko: "`local`은 `AKAN_NPM_REGISTRY`이고, 비어 있으면 `http://127.0.0.1:4873`입니다.",
+          }),
+        },
+      ],
+      notes: [
+        {
+          name: "package.json",
+          desc: l.trans({
+            en: "In a workspace, pins root `akanjs` and `@akanjs/devkit` to that version and runs `bun install`.",
+            ko: "워크스페이스 안이면 루트 `package.json`의 `akanjs`와 `@akanjs/devkit`을 그 버전으로 바꾸고 `bun install`을 실행합니다.",
+          }),
+        },
+        {
+          name: l.trans({ en: "global install", ko: "전역 설치" }),
+          desc: l.trans({
+            en: "Installs `@akanjs/cli@<tag>` globally with `bun add -g`, and prints `akan --version` at the end.",
+            ko: "`@akanjs/cli@<tag>`를 `bun add -g`로 전역 설치하고, 끝에 `akan --version`을 출력합니다.",
+          }),
+        },
+        {
+          name: "--registry local",
+          desc: l.trans({
+            en: "Tries a framework build from a local registry before it is published to npm.",
+            ko: "npm에 배포하기 전의 프레임워크 빌드를 로컬 레지스트리에서 받아 시험합니다.",
+          }),
+        },
+        {
+          name: l.trans({ en: "framework repo", ko: "프레임워크 저장소" }),
+          desc: l.trans({
+            en: "With `USE_AKANJS_PKGS=true`, `--registry` has no default, so the CLI asks.",
+            ko: "`USE_AKANJS_PKGS=true`이면 `--registry`에 기본값이 없어 CLI가 물어봅니다.",
+          }),
         },
       ],
       examples: `akan update
 akan update --tag latest
-akan update --tag beta`,
+akan update --tag beta
+akan update --registry local`,
+    },
+    {
+      name: "download-env",
+      signature: "akan download-env [--host <host>]",
+      desc: l.trans({
+        en: "Download the env values of every app and library in this workspace.\nRun it after cloning and whenever someone uploads a change, because env values are never committed.",
+        ko: "이 워크스페이스의 모든 앱과 라이브러리의 env 값을 내려받습니다.\nenv 값은 커밋되지 않으므로, clone한 직후와 누군가 변경을 올렸을 때마다 실행합니다.",
+      }),
+      options: [envHostOption],
+      notes: [
+        envStoreNote,
+        {
+          name: l.trans({ en: "files", ko: "파일" }),
+          desc: l.trans({
+            en: "Unpacked at the workspace root, over the same paths `upload-env` packed.",
+            ko: "`upload-env`가 묶은 경로 그대로 워크스페이스 루트에 풀어 덮어씁니다.",
+          }),
+        },
+        {
+          name: l.trans({ en: "first SCP run", ko: "첫 SCP 실행" }),
+          desc: l.trans({
+            en: "Asks for a server name and host, plus an optional username and SSH port.",
+            ko: "서버 이름과 호스트, 그리고 비워 둘 수 있는 사용자 이름과 SSH 포트를 묻습니다.",
+          }),
+        },
+        {
+          name: l.trans({ en: "server list", ko: "서버 목록" }),
+          desc: l.trans({
+            en: "Kept in `~/.akan/config.json`, so later runs let you pick, add or remove a server.",
+            ko: "`~/.akan/config.json`에 저장되어, 다음부터는 서버를 고르거나 추가하거나 지웁니다.",
+          }),
+        },
+      ],
+      examples: `akan download-env
+akan download-env --host https://cloud.example.com`,
+    },
+    {
+      name: "upload-env",
+      signature: "akan upload-env [--host <host>]",
+      desc: l.trans({
+        en: "Upload the env values of every app and library to where `download-env` reads from.\nThe stored archive is replaced whole, so download first instead of uploading a stale local copy.",
+        ko: "모든 앱과 라이브러리의 env 값을 `download-env`가 읽는 곳으로 올립니다.\n보관된 압축본은 통째로 바뀌므로, 오래된 로컬 사본을 올리지 말고 먼저 내려받습니다.",
+      }),
+      options: [envHostOption],
+      notes: [
+        envStoreNote,
+        {
+          name: l.trans({ en: "env files", ko: "env 파일" }),
+          desc: l.trans({
+            en: "`env/env.client.<env>.ts` and `env/env.server.<env>.ts`, without the `type` and `example` files.",
+            ko: "`env/env.client.<env>.ts`와 `env/env.server.<env>.ts`이며, `type`, `example` 파일은 빠집니다.",
+          }),
+        },
+        {
+          name: "secrets",
+          desc: l.trans({
+            en: "Also every file matched by an app's `secrets` globs in `akan.config.ts`.",
+            ko: "앱의 `akan.config.ts`에 적은 `secrets` glob에 맞는 파일도 함께 올립니다.",
+          }),
+        },
+        {
+          name: ".gitignore",
+          desc: l.trans({
+            en: "Each upload writes those `secrets` patterns into a managed block of `.gitignore`.",
+            ko: "올릴 때마다 그 `secrets` 패턴을 `.gitignore` 안에서 akan이 관리하는 구역에 적습니다.",
+          }),
+        },
+        {
+          name: l.trans({ en: "no files", ko: "파일 없음" }),
+          desc: l.trans({
+            en: "Stops with an error when there is no env file to upload.",
+            ko: "올릴 env 파일이 하나도 없으면 오류로 멈춥니다.",
+          }),
+        },
+      ],
+      examples: `akan upload-env
+akan upload-env --host https://cloud.example.com`,
     },
   ];
 
   return (
     <Scroll>
-      <Scroll.Slide id="cloud-cli" title={l.trans({ en: "Cloud CLI", ko: "Cloud CLI" })}>
-        <Docs.Title>{l.trans({ en: "Cloud CLI", ko: "Cloud CLI" })}</Docs.Title>
+      <Scroll.Slide id="cloud-cli" title={l.trans({ en: "Cloud CLI", ko: "클라우드 명령" })}>
+        <Docs.Title>{l.trans({ en: "Cloud CLI", ko: "클라우드 명령" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Cloud commands configure optional Akan Cloud helpers: authentication, LLM settings, project questions, and framework updates.",
-              ko: "Cloud command는 선택적인 Akan Cloud helper를 설정합니다. authentication, LLM setting, project question, framework update를 다룹니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "Internal deployment commands marked `devOnly: true` are intentionally not documented here.",
-              ko: "`devOnly: true`로 표시된 internal deployment command는 의도적으로 이 문서에서 제외합니다.",
+              en: "Five optional commands for signing in to Akan Cloud, updating the framework and moving env values. Internal deployment commands are left out of this page on purpose.",
+              ko: "Akan Cloud 로그인, 프레임워크 업데이트, env 값 옮기기에 쓰는 명령 다섯 가지로, 필요할 때만 씁니다. 내부 배포용 명령은 일부러 이 페이지에서 뺐습니다.",
             })}
           </div>
         </Docs.Description>
+
+        <Docs.SubSubTitle>{l.trans({ en: "Words Used on This Page", ko: "이 페이지에서 쓰는 말" })}</Docs.SubSubTitle>
+        <Docs.IntroTable type={l.trans({ en: "Term", ko: "용어" })} items={termRows} />
+
+        <Docs.SubSubTitle>
+          {l.trans({ en: "Where Each Command Connects", ko: "명령마다 접속하는 곳" })}
+        </Docs.SubSubTitle>
+        <Docs.Matrix
+          type={l.trans({ en: "Command", ko: "명령" })}
+          columns={[
+            { key: "cloud", label: "Akan Cloud" },
+            { key: "scp", label: "SCP" },
+            { key: "npm", label: "npm" },
+            { key: "local", label: l.trans({ en: "This machine only", ko: "이 컴퓨터만" }) },
+          ]}
+          groups={connectionGroups}
+          markLabel={l.trans({ en: "Connects", ko: "접속함" })}
+          emptyLabel={l.trans({ en: "Does not connect", ko: "접속 안 함" })}
+        />
+        <ul className="my-4 list-disc space-y-2 pl-5">
+          {sharedRules.map((rule, idx) => (
+            <li key={idx}>{rule}</li>
+          ))}
+        </ul>
+
+        <Docs.SubSubTitle>{l.trans({ en: "Where Env Values Are Kept", ko: "env 값을 보관하는 곳" })}</Docs.SubSubTitle>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  <code>download-env</code> and <code>upload-env</code> read the root <code>.env</code> to pick the
+                  store. Both use the same one, so what one uploads the other downloads.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>download-env</code>와 <code>upload-env</code>는 루트 <code>.env</code>를 읽어 보관 위치를
+                  정합니다. 둘은 같은 곳을 쓰므로, 올린 것을 그대로 내려받습니다.
+                </span>
+              ),
+            })}
+          </div>
+        </Docs.Description>
+        <Docs.Table
+          columns={[
+            { key: "store", label: l.trans({ en: "Store", ko: "보관처" }) },
+            { key: "when", label: l.trans({ en: "Used when", ko: "쓰는 경우" }) },
+            { key: "where", label: l.trans({ en: "Where the archive lives", ko: "압축본이 있는 곳" }) },
+          ]}
+          rows={storeRows}
+          stacked
+        />
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: (
+              <>
+                <strong>Both directions overwrite.</strong> <code>upload-env</code> replaces the stored archive whole,
+                and <code>download-env</code> writes over local files at the same paths. Download before you edit, and
+                upload right after.
+              </>
+            ),
+            ko: (
+              <>
+                <strong>양쪽 모두 덮어씁니다.</strong> <code>upload-env</code>는 보관된 압축본을 통째로 바꾸고,{" "}
+                <code>download-env</code>는 같은 경로의 로컬 파일을 덮어씁니다. 고치기 전에 내려받고, 고친 뒤 바로
+                올립니다.
+              </>
+            ),
+          })}
+        </Docs.Alert>
+
+        <Docs.SubSubTitle>{l.trans({ en: "Related Pages", ko: "관련 페이지" })}</Docs.SubSubTitle>
+        <Docs.LinkGrid
+          items={[
+            {
+              href: "/docs/core/config#app-env",
+              title: l.trans({ en: "Application Env", ko: "애플리케이션 환경설정" }),
+              desc: l.trans({
+                en: "What goes in the `env/` files these commands move.",
+                ko: "이 명령들이 옮기는 `env/` 파일에 무엇을 적는지 설명합니다.",
+              }),
+            },
+            {
+              href: "/conventions/applib/config#secrets",
+              title: "secrets",
+              desc: l.trans({
+                en: "Declare extra secret files that travel with the env values.",
+                ko: "env 값과 함께 옮길 시크릿 파일을 선언합니다.",
+              }),
+            },
+            {
+              href: "/references/cli/tunnel",
+              title: l.trans({ en: "Tunnel CLI", ko: "터널 명령" }),
+              desc: l.trans({
+                en: "Share a local app on a public URL with the `akan login` session.",
+                ko: "`akan login` 세션으로 로컬 앱을 공개 URL에 공유합니다.",
+              }),
+            },
+          ]}
+        />
       </Scroll.Slide>
-      <Divider />
-      {commands.map((command) => (
-        <CommandReferenceSlide key={command.name} command={command} />
-      ))}
+      {commands.flatMap((command) => [
+        <Divider key={`${command.name}-divider`} />,
+        <CommandReferenceSlide key={command.name} command={command} />,
+      ])}
       <DocsToc />
     </Scroll>
   );
-}
+});

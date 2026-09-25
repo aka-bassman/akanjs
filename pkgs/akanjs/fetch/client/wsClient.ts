@@ -1,4 +1,10 @@
-import { Logger, websocketAuthContract, websocketBinaryFrameContract } from "akanjs/common";
+import {
+  Logger,
+  type WebsocketHeartbeatAckData,
+  websocketAuthContract,
+  websocketBinaryFrameContract,
+  websocketHeartbeatContract,
+} from "akanjs/common";
 import type {
   WebsocketAuthAck,
   WebsocketMessageData,
@@ -7,7 +13,7 @@ import type {
   WebsocketResData,
   WebsocketSubscribeAck,
 } from "akanjs/signal";
-import type { ErrorConstructor, ErrorResponsePayload, RestoredError } from "./httpClient";
+import { type ErrorConstructor, type RestoredError, restoreRemoteError } from "./remoteError";
 
 export interface WsClientReconnectOptions {
   enabled?: boolean;
@@ -19,6 +25,14 @@ interface SubscribeOption {
   key: string;
   data: unknown[];
   listener: Set<(data: unknown) => void>;
+  /**
+   * Called after this room has been resubscribed following a dropped connection.
+   *
+   * Everything published while the socket was down is gone, and a room has no way to say which messages those
+   * were, so the only honest thing it can report is that it is behind. A plain pubsub subscriber declares none of
+   * these and is unaffected.
+   */
+  resync: Set<() => void>;
 }
 interface Listener {
   callback: (data: unknown) => void;
@@ -38,12 +52,25 @@ export class WsClient {
   #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   #reconnectAttempts = 0;
   #roomSubscribeMap = new Map<string, SubscribeOption>();
+  /**
+   * Server room id → the id this client subscribed under, for the rooms where the two differ.
+   *
+   * A live room's id also carries the caller's resolved internal arguments, which the client cannot know — so the
+   * server names the room it actually joined in the subscribe ack and inbound frames are matched through this.
+   * Keeping the subscription map keyed by the client's own id is what lets resubscribe and unsubscribe stay
+   * exactly as they were.
+   */
+  #roomAliasMap = new Map<string, string>();
   #listenerMap = new Map<string, Set<Listener>>();
   #destroyed = false;
   #connectRequested = false;
+  /** Whether this client has been connected before, so the first open is a start rather than a recovery. */
+  #hadConnection = false;
   #outbox: string[] = [];
   #unconnectedWarnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   #jwt: string | null = null;
+  #heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  #lastInboundAt = 0;
   connected = false;
 
   constructor(
@@ -90,18 +117,24 @@ export class WsClient {
       this.#reconnectAttempts = 0;
       this.connected = true;
       this.logger.debug(`WebSocket connected`);
+      this.#startHeartbeat();
       // Ordered before the resubscribes: the server applies the credential synchronously, so every
       // room below is authorized against this token rather than the bare handshake.
       if (this.#jwt) this.#sendAuth();
+      const reconnected = this.#hadConnection;
+      this.#hadConnection = true;
       this.#roomSubscribeMap.forEach((option) => {
         const data: WebsocketReqData = { key: option.key, data: option.data, subscribe: true };
         this.#ws?.send(JSON.stringify(data));
+        if (!reconnected) return;
+        for (const handler of option.resync) handler();
       });
       const queued = this.#outbox;
       this.#outbox = [];
       for (const frame of queued) this.#ws?.send(frame);
     };
     this.#ws.onmessage = (e) => {
+      this.#lastInboundAt = Date.now();
       try {
         if (typeof e.data !== "string") {
           const frame = websocketBinaryFrameContract.decode(e.data as ArrayBuffer);
@@ -113,7 +146,7 @@ export class WsClient {
         if (parsed?.error) {
           throw this.#restoreError(parsed);
         }
-        const type = (parsed as WebsocketResData).type;
+        const type = (parsed as WebsocketResData | WebsocketHeartbeatAckData).type;
         switch (type) {
           case "msg": {
             const msg = parsed as unknown as WebsocketMessageData;
@@ -122,6 +155,10 @@ export class WsClient {
           }
           case "sub": {
             const sub = parsed as unknown as WebsocketSubscribeAck;
+            if (sub.requestRoomId && sub.requestRoomId !== sub.roomId) {
+              if (sub.subscribe) this.#roomAliasMap.set(sub.roomId, sub.requestRoomId);
+              else this.#roomAliasMap.delete(sub.roomId);
+            }
             if (sub.subscribe) this.logger.verbose(`Websocket subscribe accepted: ${sub.roomId}`);
             else this.logger.verbose(`Websocket unsubscribe accepted: ${sub.roomId}`);
             break;
@@ -131,10 +168,13 @@ export class WsClient {
             this.#handlePubsub(publishData.roomId, publishData.data);
             break;
           }
+          case "pong":
+            break;
           case "auth": {
             const ack = parsed as WebsocketAuthAck;
             for (const roomId of ack.revokedRooms) {
-              this.#roomSubscribeMap.delete(roomId);
+              this.#roomSubscribeMap.delete(this.#roomAliasMap.get(roomId) ?? roomId);
+              this.#roomAliasMap.delete(roomId);
               this.logger.warn(`Websocket room ${roomId} is no longer authorized`);
             }
             break;
@@ -144,19 +184,47 @@ export class WsClient {
             break;
         }
       } catch (error) {
-        this.logger.warn("WebSocket message process failed");
-        console.error(error);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`WebSocket message process failed ${errMsg}`);
       }
     };
     this.#ws.onerror = (e) => {
-      this.logger.debug(`WebSocket error`);
-      console.error(e);
+      const errMsg = e instanceof Error ? e.message : String(e);
+      this.logger.verbose(`WebSocket error ${errMsg}`);
     };
     this.#ws.onclose = (event) => {
       this.logger.debug(`WebSocket closed: ${event.code} ${event.reason}`);
       this.connected = false;
+      this.#stopHeartbeat();
       this.#scheduleReconnect();
     };
+  }
+
+  #startHeartbeat() {
+    this.#stopHeartbeat();
+    this.#lastInboundAt = Date.now();
+    this.#heartbeatTimer = setInterval(() => this.#beat(), websocketHeartbeatContract.intervalMs);
+    // A pending interval would otherwise hold a server-side runtime open past the last socket.
+    this.#heartbeatTimer.unref?.();
+  }
+
+  #stopHeartbeat() {
+    if (this.#heartbeatTimer) clearInterval(this.#heartbeatTimer);
+    this.#heartbeatTimer = null;
+  }
+
+  #beat() {
+    const ws = this.#ws;
+    if (ws?.readyState !== WebSocket.OPEN) return;
+    // A socket the network dropped without a FIN still accepts `send()` forever, so silence is the only tell.
+    // Closing it by hand is what hands it to the reconnect path, which resubscribes every room.
+    if (Date.now() - this.#lastInboundAt > websocketHeartbeatContract.silenceMs) {
+      this.logger.warn(`WebSocket is silent, reconnecting`);
+      this.#stopHeartbeat();
+      ws.close();
+      return;
+    }
+    ws.send(JSON.stringify(websocketHeartbeatContract.makeRequest()));
   }
 
   #scheduleReconnect() {
@@ -183,26 +251,20 @@ export class WsClient {
     }
   }
   #handlePubsub(roomId: string, data: unknown) {
-    const roomSubscribe = this.#roomSubscribeMap.get(roomId);
+    const roomSubscribe = this.#roomSubscribeMap.get(this.#roomAliasMap.get(roomId) ?? roomId);
     if (!roomSubscribe) return;
     for (const listener of roomSubscribe.listener) listener(data);
   }
 
   #restoreError(body: unknown): RestoredError {
-    const payload =
-      body && typeof body === "object" && "error" in body
-        ? (body as ErrorResponsePayload)
-        : ({ error: String(body), statusCode: 500 } satisfies ErrorResponsePayload);
-    if (this.ErrorCls) return this.ErrorCls.fromJSON(payload);
-    const error = new Error(payload.error);
-    Object.assign(error, payload);
-    return error;
+    return restoreRemoteError(body, 500, this.ErrorCls);
   }
 
   destroy() {
     this.logger.debug(`WebSocket destroying`);
     this.#destroyed = true;
     this.#connectRequested = false;
+    this.#stopHeartbeat();
     if (this.#reconnectTimer) {
       clearTimeout(this.#reconnectTimer);
       this.#reconnectTimer = null;
@@ -210,6 +272,7 @@ export class WsClient {
     for (const timer of this.#unconnectedWarnTimers.values()) clearTimeout(timer);
     this.#unconnectedWarnTimers.clear();
     this.#outbox = [];
+    this.#roomAliasMap.clear();
     this.#ws?.close();
     this.#ws = null;
   }
@@ -276,11 +339,16 @@ export class WsClient {
     this.#ws.send(frame);
     return this;
   }
-  subscribe(option: { key: string; data: unknown[]; handleEvent: (data: unknown) => void }) {
+  subscribe(option: { key: string; data: unknown[]; handleEvent: (data: unknown) => void; handleResync?: () => void }) {
     const roomId = WsClient.makeRoomId(option.key, option.data);
     if (!this.#ws) this.#warnUnconnected("subscribe", option.key);
     if (!this.#roomSubscribeMap.has(roomId)) {
-      this.#roomSubscribeMap.set(roomId, { key: option.key, data: option.data, listener: new Set() });
+      this.#roomSubscribeMap.set(roomId, {
+        key: option.key,
+        data: option.data,
+        listener: new Set(),
+        resync: new Set(),
+      });
       if (this.#ws?.readyState === WebSocket.OPEN) {
         this.#sendSubscribe(option.key, option.data, true);
       }
@@ -289,14 +357,21 @@ export class WsClient {
     const roomSubscribe = this.#roomSubscribeMap.get(roomId);
     if (!roomSubscribe) return;
     roomSubscribe.listener.add(option.handleEvent);
+    if (option.handleResync) roomSubscribe.resync.add(option.handleResync);
     this.logger.verbose(`Websocket subscribe pubsub for ${roomId} - ${roomSubscribe.listener.size} listeners added`);
     return this;
   }
-  unsubscribe(option: { key: string; data: unknown[]; handleEvent: (data: unknown) => void }) {
+  unsubscribe(option: {
+    key: string;
+    data: unknown[];
+    handleEvent: (data: unknown) => void;
+    handleResync?: () => void;
+  }) {
     const roomId = WsClient.makeRoomId(option.key, option.data);
     const roomSusbscribe = this.#roomSubscribeMap.get(roomId);
     if (!roomSusbscribe) return;
     roomSusbscribe.listener.delete(option.handleEvent);
+    if (option.handleResync) roomSusbscribe.resync.delete(option.handleResync);
     this.logger.verbose(`Unsubscribe pubsub for ${roomId} - ${roomSusbscribe.listener.size} listeners remaining`);
     if (roomSusbscribe.listener.size === 0) {
       if (this.#ws?.readyState === WebSocket.OPEN) {

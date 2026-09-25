@@ -138,8 +138,14 @@ type DatabaseModelWithQuerySort<
   __count(query: _QueryOfDoc): Promise<number>;
   __insight(query: _QueryOfDoc): Promise<Insight>;
   clone(data: _DataInput & { id: string }): Promise<Doc>;
-  listenPre: (type: SaveEventType, listener: (doc: Doc, type: CRUDEventType) => PromiseOrObject<void>) => () => void;
-  listenPost: (type: SaveEventType, listener: (doc: Doc, type: CRUDEventType) => PromiseOrObject<void>) => () => void;
+  listenPre: (
+    type: SaveEventType,
+    listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
+  ) => () => void;
+  listenPost: (
+    type: SaveEventType,
+    listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
+  ) => () => void;
 } & {
   [key in _CapitalizedRefName]: Mdl<Doc, Obj, _DocumentObj>;
 } & {

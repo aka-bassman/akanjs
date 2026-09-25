@@ -10,27 +10,24 @@
 
 - Show Details (#show-details)
 - Add View/Edit Modal (#view-wrapper)
-- Add View Button to Cards (#button-on-unit)
+- Add View Button to Unit Cards (#button-on-unit)
 - Design Detail View (#design-detail-view)
 - Test Your Implementation (#test-implementation)
-- Best Practices for Detail Views (#best-practices)
 - What's Next? (#next-steps)
 
 ## Content
 
 Show Details
 
-Imagine walking into an ice cream shop and placing an order. You'd want to see exactly what you ordered, right? Maybe check if you remembered to add those strawberries, or confirm the size you picked. That's exactly what detailed views do in our application - they give customers a complete, beautiful summary of their order that they can access anytime with just a click.
+A Unit card renders the light model: just enough to tell orders apart. A detailed view is what opens when a customer taps one — the exact size, every topping, the order time, and whether it is ready.
 
-Here's a simpler way to think about it. The summary card is like seeing "Vanilla Cone" in your order list — just enough to know which order is yours. The detailed view is what you see when you tap on it: the exact size you picked, every topping you added, when you placed the order, and whether it's ready. It's the difference between a one-line note and the full story of your ice cream order!
-
-In Akan.js, showing detailed views follows a clean architecture pattern. We use three main components that work together:
+In Akan.js, three components work together to build a detailed view:
 
 A clickable wrapper that triggers the view modal when clicked. Think of it as the "View Details" button functionality.
 
 A modal popup that displays when customers want to see details. It handles opening, closing, and data loading automatically.
 
-The actual content inside the modal that displays all the order information in a beautiful, organized layout.
+The actual content inside the modal, showing all the order information in an organized layout.
 
 This separation allows each component to have a single responsibility: the wrapper handles clicking, the modal handles the popup behavior, and the view handles the display formatting.
 
@@ -42,7 +39,7 @@ This code creates a modal system that handles the display and editing of orders.
 
 Load.Units Component
 
-Renders all order cards in a list format, with each card displaying basic order information
+Renders every order as a Unit card in a list, each showing basic order information
 
 Model.ViewEditModal
 
@@ -50,9 +47,9 @@ Creates the modal popup that appears when customers click to view details. It au
 
 The ViewEditModal component handles opening, closing, data loading, and content display automatically. You specify what content to show, and it manages the technical implementation. This approach allows you to add detailed views throughout your application with minimal code.
 
-Add View Button to Cards
+Add View Button to Unit Cards
 
-Now let's add a "View" button to each order card. This button provides a clear interface element that customers can click to access detailed order information. The button will be positioned and styled to integrate with the existing card design.
+Now let's add a "View" button to each order's Unit card. This button provides a clear interface element that customers can click to access detailed order information. The button will be positioned and styled to integrate with the existing Unit card design.
 
 The key addition here is the ViewWrapper around the button:
 
@@ -82,7 +79,7 @@ Toppings display as colored badges, status shows with conditional styling, and t
 
 Test Your Implementation
 
-Let's test the detailed view implementation. Navigate to your ice cream order page and click the "View" button on any order card to verify that the system works correctly.
+Let's test the detailed view implementation. Navigate to your ice cream order page and click the "View" button on any Unit card to verify that the system works correctly.
 
 Testing Steps:
 
@@ -90,7 +87,7 @@ Navigate to http://localhost:8282/icecreamOrder
 
 Create a new ice cream order if you don't have any
 
-Click the 'View' button on any order card
+Click the 'View' button on any Unit card
 
 Verify the modal opens with detailed order information
 
@@ -98,41 +95,7 @@ Check that all fields display correctly with proper translations
 
 A modal popup should appear displaying all order details: size, toppings (as colored badges), status (with conditional colors), and timestamps. The modal closes when you click outside it or press the X button.
 
-Best Practices for Detail Views
-
-Here are some important best practices to follow when creating detail views in Akan.js:
-
-Use Dictionary Translations
-
-Always use l() for displaying field names and values. This ensures consistency and proper multilingual support.
-
-Consistent Visual Hierarchy
-
-Use grid layouts, consistent spacing, and clear visual separation between different pieces of information.
-
-Reusable Components
-
-Separate the ViewWrapper logic from the actual view content. This allows the wrapper to be reused across different display contexts.
-
-Handle Empty States
-
-Always provide fallback displays for empty or null values, like showing "No toppings" when the toppings array is empty.
-
 What's Next?
-
-You have successfully implemented detailed views for your ice cream orders. Customers can now click on any order to see all the specifics in an organized format. The modal system provides a clean interface for viewing order information.
-
-🎉 What You've Accomplished:
-
-Created reusable ViewWrapper components
-
-Added view buttons to order cards
-
-Designed comprehensive detail views
-
-Implemented modal popup functionality
-
-Used proper translations and styling
 
 In the next tutorial, we'll add status management functionality that allows shop staff to update orders from "active" to "processing" to "served". This will complete the order workflow system and provide full lifecycle management for ice cream orders.
 
@@ -145,7 +108,7 @@ In the next tutorial, we'll add status management functionality that allows shop
 import type { ClientInit, ClientView, SliceMeta } from "akanjs/fetch";
 import { cnst, fetch, IcecreamOrder } from "@apps/koyo/client";
 import { DefaultOf } from "akanjs/constant";
-import { Load, Model, buttonRecipe } from "akanjs/ui";
+import { Load, Model } from "akanjs/ui";
 
 interface CardProps {
   className?: string;
@@ -195,7 +158,7 @@ export const View = ({ view }: ViewProps) => {
 ```ts
 import { cn, type ModelProps } from "akanjs/client"; // [!code collapse:2]
 import { cnst, fetch, usePage } from "@apps/koyo/client";
-import { Model } from "akanjs/ui"; // [!code ++]
+import { Model, buttonRecipe } from "akanjs/ui"; // [!code ++]
 
 export const Card = ({ icecreamOrder }: ModelProps<"icecreamOrder", cnst.LightIcecreamOrder>) => {
   const { l } = usePage();

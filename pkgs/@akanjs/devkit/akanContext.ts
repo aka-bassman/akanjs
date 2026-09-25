@@ -130,13 +130,27 @@ export type CursorMcpConfig = {
   mcpServers?: Record<string, unknown>;
 };
 
-export const resourceList = [
+export const guidelineResourceUri = (name: string) => `akan://guidelines/${name}`;
+
+/**
+ * Resources that exist whatever the workspace holds. The guideline entries are **not** here: they are
+ * one per directory under `cli/guidelines/`, and a hardcoded pair listed 2 of 31 while `readResource`
+ * threw on the other 29. `buildResourceList` is the only place the two halves meet.
+ */
+const staticResourceList = [
   { uri: "akan://docs/framework", name: "Akan framework guide", mimeType: "text/markdown" },
-  { uri: "akan://guidelines/framework", name: "Framework guideline", mimeType: "text/markdown" },
-  { uri: "akan://guidelines/modelSignal", name: "Model signal guideline", mimeType: "text/markdown" },
   { uri: "akan://workspace/summary", name: "Workspace summary", mimeType: "application/json" },
   { uri: "akan://workspace/apps", name: "Workspace apps", mimeType: "application/json" },
   { uri: "akan://workspace/modules", name: "Workspace modules", mimeType: "application/json" },
+];
+
+export const buildResourceList = (guidelineNames: readonly string[]) => [
+  ...staticResourceList,
+  ...guidelineNames.map((name) => ({
+    uri: guidelineResourceUri(name),
+    name: `${name} guideline`,
+    mimeType: "text/markdown",
+  })),
 ];
 
 export const cursorMcpConfigPath = ".cursor/mcp.json";

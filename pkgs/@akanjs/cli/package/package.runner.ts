@@ -44,11 +44,16 @@ export class PackageRunner extends runner("package") {
     throw new Error(`[package] failed to locate akanjs package.json from ${path.dirname(Bun.main)}`);
   }
   async createPackage(workspace: Workspace, pkgName: string) {
-    await workspace.applyTemplate({ basePath: `pkgs/${pkgName}`, template: "pkgRoot", dict: { pkgName } });
+    const workspaceRootPath = ["pkgs", ...pkgName.split("/")].map(() => "..").join("/");
+    await workspace.applyTemplate({
+      basePath: `pkgs/${pkgName}`,
+      template: "pkgRoot",
+      dict: { pkgName, workspaceRootPath },
+    });
     await workspace.setPkgTsPaths(pkgName);
   }
   async removePackage(pkg: Pkg) {
-    await pkg.workspace.exec(`rm -rf pkgs/${pkg.name}`);
+    await pkg.workspace.removeDir(`pkgs/${pkg.name}`);
     await pkg.workspace.unsetPkgTsPaths(pkg.name);
   }
   async scanSync(pkg: Pkg) {
@@ -60,8 +65,20 @@ export class PackageRunner extends runner("package") {
     await pkg.dist.mkdir(pkg.dist.cwdPath);
     const scanner = await TypeScriptDependencyScanner.from(pkg);
     const { npmDeps, npmDevDeps, missingDeps } = await scanner.getPackageBuildDependencies(pkg.name);
+    // The three pi packages are reached only through `@earendil-works/pi-coding-agent`, and are named here
+    // because Bun applies neither that package's own `npm-shrinkwrap.json` nor this workspace's `overrides` to
+    // a consumer's install: its `^0.80.6` resolves to the newest 0.80.x, which dropped `getOAuthApiKey` from
+    // `pi-ai/oauth` and killed `akan code` on its first import. A published dependency is the only pin a
+    // consumer's resolver honours.
     const packageRuntimeDependencies: Record<string, string[]> = {
-      "@akanjs/devkit": ["tailwind-scrollbar"],
+      "@akanjs/devkit": [
+        "tailwind-scrollbar",
+        "@earendil-works/chord",
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-ai",
+        "@earendil-works/pi-telemetry",
+        "@earendil-works/pi-tui",
+      ],
     };
     const packageRuntimeDevDependencies: Record<string, string[]> = { akanjs: ["@biomejs/biome", "@types/bun"] };
     if (pkg.name === "@akanjs/cli") {
@@ -92,7 +109,11 @@ export class PackageRunner extends runner("package") {
     const packageRuntimeDevDeps = [...new Set([...npmDevDeps, ...forcedRuntimeDevDeps])].filter(
       (dep) => !optionalPeerDeps.has(dep) && !bundledRuntimeDeps.has(dep),
     );
-    const rootDeps = { ...rootPackageJson.dependencies, ...rootPackageJson.devDependencies };
+    const rootDeps = {
+      ...rootPackageJson.overrides,
+      ...rootPackageJson.dependencies,
+      ...rootPackageJson.devDependencies,
+    };
     const missingForcedDeps = forcedRuntimeDeps.filter((dep) => !rootDeps[dep]);
     const missingForcedDevDeps = forcedRuntimeDevDeps.filter((dep) => !rootDeps[dep]);
     const requiredMissingDeps = missingDeps.filter((dep) => !optionalPeerDeps.has(dep));
@@ -217,7 +238,7 @@ export class PackageRunner extends runner("package") {
       throw new Error(`[package] dist package name mismatch: expected ${pkg.name}, got ${pkgJson.name ?? "(missing)"}`);
     }
     if (!pkgJson.version) throw new Error(`[package] dist package version is missing for ${pkg.name}`);
-    if (!pkgJson.publishConfig || pkgJson.publishConfig.access !== "public") {
+    if (pkgJson.publishConfig?.access !== "public") {
       throw new Error(`[package] ${pkg.name} must publish with publishConfig.access=public`);
     }
     if (!(await Bun.file(`${pkg.dist.cwdPath}/README.md`).exists())) {

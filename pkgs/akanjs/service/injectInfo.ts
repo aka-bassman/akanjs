@@ -1,4 +1,4 @@
-import { type BackendEnv, type Cls, INJECT_META } from "akanjs/base";
+import { type BackendEnv, type Cls, dayjs, INJECT_META, PrimitiveRegistry } from "akanjs/base";
 import {
   type ConstantFieldTypeInput,
   ConstantRegistry,
@@ -16,6 +16,7 @@ import type {
   SliceCls,
 } from "akanjs/signal";
 import type { Adaptor, AdaptorCls, Service, ServiceCls } from ".";
+import { LiveSyncHub } from "./liveSyncHub";
 import type { CacheAdaptor, CacheSetOptions } from "./predefinedAdaptor";
 
 export type InjectType = "database" | "service" | "use" | "signal" | "plug" | "env" | "memory";
@@ -29,7 +30,7 @@ interface InjectBuilderOptions<ReturnType> {
   local?: boolean;
   default?: unknown;
   isMap?: boolean;
-  cacheOption?: CacheSetOptions;
+  ttl?: number;
   parentRefName: string;
 }
 
@@ -76,6 +77,8 @@ export interface LiveRegistry {
   internal: Map<string, Internal>;
   sliceCls: Map<string, SliceCls>;
   endpointCls: Map<string, EndpointCls>;
+  /** The process's one live-sync router. Rooms are registered on it at subscribe and read from it on every write. */
+  syncHub: LiveSyncHub;
 }
 export const getDefaultLiveRegistry = (): LiveRegistry => ({
   adaptor: new Map<string, Adaptor>(),
@@ -83,6 +86,7 @@ export const getDefaultLiveRegistry = (): LiveRegistry => ({
   internal: new Map<string, Internal>(),
   sliceCls: new Map<string, SliceCls>(),
   endpointCls: new Map<string, EndpointCls>(),
+  syncHub: new LiveSyncHub(),
 });
 
 export class InjectInfo<
@@ -100,7 +104,8 @@ export class InjectInfo<
   readonly adaptor?: AdaptorCls;
   readonly default?: unknown;
   readonly isMap?: boolean;
-  readonly cacheOption?: CacheSetOptions;
+  /** How long a `memory` value lives by default, in milliseconds — a `set` that names its own `expireAt` wins. */
+  readonly ttl?: number;
   readonly parentRefName: string;
   constructor(type: Type, options: InjectBuilderOptions<ReturnType>) {
     this.type = type;
@@ -112,7 +117,7 @@ export class InjectInfo<
     this.set = options.set;
     this.default = options.default;
     this.isMap = options.isMap ?? false;
-    this.cacheOption = options.cacheOption;
+    this.ttl = options.ttl;
     this.parentRefName = options.parentRefName;
   }
   static async resolveInjection(
@@ -257,80 +262,78 @@ export class InjectInfo<
   ) {
     if (injectInfo.local) {
       Object.defineProperty(instance, propKey, {
-        value: injectInfo.default ?? null,
+        value: injectInfo.isMap ? new Map() : (injectInfo.default ?? null),
         writable: true,
         enumerable: true,
       });
-    } else if (injectInfo.isMap) {
-      const topic = `akan:memory:${injectInfo.parentRefName}`;
-      const getter = injectInfo.get as unknown as (value: unknown) => unknown;
-      const setter = injectInfo.set as unknown as (value: unknown) => string | number | Buffer;
-      const get = async (key: string) => {
-        const value = await cacheAdaptor.hget(topic, propKey, key);
-        return value === undefined || value === null ? undefined : getter(value);
-      };
-      const set = async (key: string, value: unknown, option?: CacheSetOptions) => {
-        const setValue = setter(value);
-        await cacheAdaptor.hset(topic, propKey, key, setValue, option ?? injectInfo.cacheOption);
-      };
+      return;
+    }
+    // Scoped by the owner's refName, so two services that each name a memory `token` hold two values.
+    const topic = `akan:memory:${injectInfo.parentRefName}`;
+    const getter = injectInfo.get as unknown as (value: unknown) => unknown;
+    const setter = injectInfo.set as unknown as (value: unknown) => string | number | Buffer;
+    const optionOf = (option?: CacheSetOptions): CacheSetOptions | undefined =>
+      option ?? (injectInfo.ttl ? { expireAt: dayjs().add(injectInfo.ttl, "millisecond") } : undefined);
+    if (!injectInfo.isMap) {
       Object.defineProperty(instance, propKey, {
         value: {
-          get,
-          set,
-          delete: async (key: string) => {
-            await cacheAdaptor.hdelete(topic, propKey, key);
-          },
-          getOrInsert: async (key: string, value: unknown, option?: CacheSetOptions) => {
-            const existingValue = await get(key);
-            if (existingValue !== undefined) return existingValue;
-            await set(key, value, option);
-            return value;
-          },
-          getOrInsertComputed: async (
-            key: string,
-            compute: (key: string) => unknown | Promise<unknown>,
-            option?: CacheSetOptions,
-          ) => {
-            const existingValue = await get(key);
-            if (existingValue !== undefined) return existingValue;
-            const value = await compute(key);
-            await set(key, value, option);
-            return value;
-          },
-          keys: async () => await cacheAdaptor.hkeys(topic, propKey),
-          entries: async () => {
-            const entries = await cacheAdaptor.hentries(topic, propKey);
-            return entries.map(([key, value]) => [key, getter(value)]);
-          },
-          forEach: async (callback: (value: unknown, key: string) => void | Promise<void>) => {
-            for (const [key, value] of await cacheAdaptor.hentries(topic, propKey)) await callback(getter(value), key);
-          },
-          clear: async () => {
-            await cacheAdaptor.hclear(topic, propKey);
-          },
-        },
-      });
-    } else {
-      Object.defineProperty(instance, propKey, {
-        value: {
-          get: async () => {
-            const getter = injectInfo.get as unknown as (value: unknown) => unknown;
-            const value = await cacheAdaptor.get("akan:memory", propKey);
-            return value === null ? value : getter(value);
-          },
+          get: async () => getter((await cacheAdaptor.get(topic, propKey)) ?? undefined),
           set: async (value: unknown, option?: CacheSetOptions) => {
-            const setter = injectInfo.set as unknown as (value: unknown) => string | number | Buffer;
-            const setValue = setter(value);
-            await cacheAdaptor.set("akan:memory", propKey, setValue, option ?? injectInfo.cacheOption);
+            await cacheAdaptor.set(topic, propKey, setter(value), optionOf(option));
           },
           delete: async () => {
-            await cacheAdaptor.delete("akan:memory", propKey);
+            await cacheAdaptor.delete(topic, propKey);
           },
         },
         writable: false,
         enumerable: true,
       });
+      return;
     }
+    const get = async (key: string) => {
+      const value = await cacheAdaptor.hget(topic, propKey, key);
+      return value === undefined || value === null ? undefined : getter(value);
+    };
+    const set = async (key: string, value: unknown, option?: CacheSetOptions) => {
+      await cacheAdaptor.hset(topic, propKey, key, setter(value), optionOf(option));
+    };
+    Object.defineProperty(instance, propKey, {
+      value: {
+        get,
+        set,
+        delete: async (key: string) => {
+          await cacheAdaptor.hdelete(topic, propKey, key);
+        },
+        getOrInsert: async (key: string, value: unknown, option?: CacheSetOptions) => {
+          const existingValue = await get(key);
+          if (existingValue !== undefined) return existingValue;
+          await set(key, value, option);
+          return value;
+        },
+        getOrInsertComputed: async (
+          key: string,
+          compute: (key: string) => unknown | Promise<unknown>,
+          option?: CacheSetOptions,
+        ) => {
+          const existingValue = await get(key);
+          if (existingValue !== undefined) return existingValue;
+          const value = await compute(key);
+          await set(key, value, option);
+          return value;
+        },
+        keys: async () => await cacheAdaptor.hkeys(topic, propKey),
+        entries: async () => {
+          const entries = await cacheAdaptor.hentries(topic, propKey);
+          return entries.map(([key, value]) => [key, getter(value)]);
+        },
+        forEach: async (callback: (value: unknown, key: string) => void | Promise<void>) => {
+          for (const [key, value] of await cacheAdaptor.hentries(topic, propKey)) await callback(getter(value), key);
+        },
+        clear: async () => {
+          await cacheAdaptor.hclear(topic, propKey);
+        },
+      },
+    });
   }
 }
 
@@ -366,7 +369,9 @@ export const injectionBuilder = (parentRefName: string) => ({
     ValueRef extends ConstantFieldTypeInput = PlainTypeToFieldType<ExplicitType>,
     MapValue = never,
     DefaultValue extends GetFieldValue<ValueRef, ExplicitType> = never,
-    GetFn extends (value: GetFieldValue<ValueRef, ExplicitType>) => unknown = never,
+    GetFn extends (
+      value: MapConstructor extends ValueRef ? FieldToValue<MapValue> : GetFieldValue<ValueRef, ExplicitType>,
+    ) => unknown = never,
     Local extends boolean = false,
   >(
     modelRef: ValueRef,
@@ -374,9 +379,13 @@ export const injectionBuilder = (parentRefName: string) => ({
       local?: Local;
       default?: DefaultValue;
       of?: MapValue;
-      expireAt?: CacheSetOptions["expireAt"];
+      /** Milliseconds each write lives unless the `set` call names its own `expireAt`. */
+      ttl?: number;
+      /** Turns the stored value — a Map's entry value — into what the code reads; `set` is its inverse. */
       get?: GetFn;
-      set?: (value: ReturnType<GetFn>) => GetFieldValue<ValueRef, ExplicitType>;
+      set?: (
+        value: ReturnType<GetFn>,
+      ) => MapConstructor extends ValueRef ? FieldToValue<MapValue> : GetFieldValue<ValueRef, ExplicitType>;
     } = {},
   ) => {
     if (opts.local && (!!opts.get || !!opts.set))
@@ -385,8 +394,15 @@ export const injectionBuilder = (parentRefName: string) => ({
       throw new Error("get and set should be both provided or not provided");
     const isMap = modelRef === Map;
     if (isMap && !opts.of) throw new Error("of should be provided when modelRef is Map");
-    type FieldValue = never extends GetFn ? GetFieldValue<ValueRef, ExplicitType, MapValue> : ReturnType<GetFn>;
-    type MapFieldValue = never extends GetFn ? FieldToValue<MapValue> : ReturnType<GetFn>;
+    const valueRef = (isMap ? opts.of : modelRef) as Cls;
+    // A cache holds a string, a number or a Buffer. A model or scalar class serializes to an object, which Redis
+    // coerces to "[object Object]" and only the sqlite-backed cache happens to JSON on its own — so the value
+    // travels as text either way and the two adaptors round-trip the same declaration.
+    const isStructured = Array.isArray(valueRef) || !PrimitiveRegistry.has(valueRef);
+    const read = opts.get as ((value: unknown) => unknown) | undefined;
+    const write = opts.set as ((value: unknown) => unknown) | undefined;
+    type FieldValue = [GetFn] extends [never] ? GetFieldValue<ValueRef, ExplicitType, MapValue> : ReturnType<GetFn>;
+    type MapFieldValue = [GetFn] extends [never] ? FieldToValue<MapValue> : ReturnType<GetFn>;
     type IsNullable = DefaultValue extends never ? true : false;
     type UseValue = IsNullable extends true ? FieldValue | null : FieldValue;
     return new InjectInfo<
@@ -421,20 +437,25 @@ export const injectionBuilder = (parentRefName: string) => ({
     >("memory", {
       local: opts.local,
       get: (serializedValue: never) => {
-        const rawValue = serializedValue as object | null;
-        return (
-          ConstantRegistry.deserialize(isMap ? (opts.of as Cls) : (modelRef as Cls), rawValue ?? opts.default, true) ??
-          null
-        );
+        const stored = serializedValue as unknown;
+        // Redis answers a missing key with `null` and the sqlite cache with `undefined`; both mean "use the default".
+        if (stored === undefined || stored === null) {
+          if (opts.default === undefined) return null;
+          return read ? read(opts.default) : opts.default;
+        }
+        // A row written before this encoding, and the sqlite cache's own `json` type, both arrive already parsed.
+        const rawValue = isStructured && typeof stored === "string" ? JSON.parse(stored) : stored;
+        const value = ConstantRegistry.deserialize(valueRef, rawValue as object, true) ?? null;
+        return read && value !== null ? read(value) : value;
       },
       set: (value: never) => {
-        return (
-          ConstantRegistry.serialize(isMap ? (opts.of as Cls) : (modelRef as Cls), value, true) ?? opts.default ?? null
-        );
+        const plain = write ? write(value) : value;
+        const serialized = ConstantRegistry.serialize(valueRef, plain, true) ?? opts.default ?? null;
+        return isStructured ? JSON.stringify(serialized) : serialized;
       },
       default: opts.default as unknown,
       isMap,
-      cacheOption: opts.expireAt ? { expireAt: opts.expireAt } : undefined,
+      ttl: opts.ttl,
       parentRefName,
     });
   },

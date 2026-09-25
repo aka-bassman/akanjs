@@ -1,6 +1,6 @@
 {
   "name": "akanjs",
-  "version": "3.0.0-alpha.67",
+  "version": "3.0.0-beta.17",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -115,6 +115,11 @@
       "types": "./server/akanApp.ts",
       "default": "./server/akanApp.ts"
     },
+    "./server/tunnel": {
+      "import": "./server/tunnel/index.ts",
+      "types": "./server/tunnel/index.ts",
+      "default": "./server/tunnel/index.ts"
+    },
     "./server/memoryLimit": {
       "import": "./server/memoryLimit.ts",
       "types": "./server/memoryLimit.ts",
@@ -124,11 +129,23 @@
       "import": "./server/lifecycle/portInUse.ts",
       "types": "./server/lifecycle/portInUse.ts",
       "default": "./server/lifecycle/portInUse.ts"
+    },
+    "./server/logging/logQuery": {
+      "import": "./server/logging/logQuery.ts",
+      "types": "./server/logging/logQuery.ts",
+      "default": "./server/logging/logQuery.ts"
+    },
+    "./server/logging/logTailClient": {
+      "import": "./server/logging/logTailClient.ts",
+      "types": "./server/logging/logTailClient.ts",
+      "default": "./server/logging/logTailClient.ts"
     }
   },
   "dependencies": {
+    "@lexical/plain-text": "^0.51.0",
     "dayjs": "^1.11.20",
     "immer": "^11.1.8",
+    "lexical": "^0.51.0",
     "tailwind-merge": "^3.3.1",
     "tailwind-variants": "^3.3.0"
   },
@@ -301,7 +318,7 @@
     }
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.8",
+    "@biomejs/biome": "2.5.12",
     "@types/bun": "^1.4.0"
   },
   "bun": {

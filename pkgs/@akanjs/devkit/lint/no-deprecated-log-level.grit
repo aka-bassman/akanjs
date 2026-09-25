@@ -1,0 +1,17 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+// The level ladder no longer has a `log` tier: `logger.log()` and `Logger.log()` are kept for compatibility
+// and emit at `info`, so a call reads like a distinct level and is not one. The receiver regex admits the
+// instance field (`this.logger`, `this.#logger`), a local (`logger`) and the static class (`Logger`), and
+// nothing else — `console.log` is biome's own `noConsole` rule.
+//
+// No autofix: Biome does not apply plugin rewrites, and the rename is a one-word edit at each site.
+`$recv.log($arg)` as $call where {
+  $recv <: r"(?:this\.)?#?[lL]ogger",
+  register_diagnostic(
+    span = $call,
+    message = "`.log()` is deprecated and emits at `info`. Call `.info()` instead.",
+    severity = "error"
+  )
+}

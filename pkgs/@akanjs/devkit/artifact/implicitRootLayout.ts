@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { App } from "../commandDecorators";
+import { AsyncDefaultExportDetector } from "../transforms/asyncDefaultExportDetector";
 
 export interface PageEntry {
   key: string;
@@ -184,16 +185,40 @@ async function writeGeneratedRootLayoutFile(opts: {
   const clientImport = opts.includeStInit
     ? `import { st } from "@apps/${opts.appName}/client";\nvoid st;\n`
     : `import "@apps/${opts.appName}/client";\n`;
+  // Both user modules go through `resolveRouteModule`: a `rootLayout()` chain and the legacy named exports read
+  // the same afterwards, and this file never has to know which shape the app wrote.
+  const inheritedLabel = inheritedSourceAbsPath ? path.relative(opts.appCwdPath, inheritedSourceAbsPath) : "";
   const inheritedImport = inheritedSourceSpecifier
-    ? `import * as inheritedLayout from ${JSON.stringify(inheritedSourceSpecifier)};\n`
-    : "const inheritedLayout = {};\n";
+    ? `import * as inheritedModule from ${JSON.stringify(inheritedSourceSpecifier)};\nconst inheritedLayout = resolveRouteModule(inheritedModule as never, ${JSON.stringify(inheritedLabel)}).module as LayoutModule;\n`
+    : "const inheritedLayout: LayoutModule = {};\n";
   const prefix = routePrefixForSegments(opts.boundary.segments);
+  const userLabel = opts.boundary.sourceAbsPath ? path.relative(opts.appCwdPath, opts.boundary.sourceAbsPath) : "";
   const userImport = sourceSpecifier
-    ? `import UserLayout, * as userLayout from ${JSON.stringify(sourceSpecifier)};\n`
-    : "const UserLayout = ({ children }) => children;\nconst userLayout = {};\n";
+    ? `import * as userModule from ${JSON.stringify(sourceSpecifier)};\nconst userLayout = resolveRouteModule(userModule as never, ${JSON.stringify(userLabel)}).module as LayoutModule;\nconst UserLayout = userLayout.default as (props: LayoutProps) => ReactNode | Promise<ReactNode>;\n`
+    : "const UserLayout = ({ children }: LayoutProps) => children;\nconst userLayout: LayoutModule = {};\n";
+  const isAsyncUserLayout = opts.boundary.sourceAbsPath
+    ? await AsyncDefaultExportDetector.detect(opts.boundary.sourceAbsPath)
+    : false;
+  const userLayoutElement = "<UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>";
+  // React has no async client component, so the CSR bundle calls an async layout and awaits its node the way
+  // `RenderLayer` does for pages. The RSC render keeps the element: awaiting there would hold the shell behind
+  // the layout's own awaits instead of streaming it as its own Flight chunk.
+  const layoutSignature = isAsyncUserLayout
+    ? "export default async function GeneratedLayout"
+    : "export default function GeneratedLayout";
+  const layoutBinding = isAsyncUserLayout
+    ? `  const layout =
+    process.env.AKAN_PUBLIC_RENDER_ENV === "csr"
+      ? await UserLayout({ params, searchParams, children })
+      : ${userLayoutElement};
+`
+    : "";
+  const layoutChild = isAsyncUserLayout ? "{layout}" : userLayoutElement;
+  const layoutReturn = isAsyncUserLayout ? "layout" : userLayoutElement;
   const source = opts.includeSystemProvider
-    ? `import type { LayoutProps, PageProps } from "akanjs/client";
-import { loadFonts } from "akanjs/client";
+    ? `import type { LayoutModule, LayoutProps, PageProps } from "akanjs/client";
+import { loadFonts, resolveRouteModule } from "akanjs/client";
+import type { ReactNode } from "react";
 import { System } from "akanjs/ui";
 import { env } from "@apps/${opts.appName}/env/env.client";
 import { allDictionary } from ${JSON.stringify(dictMacroSpecifier)};
@@ -211,19 +236,12 @@ export async function generateHead(props: PageProps) {
   return inheritedLayout.head;
 }
 
-export async function generateMetadata(props: PageProps) {
-  if (userLayout.generateMetadata) return userLayout.generateMetadata(props);
-  if (userLayout.metadata !== undefined) return userLayout.metadata;
-  if (inheritedLayout.generateMetadata) return inheritedLayout.generateMetadata(props);
-  return inheritedLayout.metadata;
-}
-
 export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;
 export const Error = userLayout.Error ?? inheritedLayout.Error;
 export const pageConfig = userLayout.pageConfig ?? inheritedLayout.pageConfig;
 
-export default function GeneratedLayout({ children, params, searchParams }: LayoutProps) {
-  return (
+${layoutSignature}({ children, params, searchParams }: LayoutProps) {
+${layoutBinding}  return (
     <System.Provider
       of={GeneratedLayout as never}
       appName=${JSON.stringify(opts.appName)}
@@ -233,18 +251,19 @@ export default function GeneratedLayout({ children, params, searchParams }: Layo
       theme={userLayout.theme ?? inheritedLayout.theme}
       fonts={loadFonts(userFonts)}
       className={defaultFontClassName}
-      gaTrackingId={userLayout.gaTrackingId ?? inheritedLayout.gaTrackingId}
       layoutStyle={userLayout.layoutStyle ?? inheritedLayout.layoutStyle}
       reconnect={userLayout.reconnect ?? inheritedLayout.reconnect ?? false}
       wsConnect={userLayout.wsConnect ?? inheritedLayout.wsConnect ?? true}
       allDictionary={process.env.AKAN_PUBLIC_RENDER_ENV === "ssr" ? allDictionary : undefined}
     >
-      <UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>
+      ${layoutChild}
     </System.Provider>
   );
 }
 `
-    : `import type { LayoutProps, PageProps } from "akanjs/client";
+    : `import type { LayoutModule, LayoutProps, PageProps } from "akanjs/client";
+import { resolveRouteModule } from "akanjs/client";
+import type { ReactNode } from "react";
 ${inheritedImport}${userImport}
 export async function generateHead(props: PageProps) {
   if (userLayout.generateHead) return userLayout.generateHead(props);
@@ -253,19 +272,12 @@ export async function generateHead(props: PageProps) {
   return inheritedLayout.head;
 }
 
-export async function generateMetadata(props: PageProps) {
-  if (userLayout.generateMetadata) return userLayout.generateMetadata(props);
-  if (userLayout.metadata !== undefined) return userLayout.metadata;
-  if (inheritedLayout.generateMetadata) return inheritedLayout.generateMetadata(props);
-  return inheritedLayout.metadata;
-}
-
 export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;
 export const Error = userLayout.Error ?? inheritedLayout.Error;
 export const pageConfig = userLayout.pageConfig ?? inheritedLayout.pageConfig;
 
-export default function GeneratedLayout({ children, params, searchParams }: LayoutProps) {
-  return <UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>;
+${layoutSignature}({ children, params, searchParams }: LayoutProps) {
+${layoutBinding}  return ${layoutReturn};
 }
 `;
   await Bun.write(absPath, source);

@@ -17,10 +17,10 @@ describe("sharedContext", () => {
   });
 
   test("a module reaching for a client-only react API declares itself a client module", () => {
-    // What the react-server condition resolves `react` to has no `createContext`, no `useState`, no hooks at all.
-    // A module without the directive is evaluated in that graph the moment a server component imports anything
-    // from its barrel, and the app dies at boot with "Export named 'createContext' not found" — which no
-    // typecheck and no build reports, because both resolve `react` the ordinary way.
+    // The directive is what makes the bundler emit a client reference for the module instead of pulling it into
+    // an app's server graph, where `react` resolves to `react.react-server.js` and exports none of these.
+    // It does not help the RSC worker, which runs the sources directly and where Bun honours no directive —
+    // `server/rscWorkerBoot.test.ts` is the guard for that graph, and it is reachability, not this list.
     const root = `${import.meta.dir}/..`;
     const clientOnly =
       /^(createContext|useState|useEffect|useLayoutEffect|useContext|useRef|useReducer|useSyncExternalStore|useImperativeHandle)$/;

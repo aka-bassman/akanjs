@@ -20,7 +20,7 @@ export const addFieldWorkflowSpec: WorkflowSpec = {
     default: {
       type: "string",
       description:
-        "Optional default value. plan/apply coerce by field type: Int/Float to numeric literals, Boolean to true/false, Date to new Date(...), String/scalar to string literals, and enum only when the value is in values.",
+        "Optional default value. plan/apply coerce by field type: Int/Float to numeric literals, Boolean to true/false, Date (now, a timestamp, or a date string) to a () => dayjs(...) thunk, String/scalar to string literals, and enum only when the value is in values.",
     },
     surfaces: {
       type: "string-list",

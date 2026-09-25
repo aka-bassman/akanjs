@@ -127,6 +127,49 @@ describe("Executor filesystem helpers", () => {
     expect(await readFile(path.join(root, "local/docker-compose.yaml"), "utf8")).toBe("custom");
   });
 
+  test("hands every scaffolded TypeScript file to the formatter, and nothing else", async () => {
+    // A template emits identifiers it cannot sort — `import { fetch, Task, usePage }` is right for a model
+    // named Task and wrong for Zoo — and unsorted imports fail `biome check`. So the scaffold is formatted
+    // on the way out, or it is red for most model names whatever the template says.
+    const root = await makeTempRoot();
+    const exec = new Executor("fixture", root);
+    const formatted: string[] = [];
+    exec.getLinter = () =>
+      ({
+        fixFiles: async (filePaths: string[]) => {
+          formatted.push(...filePaths);
+          return { fixed: [] };
+        },
+      }) as unknown as ReturnType<Executor["getLinter"]>;
+
+    await exec.applyTemplate({
+      basePath: "apps/demo/page/task",
+      template: "crudSinglePage",
+      dict: { model: "task", appName: "demo" },
+    });
+
+    expect(formatted).toEqual([path.join(root, "apps/demo/page/task/_index.tsx")]);
+  });
+
+  test("a formatter that cannot run does not fail the scaffold", async () => {
+    // `create-akan-workspace` scaffolds before `bun install`, so there is no local Biome binary and often
+    // no config above the target. An unformatted file is a lint fix; a failed scaffold is not.
+    const root = await makeTempRoot();
+    const exec = new Executor("fixture", root);
+    exec.getLinter = () => {
+      throw new Error("biome.json not found");
+    };
+
+    const created = await exec.applyTemplate({
+      basePath: "apps/demo/page/task",
+      template: "crudSinglePage",
+      dict: { model: "task", appName: "demo" },
+    });
+
+    expect(created).toHaveLength(1);
+    expect(await readFile(path.join(root, "apps/demo/page/task/_index.tsx"), "utf8")).toContain("Task.Zone.Card");
+  });
+
   test("applies hidden files and directories from CLI templates", async () => {
     const root = await makeTempRoot();
     const exec = new Executor("fixture", root);
@@ -203,6 +246,7 @@ describe("Workspace and app executor environment contracts", () => {
       serveDomain: "example.com",
       env: "local",
       portOffset: 10,
+      workspaceId: undefined,
     });
 
     delete process.env.AKAN_PUBLIC_REPO_NAME;
@@ -233,6 +277,7 @@ describe("Workspace and app executor environment contracts", () => {
       serveDomain: "file.example.com",
       env: "develop",
       portOffset: 7,
+      workspaceId: undefined,
     });
   });
 
@@ -270,6 +315,11 @@ describe("Workspace and app executor environment contracts", () => {
     const prepared = await app.prepareCommand("build");
     expect(prepared.env.AKAN_COMMAND_TYPE).toBe("build");
     expect(prepared.env.AKAN_PUBLIC_BASE_PATHS).toBe("admin");
+    // Bundling reads `process.env` through getPublicEnv and `define`s every AKAN_PUBLIC_* into a literal, so a
+    // dev port published here would be baked into the artifact and outrank the PORT the container is run with.
+    expect(process.env.AKAN_PUBLIC_APP_NAME).toBe("demo");
+    expect(process.env.AKAN_PUBLIC_CLIENT_PORT).toBeUndefined();
+    expect(process.env.AKAN_PUBLIC_SERVER_PORT).toBeUndefined();
     expect((await stat(path.join(root, "dist/apps/demo/private"))).isDirectory()).toBe(true);
     expect((await stat(path.join(root, "dist/apps/demo/public"))).isDirectory()).toBe(true);
   });
@@ -545,9 +595,7 @@ describe("Workspace and app executor environment contracts", () => {
         "_index.tsx": `export const pageConfig = { devOnly: process.env.NODE_ENV !== "production" };\n${PAGE_SOURCE}`,
       });
 
-      await expect(app.getPageKeys({ refresh: true })).rejects.toThrow(
-        "pageConfig.devOnly must be a literal true or false",
-      );
+      await expect(app.getPageKeys({ refresh: true })).rejects.toThrow("devOnly must be a literal true or false");
     });
 
     test("reads devOnly through a satisfies annotation", async () => {
@@ -679,7 +727,7 @@ describe("Workspace and app executor environment contracts", () => {
     });
   });
 
-  test("accepts metadata route exports during page key discovery", async () => {
+  test("accepts head route exports during page key discovery", async () => {
     const root = await makeTempRoot();
     process.env.AKAN_PUBLIC_REPO_NAME = "repo";
     process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
@@ -689,24 +737,19 @@ describe("Workspace and app executor environment contracts", () => {
     await writeFile(path.join(root, "apps/demo/akan.config.ts"), "export default {};\n");
     await writeFile(
       path.join(root, "apps/demo/page/_layout.tsx"),
-      [
-        "export const head = null;",
-        "export const metadata = { title: 'Root' };",
-        "export default function Layout({ children }) { return children; }",
-        "",
-      ].join("\n"),
+      ["export const head = null;", "export default function Layout({ children }) { return children; }", ""].join("\n"),
     );
     await writeFile(
       path.join(root, "apps/demo/page/docs/_layout.tsx"),
       [
-        "export async function generateMetadata() { return { title: 'Docs' }; }",
+        "export async function generateHead() { return null; }",
         "export default function Layout({ children }) { return children; }",
         "",
       ].join("\n"),
     );
     await writeFile(
       path.join(root, "apps/demo/page/docs/intro.tsx"),
-      ["export const metadata = { title: 'Intro' };", "export default function Page() { return null; }", ""].join("\n"),
+      ["export const head = null;", "export default function Page() { return null; }", ""].join("\n"),
     );
 
     const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
@@ -719,7 +762,7 @@ describe("Workspace and app executor environment contracts", () => {
     ]);
   });
 
-  test("rejects conflicting metadata route exports during page key discovery", async () => {
+  test("rejects a metadata route export during page key discovery", async () => {
     const root = await makeTempRoot();
     process.env.AKAN_PUBLIC_REPO_NAME = "repo";
     process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
@@ -728,47 +771,16 @@ describe("Workspace and app executor environment contracts", () => {
     await mkdir(path.join(root, "apps/demo/page"), { recursive: true });
     await writeFile(path.join(root, "apps/demo/akan.config.ts"), "export default {};\n");
     await writeFile(
-      path.join(root, "apps/demo/page/conflict.tsx"),
-      [
-        "export const metadata = { title: 'Conflict' };",
-        "export function generateMetadata() { return { title: 'Conflict' }; }",
-        "export default function Page() { return null; }",
-        "",
-      ].join("\n"),
+      path.join(root, "apps/demo/page/legacy.tsx"),
+      ["export const metadata = { title: 'Legacy' };", "export default function Page() { return null; }", ""].join(
+        "\n",
+      ),
     );
 
     const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
     const app = AppExecutor.from(workspace, "demo");
 
-    await expect(app.getPageKeys({ refresh: true })).rejects.toThrow(
-      "metadata and generateMetadata cannot both be exported",
-    );
-  });
-
-  test("rejects mixed head and metadata route export channels during page key discovery", async () => {
-    const root = await makeTempRoot();
-    process.env.AKAN_PUBLIC_REPO_NAME = "repo";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    await writeJson(path.join(root, "package.json"), rootPackageJson());
-    await mkdir(path.join(root, "apps/demo/page"), { recursive: true });
-    await writeFile(path.join(root, "apps/demo/akan.config.ts"), "export default {};\n");
-    await writeFile(
-      path.join(root, "apps/demo/page/mixed.tsx"),
-      [
-        "export const head = null;",
-        "export const metadata = { title: 'Mixed' };",
-        "export default function Page() { return null; }",
-        "",
-      ].join("\n"),
-    );
-
-    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
-    const app = AppExecutor.from(workspace, "demo");
-
-    await expect(app.getPageKeys({ refresh: true })).rejects.toThrow(
-      "head/generateHead and metadata/generateMetadata cannot both be exported",
-    );
+    await expect(app.getPageKeys({ refresh: true })).rejects.toThrow('unsupported export "metadata"');
   });
 
   test("assigns start command ports from sorted app order", async () => {

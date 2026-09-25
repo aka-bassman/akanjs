@@ -55,6 +55,8 @@ export interface AkanImageConfig {
   maximumRedirects: number;
   fetchTimeoutMs: number;
   maxRemoteBytes: number;
+  /** Concurrent encodes; `0` sizes it from the CPUs the serving process sees, which the build machine's count is not. */
+  maxConcurrency: number;
 }
 
 export const defaultAkanImageConfig: AkanImageConfig = {
@@ -69,6 +71,7 @@ export const defaultAkanImageConfig: AkanImageConfig = {
   maximumRedirects: 3,
   fetchTimeoutMs: 7000,
   maxRemoteBytes: 25 * 1024 * 1024,
+  maxConcurrency: 0,
 };
 
 export function mergeAkanImageConfig(config: Partial<AkanImageConfig> = {}): AkanImageConfig {

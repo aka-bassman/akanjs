@@ -10,6 +10,7 @@
 
 - akanjs/ui (#akanjs-ui)
 - Page Map (#page-map)
+- Every Export (#exports)
 
 ## Content
 
@@ -17,37 +18,57 @@ Overview
 
 Core
 
-The most common page-building primitives for routing, media, page shells, data loading, and model workflows.
+The parts most pages are built from: routing, images, page shells, data loading, model CRUD.
 
 Display
 
-Display and feedback helpers for model lists, relative time labels, loading states, empty states, and tabular UI.
+Showing data and feedback: admin lists, relative times, loading and empty states, badges, tables.
 
 Forms
 
-Form controls and action primitives used by templates, filters, and admin surfaces.
+Form controls and buttons for templates, filters and admin screens.
 
 Overlays
 
-Overlay, confirmation, menu, and copy helpers for focused user actions.
+What opens over the page: modals, confirmations, sheets, menus, hints and copy buttons.
 
 System
 
-Application shell helpers, CSR guards, admin signal tools, tab state, and animation wrappers.
+The app shell, client-only boundaries, the API explorer, tabs and animation.
+
+Agent
+
+The in-page agent: the layout chat, zones with their own conversation, route guidance, the dev dock.
 
 Customization
 
-Re-skin any framework component per route with a `page/**/_overrides.tsx` manifest — drop-in replacements, no call-site changes.
+_overrides.tsx, override(), 46 slots
+
+Swap framework components per route with a `page/**/_overrides.tsx` file; call sites stay.
+
+Recipes
+
+The className factories: use one, add one in `apps/<app>/ui/Recipe/`, or swap one via `recipes`.
+
+Only here
 
 akanjs/ui
 
-`akanjs/ui` is the shared UI facet for Akan apps. It provides route-aware links, data loading wrappers, model UI shells, form controls, display helpers, overlays, and system-level app chrome.
+By Layer
 
-This reference is organized by actual app/lib usage frequency. Common components get full pages first; rarely used exports are deferred until they become part of normal application patterns.
+One page per layer you work in. Pick yours from the Page Map.
+
+By Name
+
+Every export A to Z, each with the page that covers it. Start here when you know the name.
 
 Page Map
 
-Open the page that matches the UI layer you are working on. Each detail page uses one `Scroll.Slide` per component with usage examples and props notes.
+Open the page for the layer you are working in. Each component there gets its own section: a props table, then the notes props alone cannot carry.
+
+Every Export
+
+Export
 
 ## Code Examples
 

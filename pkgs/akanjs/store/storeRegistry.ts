@@ -115,7 +115,7 @@ export class StoreRegistry {
       else RootStore.slice[store.refName] = store.slice;
     });
     applyMixins(RootStore, stores);
-    return RootStore as any;
+    return RootStore as unknown as RootStoreCls;
   }
   static build<RtStoreCls extends RootStoreCls>(store: RtStoreCls): WithSelectors<RtStoreCls> {
     return attachAgentic(StoreRegistry.#state.instance.addStore(store)) as unknown as WithSelectors<RtStoreCls>;

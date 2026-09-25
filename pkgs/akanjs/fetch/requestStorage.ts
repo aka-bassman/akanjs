@@ -12,11 +12,20 @@ export interface AkanDynamicUsage {
   cookies: boolean;
 }
 
+/** One `fetch.*` query a request made, by endpoint and argument — what a page's data footprint is read off. */
+export interface RequestQueryRecord {
+  key: string;
+  args: Record<string, unknown>;
+  returns: { refName: string; modelType?: string; arrDepth?: number; nullable?: boolean };
+  value: Promise<unknown>;
+}
+
 export interface AkanRequestStore {
   request: Request;
   theme?: AkanTheme;
   frameState?: unknown;
   queryCache: Map<string, Promise<unknown>>;
+  queryLog: RequestQueryRecord[];
   policy: AkanRequestPolicy;
   dynamicUsage: AkanDynamicUsage;
 }
@@ -66,6 +75,7 @@ export function createRequestStore(
   return {
     request,
     queryCache: new Map(),
+    queryLog: [],
     policy: { ...createRequestPolicy(), ...policy },
     dynamicUsage: { headers: false, cookies: false },
   };
@@ -177,15 +187,34 @@ export function getRequestDynamicUsage(): AkanDynamicUsage | undefined {
   return getRequestStore()?.dynamicUsage;
 }
 
-/** Deduplicates a promise-producing query within the active request. */
-export function memoizeRequestQuery<T>(key: string, factory: () => Promise<T>): Promise<T> {
+/**
+ * Deduplicates a promise-producing query within the active request, and says whether this caller is the one
+ * that started it.
+ *
+ * `owned` is what lets the caller skip copying the response. The copy exists because one response object is
+ * handed to every caller in the request and a parsed model can hold references into it, so a second caller must
+ * not be given the same graph — but a query asked for once (which is nearly all of them: the key carries the
+ * URL and the auth headers) has no second caller to protect, and copying for it is a whole JSON round-trip
+ * spent on nothing.
+ */
+export function claimRequestQuery<T>(key: string, factory: () => Promise<T>): { value: Promise<T>; owned: boolean } {
   const store = getRequestStore();
-  if (!store) return factory();
+  if (!store) return { value: factory(), owned: true };
   const existing = store.queryCache.get(key);
-  if (existing) return existing as Promise<T>;
+  if (existing) return { value: existing as Promise<T>, owned: false };
   const promise = factory();
   store.queryCache.set(key, promise);
-  return promise;
+  return { value: promise, owned: true };
+}
+
+/** Appends to the active request's query log; outside a request there is nothing to read it, so nothing is kept. */
+export function recordRequestQuery(record: RequestQueryRecord): void {
+  getRequestStore()?.queryLog.push(record);
+}
+
+/** Deduplicates a promise-producing query within the active request. */
+export function memoizeRequestQuery<T>(key: string, factory: () => Promise<T>): Promise<T> {
+  return claimRequestQuery(key, factory).value;
 }
 
 /** Returns current request headers as a Map, or an empty Map outside a request. */

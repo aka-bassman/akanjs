@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { contentFromText } from "../../../../common/contentFromText";
+import { RichEditor } from "../../../../common/richEditor";
 import type { EditorLosses } from "../feature";
 import { isEmptyRichContent, lossSentence, lossyNodesOf, richBlockListing, richBlocksOf } from "./agentRichPlugin.util";
 
@@ -35,12 +35,12 @@ describe("agentRichPlugin.util", () => {
       expect(isEmptyRichContent(null, labels)).toBe(true);
       expect(isEmptyRichContent([], labels)).toBe(true);
       expect(isEmptyRichContent({}, labels)).toBe(true);
-      expect(isEmptyRichContent(contentFromText(""), labels)).toBe(true);
+      expect(isEmptyRichContent(RichEditor.contentFromText(""), labels)).toBe(true);
       expect(isEmptyRichContent(docOf(paragraphOf()), labels)).toBe(true);
     });
 
     it("is not empty once a person has typed", () => {
-      expect(isEmptyRichContent(contentFromText("hello"), labels)).toBe(false);
+      expect(isEmptyRichContent(RichEditor.contentFromText("hello"), labels)).toBe(false);
     });
 
     it("is not empty when a textless block still carries meaning", () => {
@@ -48,7 +48,7 @@ describe("agentRichPlugin.util", () => {
     });
 
     it("counts whitespace as blank", () => {
-      expect(isEmptyRichContent(contentFromText("  \n  "), labels)).toBe(true);
+      expect(isEmptyRichContent(RichEditor.contentFromText("  \n  "), labels)).toBe(true);
     });
   });
 

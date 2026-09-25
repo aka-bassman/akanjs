@@ -441,7 +441,7 @@ export function declaredCustomProperties(css: string): string[] {
   );
 }
 
-function getPageKeyBasePath(pageKey: string, basePaths: string[]): string | null {
+export function getPageKeyBasePath(pageKey: string, basePaths: string[]): string | null {
   const normalized = pageKey.split(path.sep).join("/").replace(/^\.\//, "");
   const segments = normalized.split("/");
   const firstPublicSegment = segments.find((segment) => segment !== "[lang]" && !/^\(.+\)$/.test(segment));

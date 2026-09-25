@@ -27,7 +27,7 @@ export class RepairCommand extends command("repair", [RepairScript], ({ public: 
     .exec(async function (kind, workspace, format, app, module, targetName) {
       await this.repairScript.repair(kind, {
         workspace,
-        format: format as "markdown" | "json",
+        format: format,
         app,
         module,
         target: targetName,

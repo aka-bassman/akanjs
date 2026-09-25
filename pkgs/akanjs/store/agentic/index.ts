@@ -7,6 +7,8 @@ export * from "./StStateBuilder";
 export * from "./StStateDraft";
 export * from "./StToolBuilder";
 export * from "./StToolDraft";
+export * from "./useAgentReference";
 export * from "./useFieldTool";
+export * from "./useFileFieldTool";
 export * from "./useFormTools";
 export * from "./useRelationFieldTool";

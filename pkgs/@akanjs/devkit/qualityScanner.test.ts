@@ -26,7 +26,7 @@ afterEach(async () => {
 });
 
 describe("AkanQualityScanner abstract rule", () => {
-  test("warns on an abstract over the line limit and points at akan compact", async () => {
+  test("warns on an abstract over the line limit and says how to trim it", async () => {
     const root = await makeWorkspace({
       "apps/demo/lib/post/post.abstract.md": abstractOf(AbstractDoc.maxLines + 1),
       "apps/demo/lib/post/post.constant.ts": "export class Post {}\n",
@@ -41,7 +41,8 @@ describe("AkanQualityScanner abstract rule", () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.file).toBe("apps/demo/lib/post/post.abstract.md");
     expect(warnings[0]?.message).toContain(`${AbstractDoc.maxLines + 1} lines`);
-    expect(warnings[0]?.fix).toContain("akan compact");
+    expect(warnings[0]?.fix).toContain("## Rules");
+    expect(warnings[0]?.fix).not.toContain("akan compact");
   });
 });
 
@@ -247,5 +248,69 @@ describe("AkanQualityScanner layout rules", () => {
 
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.file).toBe("libs/demo/lib/helper.ts");
+  });
+});
+
+describe("bang comments in browser-reachable files", () => {
+  const bangWarningsIn = async (files: Record<string, string>) => {
+    const result = await new AkanQualityScanner().scan(await makeWorkspace(files));
+    return rulesOf(result, "akan.file.bang-comment-in-client");
+  };
+
+  test("flags the first and last line, which the grit rule cannot reach", async () => {
+    const warnings = await bangWarningsIn({
+      "apps/demo/ui/First.tsx": "//! FIXME: broken\nexport const First = () => null;\n",
+      "apps/demo/ui/Last.tsx": "export const Last = () => null;\n//! left behind\n",
+    });
+
+    expect(warnings.map((warning) => `${warning.file}:${warning.line}`).sort()).toEqual([
+      "apps/demo/ui/First.tsx:1",
+      "apps/demo/ui/Last.tsx:2",
+    ]);
+    expect(warnings[0]?.fix).toContain("// FIXME:");
+  });
+
+  test("flags the block form and a marker trailing code", async () => {
+    const warnings = await bangWarningsIn({
+      "apps/demo/lib/task/Task.Zone.tsx": ["/*! keep me */", "export const Zone = () => null; //! and me", ""].join(
+        "\n",
+      ),
+    });
+
+    expect(warnings.map((warning) => warning.line)).toEqual([1, 2]);
+  });
+
+  test("ignores a double slash inside a string literal", async () => {
+    expect(
+      await bangWarningsIn({ "apps/demo/ui/Url.tsx": 'export const url = "https://host//!path";\n' }),
+    ).toHaveLength(0);
+  });
+
+  test("stays out of server files and tests", async () => {
+    const body = "//! server-only marker\nexport const value = 1;\n";
+    expect(
+      await bangWarningsIn({
+        "apps/demo/srvkit/storage.ts": body,
+        "apps/demo/lib/task/task.service.ts": body,
+        "apps/demo/ui/Card.test.tsx": body,
+        "apps/demo/lib/task/task.signal.spec.ts": body,
+      }),
+    ).toHaveLength(0);
+  });
+
+  test("covers every path role the grit rule is scoped to", async () => {
+    const body = "//! marker\nexport const value = 1;\n";
+    const files = [
+      "apps/demo/ui/Card.tsx",
+      "apps/demo/webkit/useThing.tsx",
+      "apps/demo/common/format.ts",
+      "apps/demo/page/task/_index.tsx",
+      "apps/demo/lib/task/task.constant.ts",
+      "apps/demo/lib/task/task.store.ts",
+      "apps/demo/lib/task/Task.Unit.tsx",
+    ];
+    const warnings = await bangWarningsIn(Object.fromEntries(files.map((file) => [file, body])));
+
+    expect(warnings.map((warning) => warning.file).sort()).toEqual([...files].sort());
   });
 });

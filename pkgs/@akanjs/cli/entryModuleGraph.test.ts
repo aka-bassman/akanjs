@@ -47,13 +47,11 @@ describe("dev entry module graphs", () => {
     expect(graph.eagerHeavyDependencies("typecheck.proc.js")).toEqual(["typescript"]);
   });
 
-  test("no entry reaches the mobile, cloud or ai stacks", () => {
+  test("no entry reaches the mobile or cloud stacks", () => {
     const neverEager = [
       "ink",
       "ssh2",
       "@trapezedev/project",
-      "@langchain/core",
-      "@langchain/openai",
       "@kubernetes/client-node",
       "puppeteer",
       "fonteditor-core",

@@ -7,7 +7,11 @@ export class PageRunner extends runner("page") {
     await app.applyTemplate({
       basePath: basePath ?? `page/(${app.name})/(public)/${module.name}`,
       template: single ? "crudSinglePage" : "crudPages",
-      dict: { model: module.name, appName: module.sys.name },
+      dict: {
+        model: module.name,
+        appName: module.sys.name,
+        clientPath: `@${module.sys.type}s/${module.sys.name}/client`,
+      },
     });
   }
 }

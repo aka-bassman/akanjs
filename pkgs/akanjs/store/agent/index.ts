@@ -4,7 +4,10 @@
 export { AgentAbort, AgentProgress } from "use-agentic";
 export * from "./AgentBridge";
 export * from "./AgentContext";
+export * from "./AgentCursor";
 export * from "./AgentPrompts";
+export * from "./AgentVisual";
+export * from "./ScreenFlash";
 export * from "./ScreenReader";
 export * from "./ScreenSettle";
 export * from "./ScreenTarget";

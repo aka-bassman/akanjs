@@ -1,242 +1,997 @@
 import { usePage } from "@apps/akan/client";
 import { Code, cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
+
+  const chip = "mt-2 block overflow-x-auto whitespace-nowrap rounded-md bg-muted/60 px-2.5 py-1.5 font-mono text-xs";
+  const bulletList = "my-4 list-disc space-y-2 pl-5";
+
+  const folderCards = [
+    {
+      title: "public/",
+      subtitle: l.trans({ en: "The browser may download it", ko: "브라우저가 받아 가도 되는 파일" }),
+      desc: l.trans({
+        en: "Served as static files by URL. Images, PDFs, downloadable JSON and icons go here.",
+        ko: "URL로 바로 서빙됩니다. 이미지, PDF, 내려받는 JSON, 아이콘을 둡니다.",
+      }),
+      code: "public/images/hero.png → /images/hero.png",
+    },
+    {
+      title: "private/",
+      subtitle: l.trans({ en: "Only the server reads it", ko: "서버만 읽는 파일" }),
+      desc: l.trans({
+        en: "Never served. Seed data, private JSON, model files and resources for server jobs go here.",
+        ko: "서빙되지 않습니다. seed 데이터, 비공개 JSON, 모델 파일, 서버 작업용 리소스를 둡니다.",
+      }),
+      code: "private/model/yolo.onnx",
+    },
+  ];
+
+  const urlItems = [
+    { name: "/docs/product-guide.pdf", desc: "`apps/myapp/public/docs/product-guide.pdf`" },
+    { name: "/data/sample-products.json", desc: "`apps/myapp/public/data/sample-products.json`" },
+    { name: "/images/hero.png", desc: "`apps/myapp/public/images/hero.png`" },
+  ];
+
+  const privateColumns = [
+    { key: "file", label: l.trans({ en: "File", ko: "파일" }), code: true },
+    { key: "use", label: l.trans({ en: "Used for", ko: "용도" }) },
+  ];
+  const privateRows = [
+    {
+      file: "apps/myapp/private/seed/products.json",
+      use: l.trans({ en: "Seed data the server loads.", ko: "서버가 불러오는 seed 데이터입니다." }),
+    },
+    {
+      file: "apps/myapp/private/model/yolo.onnx",
+      use: l.trans({ en: "Model weights for server-side inference.", ko: "서버에서 추론할 때 쓰는 모델 파일입니다." }),
+    },
+    {
+      file: "libs/shared/private/recommendation/default-rules.json",
+      use: l.trans({
+        en: "A library's internal rules, covered under Library Assets below.",
+        ko: "라이브러리의 내부 규칙으로, 아래 라이브러리 애셋에서 다룹니다.",
+      }),
+    },
+  ];
+
+  const libItems = [
+    {
+      name: <span className="font-sans">{l.trans({ en: "Library's public/", ko: "라이브러리 public/" })}</span>,
+      desc: "`libs/shared/public/banner/logo.png`",
+    },
+    {
+      name: <span className="font-sans">{l.trans({ en: "Inside the app", ko: "앱 안에서" })}</span>,
+      desc: "`apps/myapp/public/libs/shared/banner/logo.png`",
+    },
+    {
+      name: <span className="font-sans">{l.trans({ en: "Browser URL", ko: "브라우저 URL" })}</span>,
+      desc: "`/libs/shared/banner/logo.png`",
+    },
+    {
+      name: <span className="font-sans">{l.trans({ en: "Library's private/", ko: "라이브러리 private/" })}</span>,
+      desc: "`libs/shared/private/recommendation/default-rules.json`",
+    },
+    {
+      name: <span className="font-sans">{l.trans({ en: "Inside the app", ko: "앱 안에서" })}</span>,
+      desc: "`apps/myapp/private/libs/shared/recommendation/default-rules.json`",
+    },
+    {
+      name: <span className="font-sans">{l.trans({ en: "Server code reads", ko: "서버 코드가 읽는 경로" })}</span>,
+      desc: '`privateFile("libs/shared/recommendation/default-rules.json")`',
+    },
+  ];
+
+  const folderColumns = [
+    { key: "public", label: "public/", code: true },
+    { key: "private", label: "private/", code: true },
+  ];
+  const inPublic = { public: true, private: false };
+  const inPrivate = { public: false, private: true };
+  const folderGroups = [
+    {
+      label: l.trans({ en: "Anyone may download it", ko: "누구나 받아 가도 되는 파일" }),
+      rows: [
+        {
+          name: "images/hero.png",
+          desc: l.trans({
+            en: "UI images and icons, drawn with `Image` from `akanjs/ui`.",
+            ko: "UI 이미지와 아이콘으로, `akanjs/ui`의 `Image`로 그립니다.",
+          }),
+          marks: inPublic,
+        },
+        {
+          name: "docs/product-guide.pdf",
+          desc: l.trans({ en: "PDFs and other files a user downloads.", ko: "사용자가 내려받는 PDF 같은 파일입니다." }),
+          marks: inPublic,
+        },
+        {
+          name: "data/sample-products.json",
+          desc: l.trans({ en: "JSON the browser loads by URL.", ko: "브라우저가 URL로 불러오는 JSON입니다." }),
+          marks: inPublic,
+        },
+      ],
+    },
+    {
+      label: l.trans({ en: "Only the server may read it", ko: "서버만 읽어야 하는 파일" }),
+      rows: [
+        {
+          name: "seed/products.json",
+          desc: l.trans({ en: "Internal data such as seed records.", ko: "seed 레코드 같은 내부 데이터입니다." }),
+          marks: inPrivate,
+        },
+        {
+          name: "model/yolo.onnx",
+          desc: l.trans({ en: "Model weights.", ko: "모델 가중치 파일입니다." }),
+          marks: inPrivate,
+        },
+        {
+          name: "recommendation/default-rules.json",
+          desc: l.trans({ en: "Server-only configuration and rules.", ko: "서버 전용 설정과 규칙입니다." }),
+          marks: inPrivate,
+        },
+      ],
+    },
+  ];
+
+  const buildColumns = [
+    { key: "folder", label: l.trans({ en: "Folder", ko: "폴더" }) },
+    { key: "build", label: l.trans({ en: "In the build", ko: "빌드에서" }) },
+  ];
+  const buildRows = [
+    {
+      folder: "`private/`",
+      build: l.trans({ en: "Copied into every build.", ko: "모든 빌드에 복사됩니다." }),
+    },
+    {
+      folder: "`public/`",
+      build: l.trans({
+        en: "Copied when the app serves pages; an API-only build (`web: false`) leaves it out.",
+        ko: "앱이 페이지를 서빙할 때 복사되고, API 전용 빌드(`web: false`)에는 들어가지 않습니다.",
+      }),
+    },
+    {
+      folder: l.trans({ en: "Fonts in `public/`", ko: "`public/`의 폰트" }),
+      build: l.trans({
+        en: "Unreferenced fonts are dropped by `assets.pruneFonts`; list any to keep in `assets.keepFonts`.",
+        ko: "참조되지 않는 폰트는 `assets.pruneFonts`가 빼고, 남길 폰트는 `assets.keepFonts`에 적습니다.",
+      }),
+    },
+  ];
+
   return (
     <Scroll>
-      <Scroll.Slide id="asset-overview" title={l.trans({ en: "Asset Overview", ko: "애셋 개요" })}>
-        <Docs.Title>{l.trans({ en: "Asset Overview", ko: "애셋 개요" })}</Docs.Title>
+      <Scroll.Slide id="asset-overview" title={l.trans({ en: "Asset Folders", ko: "애셋 폴더" })}>
+        <Docs.Title>{l.trans({ en: "Asset Folders", ko: "애셋 폴더" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Apps and libraries can both have an asset folder. Use public for files that the browser can request, and private for files that only server code should read.",
-              ko: "앱과 라이브러리는 모두 asset 폴더를 가질 수 있습니다. 브라우저가 요청할 수 있는 파일은 public에 두고, 서버 코드만 읽어야 하는 파일은 private에 둡니다.",
+              en: (
+                <span>
+                  Apps and libraries keep file assets in two folders at their root, beside <code>lib/</code> and{" "}
+                  <code>ui/</code>. Which one a file goes in depends on one question: may the browser download it?
+                </span>
+              ),
+              ko: (
+                <span>
+                  앱과 라이브러리는 파일 애셋을 <code>lib/</code>, <code>ui/</code>와 나란히 루트의 두 폴더에 둡니다.
+                  어느 폴더에 둘지는 "브라우저가 이 파일을 받아 가도 되는가?" 하나로 정합니다.
+                </span>
+              ),
             })}
           </div>
-          <div className={cardGridRecipe({ cols: "mdTwo" })}>
-            {[
-              {
-                title: "asset/public/",
-                desc: l.trans({
-                  en: "Served as static assets. Use it for images, PDF files, downloadable JSON, icons, and other files that can be public.",
-                  ko: "정적 애셋으로 서빙됩니다. 이미지, PDF, 다운로드 가능한 JSON, 아이콘처럼 공개되어도 되는 파일에 사용합니다.",
-                }),
-              },
-              {
-                title: "asset/private/",
-                desc: l.trans({
-                  en: "Available only to server-side code. Use it for seed data, private JSON, model files, and resources used by server jobs.",
-                  ko: "서버 코드에서만 사용할 수 있습니다. seed data, private JSON, 모델 파일, 서버 작업용 리소스에 사용합니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe()}>
-                <div className="font-mono font-semibold text-primary">{title}</div>
-                <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
+          <div className={cardGridRecipe({ cols: "mdTwo" }, "my-4")}>
+            {folderCards.map((card) => (
+              <div key={card.title} className={panelRecipe({ radius: "lg", padding: "sm" }, "min-w-0")}>
+                <div className="font-mono font-semibold text-primary">{card.title}</div>
+                <div className="mb-2 text-foreground/50 text-xs">{card.subtitle}</div>
+                <div className="text-foreground/70 text-sm">{card.desc}</div>
+                <code className={chip}>{card.code}</code>
               </div>
             ))}
           </div>
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>No wrapping folder.</strong> There is no <code>asset/</code> folder; <code>public/</code>{" "}
+                    and <code>private/</code> sit directly at the root.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>감싸는 폴더는 없습니다.</strong> <code>asset/</code> 폴더 없이 <code>public/</code>과{" "}
+                    <code>private/</code>이 루트에 바로 놓입니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Libraries have the same pair.</strong> Every app that depends on the library can use them,
+                    as the Library Assets section shows.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>라이브러리에도 같은 두 폴더가 있습니다.</strong> 그 라이브러리에 의존하는 모든 앱이 쓸 수
+                    있으며, 아래 라이브러리 애셋에서 다룹니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="public-assets" title={l.trans({ en: "Public Assets", ko: "Public 애셋" })}>
-        <Docs.Title>{l.trans({ en: "Public Assets", ko: "Public 애셋" })}</Docs.Title>
+      <Scroll.Slide id="public-assets" title={l.trans({ en: "Public Assets", ko: "public 애셋" })}>
+        <Docs.Title>{l.trans({ en: "Public Assets", ko: "public 애셋" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Files under asset/public are copied to the app's public surface and served by the server. The browser can request them directly by URL.",
-              ko: "asset/public 아래 파일은 앱의 public surface로 복사되고 서버가 정적 파일로 서빙합니다. 브라우저는 URL로 직접 요청할 수 있습니다.",
+              en: (
+                <span>
+                  The server serves every file under <code>public/</code> as a static file. Its URL is the file path
+                  with <code>apps/myapp/public</code> dropped:
+                </span>
+              ),
+              ko: (
+                <span>
+                  서버는 <code>public/</code> 아래 파일을 정적 파일로 그대로 서빙합니다. URL은 파일 경로에서{" "}
+                  <code>apps/myapp/public</code>을 뺀 것입니다:
+                </span>
+              ),
             })}
           </div>
+          <Docs.IntroTable type="URL" descLabel={l.trans({ en: "File", ko: "파일" })} items={urlItems} />
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>No locale in the URL.</strong> Pages live under <code>/ko/…</code> and <code>/en/…</code>,
+                    but public files do not: <code>/ko/images/hero.png</code> is a 404.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>URL에 언어가 붙지 않습니다.</strong> 페이지는 <code>/ko/…</code>, <code>/en/…</code> 아래에
+                    있지만 public 파일은 그렇지 않아서, <code>/ko/images/hero.png</code>는 404를 돌려줍니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      Link to a file with a plain <code>{"<a>"}</code>.
+                    </strong>{" "}
+                    <code>Link</code> from <code>akanjs/ui</code> adds the locale and navigates as a page, so it misses
+                    the file.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      파일 링크는 일반 <code>{"<a>"}</code>로 겁니다.
+                    </strong>{" "}
+                    <code>akanjs/ui</code>의 <code>Link</code>는 언어를 붙이고 페이지로 이동하므로 파일을 찾지 못합니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Cached for 5 minutes in production.</strong> A replaced file can show its old version for
+                    that long, while dev never caches.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>프로덕션에서는 5분간 캐시됩니다.</strong> 파일을 바꿔도 그동안은 예전 버전이 보일 수
+                    있습니다. 개발 서버는 캐시하지 않습니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Link to a PDF with a plain <code>{"<a>"}</code>:
+                </span>
+              ),
+              ko: (
+                <span>
+                  PDF 링크는 일반 <code>{"<a>"}</code> 태그로 겁니다:
+                </span>
+              ),
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/myapp/ui/ProductGuideLink.tsx"
+            code={`import { usePage } from "@apps/myapp/client";
+
+interface ProductGuideLinkProps {
+  className?: string;
+}
+export const ProductGuideLink = ({ className }: ProductGuideLinkProps) => {
+  const { l } = usePage();
+  return (
+    <a
+      className={className}
+      href="/docs/product-guide.pdf"
+      target="_blank"
+      rel="noreferrer"
+    >
+      {l.trans({ en: "Open product guide", ko: "제품 가이드 열기" })}
+    </a>
+  );
+};`}
+          />
+          <div>
+            {l.trans({
+              en: "Load a JSON file in the browser from its URL:",
+              ko: "JSON 파일은 브라우저에서 URL로 불러옵니다:",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/myapp/webkit/useSampleProducts.tsx"
+            code={`export const useSampleProducts = () => {
+  const load = async () => {
+    const res = await window.fetch("/data/sample-products.json");
+    return await res.json();
+  };
+  return { load };
+};`}
+          />
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      Call <code>window.fetch</code>.
+                    </strong>{" "}
+                    The <code>fetch</code> you import from <code>@apps/myapp/client</code> is Akan's API client, not the
+                    browser's.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>window.fetch</code>를 씁니다.
+                    </strong>{" "}
+                    <code>@apps/myapp/client</code>에서 import하는 <code>fetch</code>는 브라우저의 fetch가 아니라 Akan
+                    API 클라이언트입니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Browser only.</strong> A relative URL has no origin on the server, which is why the code
+                    lives in <code>webkit/</code>. Server code reads files from disk, as Private Assets shows.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>브라우저 전용입니다.</strong> 서버에는 상대 URL이 가리킬 origin이 없으므로 이 코드는{" "}
+                    <code>webkit/</code>에 둡니다. 서버 코드는 아래 private 애셋처럼 디스크에서 파일을 읽습니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
         </Docs.Description>
-        <Code.Snippet
-          className="w-full"
-          title="public asset examples"
-          language="bash"
-          code={`apps/myapp/asset/public/docs/product-guide.pdf
-apps/myapp/asset/public/data/sample-products.json
-apps/myapp/asset/public/images/hero.png
-
-# Web requests
-/docs/product-guide.pdf
-/data/sample-products.json
-/images/hero.png`}
-        />
-
-        <Code.Snippet
-          className="w-full"
-          title="Link to a PDF"
-          code={`import { Link } from "akanjs/ui";              
-export function GetProductGuide() {
-  return <Link href="/docs/product-guide.pdf">Open product guide</Link>;
-}`}
-        />
-        <Code.Snippet
-          className="w-full"
-          title="Fetch static JSON"
-          code={`export async function loadSampleProducts() {
-  const res = await fetch("/data/sample-products.json");
-  return res.json();
-}`}
-        />
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="optimized-images" title={l.trans({ en: "Optimized Images", ko: "Optimized Image" })}>
-        <Docs.Title>{l.trans({ en: "Optimized Images", ko: "Optimized Image" })}</Docs.Title>
+      <Scroll.Slide id="optimized-images" title={l.trans({ en: "Optimized Images", ko: "이미지 최적화" })}>
+        <Docs.Title>{l.trans({ en: "Optimized Images", ko: "이미지 최적화" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "When an image is public, you can render it with the Image component from akanjs/ui. Akan serves an optimized image response in a similar way to Next.js image optimization, so use this for UI images instead of a plain img tag when possible.",
-              ko: "이미지가 public에 있다면 akanjs/ui의 Image 컴포넌트로 렌더링할 수 있습니다. Akan은 Next.js image optimization과 비슷하게 최적화된 이미지 응답을 서빙하므로, UI 이미지는 가능한 일반 img 태그보다 Image를 사용하세요.",
+              en: (
+                <span>
+                  Draw UI images from <code>public/</code> with <code>Image</code> from <code>akanjs/ui</code> instead
+                  of a bare <code>{"<img>"}</code>. Like Next.js image optimization, the server sends a smaller, lighter
+                  version of the file:
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>public/</code>의 UI 이미지는 일반 <code>{"<img>"}</code> 태그 대신 <code>akanjs/ui</code>의{" "}
+                  <code>Image</code>로 그립니다. Next.js의 이미지 최적화처럼 서버가 더 작고 가벼운 버전을 보냅니다:
+                </span>
+              ),
             })}
           </div>
-        </Docs.Description>
-        <Code.Snippet
-          className="w-full"
-          title="HeroImage.tsx"
-          code={`import { Image } from "akanjs/ui";
+          <Code.Snippet
+            className="w-full"
+            title="apps/myapp/ui/HeroImage.tsx"
+            code={`import { usePage } from "@apps/myapp/client";
+import { Image } from "akanjs/ui";
 
-export function HeroImage() {
+interface HeroImageProps {
+  className?: string;
+}
+export const HeroImage = ({ className }: HeroImageProps) => {
+  const { l } = usePage();
   return (
     <Image
+      className={className}
       src="/images/hero.png"
-      alt="Product hero"
+      alt={l.trans({ en: "Product hero", ko: "제품 대표 이미지" })}
       width={1200}
       height={640}
       priority
     />
   );
-}`}
-        />
+};`}
+          />
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Resized and cached.</strong> Each image is served at the width it is drawn, as WebP when the
+                    browser accepts it. SVG files are sent unchanged.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>크기를 줄이고 캐시합니다.</strong> 이미지는 그려지는 폭에 맞게 줄여, 브라우저가 WebP를
+                    지원하면 WebP로 보냅니다. SVG 파일은 그대로 보냅니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      Give <code>width</code> and <code>height</code>.
+                    </strong>{" "}
+                    They choose the size the server sends and reserve the space before the image loads.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>width</code>와 <code>height</code>를 지정합니다.
+                    </strong>{" "}
+                    서버가 보낼 크기를 정하고, 이미지가 오기 전에 자리를 잡아 둡니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      <code>priority</code> only for the first screen.
+                    </strong>{" "}
+                    It preloads the image and loads it right away; every other image loads lazily.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>priority</code>는 첫 화면에만 씁니다.
+                    </strong>{" "}
+                    이미지를 미리 불러와 바로 그립니다. 나머지 이미지는 화면에 가까워질 때 불러옵니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>The rest is config.</strong> A remote host needs <code>images.remotePatterns</code>, and a{" "}
+                    <code>quality</code> other than 75 needs <code>images.qualities</code> in{" "}
+                    <code>akan.config.ts</code>.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>나머지는 설정입니다.</strong> 외부 호스트의 이미지는 <code>akan.config.ts</code>의{" "}
+                    <code>images.remotePatterns</code>에, 75가 아닌 <code>quality</code> 값은{" "}
+                    <code>images.qualities</code>에 등록해야 합니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+          <Docs.LinkGrid
+            items={[
+              {
+                href: "/cheatsheet/performance/image",
+                title: l.trans({ en: "Image Optimization", ko: "이미지 최적화" }),
+                desc: l.trans({
+                  en: "srcSet, formats, caching and every prop, step by step.",
+                  ko: "srcSet, 포맷, 캐시, 모든 prop을 단계별로 다룹니다.",
+                }),
+              },
+              {
+                href: "/conventions/applib/config#images",
+                title: l.trans({ en: "images in akan.config.ts", ko: "akan.config.ts의 images" }),
+                desc: l.trans({
+                  en: "Widths, formats, qualities and the remote hosts the optimizer may fetch.",
+                  ko: "이미지 최적화에 쓰는 폭, 포맷, quality와 허용할 외부 호스트를 정합니다.",
+                }),
+              },
+            ]}
+          />
+        </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="private-assets" title={l.trans({ en: "Private Assets", ko: "Private 애셋" })}>
-        <Docs.Title>{l.trans({ en: "Private Assets", ko: "Private 애셋" })}</Docs.Title>
+      <Scroll.Slide id="private-assets" title={l.trans({ en: "Private Assets", ko: "private 애셋" })}>
+        <Docs.Title>{l.trans({ en: "Private Assets", ko: "private 애셋" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Files under asset/private are for server-only resources. Put files here when the browser should not download them directly, but the server needs them to load data, run inference, or initialize a service.",
-              ko: "asset/private 아래 파일은 서버 전용 리소스입니다. 브라우저가 직접 다운로드하면 안 되지만 서버가 데이터 로딩, 추론, 서비스 초기화에 사용해야 하는 파일을 여기에 둡니다.",
+              en: (
+                <span>
+                  Files under <code>private/</code> are never served, so no URL reaches them. Server code reads them
+                  from disk to load data, run inference or start a service.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>private/</code> 아래 파일은 서빙되지 않으므로 어떤 URL로도 접근할 수 없습니다. 서버 코드가
+                  디스크에서 읽어 데이터를 불러오고, 추론을 돌리고, 서비스를 초기화하는 데 씁니다.
+                </span>
+              ),
             })}
           </div>
+          <Docs.Table columns={privateColumns} rows={privateRows} stacked />
+
+          <Docs.SubSubTitle>
+            {l.trans({ en: "Read from the app folder", ko: "앱 폴더 기준으로 읽기" })}
+          </Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Build the path from <code>AKAN_APP_DIR</code>, the app's own folder, with one small helper in{" "}
+                  <code>srvkit/</code>:
+                </span>
+              ),
+              ko: (
+                <span>
+                  경로는 앱 자신의 폴더인 <code>AKAN_APP_DIR</code>에서 만듭니다. <code>srvkit/</code>에 작은 헬퍼
+                  하나를 둡니다:
+                </span>
+              ),
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/myapp/srvkit/privateFile.ts"
+            code={`import path from "node:path";
+
+export const privateFile = (relativePath: string) => {
+  const appDir = process.env.AKAN_APP_DIR ?? path.dirname(Bun.main);
+  return Bun.file(path.join(appDir, "private", relativePath));
+};`}
+          />
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      <code>AKAN_APP_DIR</code> is the app folder everywhere.
+                    </strong>{" "}
+                    It is <code>apps/myapp</code> under <code>akan start</code> and <code>dist/apps/myapp</code> in a
+                    build.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>AKAN_APP_DIR</code> 값은 어디서나 앱 폴더입니다.
+                    </strong>{" "}
+                    <code>akan start</code>에서는 <code>apps/myapp</code>, 빌드에서는 <code>dist/apps/myapp</code>
+                    입니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      It lives in <code>srvkit/</code>.
+                    </strong>{" "}
+                    Code that touches <code>Bun</code> or <code>process.env</code> belongs there, never in a page or a
+                    client file.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>srvkit/</code>에 둡니다.
+                    </strong>{" "}
+                    <code>Bun</code>이나 <code>process.env</code>를 건드리는 코드는 그곳에 두고, 페이지나 클라이언트
+                    파일에는 두지 않습니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: (
+                <span>
+                  <strong>
+                    Never read <code>./private/…</code> directly.
+                  </strong>{" "}
+                  A relative path follows the working directory, which is the workspace root under{" "}
+                  <code>akan start</code>. The same line finds the file in a build and misses it in dev.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <strong>
+                    <code>./private/…</code>로 바로 읽지 마세요.
+                  </strong>{" "}
+                  상대 경로는 작업 디렉터리를 따라가는데, <code>akan start</code>에서는 그것이 워크스페이스 루트입니다.
+                  같은 코드가 빌드에서는 파일을 찾고 개발 중에는 놓칩니다.
+                </span>
+              ),
+            })}
+          </Docs.Alert>
+
+          <Docs.SubSubTitle>{l.trans({ en: "Load data and models", ko: "데이터와 모델 불러오기" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: "Read a JSON file with the helper:",
+              ko: "JSON 파일은 헬퍼로 읽습니다:",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/myapp/srvkit/seedProducts.ts"
+            code={`import { privateFile } from "./privateFile";
+
+export const loadInitialProducts = async () => {
+  return await privateFile("seed/products.json").json();
+};`}
+          />
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  A model file is loaded once, when the server starts, inside an <code>adapt()</code> class:
+                </span>
+              ),
+              ko: (
+                <span>
+                  모델 파일은 서버가 시작할 때 <code>adapt()</code> 클래스 안에서 한 번만 불러옵니다:
+                </span>
+              ),
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/myapp/srvkit/yoloDetector.ts"
+            code={`import { adapt } from "akanjs/service";
+import { privateFile } from "./privateFile";
+
+export class YoloDetector extends adapt("yoloDetector" as const, () => ({})) {
+  #model: YoloModel | null = null;
+
+  override async onInit() {
+    this.#model = await loadYoloModel(privateFile("model/yolo.onnx"));
+  }
+
+  async detect(image: ArrayBuffer) {
+    return this.#model?.detect(image) ?? [];
+  }
+}`}
+          />
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      <code>onInit</code> runs once per process.
+                    </strong>{" "}
+                    The weights are read at boot, not on every request.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>onInit</code>은 프로세스마다 한 번 실행됩니다.
+                    </strong>{" "}
+                    가중치는 요청마다 읽지 않고 시작할 때 한 번만 읽습니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      Inject it with <code>plug(YoloDetector)</code>.
+                    </strong>{" "}
+                    <code>loadYoloModel</code> and <code>YoloModel</code> stand for your ONNX runtime's loader.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      서비스에는 <code>plug(YoloDetector)</code>로 주입합니다.
+                    </strong>{" "}
+                    <code>loadYoloModel</code>과 <code>YoloModel</code>은 사용하는 ONNX 런타임의 로더로 바꿔 넣을
+                    자리입니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
         </Docs.Description>
-        <Code.Snippet
-          className="w-full"
-          title="private asset examples"
-          language="bash"
-          code={`apps/myapp/asset/private/seed/products.json
-apps/myapp/asset/private/model/yolo.onnx
-libs/shared/asset/private/recommendation/default-rules.json`}
-        />
-        <Code.Snippet
-          className="w-full"
-          title="Load private JSON on the server"
-          code={`export async function loadInitialProducts() {
-  const file = Bun.file("./private/seed/products.json");
-  return file.json();
-}`}
-        />
-        <Code.Snippet
-          className="w-full"
-          title="Use a private model file on the server"
-          code={`export async function detectObjects(image: ArrayBuffer) {
-  const file = Bun.file("./private/model/yolo.onnx");
-  const model = await loadYoloModel(file);
-  return model.detect(image);
-}`}
-        />
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="library-asset-sync" title={l.trans({ en: "Library Asset Sync", ko: "라이브러리 애셋 sync" })}>
-        <Docs.Title>{l.trans({ en: "Library Asset Sync", ko: "라이브러리 애셋 sync" })}</Docs.Title>
+      <Scroll.Slide id="library-asset-sync" title={l.trans({ en: "Library Assets", ko: "라이브러리 애셋" })}>
+        <Docs.Title>{l.trans({ en: "Library Assets", ko: "라이브러리 애셋" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "When a library has assets, Akan syncs both public and private assets into each app. Public assets become browser-requestable files, while private assets stay server-only after sync. Sync links the library folder into the app, so editing a library asset takes effect without another sync; a production build copies the real files into the build output.",
-              ko: "라이브러리가 애셋을 가지고 있으면 Akan은 public과 private 애셋을 모두 각 앱으로 sync합니다. public 애셋은 브라우저가 요청할 수 있는 파일이 되고, private 애셋은 sync 이후에도 서버 전용으로 남습니다. sync는 라이브러리 폴더를 앱에 링크하므로 라이브러리 애셋을 수정하면 다시 sync하지 않아도 반영되고, 프로덕션 빌드에서는 실제 파일이 빌드 결과물로 복사됩니다.",
+              en: (
+                <span>
+                  A library keeps assets in its own <code>public/</code> and <code>private/</code>. Every app that
+                  depends on it gets both under <code>libs/&lt;lib&gt;/</code>, public ones as URLs and private ones for
+                  server code only:
+                </span>
+              ),
+              ko: (
+                <span>
+                  라이브러리는 애셋을 자기 <code>public/</code>과 <code>private/</code>에 둡니다. 그 라이브러리에
+                  의존하는 모든 앱이 둘 다 <code>libs/&lt;lib&gt;/</code> 아래로 받습니다. public은 URL로, private은
+                  서버 코드 전용으로 씁니다:
+                </span>
+              ),
             })}
           </div>
-        </Docs.Description>
-        <Code.Snippet
-          className="w-full"
-          title="library asset mapping"
-          language="bash"
-          code={`# Source in a library
-libs/shared/asset/public/banner/logo.png
-libs/shared/asset/private/recommendation/default-rules.json
+          <Docs.IntroTable
+            type={l.trans({ en: "Where", ko: "위치" })}
+            descLabel={l.trans({ en: "Path", ko: "경로" })}
+            items={libItems}
+          />
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      <code>public/libs</code> and <code>private/libs</code> are generated.
+                    </strong>{" "}
+                    <code>akan sync</code> rebuilds them and git ignores them, so never put your own files there.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>public/libs</code>와 <code>private/libs</code>는 생성되는 폴더입니다.
+                    </strong>{" "}
+                    <code>akan sync</code>가 다시 만들고 git은 무시하므로, 직접 만든 파일을 두지 마세요.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Library server code reads through the app too.</strong> It runs inside the app, and the
+                    library's source folder is not in a build.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>라이브러리의 서버 코드도 앱 경로로 읽습니다.</strong> 앱 안에서 실행되고, 빌드에는
+                    라이브러리 소스 폴더가 없기 때문입니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Draw a library image by its <code>/libs/…</code> URL:
+                </span>
+              ),
+              ko: (
+                <span>
+                  라이브러리 이미지는 <code>/libs/…</code> URL로 그립니다:
+                </span>
+              ),
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/myapp/ui/SharedLogo.tsx"
+            code={`import { usePage } from "@apps/myapp/client";
+import { Image } from "akanjs/ui";
 
-# Linked into an app as public assets
-apps/myapp/public/libs/shared/banner/logo.png
-
-# Linked into an app as private assets
-apps/myapp/private/libs/shared/recommendation/default-rules.json
-
-# Copied as real files into the production build
-dist/apps/myapp/public/libs/shared/banner/logo.png
-
-# Browser request
-/libs/shared/banner/logo.png`}
-        />
-        <Code.Snippet
-          className="w-full"
-          title="Use synced public library asset"
-          code={`import { Image } from "akanjs/ui";
-
-export function SharedLogo() {
+interface SharedLogoProps {
+  className?: string;
+}
+export const SharedLogo = ({ className }: SharedLogoProps) => {
+  const { l } = usePage();
   return (
     <Image
+      className={className}
       src="/libs/shared/banner/logo.png"
-      alt="Shared logo"
+      alt={l.trans({ en: "Shared logo", ko: "공용 로고" })}
       width={240}
       height={80}
     />
   );
-}`}
-        />
-        <Code.Snippet
-          className="w-full"
-          title="Use synced private library asset"
-          code={`export async function loadDefaultRules() {
-  const file = Bun.file("./private/libs/shared/recommendation/default-rules.json");
-  return file.json();
-}`}
-        />
+};`}
+          />
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Read a library's private file through <code>private/libs/&lt;lib&gt;</code>:
+                </span>
+              ),
+              ko: (
+                <span>
+                  라이브러리의 private 파일은 <code>private/libs/&lt;lib&gt;</code>를 거쳐 읽습니다:
+                </span>
+              ),
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/myapp/srvkit/defaultRules.ts"
+            code={`import { privateFile } from "./privateFile";
+
+export const loadDefaultRules = async () => {
+  const file = privateFile("libs/shared/recommendation/default-rules.json");
+  return await file.json();
+};`}
+          />
+        </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="practical-rules" title={l.trans({ en: "Practical Rules", ko: "실전 규칙" })}>
-        <Docs.Title>{l.trans({ en: "Practical Rules", ko: "실전 규칙" })}</Docs.Title>
+      <Scroll.Slide id="practical-rules" title={l.trans({ en: "Which Folder?", ko: "어느 폴더에 둘까" })}>
+        <Docs.Title>{l.trans({ en: "Which Folder?", ko: "어느 폴더에 둘까" })}</Docs.Title>
         <Docs.Description>
-          <div className="space-y-1">
-            {[
-              l.trans({
-                en: "Use public when the browser is allowed to request the file directly.",
-                ko: "브라우저가 파일을 직접 요청해도 된다면 public을 사용합니다.",
-              }),
-              l.trans({
-                en: "Use private when the file contains internal data, model weights, or server-only configuration.",
-                ko: "내부 데이터, 모델 파일, 서버 전용 설정처럼 공개되면 안 되는 파일은 private을 사용합니다.",
-              }),
-              l.trans({
-                en: "Use Image from akanjs/ui for public UI images that should be optimized by the server.",
-                ko: "서버 최적화가 필요한 public UI 이미지는 akanjs/ui의 Image를 사용합니다.",
-              }),
-              l.trans({
-                en: "Put reusable public files in a library asset folder when multiple apps need the same asset.",
-                ko: "여러 앱이 같은 파일을 사용한다면 library asset 폴더에 reusable public 파일로 둡니다.",
-              }),
-            ].map((rule) => (
-              <div key={rule} className={panelRecipe({ padding: "row" }, "text-foreground/70")}>
-                {rule}
-              </div>
-            ))}
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Ask whether anyone on the internet may download the file. Yes means <code>public/</code>, no means{" "}
+                  <code>private/</code>.
+                </span>
+              ),
+              ko: (
+                <span>
+                  인터넷의 누구든 이 파일을 받아 가도 되는지 묻습니다. 된다면 <code>public/</code>, 안 된다면{" "}
+                  <code>private/</code>입니다.
+                </span>
+              ),
+            })}
           </div>
+          <Docs.Matrix
+            type={l.trans({ en: "Example file", ko: "예시 파일" })}
+            columns={folderColumns}
+            groups={folderGroups}
+            markLabel={l.trans({ en: "Goes here", ko: "여기에 둡니다" })}
+            emptyLabel={l.trans({ en: "Not here", ko: "여기가 아닙니다" })}
+          />
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      When unsure, use <code>private/</code>.
+                    </strong>{" "}
+                    A public file needs no sign-in: anyone who knows the URL can download it.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      애매하면 <code>private/</code>에 둡니다.
+                    </strong>{" "}
+                    public 파일은 로그인이 필요 없어서, URL을 아는 사람은 누구나 받아 갈 수 있습니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      UI images go through <code>Image</code>.
+                    </strong>{" "}
+                    Use <code>Image</code> from <code>akanjs/ui</code> so the server optimizes them.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      UI 이미지는 <code>Image</code>로 그립니다.
+                    </strong>{" "}
+                    <code>akanjs/ui</code>의 <code>Image</code>를 써야 서버가 최적화합니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Share through a library.</strong> When several apps need the same file, put it in the
+                    library's own <code>public/</code> or <code>private/</code> instead of copying it into each app.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>공유는 라이브러리로 합니다.</strong> 여러 앱이 같은 파일을 쓴다면 앱마다 복사하지 말고
+                    라이브러리 자신의 <code>public/</code>이나 <code>private/</code>에 둡니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+
+          <Docs.SubSubTitle>{l.trans({ en: "What a build ships", ko: "빌드에 들어가는 것" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  <code>akan build</code> copies both folders into <code>dist</code>. Only that copy is trimmed; your
+                  source folders keep every file.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>akan build</code>는 두 폴더를 <code>dist</code>로 복사합니다. 덜어내는 것은 그 복사본뿐이고,
+                  소스 폴더의 파일은 그대로 남습니다.
+                </span>
+              ),
+            })}
+          </div>
+          <Docs.Table columns={buildColumns} rows={buildRows} stacked />
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -244,4 +999,4 @@ export function SharedLogo() {
       <DocsToc />
     </Scroll>
   );
-}
+});

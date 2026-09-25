@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { dayjs, INJECT_META, Int } from "akanjs/base";
+import { Any, dayjs, INJECT_META, Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { by, type DatabaseCls, DatabaseRegistry, from, getFilterInfoByKey, into } from "akanjs/document";
 import type { ServerSignal, ServerSignalCls } from "akanjs/signal";
@@ -47,8 +47,8 @@ class TestItemFilter extends from(TestItemFull, (filter) => ({
       .opt("category", String)
       .query((category) => ({ category })),
     withMeta: filter()
-      .arg("meta", Object)
-      .query((meta) => ({ meta })),
+      .arg("meta", Any)
+      .query((meta) => ({ meta: meta as string })),
   },
   sort: {
     scoreHigh: { score: -1 },
@@ -65,7 +65,7 @@ const testItemDatabase = DatabaseRegistry.buildModel(
   TestItemDoc,
   TestItemModel,
   TestItemObject,
-  TestItemInsight,
+  TestItemInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   TestItemFilter,
 );
 
@@ -94,7 +94,7 @@ const promoteParentDatabase = DatabaseRegistry.buildModel(
   PromoteParentDoc,
   PromoteParentModel,
   PromoteParentObject,
-  PromoteParentInsight,
+  PromoteParentInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   PromoteParentFilter,
 );
 
@@ -124,7 +124,7 @@ const promoteChildDatabase = DatabaseRegistry.buildModel(
   PromoteChildDoc,
   PromoteChildModel,
   PromoteChildObject,
-  PromoteChildInsight,
+  PromoteChildInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   PromoteChildFilter,
 );
 
@@ -224,6 +224,9 @@ const makeFakeDatabaseModel = () => {
   };
   return model;
 };
+
+const CallStateInput = via((f) => ({ status: f(String), muted: f(Boolean, { default: false }) }));
+ConstantRegistry.buildScalar("serviceTestCallState", CallStateInput, { CallStateInput });
 
 const dbMethods = ServiceModel.getDefaultDbServiceMethods("ServiceTestItem");
 const filterMethods = ServiceModel.getFilterServiceMethods(
@@ -657,6 +660,73 @@ describe("dependency injection resolution", () => {
     expect(() => builder.memory(Map)).toThrow("of should be provided");
   });
 
+  test("carries a structured memory value as text so both caches hold the same thing", async () => {
+    const cache = makeFakeCache();
+    class CacheAdaptorRef extends adapt("solidCache") {}
+    const registry = getDefaultInjectRegistry();
+    registry.adaptorCls.set("solidCache", CacheAdaptorRef);
+    registry.adaptor.set(CacheAdaptorRef, cache as unknown as Adaptor);
+
+    class StateService extends serve("serviceTestState" as const, ({ memory }) => ({
+      participants: memory(Map, { of: CallStateInput }),
+    })) {}
+    const instance = new StateService() as StateService & {
+      participants: {
+        get: (key: string) => Promise<{ status: string; muted: boolean } | undefined>;
+        set: (key: string, value: { status: string; muted: boolean }) => Promise<void>;
+      };
+    };
+    await InjectInfo.resolveInjection(instance, StateService, registry, {} as never);
+
+    await instance.participants.set("user-1", { status: "speaking", muted: false });
+
+    // A cache holds a string, a number or a Buffer. Redis coerces anything else to "[object Object]" while the
+    // sqlite-backed cache JSONs it on its own, so a value that leaves as an object means two different things
+    // per deployment — and the app hand-encodes JSON to get one of them back.
+    const stored = cache.calls.at(-1)?.args[3];
+    expect(typeof stored).toBe("string");
+    expect(JSON.parse(stored as string)).toMatchObject({ status: "speaking", muted: false });
+    expect(await instance.participants.get("user-1")).toMatchObject({ status: "speaking", muted: false });
+  });
+
+  test("keeps each service's memory its own and applies the declared get, set and default", async () => {
+    const cache = makeFakeCache();
+    class CacheAdaptorRef extends adapt("solidCache") {}
+    const registry = getDefaultInjectRegistry();
+    registry.adaptorCls.set("solidCache", CacheAdaptorRef);
+    registry.adaptor.set(CacheAdaptorRef, cache as unknown as Adaptor);
+
+    class FirstService extends serve("serviceTestFirst" as const, ({ memory }) => ({
+      token: memory(String),
+      counter: memory(Int, { default: 7 }),
+      tags: memory(Map, {
+        of: String,
+        get: (value: string) => value.split(","),
+        set: (tags: string[]) => tags.join(","),
+      }),
+      seen: memory(Map, { of: Int, local: true }),
+    })) {}
+    class SecondService extends serve("serviceTestSecond" as const, ({ memory }) => ({ token: memory(String) })) {}
+    const first = new FirstService();
+    const second = new SecondService();
+    await InjectInfo.resolveInjection(first, FirstService, registry, {} as never);
+    await InjectInfo.resolveInjection(second, SecondService, registry, {} as never);
+
+    await first.token.set("first");
+    await second.token.set("second");
+    expect(await first.token.get()).toBe("first");
+    expect(await second.token.get()).toBe("second");
+
+    expect(await first.counter.get()).toBe(7);
+
+    await first.tags.set("post-1", ["a", "b"]);
+    expect(cache.calls.at(-1)?.args[3]).toBe("a,b");
+    expect(await first.tags.get("post-1")).toEqual(["a", "b"]);
+    expect(await first.tags.entries()).toEqual([["post-1", ["a", "b"]]]);
+
+    expect(first.seen).toBeInstanceOf(Map);
+  });
+
   test("resolves use, env, plug, service, database, signal, and memory injections", async () => {
     const cache = makeFakeCache();
     class CacheAdaptorRef extends adapt("solidCache") {}
@@ -673,7 +743,6 @@ describe("dependency injection resolution", () => {
     const cacheAdaptor = cache as unknown as Adaptor;
     const plugAdaptor = new PlugAdaptor() as unknown as PlugAdaptor & Adaptor;
     const depService = new DepService();
-    const defaultExpireAt = dayjs().add(1, "hour");
 
     registry.uses.set("plainUse", "use-value");
     registry.adaptorCls.set("solidCache", CacheAdaptorRef);
@@ -697,8 +766,8 @@ describe("dependency injection resolution", () => {
       depService: service<DepService>(),
       testSignal: signal<typeof signal>(),
       localCounter: memory(Int, { local: true, default: 3 }),
-      remoteValue: memory(String, { expireAt: defaultExpireAt }),
-      remoteMap: memory(Map, { of: String, expireAt: defaultExpireAt }),
+      remoteValue: memory(String, { ttl: 3_600_000 }),
+      remoteMap: memory(Map, { of: String, ttl: 3_600_000 }),
     })) {}
     Object.assign(TargetService[INJECT_META], {
       serviceTestItemModel: new InjectInfo("database", { parentRefName: "serviceTestItem" }),
@@ -754,8 +823,10 @@ describe("dependency injection resolution", () => {
     await instance.remoteValue.set("hello");
     let lastCacheCall = cache.calls.at(-1);
     expect(lastCacheCall?.method).toBe("set");
-    expect(lastCacheCall?.args.slice(0, 3)).toEqual(["akan:memory", "remoteValue", "hello"]);
-    expect(lastCacheCall?.args[3]).toEqual({ expireAt: defaultExpireAt });
+    expect(lastCacheCall?.args.slice(0, 3)).toEqual(["akan:memory:serviceTestTarget", "remoteValue", "hello"]);
+    const expireAtOf = (call = cache.calls.at(-1), idx = 3) =>
+      Math.round((call?.args[idx] as CacheSetOptions | undefined)?.expireAt?.diff(dayjs(), "minute", true) ?? 0);
+    expect(expireAtOf(lastCacheCall)).toBe(60);
     expect(await instance.remoteValue.get()).toBe("hello");
     await instance.remoteValue.delete();
     expect(await instance.remoteValue.get()).toBeNull();
@@ -769,7 +840,7 @@ describe("dependency injection resolution", () => {
     await instance.remoteMap.delete("ko");
     expect(await instance.remoteMap.get("ko")).toBeUndefined();
     expect(await instance.remoteMap.getOrInsert("ko", "다시 안녕")).toBe("다시 안녕");
-    expect(cache.calls.at(-1)?.args[4]).toEqual({ expireAt: defaultExpireAt });
+    expect(expireAtOf(cache.calls.at(-1), 4)).toBe(60);
     const hsetCountAfterInsert = cache.calls.filter((call) => call.method === "hset").length;
     expect(await instance.remoteMap.getOrInsert("ko", "덮어쓰기")).toBe("다시 안녕");
     expect(cache.calls.filter((call) => call.method === "hset")).toHaveLength(hsetCountAfterInsert);

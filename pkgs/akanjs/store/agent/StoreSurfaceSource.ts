@@ -1,6 +1,7 @@
 import { router } from "akanjs/client";
 import type { SurfaceSource, ToolEntry } from "use-agentic";
 import { AgentBridge } from "./AgentBridge";
+import { ScreenFlash } from "./ScreenFlash";
 import { ScreenReader } from "./ScreenReader";
 import { ScreenSettle } from "./ScreenSettle";
 import { ScreenTarget } from "./ScreenTarget";
@@ -18,10 +19,6 @@ import { ScreenTarget } from "./ScreenTarget";
  * with the bare name a source publishes, so a zone drops a built-in with the session's `builtins` option instead.
  */
 export class StoreSurfaceSource implements SurfaceSource {
-  /** Defined in `akanjs/ui/styles.css`, so the flash follows the app's own theme tokens. */
-  static readonly highlightClass = "akan-agent-highlight";
-  /** Mirrors the animation in that stylesheet: the class outlives the ring by nothing. */
-  static readonly highlightMs = 2400;
   /**
    * What `tools()` contributes, in the order it builds them — the list a session's `builtins` option selects from.
    * A screen that declares a hook tool of one of these names is not in it: that entry is the screen's, not this
@@ -72,6 +69,15 @@ export class StoreSurfaceSource implements SurfaceSource {
       run: async (args) => {
         const path = String(args.path);
         router.push(path);
+        // A path with no route leaves the page where it was rather than replacing it, so this is a miss the model
+        // can recover from in the same turn — and the screen it is still on is the one its tools belong to.
+        try {
+          await router.navigation();
+        } catch {
+          throw new Error(
+            `There is no route at ${path}, so the page did not move. Call readScreen — it prints each link on this screen with its own path — and navigate to one of those.`,
+          );
+        }
         // The push returns while the payload for the new route is still in flight, so without this the readScreen
         // right after it reads the page the user just left, and the new screen's tools are not registered yet.
         await ScreenSettle.wait({ appearMs: 800, timeoutMs: 5000 });
@@ -107,7 +113,7 @@ export class StoreSurfaceSource implements SurfaceSource {
     const subject = viewKey ? "this zone" : "the current page";
     return {
       name: "readScreen",
-      description: `Read what is currently rendered ${where} — headings, prose, links, buttons, and form values. Use it when the user asks about what ${subject} shows. A long screen is truncated, so pass \`section\` to read one part of it.`,
+      description: `Read what is currently rendered ${where} — headings, prose, links, buttons, form values, and where the images are. Use it when the user asks about what ${subject} shows. A long screen is truncated, so pass \`section\` to read one part of it.`,
       parameters: {
         type: "object",
         properties: {
@@ -116,6 +122,11 @@ export class StoreSurfaceSource implements SurfaceSource {
             description:
               "One region of the screen: a heading's anchor as readScreen prints it, the heading's own text, a scope path from the screen context, or the name in a `[skipped: name]` marker. Omit to read all of it.",
           },
+          images: {
+            type: "boolean",
+            description:
+              "Print each image's address beside its caption, for passing to a tool that takes a picture. Off by default, since a gallery spends the whole read on URLs.",
+          },
         },
         additionalProperties: false,
       },
@@ -123,11 +134,12 @@ export class StoreSurfaceSource implements SurfaceSource {
       run: (args) => {
         const root = StoreSurfaceSource.#zoneRoot(viewKey);
         const section = typeof args.section === "string" ? args.section.trim() : "";
-        if (!section) return ScreenReader.read(root);
+        const options = { images: args.images === true };
+        if (!section) return ScreenReader.read(root, options);
         const container = ScreenTarget.container(section, root);
-        if (container) return ScreenReader.read(container);
+        if (container) return ScreenReader.read(container, options);
         const heading = ScreenTarget.heading(section, root);
-        if (heading) return ScreenReader.readFrom(heading, root);
+        if (heading) return ScreenReader.readFrom(heading, root, options);
         const named = ScreenTarget.containerNames(root);
         throw new Error(
           `No section named ${section} is on screen. ${
@@ -156,6 +168,8 @@ export class StoreSurfaceSource implements SurfaceSource {
         required: ["target"],
         additionalProperties: false,
       },
+      // Scrolling and a ring are a change no resource holds, so there is no report to wait for.
+      settle: false,
       run: (args) => {
         const name = typeof args.target === "string" ? args.target.trim() : "";
         if (!name) throw new Error("highlight needs a target.");
@@ -170,8 +184,7 @@ export class StoreSurfaceSource implements SurfaceSource {
             }`,
           );
         }
-        target.scrollIntoView({ block: "center", behavior: "smooth" });
-        StoreSurfaceSource.#flash(target);
+        ScreenFlash.show(target);
         return `Highlighted ${name} on screen for the user.`;
       },
     };
@@ -188,35 +201,12 @@ export class StoreSurfaceSource implements SurfaceSource {
         required: ["key"],
         additionalProperties: false,
       },
+      settle: false,
       run: (args: Record<string, unknown>) => {
         this.#bridge ??= AgentBridge.of();
         return this.#bridge.read(String(args.key), viewKey);
       },
     };
-  }
-
-  /**
-   * The ring goes on once the scroll lands, not when it starts: a smooth scroll across a long page takes most of a
-   * second, and a flash begun at the top is already fading by the time the user's eye arrives. Settles on the
-   * element's own position rather than a scroll event, which no browser fires consistently, and is capped so a page
-   * that never stops moving still flashes. Removed on a timer — a React re-render that drops the class early only
-   * ends it sooner.
-   */
-  static #flash(target: HTMLElement) {
-    let last = Number.NaN;
-    let frames = 0;
-    const settle = () => {
-      const { top } = target.getBoundingClientRect();
-      frames += 1;
-      if (Math.abs(top - last) >= 1 && frames < 90) {
-        last = top;
-        requestAnimationFrame(settle);
-        return;
-      }
-      target.classList.add(StoreSurfaceSource.highlightClass);
-      setTimeout(() => target.classList.remove(StoreSurfaceSource.highlightClass), StoreSurfaceSource.highlightMs);
-    };
-    requestAnimationFrame(settle);
   }
 
   static #zoneRoot(viewKey: string): HTMLElement | undefined {

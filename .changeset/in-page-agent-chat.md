@@ -54,7 +54,7 @@ the client reads its own serialized signals, and the prompt's GET enforces its g
 **The relay is framework-embedded.** `runAgentTurn`, the `agentTurn` scalar, `AgentTurnStream`, and the
 `AgentRelayAccess` guard ship with `akanjs` itself, registered the way the `base` module is — every app serves the
 relay with no lib to mount, `AKAN_AGENT=false` takes it off, and a lib that still carries its own `agent` module
-wins the refName so older workspaces keep working. `DeepseekLlm` (OpenAI-compatible REST, zero SDK dependencies)
+wins the refName so older workspaces keep working. `OpenaiLlm` (chat-completions REST, zero SDK dependencies)
 is the predefined default behind a new `LlmAdaptorRole`; an app swaps providers in its `option.ts` with
 `applyAdaptor(LlmAdaptorRole, OwnLlm)` — the same builder family as `applyMiddleware`, and the override mechanism
 works for every predefined adaptor role. The endpoint stays outside MCP — its `Any` bodies are refused from the
@@ -65,7 +65,7 @@ policy that throws fails closed.
 gained three setters, each read from every lib in mount order with the app's own last, so an app tightens what a
 library declared without restating it. `setLlm({ apiKey, model, host })` — or `setLlm((options) => …)` to take the
 key out of the app's own gitignored env object — reaches whichever adaptor holds `LlmAdaptorRole` as the
-`llmOption` use, replacing `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` / `DEEPSEEK_HOST`; the settings belong to the role
+`llmOption` use, replacing the per-provider environment names; the settings belong to the role
 rather than to one provider, so they survive a swap. `setAgentAccess(SignedIn)` names the guards
 `AgentRelayAccess` forwards to, which `AgentRelayAccess.use` takes at boot. `setMcp({ … })` carries the MCP server
 settings that `new AkanApp("./server", { mcp })` used to spell as child environment variables — the gateway there

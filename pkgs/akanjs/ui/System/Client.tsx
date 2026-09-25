@@ -24,7 +24,7 @@ import {
 import { Logger } from "akanjs/common";
 import type { AkanTheme } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
-import { getBaseSearchParam, st } from "akanjs/store";
+import { DraftStore, getBaseSearchParam, st } from "akanjs/store";
 import { animated } from "akanjs/ui";
 import {
   Children,
@@ -38,7 +38,6 @@ import {
   useState,
 } from "react";
 import { getFrameCssVars } from "./frameCssVars";
-import { Gtag } from "./Gtag";
 import { Messages } from "./Messages";
 import { Reconnect } from "./Reconnect";
 
@@ -159,8 +158,6 @@ export const ClientPathWrapper = ({
     [csr.registerFrameSlot, pathRoute.path, pageType],
   );
 
-  // const { initialize, codepush, statManager } = useCodepush({ serverUrl: process.env.AKAN_PUBLIC_SERVER_URL ?? "" });
-
   const [gestureEnabled, setGestureEnabled] = useState(true);
   const frameCssVars = getFrameCssVars(pathRoute.pageState);
   const bindProps = bind && pageType !== "pending" && pathRoute.pageState.gesture && gestureEnabled ? bind() : {};
@@ -209,40 +206,28 @@ export const ClientPathWrapper = ({
 };
 
 interface ClientBridgeProps {
-  env: ClientEnv;
+  env?: object;
   lang?: string;
   theme?: AkanTheme;
   prefix?: string;
-  gaTrackingId?: string;
   wsConnect?: boolean;
 }
 
-export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect = true }: ClientBridgeProps) => {
-  (globalThis as typeof globalThis & { __AKAN_CLIENT_ENV__?: ClientEnv }).__AKAN_CLIENT_ENV__ = env;
+export const ClientBridge = ({ env, lang, theme, prefix, wsConnect = true }: ClientBridgeProps) => {
+  // Base env is recomputed here rather than taken from the app's `env/env.client.ts`: that file is imported
+  // by a server component, so its `getEnv()` would resolve to the server's own hosts and ship them to the browser.
+  (globalThis as typeof globalThis & { __AKAN_CLIENT_ENV__?: ClientEnv }).__AKAN_CLIENT_ENV__ = {
+    ...getEnv(),
+    ...env,
+  };
   const uiOperation = st.use.uiOperation({ agent: false });
   const pathname = st.use.pathname({ agent: false });
   const params = st.use.params({ agent: false });
   const searchParams = st.use.searchParams({ agent: false });
   const language = (params.lang as string | undefined) ?? lang;
   const path = `/${pathname.split("/").slice(2).join("/")}`;
-  // const { setTheme, themes, theme: nextTheme } = useTheme();
   useEffect(() => {
     if (uiOperation !== "sleep") return;
-    // const initTheme = async () => {
-    //   console.log("initTheme1", theme);
-    //   if (theme) {
-    //     setTheme(theme);
-    //     return;
-    //   }
-    //   const localTheme = await storage.getItem("theme");
-    //   console.log("localTheme2", localTheme);
-    //   if (typeof localTheme === "string" && themes.includes(localTheme)) {
-    //     console.log("setTheme3", localTheme);
-    //     setTheme(localTheme);
-    //   } else setTheme("system");
-    // };
-
-    // void initTheme();
     setCookie("siteurl", window.location.origin);
     dayjs.locale(language);
     initAuth({ jwt: getBaseSearchParam(searchParams, "jwt") });
@@ -286,6 +271,10 @@ export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect
   }, []);
 
   useEffect(() => {
+    void DraftStore.reconcileIdentity().then(() => DraftStore.sweep());
+  }, []);
+
+  useEffect(() => {
     if (uiOperation !== "sleep") return;
     const handleResize = () => {
       st.do.setWindowSize();
@@ -299,9 +288,9 @@ export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect
 
   useEffect(() => {
     setCookie("path", path);
-    Logger.log(`pathChange-finished:${path}`);
+    Logger.info(`pathChange-finished:${path}`);
   }, [pathname]);
-  return gaTrackingId && <Gtag trackingId={gaTrackingId} />;
+  return null;
 };
 Client.Bridge = ClientBridge;
 
@@ -374,7 +363,15 @@ export const ClientSsrBridge = ({ lang, prefix = "", initialPageState }: ClientS
         fallback();
         return;
       }
-      void navigation.catch((error) => {
+      return navigation.catch((error: unknown) => {
+        // By name, not `instanceof`: the RSC client is inlined into more than one browser bundle.
+        if (error instanceof Error && error.name === "RscRouteNotFound") {
+          // `syncHref` ran before the fetch, so the store is already describing the page the router refused to
+          // go to. Falling back to a document navigation is what must not happen: it would land on the 404.
+          syncHref(window.location.href);
+          Logger.error(`No route at ${href}; the page was left where it was.`);
+          throw error;
+        }
         Logger.warn(`RSC navigation failed, falling back to document navigation: ${String(error)}`);
         fallback();
       });
@@ -398,11 +395,11 @@ export const ClientSsrBridge = ({ lang, prefix = "", initialPageState }: ClientS
       router: {
         push: (href, routeOptions) => {
           syncHref(href);
-          navigateRscWithFallback(href, routeOptions, () => window.location.assign(href));
+          return navigateRscWithFallback(href, routeOptions, () => window.location.assign(href));
         },
         replace: (href, routeOptions) => {
           syncHref(href);
-          navigateRscWithFallback(href, { ...routeOptions, replace: true }, () => window.location.replace(href));
+          return navigateRscWithFallback(href, { ...routeOptions, replace: true }, () => window.location.replace(href));
         },
         back: () => {
           window.history.back();

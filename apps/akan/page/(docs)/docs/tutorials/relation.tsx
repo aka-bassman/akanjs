@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -21,35 +22,26 @@ export default function Page() {
               ko: `이 튜토리얼에서 배울 내용:`,
             })}
           </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🔗</span>
-              <div>
-                {l.trans({
-                  en: "Define relationships between models using embedded references",
-                  ko: "임베디드 참조를 사용하여 모델 간 관계 정의",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">⚡</span>
-              <div>
-                {l.trans({
-                  en: "Trigger side effects when related data is created",
-                  ko: "관계된 데이터 생성 시 부수 효과 트리거",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🎨</span>
-              <div>
-                {l.trans({
-                  en: "Build UI components for selecting and displaying related data",
-                  ko: "관계된 데이터를 선택하고 표시하는 UI 컴포넌트 구축",
-                })}
-              </div>
-            </div>
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: "Define relationships between models using embedded references",
+                ko: "임베디드 참조를 사용하여 모델 간 관계 정의",
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "Trigger side effects when related data is created",
+                ko: "관계된 데이터 생성 시 부수 효과 트리거",
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "Build UI components for selecting and displaying related data",
+                ko: "관계된 데이터를 선택하고 표시하는 UI 컴포넌트 구축",
+              })}
+            </li>
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -115,20 +107,18 @@ export class DeliveryInsight extends via(Delivery, (field) => ({})) {}`}
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🔗</span>
+              <div className="mb-2">
                 <strong className="text-primary">{"field([LightIcecreamOrder], { minlength: 1 })"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
                 {l.trans({
-                  en: `This defines a one-to-many relationship by embedding an array of LightIcecreamOrder. The "Light" version contains only essential fields (serveType, size, toppings, status) - perfect for embedding without duplicating entire documents.`,
-                  ko: `LightIcecreamOrder 배열을 임베딩하여 일대다 관계를 정의합니다. "Light" 버전은 필수 필드만 포함합니다 (serveType, size, toppings, status) - 전체 문서를 복제하지 않고 임베딩하기에 완벽합니다.`,
+                  en: `This defines a one-to-many relationship by embedding an array of LightIcecreamOrder. The "Light" version contains only essential fields (serveType, size, toppings, status), which keeps embedded documents small without duplicating entire documents.`,
+                  ko: `LightIcecreamOrder 배열을 임베딩하여 일대다 관계를 정의합니다. "Light" 버전은 필수 필드만 포함합니다 (serveType, size, toppings, status). 전체 문서를 복제하지 않고 임베딩할 수 있습니다.`,
                 })}
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📦</span>
+              <div className="mb-2">
                 <strong className="text-primary">
                   {l.trans({ en: "Embedded vs Referenced", ko: "임베디드 vs 참조" })}
                 </strong>
@@ -216,8 +206,7 @@ export class DeliveryService extends serve(db.delivery, ({ use, service }) => ({
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🔌</span>
+              <div className="mb-2">
                 <strong className="text-primary">{"service<srv.IcecreamOrderService>()"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -228,20 +217,18 @@ export class DeliveryService extends serve(db.delivery, ({ use, service }) => ({
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">⚡</span>
+              <div className="mb-2">
                 <strong className="text-primary">_postCreate</strong>
               </div>
               <div className="text-foreground/70 text-sm">
                 {l.trans({
-                  en: `A lifecycle hook that runs after a delivery is created. It iterates through all linked orders and marks them as finished - perfect for cascading updates.`,
-                  ko: `배달이 생성된 후 실행되는 라이프사이클 훅입니다. 모든 연결된 주문을 순회하며 완료 처리합니다 - 연쇄 업데이트에 완벽합니다.`,
+                  en: `A lifecycle hook that runs after a delivery is created. It iterates through all linked orders and marks them as finished, which keeps cascading updates consistent.`,
+                  ko: `배달이 생성된 후 실행되는 라이프사이클 훅입니다. 모든 연결된 주문을 순회하며 완료 처리합니다. 연쇄 업데이트를 처리합니다.`,
                 })}
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🚫</span>
+              <div className="mb-2">
                 <strong className="text-primary">_preUpdate</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -263,7 +250,7 @@ export class DeliveryService extends serve(db.delivery, ({ use, service }) => ({
             title="apps/koyo/lib/delivery/Delivery.Template.tsx"
             code={`
 "use client";
-import { Field, Layout, buttonRecipe } from "akanjs/ui";
+import { Field, Layout } from "akanjs/ui";
 import { cnst, fetch, st, usePage } from "@apps/koyo/client";
 
 interface GeneralProps {
@@ -296,38 +283,29 @@ export const General = ({ className }: GeneralProps) => {
               ko: `Field.Children의 주요 기능:`,
             })}
           </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-primary">📋</span>
-              <div>
-                <strong>slice</strong>:{" "}
-                {l.trans({
-                  en: "Specifies which slice provides the selectable options. Here it's 'icecreamOrderInDelivery' - a slice filtered for delivery-eligible orders.",
-                  ko: "선택 가능한 옵션을 제공하는 슬라이스를 지정합니다. 여기서는 배달 가능한 주문으로 필터링된 'icecreamOrderInDelivery'입니다.",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🎯</span>
-              <div>
-                <strong>initArgs</strong>:{" "}
-                {l.trans({
-                  en: 'Initial arguments passed to the slice query. ["served"] filters to only show orders ready for delivery.',
-                  ko: '슬라이스 쿼리에 전달되는 초기 인자입니다. ["served"]는 배달 준비가 된 주문만 표시하도록 필터링합니다.',
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🎨</span>
-              <div>
-                <strong>renderOption</strong>:{" "}
-                {l.trans({
-                  en: "Custom render function for each selectable option. Shows order ID for easy identification.",
-                  ko: "선택 가능한 각 옵션에 대한 커스텀 렌더 함수입니다. 쉬운 식별을 위해 주문 ID를 표시합니다.",
-                })}
-              </div>
-            </div>
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              <strong>slice</strong>:{" "}
+              {l.trans({
+                en: "Specifies which slice provides the selectable options. Here it's 'icecreamOrderInDelivery' - a slice filtered for delivery-eligible orders.",
+                ko: "선택 가능한 옵션을 제공하는 슬라이스를 지정합니다. 여기서는 배달 가능한 주문으로 필터링된 'icecreamOrderInDelivery'입니다.",
+              })}
+            </li>
+            <li>
+              <strong>initArgs</strong>:{" "}
+              {l.trans({
+                en: 'Initial arguments passed to the slice query. ["served"] filters to only show orders ready for delivery.',
+                ko: '슬라이스 쿼리에 전달되는 초기 인자입니다. ["served"]는 배달 준비가 된 주문만 표시하도록 필터링합니다.',
+              })}
+            </li>
+            <li>
+              <strong>renderOption</strong>:{" "}
+              {l.trans({
+                en: "Custom render function for each selectable option. Shows order ID for easy identification.",
+                ko: "선택 가능한 각 옵션에 대한 커스텀 렌더 함수입니다. 쉬운 식별을 위해 주문 ID를 표시합니다.",
+              })}
+            </li>
+          </ul>
           <div>
             {l.trans({
               en: `Add a new slice to IcecreamOrder specifically for the delivery selection UI. This filters orders by status and serve type:`,
@@ -338,7 +316,8 @@ export const General = ({ className }: GeneralProps) => {
             className="w-full"
             title="apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts"
             code={`
-import { ID } from "akanjs/base"; // [!code collapse:13]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:14]
+import { ID } from "akanjs/base";
 import { endpoint, internal, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
@@ -352,7 +331,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder, // [!code collapse:2]
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init() // [!code collapse:11]
       .search("statuses", [cnst.IcecreamOrderStatus])
@@ -620,7 +599,7 @@ import { Load } from "akanjs/ui";
 import { cnst, Delivery, fetch } from "@apps/koyo/client";
 import type { ClientInit, ClientView } from "akanjs/fetch";
 import { st, usePage } from "@apps/koyo/client"; // [!code ++:2]
-import { Model } from "akanjs/ui";
+import { Model, buttonRecipe } from "akanjs/ui";
 // [!code collapse:25]
 interface CardProps {
   className?: string;
@@ -694,17 +673,16 @@ export const New = ({ className }: NewProps) => {
             className="w-full"
             title="apps/koyo/page/_index.tsx"
             code={`
-import { Load, Model } from "akanjs/ui"; // [!code collapse:2]
+import { Model, buttonRecipe } from "akanjs/ui"; // [!code collapse:3]
 import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 import { Tab } from "akanjs/ui"; // [!code ++:2]
 import { Delivery } from "@apps/koyo/client";
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
-  const [{ icecreamOrderInitInPublic }, { deliveryInitInPublic }] = await Promise.all([ // [!code highlight:6]
-    fetch.initIcecreamOrderInPublic(),
-    fetch.initDeliveryInPublic(),
-  ]);
+  const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
+  const { deliveryInitInPublic } = fetch.initDeliveryInPublic(); // [!code highlight]
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
   return (
     <div className="space-y-4">
@@ -727,7 +705,7 @@ export default async function Page() {
             <div className="text-5xl font-bold">{l("icecreamOrder.modelName")}</div>
             <IcecreamOrder.Util.PublicQueryMaker />
             <Model.New
-              className={buttonRecipe({ variant: "primary" })}
+              trigger={<button className={buttonRecipe({ variant: "primary" })}>{l("base.new")}</button>}
               slice={fetch.slice.icecreamOrderInPublic}
               renderTitle="name"
               partial={icecreamOrderForm}
@@ -736,7 +714,7 @@ export default async function Page() {
             </Model.New>
           </div>
           <IcecreamOrder.Zone.Insight slice={fetch.slice.icecreamOrderInPublic} />
-          <IcecreamOrder.Zone.Card className="space-y-2" init={icecreamOrderInitInPublic} />
+          <IcecreamOrder.Zone.Card className="space-y-2" init={icecreamOrderInitInPublic} slice={fetch.slice.icecreamOrderInPublic} />
         </Tab.Panel>
         <Tab.Panel menu="delivery" className="p-2">
           <div className="flex items-center gap-4 font-black">
@@ -748,7 +726,7 @@ export default async function Page() {
       </Tab>
     </div>
   );
-}`}
+});`}
           />
           <div>
             {l.trans({
@@ -756,28 +734,22 @@ export default async function Page() {
               ko: `이 통합된 페이지의 주요 기능:`,
             })}
           </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-primary">📑</span>
-              <div>
-                <strong>Tab</strong>:{" "}
-                {l.trans({
-                  en: "Organizes related content into switchable panels. Users can easily navigate between orders and deliveries.",
-                  ko: "관련 콘텐츠를 전환 가능한 패널로 정리합니다. 사용자가 주문과 배달 사이를 쉽게 탐색할 수 있습니다.",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">⚡</span>
-              <div>
-                <strong>Promise.all</strong>:{" "}
-                {l.trans({
-                  en: "Loads both icecreamOrder and delivery data in parallel for optimal performance.",
-                  ko: "최적의 성능을 위해 icecreamOrder와 delivery 데이터를 병렬로 로드합니다.",
-                })}
-              </div>
-            </div>
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              <strong>Tab</strong>:{" "}
+              {l.trans({
+                en: "Organizes related content into switchable panels. Users can easily navigate between orders and deliveries.",
+                ko: "관련 콘텐츠를 전환 가능한 패널로 정리합니다. 사용자가 주문과 배달 사이를 쉽게 탐색할 수 있습니다.",
+              })}
+            </li>
+            <li>
+              <strong>{"fetch.init*() without await"}</strong>:{" "}
+              {l.trans({
+                en: "Both slice queries leave at call time and each Tab.Panel gets its own promise, so the two tabs load in parallel and neither waits for the other.",
+                ko: "두 슬라이스 쿼리는 호출 시점에 출발하고 각 Tab.Panel이 자기 promise를 받으므로, 두 탭이 병렬로 로드되며 서로를 기다리지 않습니다.",
+              })}
+            </li>
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -785,95 +757,38 @@ export default async function Page() {
       <Scroll.Slide id="summary" title={l.trans({ en: "Summary", ko: "요약" })}>
         <Docs.Title>{l.trans({ en: "Summary", ko: "요약" })}</Docs.Title>
         <Docs.Description>
-          <div className="my-6 rounded-lg bg-linear-to-r from-background to-border p-6">
-            <div className="mb-3 font-bold text-lg text-primary">
-              {l.trans({ en: "🎉 What You've Accomplished:", ko: "🎉 달성한 것들:" })}
-            </div>
-            <ul className="space-y-2 text-foreground/70 text-sm">
+          <div className="text-foreground/70 text-sm">
+            <ul className="list-inside list-disc space-y-1">
               <li>
-                ✓{" "}
                 {l.trans({
-                  en: "Created a Delivery module with one-to-many relationship to IcecreamOrder",
-                  ko: "IcecreamOrder와 일대다 관계를 가진 Delivery 모듈 생성",
+                  en: "Use LightModel for embedded data to avoid document bloat",
+                  ko: "문서 비대화를 피하기 위해 임베디드 데이터에 LightModel 사용",
                 })}
               </li>
               <li>
-                ✓{" "}
                 {l.trans({
-                  en: "Used LightModel pattern for efficient embedded references",
-                  ko: "효율적인 임베디드 참조를 위한 LightModel 패턴 사용",
+                  en: "Embed data that's frequently read together",
+                  ko: "자주 함께 읽히는 데이터를 임베딩",
                 })}
               </li>
               <li>
-                ✓{" "}
                 {l.trans({
-                  en: "Implemented _postCreate hook for cascading updates across related data",
-                  ko: "관계된 데이터 간 연쇄 업데이트를 위한 _postCreate 훅 구현",
+                  en: "Use lifecycle hooks for maintaining data consistency",
+                  ko: "데이터 일관성 유지를 위해 라이프사이클 훅 사용",
                 })}
               </li>
               <li>
-                ✓{" "}
                 {l.trans({
-                  en: "Built Field.Children component for selecting related records",
-                  ko: "관련 레코드 선택을 위한 Field.Children 컴포넌트 구축",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Displayed embedded related data without additional queries",
-                  ko: "추가 쿼리 없이 임베디드 관계 데이터 표시",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Organized multiple models with Tab navigation",
-                  ko: "Tab 네비게이션으로 여러 모델 정리",
+                  en: "Create dedicated slices for relationship selection UIs",
+                  ko: "관계 선택 UI를 위한 전용 슬라이스 생성",
                 })}
               </li>
             </ul>
           </div>
-          <div className="my-4 space-y-3">
-            <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">💡</span>
-                <strong className="text-primary">{l.trans({ en: "Best Practices", ko: "모범 사례" })}</strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                <ul className="list-inside list-disc space-y-1">
-                  <li>
-                    {l.trans({
-                      en: "Use LightModel for embedded data to avoid document bloat",
-                      ko: "문서 비대화를 피하기 위해 임베디드 데이터에 LightModel 사용",
-                    })}
-                  </li>
-                  <li>
-                    {l.trans({
-                      en: "Embed data that's frequently read together",
-                      ko: "자주 함께 읽히는 데이터를 임베딩",
-                    })}
-                  </li>
-                  <li>
-                    {l.trans({
-                      en: "Use lifecycle hooks for maintaining data consistency",
-                      ko: "데이터 일관성 유지를 위해 라이프사이클 훅 사용",
-                    })}
-                  </li>
-                  <li>
-                    {l.trans({
-                      en: "Create dedicated slices for relationship selection UIs",
-                      ko: "관계 선택 UI를 위한 전용 슬라이스 생성",
-                    })}
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
           <div>
             {l.trans({
-              en: `Congratulations! You've completed all the core tutorials. You now have a solid foundation for building complex applications with akanjs. Explore the System Architecture section to dive deeper into how everything works together.`,
-              ko: `축하합니다! 모든 핵심 튜토리얼을 완료했습니다. 이제 akanjs로 복잡한 애플리케이션을 구축하기 위한 탄탄한 기반을 갖추게 되었습니다. System Architecture 섹션을 탐색하여 모든 것이 어떻게 함께 작동하는지 더 깊이 알아보세요.`,
+              en: `All core tutorials are complete. Explore the System Architecture section to see how everything works together.`,
+              ko: `모든 핵심 튜토리얼을 완료했습니다. System Architecture 섹션에서 모든 것이 어떻게 함께 작동하는지 더 깊이 알아보세요.`,
             })}
           </div>
         </Docs.Description>
@@ -883,4 +798,4 @@ export default async function Page() {
       <DocsToc />
     </Scroll>
   );
-}
+});

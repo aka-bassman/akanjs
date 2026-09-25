@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -18,7 +19,7 @@ export default function Page() {
           <Code.Snippet
             className="w-full"
             title="apps/myapp/main.ts"
-            code={`import { AkanApp } from "akanjs/server";
+            code={`import { AkanApp } from "akanjs/server/akanApp";
 
 const run = async () => {
   await new AkanApp().start();
@@ -57,24 +58,36 @@ void run();`}
               })}
             </li>
           </ul>
-          <Docs.Mermaid
-            title="Runtime overview"
-            chart={`flowchart LR
-  appCode[App Code] --> app[Akan App]
-  app --> server[Akan Server]
-  server --> internalApi["Internal API (Queue, Timer, etc.)"]
-  server --> api["API (HTTP, WebSocket)"]
-  server --> ssr["SSR Pages (Web)"]
-  server --> csr["CSR Page (Android, iOS)"]`}
+          <Docs.Figure
+            title={l.trans({ en: "Runtime overview", ko: "런타임 개요" })}
+            image="runtime-overview"
+            prompt={`
+              Application source at the far left labelled "App Code", with an arrow into a large process at the centre
+              left labelled "Akan App". Inside it, a smaller server, its outline traced as the red accent, labelled
+              "Akan Server". Four arrows leave the server to the right, fanning out to four shapes stacked top to
+              bottom: a small clock labelled "Internal API" with a smaller second line "queue · timer"; a pair of
+              opposing arrows labelled "API" with a smaller second line "http · websocket"; a browser labelled "SSR
+              Pages"; a phone labelled "CSR Pages".
+            `}
+            alt={l.trans({
+              en: "App code runs in the Akan App, which runs the Akan Server, and the server exposes an internal API for queues and timers, an HTTP and WebSocket API, SSR pages for the web and CSR pages for Android and iOS.",
+              ko: "앱 코드는 Akan App에서 실행되고 Akan App이 Akan 서버를 실행합니다. 서버는 큐·타이머용 내부 API, HTTP·WebSocket API, 웹용 SSR 페이지, Android·iOS용 CSR 페이지를 제공합니다.",
+            })}
           />
 
           <div>
             {l.trans({
-              en: "One Akan App can run one or more Akan Server processes. AKAN_REPLICA controls how many server processes are started for each role, so the same app can scale web traffic and background work separately. For browser traffic, Akan App also load-balances requests across ready federation and all servers.",
-              ko: "하나의 Akan App은 하나 이상의 Akan Server 프로세스를 실행할 수 있습니다. AKAN_REPLICA는 역할별 서버 프로세스 개수를 제어하므로, 같은 앱 안에서 웹 트래픽과 백그라운드 작업을 나누어 확장할 수 있습니다. 브라우저 요청은 Akan App이 준비된 federation/all 서버로 로드밸런싱합니다.",
+              en: "AKAN_REPLICA decides how many server processes each role gets, and it defaults to 0,0,1 everywhere: one all server and nothing else. With a single traffic replica there is nothing to balance, so Akan App runs that server inside its own process instead of spawning it and proxying to it. The container holds one process, and every request skips a proxy hop.",
+              ko: "AKAN_REPLICA는 역할별 서버 프로세스 개수를 정하며, 어디서나 기본값은 0,0,1입니다. all 서버 하나만 실행한다는 뜻입니다. 트래픽 replica가 하나면 분산할 대상이 없으므로, Akan App은 그 서버를 spawn해서 프록시하지 않고 자기 프로세스 안에서 직접 실행합니다. 컨테이너는 프로세스 하나만 갖고, 모든 요청이 프록시 홉을 건너뜁니다.",
             })}
           </div>
           <ul className="list-disc space-y-1 pl-6 md:pl-12">
+            <li>
+              {l.trans({
+                en: "all: runs both federation and batch behavior in one server process. This is the default, and the shape almost every deployment ships.",
+                ko: "all: 하나의 서버 프로세스에서 federation과 batch 역할을 함께 실행합니다. 기본값이며, 대부분의 배포가 이 형태로 나갑니다.",
+              })}
+            </li>
             <li>
               {l.trans({
                 en: "federation: serves browser traffic such as pages, API calls, and WebSocket connections.",
@@ -87,26 +100,47 @@ void run();`}
                 ko: "batch: 큐, 타이머, 예약 작업 같은 백그라운드 작업을 실행합니다.",
               })}
             </li>
-            <li>
-              {l.trans({
-                en: "all: runs both federation and batch behavior in one server process. This is the simple local default.",
-                ko: "all: 하나의 서버 프로세스에서 federation과 batch 역할을 함께 실행합니다. 로컬 개발에서 사용하는 단순한 기본 형태입니다.",
-              })}
-            </li>
           </ul>
-          <Docs.Mermaid
-            title="Replica and server modes"
-            highlightNodes={["app"]}
-            chart={`flowchart LR
-  browser[Browser] --> app["Akan App<br/>(Gateway, Load Balancer)"]
-  app -->|"traffic"| federation1["Akan Server (federation)"]
-  app -->|"traffic"| federation2["Akan Server (federation)"]
-  app -->|"traffic"| federation3["Akan Server (federation)"]
-  app --> batch["Akan Server (batch)"]
-  federation1 --> webTraffic["Pages, API, WebSocket"]
-  federation2 --> webTraffic
-  federation3 --> webTraffic
-  batch --> background["Queue, Timer, Jobs"]`}
+          <Docs.Figure
+            title={l.trans({ en: "Default: one process, no gateway", ko: "기본값: 프로세스 하나, 게이트웨이 없음" })}
+            image="runtime-solo"
+            prompt={`
+              One large container taking most of the frame, labelled "Container" at its top left. A browser labelled
+              "Browser" outside it at the far left with an arrow into the large process. Inside the container, one large
+              process spanning most of its width, its outline traced as the red accent, labelled "Akan App + Akan
+              Server" on its top band, split into two halves by a vertical line: the left half holds a pair of opposing
+              arrows labelled "Pages · API · WebSocket", the right half holds a small clock labelled "Queue · Timer ·
+              Jobs". Below it, still inside the container, a smaller process labelled "RSC Worker", joined to the large
+              process by a dashed line labelled "web only".
+            `}
+            alt={l.trans({
+              en: "The browser reaches one process in the container where Akan App and Akan Server run together, serving pages, API and WebSocket and running queues, timers and jobs; a separate RSC worker process exists only for web.",
+              ko: "브라우저는 컨테이너 안의 프로세스 하나에 닿고, 그 안에서 Akan 앱과 Akan 서버가 함께 페이지·API·웹소켓을 처리하고 큐·타이머·잡을 실행합니다. 별도의 RSC 워커 프로세스는 웹일 때만 있습니다.",
+            })}
+          />
+          <div>
+            {l.trans({
+              en: "Five things bring the gateway back: two or more replicas, a batch-only replica that never listens, AKAN_SOLO=false, passing replica to new AkanApp(...), and akan start. Then Akan App spawns the servers and load-balances browser traffic across the ready federation and all processes.",
+              ko: "gateway가 다시 사용되는 경우는 다섯 가지입니다. replica가 둘 이상일 때, listen하지 않는 batch 전용 replica가 있을 때, AKAN_SOLO=false일 때, new AkanApp(...)에 replica를 넘겼을 때, 그리고 akan start일 때입니다. 이때 Akan App은 서버들을 spawn하고 준비된 federation/all 프로세스로 브라우저 요청을 로드밸런싱합니다.",
+            })}
+          </div>
+          <Docs.Figure
+            title={l.trans({ en: "Replica and server modes", ko: "Replica와 server 모드" })}
+            image="runtime-gateway"
+            prompt={`
+              One large container taking most of the frame, labelled "Container" at its top left. A browser labelled
+              "Browser" outside it at the far left with an arrow into the gateway. Inside the container on the left, a
+              process holding a small circle with four short spokes, its outline traced as the red accent, labelled
+              "Akan App" with a smaller second line "gateway · load balancer". From it, three arrows fan right to three
+              processes stacked vertically, each holding a pair of opposing arrows, labelled once "Federation Servers"
+              with a smaller second line "pages · api · websocket". A fourth arrow reaches a process set apart at the
+              bottom right, holding a small clock, labelled "Batch Server" with a smaller second line "queue · timer ·
+              jobs".
+            `}
+            alt={l.trans({
+              en: "The browser reaches the Akan App acting as gateway and load balancer inside the container; it spreads traffic over three federation servers for pages, API and WebSocket, and runs a batch server for queues, timers and jobs.",
+              ko: "브라우저는 컨테이너 안에서 게이트웨이이자 로드 밸런서인 Akan 앱에 닿습니다. Akan 앱은 페이지·API·웹소켓 트래픽을 federation 서버 세 개로 나누고, 큐·타이머·잡을 위한 batch 서버를 실행합니다.",
+            })}
           />
           <Docs.Alert type="info">
             {l.trans({
@@ -114,26 +148,11 @@ void run();`}
               ko: "단일 Akan App은 clustering 기능을 기본으로 지원합니다. 여러 server replica를 실행하고 Akan App이 트래픽을 분산할 수 있으므로, nginx, docker compose, pm2 같은 별도 로컬 load-balancing 도구를 직접 구성하지 않아도 됩니다.",
             })}
           </Docs.Alert>
-          <div>
-            {l.trans({
-              en: "With one traffic replica there is nothing to balance, so Akan App runs that server in its own process instead of spawning it and proxying to it. The container then holds one process rather than two, and every request skips a proxy hop. Two or more replicas, or a batch-only replica that never listens, bring the gateway back. Set AKAN_SOLO=false to keep the gateway for a single replica; akan start always runs it, because the gateway is also the dev server's build relay and error overlay.",
-              ko: "트래픽 replica가 하나면 분산할 대상이 없으므로, Akan App은 그 서버를 spawn해서 프록시하지 않고 자기 프로세스에서 직접 실행합니다. 컨테이너의 프로세스가 둘에서 하나로 줄고, 모든 요청이 프록시 홉을 건너뜁니다. replica가 둘 이상이거나 listen하지 않는 batch 전용 replica면 gateway가 다시 사용됩니다. 단일 replica에서도 gateway를 쓰려면 AKAN_SOLO=false를 설정하며, akan start는 gateway가 개발 서버의 빌드 릴레이이자 에러 오버레이이기도 하므로 항상 gateway로 실행됩니다.",
-            })}
-          </div>
-          <Docs.Mermaid
-            title="Solo replica"
-            highlightNodes={["solo"]}
-            chart={`flowchart LR
-  browser[Browser] --> solo["Akan App + Akan Server<br/>(one process)"]
-  solo --> webTraffic["Pages, API, WebSocket"]
-  solo --> background["Queue, Timer, Jobs"]
-  solo -.->|"web only"| rsc["RSC Worker"]`}
-          />
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
-      <Scroll.Slide id="dev-prod" title={l.trans({ en: "Root-level Env Variables", ko: "루트 환경변수" })}>
-        <Docs.Title>{l.trans({ en: "Root-level Env Variables", ko: "루트 환경변수" })}</Docs.Title>
+      <Scroll.Slide id="env-identity" title={l.trans({ en: "Identity And Environment", ko: "정체성과 환경" })}>
+        <Docs.Title>{l.trans({ en: "Identity And Environment", ko: "정체성과 환경" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
@@ -159,211 +178,306 @@ AKAN_SEARCH_TOKENIZER="unicode61 remove_diacritics 2"`}
               ko: "AKAN_PUBLIC_ 접두사가 붙은 환경변수는 공개 값입니다. 브라우저 코드에서도 읽을 수 있으므로 비밀키, 개인 토큰, 인증 정보는 절대 넣지 마세요.",
             })}
           </Docs.Alert>
-          <div className="space-y-1">
-            {[
-              [
-                "AKAN_PUBLIC_REPO_NAME",
-                l.trans({ en: "Project owner", ko: "프로젝트 소유자" }),
-                l.trans({
-                  en: "Organization or repository namespace. Usually fixed for the project.",
-                  ko: "조직 또는 저장소 네임스페이스입니다. 보통 프로젝트 값으로 고정합니다.",
+          <div>
+            {l.trans({
+              en: "Four of those names answer who this app is and where it runs, and the first two are required:",
+              ko: "이 중 네 개는 이 앱이 누구이며 어디서 도는지에 답하며, 앞의 두 개는 필수입니다:",
+            })}
+          </div>
+          <Docs.OptionTable
+            items={[
+              {
+                key: "AKAN_PUBLIC_REPO_NAME",
+                type: "string",
+                tags: [l.trans({ en: "required", ko: "필수" })],
+                desc: l.trans({
+                  en: "Organization or repository namespace, usually fixed for the life of the project.",
+                  ko: "조직 또는 저장소 네임스페이스이며, 보통 프로젝트 수명 내내 고정입니다.",
                 }),
-                "myorg",
-              ],
-              [
-                "AKAN_PUBLIC_SERVE_DOMAIN",
-                l.trans({ en: "Public domain", ko: "공개 도메인" }),
-                l.trans({
-                  en: "Used when the app creates links, callbacks, and domain-based routes.",
-                  ko: "앱이 링크, 콜백, 도메인 기반 라우팅을 만들 때 사용하는 도메인입니다.",
+              },
+              {
+                key: "AKAN_PUBLIC_SERVE_DOMAIN",
+                type: "string",
+                tags: [l.trans({ en: "required", ko: "필수" })],
+                desc: l.trans({
+                  en: "The domain the app builds links, callbacks, and domain-based routes from.",
+                  ko: "앱이 링크, 콜백, 도메인 기반 라우팅을 만들 때 쓰는 도메인입니다.",
                 }),
-                '"mydomain.com"',
-              ],
-              [
-                "AKAN_PUBLIC_ENV",
-                l.trans({ en: "Data environment", ko: "데이터 환경" }),
-                l.trans({
-                  en: "Choose local, debug, develop, or main depending on which data set you want to use.",
-                  ko: "사용할 데이터 기준에 따라 local, debug, develop, main 중에서 선택합니다.",
+              },
+              {
+                key: "AKAN_PUBLIC_ENV",
+                type: "local | debug | develop | main | testing",
+                default: "debug",
+                desc: l.trans({
+                  en: "Which data set the app runs against, from local test data up to production-like main.",
+                  ko: "앱이 어떤 데이터 기준으로 도는지 정합니다. 로컬 테스트 데이터부터 운영에 가까운 main까지입니다.",
                 }),
-                "local | debug | develop | main",
-              ],
-              [
-                "AKAN_PUBLIC_OPERATION_MODE",
-                l.trans({ en: "Connection target", ko: "연결 대상" }),
-                l.trans({
-                  en: "Choose whether clients connect to local runtime, edge paths, or cloud services.",
-                  ko: "클라이언트가 로컬 런타임, 엣지 경로, 클라우드 서비스 중 어디에 연결될지 정합니다.",
+              },
+              {
+                key: "AKAN_PUBLIC_OPERATION_MODE",
+                type: "local | edge | cloud | module",
+                default: l.trans({ en: "local when ENV=local, else cloud", ko: "ENV=local이면 local, 아니면 cloud" }),
+                desc: l.trans({
+                  en: "Where clients connect: local runtime, cloud, or edge paths; module is only in the type.",
+                  ko: "클라이언트가 연결할 곳입니다. 로컬 런타임, 클라우드, 엣지 경로 중 하나이며 module은 타입에만 있습니다.",
                 }),
-                "local | edge | cloud",
-              ],
-              [
-                "AKAN_PUBLIC_LOG_LEVEL",
-                l.trans({ en: "Log detail", ko: "로그 상세도" }),
-                l.trans({
-                  en: "Choose how much runtime output you want to see in the terminal.",
-                  ko: "터미널에 어느 정도 자세한 런타임 로그를 볼지 정합니다.",
+              },
+            ]}
+          />
+          <div>
+            {l.trans({
+              en: "In practice you move two of them together. Build a feature with ENV=local and OPERATION_MODE=local, switch ENV to debug or develop when you need shared data or shared services, and deploy with ENV=main against whichever operation mode the cluster serves:",
+              ko: "실제로는 두 개를 같이 움직입니다. 기능을 만들 때는 ENV=local, OPERATION_MODE=local로 작업하고, 공용 데이터나 공용 서비스가 필요해지면 ENV를 debug나 develop으로 바꾸며, 배포할 때는 클러스터가 제공하는 operation mode에 맞춰 ENV=main으로 올립니다:",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title=".env"
+            language="bash"
+            code={`# Build a feature locally
+AKAN_PUBLIC_ENV=local
+AKAN_PUBLIC_OPERATION_MODE=local
+AKAN_PUBLIC_LOG_LEVEL=debug
+
+# Reproduce with shared test data
+AKAN_PUBLIC_ENV=debug
+AKAN_PUBLIC_OPERATION_MODE=local
+AKAN_PUBLIC_LOG_LEVEL=debug
+
+# Deploy production to a cloud server
+AKAN_PUBLIC_ENV=main
+AKAN_PUBLIC_OPERATION_MODE=cloud
+AKAN_PUBLIC_LOG_LEVEL=info
+
+# Deploy production to an edge server
+AKAN_PUBLIC_ENV=main
+AKAN_PUBLIC_OPERATION_MODE=edge
+AKAN_PUBLIC_LOG_LEVEL=info`}
+          />
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+      <Scroll.Slide id="env-search" title={l.trans({ en: "Text Search Variables", ko: "텍스트 검색 환경변수" })}>
+        <Docs.Title>{l.trans({ en: "Text Search Variables", ko: "텍스트 검색 환경변수" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Full-text search is on unless you switch it off, and both of its variables are deployment-wide decisions rather than per-process ones, so give every process in one deployment the same pair.",
+              ko: "전문 검색은 끄지 않는 한 켜져 있고, 두 변수 모두 프로세스별이 아니라 배포 전체의 결정이므로 한 배포의 모든 프로세스에 같은 값을 주세요.",
+            })}
+          </div>
+          <Docs.OptionTable
+            items={[
+              {
+                key: "AKAN_SEARCH_ENABLED",
+                type: "0 | 1 | false | true",
+                default: l.trans({ en: "unset means on", ko: "미설정이면 on" }),
+                desc: l.trans({
+                  en: "Turns the full-text index off, reversibly.",
+                  ko: "전문 검색 색인을 끄며, 되돌릴 수 있습니다.",
                 }),
-                "trace | debug | info | warn | error",
-              ],
-              [
-                "AKAN_SEARCH_ENABLED",
-                l.trans({ en: "Text search index", ko: "텍스트 검색 색인" }),
-                l.trans({
-                  en: "Unset means on. Set 0 to switch the full-text index off; indexed data is kept and re-enabling reconciles every model. Give every process in a deployment the same value, because a process cannot clean up triggers for models it does not mount.",
-                  ko: "값을 주지 않으면 켜져 있습니다. 0으로 두면 전문 검색 색인을 끄며, 색인된 데이터는 유지되고 다시 켜면 모든 모델을 재정합합니다. 프로세스는 자신이 마운트하지 않은 모델의 trigger를 정리할 수 없으므로 한 배포의 모든 프로세스에 같은 값을 주세요.",
+              },
+              {
+                key: "AKAN_SEARCH_TOKENIZER",
+                type: "string",
+                default: "unicode61 remove_diacritics 2",
+                desc: l.trans({
+                  en: "The fts5 tokenizer; database.search.tokenizer in the app config takes precedence.",
+                  ko: "색인에 쓰는 fts5 토크나이저이며, 앱 설정의 database.search.tokenizer가 우선합니다.",
                 }),
-                "0 | 1",
-              ],
-              [
-                "AKAN_SEARCH_TOKENIZER",
-                l.trans({ en: "Search tokenizer", ko: "검색 토크나이저" }),
-                l.trans({
-                  en: "The fts5 tokenizer the index is built with. Defaults to unicode61 remove_diacritics 2. Changing it rebuilds the index from the mirror on the next boot, so no data is re-read from the model tables. The rebuild takes no cross-process claim, so a fleet restarted at once repeats it in every process; stagger the restart when the mirror is large. database.search.tokenizer in the app config takes precedence. A value this SQLite build cannot provide fails the boot and names the fix, rather than starting a server whose every search would raise. That boot failure leaves writes alone: the index is dropped but nothing else is, so the models on that database keep accepting writes and the next healthy boot recovers the index in full.",
-                  ko: "색인을 만들 때 쓰는 fts5 토크나이저입니다. 기본값은 unicode61 remove_diacritics 2입니다. 값을 바꾸면 다음 부팅에서 미러로부터 색인을 다시 만들며, 모델 테이블을 다시 읽지는 않습니다. 이 재생성에는 프로세스 간 클레임이 없어서, 한 번에 재시작한 여러 프로세스가 각자 다시 만듭니다. 미러가 크다면 재시작을 나눠서 하세요. 앱 설정의 database.search.tokenizer가 우선합니다. 이 SQLite 빌드가 제공할 수 없는 값이면, 모든 검색이 에러를 내는 서버를 띄우는 대신 부팅을 실패시키고 고칠 방법을 알려줍니다. 이때 쓰기는 그대로 살아 있습니다. 색인만 없어지고 다른 것은 건드리지 않으므로 해당 데이터베이스의 모델은 계속 쓰기를 받고, 다음 정상 부팅이 색인을 온전히 복구합니다.",
+              },
+            ]}
+          />
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: "Changing the tokenizer rebuilds the index from the mirror on the next boot, separately in every process that restarts, so stagger the restart when the mirror is large.",
+              ko: "토크나이저를 바꾸면 다음 부팅에서 미러로부터 색인을 다시 만들며, 재시작한 프로세스마다 각자 다시 만듭니다. 미러가 크다면 재시작을 나눠서 하세요.",
+            })}
+          </Docs.Alert>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+      <Scroll.Slide id="env-logging" title={l.trans({ en: "Logging Variables", ko: "로깅 환경변수" })}>
+        <Docs.Title>{l.trans({ en: "Logging Variables", ko: "로깅 환경변수" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "The level ladder is trace, verbose, debug, info, warn, error, and three destinations read it independently: the container's stdout, the rotating log file, and any sink the app registered. Everything else here decides how much structure travels with a record and who is allowed to ask for more.",
+              ko: "레벨 사다리는 trace, verbose, debug, info, warn, error이고, 세 목적지가 이를 각각 따로 읽습니다. 컨테이너 stdout, 회전 로그 파일, 그리고 앱이 등록한 sink입니다. 나머지 변수들은 레코드에 얼마나 많은 구조가 함께 실려 가는지, 그리고 누가 더 많은 것을 요구할 수 있는지를 정합니다.",
+            })}
+          </div>
+          <Docs.OptionTable
+            items={[
+              {
+                key: "AKAN_PUBLIC_LOG_LEVEL",
+                type: "trace | verbose | debug | info | warn | error",
+                default: "info",
+                desc: l.trans({
+                  en: "How much runtime output the console carries; the deprecated log means info.",
+                  ko: "콘솔에 보낼 런타임 로그의 양입니다. 폐기된 log는 info를 뜻합니다.",
                 }),
-                "unicode61 remove_diacritics 2 | trigram | porter unicode61",
-              ],
-              [
-                "AKAN_LOG_FILE_LEVEL",
-                l.trans({ en: "File log detail", ko: "파일 로그 상세도" }),
-                l.trans({
-                  en: "Choose how much structured Logger output is written to files. Defaults to trace, independent from terminal log level.",
-                  ko: "파일에 저장할 structured Logger 출력 범위를 정합니다. 기본값은 trace이며 터미널 로그 레벨과 별도로 동작합니다.",
+              },
+              {
+                key: "AKAN_LOG_STDOUT_LEVEL",
+                type: "trace | verbose | debug | info | warn | error",
+                default: "AKAN_PUBLIC_LOG_LEVEL",
+                desc: l.trans({
+                  en: "What goes to the container's stdout, in either format; info is the production pick.",
+                  ko: "형식과 무관하게 컨테이너 stdout으로 나가는 레벨입니다. 운영 권장은 info입니다.",
                 }),
-                "trace | debug | info | warn | error",
-              ],
-              [
-                "AKAN_LOG_TO_FILE",
-                l.trans({ en: "File logging", ko: "파일 로그" }),
-                l.trans({
-                  en: "AkanApp writes gateway and child process logs to runtime/logs by default. Set this to 0 to disable file logging.",
-                  ko: "AkanApp은 기본적으로 gateway와 child process 로그를 runtime/logs에 저장합니다. 파일 로그를 끄려면 0으로 설정합니다.",
+              },
+              {
+                key: "AKAN_LOG_FILE_LEVEL",
+                type: "trace | verbose | debug | info | warn | error",
+                default: "trace",
+                desc: l.trans({
+                  en: "How much structured Logger output goes to files, independent of the console level.",
+                  ko: "파일에 저장할 structured Logger 출력 범위이며, 터미널 로그 레벨과 별도로 동작합니다.",
                 }),
-                "0 | 1",
-              ],
-              [
-                "AKAN_LOG_DIR",
-                l.trans({ en: "Log directory", ko: "로그 디렉터리" }),
-                l.trans({
-                  en: "Override the default runtime/logs directory used by file logging.",
-                  ko: "파일 로그가 사용하는 기본 runtime/logs 디렉터리를 다른 경로로 바꿉니다.",
+              },
+              {
+                key: "AKAN_LOG_FORMAT",
+                type: "text | ndjson | ndjson-only",
+                default: "text",
+                desc: l.trans({
+                  en: "text for people; ndjson makes stdout one JSON record per line, ndjson-only the file too.",
+                  ko: "text는 사람이 읽는 줄입니다. ndjson은 stdout을 한 줄에 JSON 레코드 하나로, ndjson-only는 회전 파일까지 JSON으로 씁니다.",
                 }),
-                "/var/log/akan",
-              ],
-              [
-                "AKAN_LOG_MAX_SIZE_MB",
-                l.trans({ en: "Log rotation size", ko: "로그 회전 크기" }),
-                l.trans({
+              },
+              {
+                key: "AKAN_LOG_TO_FILE",
+                type: "0 | 1",
+                default: "1",
+                desc: l.trans({
+                  en: "Writes gateway and child logs to runtime/logs; off in the production image.",
+                  ko: "gateway와 child 로그를 runtime/logs에 씁니다. 프로덕션 이미지에서는 꺼져 있습니다.",
+                }),
+              },
+              {
+                key: "AKAN_LOG_DIR",
+                type: "string",
+                default: "runtime/logs",
+                desc: l.trans({
+                  en: "Where file logging writes, when the default directory is not where the volume is mounted.",
+                  ko: "볼륨이 기본 디렉터리에 마운트되어 있지 않을 때, 파일 로그가 쓸 경로입니다.",
+                }),
+              },
+              {
+                key: "AKAN_LOG_MAX_SIZE_MB",
+                type: "number",
+                default: "50",
+                desc: l.trans({
                   en: "Create the next sequence file when a process log reaches this size.",
                   ko: "프로세스별 로그 파일이 이 크기에 도달하면 다음 sequence 파일을 만듭니다.",
                 }),
-                "50",
-              ],
-              [
-                "AKAN_LOG_MAX_FILES",
-                l.trans({ en: "Log retention", ko: "로그 보관 개수" }),
-                l.trans({
+              },
+              {
+                key: "AKAN_LOG_MAX_FILES",
+                type: "number",
+                default: "100",
+                desc: l.trans({
                   en: "Keep this many rotated files per process key, such as gateway or child-0.",
                   ko: "gateway 또는 child-0 같은 process key별로 보관할 회전 로그 파일 개수입니다.",
                 }),
-                "100",
-              ],
-            ].map(([name, label, desc, values]) => (
-              <div key={name} className="rounded-xl border border-primary/10 bg-background p-3">
-                <div className="break-all font-mono font-semibold text-primary text-sm">{name}</div>
-                <div className="mt-1 font-bold text-foreground">{label}</div>
-                <div className="mt-2 text-foreground/70 text-sm leading-relaxed">{desc}</div>
-                <div className="mt-3 break-all rounded bg-muted px-2 py-1 font-mono text-foreground/80 text-xs">
-                  ex) {values}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="space-y-1">
-            <div className={panelRecipe()}>
-              <div className="font-bold">{l.trans({ en: "AKAN_PUBLIC_ENV modes", ko: "AKAN_PUBLIC_ENV 모드" })}</div>
-              <div className="mt-3 space-y-1">
-                {[
-                  ["local", l.trans({ en: "My machine, my test data.", ko: "내 컴퓨터와 로컬 테스트 데이터" })],
-                  [
-                    "debug",
-                    l.trans({ en: "Shared test data for reproduction.", ko: "재현을 위한 공용 테스트 데이터" }),
-                  ],
-                  ["develop", l.trans({ en: "Team integration checks.", ko: "팀 통합 상태 확인" })],
-                  ["main", l.trans({ en: "Production-like behavior.", ko: "운영에 가까운 동작 확인" })],
-                ].map(([mode, desc]) => (
-                  <div key={mode} className="rounded-lg bg-muted p-3">
-                    <div className="font-mono font-semibold text-sm">{mode}</div>
-                    <div className="mt-1 text-foreground/70 text-sm">{desc}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className={panelRecipe()}>
-              <div className="font-bold">
-                {l.trans({ en: "AKAN_PUBLIC_OPERATION_MODE modes", ko: "AKAN_PUBLIC_OPERATION_MODE 모드" })}
-              </div>
-              <div className="mt-3 space-y-1">
-                {[
-                  ["local", l.trans({ en: "Client talks to local runtime.", ko: "클라이언트가 로컬 런타임에 연결" })],
-                  [
-                    "cloud",
-                    l.trans({ en: "Client talks to cloud services.", ko: "클라이언트가 클라우드 서비스에 연결" }),
-                  ],
-                  ["edge", l.trans({ en: "Client uses edge-facing paths.", ko: "클라이언트가 엣지 경로 사용" })],
-                ].map(([mode, desc]) => (
-                  <div key={mode} className="rounded-lg bg-muted p-3">
-                    <div className="font-mono font-semibold text-sm">{mode}</div>
-                    <div className="mt-1 text-foreground/70 text-sm">{desc}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+              },
+              {
+                key: "AKAN_LOG_CONTEXT",
+                type: "0 | 1",
+                default: "1",
+                desc: l.trans({
+                  en: "Tags each call's records with traceId, endpoint and origin; independent of AKAN_TRACE.",
+                  ko: "각 호출의 레코드에 traceId, 엔드포인트, origin을 붙입니다. AKAN_TRACE와는 별개입니다.",
+                }),
+              },
+              {
+                key: "AKAN_LOG_STREAM",
+                type: "0 | 1",
+                default: "0",
+                desc: l.trans({
+                  en: "1 forwards child records to the gateway always, not only while akan logs or .tail listens.",
+                  ko: "1이면 akan logs나 .tail이 구독하지 않아도 child가 항상 gateway로 레코드를 올립니다.",
+                }),
+              },
+              {
+                key: "AKAN_LOG_STREAM_TOKEN",
+                type: "string",
+                default: l.trans({ en: "unset — route absent", ko: "미설정 — 라우트 없음" }),
+                desc: l.trans({
+                  en: "Mounts GET /_akan/app/logs, an SSE stream of the ring buffer, for a matching bearer token.",
+                  ko: "일치하는 bearer 토큰에게 링 버퍼를 SSE로 흘려 주는 GET /_akan/app/logs를 엽니다.",
+                }),
+              },
+              {
+                key: "AKAN_LOG_CANONICAL",
+                type: "0 | 1 | all | slow",
+                default: "0",
+                desc: l.trans({
+                  en: "One record per call at its end; 1 or all logs every call, slow only failed or slow ones.",
+                  ko: "호출이 끝날 때 레코드 하나를 씁니다. 1·all은 모든 호출을, slow는 실패했거나 느린 호출만 씁니다.",
+                }),
+              },
+              {
+                key: "AKAN_LOG_FLIGHT",
+                type: "0 | 1",
+                default: "0",
+                desc: l.trans({
+                  en: "Buffers each call's last 64 sub-level records; promotes them if it failed or ran slow.",
+                  ko: "호출마다 레벨 아래 레코드 최근 64건을 들고 있다가, 실패했거나 느리면 올립니다.",
+                }),
+              },
+              {
+                key: "AKAN_LOG_FLIGHT_MS",
+                type: "number",
+                default: "1000",
+                desc: l.trans({
+                  en: "A call at least this long is slow, for the flight recorder and the slow canonical mode.",
+                  ko: "이 시간 이상 걸린 호출을 느린 호출로 봅니다. flight recorder와 canonical의 slow 모드가 함께 씁니다.",
+                }),
+              },
+              {
+                key: "AKAN_LOG_FLIGHT_MAX",
+                type: "number",
+                default: "65536",
+                desc: l.trans({
+                  en: "Caps the records the process holds at once; a call past the cap runs unrecorded.",
+                  ko: "프로세스가 동시에 들고 있을 레코드 상한이고, 넘치면 그 호출은 기록 없이 진행합니다.",
+                }),
+              },
+              {
+                key: "AKAN_LOG_BUFFER",
+                type: "number",
+                default: "2000",
+                desc: l.trans({
+                  en: "How many records the in-memory hub keeps for akan logs and the SSE stream to replay.",
+                  ko: "akan logs와 SSE 스트림이 되돌려 보낼 수 있도록 메모리 허브가 들고 있는 레코드 수입니다.",
+                }),
+              },
+              {
+                key: "AKAN_LOG_BUFFER_MB",
+                type: "number",
+                default: "4",
+                desc: l.trans({
+                  en: "The same buffer's byte ceiling; whichever limit is reached first applies.",
+                  ko: "같은 버퍼의 바이트 상한이며, 둘 중 먼저 걸리는 쪽이 적용됩니다.",
+                }),
+              },
+              {
+                key: "AKAN_LOG_DEBUG_HEADER",
+                type: "string",
+                default: l.trans({ en: "unset — local only", ko: "미설정 — local에서만" }),
+                desc: l.trans({
+                  en: "The secret x-akan-debug must carry outside local to log that one request at trace.",
+                  ko: "local 밖에서 x-akan-debug 헤더가 이 비밀값을 담아야 그 요청 하나를 trace로 기록합니다.",
+                }),
+              },
+            ]}
+          />
           <div>
-            <div className="font-bold">{l.trans({ en: "Common setup scenarios", ko: "자주 쓰는 설정 예시" })}</div>
-            <div className="space-y-1">
-              <Code.Snippet
-                className="w-full"
-                title={l.trans({ en: "Build a feature locally", ko: "로컬에서 기능 개발" })}
-                language="bash"
-                code={`AKAN_PUBLIC_ENV=local
-AKAN_PUBLIC_OPERATION_MODE=local
-AKAN_PUBLIC_LOG_LEVEL=debug`}
-              />
-              <Code.Snippet
-                className="w-full"
-                title={l.trans({ en: "Reproduce with shared test data", ko: "공용 테스트 데이터로 재현" })}
-                language="bash"
-                code={`AKAN_PUBLIC_ENV=debug
-AKAN_PUBLIC_OPERATION_MODE=local
-AKAN_PUBLIC_LOG_LEVEL=debug`}
-              />
-              <Code.Snippet
-                className="w-full"
-                title={l.trans({ en: "Deploy production to cloud server", ko: "클라우드 서버에 프로덕션 배포" })}
-                language="bash"
-                code={`AKAN_PUBLIC_ENV=main
-AKAN_PUBLIC_OPERATION_MODE=cloud
-AKAN_PUBLIC_LOG_LEVEL=info`}
-              />
-              <Code.Snippet
-                className="w-full"
-                title={l.trans({ en: "Deploy production to edge server", ko: "엣지 서버에 프로덕션 배포" })}
-                language="bash"
-                code={`AKAN_PUBLIC_ENV=main
-AKAN_PUBLIC_OPERATION_MODE=edge
-AKAN_PUBLIC_LOG_LEVEL=info`}
-              />
-            </div>
-          </div>
-          <Docs.Alert type="info">
             {l.trans({
-              en: "A common setup is ENV=local and OPERATION_MODE=local while building features, then switching ENV to debug or develop when you need to test with shared data or shared services.",
-              ko: "일반적으로 기능을 만들 때는 ENV=local, OPERATION_MODE=local로 작업합니다. 데이터베이스 마이그레이션이나 서비스를 확인해야 할 때는 ENV를 debug 또는 develop으로 바꿔 테스트합니다.",
+              en: "The ring the gateway (or the solo replica) keeps for akan logs --replay and .trace holds AKAN_LOG_BUFFER records or AKAN_LOG_BUFFER_MB, 2,000 or 4 MB by default, whichever fills first, and the older record goes first.",
+              ko: "gateway(또는 단독 replica)가 akan logs --replay와 .trace를 위해 유지하는 링은 AKAN_LOG_BUFFER건 또는 AKAN_LOG_BUFFER_MB(기본 2,000건, 4MB) 중 먼저 차는 쪽까지 보관하고, 오래된 레코드부터 밀려납니다.",
             })}
-          </Docs.Alert>
+          </div>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -448,7 +562,7 @@ serverWsUri=wss://myapp-main.mydomain.com`}
           <Code.Snippet
             className="w-full"
             title="apps/myapp/main.ts"
-            code={`import { AkanApp } from "akanjs/server";
+            code={`import { AkanApp } from "akanjs/server/akanApp";
 
 const run = async () => {
   await new AkanApp("./server", { openapi: true }).start();
@@ -524,7 +638,7 @@ void run();`}
           <Code.Snippet
             className="w-full"
             title="apps/myapp/main.ts"
-            code={`import { AkanApp } from "akanjs/server";
+            code={`import { AkanApp } from "akanjs/server/akanApp";
 
 const run = async () => {
   await new AkanApp("./server", { modules: ["article"] }).start();
@@ -533,15 +647,25 @@ void run();`}
           />
           <div>
             {l.trans({
-              en: "Dependencies are followed for you, so you list entry points instead of the whole graph. A named module pulls in every service and signal it injects, and every model its cascade removes. The boot log prints what was mounted.",
-              ko: "의존성은 프레임워크가 따라가므로 전체 그래프가 아니라 진입점만 적으면 됩니다. 지정한 모듈은 자신이 주입하는 service와 signal, 그리고 cascade로 삭제하는 model을 함께 끌어옵니다. 무엇이 마운트되었는지는 부팅 로그에 표시됩니다.",
+              en: "Dependencies are followed for you, so you list entry points instead of the whole graph. A named module pulls in every service and signal it injects, and every model its cascade removes.",
+              ko: "의존성은 프레임워크가 따라가므로 전체 그래프가 아니라 진입점만 적으면 됩니다. 지정한 모듈은 자신이 주입하는 service와 signal, 그리고 cascade로 삭제하는 model을 함께 끌어옵니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "disableModules and disableLibs are the same idea from the other end: mount everything except what you name and whatever reaches it. disableModules takes module names, disableLibs takes the name of a library and stands for every module that library registered, so it does not drift as the library gains modules. Reach for either when the process serves most of the app and a library it depends on is one it does not use. Both are accepted in all three places modules is, as AKAN_DISABLE_MODULES and AKAN_DISABLE_LIBS in the environment. Naming a module in both modules and an exclusion leaves it out, because modules says what a process is for and the exclusions say what it must not run.",
+              ko: "disableModules와 disableLibs는 같은 발상을 반대편에서 적용합니다. 지정한 대상과 그것을 참조하는 모듈만 빼고 나머지를 전부 마운트합니다. disableModules는 모듈 이름을, disableLibs는 라이브러리 이름을 받아 그 라이브러리가 등록한 모듈 전부를 뜻하므로 라이브러리에 모듈이 추가되어도 목록이 어긋나지 않습니다. 프로세스가 앱 대부분을 담당하는데 의존하는 라이브러리 중 쓰지 않는 것이 있을 때 씁니다. 둘 다 modules와 같은 세 곳에서 쓸 수 있고, 환경변수 이름은 AKAN_DISABLE_MODULES와 AKAN_DISABLE_LIBS입니다. modules와 제외 옵션에 같은 모듈을 적으면 빠집니다. modules는 이 프로세스가 무엇을 위한 것인지를, 제외 옵션은 무엇을 실행하면 안 되는지를 말하기 때문입니다.",
             })}
           </div>
           <Code.Snippet
             className="w-full"
-            title={l.trans({ en: "Boot log", ko: "부팅 로그" })}
-            language="bash"
-            code={`[DiLifecycle] INFO  Mounting 3 of 12 module(s): article, file, user`}
+            title="apps/myapp/main.ts"
+            code={`import { AkanApp } from "akanjs/server/akanApp";
+
+const run = async () => {
+  await new AkanApp("./server", { disableLibs: ["social"], disableModules: ["legacyImport"] }).start();
+};
+void run();`}
           />
           <div className="space-y-1">
             {[
@@ -581,8 +705,8 @@ void run();`}
           </div>
           <Docs.Alert type="warning">
             {l.trans({
-              en: "A name no module registered fails the boot instead of being ignored, so a typo cannot quietly drop a module. Selection narrows the enabled set rather than replacing it, so it never turns on a module whose service is disabled. Endpoints of a module left out do not exist, so a client that calls one gets a 404.",
-              ko: "등록되지 않은 이름은 무시되지 않고 부팅을 실패시키므로, 오타 때문에 모듈이 조용히 빠지는 일은 없습니다. 선택은 활성화된 모듈 집합을 좁힐 뿐이라 service가 비활성화된 모듈을 켜지는 않습니다. 빠진 모듈의 endpoint는 존재하지 않으므로 클라이언트가 호출하면 404가 됩니다.",
+              en: "Selection narrows the enabled set rather than replacing it, so it never turns on a module whose service is disabled. A module that reaches a disabled one goes with it. Endpoints of a module left out do not exist, so a client that calls one gets a 404.",
+              ko: "선택은 활성화된 모듈 집합을 좁힐 뿐이라 service가 비활성화된 모듈을 켜지는 않습니다. 빠진 모듈을 참조하는 모듈은 함께 빠집니다. 빠진 모듈의 endpoint는 존재하지 않으므로 클라이언트가 호출하면 404가 됩니다.",
             })}
           </Docs.Alert>
         </Docs.Description>
@@ -657,16 +781,30 @@ AKAN_LOG_MAX_FILES=100`}
               </div>
             </div>
           </div>
-          <Docs.Mermaid
-            title="Runtime checks"
-            chart={`flowchart LR
-  developer[Developer] --> gateway["Akan App<br/>(gateway or solo)"]
-  gateway --> health["/_akan/app/health"]
-  gateway --> metrics["/_akan/app/metrics"]
-  gateway --> logs["Terminal Logs"]
-  health --> status["Running / Ready"]
-  metrics --> numbers["Requests, Sockets, Memory"]
-  logs --> details["Debug Details"]`}
+          <Docs.Flow
+            title={l.trans({ en: "Runtime checks", ko: "런타임 점검" })}
+            nodes={{
+              developer: { label: l.trans({ en: "Developer", ko: "개발자" }) },
+              gateway: {
+                label: l.trans({ en: "Akan App", ko: "Akan 앱" }),
+                lines: [l.trans({ en: "(gateway or solo)", ko: "(게이트웨이 또는 솔로)" })],
+              },
+              health: { label: "/_akan/app/health" },
+              metrics: { label: "/_akan/app/metrics" },
+              logs: { label: l.trans({ en: "Terminal Logs", ko: "터미널 로그" }) },
+              status: { label: l.trans({ en: "Running / Ready", ko: "실행 중 / 준비 완료" }) },
+              numbers: { label: l.trans({ en: "Requests, Sockets, Memory", ko: "요청, 소켓, 메모리" }) },
+              details: { label: l.trans({ en: "Debug Details", ko: "디버그 상세" }) },
+            }}
+            edges={[
+              ["developer", "gateway"],
+              ["gateway", "health"],
+              ["gateway", "metrics"],
+              ["gateway", "logs"],
+              ["health", "status"],
+              ["metrics", "numbers"],
+              ["logs", "details"],
+            ]}
           />
           <Docs.Alert type="info">
             {l.trans({
@@ -679,4 +817,4 @@ AKAN_LOG_MAX_FILES=100`}
       <DocsToc />
     </Scroll>
   );
-}
+});

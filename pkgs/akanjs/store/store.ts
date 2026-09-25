@@ -34,6 +34,7 @@ import {
   createWritableStateBuilder,
   type DerivedStateBuilder,
   type DerivedStateOf,
+  draftMetaOf,
   mergeDerivedMeta,
   resolveDerivedState,
   resolveWritableState,
@@ -217,6 +218,8 @@ export function store<Sig extends ClientSignal<any, any, any> | string, State>(
     };
     Object.assign(storeCls[STATE_META], signalState);
     Object.assign(storeCls[STATE_INIT_META], createStateInitializerMap(signalState));
+    const draftMeta = draftMetaOf(refName);
+    storeCls[STATE_DERIVED_META].drafts[draftMeta.formKey] = draftMeta;
     const actions = {
       ...makeFormSetter(refName, signal.fetch),
       ...makeActions(refName, signal.serializedSignal.slice ?? {}, signal.fetch),
@@ -236,7 +239,7 @@ export function store<Sig extends ClientSignal<any, any, any> | string, State>(
     Object.assign(storeCls[STATE_META], derived.shape);
     storeCls[STATE_DERIVED_META] = mergeDerivedMeta(storeCls[STATE_DERIVED_META], derived.meta);
   }
-  return storeCls as any;
+  return storeCls as any; // the declared return is a generic instantiation built from this call's own type arguments, so there is no `T` to name
 }
 
 const isStoreCls = (value: unknown): value is StoreCls =>

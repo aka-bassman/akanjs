@@ -5,7 +5,7 @@ import { createOverridable } from "../UiOverride";
 export interface MenuRow {
   name: string;
   description?: string;
-  /** The argument names a prompt takes, shown so a user knows what to type after the name. */
+  /** The argument names a row takes, shown so a user knows what to type after the name. */
   hint?: string;
   pick: () => void;
 }
@@ -15,11 +15,13 @@ export interface MenuProps {
   rows: MenuRow[];
   /** Index the arrows are on. Enter picks it and Tab completes its name, so it has to be visible. */
   selected: number;
+  /** What the rows are being typed after, so a name reads as the thing the user is completing. */
+  prefix?: string;
   onPick: (row: MenuRow) => void;
 }
 
-/** The `/` menu: this chat's own commands first, then the app's `prompt()` endpoints. */
-export const DefaultMenu = ({ className, rows, selected, onPick }: MenuProps) => {
+/** The composer's completion list: the chat's own `/` commands, or the `@` menu's reference rows. */
+export const DefaultAgentMenu = ({ className, rows, selected, prefix = "/", onPick }: MenuProps) => {
   if (!rows.length) return null;
   return (
     <div
@@ -41,7 +43,10 @@ export const DefaultMenu = ({ className, rows, selected, onPick }: MenuProps) =>
           role="option"
           type="button"
         >
-          <span className="shrink-0 font-mono text-xs">/{row.name}</span>
+          <span className="shrink-0 font-mono text-xs">
+            {prefix}
+            {row.name}
+          </span>
           {row.hint ? <span className="shrink-0 font-mono text-[10px] text-foreground/40">{row.hint}</span> : null}
           {row.description ? (
             <span className="ml-auto truncate text-[10px] text-foreground/50">{row.description}</span>
@@ -52,4 +57,4 @@ export const DefaultMenu = ({ className, rows, selected, onPick }: MenuProps) =>
   );
 };
 
-export default createOverridable("AgentMenu", DefaultMenu);
+export default createOverridable("AgentMenu", DefaultAgentMenu);

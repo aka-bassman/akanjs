@@ -1,0 +1,16 @@
+set -e
+
+# Find commit files
+echo "Finding commit files..."
+FILES=$(git diff --cached --name-only --diff-filter=ACMR | sed 's| |\\ |g')
+[ -z "$FILES" ] && exit 0
+
+# Filter out ts, tsx, json files, should not exit when there are no lint files
+LINT_FILES=$(echo "$FILES" | grep -E '(\.ts|\.tsx)$' || true)
+
+echo "Checking commit files with Biome..."
+# Run Biome autofix if there are lint files. Any remaining errors fail the commit.
+if [ -n "$LINT_FILES" ]; then
+  echo "$LINT_FILES" | xargs ./node_modules/.bin/biome check --write --no-errors-on-unmatched --diagnostic-level=error
+  echo "$LINT_FILES" | xargs git add --
+fi

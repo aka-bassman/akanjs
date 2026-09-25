@@ -32,6 +32,8 @@ export interface CsrLinkProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
   activeExact?: boolean;
   /** Scroll to the top after client-side navigation. */
   scrollToTop?: boolean;
+  /** Bypass route cache for client-side navigation when supported by the renderer. */
+  noCache?: boolean;
 }
 
 export interface SsrLinkProps

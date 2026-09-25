@@ -4,49 +4,42 @@ interface Dict {
   Model: string;
   model: string;
   appName: string;
+  clientPath: string;
 }
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dict) {
   return {
     filename: "_index.tsx",
     content: `
-import { ${dict.Model}, fetch, usePage } from "@apps/${dict.appName}/client";
-import { Link } from "akanjs/ui";
-import type { PageConfig } from "akanjs/client";
+import { ${dict.Model}, fetch, usePage } from "${dict.clientPath}";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+import { buttonRecipe, Link } from "akanjs/ui";
 
-interface PageProps {
-  params: { ${dict.model}Id: string };
-}
-
-export async function generateHead({ params }: PageProps) {
-  const { ${dict.model}Id } = params;
-  const { ${dict.model} } = await fetch.view${dict.Model}(${dict.model}Id);
-  return (
+export default page()
+  .param("${dict.model}Id", ID)
+  .config({ transition: "none" })
+  .head(({ ${dict.model}Id }) => (
     <>
-      <title>{${dict.model}.id}</title>
-      <meta name="description" content={${dict.model}.id} />
-      <meta property="og:title" content={${dict.model}.id} />
-      <meta property="og:description" content={${dict.model}.id} />
+      <title>{${dict.model}Id}</title>
+      <meta name="description" content={${dict.model}Id} />
+      <meta property="og:title" content={${dict.model}Id} />
+      <meta property="og:description" content={${dict.model}Id} />
     </>
-  );
-}
-export default async function Page({ params }: PageProps) {
-  const { l } = usePage();
-  const { ${dict.model}Id } = params;
-  const { ${dict.model}, ${dict.model}View } = await fetch.view${dict.Model}(${dict.model}Id);
-  return (
-    <div className="container flex flex-col gap-4">
-      <div className="flex gap-4 font-bold text-lg items-center">
-        <${dict.Model}.Zone.View view={${dict.model}View} />
-        <Link href={\`/${dict.model}/\${${dict.model}.id}/edit\`}>
-          <button className="inline-flex items-center justify-center gap-2 rounded-field bg-primary px-4 py-2 font-medium text-primary-foreground text-sm transition-colors hover:bg-primary/90">
+  ))
+  .render(async ({ ${dict.model}Id }) => {
+    const { l } = usePage();
+    const [{ ${dict.model}, ${dict.model}View }] = await Promise.all([fetch.view${dict.Model}(${dict.model}Id)]);
+    return (
+      <div className="container flex flex-col gap-4">
+        <div className="flex items-center gap-4 font-bold text-lg">
+          <${dict.Model}.Zone.View view={${dict.model}View} />
+          <Link className={buttonRecipe()} href={\`/${dict.model}/\${${dict.model}.id}/edit\`}>
             {l("base.updateModel", { model: l("${dict.model}.modelName") })}
-          </button>
-        </Link>
+          </Link>
+        </div>
       </div>
-    </div>
-  );
-}
-export const pageConfig = { transition: "none" } satisfies PageConfig;
+    );
+  });
 `,
   };
 }

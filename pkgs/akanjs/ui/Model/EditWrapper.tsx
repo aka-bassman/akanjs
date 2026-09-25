@@ -7,6 +7,7 @@ import { st } from "akanjs/store";
 import type { ReactNode } from "react";
 
 import { agentAttrs } from "../agentAttrs";
+import { type DraftProp, editDraftScope } from "./draftScope";
 
 interface EditWrapperProps {
   className?: string;
@@ -16,6 +17,8 @@ interface EditWrapperProps {
   modal?: string | null;
   disabled?: boolean;
   resets?: string[] | null;
+  /** Draft recovery for the form this opens. `false` turns it off; a string names the scope explicitly. */
+  draft?: DraftProp;
 }
 
 export default function EditWrapper({
@@ -26,6 +29,7 @@ export default function EditWrapper({
   modal,
   disabled,
   resets,
+  draft,
 }: EditWrapperProps) {
   const { refName, sliceName } = slice;
   const modelName = refName;
@@ -41,7 +45,7 @@ export default function EditWrapper({
     .desc(`Open one ${modelName} in the edit form.`)
     .arg("modelId", ID)
     .exec((id) => {
-      void storeDo[names.editModel](id, { modal });
+      void storeDo[names.editModel](id, { modal, draftScope: editDraftScope(draft, id) });
       resets?.forEach((reset) => {
         void storeDo[`reset${capitalize(reset)}`]();
       });

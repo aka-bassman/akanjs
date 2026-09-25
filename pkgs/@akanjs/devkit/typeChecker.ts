@@ -208,7 +208,7 @@ export class TypeChecker {
     try {
       const { diagnostics } = this.check(filePath);
       return diagnostics.length === 0;
-    } catch (error) {
+    } catch (_error) {
       return false;
     }
   }

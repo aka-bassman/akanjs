@@ -34,6 +34,7 @@ Akan.js is a Bun-first full-stack TypeScript framework where business definition
 - Runtime And Infra: /llms/pages/docs/arch/infra.md
 - Mobile App Architecture: /llms/pages/docs/arch/mobile.md
 - Architecture Overview: /llms/pages/docs/arch/overview.md
+- UI Composition: /llms/pages/docs/arch/ui-composition.md
 - App Config: /llms/pages/docs/core/config.md
 - Data Layer: /llms/pages/docs/core/data-layer.md
 - File Rule: /llms/pages/docs/core/file-rule.md
@@ -54,7 +55,8 @@ Akan.js is a Bun-first full-stack TypeScript framework where business definition
 - akanjs/webkit: /llms/pages/references/akanjs/webkit.md
 - Agent: /llms/pages/references/cli/agent.md
 - Application: /llms/pages/references/cli/application.md
-- Cloud: /llms/pages/references/cli/cloud.md
+- Cloud CLI: /llms/pages/references/cli/cloud.md
+- Code CLI: /llms/pages/references/cli/code.md
 - Context: /llms/pages/references/cli/context.md
 - Guideline: /llms/pages/references/cli/guideline.md
 - Library: /llms/pages/references/cli/library.md
@@ -62,7 +64,11 @@ Akan.js is a Bun-first full-stack TypeScript framework where business definition
 - Commands: /llms/pages/references/cli/overview.md
 - Package: /llms/pages/references/cli/package.md
 - Page: /llms/pages/references/cli/page.md
+- Primitive: /llms/pages/references/cli/primitive.md
+- Quality: /llms/pages/references/cli/quality.md
 - Scalar: /llms/pages/references/cli/scalar.md
+- Tunnel CLI: /llms/pages/references/cli/tunnel.md
+- Workflow: /llms/pages/references/cli/workflow.md
 - Workspace: /llms/pages/references/cli/workspace.md
 
 ## Agent Notes

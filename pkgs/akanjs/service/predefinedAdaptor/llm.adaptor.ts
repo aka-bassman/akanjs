@@ -24,6 +24,24 @@ export interface AgentWireAttachment {
   data?: string;
   url?: string;
   text?: string;
+  /** The host's own handle on this file, carried so a relay can act on it. A provider mapping ignores it. */
+  ref?: string;
+}
+
+/**
+ * Data the caller pointed at while writing one message, rather than a file they attached. `value` is a snapshot
+ * taken when the message was sent and already masked by the host — the server has no model class to mask it with,
+ * so what the browser staged is what leaves. `refName`/`refId`/`path` are the way back to the current value, which
+ * is why they travel even when the value itself does not.
+ */
+export interface AgentWireReference {
+  refName: string;
+  refId: string;
+  label: string;
+  path?: string;
+  value?: unknown;
+  /** Read by the model in place of a value there is none of — clipped, unreadable, or gone from a restored chat. */
+  note?: string;
 }
 
 /**
@@ -34,6 +52,7 @@ export interface AgentWireMessage {
   role: "user" | "assistant" | "tool";
   text?: string;
   attachments?: AgentWireAttachment[];
+  references?: AgentWireReference[];
   toolCalls?: AgentWireToolCall[];
   toolResults?: AgentWireToolResult[];
   error?: string;
@@ -66,7 +85,13 @@ export interface LlmTurnRequest {
 export interface LlmTurnAnswer {
   text?: string;
   toolCalls?: AgentWireToolCall[];
-  stop: "end" | "toolUse";
+  /**
+   * Why the turn ended. `"length"` is the provider's ceiling — `finish_reason: "length"`, `stop_reason:
+   * "max_tokens"` — and it is distinguished from `"end"` because the two are indistinguishable downstream
+   * otherwise: a truncated answer reads as a complete one, and a turn cut off mid tool call carries no complete
+   * call at all, so it would end the loop looking exactly like a model that chose to stop.
+   */
+  stop: "end" | "toolUse" | "length";
 }
 
 /**
@@ -106,10 +131,48 @@ export interface LlmAccepts {
 /**
  * Settings for whichever adaptor fills `LlmAdaptorRole`, registered with `option.setLlm(...)` and injected as the
  * `llmOption` use. It belongs to the role rather than to one provider: swapping the default for another `adapt()`
- * class re-reads the same three fields under that provider's own defaults.
+ * class re-reads the same fields under that provider's own defaults.
+ *
+ * It is the floor, not the whole shape. `setLlm` keeps whatever else it is handed, so an adaptor an app or a
+ * library wrote declares its own interface extending this one and reads it with `use<MyLlmOption>()` — a region,
+ * a project id, a deployment name reach it through the same channel the fields below do, instead of a second
+ * `option.use({...})` key beside it.
  */
 export interface LlmOption {
   apiKey?: string;
   model?: string;
   host?: string;
+  /**
+   * What the *configured* model reads beyond text, overriding what the adaptor claims for its provider. It rides
+   * beside `model` because that is what capability belongs to: an adaptor answers for an API, and one API serves
+   * models that differ. Declared here rather than as a table the framework keeps, because a table is a claim about
+   * models that ship after it and goes quietly wrong — and getting this wrong is the worst failure available, a
+   * provider handed bytes it cannot decode either refusing the turn or accepting it having seen nothing.
+   */
+  accepts?: LlmAccepts;
+  /**
+   * The answer ceiling, for an API that requires one. A fixed default is a hazard on a model that thinks before
+   * it writes: the budget goes on reasoning and the turn comes back empty with a length stop, which reads as the
+   * model refusing rather than as a number being too small.
+   *
+   * Sampling knobs are deliberately absent from this option. They are the one place a per-model difference is a
+   * hard failure rather than a nuance — `temperature` is a 400 on some models rather than an ignored field — so
+   * the role carries nothing it would have to guess the legality of per model.
+   */
+  maxTokens?: number;
 }
+
+/**
+ * What the chat prints as the party that refused a turn, carried on `agent.error.llmRequestFailed`.
+ *
+ * It is the host rather than the adaptor's own name because one adaptor speaks one dialect to whatever host it
+ * is pointed at — an OpenAI-dialect class aimed at a gateway would otherwise credit OpenAI for that gateway's
+ * refusal. A host that is not a URL is printed as written; there is nothing better to say about it.
+ */
+export const llmProviderOf = (host: string): string => {
+  try {
+    return new URL(host).hostname;
+  } catch {
+    return host;
+  }
+};

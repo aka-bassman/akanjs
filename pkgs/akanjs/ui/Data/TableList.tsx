@@ -140,7 +140,7 @@ export default function TableList<
         <Loading.Skeleton className="rounded-box border border-border bg-card p-4" active />
       ) : (
         <Table
-          dataSource={[...modelList] as any[]}
+          dataSource={[...modelList] as unknown[]}
           columns={cols}
           loading={!!modelListLoading}
           bordered

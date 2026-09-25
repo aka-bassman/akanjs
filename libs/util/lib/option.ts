@@ -8,6 +8,7 @@ import type {
   PushNotificationServerOptions,
 } from "@libs/util/srvkit";
 import {
+  assertJwtSecretConfigured,
   BlobStorageApi,
   CloudflareApi,
   DiscordApi,
@@ -107,6 +108,7 @@ export const option = new AkanOption<ModulesOptions>().use((options) => {
   const privStorageApi = options.privateStorage
     ? new ObjectStorageApi(env.appName, options.privateStorage)
     : storageApi;
+  assertJwtSecretConfigured({ operationMode: env.operationMode, configuredSecret: options.security?.jwtSecret });
   return {
     cloudflareApi: options.cloudflare ? new CloudflareApi(options.cloudflare) : null,
     emailApi: options.mailer ? new EmailApi(options.mailer) : null,

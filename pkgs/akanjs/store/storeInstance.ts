@@ -1,6 +1,7 @@
-import { ACTION_META, ACTION_OWNER_META, STATE_DERIVED_META, STATE_INIT_META } from "akanjs/base";
+import { ACTION_META, ACTION_OWNER_META, getEnv, STATE_DERIVED_META, STATE_INIT_META } from "akanjs/base";
 import { Translator } from "akanjs/client";
-import { capitalize, Logger, parseAkanI18nEnv } from "akanjs/common";
+import { loadCapacitorApp } from "akanjs/client/capacitor";
+import { capitalize, type DynamicRecord, Logger, parseAkanI18nEnv } from "akanjs/common";
 import { ConstantRegistry } from "akanjs/constant";
 import type { SerializedArg } from "akanjs/signal";
 import { enableMapSet, produce } from "immer";
@@ -8,16 +9,20 @@ import type { RefObject } from "react";
 import { useScopePath } from "use-agentic";
 import { type ActionOwner, actionTagOf, tagAction } from "./actionTag";
 import { useFormTools } from "./agentic/useFormTools";
+import { DraftStore } from "./draftStore";
 import { useEffect, useRef, useSyncExternalStore } from "./hooks";
 import type { RootStoreCls } from "./rootStore";
 import type { SliceActionKey, SliceActionRole, SliceStateRole } from "./sliceRole";
-import type { SliceStateKey } from "./state";
+import type { DraftState, SliceStateKey } from "./state";
 import { evaluateInitializers, type SearchParamsState, type StateDerivedMeta } from "./stateBuilder";
 import type { StoreUseOptions } from "./types";
 
 enableMapSet();
 
 type StoreStateRecord = Record<string, unknown>;
+
+/** Long enough that a burst of typing is one write, short enough that a route change lands what came before it. */
+const DRAFT_DEBOUNCE_MS = 400;
 type StoreAction = (...args: unknown[]) => unknown;
 type TranslationParam = Record<string, string | number>;
 
@@ -55,7 +60,9 @@ export type ReactAPI = {
 export class StoreInstance {
   #state: StoreStateRecord = {};
   #listeners = new Set<() => void>();
-  #derivedMeta: StateDerivedMeta = { persistSession: {}, search: {}, computed: {}, derivedKeys: new Set() };
+  #derivedMeta: StateDerivedMeta = { drafts: {}, persistSession: {}, search: {}, computed: {}, derivedKeys: new Set() };
+  #draftTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  #draftFlushBound = false;
 
   get = (): StoreStateRecord => this.#state;
 
@@ -69,6 +76,7 @@ export class StoreInstance {
     this.#assertNoDerivedMutation(stateOrUpdater);
     this.#state = this.#materializeDerived(this.#state, prev);
     this.#syncPersistSession(prev, this.#state);
+    this.#syncDrafts(prev, this.#state);
     this.#notify();
   };
 
@@ -373,8 +381,8 @@ export class StoreInstance {
         Logger.verbose(`${k} action loading...`);
         const start = Date.now();
         try {
-          // action can return the result, but it is restricted to undefined, because of maintainability concerns
-          const result = await (this.#ctx[k] as StoreAction)(...args);
+          // An action's return is unreachable by design (`no-return-in-store-action.grit`), so it is not read.
+          await (this.#ctx[k] as StoreAction)(...args);
           Logger.verbose(`=> ${k} action dispatched (${Date.now() - start}ms)`);
         } catch (error) {
           this.#showActionErrorMessage(k, error);
@@ -428,6 +436,8 @@ export class StoreInstance {
       modelStaleAt: `${fieldName}StaleAt`,
       pageOfModel: `pageOf${className}`,
       limitOfModel: `limitOf${className}`,
+      hasMoreOfModel: `hasMoreOf${className}`,
+      isCumulativeOfModel: `isCumulativeOf${className}`,
       queryArgsOfModel: `queryArgsOf${className}`,
       sortOfModel: `sortOf${className}`,
       modelSelection: `${fieldName}Selection`,
@@ -435,10 +445,12 @@ export class StoreInstance {
       refreshModel: `refresh${className}`,
       selectModel: `select${className}`,
       setPageOfModel: `setPageOf${className}`,
-      addPageOfModel: `addPageOf${className}`,
+      loadMoreOfModel: `loadMoreOf${className}`,
       setLimitOfModel: `setLimitOf${className}`,
       setQueryArgsOfModel: `setQueryArgsOf${className}`,
       setSortOfModel: `setSortOf${className}`,
+      applyLiveModel: `applyLive${className}`,
+      watchLiveModel: `watchLive${className}`,
       lastPageOfModel: `lastPageOf${className}`,
     };
     const SliceName = capitalize(sliceName);
@@ -453,6 +465,8 @@ export class StoreInstance {
       lastPageOfModel: SliceName.replace(names.Model, names.lastPageOfModel),
       pageOfModel: SliceName.replace(names.Model, names.pageOfModel),
       limitOfModel: SliceName.replace(names.Model, names.limitOfModel),
+      hasMoreOfModel: SliceName.replace(names.Model, names.hasMoreOfModel),
+      isCumulativeOfModel: SliceName.replace(names.Model, names.isCumulativeOfModel),
       queryArgsOfModel: SliceName.replace(names.Model, names.queryArgsOfModel),
       sortOfModel: SliceName.replace(names.Model, names.sortOfModel),
       modelSelection: SliceName.replace(names.Model, names.modelSelection),
@@ -462,10 +476,12 @@ export class StoreInstance {
       refreshModel: SliceName.replace(names.Model, names.refreshModel),
       selectModel: SliceName.replace(names.Model, names.selectModel),
       setPageOfModel: SliceName.replace(names.Model, names.setPageOfModel),
-      addPageOfModel: SliceName.replace(names.Model, names.addPageOfModel),
+      loadMoreOfModel: SliceName.replace(names.Model, names.loadMoreOfModel),
       setLimitOfModel: SliceName.replace(names.Model, names.setLimitOfModel),
       setQueryArgsOfModel: SliceName.replace(names.Model, names.setQueryArgsOfModel),
       setSortOfModel: SliceName.replace(names.Model, names.setSortOfModel),
+      applyLiveModel: SliceName.replace(names.Model, names.applyLiveModel),
+      watchLiveModel: SliceName.replace(names.Model, names.watchLiveModel),
     };
 
     const targetSlice: {
@@ -513,7 +529,7 @@ export class StoreInstance {
       );
     };
 
-    (this.slice as any)[sliceName] = targetSlice;
+    (this.slice as unknown as DynamicRecord)[sliceName] = targetSlice;
   }
 
   #notify() {
@@ -522,6 +538,7 @@ export class StoreInstance {
 
   #mergeDerivedMeta(meta?: StateDerivedMeta) {
     if (!meta) return;
+    Object.assign(this.#derivedMeta.drafts, meta.drafts);
     Object.assign(this.#derivedMeta.persistSession, meta.persistSession);
     Object.assign(this.#derivedMeta.search, meta.search);
     Object.assign(this.#derivedMeta.computed, meta.computed);
@@ -557,6 +574,97 @@ export class StoreInstance {
         Logger.warn(`Failed to persist ${meta.kind} state ${key}: ${String(error)}`);
       }
     }
+  }
+
+  /**
+   * Schedules a save of every open form whose value moved.
+   *
+   * A form is only saved while `<model>Draft.key` is armed — `new<Model>` / `edit<Model>` arm it and a submit or
+   * reset disarms it — so a store that never opened a form writes nothing. The dirty comparison happens in the
+   * flush rather than here: it encodes the whole form, and a keystroke is not worth that.
+   *
+   * The debounce belongs to the store, not to a component, so an editor that unmounts mid-window still lands its
+   * last write. Only a closing tab can outrun it, which is what the flush listeners answer.
+   */
+  #syncDrafts(prev: StoreStateRecord, next: StoreStateRecord) {
+    if (typeof window === "undefined") return;
+    for (const meta of Object.values(this.#derivedMeta.drafts)) {
+      const draft = next[meta.draftKey] as DraftState | null;
+      if (!draft?.key) {
+        this.#cancelDraftTimer(meta.formKey);
+        continue;
+      }
+      if (Object.is(prev[meta.formKey], next[meta.formKey])) continue;
+      // Opening a form, applying a draft, restoring one and discarding one all write the form and the draft slot
+      // in a single `set`. None of them is the user typing: scheduling them would re-stamp `savedAt` on a draft
+      // nobody touched, and the one at open would race the read that is about to offer the saved form back.
+      if (!Object.is(prev[meta.draftKey], next[meta.draftKey])) continue;
+      this.#armDraftFlush();
+      this.#cancelDraftTimer(meta.formKey);
+      this.#draftTimers.set(
+        meta.formKey,
+        setTimeout(() => {
+          this.#draftTimers.delete(meta.formKey);
+          void this.#writeDraft(meta.refName, meta.formKey, meta.draftKey);
+        }, DRAFT_DEBOUNCE_MS),
+      );
+    }
+  }
+
+  #cancelDraftTimer(formKey: string) {
+    const timer = this.#draftTimers.get(formKey);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.#draftTimers.delete(formKey);
+  }
+
+  async #writeDraft(refName: string, formKey: string, draftKey: string) {
+    const draft = this.#state[draftKey] as DraftState | null;
+    const form = this.#state[formKey] as object | null;
+    if (!draft?.key || !form) return;
+    try {
+      const hash = DraftStore.formHash(refName, form);
+      // Back at the value it was opened with — including a restored draft the user then undid — so there is
+      // nothing to come back to and a leftover record would offer to restore what is already on screen.
+      if (hash === draft.baseHash) {
+        await DraftStore.remove(draft.key);
+        return;
+      }
+      await DraftStore.write(draft.key, {
+        v: 1,
+        savedAt: new Date().toISOString(),
+        baseUpdatedAt: draft.baseUpdatedAt,
+        form: DraftStore.encodeForm(refName, form),
+      });
+    } catch (error) {
+      Logger.warn(`Failed to save the ${refName} form draft: ${String(error)}`);
+    }
+  }
+
+  /** Lands every pending write before the page or the app goes away. */
+  flushDrafts = () => {
+    for (const [formKey, timer] of this.#draftTimers) {
+      clearTimeout(timer);
+      const meta = this.#derivedMeta.drafts[formKey];
+      if (meta) void this.#writeDraft(meta.refName, meta.formKey, meta.draftKey);
+    }
+    this.#draftTimers.clear();
+  };
+
+  #armDraftFlush() {
+    if (this.#draftFlushBound || typeof window === "undefined") return;
+    this.#draftFlushBound = true;
+    const onHide = () => {
+      if (document.visibilityState === "hidden") this.flushDrafts();
+    };
+    // `pagehide` is the one a bfcache navigation and an iOS tab teardown both fire; `beforeunload` is not.
+    window.addEventListener("pagehide", this.flushDrafts);
+    document.addEventListener("visibilitychange", onHide);
+    // iOS can suspend a webview without ever firing a page event, so the native lifecycle is the only warning.
+    if (getEnv().renderMode === "csr")
+      void loadCapacitorApp()
+        .then(({ App }) => App.addListener("pause", this.flushDrafts))
+        .catch(() => undefined);
   }
 
   #materializeDerived(next: StoreStateRecord, prev: StoreStateRecord) {

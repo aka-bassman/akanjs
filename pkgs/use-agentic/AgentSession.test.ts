@@ -4,6 +4,7 @@ import { AgenticSurface } from "./AgenticSurface";
 import { AgentProgress } from "./AgentProgress";
 import { AgentSession } from "./AgentSession";
 import { Compaction } from "./Compaction";
+import { Reference } from "./Reference";
 import { ToolOutput } from "./ToolOutput";
 import { Transcript } from "./Transcript";
 import type { AgentRunner, ChatMessage, RunnerEvent, RunnerRequest } from "./types";
@@ -31,6 +32,49 @@ const until = async (predicate: () => boolean) => {
 };
 
 describe("AgentSession", () => {
+  // The gap between two tool calls is a whole model turn, so anything a host draws per call keeps stopping inside
+  // a turn that never stopped. This is the boundary it measures instead.
+  test("a turn reports its own start and end, once each, around every call it makes", async () => {
+    const surface = new AgenticSurface();
+    surface.registerTool([], {
+      name: "save",
+      description: "save",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+      run: () => "saved",
+    });
+    const { runner } = scripted(
+      [
+        { type: "toolCall", id: "c1", name: "save", args: {} },
+        { type: "done", stop: "toolUse" },
+      ],
+      [
+        { type: "text", delta: "done" },
+        { type: "done", stop: "end" },
+      ],
+    );
+    const seen: string[] = [];
+    const session = new AgentSession(surface, runner, {
+      onTurn: (running) => seen.push(running ? "turn:start" : "turn:end"),
+      onActivity: (event) => seen.push(`call:${event.phase}`),
+    });
+    await session.send("save it");
+    expect(seen).toEqual(["turn:start", "call:start", "call:end", "turn:end"]);
+  });
+
+  test("summarizing the transcript is not a turn a host draws the agent working in", async () => {
+    const surface = new AgenticSurface();
+    const { runner } = scripted([
+      { type: "text", delta: "a summary" },
+      { type: "done", stop: "end" },
+    ]);
+    const seen: boolean[] = [];
+    const session = new AgentSession(surface, runner, { onTurn: (running) => seen.push(running) });
+    await session.send("hi");
+    seen.length = 0;
+    await session.compact({ keep: 0 });
+    expect(seen).toEqual([]);
+  });
+
   test("a text-only turn lands as one streamed assistant message", async () => {
     const surface = new AgenticSurface();
     const { runner, requests } = scripted([
@@ -45,6 +89,62 @@ describe("AgentSession", () => {
     expect(session.isRunning).toBe(false);
     expect(requests[0].instructions).toBe("Be brief");
     expect(requests[0].messages.map((message) => message.role)).toEqual(["user"]);
+  });
+
+  test("a turn the provider cut off is recorded as incomplete, not read as a final answer", async () => {
+    const surface = new AgenticSurface();
+    const { runner } = scripted([
+      { type: "text", delta: "Half a sen" },
+      { type: "done", stop: "length" },
+    ]);
+    const session = new AgentSession(surface, runner);
+    await session.send("summarize this");
+    expect(session.messages[1].text).toBe("Half a sen");
+    expect(session.messages[1].error).toContain("ran out of room mid-answer");
+    expect(session.isRunning).toBe(false);
+  });
+
+  test("a call the cut-off turn did make is closed rather than run, since the next one never arrived", async () => {
+    const surface = new AgenticSurface();
+    const ran: string[] = [];
+    surface.registerTool([], { name: "approveTask", run: (args) => void ran.push(String(args.id)) });
+    const { runner, requests } = scripted([
+      { type: "toolCall", id: "c1", name: "approveTask", args: { id: "t1" } },
+      { type: "done", stop: "length" },
+    ]);
+    const session = new AgentSession(surface, runner);
+    await session.send("approve them all");
+    // Not run: the turn was cut off, so the batch it finished is half an intention. Answered all the same —
+    // an unanswered call is the one shape every provider dialect refuses on the next post.
+    expect(ran).toEqual([]);
+    expect(session.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"]);
+    expect(session.messages[2].toolResults?.[0].error).toBeTruthy();
+    expect(requests).toHaveLength(1);
+  });
+
+  test("a batch that changed one resource eight times posts it once, as it finally stands", async () => {
+    const surface = new AgenticSurface();
+    const approved: string[] = [];
+    surface.registerResource([], { name: "taskList", read: () => [...approved] });
+    surface.registerTool([], { name: "approveTask", run: (args) => void approved.push(String(args.id)) });
+    const ids = ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"];
+    const { runner, requests } = scripted(
+      [
+        ...ids.map((id, at) => ({ type: "toolCall" as const, id: `c${at}`, name: "approveTask", args: { id } })),
+        { type: "done", stop: "toolUse" },
+      ],
+      [{ type: "done", stop: "end" }],
+    );
+    const session = new AgentSession(surface, runner, {});
+    await session.send("approve them all");
+    const results = session.messages.find((message) => message.role === "tool")?.toolResults ?? [];
+    expect(results).toHaveLength(8);
+    // Seven stale copies of the list would otherwise sit above the one that is true, and ride every later turn.
+    expect(results.filter((result) => result.changes?.length)).toHaveLength(1);
+    expect(results[7].changes?.[0].value).toEqual(ids);
+    // `t1` is in every cumulative copy, so the wire carried nine of them before the batch was deduped: the call's
+    // own arguments, and the list once per result.
+    expect(JSON.stringify(requests[1].messages).match(/t1/g)).toHaveLength(2);
   });
 
   test("a tool turn executes, reports changes, and feeds results into the next turn", async () => {
@@ -1180,6 +1280,36 @@ describe("AgentSession long tools", () => {
     expect(calls.every((id) => answers.includes(id))).toBe(true);
   });
 
+  test("Stop caught before the first delta leaves no draft behind, so nothing renders as still writing", async () => {
+    let streaming = false;
+    let finishTurn: () => void = () => undefined;
+    const runner: AgentRunner = {
+      async *run() {
+        await new Promise<void>((resolve) => {
+          finishTurn = resolve;
+          streaming = true;
+        });
+        yield { type: "text", delta: "never seen" };
+        yield { type: "done", stop: "end" };
+      },
+    };
+    const session = new AgentSession(new AgenticSurface(), runner);
+    const turn = session.send("go");
+    await until(() => streaming);
+    expect(session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    session.abort();
+    finishTurn();
+    await turn;
+    expect(session.messages.map((message) => message.role)).toEqual(["user"]);
+  });
+
+  test("a turn the provider ends without saying anything leaves no empty bubble either", async () => {
+    const { runner } = scripted([{ type: "done", stop: "end" }]);
+    const session = new AgentSession(new AgenticSurface(), runner);
+    await session.send("go");
+    expect(session.messages.map((message) => message.role)).toEqual(["user"]);
+  });
+
   test("Stop while the calls are still arriving leaves none of them unanswered", async () => {
     const surface = new AgenticSurface();
     surface.registerTool([], { name: "slow", run: () => "never reached" });
@@ -1204,5 +1334,218 @@ describe("AgentSession long tools", () => {
     const answered = session.messages.flatMap((message) => message.toolResults ?? []);
     expect(session.messages.flatMap((message) => message.toolCalls ?? [])).toHaveLength(1);
     expect(answered).toEqual([{ id: "c1", name: "slow", error: Transcript.unanswered }]);
+  });
+});
+
+describe("AgentSession staged references", () => {
+  const cut = (path: string, value: unknown) => ({
+    refName: "videoCut",
+    refId: "6a1f",
+    label: `Cut ${path}`,
+    path,
+    value,
+  });
+
+  test("pointing at the same field twice replaces it rather than stacking a second chip", () => {
+    const session = new AgentSession(new AgenticSurface(), scripted([{ type: "done", stop: "end" }]).runner);
+    session.stage(cut("cutFrames.2.content", "first"));
+    session.stage(cut("cutFrames.3.content", "other"));
+    session.stage(cut("cutFrames.2.content", "second"));
+    expect(session.staged.map((one) => one.value)).toEqual(["second", "other"]);
+  });
+
+  test("unstaging is by key, so it survives a list the message text ordered differently", () => {
+    const session = new AgentSession(new AgenticSurface(), scripted([{ type: "done", stop: "end" }]).runner);
+    session.stage(cut("cutFrames.2.content", "a"));
+    session.stage(cut("cutFrames.3.content", "b"));
+    session.unstage("videoCut/6a1f#cutFrames.2.content");
+    expect(session.staged.map((one) => one.path)).toEqual(["cutFrames.3.content"]);
+    // A key nothing staged leaves the list alone rather than throwing at a composer that redrew late.
+    session.unstage("videoCut/6a1f#gone");
+    expect(session.staged.length).toBe(1);
+  });
+
+  test("a staged value is clipped on the way in, so an oversized document never enters a message", () => {
+    const session = new AgentSession(new AgenticSurface(), scripted([{ type: "done", stop: "end" }]).runner);
+    session.stage(cut("cutFrames", { frames: "x".repeat(Reference.limit * 2) }));
+    expect((session.staged[0].value as string).length).toBe(Reference.limit + 1);
+    expect(session.staged[0].note).toContain("Read a narrower part of it with a tool");
+  });
+
+  test("staging redraws the composer without saving a transcript nothing touched", async () => {
+    const saved: ChatMessage[][] = [];
+    const session = new AgentSession(new AgenticSurface(), scripted([{ type: "done", stop: "end" }]).runner, {
+      history: { load: () => null, save: (messages) => void saved.push([...messages]), clear: () => undefined },
+    });
+    const before = session.version;
+    session.stage(cut("cutFrames.2.content", "a"));
+    expect(session.version).toBeGreaterThan(before);
+    // Past the persist debounce: the version moved, so every subscriber redrew, and still nothing was written.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(saved).toEqual([]);
+  });
+
+  test("clearing the conversation takes the staged references with it", async () => {
+    const session = new AgentSession(new AgenticSurface(), scripted([{ type: "done", stop: "end" }]).runner);
+    session.stage(cut("cutFrames.2.content", "a"));
+    session.clearStaged();
+    expect(session.staged).toEqual([]);
+    session.stage(cut("cutFrames.2.content", "a"));
+    await session.reset();
+    expect(session.staged).toEqual([]);
+  });
+});
+
+describe("references on the wire", () => {
+  test("a user message carrying only a reference is not mistaken for an empty draft", () => {
+    const referenced: ChatMessage = {
+      role: "user",
+      references: [{ refName: "videoCut", refId: "6a1f", label: "Cut 3", value: "a wide shot" }],
+    };
+    expect(Transcript.carries(referenced)).toBe(true);
+    expect(Transcript.wire([referenced])).toEqual([referenced]);
+  });
+});
+
+describe("AgentSession reference insertion", () => {
+  const cut = (path: string, value: unknown) => ({
+    refName: "videoCut",
+    refId: "6a1f",
+    label: `Cut ${path}`,
+    path,
+    value,
+  });
+  const session = () => new AgentSession(new AgenticSurface(), scripted([{ type: "done", stop: "end" }]).runner);
+
+  test("the composer's own menu stages a value and asks for no token, having written one already", () => {
+    const one = session();
+    one.attachChat();
+    one.stage(cut("c.2", "a"));
+    expect(one.staged.length).toBe(1);
+    expect(one.pendingInserts).toEqual([]);
+  });
+
+  test("a card points at data and leaves the token for whichever chat holds the draft", () => {
+    const one = session();
+    one.attachChat();
+    one.refer(cut("c.2", "a"));
+    expect(one.pendingInserts.map((ref) => Reference.token(ref))).toEqual(["@[Cut c.2](mention:videoCut/6a1f#c.2)"]);
+  });
+
+  test("two chats on one session both write the token, and the second acknowledgement is a no-op", () => {
+    const one = session();
+    one.attachChat();
+    one.attachChat();
+    one.refer(cut("c.2", "a"));
+    // Both read the same state in the same commit — a destructive read would have handed it to one of them.
+    expect(one.pendingInserts.length).toBe(1);
+    const key = Reference.keyOf(one.pendingInserts[0]);
+    one.insertApplied(key);
+    expect(one.pendingInserts).toEqual([]);
+    one.insertApplied(key);
+    expect(one.pendingInserts).toEqual([]);
+  });
+
+  test("pointing with no chat mounted warns instead of staging a value no token will ever name", () => {
+    const warned: string[] = [];
+    const original = console.warn;
+    console.warn = (message: string) => void warned.push(message);
+    try {
+      const one = session();
+      one.refer(cut("c.2", "a"));
+      expect(one.pendingInserts).toEqual([]);
+      expect(warned[0]).toContain("No chat is rendering this agent session");
+      expect(warned[0]).toContain("Agent.Zone");
+    } finally {
+      console.warn = original;
+    }
+  });
+
+  test("a parked reference gives way to one pointed at since, so an edit in between is not undone", () => {
+    const one = session();
+    one.attachChat();
+    one.stage(cut("c.2", "edited since"));
+    one.restoreStaged([cut("c.2", "parked"), cut("c.9", "also parked")]);
+    expect(one.staged.find((ref) => ref.path === "c.2")?.value).toBe("edited since");
+    expect(one.staged.find((ref) => ref.path === "c.9")?.value).toBe("also parked");
+  });
+
+  test("clearing takes the unwritten tokens too, so /new does not seed the next message", () => {
+    const one = session();
+    one.attachChat();
+    one.refer(cut("c.2", "a"));
+    one.clearStaged();
+    expect(one.staged).toEqual([]);
+    expect(one.pendingInserts).toEqual([]);
+  });
+});
+
+describe("AgentSession cards", () => {
+  const contactSurface = () => {
+    const surface = new AgenticSurface();
+    surface.registerTool([], {
+      name: "collectContact",
+      description: "Ask the user for their name and phone number, and return what they entered.",
+      card: () => null,
+    });
+    return surface;
+  };
+
+  test("a card tool parks on the session, and what it submits is what the model reads back", async () => {
+    const { runner } = scripted(
+      [
+        { type: "toolCall", id: "c1", name: "collectContact", args: {} },
+        { type: "done", stop: "toolUse" },
+      ],
+      [
+        { type: "text", delta: "Thanks." },
+        { type: "done", stop: "end" },
+      ],
+    );
+    const session = new AgentSession(contactSurface(), runner);
+    const sent = session.send("book me in");
+    await until(() => !!session.pendingCard);
+    expect(session.pendingCard?.name).toBe("collectContact");
+    session.pendingCard?.submit({ name: "Bora", phone: "010-0000-0000" });
+    await sent;
+    expect(session.pendingCard).toBeNull();
+    const answered = session.messages.find((message) => message.role === "tool");
+    expect(answered?.toolResults?.[0].result).toEqual({ name: "Bora", phone: "010-0000-0000" });
+  });
+
+  test("dismissing the card ends the call with a reason instead of a value", async () => {
+    const { runner } = scripted(
+      [
+        { type: "toolCall", id: "c1", name: "collectContact", args: {} },
+        { type: "done", stop: "toolUse" },
+      ],
+      [
+        { type: "text", delta: "No problem." },
+        { type: "done", stop: "end" },
+      ],
+    );
+    const session = new AgentSession(contactSurface(), runner);
+    const sent = session.send("book me in");
+    await until(() => !!session.pendingCard);
+    session.pendingCard?.dismiss();
+    await sent;
+    const answered = session.messages.find((message) => message.role === "tool");
+    expect(answered?.toolResults?.[0].result).toBeUndefined();
+    expect(answered?.toolResults?.[0].error).toContain("without filling it in");
+  });
+
+  // A card outliving the turn it belongs to would sit on the screen answering nothing.
+  test("aborting the turn takes the card down and says so", async () => {
+    const { runner } = scripted([
+      { type: "toolCall", id: "c1", name: "collectContact", args: {} },
+      { type: "done", stop: "toolUse" },
+    ]);
+    const session = new AgentSession(contactSurface(), runner);
+    const sent = session.send("book me in");
+    await until(() => !!session.pendingCard);
+    session.abort();
+    await sent;
+    expect(session.pendingCard).toBeNull();
+    expect(session.isRunning).toBe(false);
   });
 });

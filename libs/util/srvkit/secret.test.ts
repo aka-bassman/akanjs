@@ -1,5 +1,34 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { generateJwtSecret, resolveJwtSecret } from "./secret";
+import { assertJwtSecretConfigured, generateJwtSecret, resolveJwtSecret } from "./secret";
+
+describe("assertJwtSecretConfigured", () => {
+  const originalJwtSecret = process.env.JWT_SECRET;
+  const originalAllow = process.env.AKAN_ALLOW_DERIVED_JWT_SECRET;
+
+  afterEach(() => {
+    if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = originalJwtSecret;
+    if (originalAllow === undefined) delete process.env.AKAN_ALLOW_DERIVED_JWT_SECRET;
+    else process.env.AKAN_ALLOW_DERIVED_JWT_SECRET = originalAllow;
+  });
+
+  test("refuses a derived secret anywhere but a developer's machine", () => {
+    delete process.env.JWT_SECRET;
+    delete process.env.AKAN_ALLOW_DERIVED_JWT_SECRET;
+    expect(() => assertJwtSecretConfigured({ operationMode: "cloud" })).toThrow("util.error.jwtSecretRequired");
+    expect(() => assertJwtSecretConfigured({ operationMode: "local" })).not.toThrow();
+  });
+
+  test("accepts a secret from either channel, or an explicit acceptance of the risk", () => {
+    delete process.env.AKAN_ALLOW_DERIVED_JWT_SECRET;
+    process.env.JWT_SECRET = "from-env";
+    expect(() => assertJwtSecretConfigured({ operationMode: "cloud" })).not.toThrow();
+    delete process.env.JWT_SECRET;
+    expect(() => assertJwtSecretConfigured({ operationMode: "cloud", configuredSecret: "from-config" })).not.toThrow();
+    process.env.AKAN_ALLOW_DERIVED_JWT_SECRET = "1";
+    expect(() => assertJwtSecretConfigured({ operationMode: "cloud" })).not.toThrow();
+  });
+});
 
 describe("resolveJwtSecret", () => {
   const originalJwtSecret = process.env.JWT_SECRET;

@@ -30,7 +30,7 @@ export class MermaidNode extends DecoratorNode<JSX.Element> {
     return $createMermaidNode(serialized);
   }
 
-  constructor(payload: MermaidPayload, key?: NodeKey) {
+  constructor(payload: MermaidPayload = {}, key?: NodeKey) {
     super(key);
     this.__code = payload.code ?? "";
     this.__width = payload.width ?? 0;

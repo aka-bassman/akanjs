@@ -40,10 +40,45 @@ export default function Doc() {
   return <div />;
 }
 
-const viewItems = [
-  { key: "table", label: "Table", icon: <BiTable /> },
-  { key: "diagram", label: "Diagram", icon: <BiNetworkChart /> },
-] as const;
+const docText = {
+  pageTitle: { en: "Constant Schema Docs", ko: "Constant 스키마 문서" },
+  printTitle: { en: "Constant Schema Definition", ko: "Constant 스키마 정의서" },
+  summary: {
+    en: "Database models, scalar models, enums, and relations from ConstantRegistry.",
+    ko: "ConstantRegistry에 등록된 데이터베이스 모델, scalar 모델, enum과 관계입니다.",
+  },
+  databaseModels: { en: "Database Models", ko: "데이터베이스 모델" },
+  scalarModels: { en: "Scalar Models", ko: "scalar 모델" },
+  enums: { en: "Enums", ko: "enum" },
+  relations: { en: "Relations", ko: "관계" },
+  table: { en: "Table", ko: "표" },
+  diagram: { en: "Diagram", ko: "다이어그램" },
+  search: { en: "Search models or enums", ko: "모델 또는 enum 검색" },
+  noDatabaseMatch: { en: "No database model matches.", ko: "일치하는 데이터베이스 모델이 없습니다." },
+  enum: { en: "Enum", ko: "enum" },
+  key: { en: "Key", ko: "키" },
+  refName: { en: "Ref Name", ko: "참조 이름" },
+  field: { en: "Field", ko: "필드" },
+  type: { en: "Type", ko: "타입" },
+  kind: { en: "Kind", ko: "종류" },
+  fieldType: { en: "Field Type", ko: "필드 타입" },
+  required: { en: "Required", ko: "필수" },
+  optional: { en: "Optional", ko: "선택" },
+  relation: { en: "Relation", ko: "관계" },
+  default: { en: "Default", ko: "기본값" },
+  constraints: { en: "Constraints", ko: "제약 조건" },
+  values: { en: "Values", ko: "값" },
+  description: { en: "Description", ko: "설명" },
+  descriptions: { en: "Descriptions", ko: "설명" },
+  usedBy: { en: "Used By", ko: "사용처" },
+  detail: { en: "Detail", ko: "상세" },
+  diagramTitle: { en: "Schema Relationship Diagram", ko: "스키마 관계 다이어그램" },
+  selectedModel: { en: "Selected Model", ko: "선택한 모델" },
+  external: { en: "External", ko: "외부" },
+  selectNode: { en: "Select a node in the diagram.", ko: "다이어그램에서 노드를 선택하세요." },
+} as const;
+
+const fieldCountText = (count: number) => ({ en: `${count} fields`, ko: `필드 ${count}개` });
 
 const variantItems = databaseModelVariants.map((variant) => ({ key: variant, label: getVariantTitle(variant) }));
 
@@ -64,7 +99,12 @@ interface ZoneProps {
 }
 
 const Zone = ({ models, scalars, enums, openAll }: ZoneProps) => {
+  const { l } = usePage();
   const schemaDoc = useMemo(() => getConstantSchemaDoc({ models, scalars, enums }), [models, scalars, enums]);
+  const viewItems = [
+    { key: "table", label: l.trans(docText.table), icon: <BiTable /> },
+    { key: "diagram", label: l.trans(docText.diagram), icon: <BiNetworkChart /> },
+  ] as const;
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "diagram">("table");
   const filteredDatabases = useMemo(
@@ -85,16 +125,14 @@ const Zone = ({ models, scalars, enums, openAll }: ZoneProps) => {
   return (
     <div className="flex break-after-page flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h1 className={docUi.pageTitle}>Constant Schema Docs</h1>
-        <p className={docUi.sectionDescription}>
-          Database models, scalar models, enums, and relations from ConstantRegistry.
-        </p>
+        <h1 className={docUi.pageTitle}>{l.trans(docText.pageTitle)}</h1>
+        <p className={docUi.sectionDescription}>{l.trans(docText.summary)}</p>
       </div>
       <SummaryGrid>
-        <SummaryCard label="Database Models" value={filteredDatabases.length} />
-        <SummaryCard label="Scalar Models" value={filteredScalars.length} />
-        <SummaryCard label="Enums" value={filteredEnums.length} />
-        <SummaryCard label="Relations" value={schemaDoc.relations.length} />
+        <SummaryCard label={l.trans(docText.databaseModels)} value={filteredDatabases.length} />
+        <SummaryCard label={l.trans(docText.scalarModels)} value={filteredScalars.length} />
+        <SummaryCard label={l.trans(docText.enums)} value={filteredEnums.length} />
+        <SummaryCard label={l.trans(docText.relations)} value={schemaDoc.relations.length} />
       </SummaryGrid>
       <Toolbar>
         <Input
@@ -103,7 +141,7 @@ const Zone = ({ models, scalars, enums, openAll }: ZoneProps) => {
           inputClassName="w-72 pl-9"
           nullable
           onChange={setQuery}
-          placeholder="Search models or enums"
+          placeholder={l.trans(docText.search)}
           value={query}
         />
         <Segmented className="ml-auto" items={viewItems} onChange={setViewMode} value={viewMode} />
@@ -112,7 +150,7 @@ const Zone = ({ models, scalars, enums, openAll }: ZoneProps) => {
         <Diagram databases={filteredDatabases} scalars={filteredScalars} />
       ) : (
         <div className="flex flex-col gap-6">
-          <Section title="Database Models">
+          <Section title={l.trans(docText.databaseModels)}>
             {filteredDatabases.length ? (
               <div className="flex flex-col gap-2">
                 {filteredDatabases.map((database) => (
@@ -120,11 +158,11 @@ const Zone = ({ models, scalars, enums, openAll }: ZoneProps) => {
                 ))}
               </div>
             ) : (
-              <div className={docUi.emptyPanel}>No database model matches.</div>
+              <div className={docUi.emptyPanel}>{l.trans(docText.noDatabaseMatch)}</div>
             )}
           </Section>
           {filteredScalars.length ? (
-            <Section title="Scalar Models">
+            <Section title={l.trans(docText.scalarModels)}>
               <div className="flex flex-col gap-2">
                 {filteredScalars.map((scalar) => (
                   <Scalar key={scalar.refName} scalar={scalar} openAll={openAll} />
@@ -133,7 +171,7 @@ const Zone = ({ models, scalars, enums, openAll }: ZoneProps) => {
             </Section>
           ) : null}
           {filteredEnums.length ? (
-            <Section title="Enums">
+            <Section title={l.trans(docText.enums)}>
               <EnumList enums={filteredEnums} />
             </Section>
           ) : null}
@@ -145,19 +183,18 @@ const Zone = ({ models, scalars, enums, openAll }: ZoneProps) => {
 Doc.Zone = Zone;
 
 const Print = ({ models, scalars, enums }: ZoneProps) => {
+  const { l } = usePage();
   const schemaDoc = useMemo(() => getConstantSchemaDoc({ models, scalars, enums }), [models, scalars, enums]);
   return (
     <div className="flex flex-col gap-10 bg-background text-foreground print:bg-white print:text-black">
       <div className="break-after-page">
-        <div className="font-bold text-4xl">Constant Schema Definition</div>
-        <div className="mt-2 text-foreground/70 print:text-black">
-          Database models, scalar models, enums, and relations from ConstantRegistry.
-        </div>
+        <div className="font-bold text-4xl">{l.trans(docText.printTitle)}</div>
+        <div className="mt-2 text-foreground/70 print:text-black">{l.trans(docText.summary)}</div>
         <SummaryGrid className="mt-6">
-          <SummaryCard label="Database Models" value={schemaDoc.databases.length} />
-          <SummaryCard label="Scalar Models" value={schemaDoc.scalars.length} />
-          <SummaryCard label="Enums" value={schemaDoc.enums.length} />
-          <SummaryCard label="Relations" value={schemaDoc.relations.length} />
+          <SummaryCard label={l.trans(docText.databaseModels)} value={schemaDoc.databases.length} />
+          <SummaryCard label={l.trans(docText.scalarModels)} value={schemaDoc.scalars.length} />
+          <SummaryCard label={l.trans(docText.enums)} value={schemaDoc.enums.length} />
+          <SummaryCard label={l.trans(docText.relations)} value={schemaDoc.relations.length} />
         </SummaryGrid>
       </div>
       {schemaDoc.databases.map((database) => (
@@ -165,7 +202,7 @@ const Print = ({ models, scalars, enums }: ZoneProps) => {
       ))}
       {schemaDoc.scalars.length ? (
         <section className="flex break-before-page flex-col gap-4">
-          <PrintSectionTitle title="Scalar Models" />
+          <PrintSectionTitle title={l.trans(docText.scalarModels)} />
           {schemaDoc.scalars.map((scalar) => (
             <PrintScalar key={scalar.refName} scalar={scalar} />
           ))}
@@ -173,7 +210,7 @@ const Print = ({ models, scalars, enums }: ZoneProps) => {
       ) : null}
       {schemaDoc.enums.length ? (
         <section className="flex break-before-page flex-col gap-4">
-          <PrintSectionTitle title="Enums" />
+          <PrintSectionTitle title={l.trans(docText.enums)} />
           <PrintEnumTable enums={schemaDoc.enums} />
         </section>
       ) : null}
@@ -260,10 +297,10 @@ const EnumList = ({ enums = getConstantSchemaDoc().enums }: EnumProps) => {
       <table className={docUi.tableClass}>
         <thead>
           <tr>
-            <th>Enum</th>
-            <th>Type</th>
-            <th>Values</th>
-            <th>Used By</th>
+            <th>{l.trans(docText.enum)}</th>
+            <th>{l.trans(docText.type)}</th>
+            <th>{l.trans(docText.values)}</th>
+            <th>{l.trans(docText.usedBy)}</th>
           </tr>
         </thead>
         <tbody>
@@ -314,16 +351,19 @@ const EnumList = ({ enums = getConstantSchemaDoc().enums }: EnumProps) => {
 };
 Doc.Enum = EnumList;
 
-const ModelVariantTable = ({ variant }: { variant: ReturnType<typeof getDefaultVariant> }) => (
-  <div className="flex flex-col gap-2">
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="font-semibold text-base">{variant.modelName}</span>
-      <span className={docPill("muted")}>{getVariantTitle(variant.variant)}</span>
-      <span className="text-foreground/45 text-sm">{variant.fields.length} fields</span>
+const ModelVariantTable = ({ variant }: { variant: ReturnType<typeof getDefaultVariant> }) => {
+  const { l } = usePage();
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold text-base">{variant.modelName}</span>
+        <span className={docPill("muted")}>{getVariantTitle(variant.variant)}</span>
+        <span className="text-foreground/45 text-sm">{l.trans(fieldCountText(variant.fields.length))}</span>
+      </div>
+      <FieldTable refName={variant.refName} fields={variant.fields} />
     </div>
-    <FieldTable refName={variant.refName} fields={variant.fields} />
-  </div>
-);
+  );
+};
 
 const PrintDatabase = ({ database }: { database: DatabaseSchema }) => {
   const { l } = usePage();
@@ -377,13 +417,16 @@ const PrintScalar = ({ scalar }: { scalar: ScalarSchema }) => {
 
 const PrintSectionTitle = ({ title }: { title: string }) => <div className="font-bold text-3xl">{title}</div>;
 
-const PrintVariantHeader = ({ title, badge, fields }: { title: string; badge: string; fields: number }) => (
-  <div className="flex flex-wrap items-center gap-2">
-    <div className="font-extrabold text-xl">{title}</div>
-    <div className={docPill("muted", "print:border print:border-black")}>{badge}</div>
-    <div className="text-foreground/60 text-sm print:text-black">{fields} fields</div>
-  </div>
-);
+const PrintVariantHeader = ({ title, badge, fields }: { title: string; badge: string; fields: number }) => {
+  const { l } = usePage();
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="font-extrabold text-xl">{title}</div>
+      <div className={docPill("muted", "print:border print:border-black")}>{badge}</div>
+      <div className="text-foreground/60 text-sm print:text-black">{l.trans(fieldCountText(fields))}</div>
+    </div>
+  );
+};
 
 const FieldTable = ({ refName, fields }: { refName: string; fields: FieldSchema[] }) => {
   const { l } = usePage();
@@ -394,13 +437,13 @@ const FieldTable = ({ refName, fields }: { refName: string; fields: FieldSchema[
         <table className={docUi.tableClass}>
           <thead>
             <tr>
-              <th>Field</th>
-              <th>Type</th>
-              <th>Kind</th>
-              <th>Default</th>
-              <th>Constraints</th>
-              <th>Values</th>
-              <th className="w-1/4">Description</th>
+              <th>{l.trans(docText.field)}</th>
+              <th>{l.trans(docText.type)}</th>
+              <th>{l.trans(docText.kind)}</th>
+              <th>{l.trans(docText.default)}</th>
+              <th>{l.trans(docText.constraints)}</th>
+              <th>{l.trans(docText.values)}</th>
+              <th className="w-1/4">{l.trans(docText.description)}</th>
               <th />
             </tr>
           </thead>
@@ -463,7 +506,7 @@ const FieldTable = ({ refName, fields }: { refName: string; fields: FieldSchema[
                     onClick={() => setSelectedField(field)}
                     type="button"
                   >
-                    <AiOutlineInfoCircle /> Detail
+                    <AiOutlineInfoCircle /> {l.trans(docText.detail)}
                   </button>
                 </td>
               </tr>
@@ -483,16 +526,16 @@ const PrintFieldTable = ({ refName, fields }: { refName: string; fields: FieldSc
       <table className={docUi.tableClass}>
         <thead>
           <tr>
-            <th>Key</th>
-            <th>Type</th>
-            <th>Required</th>
-            <th>Field Type</th>
-            <th>Relation</th>
-            <th>Default</th>
-            <th>Constraints</th>
-            <th>Enum</th>
-            <th>Description</th>
-            <th>Detail</th>
+            <th>{l.trans(docText.key)}</th>
+            <th>{l.trans(docText.type)}</th>
+            <th>{l.trans(docText.required)}</th>
+            <th>{l.trans(docText.fieldType)}</th>
+            <th>{l.trans(docText.relation)}</th>
+            <th>{l.trans(docText.default)}</th>
+            <th>{l.trans(docText.constraints)}</th>
+            <th>{l.trans(docText.enum)}</th>
+            <th>{l.trans(docText.description)}</th>
+            <th>{l.trans(docText.detail)}</th>
           </tr>
         </thead>
         <tbody>
@@ -503,7 +546,7 @@ const PrintFieldTable = ({ refName, fields }: { refName: string; fields: FieldSc
                 <div className="text-foreground/60 text-xs print:text-black">{l._(`${refName}.${field.key}`)}</div>
               </td>
               <td>{field.typeLabel}</td>
-              <td>{field.required ? "Required" : "Optional"}</td>
+              <td>{l.trans(field.required ? docText.required : docText.optional)}</td>
               <td>
                 <div>{field.fieldType}</div>
                 {!field.select ? <div>select:false</div> : null}
@@ -543,12 +586,12 @@ const PrintEnumTable = ({ enums }: { enums: ReturnType<typeof getConstantSchemaD
       <table className={docUi.tableClass}>
         <thead>
           <tr>
-            <th>Key</th>
-            <th>Ref Name</th>
-            <th>Type</th>
-            <th>Values</th>
-            <th>Descriptions</th>
-            <th>Used By</th>
+            <th>{l.trans(docText.key)}</th>
+            <th>{l.trans(docText.refName)}</th>
+            <th>{l.trans(docText.type)}</th>
+            <th>{l.trans(docText.values)}</th>
+            <th>{l.trans(docText.descriptions)}</th>
+            <th>{l.trans(docText.usedBy)}</th>
           </tr>
         </thead>
         <tbody>
@@ -620,7 +663,7 @@ const FieldDetailModal = ({
         <div className="font-bold text-lg">{l._(`${refName}.${field.key}`)}</div>
         <div className={docUi.sectionDescription}>{l._(`${refName}.${field.key}.desc`)}</div>
       </div>
-      <Code code={JSON.stringify(detail, null, 2)} label="Field" />
+      <Code code={JSON.stringify(detail, null, 2)} label={l.trans(docText.field)} />
     </Modal>
   );
 };
@@ -636,6 +679,7 @@ const getPrintRelation = (field: FieldSchema) => {
 };
 
 const Diagram = ({ databases, scalars }: { databases: DatabaseSchema[]; scalars: ScalarSchema[] }) => {
+  const { l } = usePage();
   const graph = useMemo(() => makeSchemaGraph(databases, scalars), [databases, scalars]);
   const [selectedNode, setSelectedNode] = useState<string | null>(graph.nodes.at(0)?.id ?? null);
   const selectedRefName = selectedNode ? graph.nodeRefNames.get(selectedNode) : undefined;
@@ -650,9 +694,9 @@ const Diagram = ({ databases, scalars }: { databases: DatabaseSchema[]; scalars:
         nodes={graph.nodes}
         onSelect={setSelectedNode}
         selectedId={selectedNode}
-        title="Schema Relationship Diagram"
+        title={l.trans(docText.diagramTitle)}
       />
-      <Panel bodyClassName="max-h-none" label="Selected Model">
+      <Panel bodyClassName="max-h-none" label={l.trans(docText.selectedModel)}>
         {selectedDatabase ? (
           <DiagramDetail
             fields={getDefaultVariant(selectedDatabase).fields}
@@ -667,11 +711,11 @@ const Diagram = ({ databases, scalars }: { databases: DatabaseSchema[]; scalars:
           />
         ) : selectedRefName ? (
           <div className="flex flex-col items-start gap-2">
-            <span className={docPill("muted")}>External</span>
+            <span className={docPill("muted")}>{l.trans(docText.external)}</span>
             <span className="font-bold">{selectedRefName}</span>
           </div>
         ) : (
-          <div className="text-foreground/40 text-sm">Select a node in the diagram.</div>
+          <div className="text-foreground/40 text-sm">{l.trans(docText.selectNode)}</div>
         )}
       </Panel>
     </div>

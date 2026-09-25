@@ -24,21 +24,13 @@ interface DefaultMdlStats<
   pickById: (docId: string | undefined, projection?: _Projection) => Promise<TDocument>;
   sample: (query: _FilterQuery, size?: number) => Promise<TDocument[]>;
   sampleOne: (query: _FilterQuery) => Promise<TDocument | null>;
-  preSaveListenerSet: Set<(doc: TDocument, type: CRUDEventType) => PromiseOrObject<void>>;
-  postSaveListenerSet: Set<(doc: TDocument, type: CRUDEventType) => PromiseOrObject<void>>;
-  preCreateListenerSet: Set<(doc: TDocument, type: CRUDEventType) => PromiseOrObject<void>>;
-  postCreateListenerSet: Set<(doc: TDocument, type: CRUDEventType) => PromiseOrObject<void>>;
-  preUpdateListenerSet: Set<(doc: TDocument, type: CRUDEventType) => PromiseOrObject<void>>;
-  postUpdateListenerSet: Set<(doc: TDocument, type: CRUDEventType) => PromiseOrObject<void>>;
-  preRemoveListenerSet: Set<(doc: TDocument, type: CRUDEventType) => PromiseOrObject<void>>;
-  postRemoveListenerSet: Set<(doc: TDocument, type: CRUDEventType) => PromiseOrObject<void>>;
   listenPre: (
     eventType: SaveEventType,
-    listener: (doc: TDocument, type: CRUDEventType) => PromiseOrObject<void>,
+    listener: (doc: TDocument, type: CRUDEventType, previous?: TDocument) => PromiseOrObject<void>,
   ) => () => void;
   listenPost: (
     eventType: SaveEventType,
-    listener: (doc: TDocument, type: CRUDEventType) => PromiseOrObject<void>,
+    listener: (doc: TDocument, type: CRUDEventType, previous?: TDocument) => PromiseOrObject<void>,
   ) => () => void;
 }
 export interface UpdateResult {

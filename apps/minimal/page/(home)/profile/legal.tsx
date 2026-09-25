@@ -1,10 +1,11 @@
 import { appCard, appNavClass, Screen } from "@apps/minimal/ui";
-import type { PageConfig } from "akanjs/client";
+import { page } from "akanjs/client";
 import { Layout } from "akanjs/ui";
 import { AiOutlineFileProtect } from "react-icons/ai";
 
-export default function Page() {
-  return (
+export default page()
+  .config({ topInset: 48, transition: "stack" })
+  .render(() => (
     <Screen className="px-5 pb-8">
       <Layout.Navbar className={appNavClass} back>
         <div className="font-semibold">Legal info</div>
@@ -27,6 +28,4 @@ export default function Page() {
         </div>
       </section>
     </Screen>
-  );
-}
-export const pageConfig = { topInset: 48, transition: "stack" } satisfies PageConfig;
+  ));

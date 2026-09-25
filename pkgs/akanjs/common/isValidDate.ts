@@ -13,5 +13,5 @@ export const isValidDate = (d: string | Date | Dayjs) => {
     // return dayjs(d, format, true).isValid();
     // } else if (isDayjs(d)) return dayjs(d.format(format), format, true).isSame(d);
   } else if (isDayjs(d)) return d.isValid();
-  else return d instanceof Date && !isNaN(d.getTime());
+  else return d instanceof Date && !Number.isNaN(d.getTime());
 };

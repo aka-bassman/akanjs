@@ -45,10 +45,16 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   clear and close. `chrome={false}` drops the header bar whole, for an `inline` chat inside a panel the app
   already titles, and `defaultDraft` opens the composer with text in it without sending it. A panel driven by a
   controlled `open` with **no** `onOpenChange` draws no close button at all rather than an inert one. Then the
-  slots: `AgentLauncher`, `AgentBubble`, `AgentComposer`, `AgentApproval`,
-  `AgentQuestion`, `AgentMenu`, `AgentMarkdown` and `AgentCode` each replace one part in `_overrides.tsx`, and
+  slots: `AgentLauncher`, `AgentSteps`, `AgentBubble`, `AgentComposer`, `AgentApproval`,
+  `AgentQuestion`, `AgentToolCard`, `AgentQueued`, `AgentMenu`, `AgentMarkdown` and `AgentCode` each replace one part in `_overrides.tsx`, and
   `akanjs/ui` exports every default beside them (`DefaultBubble`, `DefaultComposer`, …) so a skin composes the
-  one it is replacing. `AgentCode` is where a highlighter binds — the fence's language reaches it — and a
+  one it is replacing. **`AgentSteps` is one agent turn** — the messages between the user message that opened it
+  and the next one, with `isRunning` saying whether more are still coming — which is the grain a chat needs to
+  fold a turn's steps into a `details` and stand its answer outside them. It is the one boundary a per-message
+  slot cannot see, since neither message on either side of it knows it is at an edge. The default draws the turn's
+  messages flat into a Fragment, so a chat that binds nothing renders exactly what it did before the slot existed. The attachment row is exported on its own as `AgentAttachments`, because a replaced
+  `AgentBubble` that redraws it by hand forks the rule for which carrier is shown how — and then keeps whatever
+  that rule was on the day it was copied. `AgentCode` is where a highlighter binds — the fence's language reaches it — and a
   replacement for `AgentBubble` carries its own `memo`, since the transcript re-renders on every delta. Only then
   `AgentChat`, which replaces the panel whole: it also replaces the slash commands, the compaction notice and the
   approval gate, so reach for it when the *layout* differs, not when the look does.
@@ -59,14 +65,46 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   it scrolls. The vertical arrows still walk what was sent, but only from the first or last line — anywhere else
   the caret is the textarea's own. On a phone the panel is the whole screen (it is a card from `sm:` up) and it
   lifts above the on-screen keyboard, which only `visualViewport` reports.
+  **Enter during a running turn parks the message and sends it the moment the turn ends** — the Queue button
+  beside Stop does the same, and the placeholder says so. One slot, not a list: a second send joins the first on
+  a new line, so the model is handed one user message. The card above the composer (`AgentQueued`) shows what is
+  waiting with two ways out — ✎ takes it back into the composer, ahead of whatever was typed since, and ✕ drops it.
+  **Stop hands a parked message back to the composer rather than opening the next turn with it**, so Stop means
+  stop; `/new` drops it along with the conversation it was written for, the way it drops staged files. A `/prompt`
+  parks like text and runs when its turn comes; the built-ins (`/new`, `/copy`, …) never park, and a question the
+  agent is waiting on still takes the composer as its answer.
 - **The LLM is configured in `option.ts`, never through the environment.** `option.setLlm({ apiKey, model, host })`
   — or `setLlm((options) => …)` to read the key out of the app's own env object, which is where a secret belongs —
   fills whichever adaptor holds `LlmAdaptorRole`, reaching it as the `llmOption` use. The settings are the role's
-  rather than one provider's, so they survive a swap. **DeepSeek is the built-in default** (`deepseek-v4-flash` at
-  `https://api.deepseek.com`); with no `apiKey` the app still boots and the chat answers `llmUnavailable`. Swap
-  providers the way middleware is applied: `option.applyAdaptor(LlmAdaptorRole, ClaudeLlm)`, where the
-  implementation is an `adapt()` class in a `srvkit/` implementing `LlmAdaptor.chat(request, onDelta?)` — ignore
-  `onDelta` and the chat still answers whole.
+  rather than one provider's, so they survive a swap. **`OpenaiLlm` is the built-in default**, pointed at
+  `https://api.openai.com/v1`; with no `apiKey` or no `model` the app still boots and the chat answers
+  `llmUnavailable`. Swap providers the way middleware is applied:
+  `option.applyAdaptor(LlmAdaptorRole, AnthropicLlm)`. An app may still write its own — an `adapt()` class in a
+  `srvkit/` implementing `LlmAdaptor.chat(request, onDelta?)`, where ignoring `onDelta` still answers whole — and
+  whatever settings it needs beyond `LlmOption` travel through the same `setLlm`, read back with
+  `use<MyLlmOption>()` from an interface extending it.
+- **Two adaptors ship, one per wire — a vendor is a host and a model name, not a protocol.** `OpenaiLlm` is the
+  chat-completions dialect (`OpenaiDialect`) pointed at whatever `host` names, so OpenAI, DeepSeek, Groq,
+  Together, OpenRouter, Ollama and a self-hosted vLLM are all one class and one `option.setLlm({ host, model })`.
+  `AnthropicLlm` is the Messages API and declares `{ image: true, document: true }`; it is its own file rather
+  than a branch, because the system prompt is a field and not a message, tool calls and results are content
+  blocks, the results ride in a *user* turn, roles must alternate — so two wire turns that map to one role are
+  merged — and `max_tokens` is required. **Both require `model`**: a default would age into a 404, and worse, it
+  would decide the vision claim for the app.
+- **`OpenaiLlm` claims vision for its default host and for nothing else.** OpenAI's own endpoint takes image
+  parts, so that is what it answers with no `host` set. A `host` the app named is a gateway the class knows
+  nothing about, and it stays text-only until `option.setLlm({ accepts })` says otherwise — handing bytes to a
+  model that cannot decode them kills the whole turn on a 400, where text-only degrades them to a note the model
+  can repeat back.
+- **A refusal is one key, `agent.error.llmRequestFailed`, and it names the host.** The provider's own sentence
+  rides in `reason` and the hostname in `provider`, so an adaptor an app wrote reports through the same
+  translated channel the shipped ones do rather than needing a key in the framework's dictionary it cannot
+  add.
+- **`accepts` is answered per model, through `option.setLlm({ accepts })`.** An adaptor answers for an API and one
+  API serves models that differ, so the override rides beside the `model` it is a fact about. It is not a table
+  the framework keeps: a table is a claim about models that ship after it, and getting this wrong is the worst
+  failure available — a provider handed bytes it cannot decode either refuses the turn or accepts it having seen
+  nothing, and the model then answers confidently about a file it never read.
 - **An adaptor answers `null` for "not configured" and *throws* for a refusal it can explain.** The two are
   different things to be told: collapsing both into `null`, the way the adapter convention otherwise reads, left a
   user reading `llmUnavailable` — "no model is configured" — about a conversation that had merely outgrown the
@@ -84,15 +122,49 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   prompt. **What the provider cannot read is replaced by a note naming the file**, never dropped: an attachment the
   model never saw is one it answers about from the filename. An adaptor declares `accepts: { image, document }` and
   `AgentService.readable` degrades the rest, so a text-only provider needs no attachment code at all — DeepSeek
-  declares none, which is why an image against the default provider is refused out loud while an extracted PDF
-  works, `text` being readable by every model there is. **A `prompt()`'s `Msg.image` is the same wire shape** and
-  reaches the chat as an attachment rather than the literal `[image]` it used to become. Persisting keeps each
-  attachment's name and drops its content: web storage is a few megabytes, one screenshot fills a chunk of it, and
-  a save that fails is silent — so keeping the bytes would quietly stop keeping the transcript.
+  declares none, which is why an image against the *default* provider is refused out loud while an extracted PDF
+  works, `text` being readable by every model there is. Swap in `OpenaiLlm` or `AnthropicLlm` and the same image
+  arrives as an image. `accepts.document` is one boolean over every non-image type, so an adaptor whose API has a
+  block for only some of them — Anthropic's `document` is PDF and nothing else — names the rest in the text rather
+  than dropping them, which is the wire's own rule applied at the one layer that knows which blocks exist. Persisting keeps each
+  attachment's name, type, address and `ref` and drops only its content: web storage is a few megabytes, one
+  screenshot fills a chunk of it, and a save that fails is silent — so keeping the bytes would quietly stop keeping
+  the transcript, while an id is the handle a restored conversation has left to find the file with.
   **The ceilings are the message's, not the file's**: 4 MB per file, 8 MB and five files per message, and the same
   file twice is refused by name. The bytes ride inside one turn's JSON, so what a provider refuses is the sum —
   and a request that cannot be sent is one the user has to empty the composer to escape, which is why the refusal
-  happens at the paperclip and names the file it dropped.
+  happens at the paperclip and names the file it dropped. All three are defaults rather than the law —
+  `<Agent.Chat attachLimits={{ perFileBytes, perMessageBytes, perMessageCount }} />` — because what one request can
+  carry belongs to the configured provider and not to the framework. The per-file one is measured on **what the
+  reader produced**, not on the file that was picked: a reader that uploads and answers a `url` has already paid
+  what the ceiling exists for, so refusing its 6 MB photo would refuse it for a cost it does not incur. Only the
+  built-in path checks the source size, and there the file itself is the carrier.
+- **An app may also build attachments itself and hand them to `session.send([{ role: "user", text, attachments }])`**,
+  which is why `MessageAttachment` is exported from `akanjs/ui` — the composer's path is typed by the `AttachReader`
+  callback, that one is not, and an object assembled with no nameable type is the one that gets a field wrong.
+  Nothing downstream trusts the result: an attachment whose `mimeType` is not a string is noted like any other
+  unreadable one, and its chip renders its name with no preview, because the host wrote the object and the declared
+  type is a claim rather than a check. A field that arrives wrong costs that attachment, never the turn.
+- **A `url` carrier is an address the *provider* fetches, and bytes beside it win.** A reader that uploads answers
+  `{ url }` when its storage is publicly reachable, and `{ data }` — or both — when it is not: an attachment
+  carrying both is read from its bytes and displayed from its address, so the chip draws a thumbnail and the model
+  still gets the picture. That precedence exists because the other order fails the one way nothing reports: the
+  default storage backend serves a path only the app can resolve, the adaptor would hand it over as written, and
+  the model answers about a picture it never saw. Send a provider-reachable URL **alone** — paired with bytes it
+  costs the provider hop whatever the bytes weigh, for a fetch the provider would have done itself.
+- **An image type the provider has no block for is refused at the adaptor, not upstream.** `accepts.image` is one
+  boolean, so `AgentService.readable` passes every `image/*` through, and the built-in composer reader base64s
+  every `image/*` as well — an `AttachReader` answering `null` means "not mine" and falls through to it, so an app
+  cannot gate one either. Both shipped vision adaptors therefore match an exact set (`jpeg`, `png`, `gif`, `webp`)
+  and name the rest in the text. It matters because an unsupported type is not one unread attachment: it is a
+  block the API refuses, so the **whole turn** dies on a vendor 400 — and `image/heic`, the iPhone camera default,
+  is the likeliest one an app meets.
+- **`MessageAttachment.ref` is the host's own handle on the file — carried, never read.** A file id, a storage key,
+  whatever turns the attachment back into something a tool can be handed. The framework only moves it: the model is
+  never shown one, and a tool the app publishes (`useFileFieldTool` below) is what spends it. Without it a host that
+  stores its uploads keeps a map beside the transcript keyed on name and size — the same guess `Attachment.same`
+  has to make, and the one that is wrong for two crops of one export. So when both sides carry a `ref`, it *is* the
+  answer to "the same file twice", and the heuristic is what is left for when they do not.
 - **Speech is one engine contract and the framework's own policy.** `<Agent.Chat voice={engine} />` takes a
   `VoiceEngine` — `listen(handlers)` and `speak(sentence)`, both cancellable — and the chat decides everything
   else: a press-to-talk microphone whose transcript lands in the composer to be corrected, one utterance per
@@ -107,6 +179,52 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   WebView, **which has neither on Android or iOS**, so a `speech.plugin.ts` declares the permission and
   the packages the native build needs. An engine answering `available()` false renders no microphone at all,
   the same rule as publishing no tool for a control the screen does not draw.
+- **Data the user points at rides the message too, as `references` — and its value is a snapshot.** A file is
+  something they handed over; a reference is something they pointed at while asking, so it belongs in the same
+  place and for the same reason. Screen context does not do this job: `ContextBlock`s are rebuilt from the screen
+  every turn, so what was named three turns ago is simply not in the conversation any more. A `MessageReference`
+  carries the host's own `refName`, the id, a label, an optional dotted `path` into the document, and the `value`
+  those resolved to. **The value is never re-read on a later turn**, which is the point: re-reading rewrites what
+  the person was looking at when they spoke, and the usual next thing the agent does is edit the very field it was
+  pointed at — leaving a live reference showing the result with no record of what it was changed from.
+  `refName`/`refId`/`path` travel so a tool can read the current value when the answer needs it, and
+  `AgentService.referenced` folds the whole lot into the message text in one place, so every provider carries a
+  reference without either adaptor knowing the word. **The value is masked on the way in and nowhere else**: masking
+  needs the model class, which no wire carries, so the model a host names when it stages the reference is the whole
+  of the decision about what leaves the browser — name the class that actually holds the field, because a `Light`
+  one usually does not. **The ceiling is 20,000 characters per reference**, applied as it is staged and again on
+  the server; a reference is bulkier than a tool result and outlives one, riding every later turn and being the last
+  thing compaction folds. Persisting keeps the pointer and drops the value with a note saying so, which is a better
+  restored state than an attachment can offer — the pointer is still live, so the answer is to read it again.
+  Staging lives on the **session** (`stage` / `staged` / `unstage(key)` / `clearStaged()`), not on the composer where
+  staged files live, because a reference comes from whichever component drew the data rather than from the paperclip;
+  `unstage` is keyed on `refName/refId#path` because what orders a message's references is its text, not that list.
+- **Two ways to point at data, and which one depends on who knows the value.** `<Agent.Chat reference={[…]} />`
+  takes one `ReferenceSource` per kind of document — `refName`, a `type`, the app's own `search`, and a `resolve` —
+  and the composer's `@` menu offers whole documents from them; the token is written the moment a row is picked and
+  the value is staged when `resolve` lands, so a slow fetch never freezes the menu and one that fails leaves a
+  pointer that reads as *go and read it*. For a field *inside* a document, the component drawing it calls
+  `useAgentReference()` — it already holds the value, so there is no round trip, and it is the only thing that
+  knows a rich-text field stored as `field(Any)` reads as a paragraph rather than as the editor document it is. The
+  hook no-ops with a warning outside a session, the same call `AgentValue.publishable` makes: a card carrying a
+  reference button must not cost a route its render.
+- **The token in the draft is what carries a reference, and the chip only draws it.** Deleting
+  `@[label](mention:refName/id#path)` by hand drops the reference exactly as removing the chip does — removing the
+  chip removes the token — so the two can never disagree, and nothing re-derives a value from text somebody edited.
+  A token pasted out of an earlier message travels as a pointer with a note, which is the same shape a restored
+  conversation produces. Staged references are the **session's**, not the composer's, because `useAgentReference`
+  is called from components the composer cannot see; writing the token is the composer's half, and `refer` warns
+  rather than staging silently when no chat is mounted on that session — the case where a card sits outside the
+  `<Agent.Zone>` its chat is inside.
+- **The composer draws a pointer as the name it points at, never as the token.** Where `reference` sources are
+  declared the input is a Lexical editor rather than a textarea, and each pointer is one atomic node — a backspace
+  takes the whole thing rather than a character of a label that would then name nothing. Nothing above it changes:
+  the node's text content *is* the `@[…](mention:…)` token, so the draft string the chat reads, the `@` query, the
+  chips, the wire and the server's framing all see what they always saw, and every offset the chat hands over is
+  an offset into that string. It is its own chunk behind the chat's, fetched only where a source was declared, and
+  `mentions={false}` keeps the plain textarea — for an app that overrides `AgentComposer`, or one that would
+  rather see the tokens it is sending. An override that draws its own textarea keeps working: it fills the
+  `inputRef` it is handed, and the chat reads the caret off that when no editor filled `handleRef`.
 - **`attach` and `voice` both carry functions, so a server layout cannot pass either.** A closure does not cross
   the RSC boundary — `non-scalar-props-restricted` says so on `page/**` — so an app that wants either mounts the
   chat from a small client component in the app's own `ui/` that calls the hook.
@@ -123,6 +241,11 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `data-agent-zone` container; guides follow the layout cascade (ancestors and own, never a sibling's). Zone
   membership is positional — there is no per-declaration zone key, so a lib component joins whatever zone the app
   mounts it in.
+- **Two agents' turns run in parallel; their tool calls take turns.** Tool execution is serialized across the
+  whole page, because `AgentAbort` and `AgentProgress` reach the running call through a module slot rather than a
+  parameter — two calls in flight restore each other's slot and the second one's progress goes nowhere. Only the
+  execution queues: a zone parked on an approval card holds nothing up, since waiting for the user sits outside
+  the queue, and a call that is aborted releases it.
 - **Everything a zone publishes is named `<id>.<name>`,** and that name is what instructions must use. A bare
   `createVideoProject` inside a zone naming its tool `videoProjectDraft.createVideoProject` is a tool that does
   not exist: the model calls it, the surface answers `Unknown tool`, and a turn is gone. Build the name from the
@@ -173,6 +296,14 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `data-akan-action` like a store setter does. A `remove*` name defaults to a confirm gate. Reach a store action
   from the body — `.exec((id) => st.do.removeX(id))` — which is how an agent gets CRUD; `st.do` on its own
   reaches nobody.
+- **`.card()` is the other way the chain ends, for an answer that is the user's to give.** Where `.exec()` runs a
+  function, `.card(({ submit, cancel }, ...args) => <Form …/>)` parks the call in the chat and renders the app's own
+  component there; what `submit` is handed is what the model reads back, and `cancel` is the refusal it reads
+  instead. A name and a phone number, a date somebody has to look up, a signature — a model that fills those in
+  has answered its own question, and every other shape of "ask the user" is `askUser`. The declared arguments are
+  checked **before** the card is parked, so a bad one reaches the model as a refusal rather than throwing inside
+  the render; `confirm` is not read at all, because the card in front of the user is already the asking. The frame
+  draws its own way out even when the card does not, and the turn is never parked on something with no exit.
 - **The second argument is how the call behaves, never what it is.** `{ settle, confirm, guard }`:
   `settle: false` marks a read that returns what is already there and skips the wait; every other tool is waited
   out before its effect on the screen is reported, because a write may still be landing when `exec` resolves. A
@@ -192,7 +323,12 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   globally and a component cannot build one per render: pass the list it has — a slice's sort keys, the options a
   prop carried — and it is published and enforced the same way. Neither reaches a set that fills in *after* the
   first render, since a declaration is mount-static; put that in the tool's `guard`, which is re-read per call and
-  can name the current values in its refusal. **An argument type nothing can describe — a model class, `Any`, a
+  can name the current values in its refusal. **One array level of either is describable too** —
+  `.arg("bodies", [String])`, `.opt("modes", [TaskStatus])` — and `oneOf` then narrows the elements rather than the
+  list. It is the schema `fill<Model>Form` already builds for an array field, so the same shape reaching an agent
+  through a form and not through a component tool was an oversight: a tool that could not say "a list of these"
+  said it in prose, and the app then owned a parser for the format it invented. A second level is not describable.
+  **An argument type nothing can describe — a model class, `Any`, a
   `Map` — withdraws the whole tool and says so on the console**, naming the tool, the argument and the type; the
   callable still drives the click a person makes. It does not throw: a tool schema is built during render, and an
   agent-tooling mistake that aborted the render would cost the route its server rendering. `st.useState`'s `set`
@@ -307,6 +443,29 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   for a person too: the options arrive when the dropdown opens, and an agent never opens it. `Field.ParentId` /
   `Field.ChildrenId` need none of that — the id *is* the value, so the ordinary setter describes it. All four still
   require the setter **by reference**, and a `disabled` picker publishes nothing.
+- **An upload control reaches an agent the same way, through `useFileFieldTool`.** The clause after "picked **or
+  uploaded**" has its own hook: the control hands `read` and `label` and gets `load<Field>OptionsOn<Model>` — the
+  same name the relation picker publishes, because a form draws both side by side and a model that learned the
+  name on one field spells it the same on the next — plus the field's own `set<Field>On<Model>` taking
+  `<field>Id` / `<field>Ids`, with `add`/`sub` besides on an array field. **`read` omitted publishes nothing**: a
+  shared `Field.Img` forwards an optional prop, and a call site handing it none has no candidates and must not
+  grow a tool that refuses every id. `read` is the control's rather than the framework's because the ids are the
+  host's — a conversation carries `MessageAttachment.ref`s, and only whoever set them can turn one back into the
+  model a form field holds. akanjs draws no upload control itself, so this is the hook a lib's `Field.Img` /
+  `Field.Imgs` calls, exactly as `Field.Relation` calls the relation one.
+- **`add`/`sub` on a file field are the only way in, not the weaker way.** For every other list of ids they are a
+  convenience the framework declines to pay a tool for — `useFieldTool` publishes them for embedded rows only, and
+  the relation picker not at all, because a picker's `read` is the whole resolvable set so rewriting the array is
+  always expressible. An upload control's `read` is what *this conversation* brought, and the field may already
+  hold files that predate it: naming the array whole drops those, since the ids that would keep them are ids the
+  guard has never heard of. **`max` / `min` are passed, not derived** — `ConstantField` carries `arrDepth`, which
+  says the value is a list and not how long a legal one is — and they reach the tool's *description* as well as
+  its guard, because a limit an agent can only learn by tripping the server's `Err` is the round trip the listing
+  tool exists to spare it. Two call sites rendering one field with different caps describe one name two ways, and
+  the surface warns, which is the right answer: a field has one cap. For the same reason the unknown-id refusal
+  **names the boundary rather than the absence** on a list: an id already on the field is real, on screen, and in
+  the form the agent just read, so "no such file" reads as the form being wrong instead of the verb — it says the
+  id is not among what is *offered*, and points at `sub<Field>On<Model>`, which does cover it.
 - **An array of embedded rows also publishes `add<Field>On<Model>` and `sub<Field>On<Model>`** — append, and
   remove-by-position — beside the whole-array setter. Not new authority: the setter can already produce any array
   those two can, so they are strictly weaker. What they add is that neither can touch a row it was not given, and
@@ -359,18 +518,11 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   useless to a model — that is cheaper than every tool learning to avoid it.
 
 ## Slash Commands And The Transcript
-- **`prompt()` endpoints double as the chat's slash commands.** There is no listing endpoint — the client reads
-  its own serialized signals — so a prompt's dictionary `.desc()` is what the menu shows, and its guards are
-  enforced by the prompt's own GET at call time. Arguments are positional and whitespace-separated, and quoting
-  is how a sentence stays one of them (`/reviewTask t1 "look at the totals"`) — a prompt taking a single `String`
-  is the common case, and an unquoted sentence would fill its second parameter with the second word.
-- **The chat answers six slash commands of its own**, listed in the same `/` menu ahead of the prompts:
-  `/new` (`/clear`), `/retry`, `/compact`, `/copy`, `/help` and `/tools`. An app writes none of them and cannot add
-  one — the extension point for a product's own command is a `prompt()` endpoint, which is guarded and server-side.
-  **A built-in wins a name collision with a prompt of the same name**, the mirror image of the tool rule: a
-  component's `st.tool` shadows a built-in it means to replace, but no library's prompt may take `/new` away from
-  the user who typed it — so a shadowed prompt is dropped from the menu rather than listed twice. `/new` and
-  `/copy` are also dispatched *before* the is-a-turn-running check **and before the question card takes the
+- **The `/` menu is the chat's own.** An app's prompts are `page().prompt()` declarations served over MCP to
+  external agents; a browser chat lists none of them, so the menu holds the six built-in commands and nothing else.
+- **The chat answers six slash commands of its own**: `/new` (`/clear`), `/retry`, `/compact`, `/copy`, `/help` and
+  `/tools`. An app writes none of them and cannot add one — a workflow a person invokes by name belongs to MCP, as
+  a `page().prompt()`, where it is guarded by the page it opens. `/new` and `/copy` are dispatched *before* the is-a-turn-running check **and before the question card takes the
   composer**, because mid-turn is exactly when they are reached for and a question the agent asked is the middle
   of a turn like any other — answered as text, `/new` would have reached the model as the user's decision.
   `/new` therefore aborts the turn it is clearing and waits for it to wind down, since the loop clears its own
@@ -430,21 +582,24 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   row, Tab completing its name, and Escape closing the menu and then, pressed again, the panel.
 
 ## Built-In Tools
-- The framework publishes five built-ins on every store surface: `navigate` (internal paths only, the same
-  router `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and
-  a page that draws no back link is not one you may not leave — a screen that must not be left withholds them
-  with `builtins`, not with prose), `readScreen` (the rendered DOM as compact text —
-  headings, links, control values, and `(disabled)` on a control or button that has it; the chat's own UI is
-  skipped via `data-agent-ui`, and a password value is never read), `readState(key)` (one masked store key), and
-  `highlight(target)`. Declaring a hook tool under one of those names shadows the built-in, so reuse them only to
-  mean that. **There is no general-purpose wait**: a built-in one was reachable on every screen and a model spent
-  it on whatever key it liked, parking turns nobody asked to park. Waiting belongs to the screen that knows what
-  is worth waiting for — publish an `st.tool` beside the control that starts the work, and let it await the work.
+- The framework publishes five built-ins on every store surface: `navigate` (internal paths only, the same router
+  `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and a page
+  that draws no back link is not one you may not leave — a screen that must not be left withholds them with `builtins`,
+  not with prose), `readScreen` (the rendered DOM as compact text — headings, links, control values, and `(disabled)`
+  on a control or button that has it; the chat's own UI is skipped via `data-agent-ui`, and a password value is never
+  read), `readState(key)` (one masked store key — a key that is unknown or that this screen does not read is refused
+  *with the keys it can* read, the way `readScreen` names its sections), and `highlight(target)`. Declaring a hook tool
+  under one of those names shadows the built-in, so reuse them only to mean that. **There is no general-purpose wait**:
+  a built-in one was reachable on every screen and a model spent it on whatever key it liked, parking turns nobody
+  asked to park. Waiting belongs to the screen that knows what is worth waiting for — publish an `st.tool` beside the
+  control that starts the work, and let it await the work.
 - **A tool that changes the screen waits for the screen before it answers.** `router.push` returns while the RSC
   payload is still in flight and a store action that fires `void fetch.*` commits a tick later, so `navigate`
   awaits `ScreenSettle.wait()` — DOM quiescence, bounded, because the client router hands its promise to nobody —
-  and the session awaits it after every non-`query` tool before taking the change report. Without it the report
-  describes the moment before the change landed and the `readScreen` that follows reads the page the user left.
+  and the session awaits it after every tool that did not declare `settle: false` before taking the change report.
+  Without it the report describes the moment before the change landed and the `readScreen` that follows reads the
+  page the user left. The reading built-ins (`readScreen`, `readState`, `highlight`) declare it, because a wait
+  costs 120ms of quiet at the very least and they change nothing a resource holds.
   New tools and state from a fresh route are still only listed from the next turn: the catalogue is snapshotted
   when the turn starts.
 - **A tool that waits for its own work costs no model turns; one that returns early costs one round trip per
@@ -475,6 +630,13 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   one costs nothing, while two buttons reading "Save" are not the same control. **Nothing hidden ever resolves** —
   a ring nobody can see reads as a broken tool, not as a miss. A section named by a heading is read to the next
   heading of its level or higher.
+- **An image is always named, and its address rides only when asked for.** `readScreen` prints `[image: <alt>]`,
+  and `[image]` for one with no `alt` — dropping the unlabelled one left a card that renders a picture reading
+  exactly like a card that renders nothing, and "this page shows no image" is the one answer the screen cannot
+  support. `readScreen({ images: true })` appends `(<src>)` to each, for handing one to a tool that takes a
+  picture; it is off by default because a gallery is one long URL per thumbnail, which is the read's whole budget
+  spent on the part of the screen it can say the least about. A `data:` URL is never printed — that is the bytes
+  themselves rather than somewhere to fetch them.
 - **A screen is only aimable if its names are printed.** `readScreen` writes `(#anchor)` beside a heading that
   opens an id'd or scoped container, and a truncated read ends with the headings below the cut — otherwise
   everything past the 8000-character limit is unreachable, because nothing names it, and an agent asked to point
@@ -511,6 +673,24 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   a no-op when nobody is rendering it. The chat shows it on that call's row until the row resolves. It is the
   browser twin of `McpProgress.report`. Import it and `AgentAbort` from `akanjs/store`: an app may not reach
   `use-agentic` directly (`no-import-external-library`), and those two are the channels a long tool body needs.
+- **One turn carries every call the model made in it, and they run in order.** An assistant turn may hold any
+  number of tool calls; the session executes them one at a time, in the order they arrived, and posts them back as
+  one `tool` message. A batch therefore costs **one** model round trip, where the same calls chained one per turn
+  cost a round trip *and* a resend of the whole transcript each — and then meet the turn cap halfway through. The
+  framework asks for the batch in its own half of the system prompt (`AgentService.preamble`); what an app adds is
+  a tool that does the whole job in one call, so there are fewer calls to batch in the first place. Two agents'
+  calls still take turns page-wide — see Zones.
+- **A chain of ten calls is usually a model checking its own work, not ten things to do.** Measured against the
+  provider, the batch itself lands in one turn; what follows it is `readScreen → readState → readScreen`, one read
+  per turn, confirming a write whose change report already said the same thing. The preamble tells the model not
+  to, which is worth a turn and a half on a plain "approve what is pending". So a tool that returns *what
+  changed* pays for itself twice — once as the answer, once as the reads it stops. The read a fresh route needs
+  after `navigate` is acquisition rather than confirmation and is unaffected.
+- **A batch reports each changed resource once, at the end.** Every call takes its own before-and-after, so eight
+  approvals would each attach the whole list they approved from — and by the time the model reads the message,
+  only the last copy is still true. The superseded ones are dropped (`ToolOutput.deduped`), so a resource several
+  calls touched appears once, as it finally stands, on the last result that touched it. What each call did is
+  still its own `result`; do not compensate by returning the collection from every write.
 - **The turn cap is a question, not a dead end.** At `maxTurns` the session asks whether to keep going through the
   same card `askUser` uses, and the answer rides as the user's own turn — so a steer typed instead of the
   keep-going choice reaches the model as guidance. A host that renders no `pendingQuestion` passes no
@@ -522,4 +702,76 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   is among them. The loop parks on the question exactly as it parks on an approval, a dismissal is the tool's
   error result rather than a silent empty answer, and the settled exchange renders as question-and-answer instead
   of a tool row. **Never re-implement it per screen** — a `st.tool("askAboutX")` that opens a modal is the same
-  thing with a worse transcript — and a hook tool named `askUser` shadows it like any other built-in.
+  thing with a worse transcript — and a hook tool named `askUser` shadows it like any other built-in. The line
+  between it and a `.card()` tool is what the answer *is*: a sentence or a pick off a list is `askUser` and belongs
+  to the conversation, while a shape the model must not invent — fields, a form, a signature — is a card the screen
+  declares, because only the screen knows what filling it in looks like.
+
+## What The Page Draws
+- **The page shows the agent's work, not just the transcript.** A chat panel is closed as often as it is open, and
+  a form that fills itself or a tab that switches on its own is a change the user watches happen with nothing
+  anywhere attributing it. So **the control a call was published from is ringed** where it stands, scrolled to
+  first when it is off screen, and **a pointer travels to it and presses it** — both on by default, and both
+  driven from the tool call itself rather than from a store action, which cannot tell the agent's write from the
+  user's.
+- **It costs an app nothing, for the same reason `data-akan-action` does.** `onChange={st.do.setTitleOnTask}` by
+  reference is what annotates the control, and the annotation is what makes it findable — so the fields and verbs
+  that matter light up with no code. An inline arrow publishes no tool, carries no annotation, and therefore
+  draws nothing: one wrapper silently costs three things at once.
+- **For a control the framework did not render, spread `agentAttrs`** from `akanjs/ui`:
+  `<button {...agentAttrs(run)} onClick={run}>`, where `run` is what `st.tool(…).exec(…)` returned. It reads the
+  name off the callable, so there is nothing to keep in sync and no `ref` to thread — and it earns the same E2E
+  selector and accessibility name an `akanjs/ui` control has. Never hand-write `data-akan-*`.
+- **A control that shares its handler with its siblings takes a key**: `agentAttrs(switchTab, menu)`, in the same
+  vocabulary the call's argument uses. One tool serves a whole tab strip or a whole list, so without it every
+  namesake is interchangeable in the DOM and the page can say *what* the agent did but never *where* — which the
+  no-guessing rule then turns into drawing nothing. `Tab.Menu` passes its `menu` key; do the same for a row verb
+  whose id the call names.
+- **Almost nothing is waited on.** The call starts the moment the effect is handed its event; a ring that lands a
+  frame later costs the turn nothing, and an animation that held a call would make the agent slower for a
+  decoration. A turn past four scrolls stops scrolling and keeps ringing — eight scrolls across a page is motion
+  sickness rather than attribution. **The one exception is `navigate`**, whose press has to land before the router
+  replaces the tree the link is in; it is capped at 600ms and the call goes either way.
+- **What it refuses to draw is the point.** A name several rows answer to rings nothing rather than guessing a row,
+  a call an approval or a guard turned back is never drawn at all, a tool no control carries draws nothing, and a
+  backgrounded tab draws nothing. A ring on the wrong element is worse than no ring: it is the screen telling the
+  user something untrue about what just happened. **A control the screen is not actually showing is not pointed at
+  either, and the pointer goes rather than travelling to it**: `checkVisibility` answers about an element alone, so
+  one under a modal's backdrop, inside a drawer that has slid off, or faded to nothing all pass it while being
+  invisible, and a pointer sent there lands on a blank patch of overlay. The test is `elementFromPoint` at the
+  control's own centre, taken after the reveal has settled. **`navigate` is mostly in that last class** — the router is not
+  an element, so it draws nothing. A bar across the top of the page was tried for it and removed: it read as
+  chrome the page had grown rather than as the agent doing something, which is the opposite of attribution. What
+  it does draw is the **link already on screen that goes where it is going**, when exactly one does and the user
+  can already see it: that one is an element, and the pointer presses it before the route moves. Addresses are
+  compared as routes (`router.routeOf`), since the locale and base-path segments are on the `<a>` and never on the
+  tool argument. An off-screen link is left alone — scrolling to a link and then leaving the page it is on is two
+  motions for one act. **Link presence is a drawing condition, never a permission one**: the agent may navigate
+  anywhere the user could type, and a zone that must not leave one screen drops `navigate` through `builtins`.
+- **Turn it off with `visual`** on `Agent.Chat` / `Agent.Zone` — `false` for all of it, `{ cursor: false }` or
+  `{ reveal: false }` for one effect. The pointer is chrome (`data-agent-ui`, `aria-hidden`,
+  `pointer-events: none`), so `readScreen` never reads it back and `highlight` can never aim at it.
+- **`ToolActivity` is the channel underneath**, a `ToolRunner` host option and an `AgentSession.onActivity`, firing
+  `start` / `end` around the execution alone. It is deliberately not `progress`: that one fires only for a tool
+  that chose to report, and a tool that says nothing about itself is exactly the one whose effect arrives
+  unexplained. The `start` may answer a promise, and the call waits for it — the whole of what makes drawing a
+  click on a link possible.
+- **`AgentSession.onTurn(running)` is the other half**, and the unit the pointer's life is measured in. A model's
+  calls arrive with its own writing between them, seconds each, so a pointer that lived for the length of a *call*
+  spent every turn vanishing and coming back. Only the conversation loop reports there — `compact` runs under the
+  same internal flag and drives nothing on screen.
+- **The pointer presses on arrival, never on departure** — a press fired as it leaves is a click on whatever it
+  was still over. It glides only when the hop is far enough to be worth following (a third of a second to cross
+  fifty pixels reads as lag, not motion), and teleports otherwise. It appears at the first control it presses,
+  **drifts clear of what it pressed** and waits out the gap between calls there as a spinner — a person clicks and
+  takes the hand away, and a spinner left sitting on the button covers the change it just caused — and fades when
+  the turn ends; **a turn that
+  drove no control draws no pointer at all**, since parking one in a corner for a turn that only answered a
+  question claims something that did not happen. While a reveal scrolls, it holds still — as a person's does — and
+  carries a chevron pointing the way the view is travelling, because stillness over a sliding page otherwise reads
+  as a pointer that has come loose rather than as the one doing the scrolling. The ring answers *where* and the
+  pointer answers *who*, which is why they are one default rather than two.
+- **A form patch fans out over the fields it named.** `fill<Model>Form` is published by the form rather than by any
+  one control, so it rings one control per field in the arguments — resolved through the same
+  `data-akan-state="<model>Form.<field>"` the setter annotates — capped at five. `writeOn<Model>(path, value)`
+  draws nothing, for the same reason it carries no annotation: there is no control to put one on.

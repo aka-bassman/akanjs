@@ -100,6 +100,31 @@ export const fillMissingFilterArgs = (filterInfo: FilterInfo, args: unknown[]) =
   return [...args, ...Array(filterInfo.args.length - args.length).fill(undefined)];
 };
 
+const queryOptionKeys = new Set(["select", "skip", "limit", "sort", "sample"]);
+// A generated `list<Filter>` takes the filter's own args and an optional trailing query option, and the two are
+// told apart at runtime: the args are spread into the filter function, so an option mistaken for one lands in a
+// filter slot and changes the query. A plain object every key of which names a query option is the option — a
+// filter arg is a scalar, an id, an enum, a date or an array, never that shape. `{}` counts as an option for the
+// same reason: read as a filter arg it is a truthy value nobody passed on purpose.
+const isQueryOptionArg = (value: unknown) => {
+  if (!value || typeof value !== "object") return false;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return false;
+  return Object.keys(value).every((key) => queryOptionKeys.has(key));
+};
+
+/**
+ * Splits a generated filter method's arguments into the filter's own args and the trailing query option.
+ * Shared by the database and service resolvers so the two cannot drift into disagreeing about what an option is.
+ */
+export const splitFilterArgs = (filterInfo: FilterInfo, args: unknown[]) => {
+  const hasQueryOption = args.length > filterInfo.args.length || isQueryOptionArg(args.at(-1));
+  return {
+    queryArgs: fillMissingFilterArgs(filterInfo, hasQueryOption ? args.slice(0, -1) : args),
+    queryOption: (hasQueryOption ? args.at(-1) : {}) as Record<string, unknown>,
+  };
+};
+
 export interface FilterArgInfo {
   name: string;
   argRef: ConstantFieldType;
@@ -177,8 +202,8 @@ export type BaseFilterQueryKey = "any";
 export type BaseFilterKey = BaseFilterSortKey | BaseFilterQueryKey;
 
 export type FilterInstance<
-  Query extends { [key: string]: FilterInfo } = {},
-  Sort extends { [key: string]: unknown } = {},
+  Query extends { [key: string]: FilterInfo } = Record<never, never>,
+  Sort extends { [key: string]: unknown } = Record<never, never>,
 > = {
   query: Query;
   sort: Sort;

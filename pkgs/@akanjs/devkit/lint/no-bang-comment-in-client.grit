@@ -2,19 +2,32 @@ engine biome(1.0)
 language js(typescript, jsx)
 
 // Bun's bundler classifies `//!` and `/*!` as legal comments (the `@license` / `@preserve` class) and keeps
-// them through `minify: true`, so a `//!` marker in browser-reachable code ships verbatim to every visitor.
+// them through `minify: true`, so a bang marker in browser-reachable code ships verbatim to every visitor.
 // `legalComments` is not a Bun.build option, so the source is the only place to stop it.
-// The two alternatives anchor the marker to line start or to whitespace after code, which keeps a literal
-// like `'https://host//!path'` from tripping the rule. A marker on the file's very first line is trivia that
-// Biome does not expose to the pattern, so it is the one case this rule cannot see.
-JsModule() as $mod where {
-  or {
-    $mod <: r"(?m)(?s).*^[ \t]*//!.*",
-    $mod <: r"(?s).*[^\s/][ \t]+//!.*"
+//
+// Matched through `file($name, $body)` rather than a node: a comment is trivia, and Biome's GritQL exposes
+// it to no node pattern — `JsModule()` does not even match as a top-level pattern, which is why the earlier
+// node-based spelling of this rule reported nothing at all.
+//
+// Two consequences, both measured (`local/review-2/data/probes/grit-node-probe.sh`):
+//   1. `$body` is the module's *token* span, so interior trivia is visible but the leading and trailing
+//      trivia are not — a marker above the first statement or below the last one is unreachable from
+//      GritQL. Those two positions are the rule's blind spot.
+//   2. `$body` is the whole file, so the diagnostic lands on line 1 whatever line the marker is on, and a
+//      regex capture carries no range to report instead. Search the file for the marker to find it.
+//
+// The alternations anchor the marker to line start or to whitespace after code, which keeps a literal like
+// `'https://host//!path'` from tripping the rule.
+file($name, $body) where {
+  $body <: or {
+    r"(?ms).*^[ \t]*//!.*",
+    r"(?s).*[^\s/][ \t]+//!.*",
+    r"(?ms).*^[ \t]*/\*!.*",
+    r"(?s).*[^\s/][ \t]+/\*!.*"
   },
   register_diagnostic(
-    span = $mod,
-    message = "The `//!` marker survives minification (Bun keeps it as a legal comment) and ships to the browser. Use `// FIXME:` or `// TODO:` in client-reachable code; keep `//!` for server, srvkit, and CLI files.",
+    span = $body,
+    message = "A `//!` or `/*!` marker survives minification (Bun keeps it as a legal comment) and ships to the browser. Use `// FIXME:` or `// TODO:` in client-reachable code; keep the bang form for server, srvkit, and CLI files. This diagnostic is file-level — search the file for the marker.",
     severity = "error"
   )
 }

@@ -1,6 +1,6 @@
 "use client";
 import { loadCapacitorApp, loadCapacitorDevice, loadCapacitorUpdater } from "akanjs/client/capacitor";
-import { HttpClient, mergeVersion, splitVersion } from "akanjs/common";
+import { mergeVersion, RestClient, splitVersion } from "akanjs/common";
 import type { ProtoAppInfo, ProtoFile } from "akanjs/constant";
 import { useState } from "react";
 
@@ -65,7 +65,7 @@ export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
     //fix lu to akasys
     // ! NEED TO FIX
     const url = serverUrl.replace("lu", "akasys");
-    const httpClient = new HttpClient(url);
+    const httpClient = new RestClient(url);
     const release = await httpClient.post<(ProtoAppInfo & { appBuild: string }) | null>("/release/codepush", {
       data: { ...appInfo },
     });

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
-import { cleanupCliTempWorkspace, createTempApp } from "../testHelpers";
+import { cleanupCliTempWorkspace, createTempApp } from "@akanjs/devkit/testHelpers";
 import { ScalarRunner } from "./scalar.runner";
 import { ScalarScript } from "./scalar.script";
 
@@ -37,7 +37,7 @@ describe("ScalarRunner", () => {
     const constantPath = `${app.cwdPath}/lib/__scalar/money/money.constant.ts`;
     const abstractPath = `${app.cwdPath}/lib/__scalar/money/money.abstract.md`;
     expect(await Bun.file(constantPath).exists()).toBe(true);
-    expect(await Bun.file(abstractPath).exists()).toBe(true);
+    expect(await Bun.file(abstractPath).text()).toStartWith("# money Abstract\n");
     const original = await Bun.file(constantPath).text();
 
     await Bun.write(constantPath, "custom constant");

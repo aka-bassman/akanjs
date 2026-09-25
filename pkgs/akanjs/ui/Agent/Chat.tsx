@@ -1,7 +1,6 @@
 "use client";
-import { cn, fetch, usePage } from "akanjs/client";
-import type { PromptResult } from "akanjs/signal";
-import { type AgentPrompt, AgentPrompts } from "akanjs/store";
+import { cn, usePage } from "akanjs/client";
+import { AgentPrompts, type AgentVisualOption } from "akanjs/store";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
@@ -18,6 +17,7 @@ import {
   type AgentRunner,
   type AgentSession,
   type AgentSessionOptions,
+  type ChatMessage,
   type CompactOptions,
   SessionContext,
   type SessionHistory,
@@ -25,20 +25,26 @@ import {
 import { createOverridable } from "../UiOverride";
 import Approval from "./Approval";
 import { agentSessionOf } from "./agentSessionOf";
-import type { AttachReader } from "./attachment";
+import type { AttachLimits, AttachReader } from "./attachment";
 import Bubble from "./Bubble";
 import { type ChatCommand, ChatCommands } from "./ChatCommands";
-import { Composer } from "./Composer";
+import { Composer, type ComposerHandle } from "./Composer";
 import { Launcher } from "./Launcher";
 import Menu from "./Menu";
 import Question from "./Question";
+import Queued from "./Queued";
+import Steps from "./Steps";
 import type { PersistOption } from "./sessionHistory";
 import type { BuiltinOption } from "./sessionView";
+import ToolCard from "./ToolCard";
 import { tokenCount } from "./tokenCount";
 import { useChatAttachments } from "./useChatAttachments";
+import { type QueuedMessage, useChatQueue } from "./useChatQueue";
+import { useChatReferences } from "./useChatReferences";
 import { useChatVoice } from "./useChatVoice";
 import { useDraftRecall } from "./useDraftRecall";
 import { useKeyboardInset } from "./useKeyboardInset";
+import { type ReferenceSource, useReferenceMenu } from "./useReferenceMenu";
 import { useSlashMenu } from "./useSlashMenu";
 import type { VoiceEngine } from "./voice";
 
@@ -75,6 +81,14 @@ export interface ChatProps {
    * controlled chat assemblable by a server component, since this is the only prop here that is a function.
    */
   onOpenChange?: (open: boolean) => void;
+  /**
+   * What the page itself draws while this agent drives it: the control a call was published from is ringed where
+   * it stands, and a pointer presses it, waits out the model's turn as a spinner where it landed, and goes when
+   * the turn ends. On by default — the chat panel is closed as often as it is open, and a change nothing
+   * attributes is one the user watches happen for no reason they can see. `false` draws nothing, and an object
+   * turns one effect off (`visual={{ cursor: false }}` keeps the ring, `{ reveal: false }` keeps the pointer).
+   */
+  visual?: boolean | AgentVisualOption;
   /** `false` draws no launcher, for an app that opens the panel from a control of its own. */
   launcher?: boolean;
   /**
@@ -108,8 +122,35 @@ export interface ChatProps {
    * (images as bytes, text as text). This is where an app puts what needs a parser — a PDF's text, a spreadsheet's
    * cells — since the framework carries attachments but depends on nothing that can extract one. It runs before
    * the built-in, so it can also replace how an image is prepared.
+   *
+   * **A `url` is handed to the provider as the address it will fetch**, so answer `data` whenever the provider
+   * cannot reach it — the default storage backend serves a path only this app can resolve, and a model handed one
+   * answers about a picture it never saw with nothing anywhere reporting a failure. Answering **both** is the
+   * shape for that case: bytes are what the provider is given, and the address is what the chip draws, so an
+   * uploading reader gets a thumbnail without betting the answer on who can reach its storage.
    */
   attach?: AttachReader;
+  /**
+   * What the composer's `@` menu can point at — one entry per kind of document a user may name while asking.
+   *
+   * Which documents those are is the app's answer, so the source carries its own `search`; the framework carries
+   * the token, the masking and the snapshot. Whole documents only: a field inside one is pointed at from the
+   * component that draws it, with `useAgentReference`, because that component is the thing that knows a rich-text
+   * field reads as a paragraph rather than as the editor document it is stored as.
+   */
+  reference?: readonly ReferenceSource[];
+  /**
+   * Draws each pointer in the composer as the name it points at rather than as the `@[…](mention:…)` token that
+   * carries it. On wherever `reference` sources are declared, and `false` keeps the plain textarea — for an app
+   * that overrides the composer, or one that would rather see the tokens it is sending.
+   */
+  mentions?: boolean;
+  /**
+   * Raises or lowers what the composer accepts — per file, per message, and how many. The defaults are what one
+   * turn's JSON safely carries to a conservative provider; an app pointed at a larger request limit, or one whose
+   * `attach` uploads and answers a `url`, has no reason to inherit them.
+   */
+  attachLimits?: AttachLimits;
   /**
    * Speech in and out. The engine listens and speaks; this component decides when — a press-to-talk microphone
    * whose transcript lands in the composer for the user to correct, and a reply read aloud **only when the ask
@@ -160,6 +201,7 @@ export const DefaultChat = ({
   open: openProp,
   onOpenChange,
   launcher = true,
+  visual = true,
   persist,
   inline = false,
   shortcut = true,
@@ -170,6 +212,9 @@ export const DefaultChat = ({
   chrome = true,
   defaultDraft,
   attach,
+  attachLimits,
+  reference,
+  mentions,
   voice,
 }: ChatProps) => {
   const { l } = usePage();
@@ -189,10 +234,9 @@ export const DefaultChat = ({
       builtins,
       persist,
       onCompact,
+      visual,
     });
   const session = held.current;
-  const prompts = useRef<AgentPrompts | null>(null);
-  prompts.current ??= AgentPrompts.of();
   const version = useSyncExternalStore(
     session.subscribe,
     () => session.version,
@@ -207,7 +251,7 @@ export const DefaultChat = ({
     onOpenChange?.(next);
   };
   const [draft, setDraft] = useState(defaultDraft ?? "");
-  const files = useChatAttachments({ session, attach, l });
+  const files = useChatAttachments({ session, attach, limits: attachLimits, l });
   const speech = useChatVoice({
     session,
     engine: voice,
@@ -216,10 +260,20 @@ export const DefaultChat = ({
     onFailed: () => session.note(l("base.agentVoiceFailed")),
   });
   const recall = useDraftRecall(session.messages);
+  // `dispatch` is declared below and only ever called from the flush effect, after this render has finished.
+  const queue = useChatQueue({ session, limits: attachLimits, version, l, onFlush: (message) => dispatch(message) });
   const [hotkey, setHotkey] = useState<{ label: string; keys: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
+  const handleRef = useRef<ComposerHandle | null>(null);
+  // Filled by whichever input the composer drew. An override that draws a textarea of its own fills no handle,
+  // and the ref it was handed answers instead.
+  const focusComposer = () => {
+    if (handleRef.current) handleRef.current.focus();
+    else inputRef.current?.focus();
+  };
+  const refs = useChatReferences({ session, draft, version, handleRef, onDraft: setDraft });
   // Only what the panel is following: a user who scrolled up to read is not dragged back down by the next delta.
   const sticky = useRef(true);
   const returning = useRef(false);
@@ -244,7 +298,7 @@ export const DefaultChat = ({
       event.preventDefault();
       sticky.current = true;
       setOpen(true);
-      inputRef.current?.focus();
+      focusComposer();
     };
     // Cmd/Ctrl+L is the browser location bar; capture so preventDefault wins.
     window.addEventListener("keydown", onKeyDown, true);
@@ -257,7 +311,7 @@ export const DefaultChat = ({
       returning.current = false;
       return;
     }
-    inputRef.current?.focus();
+    focusComposer();
   }, [open, session.pendingQuestion?.callId]);
   useEffect(
     () => () => {
@@ -267,29 +321,10 @@ export const DefaultChat = ({
     },
     [],
   );
-  const runPrompt = async (prompt: AgentPrompt, args: string[]) => {
-    const usage = `/${prompt.name} ${prompt.args.map((arg) => `<${arg.name}>`).join(" ")}`.trim();
-    if (args.length < prompt.args.filter((arg) => arg.required).length) {
-      session.report(`Usage: ${usage}`);
-      return;
-    }
-    const handler = (fetch as unknown as Record<string, (...callArgs: unknown[]) => Promise<PromptResult>>)[
-      prompt.name
-    ];
-    if (typeof handler !== "function") {
-      session.report(`/${prompt.name} is not mounted on this app.`);
-      return;
-    }
-    try {
-      const result = await handler(...args);
-      await session.send(AgentPrompts.messagesOf(result));
-    } catch (error) {
-      session.report(`/${prompt.name} failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
   const write = (text: string) => {
     setDraft(text);
     menu.reopen();
+    mentionMenu.reopen();
   };
   // A panel driven by a controlled `open` with no `onOpenChange` cannot close itself, so it draws no close button
   // rather than one that does nothing — the case an `inline` chat inside an app's own frame lands in.
@@ -301,24 +336,50 @@ export const DefaultChat = ({
   const runCommand = (command: ChatCommand) => {
     write("");
     recall.remember(`/${command.name}`);
-    // A staged file belongs to the conversation being cleared, so it leaves with it.
-    if (command.name === "new") files.clear();
+    // A staged file and a parked message belong to the conversation being cleared, so they leave with it — and
+    // the slot empties before the abort, or the dying turn's last notify would send what was just cleared.
+    if (command.name === "new") {
+      files.clear();
+      session.clearStaged();
+      queue.take();
+    }
     void ChatCommands.run(command, { session, l });
   };
-  const pick = (prompt: AgentPrompt) => {
-    if (prompt.args.some((arg) => arg.required)) {
-      write(`/${prompt.name} `);
-      return;
-    }
-    if (session.isRunning) {
-      session.note(l("base.agentBusy"));
-      return;
-    }
-    write("");
-    recall.remember(`/${prompt.name}`);
-    void runPrompt(prompt, []);
+  /**
+   * Opens a turn with what the composer held, or parks it behind the turn that is running so it opens the next.
+   * False only when parking refused it — the files would not fit beside what is already waiting.
+   */
+  const dispatch = (message: QueuedMessage): boolean => {
+    if (session.isRunning) return queue.push(message);
+    sticky.current = true;
+    speech.take(message.byVoice);
+    if (!message.attachments.length && !message.references.length) void session.send(message.text);
+    else
+      void session.send([
+        {
+          role: "user",
+          ...(message.text ? { text: message.text } : {}),
+          ...(message.attachments.length ? { attachments: message.attachments } : {}),
+          ...(message.references.length ? { references: message.references } : {}),
+        },
+      ]);
+    return true;
   };
-  const menu = useSlashMenu({ draft, prompts: prompts.current, l, onCommand: runCommand, onPrompt: pick });
+  /** Hands the parked message back to the composer, ahead of whatever was typed since it was parked. */
+  const unpark = () => {
+    const message = queue.queued;
+    if (!message || !files.restore(message.attachments)) return;
+    queue.take();
+    // Only the values: the tokens are inside the text being put back, and they are what names the references.
+    session.restoreStaged(message.references);
+    write([message.text, draft].filter(Boolean).join("\n"));
+    speech.hold(message.byVoice);
+  };
+  const menu = useSlashMenu({ draft, l, onCommand: runCommand });
+  const mentionMenu = useReferenceMenu({ draft, sources: reference ?? [], session, l, onWrite: write });
+  // At most one list is ever open — a slash command is the whole draft and a mention is a word at the end of one
+  // — so the keys and the panel address whichever has rows rather than choosing between two of them.
+  const list = menu.at() ? menu : mentionMenu;
   const send = () => {
     const text = draft.trim();
     if (!text && !files.attached.length) return;
@@ -339,27 +400,19 @@ export const DefaultChat = ({
         return;
       }
       write("");
-      speech.drop();
+      speech.lift();
       question.answer(question.multiple ? [text] : text);
       return;
     }
-    if (session.isRunning) return;
-    const prompt = command ? prompts.current?.find(command.name) : null;
+    const byVoice = speech.lift();
+    if (!dispatch({ text, attachments: files.attached, references: refs.references, byVoice })) {
+      speech.hold(byVoice);
+      return;
+    }
     write("");
-    if (text) recall.remember(text);
-    sticky.current = true;
-    speech.take();
-    if (command && prompt) {
-      void runPrompt(prompt, command.args);
-      return;
-    }
-    if (!files.attached.length) {
-      void session.send(text);
-      return;
-    }
-    const attachments = files.attached;
     files.clear();
-    void session.send([{ role: "user", ...(text ? { text } : {}), attachments }]);
+    session.clearStaged();
+    if (text) recall.remember(text);
   };
   const onKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     const area = event.currentTarget;
@@ -368,22 +421,24 @@ export const DefaultChat = ({
     const onEdgeLine = (up: boolean) =>
       area.selectionStart === area.selectionEnd &&
       !(up ? area.value.slice(0, area.selectionStart) : area.value.slice(area.selectionEnd)).includes("\n");
-    const row = menu.at();
+    const row = list.at();
     if (row) {
       // The menu takes the keys the recall would otherwise walk: it is the thing on screen the arrows point at.
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
-        menu.move(event.key === "ArrowDown" ? 1 : -1);
+        list.move(event.key === "ArrowDown" ? 1 : -1);
         return;
       }
       if (event.key === "Tab") {
         event.preventDefault();
-        write(`/${row.name} `);
+        // A command completes to its name and waits for arguments; a mention has none, so Tab finishes it.
+        if (list === menu) write(`/${row.name} `);
+        else row.pick();
         return;
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        menu.hide();
+        list.hide();
         return;
       }
       if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -414,15 +469,40 @@ export const DefaultChat = ({
   // A call and its result are two wire messages because the model needs both, but they are one thing that
   // happened: the call's row resolves in place, and the result message renders only what no call claimed —
   // a persisted transcript is capped, so a result can outlive the assistant message that made it.
+  //
+  // Emitted per turn rather than per message: a user message stands alone, and everything after it up to the next
+  // one goes to one `Steps`. Where a turn starts and ends is the one thing no per-message slot can see, so an app
+  // folding a turn into a scaffold has to be handed the group — the default draws the same flat bubbles.
   const bubbles = useMemo(() => {
     const resultOf = new Map(session.messages.flatMap((message) => message.toolResults ?? []).map((r) => [r.id, r]));
     const claimed = new Set(session.messages.flatMap((message) => message.toolCalls?.map((call) => call.id) ?? []));
-    return session.messages.flatMap((message, idx) => {
-      if (message.role !== "tool")
-        return [<Bubble key={idx} message={message} progress={session.progress} results={resultOf} />];
-      const orphans = (message.toolResults ?? []).filter((result) => !claimed.has(result.id));
-      return orphans.length ? [<Bubble key={idx} message={{ ...message, toolResults: orphans }} />] : [];
+    const blocks: ({ at: number; user: ChatMessage } | { at: number; turn: ChatMessage[] })[] = [];
+    session.messages.forEach((message, idx) => {
+      if (message.role === "user") {
+        blocks.push({ at: idx, user: message });
+        return;
+      }
+      const orphans = message.role === "tool" ? (message.toolResults ?? []).filter((r) => !claimed.has(r.id)) : null;
+      if (orphans && !orphans.length) return;
+      const shown = orphans ? { ...message, toolResults: orphans } : message;
+      const open = blocks.at(-1);
+      if (open && "turn" in open) open.turn.push(shown);
+      else blocks.push({ at: idx, turn: [shown] });
     });
+    const last = blocks.at(-1);
+    return blocks.map((block) =>
+      "user" in block ? (
+        <Bubble key={block.at} message={block.user} progress={session.progress} results={resultOf} />
+      ) : (
+        <Steps
+          isRunning={session.isRunning && block === last}
+          key={block.at}
+          messages={block.turn}
+          progress={session.progress}
+          results={resultOf}
+        />
+      ),
+    );
   }, [version]);
   // Recomputed per transcript change, never per render: the estimate walks every message, and the composer
   // re-renders on every keystroke.
@@ -476,6 +556,7 @@ export const DefaultChat = ({
                 className="text-foreground/50 hover:text-foreground"
                 onClick={() => {
                   files.clear();
+                  queue.take();
                   void session.reset();
                 }}
                 type="button"
@@ -518,22 +599,31 @@ export const DefaultChat = ({
         ) : null}
       </div>
       {session.pendingApproval ? <Approval approval={session.pendingApproval} /> : null}
+      {session.pendingCard ? <ToolCard card={session.pendingCard} key={session.pendingCard.callId} /> : null}
       {session.pendingQuestion ? (
         <Question key={session.pendingQuestion.callId} question={session.pendingQuestion} />
       ) : null}
-      <Menu onPick={(row) => row.pick()} rows={menu.rows} selected={menu.selected} />
+      {queue.queued ? <Queued message={queue.queued} onCancel={() => queue.take()} onEdit={unpark} /> : null}
+      <Menu onPick={(row) => row.pick()} prefix={list === menu ? "/" : "@"} rows={list.rows} selected={list.selected} />
       <Composer
         attached={files.attached}
+        pending={files.pending}
         draft={draft}
+        handleRef={handleRef}
         inputRef={inputRef}
+        mentions={mentions ?? !!reference?.length}
         {...(speech.canListen ? { mic: { listening: speech.listening, onToggle: speech.toggle } } : {})}
         onDraft={write}
         onFiles={(picked) => void files.add(picked)}
         onKeyDown={onKeyDown}
         onRemoveFile={files.remove}
+        onRemoveReference={refs.remove}
         onSend={send}
+        references={refs.references}
         onStop={() => {
           speech.silence();
+          // Stop means stop: what was parked comes back to the composer instead of opening the next turn at once.
+          unpark();
           session.abort();
         }}
         session={session}

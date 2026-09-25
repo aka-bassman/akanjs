@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { interpolateTranslation } from "../common/interpolateTranslation";
 import { pathGetLoose } from "../common/pathGetLoose";
 
 type Side = "server" | "client";
@@ -49,6 +50,7 @@ beforeAll(() => {
         if (!acc || typeof acc !== "object") return fallback;
         return (acc as Record<string, unknown>)[key] ?? fallback;
       }, obj),
+    interpolateTranslation,
     pathGetLoose,
     getBasePathFromPathname: (
       pathname: string,
@@ -133,18 +135,14 @@ describe("router", () => {
     envState.side = "client";
     installClientWindow("/en/admin/explore");
     let historyState: unknown = null;
-    const windowWithHistory = window as typeof window & {
-      history: { state: unknown; replaceState: (state: unknown) => void };
-      addEventListener: () => void;
-    };
-    windowWithHistory.history = {
-      state: null,
-      replaceState: (state) => {
+    const historyStub = {
+      state: null as unknown,
+      replaceState: (state: unknown) => {
         historyState = state;
-        windowWithHistory.history.state = state;
+        historyStub.state = state;
       },
     };
-    windowWithHistory.addEventListener = () => undefined;
+    Object.assign(window, { history: historyStub, addEventListener: () => undefined });
     const calls: unknown[] = [];
     const originalSetTimeout = globalThis.setTimeout;
     const mockSetTimeout = ((handler: TimerHandler) => {
@@ -172,8 +170,12 @@ describe("router", () => {
       ],
       indexPath: "/explore",
       router: {
-        push: (href, options) => calls.push(["push", href, options]),
-        replace: (href, options) => calls.push(["replace", href, options]),
+        push: (href, options) => {
+          calls.push(["push", href, options]);
+        },
+        replace: (href, options) => {
+          calls.push(["replace", href, options]);
+        },
         back: (options) => calls.push(["back", options]),
         refresh: () => calls.push(["refresh"]),
       },
@@ -227,8 +229,12 @@ describe("router", () => {
       lang: "en",
       prefix: "admin",
       router: {
-        push: (href, options) => calls.push(["push", href, options]),
-        replace: (href, options) => calls.push(["replace", href, options]),
+        push: (href, options) => {
+          calls.push(["push", href, options]);
+        },
+        replace: (href, options) => {
+          calls.push(["replace", href, options]);
+        },
         back: (options) => calls.push(["back", options]),
         refresh: () => calls.push(["refresh"]),
       },
@@ -261,6 +267,35 @@ describe("router", () => {
     globalThis.setTimeout = originalSetTimeout;
   });
 
+  test("navigation() carries a refused push back to the caller", async () => {
+    envState.side = "client";
+    installClientWindow();
+    const { router } = await import("./router");
+    const refusal = new Error("no route at /nope");
+    refusal.name = "RscRouteNotFound";
+
+    router.init({
+      type: "ssr",
+      side: "client",
+      lang: "en",
+      router: {
+        push: (href) => (href.includes("/nope") ? Promise.reject(refusal) : undefined),
+        replace: () => undefined,
+        back: () => undefined,
+        refresh: () => undefined,
+      },
+    });
+
+    router.push("/docs/intro");
+    await expect(router.navigation()).resolves.toBeUndefined();
+
+    router.push("/nope");
+    await expect(router.navigation()).rejects.toThrow("no route at /nope");
+    // Awaited a second time: the refusal is held inside the router, so nobody's failure to await it turns into an
+    // unhandled rejection, and the one caller that does await it still sees it.
+    await expect(router.navigation()).rejects.toThrow("no route at /nope");
+  });
+
   test("csr navigation preserves csr runtime search params", async () => {
     envState.side = "client";
     installClientWindow("/en/admin/current", "?csr=true&akanMobileTarget=default&akanMobileBasePath=admin");
@@ -280,8 +315,12 @@ describe("router", () => {
       lang: "en",
       prefix: "admin",
       router: {
-        push: (href, options) => calls.push(["push", href, options]),
-        replace: (href, options) => calls.push(["replace", href, options]),
+        push: (href, options) => {
+          calls.push(["push", href, options]);
+        },
+        replace: (href, options) => {
+          calls.push(["replace", href, options]);
+        },
         back: (options) => calls.push(["back", options]),
         refresh: () => calls.push(["refresh"]),
       },
@@ -313,8 +352,12 @@ describe("router", () => {
       lang: "en",
       prefix: "admin",
       router: {
-        push: (href, options) => calls.push(["push", href, options]),
-        replace: (href, options) => calls.push(["replace", href, options]),
+        push: (href, options) => {
+          calls.push(["push", href, options]);
+        },
+        replace: (href, options) => {
+          calls.push(["replace", href, options]);
+        },
         back: (options) => calls.push(["back", options]),
         refresh: () => calls.push(["refresh"]),
       },
@@ -343,8 +386,12 @@ describe("router", () => {
       lang: "en",
       prefix: "akanjs",
       router: {
-        push: (href, options) => calls.push(["push", href, options]),
-        replace: (href, options) => calls.push(["replace", href, options]),
+        push: (href, options) => {
+          calls.push(["push", href, options]);
+        },
+        replace: (href, options) => {
+          calls.push(["replace", href, options]);
+        },
         back: (options) => calls.push(["back", options]),
         refresh: () => calls.push(["refresh"]),
       },

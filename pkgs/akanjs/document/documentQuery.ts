@@ -42,6 +42,9 @@ export type DocumentQueryNode =
   | { kind: "raw"; sql: string; params: unknown[] }
   | ({ kind: "search"; text: string } & DocumentSearchOptions);
 
+/** The four real SQL columns. Everything else lives inside `_doc`, which is what makes the two compile differently. */
+export const baseDocumentColumns = new Set(["id", "createdAt", "updatedAt", "removedAt"]);
+
 export type DocumentQueryOperator =
   | "eq"
   | "ne"
@@ -57,6 +60,24 @@ export type DocumentQueryOperator =
   | "empty"
   | "has"
   | "contains";
+
+/** The operator-object shorthand's keys: `{ status: { oneOf: [...] } }` reaches the same operators as `q.oneOf`. */
+export const queryOperatorKeys = new Set<string>([
+  "eq",
+  "ne",
+  "oneOf",
+  "notOneOf",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "between",
+  "exists",
+  "missing",
+  "empty",
+  "has",
+  "contains",
+]);
 
 export type DocumentQueryValue =
   | DocumentPrimitive

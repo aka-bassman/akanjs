@@ -1,6 +1,6 @@
 import type { BackendEnv, PromiseOrObject } from "akanjs/base";
 import type { Adaptor, AdaptorCls, LlmOption } from "akanjs/service";
-import type { GuardCls, MiddlewareCls } from "akanjs/signal";
+import type { CrossSiteOption, GuardCls, MiddlewareCls } from "akanjs/signal";
 import type { McpServerOption } from "./akanServer";
 import type { WebProxyRegistration } from "./proxy";
 import { HostBasePathWebProxy, LocaleWebProxy } from "./proxy";
@@ -20,8 +20,9 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   readonly #adaptorOverrides: AdaptorOverride[] = [];
   readonly #webProxies: WebProxyRegistration[] = [];
   readonly #getLlms: ((env: Env) => LlmOption)[] = [];
-  #mcp: boolean | McpServerOption | undefined;
+  #getMcp: ((env: Env) => boolean | McpServerOption) | undefined;
   #agentAccess: GuardCls | GuardCls[] | null | undefined;
+  #crossSite: CrossSiteOption | undefined;
   constructor() {
     this.#getUses = [];
   }
@@ -47,10 +48,11 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   /**
    * MCP server settings for the app mounting this option, merged over the `AKAN_MCP_*` environment and under an
    * option the server is constructed with. The app's own `option.ts` is the last lib the server reads, so it wins
-   * over every library it depends on.
+   * over every library it depends on. The function form receives the server env, for a setting derived from it —
+   * a token verifier built on the app's signing secret, the issuer an authorization server publishes under.
    */
-  setMcp(mcp: boolean | McpServerOption = true) {
-    this.#mcp = mcp;
+  setMcp(mcpOrFn: boolean | McpServerOption | ((env: Env) => boolean | McpServerOption) = true) {
+    this.#getMcp = typeof mcpOrFn === "function" ? mcpOrFn : () => mcpOrFn;
     return this;
   }
   /**
@@ -62,8 +64,24 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
     this.#agentAccess = guards;
     return this;
   }
-  /** Settings for whichever adaptor fills `LlmAdaptorRole`, injected into it as the `llmOption` use. */
-  setLlm(llmOrFn: LlmOption | ((env: Env) => LlmOption)) {
+  /**
+   * Which other origins may drive a mutation, on top of the one serving the request and the native shells.
+   * Needed only by a browser client hosted somewhere else — a separate admin domain, a partner embed. The gate
+   * itself is on by default and `{ enabled: false }` is for an API no browser reaches.
+   */
+  setCrossSite(crossSite: CrossSiteOption) {
+    this.#crossSite = crossSite;
+    return this;
+  }
+  /**
+   * Settings for whichever adaptor fills `LlmAdaptorRole`, injected into it as the `llmOption` use.
+   *
+   * The argument is generic so that whatever an adaptor needs beyond `LlmOption` travels here too: an adaptor an
+   * app or a library wrote declares its own interface extending it, reads it with `use<MyLlmOption>()`, and its
+   * region or project id rides the same channel the shipped fields do. Entries merge in mount order with the
+   * app's last, so a library may name a host and the app the key.
+   */
+  setLlm<Option extends LlmOption>(llmOrFn: Option | ((env: Env) => Option)) {
     if (typeof llmOrFn === "function") this.#getLlms.push(llmOrFn);
     else this.#getLlms.push(() => llmOrFn);
     return this;
@@ -81,11 +99,14 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   getWebProxies(): WebProxyRegistration[] {
     return this.#webProxies;
   }
-  getMcp(): boolean | McpServerOption | undefined {
-    return this.#mcp;
+  getMcp(env: Env): boolean | McpServerOption | undefined {
+    return this.#getMcp?.(env);
   }
   getAgentAccess(): GuardCls | GuardCls[] | null | undefined {
     return this.#agentAccess;
+  }
+  getCrossSite(): CrossSiteOption | undefined {
+    return this.#crossSite;
   }
   getLlm(env: Env): LlmOption {
     return Object.assign({}, ...this.#getLlms.map((fn) => fn(env)));

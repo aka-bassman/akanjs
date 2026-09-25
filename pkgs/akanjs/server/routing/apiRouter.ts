@@ -1,7 +1,8 @@
 import { dayjs } from "akanjs/base";
-import { type Logger, websocketAuthContract } from "akanjs/common";
-import type { InjectRegistry } from "akanjs/service";
-import { Exception, type WebsocketReqData } from "akanjs/signal";
+import { type Logger, websocketAuthContract, websocketHeartbeatContract } from "akanjs/common";
+import type { InjectRegistry, LiveRegistry } from "akanjs/service";
+import { isExceptionLike, SignalContext, SignalFailure, type WebsocketReqData } from "akanjs/signal";
+import { compressResponse } from "../contentEncoding";
 import type { HmrWsData, HmrWsHub } from "../hmr/wsHub";
 import { copyBunRequestFields, type WebProxyRunner } from "../proxy";
 import { SignalResolver } from "../resolver";
@@ -41,6 +42,8 @@ type RouteHandler = (req: Request) => Response | Promise<Response | undefined> |
 export interface WebsocketHandlersInputs {
   wsRoutes: WebsocketRoutes;
   registry: InjectRegistry;
+  /** Only live rooms need it — a room is released from the routing table when its last socket goes. */
+  live?: LiveRegistry;
   hmrHub: HmrWsHub | null;
   hmrState: HmrStateSource | null;
   logger: Logger;
@@ -48,20 +51,6 @@ export interface WebsocketHandlersInputs {
 }
 
 type WsTaggedData = { kind?: string };
-interface ExceptionLike {
-  statusCode: number;
-  toJSON(): object;
-}
-
-const isExceptionLike = (error: unknown): error is ExceptionLike => {
-  return (
-    error instanceof Exception ||
-    (error instanceof Error &&
-      "statusCode" in error &&
-      typeof (error as { statusCode?: unknown }).statusCode === "number" &&
-      typeof (error as { toJSON?: unknown }).toJSON === "function")
-  );
-};
 
 export class ApiRouter {
   /**
@@ -81,9 +70,12 @@ export class ApiRouter {
     webProxyRunner,
   }: ApiRouteInputs): NonNullHttpRoutes {
     const endpointEntries = Object.entries(routes ?? {}).map(
-      ([p, handler]) => [ApiRouter.#applyGlobalPrefix(prefix, p, routeOptions?.[p]), handler] as const,
+      ([p, handler]) =>
+        [ApiRouter.#applyGlobalPrefix(prefix, p, routeOptions?.[p]), ApiRouter.#compressRoute(handler)] as const,
     );
-    const builtinEntries = Object.entries(builtinRoutes ?? {});
+    const builtinEntries = Object.entries(builtinRoutes ?? {}).map(
+      ([path, handler]) => [path, ApiRouter.#compressRoute(handler)] as const,
+    );
     const endpointPaths = new Set([...endpointEntries.map(([path]) => path), ...builtinEntries.map(([path]) => path)]);
     const routeTable = {
       [`${prefix}${websocketPrefix}` as "/api/ws"]: (req) => {
@@ -109,6 +101,7 @@ export class ApiRouter {
   static buildWebsocketHandlers({
     wsRoutes,
     registry,
+    live,
     hmrHub,
     hmrState,
     logger,
@@ -149,8 +142,12 @@ export class ApiRouter {
               // Must stay synchronous: a subscribe frame sent right behind this one is dispatched
               // next and has to see the new credential, not the one it replaced.
               AppWsData.applyCredential(AppWsData.of(ws), websocketAuthContract.readJwt(msg.data));
-              const revokedRooms = await SignalResolver.revalidateWsRooms(ws, registry);
+              const revokedRooms = await SignalResolver.revalidateWsRooms(ws, registry, live);
               ws.send(JSON.stringify(websocketAuthContract.makeAck(revokedRooms)));
+              return;
+            }
+            if (msg.key === websocketHeartbeatContract.key) {
+              ws.send(JSON.stringify(websocketHeartbeatContract.makeAck()));
               return;
             }
             const wsRoute = wsRoutes[msg.key];
@@ -165,10 +162,11 @@ export class ApiRouter {
             ws.send(JSON.stringify({ ...error.toJSON(), timestamp: new Date().toISOString() }));
             return;
           }
-          const errMsg = error instanceof Error ? error.message : String(error);
-          logger.error(errMsg);
-          console.error(error);
-          ws.send(JSON.stringify({ error: errMsg, statusCode: 500, timestamp: new Date().toISOString(), at: dayjs() }));
+          if (!SignalContext.wasReported(error)) {
+            logger.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+          }
+          // The same generalization the HTTP 500 makes: a socket frame is no less readable by the caller.
+          ws.send(JSON.stringify({ ...SignalFailure.body(error), at: dayjs() }));
         }
       },
       close: (ws) => {
@@ -177,7 +175,7 @@ export class ApiRouter {
           hmrHub.detach(ws as unknown as Bun.ServerWebSocket<HmrWsData>);
           return;
         }
-        SignalResolver.handleWsClose(ws, registry);
+        SignalResolver.handleWsClose(ws, registry, live);
       },
     };
   }
@@ -227,15 +225,7 @@ export class ApiRouter {
   }
 
   static #wrapRoute(route: RouteValue, runner: WebProxyRunner): RouteValue {
-    if (typeof route === "function") return ApiRouter.#wrapHandler(route as RouteHandler, runner) as RouteValue;
-    if (route instanceof Response) return ApiRouter.#wrapHandler(() => route, runner) as RouteValue;
-    if (!route || typeof route !== "object") return route;
-    return Object.fromEntries(
-      Object.entries(route).map(([method, handler]) => [
-        method,
-        typeof handler === "function" ? ApiRouter.#wrapHandler(handler as RouteHandler, runner) : handler,
-      ]),
-    ) as RouteValue;
+    return ApiRouter.#mapRoute(route, (handler) => ApiRouter.#wrapHandler(handler, runner));
   }
 
   static #wrapHandler(handler: RouteHandler, runner: WebProxyRunner): RouteHandler {
@@ -244,5 +234,33 @@ export class ApiRouter {
       if (result.response) return result.response;
       return await handler(copyBunRequestFields(result.request, req));
     };
+  }
+
+  /**
+   * Signal endpoints answer with a fully-built JSON body, so this is the one place every model response passes
+   * through with the request still in hand. The web routes are deliberately left out: their bodies stream, and
+   * `compressResponse` buffers.
+   *
+   * Behind the gateway this finds `Accept-Encoding: identity` and does nothing — the gateway asks for an
+   * identity body because Bun's `fetch` decodes any `Content-Encoding` it is handed, so a child that
+   * compressed here would only be paying to have the gateway undo it. The gateway compresses instead.
+   */
+  static #compressRoute(route: RouteValue): RouteValue {
+    return ApiRouter.#mapRoute(route, (handler) => async (req) => {
+      const response = await handler(req);
+      return response ? await compressResponse(req, response) : response;
+    });
+  }
+
+  static #mapRoute(route: RouteValue, wrap: (handler: RouteHandler) => RouteHandler): RouteValue {
+    if (typeof route === "function") return wrap(route as RouteHandler) as RouteValue;
+    if (route instanceof Response) return wrap(() => route) as RouteValue;
+    if (!route || typeof route !== "object") return route;
+    return Object.fromEntries(
+      Object.entries(route).map(([method, handler]) => [
+        method,
+        typeof handler === "function" ? wrap(handler as RouteHandler) : handler,
+      ]),
+    ) as RouteValue;
   }
 }

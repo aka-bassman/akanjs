@@ -22,10 +22,18 @@ export interface DocumentIndexBuilder<Schema> {
   done(): Schema;
 }
 
+/**
+ * `previous` is the document as it was before this write, and is absent on a create.
+ *
+ * A hook that has to answer "did this leave the set it was in" cannot do it from the new value alone — a soft
+ * delete and a field edit that moves a row out of a filter both look like an ordinary document afterwards. It is a
+ * trailing optional parameter, so a listener that ignores it is unaffected.
+ */
 export type DocumentSaveHook<Doc = unknown> = (
   this: Doc,
   next?: () => void,
   type?: CRUDEventType,
+  previous?: Doc,
 ) => PromiseOrObject<void>;
 
 export class DocumentSchema<Doc = unknown> {
@@ -44,6 +52,28 @@ export class DocumentSchema<Doc = unknown> {
     const hooks = this.postHooks.get(type) ?? [];
     hooks.push(hook as unknown as DocumentSaveHook<Doc>);
     this.postHooks.set(type, hooks);
+    return this;
+  }
+
+  // A removal replaces the array rather than splicing it: a write already running holds the list it started with,
+  // so a listener that unsubscribes from inside a hook cannot make the loop skip the hook after it.
+  removePre<HookDoc = Doc>(type: SaveEventType, hook: DocumentSaveHook<HookDoc>) {
+    const hooks = this.preHooks.get(type);
+    if (hooks)
+      this.preHooks.set(
+        type,
+        hooks.filter((registered) => registered !== (hook as unknown)),
+      );
+    return this;
+  }
+
+  removePost<HookDoc = Doc>(type: SaveEventType, hook: DocumentSaveHook<HookDoc>) {
+    const hooks = this.postHooks.get(type);
+    if (hooks)
+      this.postHooks.set(
+        type,
+        hooks.filter((registered) => registered !== (hook as unknown)),
+      );
     return this;
   }
 

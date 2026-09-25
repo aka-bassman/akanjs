@@ -1,7 +1,6 @@
 import { type BaseEnv, INJECT_META } from "akanjs/base";
 import type { AdaptorCls, InjectInfo, ServiceCls } from "akanjs/service";
 import type { DiLifecycle } from "../di/diLifecycle";
-import { DevtoolsJson } from "./devtoolsJson";
 import type { DepEdge, DepEdgeKind, DepNode, DepNodeKind, DepsData } from "./types";
 
 export interface DepsSerializerContext {
@@ -197,9 +196,7 @@ export class DepsSerializer {
       detail: {
         local: Boolean(injectInfo.local),
         isMap: Boolean(injectInfo.isMap),
-        ...(injectInfo.cacheOption?.expireAt !== undefined
-          ? { expireAt: DevtoolsJson.toSafe(injectInfo.cacheOption.expireAt) }
-          : {}),
+        ...(injectInfo.ttl !== undefined ? { ttl: injectInfo.ttl } : {}),
       },
     };
   }

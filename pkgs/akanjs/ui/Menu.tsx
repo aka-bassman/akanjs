@@ -30,6 +30,8 @@ export interface MenuProps {
   inlineCollapsed?: boolean;
   onMouseOver?: () => void;
   onMouseLeave?: () => void;
+  /** Draws one item's body. The row, its click, and any submenu stay the framework's. */
+  renderItem?: (item: MenuItem, active: boolean) => ReactNode;
 }
 
 export const DefaultMenu = ({
@@ -47,6 +49,7 @@ export const DefaultMenu = ({
   inlineCollapsed,
   onMouseOver,
   onMouseLeave,
+  renderItem,
 }: MenuProps) => {
   const [expandedKey, setExpandedKey] = useState<string>(); // 서브메뉴
   const [currentKey, setCurrentKey] = useState<string | null>(defaultSelectedKeys?.[0] ?? null); // 선택된 메뉴
@@ -160,12 +163,15 @@ export const DefaultMenu = ({
                   if (mode === "horizontal" && !isOverflowItem) setExpandedKey(undefined);
                 }}
               >
-                <div className="flex h-full justify-between rounded-none">
-                  <div className={cn("flex items-center gap-1", labelClassName?.(checkIsActive(item.key)))}>
-                    {item.icon}
+                {renderItem ? (
+                  renderItem(item, checkIsActive(item.key))
+                ) : (
+                  <div className="flex h-full justify-between rounded-none">
+                    <div className={cn("flex items-center gap-1", labelClassName?.(checkIsActive(item.key)))}>
+                      {item.icon}
 
-                    {!inlineCollapsed && <div className="whitespace-nowrap text-foreground">{item.label}</div>}
-                    {/* <div
+                      {!inlineCollapsed && <div className="whitespace-nowrap text-foreground">{item.label}</div>}
+                      {/* <div
                       className={cn(
                         "whitespace-nowrap  truncate ",
                         mode === "horizontal" && !isOverflowItem && item.children
@@ -175,16 +181,17 @@ export const DefaultMenu = ({
                     >
                       {item.label}
                     </div> */}
+                    </div>
+                    {item.children && mode === "inline" && (
+                      <AiFillCaretDown
+                        className={cn(
+                          "text-xs transition-transform duration-400",
+                          expandedKey === item.key ? "rotate-180" : "",
+                        )}
+                      />
+                    )}
                   </div>
-                  {item.children && mode === "inline" && (
-                    <AiFillCaretDown
-                      className={cn(
-                        "text-xs transition-transform duration-400",
-                        expandedKey === item.key ? "rotate-180" : "",
-                      )}
-                    />
-                  )}
-                </div>
+                )}
                 {/* 서브메뉴 */}
                 {item.children && expandedKey === item.key && (
                   <div className={subMenuClassName}>

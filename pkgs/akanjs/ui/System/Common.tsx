@@ -1,6 +1,5 @@
 import "dayjs/locale/ko";
 
-import type { ClientEnv } from "akanjs/base";
 import type { RootLayoutProps, WebAppManifest } from "akanjs/client";
 import type { AkanTheme } from "akanjs/fetch";
 import type { ReactNode } from "react";
@@ -16,16 +15,14 @@ export interface ProviderProps {
   head?: ReactNode;
   /** Web app manifest emitted as a data URL. */
   manifest?: WebAppManifest;
-  /** Client runtime environment injected into the app bridge. */
-  env: ClientEnv;
+  /** App-specific public client config (`env/env.client.ts`) merged over the framework's own `getEnv()`. */
+  env?: object;
   /** Initial Akan theme configuration. */
   theme?: AkanTheme;
   /** Optional route prefix/base path. */
   prefix?: string;
   /** App content rendered inside the system provider. */
   children: ReactNode | ReactNode[];
-  /** Optional Google Analytics tracking id. */
-  gaTrackingId?: string;
   /** Select mobile-style frame behavior or normal web layout. */
   layoutStyle?: "mobile" | "web";
   /** Enable reconnect helper. Defaults to local operation mode in CSR. */
@@ -45,7 +42,7 @@ export interface ProviderProps {
 }
 
 export const Common = () => {
-  return <></>;
+  return null;
 };
 
 export function ManifestLink({ manifest }: { manifest?: WebAppManifest }) {

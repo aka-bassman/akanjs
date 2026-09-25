@@ -7,11 +7,13 @@ export interface RightSiderProps {
   className?: string;
   children: ReactNode;
   open: boolean;
-  title?: string;
+  title?: ReactNode;
   width?: number | string;
+  /** The mark inside the drawer's close control. `false` draws no control. */
+  close?: ReactNode | false;
   onCancel: () => void;
 }
-export const RightSider = ({ className, children, open, title, width, onCancel }: RightSiderProps) => {
+export const RightSider = ({ className, children, open, title, width, close, onCancel }: RightSiderProps) => {
   return (
     <div
       className={cn(
@@ -24,18 +26,20 @@ export const RightSider = ({ className, children, open, title, width, onCancel }
     >
       {children}
       <div className="absolute top-2 left-4 flex items-center gap-4 pt-2 text-xl">
-        <div
-          className={cn(
-            "cursor-pointer border-muted bg-background transition-all duration-150",
-            open && "opacity-100",
-            !open && "opacity-0",
-          )}
-          onClick={() => {
-            onCancel();
-          }}
-        >
-          <AiOutlineClose />
-        </div>
+        {close === false ? null : (
+          <div
+            className={cn(
+              "cursor-pointer border-muted bg-background transition-all duration-150",
+              open && "opacity-100",
+              !open && "opacity-0",
+            )}
+            onClick={() => {
+              onCancel();
+            }}
+          >
+            {close ?? <AiOutlineClose />}
+          </div>
+        )}
         {title ? <div className="whitespace-nowrap">{title}</div> : null}
       </div>
     </div>

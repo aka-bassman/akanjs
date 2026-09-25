@@ -1,3 +1,5 @@
+import { parseAkanI18nEnv } from "akanjs/common";
+
 import { ModelDictInfo, ScalarDictInfo, ServiceDictInfo } from "./dictInfo";
 import type { DictModule } from "./locale";
 import type { DictionaryNode, RootDictionary } from "./trans";
@@ -7,6 +9,12 @@ export type DictionaryModuleKind = "model" | "scalar" | "service";
 export interface DictionaryModuleInfo {
   kind: DictionaryModuleKind;
   languages: string[];
+}
+
+export interface LocaleGap {
+  locale: string;
+  total: number;
+  missing: string[];
 }
 
 /**
@@ -47,6 +55,25 @@ export class DictionaryRegistry {
 
   static getModules(): Record<string, DictionaryModuleInfo> {
     return Object.fromEntries([...DictionaryRegistry.#modules.entries()].map(([key, info]) => [key, { ...info }]));
+  }
+
+  /**
+   * Which configured locales the registered dictionaries never wrote, per locale.
+   *
+   * A dictionary declares its own locale tuple — `serviceDictionary(["en", "ko"])` — and a lib ships that tuple to
+   * every app that mounts it, so an app that adds a third locale cannot widen it from the outside. Every key those
+   * modules own then resolves through the default-locale fallback: the screen stays readable and nothing throws,
+   * which is exactly why the gap is invisible without asking.
+   */
+  static getLocaleGaps(locales: string[] = parseAkanI18nEnv().locales): LocaleGap[] {
+    const modules = [...DictionaryRegistry.#modules.entries()];
+    return locales
+      .map((locale) => ({
+        locale,
+        total: modules.length,
+        missing: modules.filter(([, info]) => !info.languages.includes(locale)).map(([refName]) => refName),
+      }))
+      .filter((gap) => gap.missing.length);
   }
 
   /** Flattened dotted paths of every leaf translation, e.g. `"user.signal.createUser.arg.data"`. */

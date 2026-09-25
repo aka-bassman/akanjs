@@ -123,6 +123,16 @@ interface MaterializeCapacitorConfigOptions {
 }
 type MobilePlatform = "ios" | "android";
 
+/**
+ * `AppExecutor.spawn`'s own options plus the two the Capacitor config is written from before the spawn:
+ * the platform the command targets, and — for iOS — whether it targets a device or a simulator, which
+ * decide the `capacitor.config.json` that command reads.
+ */
+type SpawnMobileOptions = Parameters<AppExecutor["spawn"]>[2] & {
+  platform?: MobilePlatform;
+  iosRunTargetKind?: IosRunTargetKind;
+};
+
 export interface LocalDevHostResolution {
   host: string;
   source: "override" | "detected" | "loopback" | "platform";
@@ -479,7 +489,7 @@ export function classifyIosRunFailure(log: string): IosRunFailureClassification 
     kind: "unknown",
     title: "iOS native run failed.",
     detail:
-      "Review the xcodebuild/devicectl output above. You can retry with --noAllowProvisioningUpdates to use the conservative path.",
+      "Review the xcodebuild/devicectl output above. You can retry with --no-allow-provisioning-updates to use the conservative path.",
   };
 }
 
@@ -586,6 +596,29 @@ export function raiseGradleMinSdkVersion(content: string, floor: number = ANDROI
   if (Number.isNaN(current) || current >= floor) return null;
   return content.replace(/(minSdkVersion\s*=\s*)\d+/, `$1${floor}`);
 }
+
+//* Apple's Info.plist keys do not follow the description names (photo → NSPhotoLibrary…), so each one is spelled out.
+const iosUsageDescriptionKeys = {
+  cameraUsageDescription: ["NSCameraUsageDescription"],
+  photoAddUsageDescription: ["NSPhotoLibraryAddUsageDescription"],
+  photoUsageDescription: ["NSPhotoLibraryUsageDescription"],
+  contactsUsageDescription: ["NSContactsUsageDescription"],
+  //? iOS 11+ reads the AlwaysAndWhenInUse key; the Always key only serves iOS 10 and below.
+  locationAlwaysUsageDescription: ["NSLocationAlwaysAndWhenInUseUsageDescription", "NSLocationAlwaysUsageDescription"],
+  locationWhenInUseUsageDescription: ["NSLocationWhenInUseUsageDescription"],
+  microphoneUsageDescription: ["NSMicrophoneUsageDescription"],
+  speechRecognitionUsageDescription: ["NSSpeechRecognitionUsageDescription"],
+} as const;
+
+export const toIosInfoPlistUsageDescriptions = (descriptions: { [key: string]: string }) =>
+  Object.fromEntries(
+    Object.entries(descriptions).flatMap(([key, value]) => {
+      const plistKeys: readonly string[] = Object.hasOwn(iosUsageDescriptionKeys, key)
+        ? iosUsageDescriptionKeys[key as keyof typeof iosUsageDescriptionKeys]
+        : [`NS${capitalize(key)}`];
+      return plistKeys.map((plistKey) => [plistKey, value]);
+    }),
+  );
 
 const mergeAllowNavigation = (configured: unknown, localIp: string | undefined) => {
   const values = Array.isArray(configured)
@@ -1459,9 +1492,7 @@ export class CapacitorApp {
     if (next !== content) await editor.setContent(next).save();
   }
   async #setPermissionInIos(permissions: { [key: string]: string }) {
-    const updateNs = Object.fromEntries(
-      Object.entries(permissions).map(([key, value]) => [`NS${capitalize(key)}`, value]),
-    );
+    const updateNs = toIosInfoPlistUsageDescriptions(permissions);
     await Promise.all([
       this.project.ios.updateInfoPlist(this.iosTargetName, "Debug", updateNs),
       this.project.ios.updateInfoPlist(this.iosTargetName, "Release", updateNs),

@@ -4,19 +4,15 @@ import { cn, getPathInfo, usePathCtx } from "akanjs/client";
 import { Link } from "akanjs/ui";
 import { useEffect, useMemo, useState } from "react";
 import { AiOutlineLeft, AiOutlineRight } from "react-icons/ai";
+import { AudienceIcon, AudienceLegend } from "./Audience";
+import type { DocsMenu } from "./Layout";
 import { PageTurnTool } from "./PageTurnTool";
 import { Search } from "./Search";
 import { SearchTool } from "./SearchTool";
 
 interface ShellProps {
   children: React.ReactNode;
-  menuMap: {
-    name: string;
-    subMenus: {
-      name: string;
-      href: string;
-    }[];
-  }[];
+  menuMap: DocsMenu[];
 }
 
 export const Shell = ({ children, menuMap }: ShellProps) => {
@@ -64,9 +60,10 @@ export const Shell = ({ children, menuMap }: ShellProps) => {
       <input type="checkbox" id="mobile-menu-toggle" className="peer hidden" />
 
       <div className="fixed inset-y-0 left-0 z-40 w-full -translate-x-full transform transition-transform duration-50 ease-in-out peer-checked:translate-x-0 lg:hidden">
-        <div className="mt-16 h-full overflow-y-auto border-foreground/10 border-r bg-background/95 pb-24 shadow-2xl backdrop-blur-xl">
-          <div className="px-3 pt-24 md:pt-6">
+        <div className="mt-[var(--akanjs-header-bar)] h-full overflow-y-auto border-foreground/10 border-r bg-background/95 pb-24 shadow-2xl backdrop-blur-xl">
+          <div className="px-3 pt-[calc(var(--akanjs-header-inset)+1rem)]">
             <Search className="mb-3" onNavigate={closeMenu} />
+            <AudienceLegend className="mb-3" />
             {menuMap.map((menu, menuIdx) => (
               <details
                 key={menuIdx}
@@ -94,7 +91,8 @@ export const Shell = ({ children, menuMap }: ShellProps) => {
                         }}
                       >
                         <div className="flex items-center gap-2">
-                          <span>•</span> {subMenu.name}
+                          {subMenu.audience ? <AudienceIcon audience={subMenu.audience} /> : <span>•</span>}
+                          {subMenu.name}
                         </div>
                       </Link>
                     );
@@ -113,9 +111,10 @@ export const Shell = ({ children, menuMap }: ShellProps) => {
 
       <div className="flex w-full overflow-x-hidden">
         <div className="relative hidden w-70 lg:block">
-          <div className="fixed top-29 left-0 flex h-[calc(100vh-7rem)] w-65 flex-col overflow-hidden border border-foreground/10 border-l-0 bg-foreground/4 pt-4 font-medium shadow-2xl shadow-foreground/5 backdrop-blur-xl">
+          <div className="fixed top-[var(--akanjs-header-offset)] left-0 flex h-[calc(100vh-var(--akanjs-header-offset))] w-65 flex-col overflow-hidden border border-foreground/10 border-l-0 bg-foreground/4 pt-4 font-medium shadow-2xl shadow-foreground/5 backdrop-blur-xl">
             <div className="overflow-y-auto px-2 pb-6">
               <Search className="mb-3" />
+              <AudienceLegend className="mx-1 mb-3" />
               {menuMap.map((menu, idx) => (
                 <details key={idx} className="group rounded-2xl" open>
                   <summary className="flex cursor-pointer list-none items-center justify-between whitespace-nowrap p-2 font-bold text-foreground/50 text-sm uppercase tracking-[0.18em] [&::-webkit-details-marker]:hidden">
@@ -139,7 +138,8 @@ export const Shell = ({ children, menuMap }: ShellProps) => {
                                 isActive && "font-bold text-primary",
                               )}
                             >
-                              <span>•</span> {subMenu.name}
+                              {subMenu.audience ? <AudienceIcon audience={subMenu.audience} /> : <span>•</span>}
+                              {subMenu.name}
                             </div>
                           </Link>
                         );
@@ -153,7 +153,7 @@ export const Shell = ({ children, menuMap }: ShellProps) => {
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex w-full flex-col gap-2 py-2 pb-10">
-            <div className="w-full min-w-0 max-w-full px-4 lg:pr-[270px] lg:pl-4">
+            <div className="w-full min-w-0 max-w-full px-4 xl:pr-[270px] xl:pl-4">
               <div className="w-full min-w-0 space-y-2 overflow-x-hidden px-4 pt-40 pb-16 md:pt-48 lg:mt-27 lg:px-8 lg:pt-10 xl:px-16 2xl:px-32">
                 {children}
               </div>

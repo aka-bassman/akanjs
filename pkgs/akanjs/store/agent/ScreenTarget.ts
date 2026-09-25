@@ -35,16 +35,25 @@ export class ScreenTarget {
     // miss belongs, since `readScreen` owes the model the list of sections that do exist.
     return (
       ScreenTarget.#first(scope, selector) ??
-      [...scope.querySelectorAll<HTMLElement>("[id]")].find((el) => el.id === name && ScreenTarget.#visible(el)) ??
+      [...scope.querySelectorAll<HTMLElement>("[id]")].find((el) => el.id === name && ScreenTarget.visible(el)) ??
       null
     );
   }
 
   static control(name: string, root?: HTMLElement | null): HTMLElement | null {
+    return ScreenTarget.controls(name, root)[0] ?? null;
+  }
+
+  /**
+   * Every visible control carrying the name, not just the first — a row component registers one tool per row, so
+   * a caller that must not act on the wrong row is the one that needs to know there were several.
+   */
+  static controls(name: string, root?: HTMLElement | null): HTMLElement[] {
     const scope = root ?? ScreenTarget.#body();
-    if (!scope || !name) return null;
+    if (!scope || !name) return [];
     const escaped = CSS.escape(name);
-    return ScreenTarget.#first(scope, controlAttrs.map((attr) => `[${attr}="${escaped}"]`).join(", "));
+    const selector = controlAttrs.map((attr) => `[${attr}="${escaped}"]`).join(", ");
+    return [...scope.querySelectorAll<HTMLElement>(selector)].filter(ScreenTarget.visible);
   }
 
   /** Matched on letters and digits only, so a slug written for a heading still finds it. */
@@ -52,7 +61,7 @@ export class ScreenTarget {
     const scope = root ?? ScreenTarget.#body();
     const wanted = ScreenTarget.#slug(text);
     if (!scope || !wanted) return null;
-    const headings = [...scope.querySelectorAll<HTMLElement>(headingSelector)].filter(ScreenTarget.#visible);
+    const headings = [...scope.querySelectorAll<HTMLElement>(headingSelector)].filter(ScreenTarget.visible);
     return (
       headings.find((heading) => ScreenTarget.#slug(heading.textContent ?? "") === wanted) ??
       headings.find((heading) => ScreenTarget.#slug(heading.textContent ?? "").includes(wanted)) ??
@@ -81,7 +90,7 @@ export class ScreenTarget {
     if (!scope) return [];
     const names = new Set<string>();
     for (const heading of scope.querySelectorAll<HTMLElement>(headingSelector)) {
-      const anchor = ScreenTarget.#visible(heading) ? ScreenReader.anchorOf(heading) : "";
+      const anchor = ScreenTarget.visible(heading) ? ScreenReader.anchorOf(heading) : "";
       if (anchor) names.add(anchor);
     }
     return [...names];
@@ -102,7 +111,7 @@ export class ScreenTarget {
       const own = scope.getAttribute(attr);
       if (own) names.add(own);
       for (const el of scope.querySelectorAll<HTMLElement>(`[${attr}]`)) {
-        const value = ScreenTarget.#visible(el) ? el.getAttribute(attr) : null;
+        const value = ScreenTarget.visible(el) ? el.getAttribute(attr) : null;
         if (value) names.add(value);
       }
     }
@@ -114,10 +123,11 @@ export class ScreenTarget {
   }
 
   static #first(scope: HTMLElement, selector: string) {
-    return [...scope.querySelectorAll<HTMLElement>(selector)].find(ScreenTarget.#visible) ?? null;
+    return [...scope.querySelectorAll<HTMLElement>(selector)].find(ScreenTarget.visible) ?? null;
   }
 
-  static #visible(el: HTMLElement) {
+  /** The one rule for whether an element is something the user is actually looking at. */
+  static visible(el: HTMLElement) {
     if (el.hasAttribute("hidden") || el.getAttribute("aria-hidden") === "true") return false;
     if (el.closest("[data-agent-ui]")) return false;
     return typeof el.checkVisibility === "function" ? el.checkVisibility() : true;

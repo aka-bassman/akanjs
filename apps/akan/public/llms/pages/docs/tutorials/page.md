@@ -12,7 +12,6 @@
 - Add Schema (#add-schema)
 - Kiosk Landing Page (#kiosk-landing-page)
 - Order Form Page (#order-form-page)
-- Page UX Best Practices (#page-best-practices)
 
 ## Content
 
@@ -38,13 +37,13 @@ Next, we need to add dictionary entries for the new fields and enum values:
 
 Next, let's add serveType and phone selection to the order form template.
 
-Finally, let's display serveType on the order card to clearly show whether the customer's order is for here or take out, etc.
+Finally, let's display serveType on the order's Unit card to clearly show whether the customer's order is for here or take out, etc.
 
 Kiosk Landing Page
 
 The first thing customers see when they approach the kiosk is the landing page. Think of it like the welcome screen at a fast-food restaurant kiosk - it should be inviting, easy to understand, and guide customers to their first choice: "For Here" or "Take Out".
 
-Let's create an attractive landing page that makes ordering feel like a delightful experience:
+Let's create the landing page for the kiosk ordering flow:
 
 Let's break down the key features of this landing page:
 
@@ -54,7 +53,7 @@ The "For Here" and "Take Out" buttons pass serveType as a query parameter to the
 
 Visual Design
 
-Large buttons with emojis make the interface touch-friendly and intuitive. Gradient backgrounds and hover effects create a modern, engaging experience.
+Large buttons with emojis make the interface touch-friendly. Gradient backgrounds and hover effects give the kiosk a distinct look.
 
 After customers complete their order, they need a confirmation page. Let's create a success page that reassures them:
 
@@ -74,13 +73,13 @@ The page needs to handle query parameters from the landing page and provide an i
 
 Let's understand the key components of this order form page:
 
-Next.js provides searchParams as a Promise that contains URL query parameters. We extract the serveType to pre-fill the order form with the customer's choice from the landing page.
+The page declares the query key it reads with .search("serveType", cnst.ServeType), so .render() receives serveType already typed as the enum's union — a value outside the enum is dropped, the way an absent one is. We use it to pre-fill the order form with the customer's choice from the landing page.
 
 The Load.Edit component handles form state management, validation, and submission. It connects to the slice for data persistence and automatically navigates to the success page on submit.
 
 Setting onCancel to "back" enables the cancel button to navigate back to the previous page. This provides an easy way for customers to change their mind.
 
-Now let's style the Template component for a beautiful kiosk experience. Each section is wrapped in a card with icons:
+Now let's style the Template component for the kiosk experience. Each section is wrapped in a card with icons:
 
 The Template component uses these Field components for kiosk-friendly input:
 
@@ -89,38 +88,6 @@ Large, touch-friendly buttons for selecting a single option (size)
 Allows selecting multiple options (toppings) with visual feedback
 
 Phone number input with formatting and validation built-in
-
-Page UX Best Practices
-
-When building customer-facing pages like kiosks, following UX best practices ensures a smooth and enjoyable experience. Here are the key principles we applied:
-
-Clear Navigation Flow
-
-Guide customers through a linear flow: Landing → Order Form → Success. Each step has one clear purpose, reducing confusion.
-
-Touch-Friendly Design
-
-Large buttons (py-6), adequate spacing, and visual feedback on interaction make the interface easy to use on touchscreens.
-
-Visual Hierarchy with Icons
-
-Emojis and icons provide instant visual cues that help customers understand each section without reading text carefully.
-
-State Preservation
-
-Using query parameters and Load.Edit ensures customer choices are preserved between pages, creating a seamless experience.
-
-🎉 What You've Accomplished:
-
-Extended schema with new fields for kiosk ordering
-
-Built an attractive landing page with language switching
-
-Created a touch-friendly order form with Field components
-
-Implemented success page with clear customer feedback
-
-Learned page UX best practices for kiosk applications
 
 In the next tutorial, we'll explore how to use Scalar for computed values and aggregations. This will allow you to display dynamic information like order totals, wait times, and statistics in real-time.
 
@@ -270,7 +237,7 @@ export const dictionary = modelDictionary(["en", "ko"])
 
 ```ts
 "use client"; // [!code collapse:4]
-import { Field, Layout, buttonRecipe } from "akanjs/ui";
+import { Field, Layout } from "akanjs/ui";
 import { cnst, st, usePage } from "@apps/koyo/client";
 
 interface GeneralProps {
@@ -319,7 +286,7 @@ export const General = ({ className, showServeType = true }: GeneralProps) => { 
 
 ```ts
 import { cn, type ModelProps } from "akanjs/client"; // [!code collapse:7]
-import { Model } from "akanjs/ui";
+import { Model, buttonRecipe } from "akanjs/ui";
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
 
 interface CardProps extends ModelProps<"icecreamOrder", cnst.LightIcecreamOrder> {
@@ -390,8 +357,9 @@ export const Card = ({ icecreamOrder, showControls = true }: CardProps) => {
 ```ts
 import { Link } from "akanjs/ui";
 import { usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-background via-muted to-border p-6">
@@ -442,7 +410,7 @@ export default function Page() {
       </div>
     </div>
   );
-}
+});
 ```
 
 ### apps/koyo/page/icecreamOrder/success.tsx
@@ -450,8 +418,9 @@ export default function Page() {
 ```ts
 import { Link } from "akanjs/ui";
 import { usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-background via-muted to-border p-6">
@@ -494,7 +463,7 @@ export default function Page() {
       </div>
     </div>
   );
-}
+});
 ```
 
 ### apps/koyo/page/icecreamOrder/new.tsx
@@ -502,45 +471,42 @@ export default function Page() {
 ```ts
 import { Load } from "akanjs/ui";
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-interface PageProps {
-  searchParams: {
-    serveType?: cnst.ServeType["value"];
-  };
-}
-export default function Page({ searchParams }: PageProps) {
-  const { l } = usePage();
-  const { serveType } = searchParams;
-  const icecreamOrderForm: Partial<cnst.IcecreamOrder> = { serveType };
-        
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-background via-muted to-border p-6">
-      <div className="w-full max-w-2xl space-y-8">
-        <div className="space-y-4 text-center">
-          <div className="flex justify-center">
-            <span className="text-8xl">🍦</span>
+export default page()
+  .search("serveType", cnst.ServeType, { desc: "How the order is served: forHere, takeOut or delivery." })
+  .render(({ serveType }) => {
+    const { l } = usePage();
+    const icecreamOrderForm: Partial<cnst.IcecreamOrder> = { serveType };
+
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-background via-muted to-border p-6">
+        <div className="w-full max-w-2xl space-y-8">
+          <div className="space-y-4 text-center">
+            <div className="flex justify-center">
+              <span className="text-8xl">🍦</span>
+            </div>
+            <h1 className="bg-linear-to-r from-background via-muted to-border text-5xl font-bold text-primary md:text-6xl">
+              {l("base.createModel", { model: l("icecreamOrder.modelName") })}
+            </h1>
+            <p className="text-xl font-light text-primary">
+              {l.trans({ en: "Customize your perfect treat", ko: "나만의 완벽한 디저트를 만들어보세요" })}
+            </p>
           </div>
-          <h1 className="bg-linear-to-r from-background via-muted to-border text-5xl font-bold text-primary md:text-6xl">
-            {l("base.createModel", { model: l("icecreamOrder.modelName") })}
-          </h1>
-          <p className="text-xl font-light text-primary">
-            {l.trans({ en: "Customize your perfect treat", ko: "나만의 완벽한 디저트를 만들어보세요" })}
-          </p>
+          <Load.Edit
+            className="flex flex-col items-center"
+            slice={fetch.slice.icecreamOrderInPublic}
+            edit={icecreamOrderForm}
+            type="form"
+            onCancel="back"
+            onSubmit="/icecreamOrder/success"
+          >
+            <IcecreamOrder.Template.General showServeType={false} />
+          </Load.Edit>
         </div>
-        <Load.Edit
-          className="flex flex-col items-center"
-          slice={fetch.slice.icecreamOrderInPublic}
-          edit={icecreamOrderForm}
-          type="form"
-          onCancel="back"
-          onSubmit="/icecreamOrder/success"
-        >
-          <IcecreamOrder.Template.General showServeType={false} />
-        </Load.Edit>
       </div>
-    </div>
-  );
-}
+    );
+  });
 ```
 
 ### apps/koyo/lib/icecreamOrder/IcecreamOrder.Template.tsx

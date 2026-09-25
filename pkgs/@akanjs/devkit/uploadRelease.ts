@@ -1,4 +1,4 @@
-import { HttpClient, Logger } from "akanjs/common";
+import { Logger, RestClient } from "akanjs/common";
 
 import { Spinner } from "./spinner";
 
@@ -26,7 +26,7 @@ export const uploadRelease = async (
 ) => {
   const logger = new Logger("uploadRelease");
   const basePath = local ? "http://localhost:8282/backend" : "https://cloud.akanjs.com/backend";
-  const httpClient = new HttpClient(basePath);
+  const httpClient = new RestClient(basePath);
   const buildPath = `${workspaceRoot}/releases/builds/${appName}-release.tar.gz`;
   const appBuildPath = `${workspaceRoot}/releases/builds/${appName}-appBuild.zip`;
   const sourcePath = `${workspaceRoot}/releases/sources/${appName}-source.tar.gz`;

@@ -22,7 +22,7 @@ export class ConsoleLogger extends adapt("consoleLogger", () => ({})) implements
     Logger.debug(msg, context, name);
   }
   log(name: string, msg: string, context?: string): void {
-    Logger.log(msg, context, name);
+    Logger.info(msg, context, name);
   }
   info(name: string, msg: string, context?: string): void {
     Logger.info(msg, context, name);

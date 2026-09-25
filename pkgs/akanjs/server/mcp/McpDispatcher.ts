@@ -1,19 +1,14 @@
 import { type BackendEnv, ENDPOINT_META } from "akanjs/base";
-import { Logger } from "akanjs/common";
+import { interpolateTranslation, Logger } from "akanjs/common";
 import { ConstantRegistry, mask } from "akanjs/constant";
 import { DictionaryLookup } from "akanjs/dictionary";
 import { NoDocumentError } from "akanjs/document";
 import type { InjectRegistry, LiveRegistry } from "akanjs/service";
 import type { Endpoint, EndpointCls } from "../../signal/endpoint";
 import type { EndpointInfo } from "../../signal/endpointInfo";
+import { Exception } from "../../signal/exception";
 import type { GuardCls } from "../../signal/guard";
-import {
-  McpDocument,
-  McpErrorCode,
-  type McpExposedEndpoint,
-  type McpToolResult,
-  type PromptMessage,
-} from "../../signal/mcp";
+import { McpDocument, McpErrorCode, type McpExposedEndpoint, type McpToolResult } from "../../signal/mcp";
 import type { MiddlewareCls } from "../../signal/middleware";
 import { SignalContext } from "../../signal/signalContext";
 import { McpExecutionContext } from "./McpExecutionContext";
@@ -28,13 +23,6 @@ export class McpAuthRequiredError extends Error {}
  * only place left to say whose fault it was. Without it a mistyped argument reads as `-32603 internal error`,
  * while the *missing*-argument check `prompts/get` does itself answers `-32602` — the same mistake, two codes.
  */
-export class McpPromptError extends Error {
-  readonly code: number;
-  constructor(message: string, code: number) {
-    super(message);
-    this.code = code;
-  }
-}
 
 interface McpDispatcherProps {
   registry: InjectRegistry;
@@ -95,29 +83,6 @@ export class McpDispatcher {
   }
 
   /**
-   * A prompt is user-chosen, not model-chosen, so a failure has nowhere to go but the JSON-RPC error — there is
-   * no `isError` result the model could read and recover from. Errors propagate to the router unchanged.
-   *
-   * The messages arrive already normalized: `SignalContext` does that for every `prompt`, so this route and the
-   * plain HTTP one return the same shape.
-   */
-  async prompt(exposed: McpExposedEndpoint, args: Record<string, unknown>, req: Request): Promise<PromptMessage[]> {
-    const found = this.#index().get(exposed.key);
-    if (!found)
-      throw new McpPromptError(
-        `Prompt "${exposed.key}" is declared but not mounted on this server.`,
-        McpErrorCode.internal,
-      );
-    try {
-      return (await this.#exec(exposed.key, found, args, req)) as PromptMessage[];
-    } catch (error) {
-      const status = McpDispatcher.#statusOf(error);
-      if ((status === 401 || status === 403) && !req.headers.get("authorization")) throw new McpAuthRequiredError();
-      throw new McpPromptError(this.#message(error, status, exposed.refName), McpDispatcher.#codeOf(status));
-    }
-  }
-
-  /**
    * Drops catalogue entries whose account-scoped guards refuse this caller — an anonymous agent should not be
    * offered a shelf of admin tools it can only fail at. Entries with no such guard are kept and stopped at call
    * time instead, so the listing is a UX filter and never the access decision.
@@ -159,6 +124,7 @@ export class McpDispatcher {
             endpointInfo: found.endpointInfo,
             adaptor: found.endpoint,
             ctx: new McpExecutionContext(req, {}),
+            origin: "mcp",
           }).canListForAccount();
         cached.set(key, verdict);
         return await verdict;
@@ -173,15 +139,18 @@ export class McpDispatcher {
     args: Record<string, unknown>,
     req: Request,
   ) {
-    // Deliberately not wrapped in `SignalContext.try`: that helper puts the stack trace into its 500 body, and
-    // a stack is the last thing to hand an agent that will quote it back into a transcript.
-    const context = await new SignalContext(key, req as Bun.BunRequest, {
-      ...this.#props,
-      endpointInfo,
-      adaptor: endpoint,
-      ctx: new McpExecutionContext(req, args),
-    }).init();
-    return (await context.exec()) as unknown;
+    // `SignalContext.run` rather than `.try`: that helper puts the stack trace into its 500 body, and a stack
+    // is the last thing to hand an agent that will quote it back into a transcript. `run` logs it, traced.
+    return await SignalContext.run(endpoint, endpointInfo, key, "mcp", async () => {
+      const context = await new SignalContext(key, req as Bun.BunRequest, {
+        ...this.#props,
+        endpointInfo,
+        adaptor: endpoint,
+        ctx: new McpExecutionContext(req, args),
+        origin: "mcp",
+      }).init();
+      return (await context.exec()) as unknown;
+    });
   }
 
   /**
@@ -208,21 +177,24 @@ export class McpDispatcher {
     // which has to keep the message it has.
     if (error instanceof NoDocumentError) return `No ${refName} found for the arguments given.`;
     if (status && status < 500) {
+      // Every refusal reads the same, whoever wrote it. The framework's own is `Access denied by guard: Admin`
+      // and an app's is `No authentication with roles: admin, superAdmin` — both name the authorization structure
+      // to the one caller barred from it, which is what the shared "unknown tool" message exists to keep off the
+      // wire. All an agent may act on is that it may not, which is all it may know.
+      if (status === 401 || status === 403) return "You are not permitted to perform this action.";
       const raw = error instanceof Error ? error.message : String(error);
       // A domain `Err` carries its dictionary key as the message; anything else is already prose.
       this.#lookup ??= new DictionaryLookup(this.#props.language);
       const text = this.#lookup.text(raw);
-      if (text) return text;
-      // What is left in this band at 401/403 is the framework's own refusal, `Access denied by guard: Admin` —
-      // the private authorization structure named to the one caller not allowed to see it, which is what the
-      // shared "unknown tool" message exists to keep off the wire. A domain error resolved above and keeps its
-      // own words; all this one leaves an agent to act on is that it may not, which is all it may know.
-      if (status === 401 || status === 403) return "You are not permitted to perform this action.";
+      // Filled from the data the error carried: the bare template reads `Too many files: {maxFiles}` to a model,
+      // which is neither the sentence the author wrote nor anything it can act on.
+      if (text) return interpolateTranslation(text, (error as { data?: Record<string, unknown> }).data);
       return raw;
     }
     // An unexpected failure is logged in full and described in one flat sentence: the detail an agent would
     // quote back into a transcript is the same detail an attacker would read.
-    McpDispatcher.logger.error(`MCP call failed: ${error instanceof Error ? (error.stack ?? error.message) : error}`);
+    if (!SignalContext.wasReported(error))
+      McpDispatcher.logger.error(`MCP call failed: ${error instanceof Error ? (error.stack ?? error.message) : error}`);
     return "The server failed to complete this request.";
   }
 
@@ -286,10 +258,18 @@ export class McpDispatcher {
     if (!modelType) return value;
     try {
       return mask(ConstantRegistry.getModelRef(refName, modelType), value);
-    } catch {
-      // A return naming a model this process did not mount is a catalogue that should not have listed it; the
-      // value goes out unmasked rather than the call failing, and the boot log is where that belongs.
-      return value;
+    } catch (error) {
+      // A return naming a model this process did not mount is a catalogue that should not have listed it, and
+      // this is the one place in the file that used to answer such a thing by sending the value anyway. Every
+      // other refusal here is fail-closed; masking is what decides *what* may go out, so it fails closed too.
+      // Only `visual` was actually at stake — `resolveReturn` has already dropped `hidden` and `secret` — but
+      // an unmaskable result is a bug in the catalogue, and reporting it is how it gets fixed.
+      McpDispatcher.logger.error(
+        `MCP could not mask a "${refName}" (${modelType}) result, so it was not sent: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw new Exception.Error("The server failed to complete this request.");
     }
   }
 

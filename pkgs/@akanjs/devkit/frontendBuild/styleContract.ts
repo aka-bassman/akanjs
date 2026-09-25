@@ -1,29 +1,23 @@
 /**
- * styleGuard + themeValidator 결과를 배선(build/dev/lint)이 공유하는 포맷으로 정리한다.
- * severity 사다리: style 위반은 severity==="error" 인 것만, theme 위반은 전부 차단(build/CI) 대상.
- * dev 는 이 결과를 경고로만 출력한다.
+ * Reports the style contract that `akan lint` enforces, in the shape build/dev/lint share.
+ *
+ * Only contrast lives here. The vocabulary closure — raw palette classes, arbitrary colors, dropped
+ * daisyUI slots, inline color literals, interpolated arbitrary values — is enforced by the grit plugins
+ * in `lint/*.grit` during the biome run, so it is not re-scanned. Contrast cannot be a lint rule at all:
+ * it is arithmetic over resolved token *values*, which no syntactic pattern can reach.
  */
-import type { StyleGuardViolation } from "./styleGuard";
 import type { ThemeContrastViolation } from "./themeValidator";
 
 export interface StyleContractViolations {
-  style: StyleGuardViolation[];
   theme: ThemeContrastViolation[];
 }
 
-export const countBlocking = (v: StyleContractViolations): number =>
-  v.style.filter((s) => s.severity === "error").length + v.theme.length;
+export const countBlocking = (violations: StyleContractViolations): number => violations.theme.length;
 
-export const formatStyleContract = (v: StyleContractViolations): string => {
-  const lines: string[] = [];
-  for (const s of v.style) {
-    lines.push(`  [${s.severity}] ${s.rule}  ${s.path}:${s.line}`);
-    lines.push(`      ${s.snippet}`);
-    lines.push(`      → ${s.suggestion}`);
-  }
-  for (const t of v.theme) {
-    lines.push(`  [error] contrast  ${t.scope}  ${t.pair} = ${t.ratio}:1 (min ${t.threshold}:1)`);
-    lines.push(`      → ${t.suggestion}`);
-  }
-  return lines.join("\n");
-};
+export const formatStyleContract = (violations: StyleContractViolations): string =>
+  violations.theme
+    .flatMap((theme) => [
+      `  [error] contrast  ${theme.scope}  ${theme.pair} = ${theme.ratio}:1 (min ${theme.threshold}:1)`,
+      `      → ${theme.suggestion}`,
+    ])
+    .join("\n");

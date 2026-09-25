@@ -1,4 +1,4 @@
-import { AgentContext, ensureStoreSurface, ScreenSettle } from "akanjs/store";
+import { AgentContext, AgentVisual, type AgentVisualOption, ensureStoreSurface, ScreenSettle } from "akanjs/store";
 import {
   type AgentRunner,
   AgentSession,
@@ -28,6 +28,8 @@ export interface AgentSessionSetup {
   persist?: PersistOption | SessionHistory;
   /** Called after a compaction replaced messages with one summary — where a host syncs its own watermark. */
   onCompact?: AgentSessionOptions["onCompact"];
+  /** What the page draws while this session drives it — `false` draws nothing. */
+  visual?: boolean | AgentVisualOption;
 }
 
 /**
@@ -44,9 +46,11 @@ export const agentSessionOf = ({
   builtins,
   persist,
   onCompact,
+  visual,
 }: AgentSessionSetup): AgentSession => {
   const { surface } = ensureStoreSurface();
   const history = sessionHistoryOf(persist, view.join("."));
+  const drawing = AgentVisual.sink(visual);
   return new AgentSession(sessionView(surface, view, builtins), runner ?? fetchRunner(), {
     buildContext: (scoped) => AgentContext.of().blocks(scoped, view),
     settle: () => ScreenSettle.wait(),
@@ -56,5 +60,6 @@ export const agentSessionOf = ({
     ...(compact ? { compact } : {}),
     ...(history ? { history } : {}),
     ...(onCompact ? { onCompact } : {}),
+    ...(drawing ?? {}),
   });
 };

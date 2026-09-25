@@ -1,0 +1,289 @@
+import { Logger, type LogRecord, logSeverity } from "akanjs/common";
+import { type LogQuery, LogQueryMatcher } from "./logQuery";
+import { LogStdoutWriter } from "./logStdoutWriter";
+
+export interface LogHubEntry {
+  /** Assigned here, in arrival order. `record.at` comes from several clocks and is not monotonic across children. */
+  seq: number;
+  record: LogRecord;
+}
+
+export interface LogHubCoverage {
+  count: number;
+  oldestSeq: number | null;
+  newestSeq: number | null;
+  from: number | null;
+  to: number | null;
+}
+
+export interface LogHubOptions {
+  maxRecords?: number;
+  maxBytes?: number;
+  /** Identical `(name, level, message)` lines allowed per second before the rest collapse into one count. */
+  suppressPerSecond?: number;
+  now?: () => number;
+}
+
+interface LogSubscriber {
+  id: string;
+  matcher: LogQueryMatcher;
+  sink: (entry: LogHubEntry) => void;
+}
+
+interface SuppressState {
+  windowStart: number;
+  count: number;
+  suppressed: number;
+  sample: LogRecord;
+}
+
+/**
+ * The process-wide journal: every record of every process this one fronts, in one sequence, with a bounded
+ * ring behind it and live subscribers in front. Owned by the gateway, or by the solo replica when nothing is
+ * in front of it.
+ */
+export class LogHub {
+  static readonly defaultMaxRecords = 2_000;
+  static readonly defaultMaxBytes = 4 * 1024 * 1024;
+  static readonly defaultSuppressPerSecond = 20;
+  static readonly suppressWindowMs = 1_000;
+
+  readonly #maxRecords: number;
+  readonly #maxBytes: number;
+  readonly #suppressPerSecond: number;
+  readonly #now: () => number;
+  readonly #ring: (LogHubEntry | undefined)[];
+  #head = 0;
+  #size = 0;
+  #bytes = 0;
+  #seq = 0;
+  #nextSubscriberId = 1;
+  readonly #subscribers = new Map<string, LogSubscriber>();
+  readonly #floorListeners = new Set<(minSev: number | null) => void>();
+  #floor: number | null = null;
+  readonly #suppress = new Map<string, SuppressState>();
+  #suppressTimer: ReturnType<typeof setInterval> | null = null;
+  #removeSink: (() => void) | null = null;
+  #stdout: LogStdoutWriter | null = null;
+  #closed = false;
+  static #shared: LogHub | null = null;
+
+  constructor({ maxRecords, maxBytes, suppressPerSecond, now }: LogHubOptions = {}) {
+    this.#maxRecords = Math.max(1, maxRecords ?? LogHub.defaultMaxRecords);
+    this.#maxBytes = Math.max(1, maxBytes ?? LogHub.defaultMaxBytes);
+    this.#suppressPerSecond = Math.max(1, suppressPerSecond ?? LogHub.defaultSuppressPerSecond);
+    this.#now = now ?? Date.now;
+    this.#ring = new Array<LogHubEntry | undefined>(this.#maxRecords);
+  }
+
+  static fromEnv(): LogHub {
+    const records = Number(process.env.AKAN_LOG_BUFFER);
+    const mb = Number(process.env.AKAN_LOG_BUFFER_MB);
+    return new LogHub({
+      maxRecords: Number.isInteger(records) && records > 0 ? records : undefined,
+      maxBytes: Number.isFinite(mb) && mb > 0 ? Math.round(mb * 1024 * 1024) : undefined,
+    });
+  }
+
+  /**
+   * The process's one hub, fed by this process's Logger from the moment it is asked for — at construction of the
+   * entrypoint rather than at listen, so a boot line is neither lost nor, in ndjson mode, written as text. In
+   * ndjson mode it also turns this process's console off and owns the stdout writer, the stream's only author.
+   */
+  static attach(): LogHub {
+    const shared = LogHub.#shared;
+    if (shared && !shared.#closed) return shared;
+    const hub = LogHub.fromEnv();
+    hub.#removeSink = Logger.addSink((entry) => {
+      hub.ingest(entry.record);
+    });
+    if (Logger.isNdjson) {
+      Logger.consoleOutput = false;
+      hub.#stdout = new LogStdoutWriter(hub, { minSev: logSeverity[Logger.level] });
+    }
+    LogHub.#shared = hub;
+    return hub;
+  }
+
+  get closed() {
+    return this.#closed;
+  }
+
+  /** The lowest severity any subscriber wants, or `null` with no subscriber — what a child's forwarder is told. */
+  get floor() {
+    return this.#floor;
+  }
+  get size() {
+    return this.#size;
+  }
+  get seq() {
+    return this.#seq;
+  }
+
+  ingest(record: LogRecord): LogHubEntry | null {
+    if (record.level !== null && !this.#admit(record)) return null;
+    return this.#append(record);
+  }
+
+  ingestMany(records: LogRecord[]) {
+    for (const record of records) this.ingest(record);
+  }
+
+  subscribe(query: LogQuery, sink: (entry: LogHubEntry) => void) {
+    const id = `sub_${this.#nextSubscriberId++}`;
+    this.#subscribers.set(id, { id, matcher: new LogQueryMatcher(query), sink });
+    this.#refreshFloor();
+    return { id, unsubscribe: () => this.unsubscribe(id) };
+  }
+
+  unsubscribe(id: string) {
+    if (!this.#subscribers.delete(id)) return;
+    this.#refreshFloor();
+  }
+
+  onFloorChange(listener: (minSev: number | null) => void) {
+    this.#floorListeners.add(listener);
+    return () => {
+      this.#floorListeners.delete(listener);
+    };
+  }
+
+  coverage(): LogHubCoverage {
+    const oldest = this.#size ? this.#ring[this.#head] : undefined;
+    const newest = this.#size ? this.#ring[(this.#head + this.#size - 1) % this.#maxRecords] : undefined;
+    return {
+      count: this.#size,
+      oldestSeq: oldest?.seq ?? null,
+      newestSeq: newest?.seq ?? null,
+      from: oldest?.record.at ?? null,
+      to: newest?.record.at ?? null,
+    };
+  }
+
+  history(query: LogQuery): { entries: LogHubEntry[]; coverage: LogHubCoverage } {
+    const matcher = new LogQueryMatcher(query);
+    const entries: LogHubEntry[] = [];
+    for (const entry of this.#entries()) if (matcher.matches(entry.record)) entries.push(entry);
+    const limited = query.limit && entries.length > query.limit ? entries.slice(entries.length - query.limit) : entries;
+    return { entries: limited, coverage: this.coverage() };
+  }
+
+  /** Everything after `seq`, and the gap when the ring has already evicted part of that range. */
+  since(seq: number): { entries: LogHubEntry[]; gap: { from: number; to: number; missed: number } | null } {
+    const entries: LogHubEntry[] = [];
+    for (const entry of this.#entries()) if (entry.seq > seq) entries.push(entry);
+    const oldest = entries[0];
+    const gap =
+      oldest && oldest.seq > seq + 1 ? { from: seq + 1, to: oldest.seq - 1, missed: oldest.seq - seq - 1 } : null;
+    return { entries, gap };
+  }
+
+  close() {
+    this.#closed = true;
+    this.#removeSink?.();
+    this.#removeSink = null;
+    this.#flushSuppressed(true);
+    this.#stdout?.close();
+    this.#stdout = null;
+    if (this.#suppressTimer) clearInterval(this.#suppressTimer);
+    this.#suppressTimer = null;
+    this.#subscribers.clear();
+    this.#floorListeners.clear();
+  }
+
+  *#entries(): IterableIterator<LogHubEntry> {
+    for (let idx = 0; idx < this.#size; idx += 1) {
+      const entry = this.#ring[(this.#head + idx) % this.#maxRecords];
+      if (entry) yield entry;
+    }
+  }
+
+  #append(record: LogRecord): LogHubEntry {
+    const entry: LogHubEntry = { seq: ++this.#seq, record };
+    const bytes = LogHub.estimateBytes(record);
+    while (this.#size > 0 && (this.#size >= this.#maxRecords || this.#bytes + bytes > this.#maxBytes)) this.#evict();
+    this.#ring[(this.#head + this.#size) % this.#maxRecords] = entry;
+    this.#size += 1;
+    this.#bytes += bytes;
+    for (const subscriber of this.#subscribers.values()) {
+      if (!subscriber.matcher.matches(record)) continue;
+      try {
+        subscriber.sink(entry);
+      } catch {
+        // A subscriber is an observer; its failure must not stall the journal or the other subscribers.
+      }
+    }
+    return entry;
+  }
+
+  #evict() {
+    const entry = this.#ring[this.#head];
+    this.#ring[this.#head] = undefined;
+    this.#head = (this.#head + 1) % this.#maxRecords;
+    this.#size -= 1;
+    if (entry) this.#bytes -= LogHub.estimateBytes(entry.record);
+  }
+
+  static estimateBytes(record: LogRecord) {
+    return record.message.length + record.context.length + record.name.length + 160;
+  }
+
+  /** Whether this line is under its per-second budget; over it, the line is counted and dropped. */
+  #admit(record: LogRecord): boolean {
+    const key = `${record.name} ${record.level} ${record.message}`;
+    const now = this.#now();
+    const state = this.#suppress.get(key);
+    if (!state || now - state.windowStart >= LogHub.suppressWindowMs) {
+      if (state?.suppressed) this.#emitSuppressed(state, now);
+      this.#suppress.set(key, { windowStart: now, count: 1, suppressed: 0, sample: record });
+      this.#ensureSuppressTimer();
+      return true;
+    }
+    state.count += 1;
+    if (state.count <= this.#suppressPerSecond) return true;
+    state.suppressed += 1;
+    return false;
+  }
+
+  #emitSuppressed(state: SuppressState, now: number) {
+    const { sample, suppressed } = state;
+    state.suppressed = 0;
+    this.#append({
+      ...sample,
+      at: now,
+      message: `${sample.message} (suppressed ${suppressed} identical lines within 1s)`,
+    });
+  }
+
+  #ensureSuppressTimer() {
+    if (this.#suppressTimer) return;
+    this.#suppressTimer = setInterval(() => this.#flushSuppressed(false), LogHub.suppressWindowMs);
+    // A hub with nothing to report must not keep the process alive.
+    this.#suppressTimer.unref?.();
+  }
+
+  #flushSuppressed(all: boolean) {
+    const now = this.#now();
+    for (const [key, state] of this.#suppress) {
+      const expired = now - state.windowStart >= LogHub.suppressWindowMs;
+      if (!all && !expired) continue;
+      if (state.suppressed) this.#emitSuppressed(state, now);
+      this.#suppress.delete(key);
+    }
+    if (this.#suppress.size === 0 && this.#suppressTimer) {
+      clearInterval(this.#suppressTimer);
+      this.#suppressTimer = null;
+    }
+  }
+
+  #refreshFloor() {
+    let floor: number | null = null;
+    for (const subscriber of this.#subscribers.values()) {
+      const minSev = subscriber.matcher.query.minSev ?? 0;
+      floor = floor === null ? minSev : Math.min(floor, minSev);
+    }
+    if (floor === this.#floor) return;
+    this.#floor = floor;
+    for (const listener of this.#floorListeners) listener(floor);
+  }
+}

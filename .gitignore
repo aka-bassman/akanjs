@@ -159,7 +159,6 @@ infra/master/jenkins/credentials.sh
 **/.jenkins.conf
 **/regcred.yaml
 **/.akan
-**/bun.lock
 **/tsconfig.tsbuildinfo
 
 # akan:secrets (managed by akan.config.ts — do not edit)

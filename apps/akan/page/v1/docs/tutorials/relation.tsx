@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Docs } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -119,8 +120,8 @@ export class DeliveryInsight extends via(Delivery, (field) => ({})) {}`}
               </div>
               <div className="text-blue-700 text-sm">
                 {l.trans({
-                  en: `This defines a one-to-many relationship by embedding an array of LightIcecreamOrder. The "Light" version contains only essential fields (serveType, size, toppings, status) - perfect for embedding without duplicating entire documents.`,
-                  ko: `LightIcecreamOrder 배열을 임베딩하여 일대다 관계를 정의합니다. "Light" 버전은 필수 필드만 포함합니다 (serveType, size, toppings, status) - 전체 문서를 복제하지 않고 임베딩하기에 완벽합니다.`,
+                  en: `This defines a one-to-many relationship by embedding an array of LightIcecreamOrder. The "Light" version contains only essential fields (serveType, size, toppings, status), which keeps embedded documents small without duplicating entire documents.`,
+                  ko: `LightIcecreamOrder 배열을 임베딩하여 일대다 관계를 정의합니다. "Light" 버전은 필수 필드만 포함합니다 (serveType, size, toppings, status). 전체 문서를 복제하지 않고 임베딩할 수 있습니다.`,
                 })}
               </div>
             </div>
@@ -230,8 +231,8 @@ export class DeliveryService extends serve(db.delivery, ({ use, service }) => ({
               </div>
               <div className="text-sm text-yellow-700">
                 {l.trans({
-                  en: `A lifecycle hook that runs after a delivery is created. It iterates through all linked orders and marks them as finished - perfect for cascading updates.`,
-                  ko: `배달이 생성된 후 실행되는 라이프사이클 훅입니다. 모든 연결된 주문을 순회하며 완료 처리합니다 - 연쇄 업데이트에 완벽합니다.`,
+                  en: `A lifecycle hook that runs after a delivery is created. It iterates through all linked orders and marks them as finished, which keeps cascading updates consistent.`,
+                  ko: `배달이 생성된 후 실행되는 라이프사이클 훅입니다. 모든 연결된 주문을 순회하며 완료 처리합니다. 연쇄 업데이트를 처리합니다.`,
                 })}
               </div>
             </div>
@@ -790,55 +791,6 @@ export default function Page() {
       <Scroll.Slide id="summary" title={l.trans({ en: "Summary", ko: "요약" })}>
         <Docs.Title>{l.trans({ en: "Summary", ko: "요약" })}</Docs.Title>
         <Docs.Description>
-          <div className="my-6 rounded-lg bg-gradient-to-r from-green-100 to-blue-100 p-6">
-            <div className="mb-3 font-bold text-green-800 text-lg">
-              {l.trans({ en: "🎉 What You've Accomplished:", ko: "🎉 달성한 것들:" })}
-            </div>
-            <ul className="space-y-2 text-green-700 text-sm">
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Created a Delivery module with one-to-many relationship to IcecreamOrder",
-                  ko: "IcecreamOrder와 일대다 관계를 가진 Delivery 모듈 생성",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Used LightModel pattern for efficient embedded references",
-                  ko: "효율적인 임베디드 참조를 위한 LightModel 패턴 사용",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Implemented _postCreate hook for cascading updates across related data",
-                  ko: "관계된 데이터 간 연쇄 업데이트를 위한 _postCreate 훅 구현",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Built Field.Children component for selecting related records",
-                  ko: "관련 레코드 선택을 위한 Field.Children 컴포넌트 구축",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Displayed embedded related data without additional queries",
-                  ko: "추가 쿼리 없이 임베디드 관계 데이터 표시",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Organized multiple models with Tab navigation",
-                  ko: "Tab 네비게이션으로 여러 모델 정리",
-                })}
-              </li>
-            </ul>
-          </div>
           <div className="my-4 space-y-3">
             <div className="rounded-lg bg-blue-50 p-4">
               <div className="mb-2 flex items-center gap-2">
@@ -877,15 +829,15 @@ export default function Page() {
           </div>
           <div>
             {l.trans({
-              en: `Congratulations! You've completed all the core tutorials. You now have a solid foundation for building complex applications with akanjs. Explore the System Architecture section to dive deeper into how everything works together.`,
-              ko: `축하합니다! 모든 핵심 튜토리얼을 완료했습니다. 이제 akanjs로 복잡한 애플리케이션을 구축하기 위한 탄탄한 기반을 갖추게 되었습니다. System Architecture 섹션을 탐색하여 모든 것이 어떻게 함께 작동하는지 더 깊이 알아보세요.`,
+              en: `All core tutorials are complete. Explore the System Architecture section to see how everything works together.`,
+              ko: `모든 핵심 튜토리얼을 완료했습니다. System Architecture 섹션에서 모든 것이 어떻게 함께 작동하는지 더 깊이 알아보세요.`,
             })}
           </div>
         </Docs.Description>
       </Scroll.Slide>
       <div className="my-4 h-px w-full bg-border" />
 
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
+      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 xl:flex" />
     </Scroll>
   );
-}
+});

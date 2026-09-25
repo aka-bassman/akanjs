@@ -11,86 +11,287 @@
 - DataList & Enum (#overview)
 - Enum (#enum)
 - DataList (#datalist)
-- When To Use (#when)
+- Which One To Use (#when)
 - Tips (#tips)
 
 ## Content
 
 DataList & Enum
 
-Enum and DataList are small helpers you will see often in Akan. Enum is for a fixed set of values. DataList is for a list of items that each have an id.
+The value type, `"draft" | "published" | "archived"`, for props and parameters.
 
-Enum: status, role, type, category.
+Every value, in the order you declared them.
 
-DataList: users, files, posts, selected rows.
+Whether a value belongs to the enum, checked at runtime.
+
+The value's position in `values`, throwing for a value outside the enum.
+
+The usual array methods, run over `values`.
+
+Like the array methods, but they throw when nothing matches.
+
+The name you passed to `enumOf`, here `postStatus`.
+
+Builds a list from an array or another DataList, keeping the last item for a repeated id.
+
+Add or replace, or remove, by id, changing this list in place and returning it.
+
+Look up by id: `get` may return `undefined`, `pick` throws, `has` answers true or false.
+
+Position lookups, where `indexOf` and `pickAt` throw when nothing is there.
+
+Return a new DataList, but `sort` also reorders the source array, so sort a copy.
+
+The array methods over the items, where `map` returns a plain array.
+
+The item count and the underlying array, and the list itself works in `for…of` too.
+
+Returns a new DataList with the same items, which is what a store needs.
+
+The rows the slice has loaded, suffixed for a named slice as in `postListInPublic`.
+
+The rows as the last `init` loaded them.
+
+The rows a user selected, filled by `st.do.selectPost(post)`.
+
+`Load.Units` passes the list to this callback as a DataList.
+
+Question
+
+What it holds
+
+One value from a fixed set
+
+Records that each have an `id`
+
+Examples
+
+Status, role, type, size, visibility
+
+Users, files, posts, selected rows
+
+Where it lives
+
+`*.constant.ts`, as a field type
+
+Store state, or `new DataList(items)`
+
+Typical call
+
+Enum and DataList are two small helpers you will meet all over Akan code. Enum is for a fixed set of values; DataList is for a list of items that each have an id.
+
+A fixed set of values
+
+Status, role, type, category: a value that is always one of a few known choices.
+
+A list keyed by id
+
+Users, files, posts, selected rows: records you find and replace by id.
 
 Enum
 
-Use Enum when the value must be one of a few known choices. This keeps forms, APIs, and labels consistent.
+Use an Enum when a value must be one of a few known choices. Declared once, it keeps forms, APIs and labels in agreement.
 
-Fixed values
+1. Declare It In The Constant File
 
-Use values in UI
+Declare the class above the model classes, then use it as a field type:
+
+2. Give Each Value A Label
+
+3. Use It On Screen
+
+In a form, hand the class straight to a toggle field:
+
+To show a saved value, look up the same key. A module-scope map gives each value its own style:
+
+4. Work With Values In Code
+
+The class itself carries the values and a few array helpers:
+
+Member
 
 DataList
 
-Use DataList when you already loaded a list and want to update it by id. It is useful for UI state because you can add, replace, pick, and filter items easily.
+Use a DataList when a list is already loaded and you want to work with it by id. It suits UI state because adding, replacing, picking and filtering are one call each.
 
-`set(item)`: add or replace an item.
+The Basics
 
-`pick(id)`: get one item by id.
+A DataList keeps exactly one item per id:
 
-`filter(fn)`: make a smaller DataList.
+Methods At A Glance
 
-List by id
+Method
 
-When To Use
+DataList In The Store
 
-Use Enum when the value is a kind of label: status, role, type, size, visibility.
+Name
 
-Use DataList when the data is a collection of records with ids.
+Change A Store List
 
-Do not use DataList as a database query. It is for data already loaded into the app.
+Which One To Use
+
+A label-like value is an Enum; a collection of records with ids is a DataList.
+
+Querying
+
+Filter rows on the server before they reach the list.
+
+Form From Schema
+
+Bind enum fields and other inputs to the store.
 
 Tips
 
-Give enum names stable `refName`s because dictionaries and schemas can refer to them.
-
-Keep DataList items small. It works best with light models used in lists.
-
-Remember the shortcut: value choices are Enum, id collections are DataList.
-
 ## Code Examples
 
-### Code
+### apps/myapp/lib/post/post.constant.ts
 
 ```ts
+import { enumOf } from "akanjs/base";
+import { via } from "akanjs/constant";
+
 export class PostStatus extends enumOf("postStatus", [
   "draft",
   "published",
   "archived",
 ] as const) {}
+
+export class PostInput extends via((field) => ({
+  title: field(String),
+  status: field(PostStatus, { default: "draft" }),
+})) {}
 ```
 
-### Code
+### apps/myapp/lib/post/post.dictionary.ts
 
 ```ts
-const options = PostStatus.map((status) => ({
+import { modelDictionary } from "akanjs/dictionary";
+
+import type { Post, PostInsight, PostStatus } from "./post.constant";
+import type { PostFilter } from "./post.document";
+import type { PostEndpoint, PostSlice } from "./post.signal";
+
+export const dictionary = modelDictionary(["en", "ko"])
+  .of((t) => t(["Post", "게시글"]).desc(["A post a user writes", "사용자가 쓰는 게시글"])) // [!code collapse:8]
+  .model<Post>((t) => ({
+    title: t(["Title", "제목"]).desc(["Post title", "게시글 제목"]),
+    status: t(["Status", "상태"]).desc(["Publishing state", "공개 상태"]),
+  }))
+  .insight<PostInsight>((t) => ({}))
+  .query<PostFilter>((fn) => ({}))
+  .sort<PostFilter>((t) => ({}))
+  .enum<PostStatus>("postStatus", (t) => ({
+    draft: t(["Draft", "초안"]).desc(["Not public yet", "공개 전"]),
+    published: t(["Published", "공개"]).desc(["Public", "공개됨"]),
+    archived: t(["Archived", "보관"]).desc(["Hidden", "숨김"]),
+  }))
+  .slice<PostSlice>((fn) => ({})) // [!code collapse:4]
+  .endpoint<PostEndpoint>((fn) => ({}))
+  .error({})
+  .translate({});
+```
+
+### apps/myapp/lib/post/Post.Template.tsx
+
+```tsx
+"use client";
+import { cnst, st, usePage } from "@apps/myapp/client";
+import { Field, Layout } from "akanjs/ui";
+
+interface GeneralProps {
+  className?: string;
+}
+export const General = ({ className }: GeneralProps) => {
+  const postForm = st.use.postForm();
+  const { l } = usePage();
+  return (
+    <Layout.Template className={className}>
+      <Field.ToggleSelect
+        label={l("post.status")}
+        desc={l("post.status.desc")}
+        value={postForm.status}
+        items={cnst.PostStatus}
+        onChange={st.do.setStatusOnPost}
+      />
+    </Layout.Template>
+  );
+};
+```
+
+### apps/myapp/lib/post/Post.Unit.tsx
+
+```tsx
+import { type cnst, usePage } from "@apps/myapp/client";
+import type { ModelProps } from "akanjs/client";
+
+const statusClass: { [key in cnst.PostStatus["value"]]: string } = {
+  draft: "text-foreground/60",
+  published: "text-success",
+  archived: "text-foreground/40",
+} as const;
+
+export const Card = ({ className, post }: ModelProps<"post", cnst.LightPost>) => {
+  const { l } = usePage();
+  return (
+    <div className={className}>
+      <div className="font-semibold">{post.title}</div>
+      <span className={statusClass[post.status]}>
+        {l(`postStatus.${post.status}`)}
+      </span>
+    </div>
+  );
+};
+```
+
+### apps/myapp/lib/post/Post.Zone.tsx
+
+```tsx
+const { l } = usePage();
+const statusOptions = cnst.PostStatus.map((status) => ({
   value: status,
-  label: status,
+  label: l(`postStatus.${status}`),
 }));
 ```
 
-### Code
+### apps/myapp/lib/user/user.test.ts
 
 ```ts
-const users = new DataList([
-  { id: "u1", nickname: "Akan" },
-]);
+import { describe, expect, test } from "bun:test";
+import { DataList } from "akanjs/base";
 
-users.set({ id: "u2", nickname: "Akan" });
+describe("DataList", () => {
+  test("keeps one item per id", () => {
+    const users = new DataList([{ id: "u1", nickname: "Akan" }]);
 
-const user = users.pick("u1");
+    users.set({ id: "u2", nickname: "Akan" });
+    users.set({ id: "u1", nickname: "Renamed" });
+
+    expect(users.length).toBe(2);
+    expect(users.pick("u1").nickname).toBe("Renamed");
+    expect(users.get("u3")).toBeUndefined();
+    expect(() => users.pick("u3")).toThrow();
+    expect(users.filter((user) => user.nickname === "Akan").length).toBe(1);
+  });
+});
+```
+
+### libs/shared/lib/admin/admin.store.ts
+
+```ts
+import { store } from "akanjs/store";
+
+import * as cnst from "../cnst";
+import { fetch, sig } from "../useClient";
+
+export class AdminStore extends store(sig.admin, () => ({
+  me: new cnst.Admin(),
+})) {
+  async addAdminRole(adminId: string, role: cnst.AdminRole["value"]) {
+    const admin = await fetch.addAdminRole(adminId, role);
+    const { adminList } = this.get();
+    this.set({ adminList: adminList.set(admin).save() });
+  }
+}
 ```
 
 ## Agent Notes

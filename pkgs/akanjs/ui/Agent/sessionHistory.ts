@@ -8,19 +8,45 @@ export type PersistOption = boolean | { storage?: "session" | "local"; key?: str
  * chunk of it, and `AgentSession` swallows a failed save — so persisting the bytes would quietly stop persisting
  * the transcript itself. The name and type stay so a restored conversation still reads as what happened, and a
  * `url` stays because a pointer is not content; the server then tells the model the content is gone rather than
- * letting it answer from the filename.
+ * letting it answer from the filename. A `ref` stays for the same reason and matters more: it is the host's own
+ * handle on the file, so dropping it leaves a restored conversation with nothing but a name and size to guess
+ * from — the guess `ref` exists to retire.
+ *
+ * A reference's `value` goes the same way and for the same reason — it is capped at 20,000 characters each, and a
+ * transcript of 50 messages would not fit beside it. What is left behind is better than what an attachment leaves,
+ * though, and the note says so rather than leaving the model to notice: `refName`/`refId`/`path` is a live pointer,
+ * so the answer to a restored reference is to read it again with a tool, not to guess from the label.
  */
-const withoutContent = (message: ChatMessage): ChatMessage =>
-  message.attachments?.length
-    ? {
-        ...message,
-        attachments: message.attachments.map(({ name, mimeType, url }) => ({
-          name,
-          mimeType,
-          ...(url ? { url } : {}),
-        })),
-      }
-    : message;
+const restoredValue =
+  "the conversation was restored from storage, which keeps what the user pointed at but not the value it held";
+
+const withoutContent = (message: ChatMessage): ChatMessage => {
+  if (!message.attachments?.length && !message.references?.length) return message;
+  return {
+    ...message,
+    ...(message.attachments?.length
+      ? {
+          attachments: message.attachments.map(({ name, mimeType, url, ref }) => ({
+            name,
+            mimeType,
+            ...(url ? { url } : {}),
+            ...(ref ? { ref } : {}),
+          })),
+        }
+      : {}),
+    ...(message.references?.length
+      ? {
+          references: message.references.map(({ refName, refId, label, path }) => ({
+            refName,
+            refId,
+            label,
+            ...(path ? { path } : {}),
+            note: restoredValue,
+          })),
+        }
+      : {}),
+  };
+};
 
 /**
  * Maps the `persist` prop onto a `SessionHistory` over web storage. Session storage is the default on purpose:

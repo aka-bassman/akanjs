@@ -9,74 +9,99 @@
 ## Headings
 
 - Scripts (#overview)
-- Command (#command)
+- Create And Run (#command)
 - Server Lifecycle (#lifecycle)
 - Use Services (#service)
 - Lookup Helpers (#lookup)
-- Tips (#tips)
+- Change Data Safely (#tips)
 
 ## Content
 
 Script
 
-Scripts
-
-Use `akan script` for one-time developer or operator jobs: seed data, migrations, checks, and small maintenance fixes.
-
-The script starts the app server container without opening a normal web page.
-
-You can reuse services, signals, and adaptors that the app already wires together.
-
-Keep each script small and easy to delete after the job is done.
-
-Use `akan console` instead when the job is interactive inspection or a small operator command.
-
 Command
 
-Put scripts under `apps/myapp/script`. The filename becomes the command target.
+Form
 
-Run a script
+Good for
+
+A file in `script/` you can review and rerun
+
+Seed data, migrations, checks, small maintenance fixes
+
+A prompt that is gone when you close it
+
+Inspecting a service, trying a query, one small operator command
+
+Server Console
+
+Inspect services and try queries at a prompt.
+
+akan script Reference
+
+The command's signature and arguments.
+
+optional
+
+The app name, needed with a file name. Left out, it asks from a list or uses the only app.
+
+A file directly in `script/`; the `.ts` suffix is optional. Leave it out to pick from a list.
+
+Finds by
+
+Call
+
+What you get
+
+Class
+
+A service, signal or adaptor instance, fully typed.
+
+Role
+
+The storage adaptor the app actually uses, whatever its implementation.
+
+A service.
+
+A signal, when the script should run signal logic.
+
+An adaptor, for infrastructure work.
+
+Scripts
+
+A script is a TypeScript file that boots your app's server, does one job, and exits. Reach for it when the job should live in a file rather than at a prompt:
+
+Create And Run
+
+Arguments
+
+Both arguments may be left out, and the command then asks. They are positional, so the app comes first:
 
 Server Lifecycle
 
-Start the server, do the job, and always stop it in `finally`. This makes database connections, timers, and adaptors clean up correctly.
-
 Use Services
 
-Most maintenance jobs should call services. Services already know the domain rules, database access, and other dependencies.
-
-Read and update data
+Do the work through services rather than direct database writes. A service already knows the domain rules, the database access and its other dependencies.
 
 Lookup Helpers
 
-`server.get(ArticleService)`: class-based lookup with strong types.
+Change Data Safely
 
-`server.getService("article")`: refName-based service lookup.
+A script that changes data should show what it is about to do before it does it. Three habits cover most of it:
 
-`server.getSignal("article")`: signal lookup for a script that wants to call signal logic.
+Here is the script from above with the first two habits added:
 
-`server.getAdaptor("storage")`: adaptor lookup for infrastructure tasks.
-
-Tips
-
-Print the target environment before changing data.
-
-For destructive scripts, add a confirm flag or dry-run mode.
-
-Prefer service methods over direct database writes so domain rules stay in one place.
+Run it once to read the count, then again to apply it:
 
 ## Code Examples
 
-### Code
+### Terminal
 
-```ts
-akan script myapp hello
-
-# runs this file
-apps/myapp/script/hello.ts
+```bash
+akan script koyo hello
 ```
 
-### apps/myapp/script/hello.ts
+### apps/koyo/script/hello.ts
 
 ```ts
 import { server } from "../server";
@@ -94,7 +119,7 @@ const run = async () => {
 void run();
 ```
 
-### Code
+### apps/koyo/script/finishServedOrders.ts
 
 ```ts
 import { server, srv } from "../server";
@@ -103,13 +128,13 @@ const run = async () => {
   await server.start();
 
   try {
-    const articleService = server.get(srv.ArticleService);
-    const draftArticles = await articleService.findDrafts();
+    const icecreamOrderService = server.get(srv.IcecreamOrderService);
+    const servedOrders = await icecreamOrderService.listByStatuses(["served"]);
 
-    console.info("draft count", draftArticles.length);
+    console.info("served orders", servedOrders.length);
 
-    for (const article of draftArticles) {
-      await articleService.markAsReady(article.id);
+    for (const order of servedOrders) {
+      await icecreamOrderService.finishIcecreamOrder(order.id);
     }
   } finally {
     await server.stop();
@@ -117,6 +142,44 @@ const run = async () => {
 };
 
 void run();
+```
+
+### apps/koyo/script/finishServedOrders.ts
+
+```ts
+import { getEnv } from "akanjs/base";
+import { server, srv } from "../server";
+
+const isApply = process.env.APPLY === "1";
+
+const run = async () => {
+  await server.start();
+
+  try {
+    console.info(`environment: ${getEnv().environment}, apply: ${isApply}`);
+
+    const icecreamOrderService = server.get(srv.IcecreamOrderService);
+    const servedOrders = await icecreamOrderService.listByStatuses(["served"]);
+
+    console.info("served orders", servedOrders.length);
+    if (!isApply) return;
+
+    for (const order of servedOrders) {
+      await icecreamOrderService.finishIcecreamOrder(order.id);
+    }
+  } finally {
+    await server.stop();
+  }
+};
+
+void run();
+```
+
+### Terminal
+
+```bash
+akan script koyo finishServedOrders
+APPLY=1 akan script koyo finishServedOrders
 ```
 
 ## Agent Notes

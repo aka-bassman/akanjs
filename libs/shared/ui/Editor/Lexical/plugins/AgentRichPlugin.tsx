@@ -1,20 +1,19 @@
 "use client";
-import { $convertFromMarkdownString, $generateNodesFromMarkdownString } from "@lexical/markdown";
+import { $convertFromMarkdownString, $generateNodesFromMarkdownString, type Transformer } from "@lexical/markdown";
 import { st } from "@libs/shared/client";
 import { Int } from "akanjs/base";
 import { $createParagraphNode, $isDecoratorNode, $isElementNode, type LexicalNode } from "lexical";
 
 import { useAgentField } from "../agentField";
-import { lossesOf, syntaxOf } from "../feature";
-import { AKAN_TRANSFORMERS } from "../markdown";
+import { lossesOf, syntaxOf, transformersOf } from "../feature";
 import { $spliceRichBlocks, type RichBlockOp, richBlockOps } from "./agentRichPlugin.command";
 import { isEmptyRichContent, lossSentence, lossyNodesOf, richBlockListing, richBlocksOf } from "./agentRichPlugin.util";
 
 const isBlockNode = (node: LexicalNode) => ($isElementNode(node) || $isDecoratorNode(node)) && !node.isInline();
 
 /** Markdown as root-level blocks. An inline node cannot sit under the root, so it gets a paragraph of its own. */
-const $blocksFromMarkdown = (markdown: string) =>
-  $generateNodesFromMarkdownString(markdown, AKAN_TRANSFORMERS).map((node) =>
+const $blocksFromMarkdown = (markdown: string, transformers: Transformer[]) =>
+  $generateNodesFromMarkdownString(markdown, transformers).map((node) =>
     isBlockNode(node) ? node : $createParagraphNode().append(node),
   );
 
@@ -25,10 +24,11 @@ const $blocksFromMarkdown = (markdown: string) =>
  * Markdown, not the stored JSON: `st.tool` arguments are scalars, and a model authoring Lexical's tree
  * directly would trip `parseEditorState`, which `resolveEditorState` and `ExternalValuePlugin` both
  * swallow — a malformed write would empty the document with no error anywhere. Markdown also arrives
- * through `AKAN_TRANSFORMERS`, the curated node set the person's own typing goes through.
+ * through the field's own transformers, the same set the person's typing goes through — so a field the
+ * `features` prop narrowed to plain text and mentions hands the agent exactly that vocabulary.
  *
  * The whole-field write refuses a document that already holds content, because markdown export is lossy
- * for every node class outside `AKAN_FEATURES`' transformer set; the block ops are the way in after that,
+ * for every node class outside the field's transformer set; the block ops are the way in after that,
  * since they convert only the fragment the caller wrote and leave every other block untouched.
  *
  * Every conversion runs against the live editor rather than against the stored value, which buys three
@@ -39,6 +39,7 @@ const $blocksFromMarkdown = (markdown: string) =>
 export const AgentRichPlugin = () => {
   const { name, blockBase, features, content, commit } = useAgentField();
   const losses = lossesOf(features);
+  const transformers = transformersOf(features);
 
   st.tool(name, {
     guard: (args) => {
@@ -64,7 +65,7 @@ export const AgentRichPlugin = () => {
     .opt("replaceAll", Boolean)
     .exec(async (markdown) => {
       await commit(() => {
-        $convertFromMarkdownString(markdown, AKAN_TRANSFORMERS);
+        $convertFromMarkdownString(markdown, transformers);
       });
     });
 
@@ -100,7 +101,7 @@ export const AgentRichPlugin = () => {
     .opt("markdown", String)
     .exec(async (op, index, markdown) => {
       await commit(() => {
-        $spliceRichBlocks(op, index ?? 0, op === "remove" ? [] : $blocksFromMarkdown(markdown ?? ""));
+        $spliceRichBlocks(op, index ?? 0, op === "remove" ? [] : $blocksFromMarkdown(markdown ?? "", transformers));
       });
       return richBlockListing(content());
     });

@@ -152,6 +152,13 @@ describe("frameConfig", () => {
     ).toBe("block");
   });
 
+  test("defaults both safe-area colors to the theme background", () => {
+    const state = resolvePageState({ path: "/detail", platform: "web", deviceSafeArea: { top: 0, bottom: 0 } });
+
+    expect(state.topSafeAreaColor).toBe("var(--color-background, Canvas)");
+    expect(state.bottomSafeAreaColor).toBe("var(--color-background, Canvas)");
+  });
+
   test("rejects unsupported pageConfig.ssr values", () => {
     expect(() => validatePageConfig("bad.tsx", { ssr: "wait" as never })).toThrow('unsupported pageConfig.ssr "wait"');
     expect(() => validatePageConfig("ok.tsx", { ssr: "block" })).not.toThrow();

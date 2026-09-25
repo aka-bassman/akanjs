@@ -19,109 +19,275 @@
 
 Setup
 
+The native shell that runs your web app in a WebView and reaches device APIs through plugins.
+
+CSR bundle
+
+The single-page build of your app. The native app ships it, so keep `web.csr` on.
+
+One native app built from your Akan app. Its key in `mobile.targets` is the `--target` value.
+
+The app's permanent ID: the package name on Android and the bundle ID on iOS.
+
+The Android Studio and Xcode projects, created inside the app folder on the first run.
+
+plugin
+
+A native module such as camera or push. It works only when the app's `package.json` lists it.
+
+1. Mobile config
+
+2. Capacitor plugins
+
+Install the toolchains, run the app on a device, then set up signing and store builds.
+
+4. Verify
+
+Check each feature on a real device instead of stopping at a green build.
+
+app name
+
+Name under the home-screen icon. A store listing may show a different name.
+
+Android package name and iOS bundle ID. Console and Firebase registrations must match it.
+
+The version users see: Android `versionName` and iOS `MARKETING_VERSION`.
+
+Store build number: Android `versionCode`, iOS build. Raise it for every store upload.
+
+One entry per native app. The key is the name `--target` takes.
+
+Device features to prepare. Only `camera`, `contacts`, `location`, `push` and `speech` exist.
+
+Home route. A deep link opens on top of it, and Android back returns to it before exiting.
+
+The client to open in a multi-client app. It must be a `basePath` declared in `routes`.
+
+Copies app files into the native project. Key: a path in `ios/` or `android/`. Value: the source.
+
+Per-target override, like `appName`, `version`, `buildNum`. A different `appId` is a separate app.
+
+Camera and photo library usage text
+
+`READ_MEDIA_IMAGES`, storage read and write
+
+Contacts usage text
+
+Location usage text, for always and while in use
+
+Remote-notification background mode, `aps-environment`, Firebase in `AppDelegate`
+
+Speech recognition and microphone usage text
+
+Added for you
+
+Add by hand
+
+Used by the app shell itself
+
+The Capacitor runtime itself.
+
+Android back button, deep-link events and app exit.
+
+Reads the platform and device language at startup.
+
+Reports the keyboard height so the screen can move with it.
+
+Haptic feedback, loaded at startup.
+
+Reads the notch and home-indicator insets at startup.
+
+On-device storage, where the sign-in token is kept.
+
+Opens an external `Link` in the system browser.
+
+Per feature
+
+Camera and photo picker. Pair with `camera`.
+
+Current location. Pair with `location`.
+
+The OS push bridge. Pair with `push`.
+
+Shows web pages inside the app.
+
+The FCM token for native push. Pair with `push`.
+
+Address book access. Pair with `contacts`.
+
+Voice input. Pair with `speech`.
+
+Spoken output. Pair with `speech`.
+
+Runs on an emulator or phone. `--release` ships the web build instead of the dev server.
+
+A release APK, to check that the project builds.
+
+An APK or an AAB (`--assemble-type`) for the Play Store.
+
+Runs on a simulator or phone. `--release` ships the web build instead of the dev server.
+
+Builds the iOS app with Capacitor, to check that the project builds.
+
+The same build against the `main` backend, for an App Store release.
+
+Command
+
+Default --env
+
+What you get
+
+A key of `mobile.targets`, or `all`. With a single target it is picked for you.
+
+The backend the app talks to. The default differs per command, as in the table above.
+
+Run a bundled web build, so no dev server is needed.
+
+Also open the native project in Android Studio or Xcode.
+
+Delete and recreate the native project. Hand edits in `android/` or `ios/` are lost.
+
+`aab` for a Play Store upload, `apk` to install the file directly.
+
+Allow `--env local` in a release build. For local testing only.
+
+For a phone, pick your team under Signing & Capabilities and check provisioning.
+
+Run on a simulator first, then move to a phone for device-only features.
+
+Add the plugin to `apps/myapp/package.json`, then rerun `start-ios` or `start-android`.
+
+Blank screen on a phone
+
+The phone cannot reach your dev server. Use the same Wi-Fi, or set `AKAN_PUBLIC_CLIENT_HOST=<ip>`.
+
+No permission prompt, or an iOS crash on first use
+
+Add the feature to `permissions` and rerun, so the native entries are written.
+
+A native file is missing
+
+A `files` key is a path inside `android/` or `ios/`, not inside the app folder.
+
+A notification tap opens the wrong screen
+
+Send `url: "/some/path"` in the data and check that the tap opens that CSR route.
+
+Android push
+
+The package name matches the Android app registered in Firebase.
+
+The notification permission is granted on the phone.
+
+The Firebase project is the one the server sends with.
+
+iOS push
+
+You test on a real device.
+
+The APNs key is uploaded to Firebase, and the provisioning profile allows push.
+
+Push Notifications
+
+Firebase, APNs and the client API, per platform.
+
+Deep Links
+
+Custom URL schemes and verified HTTPS app links.
+
+Every Mobile Field
+
+Icons, splash images and passthrough Capacitor config.
+
+CLI Reference
+
+Every flag of the mobile commands.
+
 Mobile Setup Flow
 
-Akan mobile apps reuse the CSR web app inside a Capacitor Android/iOS shell. The web app owns pages and business logic. The native shell owns package identity, device permissions, plugin linking, native files, signing, and store builds.
+An Akan mobile app is your CSR web app running inside a Capacitor shell for Android and iOS. The web app owns the pages and business logic. The shell owns the package ID, device permissions, plugin linking, native files, signing and store builds.
 
-Start with the mobile identity, declare only the Capacitor plugins the app actually uses, then prepare Android and iOS builds. Push notifications and deep links are optional features; configure them only when the app needs them.
+Words used on this page
 
-App name, package id, version, target basePath, permissions, native files.
+Term
 
-List the native plugins used by this app in apps/myapp/package.json.
+Four steps
 
-Prepare platform toolchains, app IDs, signing, and sync/build commands.
+Push notifications and deep links are optional. Set them up after this page, and only if the app needs them.
 
 Mobile Config
 
-The mobile block in akan.config.ts describes the native package. These values become Android application metadata, iOS bundle metadata, target entry paths, native permission hints, and native file copy rules.
+What each permission adds
 
-Native display name. Users see it on the launcher/home screen unless the platform or store overrides it.
+A permission writes that feature's native settings on the next run. It does not install the plugin; that is the next section.
 
-Stable native package identity. Android uses it as applicationId/package name; iOS uses it as bundle id. Any platform console registration must match it exactly.
+Permission
 
-version is the user-facing version. buildNum is the store build number and must increase for every native store submission.
-
-The Akan client route opened by the native app. Use separate targets when one app repo ships separate customer/admin/partner apps.
-
-Native capability hints such as "camera", "contacts", "location", and "push". They prepare Akan-side native metadata, but plugin-specific setup can still be required.
-
-Copies app-owned files into generated native project paths. Use it for native config files that must live inside Android or iOS projects.
-
-Do not change appId casually after release. Android and iOS treat a different appId as a different app.
+Several native apps from one app
 
 Capacitor Plugins
 
-Capacitor links native plugins from the app package. A workspace-level dependency is not enough if the app package does not declare the plugin. Add only the plugins your app actually calls.
+Package
 
-Use * because the app package declares usage, not the resolved version. The workspace lockfile and root package control the actual installed version.
+Yes
 
-start-ios/start-android run Capacitor add/sync/run commands, but they do not add dependencies to apps/myapp/package.json. Declare the app dependencies first, then rerun the mobile command.
+No
 
-Small bridge plugins such as haptics or device often work after package declaration and sync.
-
-Camera, geolocation, push, background work, file access, and auth plugins often require Info.plist, AndroidManifest, Xcode capabilities, Gradle settings, or console credentials.
-
-Run start-ios/start-android or a build command again. That regenerates native plugin files.
+Beyond the default set, add only the plugins the app actually calls. Native push, for example, needs the FCM plugin next to the push plugin:
 
 Android Setup
 
-Android setup prepares a generated Android project that can build and run on an emulator or physical device. The important path is package name consistency: mobile.appId and the generated Android applicationId must match.
-
 Prerequisites
 
-Android Studio with Android SDK installed.
+Android Studio with the Android SDK.
 
-JDK 21 available from your shell.
+Open the Android Studio download
 
-A stable mobile.appId such as com.example.shop.
+JDK 21, reachable from your shell.
 
-Use during development. It prepares native files and runs the app on an emulator or connected device.
+Open Homebrew openjdk@21
 
-Use to verify the Android project builds without starting an interactive device run.
+Open the Android application ID docs
 
-Use for store artifacts such as AAB. Release signing and Play Store settings matter here.
+Run on a device
 
-Success check
+Point your shell at JDK 21 and the Android SDK:
 
-Generated applicationId matches mobile.appId.
+In a second terminal, run the app on an emulator or a connected phone:
 
-The app runs on an emulator or physical device.
+Commands and store builds
 
-Push notifications are covered in Push Setup. Keep Android Setup focused on the native project and package identity first.
+Open the Android app signing docs
+
+Mobile command flags
 
 iOS Setup
 
-iOS setup prepares the Xcode project, bundle identity, signing, simulator runs, and store-oriented builds. Push notifications are covered in Push Setup.
+This prepares the Xcode project: bundle ID, signing, simulator runs and store builds. Run on a simulator first, then on a phone for device-only features.
 
-Xcode installed.
+Xcode.
 
-A stable mobile.appId used as the iOS bundle id.
+Open the Xcode download
 
-Apple signing setup when running on a physical device or releasing.
+Open the Apple bundle ID docs
+
+An Apple developer team, for phone runs and releases.
+
+Open the Apple signing docs
 
 Xcode checks
 
-Open the generated iOS project after sync.
-
-Check that bundle identifier matches mobile.appId.
-
-Check signing team and provisioning when running on a physical device.
-
-Run the app in a simulator first, then move to a physical device for device-only features.
-
-Push notifications are covered in Push Setup.
-
 Verify Setup
 
-Do not stop at a successful build. Verify the actual feature surface: plugin availability, native file placement, permission prompt, push token creation, server send, and click routing.
+A green build is not the finish line. On a real device, check that plugins load, native files are in place, permission prompts appear, and push arrives and opens the right screen.
 
-If the console says plugin is not implemented, the JS package exists but the native plugin was not linked. Check app package.json and rerun sync/build.
+Symptom
 
-Check package name, app/google-services.json, Google Services Gradle setup, notification permission, and Firebase project match.
+What to check
 
-Check real device testing, aps-environment entitlement, APNs key upload, provisioning profile, and GoogleService-Info.plist target membership.
+Push on each platform
 
-Send a notification with url: /some/path and confirm tapping it opens the expected CSR route.
+Next
 
 ## Code Examples
 
@@ -132,13 +298,12 @@ import type { AppConfig } from "akanjs";
 
 const config: AppConfig = {
   mobile: {
-    appName: "Shop",
-    appId: "com.example.shop",
+    appName: "Acme Shop",
+    appId: "com.acme.shop",
     version: "1.0.0",
     buildNum: 1,
     targets: {
       default: {
-        basePath: "shop",
         permissions: ["camera"],
       },
     },
@@ -148,24 +313,34 @@ const config: AppConfig = {
 export default config;
 ```
 
-### Base mobile shell dependencies
+### apps/myapp/akan.config.ts
 
 ```ts
-{
-  "dependencies": {
-    "@capacitor/app": "*",
-    "@capacitor/core": "*",
-    "@capacitor/device": "*",
-    "@capacitor/keyboard": "*",
-    "@capacitor/preferences": "*",
-    "capacitor-plugin-safe-area": "*"
-  }
-}
+const config: AppConfig = {
+  routes: [
+    { basePath: "shop", domains: { main: ["shop.acme.com"] } },
+    { basePath: "partner", domains: { main: ["partner.acme.com"] } },
+  ],
+  mobile: {
+    appName: "Acme Shop",
+    appId: "com.acme.shop",
+    version: "1.0.0",
+    buildNum: 1,
+    targets: {
+      shop: { basePath: "shop" },
+      partner: {
+        basePath: "partner",
+        appName: "Acme Partner",
+        appId: "com.acme.partner",
+      },
+    },
+  },
+};
 ```
 
-### Push notification add-on dependencies
+### apps/myapp/package.json
 
-```ts
+```json
 {
   "dependencies": {
     "@capacitor/push-notifications": "*",
@@ -174,45 +349,55 @@ export default config;
 }
 ```
 
-### 1. Configure local toolchain
+### Terminal
 
 ```bash
 brew install openjdk@21
-export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+JDK_PREFIX="$(brew --prefix openjdk@21)"
+export JAVA_HOME="$JDK_PREFIX/libexec/openjdk.jdk/Contents/Home"
 export PATH="$JAVA_HOME/bin:$PATH"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
 ```
 
-### 2. Set Android package identity
-
-```ts
-const config: AppConfig = {
-  mobile: {
-    appName: "Shop",
-    appId: "com.example.shop",
-    version: "1.0.0",
-    buildNum: 1,
-    targets: {
-      default: {
-        basePath: "shop",
-      },
-    },
-  },
-};
-```
-
-### 3. Sync and build
+### Terminal
 
 ```bash
-akan start-android myapp --target default
+akan start myapp
+```
+
+### Terminal
+
+```bash
+akan start-android myapp
+```
+
+### Terminal
+
+```bash
 akan build-android myapp --target default
-akan release-android myapp --target default --env main --assembleType aab
+akan release-android myapp --target default --env main --assemble-type aab
 ```
 
-### 1. Sync and build
+### apps/myapp/android/gradle.properties
+
+```yaml
+MYAPP_RELEASE_STORE_FILE=release.keystore
+MYAPP_RELEASE_STORE_PASSWORD=<store password>
+MYAPP_RELEASE_KEY_ALIAS=upload
+MYAPP_RELEASE_KEY_PASSWORD=<key password>
+```
+
+### Terminal
 
 ```bash
-akan start-ios myapp --target default
+akan start-ios myapp
+akan start-ios myapp --device "iPhone 16"
+```
+
+### Terminal
+
+```bash
 akan build-ios myapp --target default
 akan release-ios myapp --target default --env main
 ```

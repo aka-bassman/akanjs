@@ -1,23 +1,23 @@
 export class FileEditor {
-  private filePath: string;
-  private content: string;
+  #filePath: string;
+  #content: string;
 
   private constructor(filePath: string, content: string) {
-    this.filePath = filePath;
-    this.content = content;
+    this.#filePath = filePath;
+    this.#content = content;
   }
 
   static async create(filePath: string): Promise<FileEditor> {
     try {
       const content = await Bun.file(filePath).text();
       return new FileEditor(filePath, content);
-    } catch (error) {
+    } catch (_error) {
       throw new Error(`Failed to read file: ${filePath}`);
     }
   }
 
   find(pattern: string | RegExp): number {
-    const lines = this.content.split("\n");
+    const lines = this.#content.split("\n");
     const regex = typeof pattern === "string" ? new RegExp(pattern) : pattern;
 
     for (let i = 0; i < lines.length; i++) {
@@ -30,7 +30,7 @@ export class FileEditor {
   }
 
   findAll(pattern: string | RegExp): number[] {
-    const lines = this.content.split("\n");
+    const lines = this.#content.split("\n");
     const regex = typeof pattern === "string" ? new RegExp(pattern) : pattern;
     const matches: number[] = [];
 
@@ -50,9 +50,9 @@ export class FileEditor {
       throw new Error(`Pattern not found: ${pattern}`);
     }
 
-    const lines = this.content.split("\n");
+    const lines = this.#content.split("\n");
     lines.splice(lineIndex + 1, 0, data);
-    this.content = lines.join("\n");
+    this.#content = lines.join("\n");
 
     return this;
   }
@@ -64,43 +64,43 @@ export class FileEditor {
       throw new Error(`Pattern not found: ${pattern}`);
     }
 
-    const lines = this.content.split("\n");
+    const lines = this.#content.split("\n");
     lines.splice(lineIndex, 0, data);
-    this.content = lines.join("\n");
+    this.#content = lines.join("\n");
 
     return this;
   }
 
   replace(pattern: string | RegExp, replacement: string): this {
     const regex = typeof pattern === "string" ? new RegExp(pattern, "g") : pattern;
-    this.content = this.content.replace(regex, replacement);
+    this.#content = this.#content.replace(regex, replacement);
     return this;
   }
 
   append(data: string): this {
-    this.content += `\n${data}`;
+    this.#content += `\n${data}`;
     return this;
   }
 
   prepend(data: string): this {
-    this.content = `${data}\n${this.content}`;
+    this.#content = `${data}\n${this.#content}`;
     return this;
   }
 
   async save(): Promise<void> {
     try {
-      await Bun.write(this.filePath, this.content);
-    } catch (error) {
-      throw new Error(`Failed to save file: ${this.filePath}`);
+      await Bun.write(this.#filePath, this.#content);
+    } catch (_error) {
+      throw new Error(`Failed to save file: ${this.#filePath}`);
     }
   }
 
   getContent(): string {
-    return this.content;
+    return this.#content;
   }
 
   setContent(content: string): this {
-    this.content = content;
+    this.#content = content;
     return this;
   }
 }

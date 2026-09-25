@@ -49,7 +49,7 @@ Akan.js smooths over the following background technologies so your application c
 
 Web/Mobile
 
-Testing
+Tooling
 
 Deployment
 

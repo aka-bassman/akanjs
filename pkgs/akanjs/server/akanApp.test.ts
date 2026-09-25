@@ -237,7 +237,9 @@ describe("makeAkanChildProxyHeaders", () => {
       },
     });
 
-    const headers = makeAkanChildProxyHeaders(req, 2);
+    // A trusted (private) peer, which is what an ingress in front of the gateway is — without one the forwarded
+    // headers are the client's own word for itself and are dropped.
+    const headers = makeAkanChildProxyHeaders(req, 2, { address: "10.0.0.2", port: 443, family: "IPv4" });
 
     expect(headers.get("connection")).toBeNull();
     expect(headers.get("host")).toBe("akan-child");
@@ -245,6 +247,14 @@ describe("makeAkanChildProxyHeaders", () => {
     expect(headers.get("x-forwarded-host")).toBe("akanjs.com");
     expect(headers.get("x-forwarded-proto")).toBe("https");
     expect(headers.get("x-akan-child-idx")).toBe("2");
+  });
+
+  test("asks the child for an identity body, whatever the real client accepts", () => {
+    const req = new Request("http://akan-internal/", {
+      headers: { host: "internal.example", "accept-encoding": "gzip, deflate, br" },
+    });
+
+    expect(makeAkanChildProxyHeaders(req, 0).get("accept-encoding")).toBe("identity");
   });
 
   test("falls back to request host and protocol without upstream forwarded headers", () => {
@@ -289,10 +299,26 @@ describe("makeAkanChildProxyHeaders", () => {
     expect(headers.get("x-forwarded-for")).toBe("203.0.113.10, 203.0.113.10");
   });
 
-  test("falls back to loopback only when there is no peer to read", () => {
+  test("sends no client address at all when there is no peer and nothing proxied the call", () => {
     const req = new Request("http://internal.example/", { headers: { host: "internal.example" } });
 
-    expect(makeAkanChildProxyHeaders(req, 0).get("x-real-ip")).toBe("127.0.0.1");
+    const headers = makeAkanChildProxyHeaders(req, 0);
+
+    // Not `127.0.0.1`: a loopback-looking address for an unknown caller cannot be told from a real local one.
+    expect(headers.get("x-real-ip")).toBeNull();
+    expect(headers.get("x-forwarded-for")).toBeNull();
+  });
+
+  test("ignores a forwarded address from an untrusted peer, which is the client forging its own", () => {
+    const req = new Request("http://internal.example/", {
+      headers: { host: "internal.example", "x-real-ip": "10.0.0.1", "x-forwarded-for": "10.0.0.1" },
+    });
+
+    // A public peer is a client talking to this port directly, so its headers are not a proxy's word for anyone.
+    const headers = makeAkanChildProxyHeaders(req, 0, { address: "198.51.100.7", port: 40_000, family: "IPv4" });
+
+    expect(headers.get("x-real-ip")).toBe("198.51.100.7");
+    expect(headers.get("x-forwarded-for")).toBe("10.0.0.1, 198.51.100.7");
   });
 });
 
@@ -525,6 +551,118 @@ describe("AkanApp", () => {
       await Promise.race([running, wait(1_000)]);
     }
   }, 20_000);
+
+  test("holds a request until a booting replica reports ready", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akan-app-boot-wait-"));
+    tempRoots.push(root);
+    const serverPath = path.join(root, "server.ts");
+    const runtimeDir = path.join(root, "runtime");
+    const port = 24_000 + Math.floor(Math.random() * 10_000);
+
+    await Bun.write(
+      serverPath,
+      `
+        export const server = {
+          async start() {
+            Bun.serve({ unix: process.env.AKAN_CHILD_SOCKET, fetch() { return new Response("ok"); } });
+            process.on("message", (message) => {
+              if (!message || typeof message !== "object") return;
+              if (message.type === "health.ping") {
+                process.send?.({ type: "health.pong", nonce: message.nonce, sentAt: message.sentAt, pid: process.pid });
+              }
+              if (message.type === "shutdown") process.exit(0);
+            });
+            await Bun.sleep(1_500);
+            process.send?.({
+              type: "ready",
+              pid: process.pid,
+              replicaIdx: 0,
+              role: "all",
+              upstream: { type: "unix", socketPath: process.env.AKAN_CHILD_SOCKET },
+              healthPath: "/_akan/app/child-health",
+            });
+          },
+        };
+      `,
+    );
+
+    const app = new AkanApp(serverPath, { replica: 1, runtimeDir, port });
+    const running = app.start();
+    try {
+      const health = await waitFor(async () => {
+        const res = await fetch(`http://127.0.0.1:${port}/_akan/app/health`).catch(() => null);
+        if (!res?.ok) return null;
+        return (await res.json()) as { children: Array<{ ready: boolean }> };
+      });
+      expect(health.children[0]?.ready).toBe(false);
+
+      const held = await fetch(`http://127.0.0.1:${port}/while-booting`);
+      expect(held.status).toBe(200);
+      expect(await held.text()).toBe("ok");
+    } finally {
+      await app.stop();
+      await Promise.race([running, wait(1_000)]);
+    }
+  }, 15_000);
+
+  test("serves a self-reloading page once the upstream wait budget runs out", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akan-app-boot-page-"));
+    tempRoots.push(root);
+    const serverPath = path.join(root, "server.ts");
+    const runtimeDir = path.join(root, "runtime");
+    const port = 24_000 + Math.floor(Math.random() * 10_000);
+
+    await Bun.write(
+      serverPath,
+      `
+        export const server = {
+          async start() {
+            Bun.serve({ unix: process.env.AKAN_CHILD_SOCKET, fetch() { return new Response("ok"); } });
+            process.on("message", (message) => {
+              if (message && typeof message === "object" && message.type === "shutdown") process.exit(0);
+            });
+            await new Promise(() => {});
+          },
+        };
+      `,
+    );
+
+    const originalWait = process.env.AKAN_UPSTREAM_WAIT_MS;
+    process.env.AKAN_UPSTREAM_WAIT_MS = "200";
+    let app: AkanApp;
+    try {
+      app = new AkanApp(serverPath, { replica: 1, runtimeDir, port });
+    } finally {
+      if (originalWait === undefined) delete process.env.AKAN_UPSTREAM_WAIT_MS;
+      else process.env.AKAN_UPSTREAM_WAIT_MS = originalWait;
+    }
+    const running = app.start();
+    try {
+      const htmlRes = await waitFor(async () =>
+        fetch(`http://127.0.0.1:${port}/`, { headers: { accept: "text/html" } }).catch(() => null),
+      );
+      expect(htmlRes.status).toBe(503);
+      expect(htmlRes.headers.get("content-type") ?? "").toContain("text/html");
+      expect(htmlRes.headers.get("cache-control")).toBe("no-store");
+      const htmlBody = await htmlRes.text();
+      expect(htmlBody).toContain("Backend is starting");
+      expect(htmlBody).toContain("location.reload()");
+
+      const textRes = await fetch(`http://127.0.0.1:${port}/api/anything`);
+      expect(textRes.status).toBe(503);
+      expect(await textRes.text()).toContain("No healthy federation child is ready");
+
+      const jsonRes = await fetch(`http://127.0.0.1:${port}/api/anything`, {
+        headers: { accept: "application/json" },
+      });
+      expect(jsonRes.status).toBe(503);
+      expect(jsonRes.headers.get("content-type") ?? "").toContain("application/json");
+      expect(await jsonRes.json()).toMatchObject({ error: "base.error.serverUnavailable", statusCode: 503 });
+    } finally {
+      await app.stop();
+      await Promise.race([running, wait(1_000)]);
+    }
+  }, 15_000);
 
   test("honors an explicitly configured runtimeDir for child sockets", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "akan-app-runtime-dir-"));
@@ -894,7 +1032,7 @@ describe("AkanApp", () => {
 });
 
 describe("AkanApp solo", () => {
-  const soloEnvKeys = ["AKAN_SOLO", "SERVER_MODE", "AKAN_REPLICA", "AKAN_REPLICA_IDX", "AKAN_APP_DIR"] as const;
+  const soloEnvKeys = ["AKAN_SOLO", "SERVER_MODE", "AKAN_REPLICA", "AKAN_REPLICA_IDX", "AKAN_APP_DIR", "PORT"] as const;
 
   /** `#startSolo` writes the child env onto this process, so every case restores what it found. */
   const withSoloEnv = async (env: { [key: string]: string | undefined }, fn: () => Promise<void>) => {
@@ -926,6 +1064,7 @@ describe("AkanApp solo", () => {
               role: process.env.SERVER_MODE,
               replicaIdx: process.env.AKAN_REPLICA_IDX,
               childSocket: process.env.AKAN_CHILD_SOCKET ?? null,
+              port: process.env.PORT ?? null,
             }));
             if (!process.send) return;
             process.send({
@@ -968,6 +1107,25 @@ describe("AkanApp solo", () => {
       // Its absence is what `AkanServer` reads to know it owns `/_akan/app/*` and the rotating log.
       expect(report.childSocket).toBeNull();
       expect(await readdir(runtimeDir).catch(() => [])).toEqual([]);
+    });
+  }, 10_000);
+
+  test("logs the solo boot at info, which is all a container with no gateway shows", async () => {
+    const { serverPath, runtimeDir } = await makeSoloRoot("akan-app-solo-boot-log-");
+    await withSoloEnv({ AKAN_SOLO: undefined, AKAN_REPLICA: undefined }, async () => {
+      const writes: string[] = [];
+      const original = process.stdout.write;
+      process.stdout.write = ((chunk: unknown) => {
+        writes.push(String(chunk));
+        return true;
+      }) as typeof process.stdout.write;
+      try {
+        const app = new AkanApp(serverPath, { runtimeDir, port: 24_000 + Math.floor(Math.random() * 10_000) });
+        await app.start();
+      } finally {
+        process.stdout.write = original;
+      }
+      expect(writes.join("")).toContain("replica in this process (solo)");
     });
   }, 10_000);
 
@@ -1014,6 +1172,33 @@ describe("AkanApp solo", () => {
         const report = (await readReport(reportPath)) as { pid: number; role: string };
         expect(report.pid).not.toBe(process.pid);
         expect(report.role).toBe("batch");
+      } finally {
+        await app.stop();
+        await Promise.race([running, wait(1_000)]);
+      }
+    });
+  }, 10_000);
+
+  // The RSC worker fetches the API back over the loopback, and `AKAN_PUBLIC_SERVER_PORT` defaults to 8282 —
+  // so the port this gateway resolved has to reach the tree as `PORT`, whether it came from an option or the env.
+  test("publishes the resolved port to the replica it runs in this process", async () => {
+    const { serverPath, reportPath, runtimeDir } = await makeSoloRoot("akan-app-solo-port-");
+    const port = 24_000 + Math.floor(Math.random() * 10_000);
+    await withSoloEnv({ AKAN_SOLO: undefined, AKAN_REPLICA: undefined, PORT: undefined }, async () => {
+      const app = new AkanApp(serverPath, { runtimeDir, port });
+      await app.start();
+      expect(((await readReport(reportPath)) as { port: string | null }).port).toBe(String(port));
+    });
+  }, 10_000);
+
+  test("publishes the resolved port to a spawned child, which proxies its own fetches back here", async () => {
+    const { serverPath, reportPath, runtimeDir } = await makeSoloRoot("akan-app-child-port-");
+    const port = 24_000 + Math.floor(Math.random() * 10_000);
+    await withSoloEnv({ AKAN_SOLO: "false", AKAN_REPLICA: undefined, PORT: "8282" }, async () => {
+      const app = new AkanApp(serverPath, { runtimeDir, port });
+      const running = app.start();
+      try {
+        expect(((await readReport(reportPath)) as { port: string | null }).port).toBe(String(port));
       } finally {
         await app.stop();
         await Promise.race([running, wait(1_000)]);

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BackendEnv } from "akanjs/base";
 import { Logger } from "akanjs/common";
+import { DatabaseSignal } from "../signal/signalRegistry";
 
 const createEnv = (tmp: string) =>
   ({
@@ -71,12 +72,12 @@ const loadRuntime = async () => {
           constant: serverResolverTestConstant,
           database: serverResolverTestDatabase,
           service: serverResolverTestServiceModel,
-          signal: {
-            endpoint: ServerResolverTestEndpoint,
-            slice: ServerResolverTestSlice,
-            internal: ServerResolverTestInternal,
-            server: ServerResolverTestServerSignal,
-          },
+          signal: new DatabaseSignal(
+            ServerResolverTestInternal,
+            ServerResolverTestEndpoint,
+            ServerResolverTestSlice,
+            ServerResolverTestServerSignal,
+          ),
         },
       ],
       services: [],
@@ -204,6 +205,46 @@ describe("AkanServer web config", () => {
   });
 });
 
+describe("AkanServer route prefix", () => {
+  test("takes the deployed prefix from env and normalizes what code sets", async () => {
+    setAkanEnv();
+    const { AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-prefix-"));
+    const make = () => new AkanServer("serverPrefix", createEnv(tmp), "all", createLib());
+
+    try {
+      expect([make().prefix, make().websocketPrefix]).toEqual(["/api", "/ws"]);
+
+      process.env.AKAN_API_PREFIX = "backend/";
+      process.env.AKAN_WS_PREFIX = "/socket";
+      expect([make().prefix, make().websocketPrefix]).toEqual(["/backend", "/socket"]);
+
+      expect(make().setPrefix("v2/api/").prefix).toBe("/v2/api");
+      expect(() => make().setPrefix("/")).toThrow('prefix must be a path segment such as "/api"; "/" is not one.');
+      expect(() => make().setWebsocketPrefix("  ")).toThrow("websocketPrefix must be a path segment");
+    } finally {
+      delete process.env.AKAN_API_PREFIX;
+      delete process.env.AKAN_WS_PREFIX;
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses a prefix a basePath would shadow", async () => {
+    setAkanEnv();
+    const { AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-prefix-clash-"));
+
+    try {
+      process.env.AKAN_PUBLIC_BASE_PATHS = "admin,shop";
+      const server = new AkanServer("serverPrefixClash", createEnv(tmp), "all", createLib()).setPrefix("/admin");
+      await expect(server.init()).rejects.toThrow('Route prefix "/admin" collides with the "admin" basePath');
+    } finally {
+      delete process.env.AKAN_PUBLIC_BASE_PATHS;
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("AkanServer MCP config", () => {
   test("reads every option from env and lets code override it", async () => {
     setAkanEnv();
@@ -219,6 +260,10 @@ describe("AkanServer MCP config", () => {
       "AKAN_MCP_PAGE_SIZE",
       "AKAN_MCP_LANGUAGE",
       "AKAN_MCP_AUTH_SERVERS",
+      "AKAN_MCP_OUTPUT_SCHEMA",
+      "AKAN_MCP_RATE_LIMIT",
+      "AKAN_MCP_CONCURRENT",
+      "AKAN_MCP_PROMPT_BUDGET",
     ];
 
     try {
@@ -233,6 +278,10 @@ describe("AkanServer MCP config", () => {
       process.env.AKAN_MCP_PAGE_SIZE = "25";
       process.env.AKAN_MCP_LANGUAGE = "ko";
       process.env.AKAN_MCP_AUTH_SERVERS = "https://auth.example.com";
+      process.env.AKAN_MCP_OUTPUT_SCHEMA = "none";
+      process.env.AKAN_MCP_RATE_LIMIT = "60/30";
+      process.env.AKAN_MCP_CONCURRENT = "2";
+      process.env.AKAN_MCP_PROMPT_BUDGET = "20000";
 
       const fromEnv = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
       expect(fromEnv.mcp).toBe(true);
@@ -244,8 +293,14 @@ describe("AkanServer MCP config", () => {
         allowedOrigins: ["https://a.example.com", "https://b.example.com"],
         pageSize: 25,
         language: "ko",
+        outputSchema: "none",
+        rateLimit: { calls: 60, windowMs: 30_000, concurrent: 2 },
+        promptBudget: 20_000,
       });
       expect(fromEnv.mcpAuth).toEqual({ authorizationServers: ["https://auth.example.com"] });
+      process.env.AKAN_MCP_RATE_LIMIT = "off";
+      expect(new AkanServer("serverGet", createEnv(tmp), "all", createLib()).mcpOption.rateLimit).toBe(false);
+      process.env.AKAN_MCP_RATE_LIMIT = "60/30";
 
       const overridden = new AkanServer("serverGet", createEnv(tmp), "all", createLib(), {
         mcp: { language: "en", readOnly: false },
@@ -264,6 +319,29 @@ describe("AkanServer MCP config", () => {
       expect(partial.mcpAuth.authorizationServers).toEqual(["https://auth.example.com"]);
     } finally {
       for (const name of vars) delete process.env[name];
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("lets a lib derive its MCP option from the server env, verifier included", async () => {
+    setAkanEnv();
+    const { AkanServer, AkanOption, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-fn-"));
+    try {
+      // A token verifier is built on the app's signing secret and an issuer on its host, both of which live in the
+      // env the server is constructed with — so a lib's `option.ts` reads them off the env rather than restating.
+      const verify = () => ({ sub: "u1" });
+      const lib = createLib(
+        new AkanOption().setMcp((env) => ({
+          instructions: `tools for ${Object.keys(env).length ? "a configured" : "an empty"} env`,
+          auth: { authorizationServers: ["https://app.example.com"], verify },
+        })),
+      );
+      const server = new AkanServer("serverGet", createEnv(tmp), "all", lib);
+      expect(server.mcpOption.instructions).toBe("tools for a configured env");
+      expect(server.mcpAuth.authorizationServers).toEqual(["https://app.example.com"]);
+      expect(server.mcpAuth.verify).toBe(verify);
+    } finally {
       await rm(tmp, { recursive: true, force: true });
     }
   });
@@ -300,6 +378,37 @@ describe("AkanServer MCP config", () => {
     }
   });
 
+  test("keeps the surface off under AKAN_MCP=false whatever an option.ts configures", async () => {
+    setAkanEnv();
+    const { AkanOption, AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-off-"));
+    try {
+      process.env.AKAN_MCP = "false";
+      const configured = new AkanServer(
+        "serverGet",
+        createEnv(tmp),
+        "all",
+        createLib(new AkanOption().setMcp({ instructions: "Domain tools for the test app." })),
+      );
+      expect(configured.mcp).toBe(false);
+      expect(configured.mcpOption.instructions).toBe("Domain tools for the test app.");
+
+      const fromFunction = new AkanServer(
+        "serverGet",
+        createEnv(tmp),
+        "all",
+        createLib(new AkanOption().setMcp(() => ({}))),
+      );
+      expect(fromFunction.mcp).toBe(false);
+
+      const explicit = new AkanServer("serverGet", createEnv(tmp), "all", createLib(), { mcp: { enabled: true } });
+      expect(explicit.mcp).toBe(false);
+    } finally {
+      delete process.env.AKAN_MCP;
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("gives the mount path its leading slash and takes the public spelling of both switches", async () => {
     setAkanEnv();
     const { AkanServer, createLib } = await loadRuntime();
@@ -328,14 +437,14 @@ describe("AkanServer MCP config", () => {
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-boot-"));
     process.env.AKAN_MCP = "true";
     const lines: string[] = [];
-    const stop = Logger.addSink(({ message }) => lines.push(message));
+    const stop = Logger.addSink(({ message }) => void lines.push(message));
     const server = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
     try {
       // Routes on, web off: the report rides with the builtin routes, so a `script`/`console` command that mounts
       // none stays quiet about a catalogue it is not serving.
       await server.init({ web: false });
       const log = lines.join("\n");
-      expect(log).toContain("MCP catalogue: tools=5 prompts=0 resourceTemplates=3");
+      expect(log).toContain("MCP catalogue: tools=4 resourceTemplates=2");
       // Nobody wrote an opt-in, so the boot log is the only place a missing tool has an explanation — and this
       // fixture's `[Public]` writes and guardless reads are exactly the two shapes the guarded rule keeps out.
       expect(log).toContain('did not expose "createServerResolverTestItem"');
@@ -343,6 +452,35 @@ describe("AkanServer MCP config", () => {
     } finally {
       stop();
       delete process.env.AKAN_MCP;
+      await server.stop();
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("AkanServer locale coverage", () => {
+  test("names a configured locale the dictionaries never wrote", async () => {
+    setAkanEnv();
+    const { AkanServer, createLib } = await loadRuntime();
+    const { makeTrans, serviceDictionary } = await import("akanjs/dictionary");
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-locale-"));
+    makeTrans({
+      localeCoverageTest: {
+        dict: serviceDictionary(["en", "ko"] as [string, string]).translate({ ready: ["Ready", "준비됨"] }),
+      } as never,
+    });
+    process.env.AKAN_PUBLIC_LOCALES = "en,ko,zhChs";
+    const lines: string[] = [];
+    const stop = Logger.addSink(({ message }) => void lines.push(message));
+    const server = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
+    try {
+      await server.init({ web: false });
+      const log = lines.join("\n");
+      expect(log).toContain('Locale "zhChs" is configured but');
+      expect(log).toContain("localeCoverageTest");
+    } finally {
+      stop();
+      delete process.env.AKAN_PUBLIC_LOCALES;
       await server.stop();
       await rm(tmp, { recursive: true, force: true });
     }
@@ -374,6 +512,94 @@ describe("AkanServer agent relay access", () => {
       expect(await guard.canPass({ get: () => ({ id: "u1" }) } as never)).toBe(true);
     } finally {
       AgentRelayAccess.use(null);
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("AkanServer module exclusion", () => {
+  test("takes a module out of the container, from the option or from the env", async () => {
+    setAkanEnv();
+    delete process.env.AKAN_DISABLE_MODULES;
+    const { AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-disable-"));
+    // Options are the last vararg, so an object carrying only `disableModules` has to read as options, not a lib.
+    const server = new AkanServer("serverGet", createEnv(tmp), "all", createLib(), {
+      disableModules: ["serverResolverTestItem"],
+    });
+
+    try {
+      expect(server.disableModules).toEqual(["serverResolverTestItem"]);
+      await server.start({ listen: false });
+      expect(() => server.getService("serverResolverTestItem")).toThrow(
+        'Service "serverResolverTestItem" is not registered.',
+      );
+
+      process.env.AKAN_DISABLE_MODULES = "serverResolverTestItem, base";
+      const fromEnv = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
+      expect(fromEnv.disableModules).toEqual(["serverResolverTestItem", "base"]);
+    } finally {
+      delete process.env.AKAN_DISABLE_MODULES;
+      await server.stop();
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("takes out a whole lib, from the option or from the env", async () => {
+    setAkanEnv();
+    delete process.env.AKAN_DISABLE_LIBS;
+    const { AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-disable-lib-"));
+    const server = new AkanServer("serverGet", createEnv(tmp), "all", createLib(), {
+      disableLibs: ["serverGetTest"],
+    });
+
+    try {
+      expect(server.disableLibs).toEqual(["serverGetTest"]);
+      await server.start({ listen: false });
+      expect(() => server.getService("serverResolverTestItem")).toThrow(
+        'Service "serverResolverTestItem" is not registered.',
+      );
+
+      process.env.AKAN_DISABLE_LIBS = "serverGetTest";
+      const fromEnv = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
+      expect(fromEnv.disableLibs).toEqual(["serverGetTest"]);
+
+      expect(() => new AkanServer("serverGet", createEnv(tmp), "all", createLib(), { disableLibs: ["nope"] })).toThrow(
+        '[DI:disableLibs] unknown lib "nope"',
+      );
+    } finally {
+      delete process.env.AKAN_DISABLE_LIBS;
+      await server.stop();
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("AkanServer console process", () => {
+  test("brings services up but runs no internal init, schedule or queue worker", async () => {
+    setAkanEnv();
+    const { AkanServer, createLib } = await loadRuntime();
+    const fixture = await import("./resolver/resolver.contract.fixture");
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-console-"));
+    const replica = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
+    const consoleProcess = new AkanServer("serverGet", createEnv(join(tmp, "console")), "all", createLib());
+
+    try {
+      fixture.resetResolverOrder();
+      await replica.start({ listen: false });
+      expect(fixture.resolverOrder).toContain("init");
+      await replica.stop();
+
+      fixture.resetResolverOrder();
+      process.env.AKAN_COMMAND_TYPE = "console";
+      await consoleProcess.start({ listen: false, web: false });
+      expect(consoleProcess.getService("serverResolverTestItem")).toBeDefined();
+      expect(fixture.resolverOrder).not.toContain("init");
+    } finally {
+      delete process.env.AKAN_COMMAND_TYPE;
+      if (replica.status === "running") await replica.stop();
+      await consoleProcess.stop();
       await rm(tmp, { recursive: true, force: true });
     }
   });

@@ -1,6 +1,14 @@
-import { Any, applyFnToArrayObjects, type Cls, FIELD_META, PrimitiveRegistry, type PrimitiveScalar } from "akanjs/base";
+import {
+  Any,
+  applyFnToArrayObjects,
+  type Cls,
+  type EnumInstance,
+  FIELD_META,
+  PrimitiveRegistry,
+  type PrimitiveScalar,
+} from "akanjs/base";
 
-import { type ConstantCls, type ConstantModelRef, ConstantRegistry, type FieldProps } from ".";
+import { type ConstantCls, type ConstantModelRef, ConstantRegistry, type FieldProps, withSharedInstances } from ".";
 
 const getDeserializeFn = (inputRef: ConstantModelRef | PrimitiveScalar) => {
   const deserializeFn = PrimitiveRegistry.has(inputRef as Cls)
@@ -50,6 +58,7 @@ const deserializeInput = <Input = unknown>(
           : deserialize(field.modelRef, field.arrDepth, (value as Record<string, unknown>)[key], {
               key,
               nullable: field.nullable,
+              enum: field.enum,
             }),
       ]),
     ) as unknown as Input;
@@ -57,14 +66,36 @@ const deserializeInput = <Input = unknown>(
   }
 };
 
+interface DeserializeOption {
+  key?: string;
+  nullable?: boolean;
+  convertFn?: (value: unknown) => unknown;
+  enum?: EnumInstance;
+}
+
+// An `enumOf` erases to its `type` in every `argRef` and `modelRef`, so the parser accepts any string the schema
+// said could not exist; the enum handed alongside is the only thing left that can refuse the value.
+const assertEnumValue = (enumRef: EnumInstance, value: unknown, key?: string): void => {
+  if (Array.isArray(value)) {
+    for (const item of value) assertEnumValue(enumRef, item, key);
+    return;
+  }
+  if (value === null || value === undefined || enumRef.has(value as never)) return;
+  throw new Error(`Invalid Enum Value in ${key}: ${String(value)} is not one of ${enumRef.values.join(", ")}`);
+};
+
 export const deserialize = (
   argRef: ConstantModelRef | PrimitiveScalar,
   arrDepth: number,
   value: unknown,
-  { key, nullable = false, convertFn }: { key?: string; nullable?: boolean; convertFn?: (value: unknown) => unknown },
+  { key, nullable = false, convertFn, enum: enumRef }: DeserializeOption,
 ) => {
   if (nullable && (value === null || value === undefined)) return null;
   else if (!nullable && (value === null || value === undefined) && argRef !== Any)
     throw new Error(`Invalid Value (Nullable) in ${key} ${argRef} for value ${value}`);
-  return deserializeInput(value, argRef, arrDepth, convertFn) as object[];
+  // One response is one pass, so a relation repeated across its rows is built once. Nested `deserialize` calls
+  // join the pass their caller opened rather than starting one of their own.
+  const result = withSharedInstances(() => deserializeInput(value, argRef, arrDepth, convertFn)) as object[];
+  if (enumRef) assertEnumValue(enumRef, result, key);
+  return result;
 };

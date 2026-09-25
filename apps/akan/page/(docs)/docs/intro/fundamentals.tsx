@@ -1,10 +1,11 @@
 import { usePage } from "@apps/akan/client";
 import { Code, cardGridRecipe, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 import { badgeRecipe, buttonRecipe, Link } from "akanjs/ui";
 import { BiLinkExternal } from "react-icons/bi";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -137,11 +138,6 @@ export default function Page() {
                       <BiLinkExternal /> TailwindCSS
                     </button>
                   </Link>
-                  <Link href="https://www.radix-ui.com/" target="_blank">
-                    <button className={buttonRecipe({ variant: "outline", size: "xs" })}>
-                      <BiLinkExternal /> Radix UI
-                    </button>
-                  </Link>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -159,7 +155,7 @@ export default function Page() {
                       <BiLinkExternal /> SQLite
                     </button>
                   </Link>
-                  <Link href="https://turso.tech/libsql" target="_blank">
+                  {/* <Link href="https://turso.tech/libsql" target="_blank">
                     <button className={buttonRecipe({ variant: "outline", size: "xs" })}>
                       <BiLinkExternal /> libSQL
                     </button>
@@ -173,12 +169,12 @@ export default function Page() {
                     <button className={buttonRecipe({ variant: "outline", size: "xs" })}>
                       <BiLinkExternal /> Redis
                     </button>
-                  </Link>
+                  </Link> */}
                 </div>
               </div>
               <div className="flex gap-2">
                 <div className="flex w-20 items-center whitespace-nowrap text-sm">
-                  {l.trans({ en: "Testing", ko: "테스팅" })}:
+                  {l.trans({ en: "Tooling", ko: "툴링" })}:
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Link href="https://biomejs.dev/" target="_blank">
@@ -513,15 +509,14 @@ export default function Page() {
             {l.trans({
               en: (
                 <span>
-                  Pages are files that implement user-facing routes and layouts. Akan scans the folder structure under{" "}
-                  <code>page/</code>, then serves the generated route artifacts through the Akan runtime.
+                  Pages are files that implement user-facing routes and layouts, and the folder structure under{" "}
+                  <code>page/</code> becomes the URL.
                 </span>
               ),
               ko: (
                 <span>
-                  페이지는 URL 경로에 맞추어 사용자에게 전달되는 route와 layout을 구현하는 파일입니다. Akan은{" "}
-                  <code>page/</code> 아래의 폴더 구조를 스캔하고, 생성된 route artifact를 Akan runtime을 통해
-                  제공합니다.
+                  페이지는 URL 경로에 맞추어 사용자에게 전달되는 route와 layout을 구현하는 파일이며, <code>page/</code>{" "}
+                  아래의 폴더 구조가 곧 URL이 됩니다.
                 </span>
               ),
             })}
@@ -692,4 +687,4 @@ export default function Page() {
       <DocsToc />
     </Scroll>
   );
-}
+});

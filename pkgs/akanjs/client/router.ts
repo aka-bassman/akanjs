@@ -14,14 +14,15 @@ export interface DeepLinkOptions extends RouteOptions {
 const DEEP_LINK_STACK_STEP_DELAY = 450;
 
 export interface RouterInstance {
-  push: (href: string, routeOptions?: RouteOptions) => void;
-  replace: (href: string, routeOptions?: RouteOptions) => void;
+  /** May answer a promise that rejects when the route refused to move — see `Router.navigation`. */
+  push: (href: string, routeOptions?: RouteOptions) => void | Promise<void>;
+  replace: (href: string, routeOptions?: RouteOptions) => void | Promise<void>;
   back: (routeOptions?: RouteOptions) => void;
   refresh: () => void;
 }
 interface InternalRouterInstance {
-  push: (href: string, routeOptions?: RouteOptions) => void;
-  replace: (href: string, routeOptions?: RouteOptions) => void;
+  push: (href: string, routeOptions?: RouteOptions) => void | Promise<void>;
+  replace: (href: string, routeOptions?: RouteOptions) => void | Promise<void>;
   back: (routeOptions?: RouteOptions) => void;
   refresh: () => void;
 }
@@ -163,17 +164,18 @@ class Router {
   #lang = parseAkanI18nEnv().defaultLocale;
   #routePaths = new Set<string>();
   #indexPath = "/";
+  #navigation: Promise<void> = Promise.resolve();
   #historyIdx = 0;
   #instance: InternalRouterInstance = {
     push: (href: string) => {
       const { href: fullHref } = this.#getPathInfo(href);
-      Logger.log(`push to:${fullHref}`);
+      Logger.info(`push to:${fullHref}`);
       // ! need to revive
       // if (getEnv().side === "server") void redirect(fullHref);
     },
     replace: (href: string) => {
       const { pathname } = this.#getPathInfo(href);
-      Logger.log(`replace to:${pathname}`);
+      Logger.info(`replace to:${pathname}`);
       // ! need to revive
       // if (getEnv().side === "server") void redirect(fullHref);
     },
@@ -195,7 +197,7 @@ class Router {
     );
     this.#indexPath = splitHref(options.indexPath ?? "/").path;
     if (this.#routePaths.size > 0 && !this.#routePaths.has(this.#indexPath)) {
-      Logger.log(`[router] indexPath '${this.#indexPath}' was not found in route manifest. Falling back to '/'.`);
+      Logger.info(`[router] indexPath '${this.#indexPath}' was not found in route manifest. Falling back to '/'.`);
       this.#indexPath = "/";
     }
     this.#ensureHistoryState();
@@ -215,14 +217,14 @@ class Router {
         const pathInfo = this.#getPathInfo(href);
         const navigationPathInfo = this.#getNavigationPathInfo(href);
         this.#postPathChange(pathInfo);
-        router.push(navigationPathInfo.href, routeOptions);
+        return router.push(navigationPathInfo.href, routeOptions);
       },
       replace: (href: string, routeOptions) => {
         const router = options.router;
         const pathInfo = this.#getPathInfo(href);
         const navigationPathInfo = this.#getNavigationPathInfo(href);
         this.#postPathChange(pathInfo);
-        router.replace(navigationPathInfo.href, routeOptions);
+        return router.replace(navigationPathInfo.href, routeOptions);
       },
       back: () => {
         const router = options.router;
@@ -243,7 +245,7 @@ class Router {
       push: (href: string, routeOptions) => {
         const { path, pathname, hash, href: fullHref } = this.#getPathInfo(href);
         this.#postPathChange({ path, pathname, hash });
-        options.router.push(this.#withCsrRuntimeSearchParams(fullHref), routeOptions);
+        return options.router.push(this.#withCsrRuntimeSearchParams(fullHref), routeOptions);
       },
       replace: (href: string, routeOptions) => {
         const { path, pathname, hash, href: fullHref } = this.#getPathInfo(href);
@@ -323,7 +325,7 @@ class Router {
     return getPathInfo(href, lang, shouldExposeBasePath() ? this.#prefix : "");
   }
   #postPathChange({ path, pathname, hash }: { path: string; pathname: string; hash: string }) {
-    Logger.log(`pathChange-start:${path}${hash ? `#${hash}` : ""}`);
+    Logger.info(`pathChange-start:${path}${hash ? `#${hash}` : ""}`);
     window.parent.postMessage({ type: "pathChange", path, pathname, hash }, "*");
   }
   #postDevSyncNavigation(kind: "push" | "replace", href: string) {
@@ -343,7 +345,7 @@ class Router {
     const normalizedHref = normalizeDeepLinkHref(href);
     const { path, search, hash } = splitHref(normalizedHref);
     if (this.#routePaths.size > 0 && !this.#routePaths.has(path)) {
-      Logger.log(`[router] deep link target '${path}' was not found in route manifest.`);
+      Logger.info(`[router] deep link target '${path}' was not found in route manifest.`);
       return [];
     }
     const stack = this.#routePaths.size > 0 ? this.#getExistingSegmentStack(path) : [path];
@@ -372,17 +374,33 @@ class Router {
   }
   push(href: string, routeOptions?: RouteOptions) {
     this.#checkInitialized();
-    this.#instance.push(href, routeOptions);
+    this.#track(this.#instance.push(href, routeOptions));
     this.#rememberHistoryState("push");
     this.#postDevSyncNavigation("push", href);
     return undefined as never;
   }
   replace(href: string, routeOptions?: RouteOptions) {
     this.#checkInitialized();
-    this.#instance.replace(href, routeOptions);
+    this.#track(this.#instance.replace(href, routeOptions));
     this.#rememberHistoryState("replace");
     this.#postDevSyncNavigation("replace", href);
     return undefined as never;
+  }
+  /**
+   * The navigation `push` / `replace` last started, for a caller that has to know whether it landed. **Rejects
+   * when the route refused to move** — a target that resolves to nothing leaves the page where it was instead of
+   * replacing it, and `push` returns long before that is known, so this is the only place it can be reported.
+   *
+   * A method rather than a getter: `router` is a Proxy that binds functions to the real instance, and a getter
+   * reached through it would run with the Proxy as `this` and fail on the private field.
+   */
+  navigation(): Promise<void> {
+    return this.#navigation;
+  }
+  #track(result: void | Promise<void>) {
+    this.#navigation = Promise.resolve(result);
+    // Observed here so a refusal nobody awaited is not an unhandled rejection; `navigation()` still rejects.
+    void this.#navigation.catch(() => undefined);
   }
   canGoBack() {
     if (getEnv().side === "server") return false;
@@ -421,7 +439,7 @@ class Router {
       const lang = (h.get("x-locale") ?? langFromPath ?? this.#lang) as string;
       const basePath = getServerBasePath(reqPathname, lang, h.get("x-base-path") ?? undefined, this.#prefix);
       const { pathname, href: fullHref } = getPathInfo(href, lang, shouldExposeBasePath() ? basePath : "");
-      Logger.log(`redirect to:${pathname}`);
+      Logger.info(`redirect to:${pathname}`);
       throw new AkanRedirectError(fullHref, method, status);
     } else {
       this.#instance[method](href);
@@ -430,7 +448,7 @@ class Router {
   }
   notFound(): never {
     if (getEnv().side === "server") {
-      Logger.log(`redirect to:/404`);
+      Logger.info(`redirect to:/404`);
       throw new AkanNotFoundError();
     }
     this.#checkInitialized();
@@ -449,10 +467,17 @@ class Router {
     this.#instance.replace(`${path}${search ? `?${search}` : ""}${hash ? `#${hash}` : ""}`);
     return undefined as never;
   }
+  /**
+   * A pathname with the locale and base-path segments taken off — the app-internal route it names, which is what
+   * a tool argument and a `<a href>` have in common. Unguarded, unlike `getPath`, whose default argument is the
+   * one thing in it that needs a browser.
+   */
+  routeOf(pathname: string) {
+    return getPathInfo(pathname, this.#lang, this.#prefix).path;
+  }
   getPath(pathname = window.location.pathname) {
     if (getEnv().side === "server") throw new Error("getPath is only available in client side");
-    const { path } = getPathInfo(pathname, this.#lang, this.#prefix);
-    return path;
+    return this.routeOf(pathname);
   }
   getFullPath(withLang = true) {
     if (getEnv().side === "server") throw new Error("getPath is only available in client side");

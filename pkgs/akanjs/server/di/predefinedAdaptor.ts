@@ -10,13 +10,13 @@ import {
   ConsoleLogger,
   type DatabaseAdaptor,
   DatabaseAdaptorRole,
-  DeepseekLlm,
   JsonCompressor,
   LibsqlDatabase,
   type LlmAdaptor,
   LlmAdaptorRole,
   type LoggingAdaptor,
   LoggingAdaptorRole,
+  OpenaiLlm,
   PostgresDatabase,
   type QueueAdaptor,
   QueueAdaptorRole,
@@ -68,7 +68,7 @@ export const predefinedAdaptor = {
   logging: ConsoleLogger,
   websocket: SolidPubSub,
   compress: JsonCompressor,
-  llm: DeepseekLlm,
+  llm: OpenaiLlm,
 };
 
 export const getPredefinedAdaptor = (mode: DatabaseMode = "single"): PredefinedAdaptor => {

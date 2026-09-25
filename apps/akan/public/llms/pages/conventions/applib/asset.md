@@ -8,173 +8,246 @@
 
 ## Headings
 
-- Asset Overview (#asset-overview)
+- Asset Folders (#asset-overview)
 - Public Assets (#public-assets)
 - Optimized Images (#optimized-images)
 - Private Assets (#private-assets)
-- Library Asset Sync (#library-asset-sync)
-- Practical Rules (#practical-rules)
+- Library Assets (#library-asset-sync)
+- Which Folder? (#practical-rules)
 
 ## Content
 
 Assets (public/ private/)
 
-Asset Overview
+The browser may download it
 
-Apps and libraries can both have an asset folder. Use public for files that the browser can request, and private for files that only server code should read.
+Served as static files by URL. Images, PDFs, downloadable JSON and icons go here.
 
-Served as static assets. Use it for images, PDF files, downloadable JSON, icons, and other files that can be public.
+Only the server reads it
 
-Available only to server-side code. Use it for seed data, private JSON, model files, and resources used by server jobs.
+Never served. Seed data, private JSON, model files and resources for server jobs go here.
+
+File
+
+Used for
+
+Seed data the server loads.
+
+Model weights for server-side inference.
+
+A library's internal rules, covered under Library Assets below.
+
+Library's public/
+
+Inside the app
+
+Browser URL
+
+Library's private/
+
+Server code reads
+
+Anyone may download it
+
+UI images and icons, drawn with `Image` from `akanjs/ui`.
+
+PDFs and other files a user downloads.
+
+JSON the browser loads by URL.
+
+Only the server may read it
+
+Internal data such as seed records.
+
+Model weights.
+
+Server-only configuration and rules.
+
+Folder
+
+In the build
+
+Copied into every build.
+
+Copied when the app serves pages; an API-only build (`web: false`) leaves it out.
+
+Fonts in `public/`
+
+Unreferenced fonts are dropped by `assets.pruneFonts`; list any to keep in `assets.keepFonts`.
+
+Asset Folders
 
 Public Assets
 
-Files under asset/public are copied to the app's public surface and served by the server. The browser can request them directly by URL.
+Load a JSON file in the browser from its URL:
 
 Optimized Images
 
-When an image is public, you can render it with the Image component from akanjs/ui. Akan serves an optimized image response in a similar way to Next.js image optimization, so use this for UI images instead of a plain img tag when possible.
+Image Optimization
+
+srcSet, formats, caching and every prop, step by step.
+
+images in akan.config.ts
+
+Widths, formats, qualities and the remote hosts the optimizer may fetch.
 
 Private Assets
 
-Files under asset/private are for server-only resources. Put files here when the browser should not download them directly, but the server needs them to load data, run inference, or initialize a service.
+Read from the app folder
 
-Library Asset Sync
+Load data and models
 
-When a library has assets, Akan syncs both public and private assets into each app. Public assets become browser-requestable files, while private assets stay server-only after sync. Sync links the library folder into the app, so editing a library asset takes effect without another sync; a production build copies the real files into the build output.
+Read a JSON file with the helper:
 
-Practical Rules
+Library Assets
 
-Use public when the browser is allowed to request the file directly.
+Where
 
-Use private when the file contains internal data, model weights, or server-only configuration.
+Path
 
-Use Image from akanjs/ui for public UI images that should be optimized by the server.
+Which Folder?
 
-Put reusable public files in a library asset folder when multiple apps need the same asset.
+Example file
+
+Goes here
+
+Not here
+
+What a build ships
 
 ## Code Examples
 
-### public asset examples
-
-```bash
-apps/myapp/asset/public/docs/product-guide.pdf
-apps/myapp/asset/public/data/sample-products.json
-apps/myapp/asset/public/images/hero.png
-
-# Web requests
-/docs/product-guide.pdf
-/data/sample-products.json
-/images/hero.png
-```
-
-### Link to a PDF
+### apps/myapp/ui/ProductGuideLink.tsx
 
 ```ts
-import { Link } from "akanjs/ui";              
-export function GetProductGuide() {
-  return <Link href="/docs/product-guide.pdf">Open product guide</Link>;
+import { usePage } from "@apps/myapp/client";
+
+interface ProductGuideLinkProps {
+  className?: string;
 }
+export const ProductGuideLink = ({ className }: ProductGuideLinkProps) => {
+  const { l } = usePage();
+  return (
+    <a
+      className={className}
+      href="/docs/product-guide.pdf"
+      target="_blank"
+      rel="noreferrer"
+    >
+      {l.trans({ en: "Open product guide", ko: "제품 가이드 열기" })}
+    </a>
+  );
+};
 ```
 
-### Fetch static JSON
+### apps/myapp/webkit/useSampleProducts.tsx
 
 ```ts
-export async function loadSampleProducts() {
-  const res = await fetch("/data/sample-products.json");
-  return res.json();
-}
+export const useSampleProducts = () => {
+  const load = async () => {
+    const res = await window.fetch("/data/sample-products.json");
+    return await res.json();
+  };
+  return { load };
+};
 ```
 
-### HeroImage.tsx
+### apps/myapp/ui/HeroImage.tsx
 
 ```ts
+import { usePage } from "@apps/myapp/client";
 import { Image } from "akanjs/ui";
 
-export function HeroImage() {
+interface HeroImageProps {
+  className?: string;
+}
+export const HeroImage = ({ className }: HeroImageProps) => {
+  const { l } = usePage();
   return (
     <Image
+      className={className}
       src="/images/hero.png"
-      alt="Product hero"
+      alt={l.trans({ en: "Product hero", ko: "제품 대표 이미지" })}
       width={1200}
       height={640}
       priority
     />
   );
+};
+```
+
+### apps/myapp/srvkit/privateFile.ts
+
+```ts
+import path from "node:path";
+
+export const privateFile = (relativePath: string) => {
+  const appDir = process.env.AKAN_APP_DIR ?? path.dirname(Bun.main);
+  return Bun.file(path.join(appDir, "private", relativePath));
+};
+```
+
+### apps/myapp/srvkit/seedProducts.ts
+
+```ts
+import { privateFile } from "./privateFile";
+
+export const loadInitialProducts = async () => {
+  return await privateFile("seed/products.json").json();
+};
+```
+
+### apps/myapp/srvkit/yoloDetector.ts
+
+```ts
+import { adapt } from "akanjs/service";
+import { privateFile } from "./privateFile";
+
+export class YoloDetector extends adapt("yoloDetector" as const, () => ({})) {
+  #model: YoloModel | null = null;
+
+  override async onInit() {
+    this.#model = await loadYoloModel(privateFile("model/yolo.onnx"));
+  }
+
+  async detect(image: ArrayBuffer) {
+    return this.#model?.detect(image) ?? [];
+  }
 }
 ```
 
-### private asset examples
-
-```bash
-apps/myapp/asset/private/seed/products.json
-apps/myapp/asset/private/model/yolo.onnx
-libs/shared/asset/private/recommendation/default-rules.json
-```
-
-### Load private JSON on the server
+### apps/myapp/ui/SharedLogo.tsx
 
 ```ts
-export async function loadInitialProducts() {
-  const file = Bun.file("./private/seed/products.json");
-  return file.json();
-}
-```
-
-### Use a private model file on the server
-
-```ts
-export async function detectObjects(image: ArrayBuffer) {
-  const file = Bun.file("./private/model/yolo.onnx");
-  const model = await loadYoloModel(file);
-  return model.detect(image);
-}
-```
-
-### library asset mapping
-
-```bash
-# Source in a library
-libs/shared/asset/public/banner/logo.png
-libs/shared/asset/private/recommendation/default-rules.json
-
-# Linked into an app as public assets
-apps/myapp/public/libs/shared/banner/logo.png
-
-# Linked into an app as private assets
-apps/myapp/private/libs/shared/recommendation/default-rules.json
-
-# Copied as real files into the production build
-dist/apps/myapp/public/libs/shared/banner/logo.png
-
-# Browser request
-/libs/shared/banner/logo.png
-```
-
-### Use synced public library asset
-
-```ts
+import { usePage } from "@apps/myapp/client";
 import { Image } from "akanjs/ui";
 
-export function SharedLogo() {
+interface SharedLogoProps {
+  className?: string;
+}
+export const SharedLogo = ({ className }: SharedLogoProps) => {
+  const { l } = usePage();
   return (
     <Image
+      className={className}
       src="/libs/shared/banner/logo.png"
-      alt="Shared logo"
+      alt={l.trans({ en: "Shared logo", ko: "공용 로고" })}
       width={240}
       height={80}
     />
   );
-}
+};
 ```
 
-### Use synced private library asset
+### apps/myapp/srvkit/defaultRules.ts
 
 ```ts
-export async function loadDefaultRules() {
-  const file = Bun.file("./private/libs/shared/recommendation/default-rules.json");
-  return file.json();
-}
+import { privateFile } from "./privateFile";
+
+export const loadDefaultRules = async () => {
+  const file = privateFile("libs/shared/recommendation/default-rules.json");
+  return await file.json();
+};
 ```
 
 ## Agent Notes

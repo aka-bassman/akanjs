@@ -238,16 +238,15 @@ export class ConstantRegistry {
       PurifiedModel<Model>
     >;
   }
-  static serialize<Value>(modelRef: Cls | Cls[], value: Value, nullable: boolean = false): Value {
+  static serialize<Value>(modelRef: Cls | Cls[], value: Value, nullable: boolean = false, of?: Cls | Cls[]): Value {
     if (Array.isArray(value) && Array.isArray(modelRef)) {
       const singleModelRef = modelRef.at(0);
       if (!singleModelRef) throw new Error("No model ref found");
       return value.map((v: object) => ConstantRegistry.serialize(singleModelRef as Cls, v)) as unknown as Value;
     } else if (modelRef === Map && value instanceof Map) {
+      if (!of) throw new Error("A Map needs its value type (of) to serialize");
       return Object.fromEntries(
-        [...value.entries()].map(([key, value]: [string, unknown]) => {
-          return [key, ConstantRegistry.serialize(value as Cls, value)];
-        }),
+        [...value.entries()].map(([key, entry]: [string, unknown]) => [key, ConstantRegistry.serialize(of, entry)]),
       ) as unknown as Value;
     } else if (PrimitiveRegistry.has(modelRef as Cls)) {
       return (modelRef as typeof PrimitiveScalar)._serialize(value as PrimitiveValue) as unknown as Value;
@@ -255,17 +254,15 @@ export class ConstantRegistry {
       return serialize(modelRef as ConstantCls, 0, value, "object", { nullable }) as unknown as Value;
     } else throw new Error(`No serialize function for modelRef: ${modelRef}`);
   }
-  static deserialize<Value>(modelRef: Cls | Cls[], value: Value, nullable: boolean = false): Value {
+  static deserialize<Value>(modelRef: Cls | Cls[], value: Value, nullable: boolean = false, of?: Cls | Cls[]): Value {
     if (Array.isArray(value) && Array.isArray(modelRef)) {
       const singleModelRef = modelRef.at(0);
       if (!singleModelRef) throw new Error("No model ref found");
       return value.map((v: object) => ConstantRegistry.deserialize(singleModelRef as Cls, v)) as unknown as Value;
-    } else if (modelRef === Map && value instanceof Map) {
-      return new Map(
-        Object.entries(value).map(([key, value]: [string, unknown]) => {
-          return [key, ConstantRegistry.deserialize(value as Cls, value)];
-        }),
-      ) as unknown as Value;
+    } else if (modelRef === Map && value !== null && typeof value === "object") {
+      if (!of) throw new Error("A Map needs its value type (of) to deserialize");
+      const entries: [string, unknown][] = value instanceof Map ? [...value.entries()] : Object.entries(value);
+      return new Map(entries.map(([key, entry]) => [key, ConstantRegistry.deserialize(of, entry)])) as unknown as Value;
     } else if (PrimitiveRegistry.has(modelRef as Cls)) {
       return (modelRef as typeof PrimitiveScalar)._parse(value as PrimitiveValue) as unknown as Value;
     } else if (ConstantRegistry.modelRefNameMap.has(modelRef as Cls)) {

@@ -17,7 +17,7 @@ const config: AppConfig = {
             "app/google-services.json": "secrets/google-services.json",
           },
           ios: {
-            "App/GoogleService-Info.plist": "secrets/GoogleService-Info.plist",
+            "App/App/GoogleService-Info.plist": "secrets/GoogleService-Info.plist",
           },
         },
         deepLinks: {

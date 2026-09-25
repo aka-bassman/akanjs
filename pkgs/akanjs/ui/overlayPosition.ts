@@ -1,4 +1,5 @@
 "use client";
+import { clamp } from "akanjs/common";
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useState } from "react";
 
 const TRIGGER_GAP = 4;
@@ -15,8 +16,6 @@ export interface OverlayPosition {
   /** The trigger's own width, for a panel that lines up with the control it drops out of. */
   anchorWidth: number;
 }
-
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
 
 /**
  * Places a portalled panel against its trigger in viewport coordinates.

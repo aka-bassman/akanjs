@@ -1,10 +1,11 @@
 import { appCard, appNavClass, Screen } from "@apps/minimal/ui";
-import type { PageConfig } from "akanjs/client";
+import { page } from "akanjs/client";
 import { buttonRecipe, Layout, Link } from "akanjs/ui";
 import { AiOutlineCreditCard, AiOutlineRight, AiOutlineSafety } from "react-icons/ai";
 
-export default function Page() {
-  return (
+export default page()
+  .config({ topInset: 48, bottomInset: 72, transition: "stack" })
+  .render(() => (
     <Screen className="px-5 pb-24">
       <Layout.Navbar className={appNavClass} back>
         <div className="font-semibold">Payments</div>
@@ -57,6 +58,4 @@ export default function Page() {
         </Link>
       </Layout.BottomInset>
     </Screen>
-  );
-}
-export const pageConfig = { topInset: 48, bottomInset: 72, transition: "stack" } satisfies PageConfig;
+  ));

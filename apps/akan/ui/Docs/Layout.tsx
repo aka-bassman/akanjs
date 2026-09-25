@@ -1,14 +1,18 @@
+import type { Audience } from "./Audience";
 import { Shell } from "./Shell";
+
+export interface DocsMenu {
+  name: string;
+  subMenus: {
+    name: string;
+    href: string;
+    audience?: Audience;
+  }[];
+}
 
 interface LayoutProps {
   children: React.ReactNode;
-  menuMap: {
-    name: string;
-    subMenus: {
-      name: string;
-      href: string;
-    }[];
-  }[];
+  menuMap: DocsMenu[];
 }
 
 export const Layout = ({ children, menuMap }: LayoutProps) => {

@@ -4,11 +4,11 @@ import { ConstantRegistry, via } from "akanjs/constant";
 import type { SerializedSignal } from "../types";
 import { createOpenApiDocument } from "./openapi";
 
-const OpenApiRole = enumOf("openApiRole", ["admin", "user"] as const);
+class OpenApiRole extends enumOf("openApiRole", ["admin", "user"] as const) {}
 
 class OpenApiItemInput extends via((field) => ({
   title: field(String, { minlength: 2, example: "Hello" }),
-  role: field(String, { enum: OpenApiRole, example: "admin" }),
+  role: field(OpenApiRole, { example: "admin" }),
 })) {}
 
 class OpenApiItemObject extends via(OpenApiItemInput, (field) => ({
@@ -70,12 +70,6 @@ const serializedSignal: Record<string, SerializedSignal> = {
         type: "message",
         args: [{ type: "msg", name: "data", refName: "String" }],
         returns: { refName: "String" },
-      },
-      reviewOpenApiItem: {
-        type: "prompt",
-        args: [{ type: "param", name: "openApiItemId", refName: "ID" }],
-        returns: { refName: "Any" },
-        guards: ["User"],
       },
       getBlob: {
         type: "query",
@@ -139,19 +133,6 @@ describe("createOpenApiDocument", () => {
         },
       },
     });
-    // A prompt is a plain GET mounted whether or not the app enabled MCP, so an HTTP contract that left it out
-    // described fewer routes than the app serves — and disagreed with the API explorer, which shows the same one.
-    expect(document.paths["/openApiItem/reviewOpenApiItem/{openApiItemId}"]?.get).toMatchObject({
-      operationId: "reviewOpenApiItem",
-      "x-akan-endpoint-type": "prompt",
-      security: [{ bearerAuth: [] }],
-    });
-    // Its declared return is `Any`, which reads as `{}` — a documented route whose body the document could not
-    // describe. The shape is the protocol's, not the endpoint's, so it is published once as a component.
-    expect(document.paths["/openApiItem/reviewOpenApiItem/{openApiItemId}"]?.get?.responses).toMatchObject({
-      "200": { content: { "application/json": { schema: { items: { $ref: "#/components/schemas/PromptMessage" } } } } },
-    });
-    expect(document.components.schemas.PromptMessage).toMatchObject({ required: ["role", "content"] });
     // The websocket types have no HTTP surface to describe, which is why they are absent.
     expect(document.paths["/openApiItem/openApiItemMessage"]).toBeUndefined();
     expect(document.paths["/ping"]).toBeUndefined();

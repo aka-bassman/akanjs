@@ -65,6 +65,27 @@ export interface AkanWebConfig {
  */
 export type AkanWebOption = boolean | { csr: boolean };
 
+/**
+ * How `akan build` trims the `public/` tree it copies into `dist`. Source trees are never touched: an app's
+ * and a lib's `public/` keep every file, and only the build's own copy is trimmed.
+ */
+export interface AkanAssetsConfig {
+  /**
+   * Drop font files from the build's `public/` that no built surface references. A font with `optimize` on is
+   * served from `/_akan/fonts` after subsetting, so its source is a build input the image never reads.
+   */
+  pruneFonts: boolean;
+  /**
+   * Font files to keep whatever the scan concludes, as globs relative to this app's or lib's own `public/`
+   * (`"fonts/Assistant-*.woff2"`). For the case a scan cannot see: a URL assembled at runtime. Declare it in
+   * the `akan.config.ts` that owns the font, so the reason travels with the lib rather than with the app.
+   */
+  keepFonts: string[];
+}
+
+/** A lib picks only which of its own fonts must survive; whether to prune at all belongs to the app. */
+export type LibAssetsConfig = Pick<AkanAssetsConfig, "keepFonts">;
+
 export type DatabaseMode = "single" | "multiple" | "cluster";
 export type MobileEnv = "local" | "debug" | "develop" | "main";
 export type MobilePermission = "camera" | "contacts" | "location" | "push" | "speech";
@@ -170,6 +191,7 @@ export interface AkanSyncContext {
   readonly executor: AkanExecutor;
   getPath(rel: string): string;
   fileExists(rel: string): Promise<boolean>;
+  readFile(rel: string): Promise<string>;
   writeFile(rel: string, content: string, opts?: { overwrite?: boolean }): Promise<void>;
   /** Resolves `env/env.client.ts` and returns its exported `env`, or null when absent/invalid. */
   readEnvClient(): Promise<Record<string, unknown> | null>;
@@ -213,9 +235,22 @@ export interface AkanPlugin {
   syncAssets?: (ctx: AkanSyncContext) => Promise<void>;
 }
 
+export interface AkanApiConfig {
+  /** Where signal endpoints are mounted. Defaults to `/api`. */
+  prefix: string;
+  /** Where the websocket upgrade sits under `prefix`. Defaults to `/ws`. */
+  websocketPrefix: string;
+}
+
 export interface AppConfigResult {
   docker: DockerConfig;
   defaultDatabaseMode: DatabaseMode;
+  /**
+   * Where this app mounts its endpoints. Declared here rather than only in `main.ts` because the value is baked
+   * into every client bundle: a prebuilt CSR shell or a mobile bundle never reaches the server that would tell
+   * it otherwise. `new AkanApp({ prefix })` still overrides the server and every server-rendered page.
+   */
+  api: AkanApiConfig;
   /** Web surfaces built into the app and mounted at boot. Both default to `true`. */
   web: AkanWebConfig;
   routes?: AkanRouteConfig[];
@@ -233,12 +268,16 @@ export interface AppConfigResult {
   publicEnv: string[];
   mobile: AkanMobileConfig;
   secrets: string[];
+  /** How the build trims the `public/` copy it ships. */
+  assets: AkanAssetsConfig;
 }
 
 export interface LibConfigResult {
   externalLibs: string[];
   /** Image steps every app that mounts this lib inherits, unless that app declares a whole Dockerfile. */
   docker: LibDockerConfig;
+  /** Which of this lib's own public fonts every app that mounts it must keep. */
+  assets: LibAssetsConfig;
 }
 
 export type DeepPartial<T> = {
@@ -261,6 +300,40 @@ export type AppConfigInput = Omit<DeepPartial<AppConfigResult>, "docker" | "web"
   plugins?: AkanPlugin[];
 };
 export type LibConfigInput = DeepPartial<LibConfigResult> & { plugins?: AkanPlugin[] };
+export interface SubspaceDeclaration {
+  /** Short name used on the command line and as the git remote suffix. */
+  name: string;
+  repo: string;
+  /** Apps this subspace serves. Libraries are never listed — they are derived from each app's closure. */
+  apps: string[];
+  /**
+   * The cloud workspace this subspace deploys from — its own `AKAN_WORKSPACE_ID`, not this workspace's.
+   * `akan subspace upload-env` is the only thing that reads it.
+   */
+  workspaceId?: string;
+}
+
+/**
+ * What `akan.subspace.ts` at a workspace root may write: the customer repos this workspace is mirrored
+ * to. There is no branch field — the branch is whichever one the workspace is on, so one declaration
+ * serves every release branch and each of them holds one akanjs version and one copy of the library
+ * source.
+ */
+export interface SubspaceConfigInput {
+  /**
+   * Branches a push may target. A feature branch is refused, because pushing it would copy this
+   * workspace's branch namespace into every customer repo.
+   */
+  pushableBranches?: string[];
+  /**
+   * Workspace-root entries to keep out of every subspace, on top of the ones that always are. Top-level
+   * names or `dir/` prefixes — a workspace's own infra, release and benchmark trees are the usual
+   * entries.
+   */
+  exclude?: string[];
+  subspaces: SubspaceDeclaration[];
+}
+
 export type AppConfig = AppConfigInput | ((app: AppConfigContext) => AppConfigInput);
 export type LibConfig = LibConfigInput | ((lib: LibConfigContext) => LibConfigInput);
 export type AkanConfigFile = object;
@@ -278,6 +351,20 @@ export interface FileConventionScanResult {
   view: { databases: string[]; services: string[]; scalars: string[] };
   zone: { databases: string[]; services: string[]; scalars: string[] };
 }
+
+/**
+ * What a *live* scan exposes on `AppInfo.file` / `LibInfo.file`: a set per module kind, with every file
+ * type carrying all four kinds. `FileConventionScanResult` above is the serialized form that crosses a
+ * process boundary as JSON, which is why it is arrays and why each file type lists only the kinds it can
+ * hold. The two are not interchangeable — every reader of `.file` calls `.has()`.
+ */
+export interface FileConventionScanSet {
+  all: Set<string>;
+  databases: Set<string>;
+  services: Set<string>;
+  scalars: Set<string>;
+}
+export type FileConventionScanSets = { [key in keyof FileConventionScanResult]: FileConventionScanSet };
 
 export interface ScanResult {
   name: string;
@@ -321,7 +408,7 @@ export interface AppInfo {
   readonly database: Map<string, Set<string>>;
   readonly service: Map<string, Set<string>>;
   readonly scalar: Map<string, Set<string>>;
-  readonly file: FileConventionScanResult;
+  readonly file: FileConventionScanSets;
   getLibs(): string[];
   getLibInfos(): Map<string, LibInfo>;
   getDatabaseModules(): string[];
@@ -335,7 +422,7 @@ export interface LibInfo {
   readonly database: Map<string, Set<string>>;
   readonly service: Map<string, Set<string>>;
   readonly scalar: Map<string, Set<string>>;
-  readonly file: FileConventionScanResult;
+  readonly file: FileConventionScanSets;
   getLibs(): string[];
   getLibInfos(): Map<string, LibInfo>;
   getLibInfo(libName: string): LibInfo | undefined;

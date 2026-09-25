@@ -18,41 +18,135 @@
 
 Runtime And Infra
 
-Infra Architecture
+Your own machine, for fast iteration: MVP screens, feature prototypes and debugging.
 
-Akan apps can run locally, in a cloud cluster, or near users and devices through edge servers. The same application code can be packaged for different environments, while infrastructure decides where traffic enters, where services run, and how data or deployment operations are managed.
+A Kubernetes runtime for shared team environments and production-like workloads.
 
-Developer machine for fast iteration. Good for MVP screens, feature prototypes, and local debugging.
+The deployment control area: CI/CD, environment files, secrets and release automation.
 
-Kubernetes-based runtime for shared team environments and production-like workloads.
+The app packaged with everything it needs, so it starts the same way on any server.
 
-Near-site server for stores, kiosks, robots, factories, buildings, or local device networks.
+Kubernetes's unit of running: one or more containers placed together on one server (a node).
 
-Deployment control area for CI/CD, environment files, secrets, and release automation.
+The cluster's front door. It takes outside traffic for a domain and routes it inward.
 
-Which Option Should I Use?
+A stable address inside the cluster that forwards to whichever pods run the app.
 
-Start from the product situation, not from the infrastructure name. A small internal tool, a team QA environment, a store kiosk, and a production service need different levels of infrastructure.
+A Helm package of Kubernetes manifests. The one Akan ships lives in infra/app.
+
+SQLite's write-ahead log mode, which lets reads keep going while a write is in progress.
 
 MVP or feature prototype
+
+Local
 
 Use local development first. Keep the setup small until the product needs shared data, shared testing, or deployment automation.
 
 Team QA or staging
 
+Cloud · debug / develop
+
 Use cloud deployment with debug or develop environments so the team can test the same service together.
 
-Physical site or device network
+Production service
 
-Use edge when the service is close to stores, kiosks, factories, buildings, robots, or private device networks.
+Cloud · main
 
-Headquarters plus branches
+Use the main branch of the same cloud deployment. The shipped chart runs one pod per app, so plan the database and cache layer before traffic outgrows it.
 
-Use a hybrid shape: cloud cluster as the main service and edge servers for nearby execution, proxying, or cache-like responsibilities.
+An SSR or CSR page response for browser users.
+
+A business operation, run through signal and service logic.
+
+Realtime updates over a client connection that stays open.
+
+Static files, client bundles, images and generated output, served as files.
+
+Mode
+
+Database
+
+Queue / PubSub
+
+Cache
+
+SQLite based, Bun IPC accelerated
+
+SQLite key-value cache
+
+The best start for MVPs, internal tools, admin pages, content sites and small-to-medium services.
+
+Enough for most products under roughly 10k DAU, especially with WAL mode.
+
+When you need a separate cache, pub/sub, queue-like work, or realistic service boundaries.
+
+Cache and background work are separated, while staying lighter than cluster storage.
+
+When local runs should match the production cluster, or you need heavier relational storage.
+
+The most production-like mode, for heavier concurrent work and cluster validation.
+
+Stable
+
+Experimental
+
+Stage
+
+Servers
+
+Containers
+
+Database mode
+
+1. Single server
+
+one
+
+2. Multiple containers
+
+several
+
+3. Cloud cluster
+
+Infra Architecture
+
+The business code you write is the same wherever it runs. What changes between a laptop and a cloud is everything around it: where traffic enters, where the app runs, and how data and deployments are managed. That surrounding layer is what this page calls infrastructure.
+
+Akan apps run on a developer machine or in a cloud cluster, and the same application code is packaged for both. The infrastructure falls into three areas:
+
+Area
+
+Infrastructure shape
+
+A developer ships through the master infra — CI/CD, environment files and secrets — into a cloud cluster, where the Akan app runtime serves users and their devices.
+
+Words used on this page
+
+Term
+
+Which Option Should I Use?
+
+Start from the product situation, not from the infrastructure name. A small internal tool, a team QA environment and a production service need different levels of infrastructure, so start from the one that describes where you are today:
 
 How Traffic Moves
 
-Infrastructure does not change the business code inside your app. It decides how a request reaches the Akan runtime. The path is simple on your laptop, more structured in a cloud cluster, and sometimes site-specific when edge servers are involved.
+Infrastructure does not change the business code inside your app. It decides how a request reaches the Akan runtime. The path is simple on your laptop and goes through a structured layer in a cloud cluster.
+
+Request paths
+
+Browser Or Device
+
+Domain Or Local Address
+
+Local Dev Server
+
+Cloud Ingress
+
+Kubernetes Service
+
+Akan App Runtime
+
+Page · API · WebSocket · Asset
 
 Local path
 
@@ -62,79 +156,47 @@ Cloud path
 
 A user enters through a public domain. Kubernetes Ingress receives the request, Service finds the right app pod, and the Akan runtime handles the actual page or API response.
 
-Edge path
+Once a request reaches the Akan App Runtime, the runtime sorts it by kind of work. Each kind gets its own kind of answer:
 
-A store, kiosk, robot, or local device network can reach an edge proxy first. The edge side may serve nearby runtime work or forward traffic to the cloud service.
-
-After the request reaches Akan App Runtime, the runtime classifies what kind of work it is. A page request renders a web page, an API request runs signal/service logic, a WebSocket request keeps a realtime channel open, and static assets are served as files.
-
-SSR or CSR page response for browser users.
-
-Business operations through signal and service logic.
-
-Realtime updates and long-lived client connections.
-
-Static files, client bundles, images, and generated output.
-
-Key idea: infrastructure chooses the route into the app, not the business behavior inside the app. Local, cloud, and edge paths can look different, but they all eventually hand work to the Akan runtime.
+Request
 
 Database Mode
 
-Start with single mode first. Most services do not need a separate database cluster on day one. When real performance limits, queue needs, or multi-instance operation appear, you can move up to multiple or cluster mode without changing the business shape of the app.
+Besides the app itself, a service needs somewhere to keep data, a queue for background work and a cache. The database mode decides which engine fills each of those three roles.
 
-SQLite is the default database in single mode, but that does not mean it is only for toys. With WAL mode, SQLite has very strong practical performance. For many ordinary services under about 10,000 DAU, single mode is usually enough until real usage data proves otherwise.
+Start with single mode. Most services do not need a separate database cluster on day one. When real performance limits, queue needs or multi-instance operation appear, move up to multiple or cluster mode without changing the business shape of the app.
 
-Best starting point for MVPs, early internal tools, admin screens, content sites, and many small-to-medium services.
+When to pick each mode
 
-SQLite based, Bun IPC accelerated processing
+When → what you get
 
-SQLite based key-value cache
+The default mode lives in akan.config.ts:
 
-High enough for most products under roughly 10k DAU, especially with WAL mode.
-
-Use this when the product starts needing a separated cache, pub/sub, queue-like behavior, or more realistic local service boundaries.
-
-Better separation for cache and background work while staying lighter than full cluster-style storage.
-
-Use this when the team wants local behavior to resemble a production cluster before release or when heavier relational persistence is needed.
-
-Most production-like local mode. Better for heavier concurrent workloads and cluster-oriented validation.
-
-Database
-
-Queue / PubSub
-
-Cache
-
-Performance
-
-A practical rule: do not upgrade database mode because it feels safer. Stay on single until you see real needs such as Redis-backed pub/sub, separate queue/cache behavior, heavier concurrent writes, or a deployment shape that must resemble production.
+multiple and cluster need their database and Redis running beside the app on your machine. akan dbup starts the local database for the mode you name:
 
 Growth Stages
 
-Infrastructure does not need to start big. A business can begin with one server and one container, then grow step by step as traffic, reliability requirements, and physical site needs increase.
+Infrastructure does not need to start big. A business can begin with one server and one container, then grow step by step as traffic and reliability requirements increase. The three stages at a glance:
 
-1. Single server
+Stage 1 is stable. Stages 2 and 3 are experimental: they describe where the shape goes next, not a chart you can apply today.
 
-A small product, MVP, internal tool, or early admin page can run as a single server with a single Akan container. single database mode is usually enough.
+A small product, MVP, internal tool or early admin page runs on one server with one Akan container. That single container serves the database, API, web, CSR, image optimization, cache and queue, and single database mode is usually enough.
 
-Akan runtime's single container uses about 0.05 CPU/200MB RAM at boot, and about 0.5 CPU/0.5GB RAM in use. It handles all database, api server, web server, CSR page, image optimization, cache, queue, etc., isn't it amazing?
+The chart asks a debug or develop pod for 0.05 CPU and 250M, capped at 0.5 CPU and 1G.
+
+Users reach one server that holds one Akan runtime container, and SQLite WAL storage, the local cache and the local queue all live inside that container.
 
 2. Single server, multiple containers
 
-When traffic grows but one machine is still enough, run multiple containers on the same server. This is vertical scaling: stronger server, more containers, and multiple or cluster database mode.
+When traffic grows but one machine is still enough, run multiple containers on the same server. This is vertical scaling: a stronger server, more containers, and multiple or cluster database mode.
 
-Akan Runtime runs multiple child servers based on the AKAN_REPLICA environment variable setting to perform load balancing. There is no need to run multiple runtimes for load balancing purposes, and if stability improvement is needed, multiple runtimes can be run.
+Users pass a reverse proxy into one large server running Akan runtime containers A, B and C, and every container shares Redis for cache, pubsub and queue plus libsql or Postgres on the same server.
 
 3. Cloud cluster scale
 
 When one server is no longer enough, move to a cloud cluster. Multiple servers run multiple containers, and cluster mode keeps the database/cache layer closer to production operation.
 
-4. Cloud plus distributed edge
-
-Very large services can keep the cloud cluster from stage 3 and add edge servers below it. Each edge server has its own Akan runtime and local database, so stores, factories, robots, or local networks can compute and store nearby data like a distributed cache layer.
-
-The practical rule is to grow only when the business asks for it. Start small, measure real usage, then move from single server to multi-container, cloud cluster, and finally cloud plus edge.
+Inside a cloud cluster, users enter through a Kubernetes Ingress and Service that fan out to cloud nodes A, B and C, each running one Akan runtime pod against a shared Redis cluster and Postgres database.
 
 ## Code Examples
 

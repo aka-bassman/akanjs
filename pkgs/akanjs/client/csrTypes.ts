@@ -3,6 +3,7 @@ import type { ReactDOMAttributes } from "@use-gesture/react/dist/declarations/sr
 import type { PromiseOrObject } from "akanjs/base";
 import { type ForwardRefExoticComponent, type ReactNode, type RefObject, useContext } from "react";
 import type { AnimatedComponent, AnimatedProps, Interpolation, SpringValue } from "react-spring";
+import type { RouteDefinition } from "./route/RouteDefinition";
 import type { RouterInstance } from "./router";
 import { sharedContext } from "./sharedContext";
 import type { ReactFont } from "./types";
@@ -45,7 +46,7 @@ export interface PageConfig {
   ssr?: SsrRenderMode;
   /**
    * Opt in to guarded RSC page suffix commits when the page does not require
-   * head/metadata updates and the retained route chain head is invariant for
+   * head updates and the retained route chain head is invariant for
    * sibling navigations under the same layout.
    */
   rscPatchHeadSafe?: boolean;
@@ -108,7 +109,6 @@ export interface AkanHeadSnapshotV1 {
 }
 export interface ResolvedHead {
   node: Head | null | undefined;
-  hasExplicitLanguageAlternates: boolean;
   headSnapshot?: AkanHeadSnapshotV1;
 }
 export type ResolveHeadResult = Head | ResolvedHead | null | undefined;
@@ -134,6 +134,8 @@ export interface RouteRender {
   resolveHead?: ResolveHead;
   getPageConfig?: () => PromiseOrObject<PageConfig | undefined>;
   getLayoutPageConfig?: () => PromiseOrObject<PageConfig | undefined>;
+  /** The `page()` chain behind a page render, when it was declared as one — what a page prompt is read off. */
+  getRouteDefinition?: () => PromiseOrObject<RouteDefinition | undefined>;
 }
 export interface WebAppManifestIcon {
   src: string;
@@ -160,53 +162,24 @@ export interface WebAppManifest {
   screenshots?: WebAppManifestIcon[];
   [key: string]: unknown;
 }
-export interface AkanMetadata {
-  title?: string;
-  description?: string;
-  robots?: string;
-  openGraph?: {
-    title?: string;
-    description?: string;
-    type?: string;
-    url?: string;
-    siteName?: string;
-    images?: string | string[];
-  };
-  twitter?: {
-    card?: "summary" | "summary_large_image" | "app" | "player" | (string & {});
-    title?: string;
-    description?: string;
-    images?: string | string[];
-  };
-  alternates?: {
-    canonical?: string;
-    languages?: Record<string, string>;
-  };
-}
-export type GenerateMetadata = (props: PageProps) => PromiseOrObject<AkanMetadata | null | undefined>;
 export interface PageModule {
   default?: PageRender;
   pageConfig?: PageConfig;
   head?: Head;
-  metadata?: AkanMetadata;
   generateHead?: GenerateHead;
-  generateMetadata?: GenerateMetadata;
   Loading?: PageLoadingRender;
 }
 export interface LayoutModule {
   default?: LayoutRender;
   pageConfig?: PageConfig;
   head?: Head;
-  metadata?: AkanMetadata;
   generateHead?: GenerateHead;
-  generateMetadata?: GenerateMetadata;
   fonts?: ReactFont[];
   manifest?: WebAppManifest;
   theme?: string;
   reconnect?: boolean;
   wsConnect?: boolean;
   layoutStyle?: "mobile" | "web";
-  gaTrackingId?: string;
   Loading?: LayoutLoadingRender;
   NotFound?: LayoutNotFoundRender;
   Error?: LayoutErrorRender;
@@ -267,18 +240,6 @@ export interface CsrTransitionStyles {
 export type PageState = CsrState & {
   topInset: number;
   bottomInset: number;
-};
-export const defaultPageState: PageState = {
-  transition: "none",
-  topSafeArea: 0,
-  bottomSafeArea: 0,
-  topInset: 0,
-  bottomInset: 0,
-  gesture: true,
-  cache: false,
-  ssr: "stream",
-  topSafeAreaColor: "var(--color-background, Canvas)",
-  bottomSafeAreaColor: "var(--color-background, Canvas)",
 };
 
 export interface Location {

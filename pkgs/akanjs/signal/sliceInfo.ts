@@ -23,6 +23,52 @@ import {
 import type { InternalArgCls } from "./internalArg";
 import type { CnstFull, CnstInput, CnstInsight, CnstLight, DbFilter, SignalOption, SrvMap, SrvRefName } from "./types";
 
+/**
+ * What a slice declares when it opts into live sync. Nothing here is required — `.live()` on its own is the whole
+ * opt-in, and every default below is the conservative reading.
+ */
+export interface LiveSliceOption<ArgName extends string = string> {
+  /**
+   * The sort keys a client may reproduce well enough to place a row itself. Anything else falls back to a refetch,
+   * because the client would otherwise have to guess where a new row goes.
+   *
+   * `latest` is `{ createdAt: -1 }` on a real column, which a client compares identically. A key that sorts on a
+   * field inside `_doc` is checked at boot and warned about: SQLite orders those by SQL value and Postgres by
+   * jsonb type, so the two servers do not even agree with each other.
+   */
+  sort?: string[];
+  /**
+   * Downgrades this slice to invalidation only: subscribers are told their list moved and refetch, and no
+   * membership is evaluated. Required for a query holding `q.raw()`, `q.search()`, or `exists`/`missing` on a
+   * `_doc` field, none of which can be answered without the database.
+   */
+  fallback?: "invalidate";
+  /** `light` sends the row and costs nothing to apply; `id` sends the id alone for a room where the row is bulky. */
+  payload?: "light" | "id";
+  /**
+   * The arguments that switch live sync off for as long as they carry a value, named for this slice.
+   *
+   * A filter often builds a different query shape depending on what it was handed — `search ? q.search(text) : {}`
+   * is the common one — so the same slice is routable blank and unroutable with text in the box. Naming the
+   * argument makes that explicit: the client opens no room while it is filled and the window updates by
+   * refetching, which is what a slice with no `.live()` at all does. Clearing it opens the room again.
+   *
+   * Only a nullable argument can be named, which in practice means a `search`: a `param` is always present, so
+   * naming one would switch live off for good. That is refused at boot rather than left to be discovered.
+   *
+   * This is not `fallback`. `fallback: "invalidate"` keeps the room and gives up precision — every write on the
+   * model tells the room to refetch. `pauseOn` gives up the room and keeps precision everywhere else.
+   */
+  pauseOn?: ArgName[];
+}
+
+export interface ResolvedLiveSliceOption {
+  sort: string[];
+  fallback: "invalidate" | null;
+  payload: "light" | "id";
+  pauseOn: string[];
+}
+
 export class SliceInfo<
   RefName extends string = string,
   Input = any,
@@ -46,6 +92,7 @@ export class SliceInfo<
   readonly args: ArgInfo<EndpointArgProps<boolean>>[] = [];
   readonly internalArgs: InternalArgInfo<boolean>[] = [];
   readonly signalOption: SignalOption;
+  liveOption: ResolvedLiveSliceOption | null = null;
   execFn: ((...args: [...ServerArgs, ...InternalArgs]) => QueryOf<DocumentModel<Full>>) | null = null;
 
   constructor(
@@ -160,6 +207,18 @@ export class SliceInfo<
       [...InternalArgs, arg: NonNullable<ArgType> | (Optional extends true ? null : never)],
       ServerArgs
     >;
+  }
+  /** Opts this slice into live sync. Declaring nothing at all is what keeps a slice out of it entirely. */
+  live(option: LiveSliceOption<ArgNames[number]> = {}) {
+    if (this.execFn) throw new Error("Query function is already set");
+    if (this.liveOption) throw new Error("Live option is already set");
+    this.liveOption = {
+      sort: option.sort ?? ["latest"],
+      fallback: option.fallback ?? null,
+      payload: option.payload ?? "light",
+      pauseOn: (option.pauseOn as string[] | undefined) ?? [],
+    };
+    return this;
   }
   exec(
     query: (

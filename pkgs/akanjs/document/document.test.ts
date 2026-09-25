@@ -31,6 +31,7 @@ import {
   resolveFilterQuery,
   type SchemaOf,
   sanitizeJson,
+  splitFilterArgs,
 } from ".";
 
 type Equal<Left, Right> =
@@ -451,6 +452,30 @@ describe("by, from, into, and DatabaseRegistry", () => {
       kind: "all",
       queries: [{ title: "Alpha" }, {}],
     });
+  });
+
+  test("splits a trailing query option from the filter's own args", () => {
+    const byTitle = getFilterInfoByKey(DocumentTestFilter, "byTitle");
+
+    // The args are spread into the filter function, so an option read as an arg lands in a filter slot and
+    // changes the query. Every key naming a query option is the test — the values may all be null or absent.
+    expect(splitFilterArgs(byTitle, ["Alpha", { sample: 2 }])).toEqual({
+      queryArgs: ["Alpha", undefined],
+      queryOption: { sample: 2 },
+    });
+    expect(splitFilterArgs(byTitle, ["Alpha", { sort: null, limit: null }]).queryArgs).toEqual(["Alpha", undefined]);
+    expect(splitFilterArgs(byTitle, ["Alpha", {}]).queryArgs).toEqual(["Alpha", undefined]);
+    expect(splitFilterArgs(byTitle, ["Alpha", true, { limit: 5 }])).toEqual({
+      queryArgs: ["Alpha", true],
+      queryOption: { limit: 5 },
+    });
+
+    // A filter arg is a scalar, a date, an id or an array — never a bare object of option keys.
+    expect(splitFilterArgs(byTitle, ["Alpha", true]).queryArgs).toEqual(["Alpha", true]);
+    expect(splitFilterArgs(byTitle, ["Alpha", []]).queryArgs).toEqual(["Alpha", []]);
+    expect(splitFilterArgs(byTitle, ["Alpha", new Date(0)]).queryArgs).toEqual(["Alpha", new Date(0)]);
+    expect(splitFilterArgs(byTitle, ["Alpha", dayjs(0)]).queryArgs).toEqual(["Alpha", dayjs(0)]);
+    expect(splitFilterArgs(byTitle, ["Alpha", null]).queryArgs).toEqual(["Alpha", null]);
   });
 
   test("compiles a query key and its args into the filter's own query", () => {
@@ -896,12 +921,52 @@ describe("data loaders", () => {
     expect(batches).toEqual([["a", "b"]]);
   });
 
-  test("DataLoader cache can be cleared and primed", async () => {
+  test("DataLoader remembers nothing past its own batch unless a cache is declared", async () => {
     let calls = 0;
     const loader = new DataLoader<string, string>(async (keys) => {
       calls++;
       return keys.map((key) => `loaded:${key}`);
     });
+
+    await Promise.all([loader.load("a"), loader.load("a")]);
+    await loader.load("a");
+    loader.prime("a", "primed:a");
+    await expect(loader.load("a")).resolves.toBe("loaded:a");
+    expect(calls).toBe(3);
+  });
+
+  test("DataLoader keeps a key for the declared milliseconds and never keeps a failure", async () => {
+    let calls = 0;
+    let fail = true;
+    const loader = new DataLoader<string, string>(
+      async (keys) => {
+        calls++;
+        if (fail) throw new Error("store down");
+        return keys.map((key) => `loaded:${key}`);
+      },
+      { cache: 30 },
+    );
+
+    await expect(loader.load("a")).rejects.toThrow("store down");
+    fail = false;
+    await expect(loader.load("a")).resolves.toBe("loaded:a");
+    await expect(loader.load("a")).resolves.toBe("loaded:a");
+    expect(calls).toBe(2);
+
+    await Bun.sleep(40);
+    await expect(loader.load("a")).resolves.toBe("loaded:a");
+    expect(calls).toBe(3);
+  });
+
+  test("DataLoader cache can be cleared and primed", async () => {
+    let calls = 0;
+    const loader = new DataLoader<string, string>(
+      async (keys) => {
+        calls++;
+        return keys.map((key) => `loaded:${key}`);
+      },
+      { cache: true },
+    );
 
     await expect(loader.load("a")).resolves.toBe("loaded:a");
     await expect(loader.load("a")).resolves.toBe("loaded:a");

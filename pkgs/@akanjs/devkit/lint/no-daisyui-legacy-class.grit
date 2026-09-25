@@ -3,8 +3,8 @@ language js(typescript, jsx)
 
 // daisyUI was removed from the UI system; its component classes (`btn-primary`, `card-body`,
 // `mockup-code`, ...) and its colour slots (`bg-base-100`, `text-base-content`, `bg-error`)
-// no longer have any CSS behind them and silently render unstyled. Grit port of styleGuard's
-// `daisyui-legacy` rule (frontendBuild/styleGuard.ts) — keep in sync.
+// no longer have any CSS behind them and silently render unstyled.
+// Cases: lint/__fixtures__/no-daisyui-legacy-class/{bad,good}.tsx
 // Only high-signal compound names are matched; bare ambiguous words that collide with
 // Tailwind or app classes (`card`, `input`, `badge`, `btn`, `divider`) are deliberately not
 // flagged, and colour slots that survived into the semantic vocabulary (`primary`, `info`,

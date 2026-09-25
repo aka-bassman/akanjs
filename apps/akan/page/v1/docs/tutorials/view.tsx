@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Docs } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -11,8 +12,8 @@ export default function Page() {
         <Docs.Description>
           <div>
             {l.trans({
-              en: `Imagine walking into an ice cream shop and placing an order. You'd want to see exactly what you ordered, right? Maybe check if you remembered to add those strawberries, or confirm the size you picked. That's exactly what detailed views do in our application - they give customers a complete, beautiful summary of their order that they can access anytime with just a click.`,
-              ko: `아이스크림 가게에 들어가서 주문을 한다고 상상해보세요. 어떤 것을 주문했는지 정확히 보고 싶을 테니까요? 딸기를 추가했는지 확인하거나, 선택한 크기가 맞는지 확인하고 싶을 것입니다. 바로 이것이 우리 애플리케이션의 상세 뷰가 하는 일입니다 - 고객들에게 단지 한 번의 클릭으로 언제든 접근할 수 있는 주문의 완전하고 아름다운 요약을 제공합니다.`,
+              en: `Imagine walking into an ice cream shop and placing an order. You'd want to see exactly what you ordered, right? Maybe check if you remembered to add those strawberries, or confirm the size you picked. That's exactly what detailed views do in our application - they give customers a full summary of their order that they can access anytime with just a click.`,
+              ko: `아이스크림 가게에 들어가서 주문을 한다고 상상해보세요. 어떤 것을 주문했는지 정확히 보고 싶을 테니까요? 딸기를 추가했는지 확인하거나, 선택한 크기가 맞는지 확인하고 싶을 것입니다. 바로 이것이 우리 애플리케이션의 상세 뷰가 하는 일입니다 - 고객들에게 단지 한 번의 클릭으로 언제든 접근할 수 있는 주문의 전체 요약을 제공합니다.`,
             })}
           </div>
           <div>
@@ -59,8 +60,8 @@ export default function Page() {
               </div>
               <div className="text-purple-700 text-sm">
                 {l.trans({
-                  en: `The actual content inside the modal that displays all the order information in a beautiful, organized layout.`,
-                  ko: `모달 안의 실제 내용으로, 모든 주문 정보를 아름답고 체계적인 레이아웃으로 표시합니다.`,
+                  en: `The actual content inside the modal that displays all the order information in an organized layout.`,
+                  ko: `모달 안의 실제 내용으로, 모든 주문 정보를 체계적인 레이아웃으로 표시합니다.`,
                 })}
               </div>
             </div>
@@ -445,106 +446,9 @@ export const General = ({ className, icecreamOrder }: GeneralProps) => {
         </Docs.Description>
       </Scroll.Slide>
       <div className="my-4 h-px w-full bg-border" />
-      <Scroll.Slide
-        id="best-practices"
-        title={l.trans({ en: "Best Practices for Detail Views", ko: "상세 뷰 모범 사례" })}
-      >
-        <Docs.Title>{l.trans({ en: "Best Practices for Detail Views", ko: "상세 뷰 모범 사례" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `Here are some important best practices to follow when creating detail views in Akan.js:`,
-              ko: `Akan.js에서 상세 뷰를 만들 때 따라야 할 중요한 모범 사례들입니다:`,
-            })}
-          </div>
-          <div className="my-4 space-y-4">
-            <div className="rounded-lg bg-green-50 p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-green-600">✅</span>
-                <strong className="text-green-800">
-                  {l.trans({ en: "Use Dictionary Translations", ko: "Dictionary 번역 사용" })}
-                </strong>
-              </div>
-              <div className="text-green-700 text-sm">
-                {l.trans({
-                  en: `Always use l() for displaying field names and values. This ensures consistency and proper multilingual support.`,
-                  ko: `필드 이름과 값을 표시할 때는 항상 l()을 사용하세요. 이렇게 하면 일관성과 적절한 다국어 지원이 보장됩니다.`,
-                })}
-              </div>
-            </div>
-            <div className="rounded-lg bg-blue-50 p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-blue-600">🎨</span>
-                <strong className="text-blue-800">
-                  {l.trans({ en: "Consistent Visual Hierarchy", ko: "일관된 시각적 계층구조" })}
-                </strong>
-              </div>
-              <div className="text-blue-700 text-sm">
-                {l.trans({
-                  en: `Use grid layouts, consistent spacing, and clear visual separation between different pieces of information.`,
-                  ko: `그리드 레이아웃, 일관된 간격, 다른 정보 간의 명확한 시각적 분리를 사용하세요.`,
-                })}
-              </div>
-            </div>
-            <div className="rounded-lg bg-purple-50 p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-purple-600">🔧</span>
-                <strong className="text-purple-800">
-                  {l.trans({ en: "Reusable Components", ko: "재사용 가능한 컴포넌트" })}
-                </strong>
-              </div>
-              <div className="text-purple-700 text-sm">
-                {l.trans({
-                  en: `Separate the ViewWrapper logic from the actual view content. This allows the wrapper to be reused across different display contexts.`,
-                  ko: `ViewWrapper 로직을 실제 뷰 내용과 분리하세요. 이렇게 하면 래퍼를 다른 표시 맥락에서 재사용할 수 있습니다.`,
-                })}
-              </div>
-            </div>
-            <div className="rounded-lg bg-yellow-50 p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-yellow-600">⚡</span>
-                <strong className="text-yellow-800">
-                  {l.trans({ en: "Handle Empty States", ko: "빈 상태 처리" })}
-                </strong>
-              </div>
-              <div className="text-sm text-yellow-700">
-                {l.trans({
-                  en: `Always provide fallback displays for empty or null values, like showing "No toppings" when the toppings array is empty.`,
-                  ko: `토핑 배열이 비어있을 때 "토핑 없음"을 표시하는 것처럼 빈 값이나 null 값에 대한 대체 표시를 항상 제공하세요.`,
-                })}
-              </div>
-            </div>
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <div className="my-4 h-px w-full bg-border" />
       <Scroll.Slide id="next-steps" title={l.trans({ en: "What's Next?", ko: "다음은 무엇인가요?" })}>
         <Docs.Title>{l.trans({ en: "What's Next?", ko: "다음은 무엇인가요?" })}</Docs.Title>
         <Docs.Description>
-          <div>
-            {l.trans({
-              en: `You have successfully implemented detailed views for your ice cream orders. Customers can now click on any order to see all the specifics in an organized format. The modal system provides a clean interface for viewing order information.`,
-              ko: `아이스크림 주문에 대한 상세 뷰를 성공적으로 구현했습니다. 이제 고객들이 주문을 클릭해서 체계적인 형식으로 모든 세부사항을 볼 수 있습니다. 모달 시스템은 주문 정보를 보기 위한 깔끔한 인터페이스를 제공합니다.`,
-            })}
-          </div>
-          <div className="my-6 rounded-lg bg-gradient-to-r from-pink-100 to-yellow-100 p-6">
-            <div className="mb-3 font-bold text-lg text-pink-800">
-              {l.trans({ en: "🎉 What You've Accomplished:", ko: "🎉 달성한 것들:" })}
-            </div>
-            <ul className="space-y-2 text-pink-700 text-sm">
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Created reusable ViewWrapper components",
-                  ko: "재사용 가능한 ViewWrapper 컴포넌트 생성",
-                })}
-              </li>
-              <li>✓ {l.trans({ en: "Added view buttons to order cards", ko: "주문 카드에 뷰 버튼 추가" })}</li>
-              <li>✓ {l.trans({ en: "Designed comprehensive detail views", ko: "포괄적인 상세 뷰 디자인" })}</li>
-              <li>✓ {l.trans({ en: "Implemented modal popup functionality", ko: "모달 팝업 기능 구현" })}</li>
-              <li>✓ {l.trans({ en: "Used proper translations and styling", ko: "적절한 번역과 스타일링 사용" })}</li>
-            </ul>
-          </div>
           <div>
             {l.trans({
               en: `In the next tutorial, we'll add status management functionality that allows shop staff to update orders from "active" to "processing" to "served". This will complete the order workflow system and provide full lifecycle management for ice cream orders.`,
@@ -553,7 +457,7 @@ export const General = ({ className, icecreamOrder }: GeneralProps) => {
           </div>
         </Docs.Description>
       </Scroll.Slide>
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
+      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 xl:flex" />
     </Scroll>
   );
-}
+});

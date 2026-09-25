@@ -1,5 +1,4 @@
 import { PushNotificationDemo } from "@apps/minimal/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
-  return <PushNotificationDemo />;
-}
+export default page().render(() => <PushNotificationDemo />);

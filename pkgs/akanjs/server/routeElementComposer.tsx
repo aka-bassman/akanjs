@@ -10,7 +10,7 @@ import type {
 } from "akanjs/client";
 import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode, Suspense } from "react";
 import { getExplicitPageConfigKeys, resolvePageState } from "../client/frameConfig";
-import { resolveHeadResult } from "./metadata";
+import { resolveHeadResult } from "./head";
 import { type AkanRouteSegmentState, createAkanRouteSegments, createAkanSegmentOutletKey } from "./routeState";
 import { isAkanRscPartialCommitEnabled } from "./rscPartialCommit";
 import { AkanSegmentOutletReference } from "./rscSegmentOutletReference";
@@ -122,7 +122,7 @@ export class RouteElementComposer {
     searchParams: Record<string, string | string[]>;
   }): Promise<Head | null | undefined> {
     return (
-      await RouteElementComposer.resolveHeadWithMetadata({
+      await RouteElementComposer.resolveHeadWithSnapshot({
         pathRoute,
         params,
         searchParams,
@@ -130,7 +130,7 @@ export class RouteElementComposer {
     ).node;
   }
 
-  static async resolveHeadWithMetadata({
+  static async resolveHeadWithSnapshot({
     pathRoute,
     params,
     searchParams,

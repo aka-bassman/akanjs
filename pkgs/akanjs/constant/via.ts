@@ -10,12 +10,13 @@ import {
   PURIFIED_VALUE,
   SERVER_VALUE,
 } from "akanjs/base";
-import { applyMixins } from "akanjs/common";
+import { applyMixins, plainFieldsOf } from "akanjs/common";
 import { immerable } from "immer";
 
-import { crystalize, getDefault } from ".";
+import { getDefault } from ".";
 import { CascadePaths } from "./cascadePaths";
 import { ConstantRegistry } from "./constantRegistry";
+import { dateAccessorOf, isDateSlotField } from "./dateSlot";
 import {
   ConstantField,
   type ExtractFieldInfoObject,
@@ -27,6 +28,7 @@ import {
   field,
   resolve,
 } from "./fieldInfo";
+import { HydrationPlan } from "./hydrationPlan";
 import { makePurify, type PurifiedModel, type PurifyFunc } from "./purify";
 import { TextFieldPaths } from "./textFieldPaths";
 import type { BaseInsight, BaseObject, ConstantType, DefaultOf, DefaultOfSchema, NonFunctionalKeys } from "./types";
@@ -201,21 +203,15 @@ const getBaseConstantClass = (field: FieldObject, modelType: ConstantType = "sca
     static enums: Set<EnumInstance> = new Set();
     [immerable] = true;
     constructor(obj?: Partial<unknown>) {
-      this.set({
-        ...(this.constructor as ConstantCls).getDefault(),
-        ...((obj ?? {}) as Partial<typeof this>),
-      });
+      HydrationPlan.of(this.constructor as ConstantCls).construct(this, obj as Record<string, unknown> | undefined);
     }
     set(obj: Partial<typeof this>) {
-      Object.entries(obj).forEach(([key, value]) => {
-        //check field has key
-        if (!(this.constructor as ConstantCls)[FIELD_META][key] as unknown as object | undefined) return;
-        const field = (this.constructor as ConstantCls)[FIELD_META][key];
-        if (!field) throw new Error(`Field ${key} not found`);
-        const fieldProp = field.getProps();
-        (this as Record<string, unknown>)[key] = crystalize(fieldProp, value);
-      });
+      HydrationPlan.of(this.constructor as ConstantCls).assign(this, obj as Record<string, unknown>);
       return this;
+    }
+    // Date fields live behind prototype accessors, which `JSON.stringify` alone would skip.
+    toJSON() {
+      return plainFieldsOf(this);
     }
   }
   return BaseConstant as unknown as ConstantCls;
@@ -454,6 +450,11 @@ const applyConstantStatics = <Model>(model: ConstantCls<Model>, fieldMap: FieldO
   });
   model.text.collect(fieldMap);
   model.cascade.collect(fieldMap);
+  // Over the whole `FIELD_META`, not `fieldMap`: `fullModelOf` extends a lib model's map in place, and a plan or
+  // accessor built from the earlier map would miss the fields the app added.
+  for (const [key, field] of Object.entries(model[FIELD_META]))
+    if (isDateSlotField(field.getProps())) Object.defineProperty(model.prototype, key, dateAccessorOf(key));
+  HydrationPlan.reset(model);
   return model as unknown as ConstantCls<Model>;
 };
 

@@ -26,6 +26,23 @@ describe("ScreenReader", () => {
     expect(text).toContain("\n- two");
   });
 
+  test("an image is named whether or not it carries an alt", () => {
+    const text = readOf('<p><img alt="Q3 revenue" src="/a.png" /><img src="/b.png" /></p>');
+    expect(text).toContain("[image: Q3 revenue]");
+    expect(text).toContain("[image]");
+    expect(text).not.toContain("/a.png");
+  });
+
+  test("the address rides only when it was asked for, and never for a data URL", () => {
+    document.body.innerHTML =
+      '<p><img alt="chart" src="/a.png" /><img src="/b.png" /><img alt="inline" src="data:image/png;base64,AAAA" /></p>';
+    const text = ScreenReader.read(null, { images: true });
+    expect(text).toContain("[image: chart](/a.png)");
+    expect(text).toContain("[image](/b.png)");
+    expect(text).toContain("[image: inline]");
+    expect(text).not.toContain("base64");
+  });
+
   test("keeps a link's href inline in its sentence", () => {
     const text = readOf('<p>See <a href="/docs">the docs</a> now</p><a href="/docs">/docs</a>');
     expect(text).toContain("See the docs (/docs) now");

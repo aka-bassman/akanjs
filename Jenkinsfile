@@ -111,6 +111,20 @@ pipeline {
                 }
             }
         }
+        stage("Typecheck"){
+            steps {
+                // `bun test` does not typecheck, so nothing used to notice API drift between the framework and
+                // its own callers until a build broke — and 148 errors had accumulated behind that, including a
+                // `refName` whose declared type disagreed with its runtime value and a type-level regression
+                // guard that had silently stopped guarding. Tests included: they are where the drift shows.
+                //
+                // All three published packages, not just `akanjs`: `@akanjs/devkit` and `@akanjs/cli` were in no
+                // gate at all, which is how 64 errors accumulated in them — among those a `.file` scan view whose
+                // declared type said `string[]` where every reader called `.has()`, and a test file that had lost
+                // its `bun:test` import and reported 20 errors from one line.
+                sh "ssh -i $SSH_KEY $BUILD_USER@$BUILD_HOST -p $BUILD_PORT \"cd $REPO_NAME/$BRANCH && bun run typecheckPkgs\""
+            }
+        }
         stage("Test"){
             steps {
                 // The framework unit suites, gating Dockerize and Deploy. `testPkgs` is the same command
@@ -121,6 +135,23 @@ pipeline {
                 // 8 of its tests build temp workspaces through `WorkspaceExecutor.getBaseDevEnv`, which
                 // throws without them.
                 sh "ssh -i $SSH_KEY $BUILD_USER@$BUILD_HOST -p $BUILD_PORT \"cd $REPO_NAME/$BRANCH && bun run testPkgs\""
+            }
+        }
+        stage("Dev Stability"){
+            steps {
+                // The 1113-line dev-host harness — the only coverage for the interlocked RSS-recycle, idle-suspend,
+                // and builder-gap timers — ran nowhere automatically: `AKAN_DEV_STABILITY_INTEGRATION` is set by
+                // this script alone, and nothing called it. `testPkgs` skips all 19 tests without it.
+                //
+                // Non-gating on purpose, for now. Each test boots a real dev server and several assert RSS
+                // ceilings, so the suite is host-sensitive and budgets up to 180s per test; it has never run on
+                // this host. Marking the build unstable puts the result in front of someone without letting a
+                // first red measurement block a deploy. Promote it to a gating `sh` once it has been green here.
+                catchError(buildResult: "UNSTABLE", stageResult: "FAILURE") {
+                    timeout(time: 45, unit: "MINUTES") {
+                        sh "ssh -i $SSH_KEY $BUILD_USER@$BUILD_HOST -p $BUILD_PORT \"cd $REPO_NAME/$BRANCH && bun run testDevStability\""
+                    }
+                }
             }
         }
         // The app and lib suites (ALL_PROJECTS + TEST_LIBS) are still not run anywhere. Their testing

@@ -1,5 +1,4 @@
 import path from "node:path";
-import { AiSession } from "@akanjs/devkit/aiEditor";
 import { CloudApi, GlobalConfig, getDefaultHostConfig, type RemoteEnvServerConfig } from "@akanjs/devkit/cloud";
 import { runner, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
@@ -14,6 +13,12 @@ interface RegistryOptions {
   registryUrl?: string;
   confirmPublish?: boolean;
   tag?: string;
+}
+
+/** The apps and libraries an env archive covers, when it carries a slice of the workspace rather than all of it. */
+export interface EnvScope {
+  apps: string[];
+  libs: string[];
 }
 
 interface SelectedRemoteEnvServer {
@@ -227,13 +232,6 @@ export class CloudRunner extends runner("cloud") {
       Logger.rawLog(chalk.dim("You were not logged in to begin with\n"));
     }
   }
-  async setLlm() {
-    await AiSession.init({ useExisting: false });
-  }
-  resetLlm() {
-    AiSession.setLlmConfig(null);
-    Logger.rawLog(chalk.green("☑️ LLM model config is cleared. Please run `akan set-llm` to set a new LLM model."));
-  }
   async getAkanPkgs(workspace: Workspace) {
     const pkgs = await workspace.getPkgs();
     return pkgs.filter((pkg) => pkg === "akanjs" || pkg === "create-akan-workspace" || pkg.startsWith("@akanjs/"));
@@ -290,9 +288,14 @@ export class CloudRunner extends runner("cloud") {
         return;
       }
     }
-    Logger.info("Logging in to npm...");
-    await workspace.spawn("npm", ["login"], { stdio: "inherit" });
-    Logger.info("Logged in to npm");
+    // The local registry carries its own token on every publish below, and `npm login` has no registry argument —
+    // it would prompt for npmjs.org credentials to authorize a publish that never reaches npmjs.org, which also
+    // makes the whole local-registry flow interactive and therefore unscriptable.
+    if (!registry) {
+      Logger.info("Logging in to npm...");
+      await workspace.spawn("npm", ["login"], { stdio: "inherit" });
+      Logger.info("Logged in to npm");
+    }
     for (const library of akanPkgs) {
       Logger.info(`Publishing ${library}@${nextVersion} to ${registry ?? "npm"}...`);
       await workspace.spawn(
@@ -312,11 +315,11 @@ export class CloudRunner extends runner("cloud") {
     const registry = registryUrl ? getNpmRegistryUrl(registryUrl) : undefined;
     const registryArgs = this.#getRegistryArgs(registry);
     const env = this.#getRegistryEnv(registry);
-    if (!(await workspace.exists("package.json")))
-      await workspace.spawn("bun", ["update", "-g", "akanjs", "--latest", `--tag=${tag}`, ...registryArgs], { env });
+    const globalCliArgs = ["add", "-g", `@akanjs/cli@${tag}`, ...registryArgs];
+    if (!(await workspace.exists("package.json"))) await workspace.spawn("bun", globalCliArgs, { env });
     else
       await Promise.all([
-        workspace.spawn("bun", ["update", "-g", "akanjs", "--latest", `--tag=${tag}`, ...registryArgs], { env }),
+        workspace.spawn("bun", globalCliArgs, { env }),
         this.#updateAkanPkgs(workspace, tag, registry),
       ]);
   }
@@ -410,9 +413,14 @@ export class CloudRunner extends runner("cloud") {
     }
   }
 
-  async gatherEnvFiles(workspace: Workspace) {
+  async gatherEnvFiles(
+    workspace: Workspace,
+    { scope, archivePath = "local/env.tar" }: { scope?: EnvScope; archivePath?: string } = {},
+  ) {
     const envFilePattern = /^env\.(client|server)\.(?!(type|example)\.ts$).+\.ts$/;
-    const [appNames, libNames] = await workspace.getExecs();
+    const [workspaceAppNames, workspaceLibNames] = await workspace.getExecs();
+    const appNames = scope?.apps ?? workspaceAppNames;
+    const libNames = scope?.libs ?? workspaceLibNames;
     const envDirs = [
       ...appNames.map((appName) => `apps/${appName}/env`),
       ...libNames.map((libName) => `libs/${libName}/env`),
@@ -428,17 +436,24 @@ export class CloudRunner extends runner("cloud") {
         ),
       )
     ).flat();
-    await this.#syncSecretGitignore(workspace, appNames);
+    //* The managed block is a workspace-level file listing every app: syncing it from one slice would drop
+    //* every other app's secret patterns from it.
+    await this.#syncSecretGitignore(workspace, workspaceAppNames);
     const customSecretPaths = await this.#gatherCustomSecretFiles(workspace, appNames);
     const envFilePaths = [...new Set([...defaultEnvFilePaths, ...customSecretPaths])].sort();
     await workspace.mkdir("local");
-    await workspace.remove("local/env.tar");
-    if (envFilePaths.length === 0) throw new Error("No environment files found to archive");
-    await workspace.spawn("tar", ["-cf", "local/env.tar", ...envFilePaths], {
+    await workspace.remove(archivePath);
+    if (envFilePaths.length === 0)
+      throw new Error(
+        scope
+          ? `No environment files found to archive for ${appNames.join(", ") || "(no apps)"}`
+          : "No environment files found to archive",
+      );
+    await workspace.spawn("tar", ["-cf", archivePath, ...envFilePaths], {
       cwd: workspace.workspaceRoot,
     });
-    Logger.info(`Archived ${envFilePaths.length} environment files to local/env.tar`);
-    return { files: envFilePaths, path: "local/env.tar" };
+    Logger.info(`Archived ${envFilePaths.length} environment files to ${archivePath}`);
+    return { files: envFilePaths, path: archivePath };
   }
 
   async #gatherCustomSecretFiles(workspace: Workspace, appNames: string[]) {

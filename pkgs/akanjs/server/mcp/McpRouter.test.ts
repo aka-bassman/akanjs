@@ -10,17 +10,20 @@ process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
 process.env.AKAN_PUBLIC_ENV = "local";
 process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
 
-const routes = () =>
+type Routes = Record<string, Record<string, (req: Request) => Promise<Response> | Response>>;
+type RouterProps = Partial<ConstructorParameters<typeof McpRouter>[0]>;
+
+const routes = (props: RouterProps = {}) =>
   new McpRouter({
     registry: getDefaultInjectRegistry(),
     live: getDefaultLiveRegistry(),
     middleware: new Map(),
     env: {},
     instructions: "Domain tools.",
-  }).createRoutes() as Record<string, Record<string, (req: Request) => Promise<Response> | Response>>;
+    ...props,
+  }).createRoutes() as Routes;
 
-const post = async (body: object, init: RequestInit = {}) => {
-  const handlers = routes()["/mcp"];
+const post = async (body: object, init: RequestInit = {}, handlers: Routes[string] = routes()["/mcp"]) => {
   const req = new Request("http://127.0.0.1:8080/mcp", {
     method: "POST",
     body: JSON.stringify(body),
@@ -86,6 +89,20 @@ describe("McpRouter transport", () => {
     // MCP clients are not browsers and normally send no Origin at all.
     const absent = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(absent.res.status).toBe(200);
+  });
+
+  test("judges a browser's origin against the configured resource, not a header the caller wrote", async () => {
+    const pinned = routes({ auth: { resource: "https://public.example.com/mcp" } })["/mcp"];
+    const list = { jsonrpc: "2.0", id: 1, method: "tools/list" };
+    const ours = await post(list, { headers: { Origin: "https://public.example.com" } }, pinned);
+    expect(ours.res.status).toBe(200);
+    // The request's own host is the internal child; a forwarded host that agrees with the Origin used to be enough.
+    const forwarded = await post(
+      list,
+      { headers: { Origin: "https://evil.example.net", "x-forwarded-host": "evil.example.net" } },
+      pinned,
+    );
+    expect(forwarded.res.status).toBe(403);
   });
 
   test("reports a broken body as a parse error rather than crashing", async () => {
@@ -270,5 +287,46 @@ describe("McpRouter methods", () => {
   test("refuses an unadvertised resource uri", async () => {
     const { json } = await post({ jsonrpc: "2.0", id: 1, method: "resources/read", params: { uri: "akan://user/1" } });
     expect(json.error?.code).toBe(-32602);
+  });
+});
+
+describe("McpRouter rate limit", () => {
+  const call = (id: number) => ({
+    jsonrpc: "2.0",
+    id,
+    method: "tools/call",
+    params: { name: "nothing", arguments: {} },
+  });
+
+  test("answers the call past the budget with 429, a JSON-RPC error and Retry-After, per caller", async () => {
+    const handlers = routes({ rateLimit: { calls: 2, windowMs: 60_000 } })["/mcp"];
+    const bearer = (sid: string) => ({
+      headers: {
+        Authorization: `Bearer x.${Buffer.from(JSON.stringify({ sid })).toString("base64url")}.y`,
+      },
+    });
+    for (const id of [1, 2]) {
+      const { res, json } = await post(call(id), bearer("a"), handlers);
+      // The unknown tool is refused as a call, and counted as one.
+      expect(res.status).toBe(200);
+      expect(json.error?.message).toContain("Unknown tool");
+    }
+    const third = await post(call(3), bearer("a"), handlers);
+    expect(third.res.status).toBe(429);
+    expect(third.res.headers.get("retry-after")).toMatch(/^\d+$/);
+    expect(third.json.error?.code).toBe(-32010);
+    expect(third.json.error?.message).toContain("2 calls per 60s");
+    // Another session, another budget; a listing is never counted.
+    expect((await post(call(4), bearer("b"), handlers)).res.status).toBe(200);
+    expect((await post({ jsonrpc: "2.0", id: 5, method: "tools/list" }, bearer("a"), handlers)).res.status).toBe(200);
+  });
+
+  test("is on by default and can be turned off", async () => {
+    const off = routes({ rateLimit: false })["/mcp"];
+    for (let id = 0; id < 130; id += 1) expect((await post(call(id), {}, off)).res.status).toBe(200);
+    const on = routes()["/mcp"];
+    let limited = 0;
+    for (let id = 0; id < 130; id += 1) if ((await post(call(id), {}, on)).res.status === 429) limited += 1;
+    expect(limited).toBe(10);
   });
 });

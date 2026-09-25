@@ -1,7 +1,7 @@
 "use client";
 import { fetch, st } from "@libs/shared/client";
 import { buttonRecipe } from "@libs/util/ui";
-import { cn, getCookie } from "akanjs/client";
+import { cn, getAuthToken } from "akanjs/client";
 import { Image, Loading } from "akanjs/ui";
 import { lazy } from "akanjs/webkit";
 import { type ReactNode, useState } from "react";
@@ -96,13 +96,14 @@ export const Download = ({ className, onClick, url, filename, children }: Downlo
 
 export const ExportPDF = () => {
   const [loading, setLoading] = useState<boolean | null>(null);
-  const jwt = getCookie("jwt");
+  const jwt = getAuthToken();
   const exportPdf = async () => {
     if (loading) return;
     setLoading(true);
     const fullPath =
-      window.location.href +
-      (window.location.href.includes("jwt") ? "" : window.location.href.includes("?") ? `&jwt=${jwt}` : `?jwt=${jwt}`);
+      jwt && !window.location.href.includes("jwt")
+        ? `${window.location.href}${window.location.href.includes("?") ? "&" : "?"}jwt=${jwt}`
+        : window.location.href;
 
     const file = await fetch.generatePdf(fullPath);
     const arrayBuffer = new Uint8Array(file as unknown as ArrayBuffer);

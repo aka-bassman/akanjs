@@ -16,7 +16,6 @@
 - Create Utility Components (#util-components)
 - Apply To Unit & View Components (#apply-to-components)
 - Test Status Management (#test-implementation)
-- Status Management Best Practices (#best-practices)
 - What's Next? (#next-steps)
 
 ## Content
@@ -79,9 +78,11 @@ This pattern ensures that business rules are enforced at the document level whil
 
 Create Signal Endpoints
 
-Think of signal endpoints as the communication system between the frontend (like the shop's order display screen) and the backend (the kitchen and management system). When staff clicks a "Process" button on the screen, it needs to communicate with the backend to actually update the order. Akan.js automatically creates both REST and GraphQL versions of these endpoints, so different parts of your system can communicate however they prefer.
+Think of signal endpoints as the communication system between the frontend (like the shop's order display screen) and the backend (the kitchen and management system). When staff clicks a "Process" button on the screen, it needs to communicate with the backend to actually update the order. Akan.js serves every endpoint over HTTP and over the websocket, and publishes it to AI agents over MCP when its guards allow, so every caller reaches the same kitchen through the same hatch.
 
 Each signal endpoint is defined using the mutation() builder, specifying the return type and accepting the order ID as a parameter via .param(). The .exec() callback delegates to the corresponding service method to perform the actual business logic.
+
+The second argument to slice() is the guard map, not boilerplate: root is the generated admin query API and is always Admin, get covers reads, and cru covers create, update and remove — create is opened on its own here because the kiosk takes anonymous orders. Leaving root: Public hands that admin query API to every anonymous caller, and to every AI agent through /mcp.
 
 We also need to add dictionary entries for these API endpoints so they display properly in the UI:
 
@@ -103,7 +104,7 @@ This ensures that when status changes happen, the UI automatically reflects the 
 
 Create Utility Components
 
-Just like a real ice cream shop might have labeled buttons or stamps for different order stages, we'll create reusable button components for each action. These "digital buttons" can be placed anywhere in our interface - on order cards, in detailed views, or on staff dashboards. By creating them once as utility components, we ensure consistent behavior and styling throughout the entire application.
+Just like a real ice cream shop might have labeled buttons or stamps for different order stages, we'll create reusable button components for each action. These "digital buttons" can be placed anywhere in our interface - on order Unit cards, in detailed views, or on staff dashboards. By creating them once as utility components, we ensure consistent behavior and styling throughout the entire application.
 
 Each button component includes:
 
@@ -121,7 +122,7 @@ Button labels come from dictionary entries for proper multilingual support
 
 Apply To Unit & View Components
 
-Now comes the exciting part - putting all the pieces together! Just like adding action buttons to the order tickets in a real shop, we'll integrate our status management buttons directly into the order cards and detailed views. This means staff won't need to navigate to separate pages or menus - they can process orders right from wherever they're viewing them, making the workflow fast and intuitive.
+Now we'll put all the pieces together. Just like adding action buttons to the order tickets in a real shop, we'll integrate our status management buttons directly into the order Unit cards and detailed views. Staff won't need to navigate to separate pages or menus - they can process orders right from wherever they're viewing them.
 
 Let's update the Unit component to include status management buttons:
 
@@ -171,43 +172,7 @@ Invalid actions should be prevented
 
 Error messages should appear if business rules are violated
 
-Status Management Best Practices
-
-Here are important best practices for implementing status management in Akan.js:
-
-Enforce Business Rules
-
-Always validate state transitions at the document level using business methods. This ensures data integrity regardless of how the API is called.
-
-Smart UI Controls
-
-Disable buttons and hide actions that aren't valid for the current state. This provides immediate feedback to users about what actions are possible.
-
-Consistent Patterns
-
-Follow the same pattern across all status operations: Document → Service → Signal → Store → Component. This makes your code predictable and maintainable.
-
-Proper Error Handling
-
-Use dictionary-based error messages with Err exceptions. This ensures error messages are properly translated and user-friendly.
-
 What's Next?
-
-Excellent work! You've successfully implemented a complete status management system for your ice cream orders. Shop staff can now efficiently manage the order lifecycle with proper business rule enforcement.
-
-🎉 What You've Accomplished:
-
-Implemented business logic with validation
-
-Created service layer for status operations
-
-Built signal endpoints for status changes
-
-Added frontend store actions
-
-Created reusable utility components
-
-Integrated smart UI controls
 
 In the next tutorial, we'll learn how to edit existing data by implementing order modification functionality. This will allow customers to update their ice cream orders before they're processed, completing the full CRUD operations for our ice cream shop.
 
@@ -337,6 +302,7 @@ export class IcecreamOrderService extends serve(db.icecreamOrder, ({ use, servic
 ### apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts
 
 ```ts
+import { Admin } from "@libs/shared/srvkit";
 import { ID } from "akanjs/base"; // [!code ++]
 import { endpoint, internal, Public, slice } from "akanjs/signal"; // [!code collapse:18]
 
@@ -347,7 +313,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder,
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init().exec(function () {
       return this.icecreamOrderService.queryAny();
@@ -488,8 +454,7 @@ export class IcecreamOrderStore extends store(sig.icecreamOrder, () => ({
 ### apps/koyo/lib/icecreamOrder/IcecreamOrder.Util.tsx
 
 ```ts
-"use client"; // [!code collapse:4]
-import { cn } from "akanjs/client";
+"use client"; // [!code collapse:3]
 import { st, usePage } from "@apps/koyo/client";
 import { buttonRecipe } from "akanjs/ui";
 

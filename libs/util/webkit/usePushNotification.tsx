@@ -3,8 +3,9 @@
 import { router } from "akanjs/client";
 import { loadCapacitorDevice, loadCapacitorFcm, loadCapacitorPushNotifications } from "akanjs/client/capacitor";
 import { getApps, initializeApp } from "firebase/app";
-import { getToken as getFirebaseToken, getMessaging } from "firebase/messaging";
+import { getToken as getFirebaseToken, getMessaging, type Messaging, onMessage } from "firebase/messaging";
 import { useEffect } from "react";
+import { pushNavigateMessage } from "../common/pushNavigateMessage";
 
 export type PushNotificationPlatform = "web" | "ios" | "android";
 export type PushNotificationProvider = "fcm";
@@ -36,11 +37,12 @@ export interface PushNotificationClientEnv {
   };
 }
 
-/** The two runtime globals this integration touches: the injected client env, and the click-bridge promise
- *  cached on `globalThis` so repeated `initPushNotificationClickBridge` calls register the native listener
- *  once per page. */
+/** The runtime globals this integration touches: the injected client env, plus the two install guards cached
+ *  on `globalThis` so repeated calls register the click and foreground listeners once per page. */
 export interface PushNotificationGlobals {
   __AKAN_PUSH_CLICK_BRIDGE__?: Promise<boolean>;
+  __AKAN_PUSH_WEB_CLICK__?: boolean;
+  __AKAN_PUSH_FOREGROUND__?: boolean;
   __AKAN_CLIENT_ENV__?: PushNotificationClientEnv;
 }
 
@@ -76,6 +78,14 @@ const enterDeepLink = (url: string) => {
   return router.enterDeepLink(`${parsed.pathname}${parsed.search}${parsed.hash}`);
 };
 
+export const applyPushBadge = (count: string | number | undefined) => {
+  // Firefox and desktop Safari ship no setAppBadge; calling it unguarded is a synchronous TypeError.
+  if (count === undefined || !isWebRuntime() || !("setAppBadge" in navigator)) return;
+  const parsed = typeof count === "number" ? count : Number.parseInt(count, 10);
+  if (Number.isNaN(parsed)) return;
+  void navigator.setAppBadge(parsed);
+};
+
 const getNativePlatform = async () => {
   const { Device } = await loadCapacitorDevice();
   const device = await Device.getInfo();
@@ -98,6 +108,29 @@ const getNativeToken = async (options?: { retries?: number }): Promise<PushToken
   return undefined;
 };
 
+//* FCM SDK 는 보이는 window client 가 하나라도 있으면 워커에서 그리지 않고 페이지로 payload 를 넘긴다.
+//* 이 경로가 없으면 앱 창을 보고 있는 동안 푸시가 통째로 사라진다 — FCM 응답은 성공이라 서버 쪽은 정상으로 보인다.
+const initForegroundDisplay = (messaging: Messaging, registration: ServiceWorkerRegistration) => {
+  const globals = pushNotificationGlobals();
+  if (globals.__AKAN_PUSH_FOREGROUND__) return;
+  globals.__AKAN_PUSH_FOREGROUND__ = true;
+  onMessage(messaging, (payload) => {
+    const data: Record<string, string | undefined> = payload.data ?? {};
+    applyPushBadge(data.badgeCount);
+    const title = payload.notification?.title ?? data.title;
+    const body = payload.notification?.body ?? data.body;
+    if (!title && !body) return;
+    // Drawing through the worker's own registration keeps the click on `notificationclick`, so a foreground
+    // and a background notification take the one deep-link path instead of two that can drift apart.
+    void registration.showNotification(title ?? "", {
+      body,
+      icon: payload.notification?.icon ?? data.icon,
+      tag: data.tag,
+      data: { url: data.url ?? payload.fcmOptions?.link, FCM_MSG: payload },
+    });
+  });
+};
+
 const getWebToken = async (): Promise<PushToken | undefined> => {
   if (!isWebRuntime() || !("serviceWorker" in navigator)) return undefined;
   const firebaseConfig = getFirebaseConfig();
@@ -116,8 +149,37 @@ const getWebToken = async (): Promise<PushToken | undefined> => {
     vapidKey: firebaseConfig.vapidKey,
     serviceWorkerRegistration,
   });
+  initForegroundDisplay(messaging, serviceWorkerRegistration);
   if (!token) return undefined;
   return { token, platform: "web", provider: "fcm" };
+};
+
+//* 워커가 이미 열린 탭을 찾아 넘긴 알림 클릭을 받아 클라이언트 라우팅으로 잇는다(풀 리로드 방지).
+const initWebClickBridge = () => {
+  const globals = pushNotificationGlobals();
+  if (globals.__AKAN_PUSH_WEB_CLICK__) return;
+  if (!isWebRuntime() || typeof navigator.serviceWorker?.addEventListener !== "function") return;
+  globals.__AKAN_PUSH_WEB_CLICK__ = true;
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    const message = event.data as { type?: unknown; url?: unknown } | null;
+    if (message?.type !== pushNavigateMessage || typeof message.url !== "string") return;
+    try {
+      enterDeepLink(message.url);
+    } catch {
+      // Router may not be initialized yet when the click wakes a backgrounded tab.
+    }
+  });
+};
+
+//* 이미 워커가 설치된 재방문에서는 register() 가 다시 불리지 않으므로, 여기서 포그라운드 경로를 복구한다.
+const restoreForegroundDisplay = async () => {
+  if (!isWebRuntime() || typeof navigator.serviceWorker?.getRegistration !== "function") return;
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const firebaseConfig = getFirebaseConfig();
+  if (!firebaseConfig?.apiKey) return;
+  const registration = await navigator.serviceWorker.getRegistration("/firebase-messaging-sw.js");
+  if (!registration) return;
+  initForegroundDisplay(getMessaging(getApps()[0] ?? initializeApp(firebaseConfig)), registration);
 };
 
 const getPushUrlFromNativeEvent = (event: { notification?: { data?: Record<string, unknown> } }) => {
@@ -171,7 +233,11 @@ export const initPushNotificationClickBridge = async () => {
 
   try {
     const platform = await getNativePlatform();
-    if (!platform || platform === "web") return true;
+    if (!platform || platform === "web") {
+      initWebClickBridge();
+      await restoreForegroundDisplay();
+      return true;
+    }
 
     globals.__AKAN_PUSH_CLICK_BRIDGE__ = (async () => {
       const { PushNotifications } = await loadCapacitorPushNotifications();

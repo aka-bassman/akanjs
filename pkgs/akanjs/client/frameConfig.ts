@@ -121,6 +121,23 @@ export function getExplicitPageConfigKeys(configChain: PageConfig[] = []): Parti
   return explicitKeys;
 }
 
+//? Lives here, not beside `PageState` in `csrTypes.ts`: the RSC worker runs under the `react-server`
+//? condition, where `react` exports no `createContext` and no hooks, so a value import of any module that
+//? reaches one is a boot-time link error. This file is the react-free half of the page frame contract, and
+//? `routeTreeBuilder.ts` imports the fallback from here.
+export const defaultPageState: PageState = {
+  transition: "none",
+  topSafeArea: 0,
+  bottomSafeArea: 0,
+  topInset: 0,
+  bottomInset: 0,
+  gesture: true,
+  cache: false,
+  ssr: "stream",
+  topSafeAreaColor: "var(--color-background, Canvas)",
+  bottomSafeAreaColor: "var(--color-background, Canvas)",
+};
+
 export function resolvePageState({
   configChain = [],
   path,
@@ -153,8 +170,8 @@ export function resolvePageState({
         : (config.gesture ?? false),
     cache: config.cache ?? false,
     ssr: config.ssr ?? "stream",
-    topSafeAreaColor: config.topSafeAreaColor ?? "var(color-background, Canvas)",
-    bottomSafeAreaColor: config.bottomSafeAreaColor ?? "var(color-background, Canvas)",
+    topSafeAreaColor: config.topSafeAreaColor ?? defaultPageState.topSafeAreaColor,
+    bottomSafeAreaColor: config.bottomSafeAreaColor ?? defaultPageState.bottomSafeAreaColor,
   };
 }
 

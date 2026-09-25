@@ -21,7 +21,15 @@ export interface Internal extends Adaptor {
 export type InternalCls<
   SrvModule extends ServiceModel = ServiceModel,
   InternalInfoMap extends { [key: string]: InternalInfo } = { [key: string]: InternalInfo },
-> = AdaptorCls & { refName: SrvRefName<SrvModule>; srv: SrvModule; [INTERNAL_META]: InternalInfoMap };
+> = AdaptorCls & {
+  /**
+   * The adaptor name, which `dangerouslyAdapt` suffixes — and which the DI container keys `live.internal` by.
+   * It used to be declared as the bare service name, so every typed read of it disagreed with the value.
+   */
+  refName: `${SrvRefName<SrvModule>}Internal`;
+  srv: SrvModule;
+  [INTERNAL_META]: InternalInfoMap;
+};
 
 /** Builds an internal adaptor for schedules, queues, processes, and server-only jobs. */
 export function internal<
@@ -53,5 +61,5 @@ export function internal<
     Object.assign(internalCls.srv.srvMap, libInternal.srv.srvMap);
   });
   applyMixins(internalCls, libInternals);
-  return internalCls as any;
+  return internalCls as any; // the declared return is a generic instantiation built from this call's own type arguments, so there is no `T` to name
 }

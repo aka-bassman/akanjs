@@ -9,47 +9,159 @@
 ## Headings
 
 - service.abstract.md (#service-abstract)
+- The Four Parts (#real-shape)
+- Fill In The Scaffold (#scaffold)
+- What Counts As A Rule (#what-to-write)
 
 ## Content
 
 service.abstract.md
 
-A service abstract explains the intent and boundaries of a workflow or integration module. Service folders keep the underscore, but the abstract filename drops it: `lib/_payment/payment.abstract.md`.
+One title line: the module name as the folder spells it, minus the underscore.
 
-Use it for rules that should guide service, signal, store, and UI changes, especially when a workflow touches external systems or background work.
+One sentence
+
+What the module owns, stated as fact rather than a promise. No heading above it.
+
+Two to five bullets, each an invariant a reader could not derive from the code.
+
+Workflow chain
+
+Optional. One line with no heading: bare arrows between states.
+
+Written for you from the folder name, minus the underscore. Keep it.
+
+Replaced by what the module owns, stated as fact.
+
+Stays. Both placeholder bullets become the module's real invariants, two to five in all.
+
+Not in the scaffold. Add one last line of arrows if the service moves something through states.
+
+A field's meaning
+
+Not here: a trailing comment beside the field, in the constant.ts that declares it.
+
+A lifetime or threshold, and its reason
+
+A code lives sixty seconds; an authorization request lives ten minutes.
+
+A refusal that looks like an oversight
+
+Revocation answers 200 whether or not the token was live, so it cannot probe tokens.
+
+Why an obvious alternative was rejected
+
+A client holding the same refresh token twice is not a thief.
+
+A scope boundary enforced call by call
+
+A late reuse revokes that grant's lineage only, never the account's other sessions.
+
+A short markdown file beside a service module. It holds the invariants — rules that must always hold — which the code obeys but cannot explain, and nothing else.
+
+One rule from the oauth module shows the difference:
+
+What the Code Says
+
+What the Abstract Adds
+
+Why. A client that holds the same token twice is not a thief, and treating it as one signs the user out of an app that did nothing wrong.
+
+When to touch it
+
+The Four Parts
+
+The whole skeleton:
+
+Part
+
+A real one: oauth
+
+Fill In The Scaffold
+
+A new service module starts with an abstract already in this shape: its title, a placeholder sentence and two placeholder rules. Every line in angle brackets is a prompt, and none of them survives the first real edit.
+
+What each line becomes:
+
+Scaffold
+
+Becomes
+
+What Counts As A Rule
+
+Use the same test as for code comments: does this sentence carry a fact that is nowhere in the code? A bullet that passes stays true for years; one that fails goes stale the first time a field is renamed.
+
+Worth a bullet
+
+Kind
+
+Example from oauth
+
+Not worth a bullet
+
+Language
 
 ## Code Examples
 
-### lib/_payment/payment.abstract.md
+### apps/koyo/lib/_payment/payment.abstract.md
 
 ```markdown
-# Payment Service Abstract
+# payment Service Abstract
 
-## Purpose
+<One sentence: what this module owns, stated as fact.>
 
-Describe the workflow or integration this service owns.
+## Rules
 
-## Domain Rules
+- <An invariant the code obeys but cannot explain.>
+- <Two to five of them.>
 
-- Keep durable workflow and integration invariants here.
+<state> -> <state> -> <state>
+```
 
-## Data Meaning
+### libs/shared/lib/_oauth/oauth.abstract.md
 
-Explain important inputs, outputs, and state meanings.
+```markdown
+# oauth Service Abstract
 
-## Workflows
+Issues, from the same process that serves `/mcp`, the OAuth 2.1 tokens that MCP endpoint accepts: authorization-server
+metadata, authorization with PKCE and a consent page, client registration, token exchange and refresh.
 
-Describe external calls, jobs, state transitions, or service orchestration.
+## Rules
 
-## Agent Notes
+- Every access token is signed with the app's own secret and names the MCP endpoint as `aud`, so `AccountMiddleware`
+  accepts it unchanged and `McpAuth` verifies it through `option.setMcp`. Guards stay the only authorization decision;
+  no scope narrows what the token may do.
+- An authorization request lives ten minutes, binds to the first signed-in account that opens it, and is decided once.
+  A code lives sixty seconds and is consumed on first exchange, whether or not that exchange succeeds.
+- PKCE `S256` is the only method. A redirect URI must be registered and match exactly, except that a loopback address
+  may vary its port; a private-use scheme is accepted only when configuration names it.
+- Refresh tokens rotate on use through `refreshSession`; a token reused within thirty seconds of its rotation is answered with
+  a rotation of its own (a client that holds it twice is not a thief), one reused later revokes that grant's lineage only — never
+  the account's other sessions. A refresh presented by a client other than the one it was issued to is refused.
+- Registration is open (RFC 7591), rate-limited per address and public-client only; a `client_id` that is an HTTPS URL is
+  read as a Client ID Metadata Document — resolved first and refused when it points into a private range, never fetched
+  from the server's own network — unless configuration turns the feature off.
+- A grant is revoked as a whole (RFC 7009 `/oauth/revoke` by the client, or the account's owner disconnecting it): its
+  refresh lineage is closed and the lineage id is denylisted for an access token's lifetime, which is how a stateless
+  token dies early. Revocation answers 200 whether or not the token was live, so it cannot be used to probe tokens.
+- A token this server minted names its client and the MCP resource; a browser session names neither. That difference is
+  what `isAgentCall` / `Person` read to keep an act a person may take from being taken on a model's say-so.
+- None of these endpoints is published to MCP: they are the protocol and the account's own controls, not tools.
 
-- Keep business behavior in service code.
-- Expose callable actions through signal files.
-- Update this abstract when public behavior or workflow rules change.
+authorize -> pending -> approved | denied -> code -> token -> refresh -> revoked
+```
 
-## Related Modules
+### apps/koyo/lib/_payment/payment.abstract.md
 
-- None documented yet.
+```markdown
+# payment Service Abstract
+
+<One sentence: the workflow or integration this service owns, stated as fact.>
+
+## Rules
+
+- <An invariant the code obeys but cannot explain: a lifetime, a refusal, an ordering, and its reason.>
+- <Two to five of them. If the service moves something through states, end the file with one arrow line.>
 ```
 
 ## Agent Notes

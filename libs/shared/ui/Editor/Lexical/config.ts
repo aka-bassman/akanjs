@@ -38,6 +38,9 @@ export { isSerializedEditorState } from "./softGuard";
  * read-only renders — mounted from server components that cannot pass node classes
  * — reconstruct mention chips instead of dropping them.
  */
+// Every node here must survive `new klass()`: @lexical/yjs default-constructs each registered node once to
+// learn which properties to sync, in one update whose first throw skips every node after it (silently, through
+// onError). A payload-taking constructor needs a default, or its whole tail of the list stops syncing.
 export const AKAN_EDITOR_NODES: readonly Klass<LexicalNode>[] = [
   HeadingNode,
   QuoteNode,

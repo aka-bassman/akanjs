@@ -1,10 +1,10 @@
-import { capitalize, isMcpDescribableArg, mcpHintsOf, mcpRefusalOf } from "akanjs/common";
+import { isMcpDescribableArg, mcpHintsOf, mcpRefusalOf } from "akanjs/common";
 import { FetchClient } from "akanjs/fetch";
 import { type AgentCandidate, AgentCatalogue, type AgentRefusal, type AgentUndescribed } from "../agent";
 import { type JsonSchema, JsonSchemaBuilder } from "../schema";
 import type { SerializedArg, SerializedEndpoint, SerializedSignal } from "../types";
 import { McpUriTemplate } from "./McpUriTemplate";
-import type { McpPrompt, McpResource, McpResourceTemplate, McpTool, McpToolAnnotations } from "./mcpProtocol";
+import type { McpResource, McpResourceTemplate, McpTool, McpToolAnnotations } from "./mcpProtocol";
 
 export interface McpDocumentOptions {
   resolveDescription?: (key: string) => string | undefined;
@@ -15,7 +15,19 @@ export interface McpDocumentOptions {
    * its author no way to see why. This is the read-only-deployment valve.
    */
   readOnly?: boolean;
+  /**
+   * How much of a result's shape a tool advertises. `shallow`, the default, publishes the returned model with every
+   * field of its own and names each nested model instead of inlining it: on a fully open catalogue 83% of the bytes
+   * were the same model schemas re-inlined per entry, most of them nested closures. `full` inlines the closure the
+   * way a shared component section would. `none` publishes no `outputSchema` at all — results still ship as
+   * `structuredContent` — for a deployment that would rather spend the bytes per call.
+   */
+  outputSchema?: McpOutputSchemaMode;
 }
+
+export type McpOutputSchemaMode = "full" | "shallow" | "none";
+
+type McpSchemaSide = "input" | "output";
 
 export interface McpExposedEndpoint {
   refName: string;
@@ -30,6 +42,18 @@ export interface McpExposedEndpoint {
 export type McpRefusal = AgentRefusal;
 export type McpUndescribed = AgentUndescribed;
 
+/** What one signal contributes to a listing, so a catalogue that grew can say where it grew. */
+export interface McpSignalCost {
+  refName: string;
+  entries: number;
+  bytes: number;
+}
+
+export interface McpListingCost {
+  bytes: number;
+  bySignal: McpSignalCost[];
+}
+
 /**
  * Turns the serialized signal registry into the three MCP catalogues and answers the lookups `tools/call` and
  * `resources/read` need. Pure: no IO and no DI — the sibling of `createOpenApiDocument`.
@@ -42,7 +66,6 @@ export class McpDocument {
   static readonly listKey = "items";
 
   readonly tools: McpTool[];
-  readonly prompts: McpPrompt[];
   readonly resourceTemplates: McpResourceTemplate[];
   /** Every readable thing is addressed by a template, so there are no fixed resources to enumerate. */
   readonly resources: McpResource[] = [];
@@ -53,27 +76,21 @@ export class McpDocument {
   readonly refusals: McpRefusal[];
   /** What is published with no description of its own, which is the field a model picks a tool by. */
   readonly undescribed: McpUndescribed[];
-  readonly #schema = new JsonSchemaBuilder({ refPrefix: "#/$defs/" });
-  #allSchemas: Record<string, JsonSchema> | null = null;
-  #readSchemas: Record<string, JsonSchema> | null = null;
+  readonly #schema = new JsonSchemaBuilder({ refPrefix: "#/$defs/", nullable: "type" });
+  readonly #modelSchemas = new Map<McpSchemaSide, Record<string, JsonSchema>>();
   readonly #options: McpDocumentOptions;
   readonly #catalogue: AgentCatalogue;
   readonly #byToolName = new Map<string, McpExposedEndpoint>();
-  readonly #byPromptName = new Map<string, { exposed: McpExposedEndpoint; prompt: McpPrompt }>();
   /** Keyed by endpoint key: what is addressable, and by exactly which uri. */
   readonly #templates = new Map<string, string>();
+  #cost: McpListingCost | null = null;
 
   constructor(serializedSignal: Record<string, SerializedSignal>, options: McpDocumentOptions = {}) {
     this.#options = options;
     this.#catalogue = new AgentCatalogue(options);
-    const { tools, prompts } = this.#collect(serializedSignal);
+    const tools = this.#collect(serializedSignal);
     this.refusals = this.#catalogue.refusals;
     this.tools = tools.map((item) => this.#tool(item));
-    this.prompts = prompts.map((item) => {
-      const prompt = this.#prompt(item);
-      this.#byPromptName.set(item.key, { exposed: item, prompt });
-      return prompt;
-    });
     this.resourceTemplates = tools.flatMap((item) => {
       const uriTemplate = this.#templates.get(item.key);
       return uriTemplate ? [this.#template(item, uriTemplate)] : [];
@@ -82,13 +99,40 @@ export class McpDocument {
     this.undescribed = this.#catalogue.undescribed;
   }
 
+  /**
+   * Roughly what a `tools/list` costs the caller, and which signals it went to.
+   *
+   * Worth reporting because the number is nobody's intuition: MCP has no shared component section and forbids a
+   * `$ref` across entries, so every entry inlines the schema of every model it mentions — under `outputSchema:
+   * "full"` a plain 21-field model with one named slice ships 12KB across its eight entries, three quarters of it
+   * the same four schemas repeated. A catalogue is re-sent whole to every agent that connects, before its first turn.
+   */
+  get listingCost(): McpListingCost {
+    if (this.#cost) return this.#cost;
+    const bySignal = new Map<string, McpSignalCost>();
+    const add = (refName: string, entry: unknown) => {
+      const cost = bySignal.get(refName) ?? { refName, entries: 0, bytes: 0 };
+      cost.entries += 1;
+      cost.bytes += JSON.stringify(entry).length;
+      bySignal.set(refName, cost);
+    };
+    for (const tool of this.tools) add(this.#byToolName.get(tool.name)?.refName ?? tool.name, tool);
+    const costs = [...bySignal.values()].sort((a, b) => b.bytes - a.bytes);
+    this.#cost = { bytes: costs.reduce((sum, cost) => sum + cost.bytes, 0), bySignal: costs };
+    return this.#cost;
+  }
+
   findTool(name: string): McpExposedEndpoint | undefined {
     return this.#byToolName.get(name);
   }
 
-  /** Returns the catalogue entry alongside the endpoint: `prompts/get` validates against the published one. */
-  findPrompt(name: string) {
-    return this.#byPromptName.get(name);
+  /**
+   * The uri `resources/read` answers for one call of a tool, or undefined for a tool that has no template. What a
+   * page fetched is attached to a prompt under the address an agent can read it back from.
+   */
+  resourceUri(key: string, args: Record<string, unknown>): string | undefined {
+    const template = this.#templates.get(key);
+    return template ? McpUriTemplate.expand(template, args) : undefined;
   }
 
   /**
@@ -117,14 +161,10 @@ export class McpDocument {
    *
    * The enumeration and the naming policy are `AgentCatalogue`'s — every audience walks the same registry and
    * holds one name per entry. What is MCP's own is only this: that every candidate is published unless a rule
-   * refuses it, and that a published one becomes a tool, a prompt, and sometimes an addressable uri.
+   * refuses it, and that a published one becomes a tool and sometimes an addressable uri.
    */
-  #collect(serializedSignal: Record<string, SerializedSignal>): {
-    tools: McpExposedEndpoint[];
-    prompts: McpExposedEndpoint[];
-  } {
+  #collect(serializedSignal: Record<string, SerializedSignal>): McpExposedEndpoint[] {
     const tools: McpExposedEndpoint[] = [];
-    const prompts: McpExposedEndpoint[] = [];
     for (const candidate of AgentCatalogue.candidates(serializedSignal, {
       excludeSignals: this.#options.excludeSignals,
     })) {
@@ -134,17 +174,16 @@ export class McpDocument {
         endpoint: candidate.endpoint,
       };
       // Fail-closed and shared with the API explorer, so the reason an author reads is the rule that ran.
-      const reason = mcpRefusalOf(item.endpoint, { readOnly: this.#options.readOnly });
+      const reason = mcpRefusalOf(item.endpoint, {
+        refName: item.refName,
+        key: item.key,
+        readOnly: this.#options.readOnly,
+      });
       if (reason) {
         this.#catalogue.refuse(item.key, reason);
         continue;
       }
       if (!this.#catalogue.claim(item.key)) continue;
-      if (item.endpoint.type === "prompt") {
-        // A prompt is never addressable: `resources/read` resolves a template to a tool, and a prompt is not one.
-        prompts.push(item);
-        continue;
-      }
       // Only the reads the framework generates have a uri shape — `#uriTemplate` knows those key shapes and
       // nothing else. A custom endpoint gets no template: falling back to the model's own published
       // `akan://x/{xId}` under a custom name, which `parse` then routed to *that* endpoint, so every read of the
@@ -156,7 +195,7 @@ export class McpDocument {
       if (uriTemplate) this.#templates.set(item.key, uriTemplate);
       tools.push(item);
     }
-    return { tools, prompts };
+    return tools;
   }
 
   /**
@@ -190,39 +229,15 @@ export class McpDocument {
         properties,
         ...(required.length ? { required } : {}),
         additionalProperties: false,
-        ...this.#defs(properties),
+        ...this.#defs(properties, "input"),
       },
       ...(outputSchema ? { outputSchema } : {}),
       annotations: mcpHintsOf(key, endpoint) satisfies McpToolAnnotations,
     };
   }
 
-  /**
-   * A prompt's arguments are a flat string map on the wire, so there is no schema to publish — only names,
-   * descriptions and which ones must be filled. A `param` is a path segment and always required; a `search` is
-   * the only way to declare an optional one.
-   */
-  #prompt({ refName, key, endpoint }: McpExposedEndpoint): McpPrompt {
-    const args = endpoint.args.filter((arg) => arg.type === "param" || arg.type === "search");
-    return {
-      name: key,
-      ...this.#catalogue.entryTexts(refName, key),
-      ...(args.length
-        ? {
-            arguments: args.map((arg) => {
-              const description = this.#options.resolveDescription?.(`${refName}.signal.${key}.arg.${arg.name}.desc`);
-              return {
-                name: arg.name,
-                ...(description ? { description } : {}),
-                required: arg.type === "param",
-              };
-            }),
-          }
-        : {}),
-    };
-  }
-
   #outputSchema(endpoint: SerializedEndpoint) {
+    if (this.#options.outputSchema === "none") return undefined;
     // A scalar return ships as text only: `structuredContent` must be an object, and declaring an `outputSchema`
     // obliges the server to produce a result that matches it.
     if (!endpoint.returns.modelType) return undefined;
@@ -243,27 +258,35 @@ export class McpDocument {
     // `readable` because this describes what comes back: `resolveReturn` strips every `hidden` and `secret` field,
     // so publishing their names here promises a property no answer will ever carry — and on a model like `user`,
     // the names alone (`password`, `accountId`) are the whole leak. Input keeps them: they are legal to send.
-    return { ...schema, ...this.#defs(schema, { readable: true }) };
+    return { ...schema, ...this.#defs(schema, "output") };
   }
 
-  #defs(seed: unknown, { readable = false } = {}) {
-    const defs = this.#schema.referencedSchemas(seed, this.#modelSchemas(readable));
+  #defs(seed: unknown, side: McpSchemaSide) {
+    const defs = this.#schema.referencedSchemas(seed, this.#modelSchemasOf(side));
     // A tool schema has to resolve on its own: the spec forbids dereferencing a `$ref` over the network, so every
     // model a tool mentions travels inside that tool rather than in a shared component section.
     return Object.keys(defs).length ? { $defs: defs } : {};
   }
 
   /**
-   * Every registered model, built once per shape for the whole document. Narrowing runs twice per tool — input
+   * Every registered model, built once per side for the whole document. Narrowing runs twice per tool — input
    * schema and output schema — so deriving the full set inside each call rebuilt every model in the app 2N times.
+   * A request side asks for a relation's id, which is what the wire carries; a response side names a nested model
+   * unless `outputSchema: "full"` asked for the closure. Neither repeats the id pattern inside a `$defs`.
    */
-  #modelSchemas(readable: boolean) {
-    if (!readable) {
-      this.#allSchemas ??= this.#schema.allModelSchemas();
-      return this.#allSchemas;
-    }
-    this.#readSchemas ??= this.#schema.allModelSchemas({ readable: true });
-    return this.#readSchemas;
+  #modelSchemasOf(side: McpSchemaSide) {
+    const cached = this.#modelSchemas.get(side);
+    if (cached) return cached;
+    const schemas =
+      side === "input"
+        ? this.#schema.allModelSchemas({ relations: "id", idPattern: false })
+        : this.#schema.allModelSchemas({
+            readable: true,
+            relations: this.#options.outputSchema === "full" ? "inline" : "named",
+            idPattern: false,
+          });
+    this.#modelSchemas.set(side, schemas);
+    return schemas;
   }
 
   #argSchema(refName: string, key: string, arg: SerializedArg) {
@@ -286,7 +309,6 @@ export class McpDocument {
 
   static #uriTemplate(refName: string, key: string, endpoint: SerializedEndpoint) {
     if (key === refName) return McpUriTemplate.model(refName);
-    if (key === `light${capitalize(refName)}`) return McpUriTemplate.light(refName);
     const listPrefix = `${refName}List`;
     if (!key.startsWith(listPrefix)) return undefined;
     const suffix = key.slice(listPrefix.length);

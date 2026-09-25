@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -29,8 +30,7 @@ export default function Page() {
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🟢</span>
+              <div className="mb-2">
                 <strong className="text-primary">Active</strong> → Processing
               </div>
               <div className="text-foreground/70 text-sm">
@@ -41,8 +41,7 @@ export default function Page() {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🔵</span>
+              <div className="mb-2">
                 <strong className="text-primary">Processing</strong> → Served
               </div>
               <div className="text-foreground/70 text-sm">
@@ -53,8 +52,7 @@ export default function Page() {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">⚫</span>
+              <div className="mb-2">
                 <strong className="text-primary">Active</strong> → Canceled
               </div>
               <div className="text-foreground/70 text-sm">
@@ -66,8 +64,7 @@ export default function Page() {
             </div>
           </div>
           <div className={panelRecipe({ radius: "lg" })}>
-            <div className="mb-2 flex items-center gap-2">
-              <span className="text-primary">⚠️</span>
+            <div className="mb-2">
               <strong className="text-primary">{l.trans({ en: "Business Rules", ko: "비즈니스 규칙" })}</strong>
             </div>
             <ul className="list-disc space-y-1 pl-5 text-foreground/70 text-sm">
@@ -150,38 +147,29 @@ export class IcecreamOrderModel extends into(IcecreamOrder, IcecreamOrderFilter,
               ko: `이러한 메서드들은 비즈니스 규칙을 데이터 모델에 직접 구현합니다:`,
             })}
           </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🔄</span>
-              <div>
-                <strong>process()</strong>:{" "}
-                {l.trans({
-                  en: "Checks if status is 'active' before changing to 'processing'",
-                  ko: "'처리중'으로 변경하기 전에 상태가 '활성'인지 확인합니다",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">✅</span>
-              <div>
-                <strong>serve()</strong>:{" "}
-                {l.trans({
-                  en: "Validates that status is 'processing' before marking as 'served'",
-                  ko: "'서빙완료'로 표시하기 전에 상태가 '처리중'인지 검증합니다",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">❌</span>
-              <div>
-                <strong>cancel()</strong>:{" "}
-                {l.trans({
-                  en: "Ensures only 'active' orders can be canceled",
-                  ko: "'활성' 상태의 주문만 취소될 수 있도록 보장합니다",
-                })}
-              </div>
-            </div>
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              <strong>process()</strong>:{" "}
+              {l.trans({
+                en: "Checks if status is 'active' before changing to 'processing'",
+                ko: "'처리중'으로 변경하기 전에 상태가 '활성'인지 확인합니다",
+              })}
+            </li>
+            <li>
+              <strong>serve()</strong>:{" "}
+              {l.trans({
+                en: "Validates that status is 'processing' before marking as 'served'",
+                ko: "'서빙완료'로 표시하기 전에 상태가 '처리중'인지 검증합니다",
+              })}
+            </li>
+            <li>
+              <strong>cancel()</strong>:{" "}
+              {l.trans({
+                en: "Ensures only 'active' orders can be canceled",
+                ko: "'활성' 상태의 주문만 취소될 수 있도록 보장합니다",
+              })}
+            </li>
+          </ul>
           <div>
             {l.trans({
               en: `When validation fails, we throw an Err with a dictionary key for user-friendly error messages. Let's add these error messages to our dictionary:`,
@@ -292,38 +280,29 @@ export class IcecreamOrderService extends serve(db.icecreamOrder, ({ use, servic
               ko: `각 서비스 메서드는 동일한 패턴을 따릅니다:`,
             })}
           </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-primary">1️⃣</span>
-              <div>
-                <strong>{l.trans({ en: "Fetch", ko: "가져오기" })}</strong>:{" "}
-                {l.trans({
-                  en: "Retrieve the order from database using getIcecreamOrder()",
-                  ko: "getIcecreamOrder()를 사용하여 데이터베이스에서 주문을 가져옵니다",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">2️⃣</span>
-              <div>
-                <strong>{l.trans({ en: "Execute", ko: "실행" })}</strong>:{" "}
-                {l.trans({
-                  en: "Call the business logic method (process(), serve(), or cancel())",
-                  ko: "비즈니스 로직 메서드를 호출합니다 (process(), serve(), 또는 cancel())",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">3️⃣</span>
-              <div>
-                <strong>{l.trans({ en: "Save", ko: "저장" })}</strong>:{" "}
-                {l.trans({
-                  en: "Persist the changes to database with save()",
-                  ko: "save()로 변경사항을 데이터베이스에 저장합니다",
-                })}
-              </div>
-            </div>
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              <strong>{l.trans({ en: "Fetch", ko: "가져오기" })}</strong>:{" "}
+              {l.trans({
+                en: "Retrieve the order from database using getIcecreamOrder()",
+                ko: "getIcecreamOrder()를 사용하여 데이터베이스에서 주문을 가져옵니다",
+              })}
+            </li>
+            <li>
+              <strong>{l.trans({ en: "Execute", ko: "실행" })}</strong>:{" "}
+              {l.trans({
+                en: "Call the business logic method (process(), serve(), or cancel())",
+                ko: "비즈니스 로직 메서드를 호출합니다 (process(), serve(), 또는 cancel())",
+              })}
+            </li>
+            <li>
+              <strong>{l.trans({ en: "Save", ko: "저장" })}</strong>:{" "}
+              {l.trans({
+                en: "Persist the changes to database with save()",
+                ko: "save()로 변경사항을 데이터베이스에 저장합니다",
+              })}
+            </li>
+          </ul>
           <div>
             {l.trans({
               en: `This pattern ensures that business rules are enforced at the document level while the service handles database transactions safely.`,
@@ -341,14 +320,15 @@ export class IcecreamOrderService extends serve(db.icecreamOrder, ({ use, servic
         <Docs.Description>
           <div>
             {l.trans({
-              en: `Think of signal endpoints as the communication system between the frontend (like the shop's order display screen) and the backend (the kitchen and management system). When staff clicks a "Process" button on the screen, it needs to communicate with the backend to actually update the order. Akan.js automatically creates both REST and GraphQL versions of these endpoints, so different parts of your system can communicate however they prefer.`,
-              ko: `시그널 엔드포인트를 프론트엔드(가게의 주문 표시 화면 같은)와 백엔드(주방과 관리 시스템) 사이의 의사소통 시스템이라고 생각해보세요. 직원이 화면의 "작업시작" 버튼을 클릭하면, 실제로 주문을 업데이트하기 위해 백엔드와 통신해야 합니다. Akan.js는 이러한 엔드포인트의 REST와 GraphQL 버전을 자동으로 생성하므로, 시스템의 다른 부분들이 원하는 방식으로 통신할 수 있습니다.`,
+              en: `Think of signal endpoints as the communication system between the frontend (like the shop's order display screen) and the backend (the kitchen and management system). When staff clicks a "Process" button on the screen, it needs to communicate with the backend to actually update the order. Akan.js serves every endpoint over HTTP and over the websocket, and publishes it to AI agents over MCP when its guards allow, so every caller reaches the same kitchen through the same hatch.`,
+              ko: `시그널 엔드포인트를 프론트엔드(가게의 주문 표시 화면 같은)와 백엔드(주방과 관리 시스템) 사이의 의사소통 시스템이라고 생각해보세요. 직원이 화면의 "작업시작" 버튼을 클릭하면, 실제로 주문을 업데이트하기 위해 백엔드와 통신해야 합니다. Akan.js는 모든 엔드포인트를 HTTP와 websocket으로 함께 제공하고, guard가 허용하면 MCP를 통해 AI 에이전트에게도 공개하므로, 모든 호출자가 같은 창구로 같은 주방에 도달합니다.`,
             })}
           </div>
           <Code.Snippet
             className="w-full"
             title="apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts"
             code={`
+import { Admin } from "@libs/shared/srvkit";
 import { ID } from "akanjs/base"; // [!code ++]
 import { endpoint, internal, Public, slice } from "akanjs/signal"; // [!code collapse:18]
 
@@ -359,7 +339,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder,
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init().exec(function () {
       return this.icecreamOrderService.queryAny();
@@ -394,6 +374,12 @@ export class IcecreamOrderEndpoint extends endpoint(srv.icecreamOrder, ({ query,
             {l.trans({
               en: `Each signal endpoint is defined using the mutation() builder, specifying the return type and accepting the order ID as a parameter via .param(). The .exec() callback delegates to the corresponding service method to perform the actual business logic.`,
               ko: `각 시그널 엔드포인트는 mutation() 빌더를 사용하여 정의되며, .param()을 통해 주문 ID를 매개변수로 받습니다. .exec() 콜백은 해당 서비스 메서드에 위임하여 실제 비즈니스 로직을 수행합니다.`,
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: `The second argument to slice() is the guard map, not boilerplate: root is the generated admin query API and is always Admin, get covers reads, and cru covers create, update and remove — create is opened on its own here because the kiosk takes anonymous orders. Leaving root: Public hands that admin query API to every anonymous caller, and to every AI agent through /mcp.`,
+              ko: `slice()의 두 번째 인자는 guard map이며 형식적인 boilerplate가 아닙니다. root는 생성된 admin query API라서 항상 Admin이고, get은 읽기, cru는 create/update/remove를 담당합니다 — 여기서는 키오스크가 익명 주문을 받으므로 create만 따로 열었습니다. root: Public으로 두면 그 admin query API가 모든 익명 호출자에게, 그리고 /mcp를 통해 모든 AI 에이전트에게 그대로 열립니다.`,
             })}
           </div>
           <div>
@@ -531,28 +517,22 @@ export class IcecreamOrderStore extends store(sig.icecreamOrder, () => ({
               ko: `각 스토어 액션은 이 패턴을 따릅니다:`,
             })}
           </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-primary">📡</span>
-              <div>
-                <strong>{l.trans({ en: "API Call", ko: "API 호출" })}</strong>:{" "}
-                {l.trans({
-                  en: "Make an API request to signal endpoints through fetch methods",
-                  ko: "fetch 메서드를 통해 시그널 엔드포인트로 API 요청을 만듭니다",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🔄</span>
-              <div>
-                <strong>{l.trans({ en: "State Update", ko: "상태 업데이트" })}</strong>:{" "}
-                {l.trans({
-                  en: "Update the local store state with the new order data using setIcecreamOrder()",
-                  ko: "setIcecreamOrder()를 사용하여 새 주문 데이터로 로컬 스토어 상태를 업데이트합니다",
-                })}
-              </div>
-            </div>
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              <strong>{l.trans({ en: "API Call", ko: "API 호출" })}</strong>:{" "}
+              {l.trans({
+                en: "Make an API request to signal endpoints through fetch methods",
+                ko: "fetch 메서드를 통해 시그널 엔드포인트로 API 요청을 만듭니다",
+              })}
+            </li>
+            <li>
+              <strong>{l.trans({ en: "State Update", ko: "상태 업데이트" })}</strong>:{" "}
+              {l.trans({
+                en: "Update the local store state with the new order data using setIcecreamOrder()",
+                ko: "setIcecreamOrder()를 사용하여 새 주문 데이터로 로컬 스토어 상태를 업데이트합니다",
+              })}
+            </li>
+          </ul>
           <div>
             {l.trans({
               en: `This ensures that when status changes happen, the UI automatically reflects the updated state without requiring a page refresh.`,
@@ -570,16 +550,15 @@ export class IcecreamOrderStore extends store(sig.icecreamOrder, () => ({
         <Docs.Description>
           <div>
             {l.trans({
-              en: `Just like a real ice cream shop might have labeled buttons or stamps for different order stages, we'll create reusable button components for each action. These "digital buttons" can be placed anywhere in our interface - on order cards, in detailed views, or on staff dashboards. By creating them once as utility components, we ensure consistent behavior and styling throughout the entire application.`,
-              ko: `실제 아이스크림 가게에 다른 주문 단계를 위한 라벨이 붙은 버튼이나 스탬프가 있는 것처럼, 각 액션에 대한 재사용 가능한 버튼 컴포넌트를 만들어봅시다. 이러한 "디지털 버튼"은 인터페이스의 어디든 배치할 수 있습니다 - 주문 카드, 상세 뷰, 직원 대시보드에 말이죠. 유틸리티 컴포넌트로 한 번 만들어두면 전체 애플리케이션에서 일관된 동작과 스타일링을 보장할 수 있습니다.`,
+              en: `Just like a real ice cream shop might have labeled buttons or stamps for different order stages, we'll create reusable button components for each action. These "digital buttons" can be placed anywhere in our interface - on order Unit cards, in detailed views, or on staff dashboards. By creating them once as utility components, we ensure consistent behavior and styling throughout the entire application.`,
+              ko: `실제 아이스크림 가게에 다른 주문 단계를 위한 라벨이 붙은 버튼이나 스탬프가 있는 것처럼, 각 액션에 대한 재사용 가능한 버튼 컴포넌트를 만들어봅시다. 이러한 "디지털 버튼"은 인터페이스의 어디든 배치할 수 있습니다 - 주문 Unit 카드, 상세 뷰, 직원 대시보드에 말이죠. 유틸리티 컴포넌트로 한 번 만들어두면 전체 애플리케이션에서 일관된 동작과 스타일링을 보장할 수 있습니다.`,
             })}
           </div>
           <Code.Snippet
             className="w-full"
             title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Util.tsx"
             code={`
-"use client"; // [!code collapse:4]
-import { cn } from "akanjs/client";
+"use client"; // [!code collapse:3]
 import { st, usePage } from "@apps/koyo/client";
 import { buttonRecipe } from "akanjs/ui";
 
@@ -671,8 +650,7 @@ export const Cancel = ({ className, icecreamOrderId, disabled }: CancelProps) =>
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🎨</span>
+              <div className="mb-2">
                 <strong className="text-primary">{l.trans({ en: "Consistent Styling", ko: "일관된 스타일링" })}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -683,8 +661,7 @@ export const Cancel = ({ className, icecreamOrderId, disabled }: CancelProps) =>
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🔒</span>
+              <div className="mb-2">
                 <strong className="text-primary">{l.trans({ en: "Disabled State", ko: "비활성화 상태" })}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -695,8 +672,7 @@ export const Cancel = ({ className, icecreamOrderId, disabled }: CancelProps) =>
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🌍</span>
+              <div className="mb-2">
                 <strong className="text-primary">{l.trans({ en: "Internationalization", ko: "국제화" })}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -720,8 +696,8 @@ export const Cancel = ({ className, icecreamOrderId, disabled }: CancelProps) =>
         <Docs.Description>
           <div>
             {l.trans({
-              en: `Now comes the exciting part - putting all the pieces together! Just like adding action buttons to the order tickets in a real shop, we'll integrate our status management buttons directly into the order cards and detailed views. This means staff won't need to navigate to separate pages or menus - they can process orders right from wherever they're viewing them, making the workflow fast and intuitive.`,
-              ko: `이제 흥미진진한 부분이 옵니다 - 모든 조각들을 하나로 합치는 것이죠! 실제 가게의 주문 티켓에 액션 버튼을 추가하는 것처럼, 상태 관리 버튼을 주문 카드와 상세 뷰에 직접 통합할 것입니다. 이렇게 하면 직원들이 별도의 페이지나 메뉴로 이동할 필요 없이, 주문을 보고 있는 바로 그곳에서 처리할 수 있어 워크플로우가 빠르고 직관적이 됩니다.`,
+              en: `Now we'll put all the pieces together. Just like adding action buttons to the order tickets in a real shop, we'll integrate our status management buttons directly into the order Unit cards and detailed views. Staff won't need to navigate to separate pages or menus - they can process orders right from wherever they're viewing them.`,
+              ko: `이제 모든 조각을 하나로 합칩니다. 실제 가게의 주문 티켓에 액션 버튼을 추가하는 것처럼, 상태 관리 버튼을 주문 Unit 카드와 상세 뷰에 직접 통합합니다. 직원들은 별도의 페이지나 메뉴로 이동할 필요 없이 주문을 보고 있는 곳에서 바로 처리할 수 있습니다.`,
             })}
           </div>
           <div>
@@ -865,38 +841,29 @@ export const General = ({ className, icecreamOrder }: GeneralProps) => {
               ko: `이 구현의 주요 특징:`,
             })}
           </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-primary">⚡</span>
-              <div>
-                <strong>{l.trans({ en: "Smart Disabling", ko: "스마트 비활성화" })}</strong>:{" "}
-                {l.trans({
-                  en: "Buttons are disabled when actions aren't allowed based on current status",
-                  ko: "현재 상태에 따라 작업이 허용되지 않을 때 버튼이 비활성화됩니다",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">📱</span>
-              <div>
-                <strong>{l.trans({ en: "Responsive Layout", ko: "반응형 레이아웃" })}</strong>:{" "}
-                {l.trans({
-                  en: "Buttons wrap gracefully on smaller screens with flex-wrap",
-                  ko: "버튼들이 flex-wrap으로 작은 화면에서 우아하게 줄바꿈됩니다",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🎨</span>
-              <div>
-                <strong>{l.trans({ en: "Visual Hierarchy", ko: "시각적 계층구조" })}</strong>:{" "}
-                {l.trans({
-                  en: "Different button styles indicate action priority and type",
-                  ko: "다른 버튼 스타일이 작업 우선순위와 유형을 나타냅니다",
-                })}
-              </div>
-            </div>
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              <strong>{l.trans({ en: "Smart Disabling", ko: "스마트 비활성화" })}</strong>:{" "}
+              {l.trans({
+                en: "Buttons are disabled when actions aren't allowed based on current status",
+                ko: "현재 상태에 따라 작업이 허용되지 않을 때 버튼이 비활성화됩니다",
+              })}
+            </li>
+            <li>
+              <strong>{l.trans({ en: "Responsive Layout", ko: "반응형 레이아웃" })}</strong>:{" "}
+              {l.trans({
+                en: "Buttons wrap gracefully on smaller screens with flex-wrap",
+                ko: "버튼들이 flex-wrap으로 작은 화면에서 우아하게 줄바꿈됩니다",
+              })}
+            </li>
+            <li>
+              <strong>{l.trans({ en: "Visual Hierarchy", ko: "시각적 계층구조" })}</strong>:{" "}
+              {l.trans({
+                en: "Different button styles indicate action priority and type",
+                ko: "다른 버튼 스타일이 작업 우선순위와 유형을 나타냅니다",
+              })}
+            </li>
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -989,114 +956,9 @@ export const General = ({ className, icecreamOrder }: GeneralProps) => {
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
-      <Scroll.Slide
-        id="best-practices"
-        title={l.trans({ en: "Status Management Best Practices", ko: "상태 관리 모범 사례" })}
-      >
-        <Docs.Title>{l.trans({ en: "Status Management Best Practices", ko: "상태 관리 모범 사례" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `Here are important best practices for implementing status management in Akan.js:`,
-              ko: `Akan.js에서 상태 관리를 구현할 때의 중요한 모범 사례들입니다:`,
-            })}
-          </div>
-          <div className="my-4 space-y-4">
-            <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🛡️</span>
-                <strong className="text-primary">
-                  {l.trans({ en: "Enforce Business Rules", ko: "비즈니스 규칙 강제" })}
-                </strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: `Always validate state transitions at the document level using business methods. This ensures data integrity regardless of how the API is called.`,
-                  ko: `비즈니스 메서드를 사용하여 도큐먼트 레벨에서 항상 상태 전환을 검증하세요. 이렇게 하면 API가 어떻게 호출되든 데이터 무결성이 보장됩니다.`,
-                })}
-              </div>
-            </div>
-            <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">💡</span>
-                <strong className="text-primary">{l.trans({ en: "Smart UI Controls", ko: "스마트 UI 제어" })}</strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: `Disable buttons and hide actions that aren't valid for the current state. This provides immediate feedback to users about what actions are possible.`,
-                  ko: `현재 상태에 유효하지 않은 버튼을 비활성화하고 작업을 숨기세요. 이는 어떤 작업이 가능한지에 대한 즉각적인 피드백을 사용자에게 제공합니다.`,
-                })}
-              </div>
-            </div>
-            <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🔄</span>
-                <strong className="text-primary">{l.trans({ en: "Consistent Patterns", ko: "일관된 패턴" })}</strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: `Follow the same pattern across all status operations: Document → Service → Signal → Store → Component. This makes your code predictable and maintainable.`,
-                  ko: `모든 상태 작업에서 동일한 패턴을 따르세요: Document → Service → Signal → Store → Component. 이렇게 하면 코드가 예측 가능하고 유지보수하기 쉬워집니다.`,
-                })}
-              </div>
-            </div>
-            <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📝</span>
-                <strong className="text-primary">
-                  {l.trans({ en: "Proper Error Handling", ko: "적절한 오류 처리" })}
-                </strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: `Use dictionary-based error messages with Err exceptions. This ensures error messages are properly translated and user-friendly.`,
-                  ko: `Err 예외와 함께 dictionary 기반 오류 메시지를 사용하세요. 이렇게 하면 오류 메시지가 제대로 번역되고 사용자 친화적이 됩니다.`,
-                })}
-              </div>
-            </div>
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
       <Scroll.Slide id="next-steps" title={l.trans({ en: "What's Next?", ko: "다음은 무엇인가요?" })}>
         <Docs.Title>{l.trans({ en: "What's Next?", ko: "다음은 무엇인가요?" })}</Docs.Title>
         <Docs.Description>
-          <div>
-            {l.trans({
-              en: `Excellent work! You've successfully implemented a complete status management system for your ice cream orders. Shop staff can now efficiently manage the order lifecycle with proper business rule enforcement.`,
-              ko: `훌륭한 작업입니다! 아이스크림 주문을 위한 완전한 상태 관리 시스템을 성공적으로 구현했습니다. 이제 가게 직원이 적절한 비즈니스 규칙 강제와 함께 주문 생명주기를 효율적으로 관리할 수 있습니다.`,
-            })}
-          </div>
-          <div className="my-6 rounded-lg bg-linear-to-r from-background to-border p-6">
-            <div className="mb-3 font-bold text-lg text-primary">
-              {l.trans({ en: "🎉 What You've Accomplished:", ko: "🎉 달성한 것들:" })}
-            </div>
-            <ul className="space-y-2 text-foreground/70 text-sm">
-              <li>
-                ✓{" "}
-                {l.trans({ en: "Implemented business logic with validation", ko: "검증이 포함된 비즈니스 로직 구현" })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Created service layer for status operations",
-                  ko: "상태 작업을 위한 서비스 레이어 생성",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Built signal endpoints for status changes",
-                  ko: "상태 변경을 위한 시그널 엔드포인트 구축",
-                })}
-              </li>
-              <li>✓ {l.trans({ en: "Added frontend store actions", ko: "프론트엔드 스토어 액션 추가" })}</li>
-              <li>
-                ✓ {l.trans({ en: "Created reusable utility components", ko: "재사용 가능한 유틸리티 컴포넌트 생성" })}
-              </li>
-              <li>✓ {l.trans({ en: "Integrated smart UI controls", ko: "스마트 UI 제어 통합" })}</li>
-            </ul>
-          </div>
           <div>
             {l.trans({
               en: `In the next tutorial, we'll learn how to edit existing data by implementing order modification functionality. This will allow customers to update their ice cream orders before they're processed, completing the full CRUD operations for our ice cream shop.`,
@@ -1108,4 +970,4 @@ export const General = ({ className, icecreamOrder }: GeneralProps) => {
       <DocsToc />
     </Scroll>
   );
-}
+});

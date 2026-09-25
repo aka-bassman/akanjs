@@ -26,7 +26,7 @@ export const Snippet = ({
   wrapperClassName,
 }: SnippetProps) => {
   const trimmedCode = code.trim();
-  const copyText = getCopyText(trimmedCode);
+  const copyText = getCopyText(trimmedCode, language);
   const lastCode = trimmedCode.slice(-10);
   return (
     <CodeView
@@ -41,7 +41,7 @@ export const Snippet = ({
   );
 };
 
-function getCopyText(trimmedCode: string): string {
+function getCopyText(trimmedCode: string, language: BundledLanguage): string {
   const lines = trimmedCode.split("\n");
   const result: string[] = [];
   let skipCount = 0;
@@ -56,7 +56,8 @@ function getCopyText(trimmedCode: string): string {
       continue;
     }
     if (/\/\/\s*\[!code\s+--\]/.test(line)) continue;
-    if (/^\s*#/.test(line)) continue;
+    //? only a shell comment is dropped; in TS a leading # is a private field and in markdown a heading
+    if (language === "bash" && /^\s*#/.test(line)) continue;
     result.push(line.replace(/\s*\/\/\s*\[!code[^\]]*\]/g, ""));
   }
   return result.join("\n");

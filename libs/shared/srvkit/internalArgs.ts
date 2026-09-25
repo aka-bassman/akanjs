@@ -1,6 +1,7 @@
 import type { Me as BaseMe, Self as BaseSelf } from "@libs/shared/common";
 import type { InternalArg, SignalContext } from "akanjs/signal";
 import type { SerAccount } from "./account";
+import { isAgentCall } from "./agentCall";
 
 export class Account implements InternalArg {
   getArg(context: SignalContext) {
@@ -25,5 +26,12 @@ export class Me implements InternalArg {
       return context.getHttpContext<{ account?: SerAccount<{ me?: BaseMe }> }>().req.account?.me ?? null;
     else if (context.transport === "websocket")
       return context.getWebSocketContext<{ account?: SerAccount<{ me?: BaseMe }> }>().ws.data.account?.me ?? null;
+  }
+}
+
+/** `.with(AgentCall)` hands the endpoint `true` when a model is driving the call, as `isAgentCall` judges it. */
+export class AgentCall implements InternalArg<boolean> {
+  getArg(context: SignalContext): boolean {
+    return isAgentCall(context);
   }
 }

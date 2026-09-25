@@ -1,11 +1,13 @@
 import { appCard, appNavClass, iconTileRecipe, Screen } from "@apps/minimal/ui";
-import type { PageConfig } from "akanjs/client";
-import { cn } from "akanjs/client";
+import { cn, page } from "akanjs/client";
 import { Layout, Link } from "akanjs/ui";
 import { AiOutlineCreditCard, AiOutlineFileText, AiOutlineRight, AiOutlineUser } from "react-icons/ai";
 
-export default function Page() {
-  return (
+const pageConfig = { topInset: 72 };
+
+export default page()
+  .config(pageConfig)
+  .render(() => (
     <Screen className="px-5 pb-28">
       <Layout.TopInset className={cn(appNavClass, "flex items-center px-5")} estimatedHeight={pageConfig.topInset}>
         <div className="flex w-full items-center justify-between">
@@ -57,6 +59,4 @@ export default function Page() {
         </div>
       </section>
     </Screen>
-  );
-}
-export const pageConfig = { topInset: 72 } satisfies PageConfig;
+  ));

@@ -1,9 +1,11 @@
 import { appCard, iconTileRecipe, Screen } from "@apps/minimal/ui";
+import { page } from "akanjs/client";
 import { buttonRecipe, Link } from "akanjs/ui";
 import { AiOutlineCamera, AiOutlineHeart } from "react-icons/ai";
 
-export default function Page({ searchParams }: { searchParams: { deepLink?: string } }) {
-  return (
+export default page()
+  .search("deepLink", String)
+  .render(({ deepLink }) => (
     <Screen className="px-5 pt-6 pb-28">
       <div className="flex items-center justify-between">
         <div>
@@ -14,9 +16,9 @@ export default function Page({ searchParams }: { searchParams: { deepLink?: stri
           <AiOutlineHeart />
         </div>
       </div>
-      {searchParams.deepLink ? (
+      {deepLink ? (
         <div className="mt-5 rounded-3xl border border-primary/20 bg-primary/10 p-4 text-primary text-sm">
-          deep link: {searchParams.deepLink}
+          deep link: {deepLink}
         </div>
       ) : null}
       <div className="mt-6 grid gap-3">
@@ -41,5 +43,4 @@ export default function Page({ searchParams }: { searchParams: { deepLink?: stri
         <AiOutlineCamera /> Capture a new place
       </Link>
     </Screen>
-  );
-}
+  ));

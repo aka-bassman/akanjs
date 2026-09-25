@@ -52,9 +52,21 @@ const signal = (): Record<string, SerializedSignal> => ({
         guards: ["Public"],
       },
       internalOnly: { args: [], guards: ["Admin"] },
+      // `init({ mcp: false })`: one declaration covers both entries the slice generates.
+      quietSlice: { args: [], guards: ["Public"], mcp: false },
+      // `init({ guards: [Public, Person] })`: the serializer stamped `agents: false` because `Person` admits none.
+      personSlice: { args: [], guards: ["Public", "Person"], agents: false },
     },
     endpoint: {
       countMcpPosts: { type: "query", args: [], returns: { refName: "Int" }, guards: ["Public"] },
+      // Perfectly guarded, perfectly callable, and no business on a shelf — a step of a UI-driven state machine.
+      requestMcpPostCode: {
+        type: "mutation",
+        args: [],
+        returns: { refName: "Boolean" },
+        guards: ["Admin"],
+        mcp: false,
+      },
       findMcpPost: {
         type: "query",
         args: [],
@@ -68,6 +80,14 @@ const signal = (): Record<string, SerializedSignal> => ({
         guards: ["Public"],
       },
       undeclaredMcpPost: { type: "query", args: [], returns: { refName: "String" } },
+      // Guarded for a person: `Person` says `static agents = false`, which the serializer resolved onto the entry.
+      signMcpPost: {
+        type: "mutation",
+        args: [],
+        returns: { refName: "Boolean" },
+        guards: ["Admin", "Person"],
+        agents: false,
+      },
       summaryMcpPost: {
         type: "query",
         args: [{ type: "search", name: "status", refName: "String", nullable: true }],
@@ -98,43 +118,6 @@ const signal = (): Record<string, SerializedSignal> => ({
         returns: { refName: "Boolean" },
         guards: ["Admin"],
       },
-      reviewMcpPost: {
-        type: "prompt",
-        args: [
-          { type: "param", name: "mcpPostId", refName: "ID" },
-          { type: "search", name: "tone", refName: "String", nullable: true },
-        ],
-        returns: { refName: "Any" },
-        guards: ["Public"],
-      },
-      unguardedPrompt: { type: "prompt", args: [], returns: { refName: "Any" } },
-      undeclaredPrompt: { type: "prompt", args: [], returns: { refName: "Any" }, guards: ["Public"] },
-      bodyPrompt: {
-        type: "prompt",
-        args: [{ type: "body", name: "data", refName: "mcpPost", modelType: "input" }],
-        returns: { refName: "Any" },
-        guards: ["Public"],
-      },
-      tagsPrompt: {
-        type: "prompt",
-        args: [{ type: "search", name: "tags", refName: "String", arrDepth: 1, nullable: true }],
-        returns: { refName: "Any" },
-        guards: ["Public"],
-      },
-      rawArgPrompt: {
-        type: "prompt",
-        args: [{ type: "search", name: "filter", refName: "Any", nullable: true }],
-        returns: { refName: "Any" },
-        guards: ["Public"],
-      },
-      // Keyed like a generated list, so a uri shape resolves for it — and it is still not addressable, because
-      // `resources/read` resolves a template to a tool and a prompt is never one.
-      mcpPostListDigest: {
-        type: "prompt",
-        args: [],
-        returns: { refName: "Any" },
-        guards: ["Public"],
-      },
     },
   },
 });
@@ -151,7 +134,6 @@ describe("McpDocument", () => {
       "createMcpPost",
       "draftMcpPost",
       "findMcpPost",
-      "lightMcpPost",
       "mcpPost",
       "mcpPostInsight",
       "mcpPostInsightByAuthor",
@@ -167,6 +149,88 @@ describe("McpDocument", () => {
       "summaryMcpPost",
       "updateMcpPost",
     ]);
+  });
+
+  test("publishes one read per model rather than the same document in two shapes", () => {
+    // `lightMcpPost` reads the same row as `mcpPost` under the same guards, trimmed for a page's payload rather
+    // than for a model — so it was one more tool per model in a listing an agent pays for on every turn, told
+    // apart from the full read by the word "light" and nothing else.
+    const doc = new McpDocument(signal());
+    expect(names(doc)).not.toContain("lightMcpPost");
+    expect(names(doc)).toContain("mcpPost");
+    expect(doc.refusals.find(({ key }) => key === "lightMcpPost")?.reason).toContain("`mcpPost`");
+    // Never advertised, so the address it used to hold is unreadable rather than merely guarded.
+    expect(doc.resolveResource("akan://mcpPost/light/6712ab34cd56ef7890123456")).toBeNull();
+    expect(doc.resourceTemplates.map((template) => template.uriTemplate)).not.toContain(
+      "akan://mcpPost/light/{mcpPostId}",
+    );
+  });
+
+  test("keeps out what an author declared `mcp: false` on, at every altitude that declares it", () => {
+    // The question guards cannot answer: `requestMcpPostCode` is perfectly guarded and perfectly callable, and is
+    // a step of a UI-driven state machine that a model would only ever call by mistake. Curation, not
+    // authorization — the reason says so, because somebody will reach for this as a lock.
+    const doc = new McpDocument(signal());
+    const refusals = Object.fromEntries(doc.refusals.map(({ key, reason }) => [key, reason]));
+    expect(names(doc)).not.toContain("requestMcpPostCode");
+    expect(refusals.requestMcpPostCode).toContain("HTTP still serves it");
+    // One `mcp: false` on a slice covers both entries it generates, which is what an author writing it means.
+    expect(names(doc)).not.toContain("mcpPostListQuietSlice");
+    expect(names(doc)).not.toContain("mcpPostInsightQuietSlice");
+    // Nothing else moved: the declaration is per entry, not per model.
+    expect(names(doc)).toContain("mcpPostList");
+    expect(names(doc)).toContain("countMcpPosts");
+  });
+
+  test("keeps out what a person-only guard protects, at every altitude, and says which guards did it", () => {
+    // A guard with `static agents = false` never passes a model, so the entry would be a tool every agent is
+    // refused — and hiding it per caller at listing time would still leave it in the document, the boot count and
+    // every listing's bytes. Refused like `mcp: false`, and the reason names the guards so the author can find it.
+    const doc = new McpDocument(signal());
+    const refusals = Object.fromEntries(doc.refusals.map(({ key, reason }) => [key, reason]));
+    expect(names(doc)).not.toContain("signMcpPost");
+    expect(refusals.signMcpPost).toContain("Admin, Person");
+    expect(refusals.signMcpPost).toContain("HTTP still serves it");
+    expect(names(doc)).not.toContain("mcpPostListPersonSlice");
+    expect(names(doc)).not.toContain("mcpPostInsightPersonSlice");
+    // The generated verbs read the signal's own verb map, the shape `mcp` already travels in.
+    const withMap = signal();
+    withMap.mcpPost.agents = { remove: false };
+    const mapped = new McpDocument(withMap);
+    expect(names(mapped)).not.toContain("removeMcpPost");
+    expect(names(mapped)).toContain("createMcpPost");
+    expect(names(mapped)).toContain("mcpPost");
+  });
+
+  test("takes the generated verbs the module map names off the shelf, and leaves the rest", () => {
+    // The `mcp` map mirrors the `guards` map `slice()` takes, key for key and scope for scope: it narrows the
+    // root slice and the generated CRUD, and never reaches a named slice or a custom endpoint.
+    const withMap = signal();
+    const post = withMap.mcpPost;
+    if (!post) throw new Error("fixture");
+    post.mcp = { create: false, update: false, remove: false };
+    const exposed = names(new McpDocument(withMap));
+    expect(exposed).not.toContain("createMcpPost");
+    expect(exposed).not.toContain("updateMcpPost");
+    expect(exposed).not.toContain("removeMcpPost");
+    // Reads are untouched, and so is a custom mutation that happens to write the same model.
+    expect(exposed).toContain("mcpPost");
+    expect(exposed).toContain("mcpPostList");
+    expect(exposed).toContain("draftMcpPost");
+  });
+
+  test("says what the listing costs, and which signals it went to", () => {
+    // MCP has no shared component section and forbids a `$ref` across entries, so every entry inlines the schema
+    // of every model it mentions. The number is nobody's intuition, and a catalogue nobody can size is one
+    // nobody narrows.
+    const doc = new McpDocument(signal());
+    const cost = doc.listingCost;
+    const entries = [...doc.tools];
+    expect(cost.bytes).toBe(entries.reduce((sum, entry) => sum + JSON.stringify(entry).length, 0));
+    expect(cost.bySignal.map(({ refName }) => refName)).toEqual(["mcpPost"]);
+    expect(cost.bySignal[0]?.entries).toBe(entries.length);
+    // Memoized: the report builds it at boot and a listing is re-derived per caller.
+    expect(doc.listingCost).toBe(cost);
   });
 
   test("readOnly drops every mutation whatever its guards allow", () => {
@@ -194,14 +258,17 @@ describe("McpDocument", () => {
     // flag to explain a missing tool, so this list is the only place the answer exists. Printed at boot.
     const refusals = Object.fromEntries(new McpDocument(signal()).refusals.map(({ key, reason }) => [key, reason]));
     expect(Object.keys(refusals).sort()).toEqual([
-      "bodyPrompt",
       "importMcpPost",
-      "rawArgPrompt",
+      "lightMcpPost",
+      "mcpPostInsightPersonSlice",
+      "mcpPostInsightQuietSlice",
+      "mcpPostListPersonSlice",
+      "mcpPostListQuietSlice",
       "rawMcpPost",
-      "tagsPrompt",
+      "requestMcpPostCode",
+      "signMcpPost",
       "undeclaredMcpPost",
       "unguardedMcpPost",
-      "unguardedPrompt",
       "wipeMcpPosts",
     ]);
     expect(refusals.rawMcpPost).toContain("`Any`");
@@ -209,11 +276,8 @@ describe("McpDocument", () => {
     // and the other is a decision that is still wrong for a write.
     expect(refusals.undeclaredMcpPost).toContain("declares no guards");
     expect(refusals.wipeMcpPosts).toContain("`[Public]` is having none");
-    // A prompt answers to the guarded rule exactly as a query does.
-    expect(refusals.unguardedPrompt).toContain("declares no guards");
     // Names the argument: "it has an `Any` argument" still leaves an author hunting for which one.
     expect(refusals.importMcpPost).toContain("`payload`");
-    expect(refusals.bodyPrompt).toContain("flat string map");
   });
 
   test("keeps hidden and secret field names out of the output schema and in the input schema", () => {
@@ -245,9 +309,8 @@ describe("McpDocument", () => {
     // so a model can still pick a filter, and the values it may pick are published with it.
     const properties = (list?.inputSchema.properties ?? {}) as Record<string, unknown>;
     expect(Object.keys(properties)).toEqual(["queryKey", "skip", "limit", "sort"]);
-    expect(properties.queryKey).toEqual({
-      anyOf: [{ type: "string", enum: ["any", "byAuthor"] }, { type: "null" }],
-    });
+    // Nullability rides in the type rather than an `anyOf` wrapper, and the enum lists `null` so both halves agree.
+    expect(properties.queryKey).toEqual({ type: ["string", "null"], enum: ["any", "byAuthor", null] });
     expect(doc.resourceTemplates.map((template) => template.uriTemplate)).toContain(
       "akan://mcpPost/list{?queryKey,skip,limit,sort}",
     );
@@ -299,16 +362,13 @@ describe("McpDocument", () => {
       "mcpPost.modelDesc": "An article somebody wrote",
       "mcpPost.signal.mcpPost": "Get Post",
       "mcpPost.signal.mcpPost.desc": "Get Post",
-      "mcpPost.signal.lightMcpPost.desc": "Get light version of Post",
     };
     const doc = new McpDocument(signal(), { resolveDescription: (key) => text[key] });
     expect(doc.tools.find((tool) => tool.name === "mcpPost")).toMatchObject({
       title: "Get Post",
       description: "Get Post — An article somebody wrote",
     });
-    expect(doc.tools.find((tool) => tool.name === "lightMcpPost")?.description).toBe(
-      "Get light version of Post — An article somebody wrote",
-    );
+    expect(doc.tools.find((tool) => tool.name === "removeMcpPost")?.description).toContain("An article somebody wrote");
     // A custom endpoint is the author's own text and is left exactly as written.
     expect(doc.tools.find((tool) => tool.name === "countMcpPosts")?.description).toBeUndefined();
   });
@@ -329,8 +389,31 @@ describe("McpDocument", () => {
     const doc = new McpDocument(signal());
     const tool = doc.tools.find((candidate) => candidate.name === "mcpPost");
     expect(tool?.outputSchema?.$ref).toBe("#/$defs/McpPost");
-    // A `$ref` may not be dereferenced over the network, so every model travels inside the tool that names it.
-    expect(Object.keys(tool?.outputSchema?.$defs as object)).toEqual(["McpPost", "McpTag"]);
+    // A `$ref` may not be dereferenced over the network, so every model travels inside the tool that names it —
+    // and by default a nested model is named rather than inlined, so the closure stops at the returned model.
+    const defs = tool?.outputSchema?.$defs as Record<string, { properties: Record<string, unknown> }>;
+    expect(Object.keys(defs)).toEqual(["McpPost"]);
+    expect(defs.McpPost.properties.tag).toEqual({ type: ["object", "null"], description: "McpTag" });
+    const full = new McpDocument(signal(), { outputSchema: "full" }).tools.find(
+      (candidate) => candidate.name === "mcpPost",
+    );
+    expect(Object.keys(full?.outputSchema?.$defs as object)).toEqual(["McpPost", "McpTag"]);
+  });
+
+  test("asks for a relation's id in a request schema, which is what the wire carries", () => {
+    // `serialize` sends a relation field as its id and the server never converts an object back, so a schema that
+    // showed the related model asked an agent for a shape the document layer cannot take.
+    const doc = new McpDocument(signal());
+    const draft = doc.tools.find((tool) => tool.name === "draftMcpPost");
+    const input = draft?.inputSchema.$defs as Record<string, { properties: Record<string, unknown> }>;
+    expect(Object.keys(input)).toEqual(["McpPostInput"]);
+    expect(input.McpPostInput.properties.tag).toEqual({ type: ["string", "null"] });
+  });
+
+  test("publishes no outputSchema at all when asked, and keeps every input schema", () => {
+    const doc = new McpDocument(signal(), { outputSchema: "none" });
+    expect(doc.tools.every((tool) => tool.outputSchema === undefined)).toBe(true);
+    expect(doc.tools.find((tool) => tool.name === "draftMcpPost")?.inputSchema.$defs).toBeDefined();
   });
 
   test("wraps an array result so structuredContent stays an object", () => {
@@ -380,7 +463,6 @@ describe("McpDocument", () => {
   test("addresses the single and list reads but not an aggregate", () => {
     const doc = new McpDocument(signal());
     expect(doc.resourceTemplates.map((template) => template.uriTemplate)).toEqual([
-      "akan://mcpPost/light/{mcpPostId}",
       "akan://mcpPost/{mcpPostId}",
       "akan://mcpPost/list{?queryKey,skip,limit,sort}",
       "akan://mcpPost/list/byAuthor{?authorId,skip,limit,sort}",
@@ -406,19 +488,6 @@ describe("McpDocument", () => {
     expect(doc.resolveResource("akan://mcpPost/6712ab34cd56ef7890123456")?.exposed.key).toBe("mcpPost");
   });
 
-  test("refuses a prompt argument a flat string map cannot carry, whatever its type", () => {
-    // `prompts/get` sends one string per name and no schema beside it. A list argument would silently cap at one
-    // value; an `Any` has nowhere left to be described, which the tool path solves by leaving it out of a schema
-    // a prompt does not have.
-    const refusals = Object.fromEntries(new McpDocument(signal()).refusals.map(({ key, reason }) => [key, reason]));
-    expect(refusals.tagsPrompt).toContain("`tags`");
-    expect(refusals.tagsPrompt).toContain("more than one value");
-    expect(refusals.rawArgPrompt).toContain("`filter`");
-    expect(refusals.rawArgPrompt).toContain("no schema");
-    // The same two types are fine on a tool, which publishes a real schema for them.
-    expect(names(new McpDocument(signal()))).toContain("mcpPostListInPeriod");
-  });
-
   test("names what it published with no description of its own", () => {
     // The scanner cannot answer this: it reads source, where `expose` is visible only as a literal in the builder
     // call, and where the model `.desc()` a generated entry borrows is not that entry's description at all.
@@ -438,8 +507,6 @@ describe("McpDocument", () => {
     expect(undescribed.mcpPost).toContain("`mcpPost` has no `.desc()`");
     expect(undescribed.mcpPostList).toContain("`mcpPost` has no `.desc()`");
     expect(undescribed.findMcpPost).toContain("no dictionary `.desc()`");
-    // A prompt is chosen by its description exactly as a tool is.
-    expect(undescribed.reviewMcpPost).toBeDefined();
     // Nothing refused is in here — it was never published.
     expect(undescribed.unguardedMcpPost).toBeUndefined();
     // Writing the model's own description is what clears all six generated entries at once.
@@ -459,51 +526,16 @@ describe("McpDocument", () => {
     expect(doc.resolveResource("akan://mcpPost/list/undeclared")).toBeNull();
   });
 
-  test("never addresses a prompt, whatever its key looks like", () => {
-    // A prompt is not a tool, so `resources/read` can never resolve to one. This key matches a generated list,
-    // which is what made a uri resolvable for it at all.
+  test("expands a tool's template into the uri its call answers to, and nothing for a tool without one", () => {
+    // A page prompt attaches what the screen fetched under the address `resources/read` would answer for it.
     const doc = new McpDocument(signal());
-    expect(doc.findPrompt("mcpPostListDigest")).toBeDefined();
-    expect(doc.resourceTemplates.map((template) => template.name)).not.toContain("mcpPostListDigest");
-    expect(doc.resolveResource("akan://mcpPost/list/digest")).toBeNull();
-  });
-
-  test("lists a prompt with its arguments, and never as a tool", () => {
-    const doc = new McpDocument(signal());
-    expect(doc.prompts.map((prompt) => prompt.name)).toEqual([
-      "mcpPostListDigest",
-      "reviewMcpPost",
-      "undeclaredPrompt",
-    ]);
-    // A prompt rides the `Any` carrier, which `#isExposable` refuses — the split has to happen before it.
-    expect(names(doc)).not.toContain("reviewMcpPost");
-    expect(doc.findPrompt("reviewMcpPost")?.prompt.arguments).toEqual([
-      { name: "mcpPostId", required: true },
-      { name: "tone", required: false },
-    ]);
-  });
-
-  test("exposes a prompt on the same terms as a query", () => {
-    const doc = new McpDocument(signal());
-    // `[Public]` written down publishes; declaring nothing does not, exactly as for a query.
-    expect(doc.findPrompt("undeclaredPrompt")).toBeDefined();
-    expect(doc.findPrompt("unguardedPrompt")).toBeUndefined();
-    // `prompts/get` sends a flat string map, so there is nowhere to put a body.
-    expect(doc.findPrompt("bodyPrompt")).toBeUndefined();
-  });
-
-  test("carries dictionary text into a prompt and its arguments", () => {
-    const text: Record<string, string> = {
-      "mcpPost.signal.reviewMcpPost": "Review Post",
-      "mcpPost.signal.reviewMcpPost.desc": "Drafts a review of one post",
-      "mcpPost.signal.reviewMcpPost.arg.mcpPostId.desc": "Post to review",
-    };
-    const doc = new McpDocument(signal(), { resolveDescription: (key) => text[key] });
-    expect(doc.findPrompt("reviewMcpPost")?.prompt).toMatchObject({
-      title: "Review Post",
-      description: "Drafts a review of one post",
-      arguments: [{ name: "mcpPostId", description: "Post to review", required: true }, { name: "tone" }],
-    });
+    expect(doc.resourceUri("mcpPost", { mcpPostId: "6712ab34cd56ef7890123456" })).toBe(
+      "akan://mcpPost/6712ab34cd56ef7890123456",
+    );
+    expect(doc.resourceUri("mcpPostListInPeriod", { from: "2026-01-01", periodTypes: ["day", "week"], limit: 5 })).toBe(
+      "akan://mcpPost/list/inPeriod?from=2026-01-01&periodTypes=day&periodTypes=week&limit=5",
+    );
+    expect(doc.resourceUri("summaryMcpPost", {})).toBeUndefined();
   });
 
   test("orders the catalogue deterministically", () => {

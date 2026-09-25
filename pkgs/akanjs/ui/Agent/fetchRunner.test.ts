@@ -94,16 +94,20 @@ describe("fetchRunner", () => {
 
   test("a domain Err arrives as its key and is resolved against the dictionary, values interpolated", async () => {
     Translator.seed("ko", {
-      agent: { error: { deepseekRequestFailed: { t: "DeepSeek가 거절했습니다 (status {status})." } } },
+      agent: { error: { llmRequestFailed: { t: "{provider}가 거절했습니다 (status {status})." } } },
     });
     Translator.setActiveLocale("ko");
     handlerHolder.runAgentTurn = () => undefined;
     const fetcher = (async () =>
-      new Response(JSON.stringify({ error: "agent.error.deepseekRequestFailed", data: { status: "400" } }), {
-        status: 400,
-      })) as unknown as typeof fetch;
+      new Response(
+        JSON.stringify({
+          error: "agent.error.llmRequestFailed",
+          data: { provider: "api.deepseek.com", status: "400" },
+        }),
+        { status: 400 },
+      )) as unknown as typeof fetch;
     expect(await collect(request(), fetcher)).toEqual([
-      { type: "error", message: "DeepSeek가 거절했습니다 (status 400)." },
+      { type: "error", message: "api.deepseek.com가 거절했습니다 (status 400)." },
     ]);
   });
 

@@ -1,6 +1,6 @@
 import type { PromiseOrObject } from "akanjs/base";
 import { applyMixins, capitalize } from "akanjs/common";
-import { type ConstantModel, DEFAULT_PAGE_SIZE, type QueryOf } from "akanjs/constant";
+import { type ConstantModel, type QueryOf, resolvePageLimit, resolvePageSkip } from "akanjs/constant";
 import {
   assertFilterFitsCrud,
   CacheDatabase,
@@ -13,7 +13,6 @@ import {
   type DocumentUpdateInput,
   documentQueryHelper,
   type FindQueryOption,
-  fillMissingFilterArgs,
   getFilterInfoByKey,
   getFilterMeta,
   getFilterSortByKey,
@@ -22,6 +21,7 @@ import {
   type Mdl,
   NoDocumentError,
   type SaveEventType,
+  splitFilterArgs,
   type UpdateChain,
 } from "akanjs/document";
 import {
@@ -32,7 +32,7 @@ import {
   DatabaseAdaptorRole,
   type DocumentStore,
 } from "akanjs/service";
-import { getCurrentTrace, traceDataLoaderBatch } from "akanjs/signal";
+import { Exception, getCurrentTrace, traceDataLoaderBatch } from "akanjs/signal";
 
 /**
  * Times a store query and records it against the active request trace (no-op when
@@ -58,13 +58,26 @@ export class DatabaseResolver {
     const [modelName, className]: [string, string] = [database.refName, capitalize(database.refName)];
     // `sort` stays null when the caller named none, so the store can pick relevance order for a text search and
     // its own default otherwise. Defaulting to "latest" here would make every search look explicitly sorted.
-    const resolveSort = (sortKey?: string | null) =>
-      sortKey ? (getFilterSortByKey(database.filter, sortKey) as { [key: string]: 1 | -1 }) : null;
+    //
+    // A key the model does not declare is refused rather than ignored: the answer to an unknown key used to be
+    // `createdAt` descending, so a client typo — and `sortKeys` travels to the client, so typos happen — became
+    // a different order with nothing said. The cast the old line made was a lie for the same reason: the lookup
+    // returns `undefined` for a key that is not there.
+    const resolveSort = (sortKey?: string | null): { [key: string]: 1 | -1 } | null => {
+      if (!sortKey) return null;
+      const sort = getFilterSortByKey(database.filter, sortKey) as { [key: string]: 1 | -1 } | undefined;
+      if (!sort) throw new Exception.BadRequest(`Unknown sort key for ${modelName}: ${sortKey}`);
+      return sort;
+    };
     const getListQuery = (query?: QueryOf<any>, queryOption?: ListQueryOption) => {
       const find = query ?? {};
       const sort = resolveSort(queryOption?.sort);
-      const skip = Number(queryOption?.skip ?? 0);
-      const limit = queryOption?.limit === null ? DEFAULT_PAGE_SIZE : Number(queryOption?.limit ?? 0);
+      const skip = resolvePageSkip(queryOption?.skip);
+      // `undefined` is a server caller that named no page — `list()` inside a service, where the caller is the
+      // code itself and a ceiling is the wrong answer. Every client-reachable path arrives through the slice
+      // endpoint, which has already clamped what it was handed. An explicit `null` is the opposite ask and is not
+      // the same as leaving it out: it means "page this, I have no number", and lands on the default page size.
+      const limit = queryOption?.limit === undefined ? 0 : resolvePageLimit(queryOption.limit);
       const select = queryOption?.select;
       const sample = queryOption?.sample;
       return { find, sort, skip, limit, select, sample };
@@ -72,7 +85,7 @@ export class DatabaseResolver {
     const getFindQuery = (query?: QueryOf<any>, queryOption?: FindQueryOption) => {
       const find = query ?? {};
       const sort = resolveSort(queryOption?.sort);
-      const skip = Number(queryOption?.skip ?? 0);
+      const skip = resolvePageSkip(queryOption?.skip);
       const select = queryOption?.select;
       const sample = queryOption?.sample ?? false;
       return { find, sort, skip, select, sample };
@@ -104,6 +117,27 @@ export class DatabaseResolver {
       schema.index(fields as { [key: string]: 1 | -1 });
     }
 
+    // The schema holds a wrapper, not the caller's listener, so an unsubscribe has to close over that wrapper.
+    // Shared by the model facade and the instance method so the two cannot hand back different teardowns.
+    const listen = (phase: "pre" | "post") => {
+      return (
+        type: SaveEventType,
+        listener: (doc: any, type: CRUDEventType, previous?: any) => PromiseOrObject<void>,
+      ) => {
+        const hook = function (this: any, _next?: () => void, crudType?: CRUDEventType, previous?: any) {
+          return listener(this, crudType ?? "update", previous);
+        };
+        if (phase === "pre") schema.pre(type, hook);
+        else schema.post(type, hook);
+        return () => {
+          if (phase === "pre") schema.removePre(type, hook);
+          else schema.removePost(type, hook);
+        };
+      };
+    };
+    const listenPreHook = listen("pre");
+    const listenPostHook = listen("post");
+
     class DatabaseModelInstance extends adapt(`${modelName}Model`, ({ plug }) => ({
       __database: plug(DatabaseAdaptorRole, (database) => database),
       __cache: plug(CacheAdaptorRole, (cache) => new CacheDatabase(modelName, cache)),
@@ -133,37 +167,40 @@ export class DatabaseResolver {
         });
         Object.entries(getLoaderInfos(database.model)).forEach(([key, loaderInfo]) => {
           Object.assign(this, {
-            [key]: new DataLoader<any, any>(async (keys) => {
-              traceDataLoaderBatch(keys.length);
-              if (loaderInfo.type === "query") {
-                const fields = loaderInfo.field as string[];
-                const query = { kind: "any", queries: keys } as QueryOf<unknown>;
+            [key]: new DataLoader<any, any>(
+              async (keys) => {
+                traceDataLoaderBatch(keys.length);
+                if (loaderInfo.type === "query") {
+                  const fields = loaderInfo.field as string[];
+                  const query = { kind: "any", queries: keys } as QueryOf<unknown>;
+                  const docs = await timedQuery(() =>
+                    this.__store.find(documentQueryHelper.all(loaderInfo.defaultQuery, query)),
+                  );
+                  const byKey = new Map(docs.map((doc) => [fields.map((field) => String(doc[field])).join(""), doc]));
+                  return keys.map(
+                    (queryKey) => byKey.get(fields.map((field) => String(queryKey[field])).join("")) ?? null,
+                  );
+                }
+                const field = loaderInfo.field as string;
+                const query = {
+                  [field]: documentQueryHelper.oneOf([...keys]),
+                };
                 const docs = await timedQuery(() =>
                   this.__store.find(documentQueryHelper.all(loaderInfo.defaultQuery, query)),
                 );
-                const byKey = new Map(docs.map((doc) => [fields.map((field) => String(doc[field])).join(""), doc]));
-                return keys.map(
-                  (queryKey) => byKey.get(fields.map((field) => String(queryKey[field])).join("")) ?? null,
-                );
-              }
-              const field = loaderInfo.field as string;
-              const query = {
-                [field]: documentQueryHelper.oneOf([...keys]),
-              };
-              const docs = await timedQuery(() =>
-                this.__store.find(documentQueryHelper.all(loaderInfo.defaultQuery, query)),
-              );
-              if (loaderInfo.type === "arrayField") {
-                const byKey = new Map<string, unknown>();
-                for (const doc of docs) {
-                  const values = Array.isArray(doc[field]) ? doc[field] : [];
-                  for (const value of values) if (!byKey.has(String(value))) byKey.set(String(value), doc);
+                if (loaderInfo.type === "arrayField") {
+                  const byKey = new Map<string, unknown>();
+                  for (const doc of docs) {
+                    const values = Array.isArray(doc[field]) ? doc[field] : [];
+                    for (const value of values) if (!byKey.has(String(value))) byKey.set(String(value), doc);
+                  }
+                  return keys.map((key) => byKey.get(String(key)) ?? null);
                 }
+                const byKey = new Map(docs.map((doc) => [String(doc[field]), doc]));
                 return keys.map((key) => byKey.get(String(key)) ?? null);
-              }
-              const byKey = new Map(docs.map((doc) => [String(doc[field]), doc]));
-              return keys.map((key) => byKey.get(String(key)) ?? null);
-            }),
+              },
+              { name: key, cache: loaderInfo.cache },
+            ),
           });
         });
       }
@@ -221,44 +258,46 @@ export class DatabaseResolver {
           };
           return chain;
         };
+        const pickById = async (id: string | undefined, projection?: any) => {
+          if (!id) throw new NoDocumentError("No Document ID");
+          const doc = await timedQuery(() => store.findOne({ id }, { select: projection }));
+          if (!doc) throw new NoDocumentError(`No Document (${modelName}): ${id}`);
+          return doc;
+        };
         return Object.assign(Model, {
           refName: modelName,
-          pickOne: (query: QueryOf<any>, projection?: any) => store.pickOne(query, { select: projection }),
-          pickById: (id: string | undefined, projection?: any) => {
-            if (!id) throw new NoDocumentError("No Document ID");
-            return store.findOne({ id }, { select: projection }).then((doc) => {
-              if (!doc) throw new NoDocumentError(`No Document (${modelName}): ${id}`);
-              return doc;
-            });
-          },
-          exists: async (query: QueryOf<any>) => await store.exists(query),
-          sample: (query: QueryOf<any>, size = 1) => store.find(query, { sample: size, limit: size }),
-          sampleOne: (query: QueryOf<any>) => store.findOne(query, { sample: true }),
-          find: (query: QueryOf<any>) => createFindManyChain(query),
-          findOne: (query: QueryOf<any>) => createFindOneChain(query),
-          findById: (id: string | undefined) => (id ? store.findOne({ id }) : Promise.resolve(null)),
-          count: (query: QueryOf<any>) => store.count(query),
+          pickOne: (query: QueryOf<any>, projection?: any) =>
+            timedQuery(() => store.pickOne(query, { select: projection })),
+          pickById,
+          // `AndWrite` writes through the document, so the save hooks run — `updateById` is the query-level write
+          // that skips them.
+          pickAndWrite: async (id: string, rawData: any) => await (await pickById(id)).set(rawData).save(),
+          pickOneAndWrite: async (query: QueryOf<any>, rawData: any) =>
+            await (await timedQuery(() => store.pickOne(query))).set(rawData).save(),
+          exists: async (query: QueryOf<any>) => await timedQuery(() => store.exists(query)),
+          sample: (query: QueryOf<any>, size = 1) => timedQuery(() => store.find(query, { sample: size, limit: size })),
+          sampleOne: (query: QueryOf<any>) => timedQuery(() => store.findOne(query, { sample: true })),
+          find: (query: QueryOf<any>, projection?: any) => createFindManyChain(query, { select: projection }),
+          findOne: (query: QueryOf<any>, projection?: any) => createFindOneChain(query, { select: projection }),
+          findById: (id: string | undefined, projection?: any) =>
+            id ? timedQuery(() => store.findOne({ id }, { select: projection })) : Promise.resolve(null),
+          count: (query: QueryOf<any>) => timedQuery(() => store.count(query)),
           updateOne: (query: QueryOf<any>, update: DocumentUpdateInput, options?: { upsert?: boolean }) =>
-            store.updateOneByQuery(query, update, options),
-          updateMany: (query: QueryOf<any>, update: DocumentUpdateInput) => store.updateManyByQuery(query, update),
-          removeOne: (query: QueryOf<any>) => store.removeOneByQuery(query),
-          removeMany: (query: QueryOf<any>) => store.removeManyByQuery(query),
+            timedQuery(() => store.updateOneByQuery(query, update, options)),
+          updateMany: (query: QueryOf<any>, update: DocumentUpdateInput) =>
+            timedQuery(() => store.updateManyByQuery(query, update)),
+          removeOne: (query: QueryOf<any>) => timedQuery(() => store.removeOneByQuery(query)),
+          removeMany: (query: QueryOf<any>) => timedQuery(() => store.removeManyByQuery(query)),
           updateById: (id: string, update: DocumentUpdateInput, options?: { upsert?: boolean }) =>
-            store.updateOneByQuery({ id }, update, options),
-          removeById: (id: string) => store.removeOneByQuery({ id }),
+            timedQuery(() => store.updateOneByQuery({ id }, update, options)),
+          removeById: (id: string) => timedQuery(() => store.removeOneByQuery({ id })),
           // Kept so existing call sites keep working; `@deprecated` on the `Mdl` type is what points them onward.
-          countDocuments: (query: QueryOf<any>) => store.count(query),
+          countDocuments: (query: QueryOf<any>) => timedQuery(() => store.count(query)),
           bulkWrite: (
             operations: { updateOne: { filter: QueryOf<any>; update: DocumentUpdateInput; upsert?: boolean } }[],
-          ) => store.bulkWrite(operations),
-          listenPre: (type: SaveEventType, listener: (doc: any, type: CRUDEventType) => PromiseOrObject<void>) =>
-            schema.pre(type, function (this: any, _next, crudType) {
-              return listener(this, crudType ?? "update");
-            }),
-          listenPost: (type: SaveEventType, listener: (doc: any, type: CRUDEventType) => PromiseOrObject<void>) =>
-            schema.post(type, function (this: any, _next, crudType) {
-              return listener(this, crudType ?? "update");
-            }),
+          ) => timedQuery(() => store.bulkWrite(operations)),
+          listenPre: listenPreHook,
+          listenPost: listenPostHook,
         });
       }
 
@@ -280,34 +319,34 @@ export class DatabaseResolver {
       }
       async __pick(query?: QueryOf<any>, queryOption?: FindQueryOption): Promise<any> {
         const { find, sort, skip, sample, select } = getFindQuery(query, queryOption);
-        return await this.__store.pickOne(find, { sort, skip, sample, select });
+        return await timedQuery(() => this.__store.pickOne(find, { sort, skip, sample, select }));
       }
       async __pickId(query?: QueryOf<any>, queryOption?: FindQueryOption): Promise<string> {
         const { find, sort, skip, sample } = getFindQuery(query, queryOption);
-        const id = await this.__store.findId(find, { sort, skip, sample });
+        const id = await timedQuery(() => this.__store.findId(find, { sort, skip, sample }));
         if (!id) throw new NoDocumentError(`No Document (${database.refName}): ${JSON.stringify(query)}`);
         return id;
       }
       async __exists(query?: QueryOf<any>): Promise<string | null> {
-        return await this.__store.exists(query);
+        return await timedQuery(() => this.__store.exists(query));
       }
       async __count(query?: QueryOf<any>): Promise<number> {
         return await timedQuery(() => this.__store.count(query));
       }
       async __insight(query?: QueryOf<any>): Promise<any> {
-        return await this.__store.insight(query);
+        return await timedQuery(() => this.__store.insight(query));
       }
-      listenPre(type: SaveEventType, listener: (doc: any, type: CRUDEventType) => PromiseOrObject<void>) {
-        schema.pre(type, function (this: any, _next, crudType) {
-          return listener(this, crudType ?? "update");
-        });
-        return () => undefined;
+      listenPre(
+        type: SaveEventType,
+        listener: (doc: any, type: CRUDEventType, previous?: any) => PromiseOrObject<void>,
+      ) {
+        return listenPreHook(type, listener);
       }
-      listenPost(type: SaveEventType, listener: (doc: any, type: CRUDEventType) => PromiseOrObject<void>) {
-        schema.post(type, function (this: any, _next, crudType) {
-          return listener(this, crudType ?? "update");
-        });
-        return () => undefined;
+      listenPost(
+        type: SaveEventType,
+        listener: (doc: any, type: CRUDEventType, previous?: any) => PromiseOrObject<void>,
+      ) {
+        return listenPostHook(type, listener);
       }
       async __get(id: string) {
         const doc = await this.__loader.load(id);
@@ -318,7 +357,7 @@ export class DatabaseResolver {
         return this.__get(id);
       }
       async __load(id?: string) {
-        return (id ? await this.__loader.load(id) : null) as any | null;
+        return (id ? await this.__loader.load(id) : null) as unknown;
       }
       async [`load${className}`](id?: string) {
         return this.__load(id);
@@ -330,7 +369,7 @@ export class DatabaseResolver {
         return this.__loadMany(ids);
       }
       async clone(data: DataInputOf<any, any> & { id: string }) {
-        return await this.__store.clone(data);
+        return await timedQuery(() => this.__store.clone(data));
       }
       async __create(data: DataInputOf<any, any>) {
         return await timedQuery(() => this.__store.create(data));
@@ -345,7 +384,7 @@ export class DatabaseResolver {
         return this.__update(id, data);
       }
       async __remove(id: string) {
-        return await this.__store.remove(id);
+        return await timedQuery(() => this.__store.remove(id));
       }
       async __removeMany(query: QueryOf<any>) {
         return await timedQuery(() => this.__store.removeManyByQuery(query));
@@ -365,21 +404,11 @@ export class DatabaseResolver {
     }
 
     const getQueryDataFromKey = (queryKey: string, args: any): { query: any; queryOption: any } => {
-      const lastArg = args.at(-1);
-      const hasQueryOption =
-        lastArg &&
-        typeof lastArg === "object" &&
-        (typeof lastArg.select === "object" ||
-          typeof lastArg.skip === "number" ||
-          typeof lastArg.limit === "number" ||
-          typeof lastArg.sort === "string");
       const filterInfo = getFilterInfoByKey(database.filter, queryKey);
       const queryFn = filterInfo.queryFn;
       if (!queryFn) throw new Error(`No query function for key: ${queryKey}`);
-      const queryArgs = fillMissingFilterArgs(filterInfo, hasQueryOption ? args.slice(0, -1) : args);
-      const query = queryFn(...queryArgs, documentQueryHelper);
-      const queryOption = hasQueryOption ? lastArg : {};
-      return { query, queryOption };
+      const { queryArgs, queryOption } = splitFilterArgs(filterInfo, args);
+      return { query: queryFn(...queryArgs, documentQueryHelper), queryOption };
     };
     Object.entries(filterMeta.query).forEach(([queryKey, filterInfo]) => {
       const queryFn = filterInfo.queryFn;
@@ -411,35 +440,35 @@ export class DatabaseResolver {
           return (this as unknown as DatabaseInstance).__pickId(query, queryOption);
         },
         [`exists${capitalize(queryKey)}`]: async function (...args: any) {
-          const query = queryFn(...fillMissingFilterArgs(filterInfo, args), documentQueryHelper);
+          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
           return (this as unknown as DatabaseInstance).__exists(query);
         },
         [`count${capitalize(queryKey)}`]: async function (...args: any) {
-          const query = queryFn(...fillMissingFilterArgs(filterInfo, args), documentQueryHelper);
+          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
           return (this as unknown as DatabaseInstance).__count(query);
         },
         [`insight${capitalize(queryKey)}`]: async function (...args: any) {
-          const query = queryFn(...fillMissingFilterArgs(filterInfo, args), documentQueryHelper);
+          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
           return (this as unknown as DatabaseInstance).__insight(query);
         },
         [`query${capitalize(queryKey)}`]: (...args: any) =>
-          queryFn(...fillMissingFilterArgs(filterInfo, args), documentQueryHelper),
+          queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper),
         [`remove${capitalize(queryKey)}`]: async function (...args: any) {
-          const query = queryFn(...fillMissingFilterArgs(filterInfo, args), documentQueryHelper);
+          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
           return (this as unknown as DatabaseInstance).__removeMany(query);
         },
         [`removeOne${capitalize(queryKey)}`]: async function (...args: any) {
-          const query = queryFn(...fillMissingFilterArgs(filterInfo, args), documentQueryHelper);
+          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
           return (this as unknown as DatabaseInstance).__removeOne(query);
         },
         [`update${capitalize(queryKey)}`]: function (...args: any): UpdateChain {
           const instance = this as unknown as DatabaseInstance;
-          const query = queryFn(...fillMissingFilterArgs(filterInfo, args), documentQueryHelper);
+          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
           return { set: (update) => instance.__updateMany(query, update) };
         },
         [`updateOne${capitalize(queryKey)}`]: function (...args: any): UpdateChain {
           const instance = this as unknown as DatabaseInstance;
-          const query = queryFn(...fillMissingFilterArgs(filterInfo, args), documentQueryHelper);
+          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
           return { set: (update) => instance.__updateOne(query, update) };
         },
       });

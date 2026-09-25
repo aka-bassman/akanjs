@@ -54,7 +54,11 @@ export class McpExecutionContext extends HttpExecutionContext {
     return endpointInfo.args.map((arg) => {
       const value = McpExecutionContext.#lift(arg, this.#arguments[arg.name] ?? null);
       try {
-        return deserialize(arg.argRef, arg.arrDepth, value, { key: arg.name, nullable: arg.option?.nullable });
+        return deserialize(arg.argRef, arg.arrDepth, value, {
+          key: arg.name,
+          nullable: arg.option?.nullable,
+          enum: arg.enum,
+        });
       } catch {
         // What the parser says names internals; what the caller can act on is which argument and what it should
         // have been. An agent retries on this message, so it must not read as a server failure.
@@ -97,6 +101,7 @@ export class McpExecutionContext extends HttpExecutionContext {
 
   static #argumentMessage(arg: McpArg, value: unknown) {
     if (value === null) return `Missing required argument "${arg.name}".`;
+    if (arg.enum) return `Invalid argument "${arg.name}": expected one of ${arg.enum.values.join(", ")}.`;
     const primitive = PrimitiveRegistry.has(arg.argRef as Cls)
       ? PrimitiveRegistry.getName(arg.argRef as typeof PrimitiveScalar)
       : undefined;

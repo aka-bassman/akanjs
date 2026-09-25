@@ -12,7 +12,7 @@ import { COMMAND_META, type CommandCls } from "./targetMeta";
 export const argTypes = ["Argument", "Option"] as const;
 export type ArgType = (typeof argTypes)[number];
 
-export const internalArgTypes = ["Workspace", "App", "Lib", "Sys", "Pkg", "Module", "Exec"] as const;
+export const internalArgTypes = ["Workspace", "App", "Apps", "Lib", "Sys", "Pkg", "Module", "Exec"] as const;
 export type InternalArgType = (typeof internalArgTypes)[number];
 
 export type PrimitiveArgType = StringConstructor | NumberConstructor | BooleanConstructor;
@@ -82,6 +82,14 @@ export const normalizePrimitiveArgType = (type: PrimitiveArgType): NormalizedPri
 
 export const App = createInternalArgToken<AppExecutor, "App">("App");
 export type App = AppExecutor;
+
+/**
+ * One or more apps, from a variadic positional (`akan start a b`, `akan start a,b`, `akan start all`)
+ * or a checkbox when none is named. Reach for it only where running several is meaningful — every other
+ * command takes `App`, whose single-select is unchanged.
+ */
+export const Apps = createInternalArgToken<AppExecutor[], "Apps">("Apps");
+export type Apps = AppExecutor[];
 
 export const Lib = createInternalArgToken<LibExecutor, "Lib">("Lib");
 export type Lib = LibExecutor;

@@ -10,119 +10,279 @@
 
 - Docker (#overview)
 - Minimal Compose (#compose)
-- Open Console (#console)
-- Important Env (#env)
-- Trim The Web Surface (#web-surface)
+- Container Env (#env)
 - Scale With AKAN_REPLICA (#replica)
+- Trim The Web Surface (#web-surface)
+- Customize The Image (#dockerfile)
+- Open Console (#console)
 - Tips (#tips)
 
 ## Content
 
 Docker
 
-For a small edge server, start with one Akan app container.
+The app listens on 8282, so publish `8282:8282`.
 
-Expose the app on port 8282. Route to service port 80.
+The sqlite files land here, so mount a volume on it to survive restarts.
 
-Mount sqlite data so local data survives container restarts.
+File logging is off, so collect stdout or set it to 1 and mount a log volume.
 
-Mount logs so troubleshooting does not depend on container lifetime.
+The only packages installed, so declare ffmpeg or Chromium in `docker.preRuns`.
+
+It ships next to `main.js`, so you open an operator console with `docker exec`.
+
+from the build
+
+The app's codename.
+
+The workspace name.
+
+The base domain the app derives its own origins from.
+
+from the build (debug)
+
+Which deployment this is. The Helm chart sets it per namespace.
+
+cloud in the image
+
+Where it runs. The on-premise box in this page's example is `edge`.
+
+The port the gateway or the solo process binds.
+
+/workspace/sqlite in the image
+
+Where the sqlite files go. Point it at a mounted volume.
+
+0 in the image
+
+Rotating log files. Set 1 and mount `AKAN_LOG_DIR` to get them back.
+
+/workspace/runtime/logs in the image
+
+Where the rotating log files go when file logging is on.
+
+unset
+
+Required to open `console.js` in a production-like environment.
+
+One server process that serves requests, runs background work, or both.
+
+A front process that binds PORT and spreads traffic across the replicas.
+
+One replica running as the container's only process, with no gateway.
+
+Background work a signal declares, such as cron, interval and queue jobs.
+
+The separate process that renders pages, one per web-serving replica.
+
+Serves requests. Skips internals pinned to `serverMode: "batch"`.
+
+Runs internals and never listens. Asking for one always keeps the gateway.
+
+Serves requests and runs every internal.
+
+Requests
+
+batch internals
+
+Solo — one process, no gateway
+
+(unset)
+
+Same as `"0,0,1"`: one all-purpose replica.
+
+One federation replica.
+
+Becomes one all-purpose replica. You can never ask for none.
+
+Gateway in front
+
+Two federation replicas. Missing slots count as zero.
+
+One batch replica. The gateway stays to answer health checks.
+
+akan.config.ts — what the build puts in the image
+
+The default. Both surfaces are built.
+
+Drops the mobile SPA bundle and keeps SSR.
+
+API only: no route artifact, CSR bundle, RSC worker entrypoint or `public/`.
+
+Container env — narrows at boot
+
+Takes down only the mobile SPA bundle.
+
+Takes down the RSC worker and the render routes, and CSR with them.
+
+The base image. The object form picks one per architecture; a missing one uses the default.
+
+Commands run before `bun install`, such as a system package a native dependency needs.
+
+Commands run after `bun install`, before the app files are copied.
+
+The container's `CMD`.
+
+Akan Runtime
+
+The runtime environment variables in depth, including the logging ones.
+
+Kubernetes
+
+The same image on a cluster, with the Helm chart and its probes.
+
+Server Console
+
+What you can do once the console is open.
+
+Logging
+
+Reading and filtering the logs a container writes.
+
+Say you have a built app and a small machine at the edge of a factory floor. It has to come back after a power cut with its data intact, and you need to see why it fell over.
+
+For a small edge server, start with one Akan app container. Plan around these image defaults:
+
+Image default
+
+What it means for you
 
 Minimal Compose
 
-This is a simplified example for one app. Replace `myapp` and the image name with your app.
+Container Env
 
-Open Console
+The image already carries the build's values, so a container sets only the ones that differ.
 
-`akan build` embeds `console.js` next to `main.js`, so you can open an operator console without creating files inside the container.
+Required — set by the build
 
-Set `AKAN_CONSOLE=1` only on the exec command for production-like environments.
+The app does not start without these three.
 
-Docker exec
-
-Important Env
-
-`AKAN_PUBLIC_OPERATION_MODE=edge`: tells the app it is running as an edge deployment.
-
-`AKAN_SQLITE_DIR`: keeps sqlite files in a mounted folder.
-
-`AKAN_LOG_DIR`: keeps runtime logs outside the container filesystem.
-
-`AKAN_REPLICA`: controls child process roles for scaling.
-
-`AKAN_SSR=false`: serves the API only. Drops the RSC worker process every web-serving replica otherwise spawns.
-
-`AKAN_CSR=false`: keeps SSR but stops serving the mobile SPA bundle at `/__csr` and `?csr=true`.
-
-Trim The Web Surface
-
-A deployment that only answers API calls does not need the web half at all. `AKAN_SSR=false` takes down the RSC worker and the render routes; `AKAN_CSR=false` takes down only the mobile SPA bundle. Both narrow what the build produced and can never widen it, and the boot log names what the process ended up serving.
-
-Declare it in akan.config.ts as `web: false` to also keep the artifacts out of the image: no route artifact, no CSR bundle, no RSC worker entrypoint, and no public/ folder. Measured on this docs app, that is 86MB down to 6.2MB.
-
-API-only container
+Commonly changed
 
 Scale With AKAN_REPLICA
 
-`AKAN_REPLICA` is a compact way to choose how many federation, batch, and all-purpose child processes the app starts.
+Words used on this page
 
-Replica examples
+Term
 
-A single request-serving replica runs in the container's only process — there is nothing to balance, so the app skips the gateway and its proxy hop. Ask for two or more and the gateway comes back to spawn and route them. Set AKAN_SOLO=false to keep the gateway with one replica.
+The three slots
+
+Slot
+
+Role
+
+Default
+
+What it does
+
+Value examples
+
+handled
+
+not handled
+
+Solo or gateway
+
+One process, or a gateway and its children
+
+total = 1 and batch = 0?
+
+Solo: the container's only process
+
+binds PORT
+
+Gateway: binds PORT and proxies
+
+RSC worker
+
+federation child
+
+batch child
+
+never listens
+
+yes
+
+no · AKAN_SOLO=false · akan start
+
+Trim The Web Surface
+
+A deployment that only answers API calls does not need the web half. Leave it out of the build to shrink the image, or turn it off at boot to shrink the processes.
+
+Setting
+
+served
+
+off
+
+An API-only container with one request-serving replica:
+
+Customize The Image
+
+An app that needs ffmpeg, plus one step that runs only on arm64:
+
+Open Console
 
 Tips
 
-Keep the first compose file boring. Add extra services only when the app really needs them.
-
-Back up the sqlite volume before replacing edge hardware.
-
-Check logs from the mounted folder when the container restarts repeatedly.
+Read next
 
 ## Code Examples
 
 ### docker-compose.yaml
 
 ```ts
-version: "3.8"
-
 services:
   myapp:
     image: registry.mydomain.com/myorg/myapp:latest
     container_name: myapp
     restart: unless-stopped
     ports:
-      - "8282:80"
+      - "8282:8282"
     environment:
-      AKAN_REPLICA: "1,0,0"
       AKAN_PUBLIC_APP_NAME: myapp
+      AKAN_PUBLIC_REPO_NAME: myorg
+      AKAN_PUBLIC_SERVE_DOMAIN: example.com
       AKAN_PUBLIC_ENV: main
       AKAN_PUBLIC_OPERATION_MODE: edge
-      AKAN_PUBLIC_SERVE_DOMAIN: example.com
+      AKAN_REPLICA: "0,0,1"
       AKAN_SQLITE_DIR: /workspace/sqlite
+      AKAN_LOG_TO_FILE: "1"
       AKAN_LOG_DIR: /workspace/logs
     volumes:
       - ./sqlite:/workspace/sqlite
       - ./logs:/workspace/logs
 ```
 
-### Code
+### Terminal
 
 ```bash
-docker exec -it myapp sh -lc 'AKAN_CONSOLE=1 bun console.js'
-```
-
-### Code
-
-```ts
 docker run -e AKAN_SSR=false -e AKAN_REPLICA="1,0,0" -p 8282:8282 myapp
 ```
 
-### Code
+### apps/myapp/akan.config.ts
 
 ```ts
-AKAN_REPLICA="1,0,0"  # one request-serving process, no gateway
-AKAN_REPLICA="0,0,1"  # one all-purpose process, no gateway
-AKAN_REPLICA="2,1,0"  # two request children and one batch child, behind a gateway
+import type { AppConfig } from "akanjs";
+
+const config: AppConfig = {
+  docker: {
+    preRuns: ["apt-get update && apt-get install -y --no-install-recommends ffmpeg"],
+    postRuns: [{ arm64: "echo aarch64 image" }],
+  },
+  assets: {
+    pruneFonts: true,
+    keepFonts: ["fonts/Assistant-*.woff2"],
+  },
+};
+
+export default config;
+```
+
+### Terminal
+
+```bash
+docker exec -it myapp sh -lc 'AKAN_CONSOLE=1 bun console.js'
 ```
 
 ## Agent Notes

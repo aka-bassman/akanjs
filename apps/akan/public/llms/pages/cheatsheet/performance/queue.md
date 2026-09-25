@@ -18,55 +18,117 @@
 
 Queueing
 
-Queueing is for work that should not block the user's request. The button returns quickly, and a background process does the heavy job.
+An internal declared in the signal file. A queued job runs its `exec`.
 
-Good for backups, exports, report generation, imports, and long AI jobs.
+One queued run of a process: its arguments plus its retry state.
 
-The endpoint records intent and queues the process.
+One server process of the app. Its role is `federation`, `batch` or `all`.
 
-The process performs the slow work outside the request path.
+A process option that picks which replica roles run its jobs.
+
+Milliseconds to wait before the first run.
+
+How many times the job may run in total, counting the first try.
+
+Milliseconds to wait before a retry.
+
+Requests
+
+Default job
+
+Batch job
+
+Answers user requests.
+
+Never listens for requests. Runs background work only.
+
+Does both. The default `0,0,1` is one of these.
+
+The job is in the queue, waiting for its turn.
+
+The process is working. Update `progress` along the way.
+
+The result, here `file`, is ready.
+
+The work failed. The reason goes into `errMsg`.
+
+Some work is too slow to finish inside a request. Put it in a queue and answer right away; a background process picks it up and does the heavy part.
+
+Words used on this page
+
+Term
+
+The three steps
 
 Queue From Endpoint
 
-The endpoint should stay short. It changes the job status to waiting and asks the internal process to run later.
+The endpoint only hands the call to the service:
 
-Queue report generation
+The service saves the status, then queues the job:
 
-Service queues process
+Job options
+
+Pass job options as the last argument of the queueing call:
 
 Run In Process
 
-The internal process owns the slow work. It can update progress, upload files, and mark the job as done or failed.
+Declare the process in the signal file's Internal class:
 
-Internal process
-
-Slow job
+The work itself lives in a service method:
 
 Replica Roles
 
-Akan can run replicated children with roles. `federation` handles user-facing requests, while `batch` can take background work. This helps prevent slow jobs from exhausting the request server.
+Role
 
-Before batch child
+runs
 
-After batch child
+does not run
+
+Request side: federation replica
+
+User Request
+
+Federation Replica
+
+endpoint
+
+Queue Job
+
+Background side: batch replica
+
+Batch Replica
+
+Run Heavy Work
+
+Update Job Status
+
+User Sees Progress
 
 Tips
 
-Always store job status: `waiting`, `running`, `done`, `failed`.
+Always store the job status. These four are enough for the screen to know what to show:
 
-Make jobs idempotent. Retrying the same job should not corrupt data.
+Status
 
-Save progress when the user needs feedback.
+Written by
 
-Return quickly from endpoint. Do the slow work in process.
+Meaning
+
+Internal Signals
+
+Every internal type, and the `serverMode` / `operationMode` options.
+
+Scale With AKAN_REPLICA
+
+The three slots of `AKAN_REPLICA` and how a container runs them.
 
 ## Code Examples
 
-### Code
+### apps/myapp/lib/report/report.signal.ts
 
 ```ts
 export class ReportEndpoint extends endpoint(srv.report, ({ mutation }) => ({
-  queueGenerateReport: mutation(cnst.Report)
+  queueGenerateReport: mutation(cnst.Report, { guards: [Owner] })
     .param("reportId", ID)
     .exec(async function (reportId) {
       return await this.reportService.queueGenerateReport(reportId);
@@ -74,18 +136,23 @@ export class ReportEndpoint extends endpoint(srv.report, ({ mutation }) => ({
 })) {}
 ```
 
-### Code
+### apps/myapp/lib/report/report.service.ts
 
 ```ts
-async queueGenerateReport(reportId: string) {
-  const report = await this.reportModel.getReport(reportId);
-  await report.set({ status: "waiting" }).save();
-  await this.reportSignal.generateReport(report.id);
-  return report;
+export class ReportService extends serve(db.report, ({ signal, plug }) => ({
+  reportSignal: signal<sig.Report>(),
+  reportWriter: plug(ReportWriter),
+})) {
+  async queueGenerateReport(reportId: string) {
+    const report = await this.reportModel.getReport(reportId);
+    await report.set({ status: "waiting" }).save();
+    await this.reportSignal.generateReport(report.id);
+    return report;
+  }
 }
 ```
 
-### Code
+### apps/myapp/lib/report/report.signal.ts
 
 ```ts
 export class ReportInternal extends internal(srv.report, ({ process }) => ({
@@ -98,7 +165,7 @@ export class ReportInternal extends internal(srv.report, ({ process }) => ({
 })) {}
 ```
 
-### Code
+### apps/myapp/lib/report/report.service.ts
 
 ```ts
 async generateReport(reportId: string) {
@@ -111,6 +178,17 @@ async generateReport(reportId: string) {
     await report.set({ status: "failed", errMsg: String(err) }).save();
   }
 }
+```
+
+### apps/myapp/lib/report/report.signal.ts
+
+```ts
+generateReport: process(Boolean, { serverMode: "batch" })
+  .msg("reportId", ID)
+  .exec(async function (reportId) {
+    await this.reportService.generateReport(reportId);
+    return true;
+  }),
 ```
 
 ## Agent Notes

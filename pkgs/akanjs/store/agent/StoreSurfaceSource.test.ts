@@ -117,6 +117,36 @@ describe("StoreSurfaceSource", () => {
     expect(await surface.call("navigate", { path: "/docs/intro" })).toContain("Now on /docs/intro.");
   });
 
+  test("navigate reports a path with no route instead of leaving the page half-moved", async () => {
+    const { router } = await import("akanjs/client");
+    const priorWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", {
+      value: { parent: { postMessage: () => undefined } },
+      configurable: true,
+    });
+    const refusal = new Error("[rscClient] no route at /nope");
+    refusal.name = "RscRouteNotFound";
+    router.init({
+      type: "ssr",
+      side: "client",
+      lang: "en",
+      router: {
+        push: (href: string) => (href.includes("/nope") ? Promise.reject(refusal) : undefined),
+        replace: () => undefined,
+        back: () => undefined,
+        refresh: () => undefined,
+      },
+    } as never);
+    const surface = new AgenticSurface();
+    surface.addSource(source);
+
+    await expect(surface.call("navigate", { path: "/nope" })).rejects.toThrow("There is no route at /nope");
+    expect(await surface.call("navigate", { path: "/docs/intro" })).toContain("Now on /docs/intro.");
+
+    router.init({ side: "server", routeManifest: [] } as never);
+    Object.defineProperty(globalThis, "window", { value: priorWindow, configurable: true });
+  });
+
   test("goBack is global, and refuses when there is nothing behind this page", async () => {
     const surface = new AgenticSurface();
     surface.addSource(source);
@@ -140,12 +170,19 @@ describe("StoreSurfaceSource", () => {
     expect(shadowed).toBe(1);
   });
 
+  test("the built-ins that change nothing a resource holds do not wait for the screen", () => {
+    // Every settle is 120ms of quiet at the very least, and a turn that reads ten keys pays it ten times for a
+    // report that is empty by construction.
+    for (const name of ["readScreen", "readState", "highlight"]) expect(entryOf(name)?.settle).toBe(false);
+    for (const name of ["navigate", "goBack"]) expect(entryOf(name)?.settle).toBeUndefined();
+  });
+
   test("readScreen is published and answers honestly with no document", async () => {
     const surface = new AgenticSurface();
     surface.addSource(source);
     const readScreen = entryOf("readScreen");
     expect(readScreen?.settle).toBe(false);
-    expect(Object.keys((readScreen?.parameters?.properties ?? {}) as object)).toEqual(["section"]);
+    expect(Object.keys((readScreen?.parameters?.properties ?? {}) as object)).toEqual(["section", "images"]);
     expect(readScreen?.parameters?.required).toBeUndefined();
     expect(await surface.call("readScreen", {})).toBe("No rendered document is available.");
   });

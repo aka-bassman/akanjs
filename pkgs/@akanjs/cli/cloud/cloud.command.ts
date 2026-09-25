@@ -18,25 +18,6 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
     .exec(async function (host, workspace) {
       await this.cloudScript.logout(workspace, host);
     }),
-  setLlm: target({ desc: "Configure LLM (Large Language Model) API key" })
-    .with(Workspace)
-    .exec(async function (workspace) {
-      await this.cloudScript.setLlm(workspace);
-    }),
-  resetLlm: target({ desc: "Reset LLM configuration to default" })
-    .with(Workspace)
-    .exec(function (workspace) {
-      this.cloudScript.resetLlm(workspace);
-    }),
-  ask: target({
-    devOnly: true,
-    desc: "Ask AI assistant a question about your project",
-  })
-    .option("question", String, { ask: "question to ask" })
-    .with(Workspace)
-    .exec(async function (question, workspace) {
-      await this.cloudScript.ask(question, workspace);
-    }),
   deployAkan: target({
     devOnly: true,
     desc: "Deploy Akan.js framework to cloud (internal use)",
@@ -54,7 +35,7 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
     .exec(async function (test, registry, workspace) {
       await this.cloudScript.deployAkan(workspace, {
         test,
-        registryUrl: resolveRegistryUrl(registry as "npm" | "local"),
+        registryUrl: resolveRegistryUrl(registry),
       });
     }),
   update: target({ desc: "Update Akan.js framework to the latest version" })
@@ -75,7 +56,7 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
     })
     .exec(async function (workspace, tag, registry) {
       await this.cloudScript.update(workspace, tag, {
-        registryUrl: resolveRegistryUrl(registry as "npm" | "local"),
+        registryUrl: resolveRegistryUrl(registry),
       });
     }),
   downloadEnv: target({

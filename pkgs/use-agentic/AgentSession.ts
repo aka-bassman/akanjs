@@ -1,18 +1,22 @@
-import { AgentAbort } from "./AgentAbort";
-import { AgentProgress, type AgentProgressReport } from "./AgentProgress";
+import type { AgentProgressReport } from "./AgentProgress";
 import { Compaction, type CompactOptions } from "./Compaction";
+import { Reference } from "./Reference";
 import { ToolOutput } from "./ToolOutput";
+import { type ToolApprovalRequest, type ToolCardAnswer, type ToolCardRequest, ToolRunner } from "./ToolRunner";
 import { Transcript } from "./Transcript";
 import type {
   AgentRunner,
   ChatMessage,
   ContextBlock,
+  MessageReference,
   PublishedTool,
   RunnerRequest,
   SurfaceView,
+  ToolActivity,
   ToolCallRequest,
   ToolCallResult,
-  ToolEntry,
+  ToolCard,
+  TurnStop,
 } from "./types";
 
 export interface PendingApproval {
@@ -34,6 +38,20 @@ export interface PendingQuestion {
   choices: string[];
   multiple: boolean;
   answer: (value: string | string[]) => void;
+  dismiss: (reason?: string) => void;
+}
+
+/**
+ * A call parked on a component the app declared with the tool — a form to fill in, a choice no list of strings
+ * could carry. The loop waits on it exactly as it waits on an approval, and `render` is the app's own, so the
+ * framework decides where the card sits and nothing about what it asks.
+ */
+export interface PendingCard {
+  callId: string;
+  name: string;
+  args: Record<string, unknown>;
+  render: ToolCard;
+  submit: (value: unknown) => void;
   dismiss: (reason?: string) => void;
 }
 
@@ -90,6 +108,21 @@ export interface AgentSessionOptions {
    * duplicate, no error, just messages that never reach the server. Reset the mark here.
    */
   onCompact?: (replaced: readonly ChatMessage[], summary: ChatMessage) => void;
+  /**
+   * Called as each tool call starts and ends — where a host draws what the agent is doing on the page itself.
+   * The session keeps none of it: nothing here is transcript, and holding it would mean a re-render per call for
+   * something no message renders.
+   */
+  onActivity?: (event: ToolActivity) => void | Promise<void>;
+  /**
+   * Called when a turn starts and when it settles — the boundary a host draws the agent's own presence in. The
+   * calls of one turn arrive with model turns between them, seconds long, so anything measured in the gap
+   * between *calls* keeps ending and restarting inside a turn that never stopped.
+   *
+   * Only the conversation loop reports here. `compact` runs under the same flag and drives nothing on screen, so
+   * a host drawing the agent at work would draw it for a summary nobody asked to watch.
+   */
+  onTurn?: (running: boolean) => void;
 }
 
 /**
@@ -127,10 +160,15 @@ export class AgentSession {
   readonly #surface: SurfaceView;
   readonly #runner: AgentRunner;
   readonly #options: AgentSessionOptions;
+  readonly #tools: ToolRunner;
   #messages: ChatMessage[] = [];
   #running = false;
   #pending: PendingApproval | null = null;
   #question: PendingQuestion | null = null;
+  #card: PendingCard | null = null;
+  #staged: MessageReference[] = [];
+  #inserts: MessageReference[] = [];
+  #chats = 0;
   #progress: (AgentProgressReport & { callId: string }) | null = null;
   #controller: AbortController | null = null;
   #active: Promise<void> | null = null;
@@ -151,6 +189,23 @@ export class AgentSession {
     this.#surface = surface;
     this.#runner = runner;
     this.#options = options;
+    this.#tools = new ToolRunner(surface, {
+      approve: (request, signal) => this.#awaitApproval(request, signal),
+      card: (request, signal) => this.#awaitCard(request, signal),
+      settle: () => this.#options.settle?.(),
+      activity: (event) => this.#options.onActivity?.(event),
+      progress: ({ callId, report }) => {
+        if (report) this.#progress = { ...report, callId };
+        else if (this.#progress?.callId === callId) this.#progress = null;
+        // A clear that names a call the slot has already moved past is not this row's to take back.
+        else return;
+        this.#notify();
+      },
+      fallback: async (call, signal) =>
+        call.name === AgentSession.askUserTool.name
+          ? await this.#ask(call, signal)
+          : { id: call.id, name: call.name, error: `Unknown tool: ${call.name}` },
+    });
     this.#history = options.history;
     this.#onCompact = options.onCompact;
     const restored = AgentSession.#restored(options.history);
@@ -198,6 +253,121 @@ export class AgentSession {
     return this.#question;
   }
 
+  get pendingCard(): PendingCard | null {
+    return this.#card;
+  }
+
+  /**
+   * What the user has pointed at and not yet sent.
+   *
+   * Held by the session rather than by the composer, which is where staged *files* live — and the difference is
+   * not an inconsistency. A file only ever arrives from the composer's own picker or drop zone, so composer-local
+   * state can reach every producer of one. A reference arrives from whichever component drew the data: a card
+   * partway down the page, reaching the session it is already inside. Composer state is unreachable from there,
+   * and a chat that replaces its composer has no state to reach anyway.
+   *
+   * A staging slot, not a tray. `send` empties it, so what somebody pointed at belongs to the message they were
+   * writing and never leaks into the next one.
+   */
+  get staged(): readonly MessageReference[] {
+    return this.#staged;
+  }
+
+  /**
+   * Pointing at the same field twice replaces it: the newer value is the one they meant, and one chip is honest.
+   *
+   * Stages the value only. The caller is the composer's own `@` menu, which is already writing the token as the
+   * user picks — `refer` is the entry point for everything that is not the composer.
+   */
+  stage = (reference: MessageReference) => {
+    this.#stage(Reference.clipped(reference));
+    this.#announce();
+  };
+
+  /**
+   * Points at something from a component that is not the composer — a card the user clicked beside the data.
+   *
+   * Two halves, because the composer owns one of them: the value is staged here, and the token the message needs
+   * is left for whichever chat is rendering this session's draft to write. That is why nothing is queued when no
+   * chat is: the value would sit staged with no token anywhere naming it, and the message text is what decides
+   * which references a turn carries — so the user would press a button and watch nothing happen, which is the
+   * failure this warns about instead.
+   */
+  refer = (reference: MessageReference) => {
+    const clipped = Reference.clipped(reference);
+    this.#stage(clipped);
+    if (this.#chats) this.#inserts = [...this.#inserts.filter((one) => !Reference.same(one, clipped)), clipped];
+    else
+      console.warn(
+        `No chat is rendering this agent session, so "${clipped.label}" was staged with no token written for it. ` +
+          "The component calling this and an <Agent.Chat /> have to share one session — check which <Agent.Zone> " +
+          "each of them is inside.",
+      );
+    this.#announce();
+  };
+
+  /**
+   * Tokens a chat has not written into its draft yet. State rather than a queue somebody drains, for the reason
+   * `pendingApproval` is state: two chats may be mounted on one session — a responsive app renders a desktop and
+   * a mobile composer and hides one in CSS — and each holds its own draft, so each has to write the token. A
+   * destructive read would hand it to whichever rendered first and leave the other silently without it.
+   */
+  get pendingInserts(): readonly MessageReference[] {
+    return this.#inserts;
+  }
+
+  /** Idempotent by key: the second chat to apply the same insert is acknowledging one that is already gone. */
+  insertApplied = (key: string) => {
+    const next = this.#inserts.filter((one) => Reference.keyOf(one) !== key);
+    if (next.length === this.#inserts.length) return;
+    this.#inserts = next;
+    this.#announce();
+  };
+
+  /**
+   * Stages references back from a message that was parked behind a running turn. What was pointed at since wins:
+   * the parked value is the older read of the same field, and letting it land would undo an edit made in between.
+   * No token is written — the parked text carries them already, and the composer is putting that text back.
+   */
+  restoreStaged = (references: readonly MessageReference[]) => {
+    const fresh = references.filter((one) => !this.#staged.some((held) => Reference.same(held, one)));
+    if (!fresh.length) return;
+    this.#staged = [...fresh.map((one) => Reference.clipped(one)), ...this.#staged];
+    this.#announce();
+  };
+
+  /**
+   * Registered by a chat for as long as it is rendering this session's draft, so `refer` can tell the difference
+   * between a token nobody has written yet and one nobody ever will.
+   */
+  attachChat = () => {
+    this.#chats += 1;
+    return () => {
+      this.#chats = Math.max(0, this.#chats - 1);
+    };
+  };
+
+  #stage(clipped: MessageReference) {
+    const at = this.#staged.findIndex((one) => Reference.same(one, clipped));
+    this.#staged =
+      at === -1 ? [...this.#staged, clipped] : this.#staged.map((one, idx) => (idx === at ? clipped : one));
+  }
+
+  /** By key, never by index: what orders the references of a message is its text, and that is not this list. */
+  unstage = (key: string) => {
+    const next = this.#staged.filter((one) => Reference.keyOf(one) !== key);
+    if (next.length === this.#staged.length) return;
+    this.#staged = next;
+    this.#announce();
+  };
+
+  clearStaged = () => {
+    if (!this.#staged.length && !this.#inserts.length) return;
+    this.#staged = [];
+    this.#inserts = [];
+    this.#announce();
+  };
+
   /** What the tool running now last said about its own progress, for the row that is still spinning. */
   get progress(): (AgentProgressReport & { callId: string }) | null {
     return this.#progress;
@@ -227,9 +397,10 @@ export class AgentSession {
   async #turn(input: string | ChatMessage[]) {
     const controller = new AbortController();
     this.#controller = controller;
+    this.#options.onTurn?.(true);
     if (typeof input === "string") this.#append({ role: "user", text: input });
     else for (const message of input) this.#append(message);
-    const maxTurns = this.#options.maxTurns ?? 8;
+    const maxTurns = this.#options.maxTurns ?? 12;
     try {
       let budget = maxTurns;
       for (let turn = 0; ; turn += 1) {
@@ -254,17 +425,28 @@ export class AgentSession {
           this.#unanswered(toolCalls);
           return;
         }
+        // A turn the provider cut off is one whose last call may be missing, so the ones that did arrive are
+        // closed rather than run: acting on half an intention is worse than stopping. The user is told because
+        // nothing else can tell them — a truncated answer is otherwise a complete-looking one, and a turn cut off
+        // before its call finished ends the loop looking exactly like a model that decided it was done.
+        if (stop === "length") {
+          // Marked before the calls are closed, so the error lands on the assistant draft that was cut off rather
+          // than opening a second assistant turn after the tool message.
+          this.#fail(
+            "The model ran out of room mid-answer, so this turn is incomplete. Ask again, or raise the answer limit.",
+          );
+          if (toolCalls.length) this.#unanswered(toolCalls);
+          return;
+        }
         if (stop !== "toolUse" || !toolCalls.length) return;
         const toolResults: ToolCallResult[] = [];
         for (const call of toolCalls)
           toolResults.push(
             controller.signal.aborted
               ? { id: call.id, name: call.name, error: Transcript.unanswered }
-              : // Bounded here, at the one place every tool's answer enters the transcript, because from here on it
-                // rides every later turn as well.
-                ToolOutput.clipped(await this.#execute(call, controller.signal)),
+              : await this.#tools.run(call, controller.signal),
           );
-        this.#append({ role: "tool", toolResults });
+        this.#append({ role: "tool", toolResults: ToolOutput.deduped(toolResults) });
       }
     } catch (error) {
       if (!controller.signal.aborted) this.#fail(error instanceof Error ? error.message : String(error));
@@ -274,7 +456,14 @@ export class AgentSession {
       this.#active = null;
       this.#pending = null;
       this.#question = null;
+      this.#card = null;
       this.#progress = null;
+      // Stop caught before the first delta leaves the draft this turn opened, and the rendered transcript is the
+      // one place it survives — `Transcript` already drops it from the wire and from history. A bubble draws an
+      // assistant message with no text as still being written, so the draft outlives the turn as a live spinner.
+      const draft = this.#messages[this.#messages.length - 1];
+      if (draft?.role === "assistant" && !Transcript.carries(draft)) this.#messages = this.#messages.slice(0, -1);
+      this.#options.onTurn?.(false);
       this.#notify();
     }
   }
@@ -294,6 +483,8 @@ export class AgentSession {
       await this.#active;
     }
     this.#messages = [];
+    this.#staged = [];
+    this.#inserts = [];
     this.#compactFloor = 0;
     // The pending debounced save would re-create the entry clear() just removed.
     if (this.#saveTimer) {
@@ -479,7 +670,7 @@ export class AgentSession {
     return text;
   }
 
-  async #assistantTurn(signal: AbortSignal): Promise<{ toolCalls: ToolCallRequest[]; stop: "end" | "toolUse" }> {
+  async #assistantTurn(signal: AbortSignal): Promise<{ toolCalls: ToolCallRequest[]; stop: TurnStop }> {
     const { tools, guides } = this.#surface.snapshot();
     const instructions = [this.#options.instructions, ...guides].filter(Boolean).join("\n\n");
     const request: RunnerRequest = {
@@ -494,7 +685,7 @@ export class AgentSession {
     this.#append({ role: "assistant" });
     let text = "";
     const toolCalls: ToolCallRequest[] = [];
-    let stop: "end" | "toolUse" = "end";
+    let stop: TurnStop = "end";
     for await (const event of this.#runner.run(request)) {
       if (signal.aborted) break;
       if (event.type === "text") {
@@ -506,48 +697,6 @@ export class AgentSession {
     }
     if (toolCalls.length) this.#patchLast({ toolCalls });
     return { toolCalls, stop };
-  }
-
-  async #execute(call: ToolCallRequest, signal: AbortSignal): Promise<ToolCallResult> {
-    const base = { id: call.id, name: call.name };
-    const entry = this.#surface.tool(call.name);
-    if (!entry) {
-      if (call.name === AgentSession.askUserTool.name) return await this.#ask(call, signal);
-      return { ...base, error: `Unknown tool: ${call.name}` };
-    }
-    const message = AgentSession.#confirmMessage(call.name, entry, call.args);
-    if (message) {
-      const approved = await this.#awaitApproval(call, message, signal);
-      if (approved !== true) return { ...base, error: approved };
-    }
-    const before = this.#surface.snapshot();
-    try {
-      const result = await AgentAbort.run(signal, () =>
-        AgentProgress.run(
-          (report) => {
-            this.#progress = { ...report, callId: call.id };
-            this.#notify();
-          },
-          () => AgentSession.#raced(this.#surface.call(call.name, call.args), signal),
-        ),
-      );
-      // A read returns what is already there; anything else may still be landing, and a report taken now would
-      // describe the screen as it was one tick before the call.
-      if (entry.settle !== false) await this.#options.settle?.();
-      const changes = this.#surface.diffSince(before);
-      return {
-        ...base,
-        ...(result !== undefined ? { result } : {}),
-        ...(changes.length ? { changes } : {}),
-      };
-    } catch (error) {
-      return { ...base, error: error instanceof Error ? error.message : String(error) };
-    } finally {
-      if (this.#progress?.callId === call.id) {
-        this.#progress = null;
-        this.#notify();
-      }
-    }
   }
 
   /** `null` when the user declined or no ask is configured: both mean stop and record why. */
@@ -605,7 +754,29 @@ export class AgentSession {
     });
   }
 
-  #awaitApproval(call: ToolCallRequest, message: string, signal: AbortSignal): Promise<true | string> {
+  #awaitCard(request: ToolCardRequest, signal: AbortSignal): Promise<ToolCardAnswer> {
+    return new Promise((resolve) => {
+      const settle = (answer: ToolCardAnswer) => {
+        this.#card = null;
+        signal.removeEventListener("abort", onAbort);
+        this.#notify();
+        resolve(answer);
+      };
+      const onAbort = () => settle({ error: "The user aborted the turn." });
+      signal.addEventListener("abort", onAbort);
+      this.#card = {
+        callId: request.callId,
+        name: request.name,
+        args: request.args,
+        render: request.render,
+        submit: (value) => settle({ result: value }),
+        dismiss: (reason) => settle({ error: reason ?? "The user closed the card without filling it in." }),
+      };
+      this.#notify();
+    });
+  }
+
+  #awaitApproval(request: ToolApprovalRequest, signal: AbortSignal): Promise<true | string> {
     return new Promise((resolve) => {
       const settle = (value: true | string) => {
         this.#pending = null;
@@ -616,53 +787,12 @@ export class AgentSession {
       const onAbort = () => settle("The user aborted the turn.");
       signal.addEventListener("abort", onAbort);
       this.#pending = {
-        callId: call.id,
-        name: call.name,
-        args: call.args,
-        message,
+        ...request,
         approve: () => settle(true),
         reject: (reason) => settle(reason ?? "The user declined."),
       };
       this.#notify();
     });
-  }
-
-  /**
-   * The call, or the abort — whichever lands first.
-   *
-   * A tool is handed the signal through `AgentAbort` and may stop itself, but nothing obliges it to, and a tool
-   * that waits on a two-minute job is exactly the one a user reaches for Stop during. Without this race the loop
-   * stays parked inside the call for those two minutes with the chat still showing a turn in flight.
-   *
-   * The losing promise is left running rather than cancelled: the work is usually a job a server is already
-   * doing, and throwing away a result that is about to land helps nobody. Both of its outcomes are handled here,
-   * so a late failure settles nothing instead of surfacing as an unhandled rejection.
-   */
-  static #raced<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const onAbort = () => reject(new Error("The user aborted the turn."));
-      work.then(
-        (value) => {
-          signal.removeEventListener("abort", onAbort);
-          resolve(value);
-        },
-        (error: unknown) => {
-          signal.removeEventListener("abort", onAbort);
-          reject(error instanceof Error ? error : new Error(String(error)));
-        },
-      );
-      if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
-    });
-  }
-
-  static #confirmMessage(name: string, entry: ToolEntry, args: Record<string, unknown>): string | null {
-    const confirm = entry.confirm;
-    if (confirm === undefined || confirm === false) return null;
-    if (typeof confirm === "string") return confirm;
-    const verdict = confirm === true ? true : confirm(args);
-    if (verdict === false) return null;
-    return verdict === true ? `Run ${name}?` : verdict;
   }
 
   static #defaultContext(surface: SurfaceView): ContextBlock[] {
@@ -702,9 +832,17 @@ export class AgentSession {
   }
 
   #notify() {
+    this.#announce();
+    this.#schedulePersist();
+  }
+
+  /**
+   * A change that is not the transcript's. Staged references live beside the messages rather than in them, so
+   * announcing one has to redraw the composer without scheduling a save of messages nothing touched.
+   */
+  #announce() {
     this.#version += 1;
     for (const listener of this.#listeners) listener();
-    this.#schedulePersist();
   }
 
   /** Debounced: streaming patches the last message on every delta, and a save per delta would thrash storage. */

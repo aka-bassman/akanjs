@@ -1,6 +1,6 @@
 {
   "name": "@akanjs/cli",
-  "version": "3.0.0-alpha.67",
+  "version": "3.0.0-beta.17",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -17,8 +17,7 @@
     "bun": ">=1.4.0"
   },
   "bin": {
-    "akan": "./index.ts",
-    "akan2": "./index.ts"
+    "akan": "./index.ts"
   },
   "exports": {
     ".": {
@@ -26,16 +25,24 @@
       "types": "./index.ts",
       "default": "./index.ts"
     },
+    "./code": {
+      "import": "./code/akanCode.ts",
+      "types": "./code/akanCode.ts",
+      "default": "./code/akanCode.ts"
+    },
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@earendil-works/chord": "0.86.1",
+    "@earendil-works/pi-agent-core": "0.86.1",
+    "@earendil-works/pi-ai": "0.86.1",
+    "@earendil-works/pi-coding-agent": "0.86.1",
+    "@earendil-works/pi-telemetry": "0.86.1",
+    "@earendil-works/pi-tui": "0.86.1",
     "@inquirer/prompts": "^8.4.3",
-    "@langchain/core": "^1.1.47",
-    "@langchain/deepseek": "^1.0.26",
-    "@langchain/openai": "^1.4.6",
     "@tailwindcss/node": "^4.3.0",
     "@trapezedev/project": "^7.1.4",
-    "akanjs": "3.0.0-alpha.67",
+    "akanjs": "3.0.0-beta.17",
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
     "dayjs": "^1.11.20",
@@ -47,9 +54,11 @@
     "qrcode": "^1.5.4",
     "react": "19.2.7",
     "ssh2": "^1.17.0",
+    "string-width": "^8.2.1",
     "subset-font": "^2.5.0",
     "tailwind-scrollbar": "^4.0.2",
     "tailwindcss": "^4.3.0",
+    "typebox": "1.1.38",
     "typescript": "^6.0.3"
   },
   "devDependencies": {},

@@ -31,6 +31,40 @@ describe("sessionHistoryOf", () => {
     expect(stored(history)).toBeNull();
   });
 
+  test("a reference keeps its pointer and loses its value, so a restored chat re-reads instead of guessing", () => {
+    const history = sessionHistoryOf(true, "refs");
+    if (!history) throw new Error("expected a history");
+    history.save([
+      {
+        role: "user",
+        text: "make this more dynamic",
+        references: [
+          { refName: "videoCut", refId: "6a1f", label: "Cut 3", path: "cutFrames.2.content", value: "a wide shot" },
+          { refName: "videoCharacter", refId: "c1", label: "Karina", value: { name: "Karina" } },
+        ],
+      },
+    ]);
+    const raw = window.sessionStorage.getItem("akan.agent.historytest.refs") ?? "";
+    expect(raw).not.toContain("a wide shot");
+    expect(raw).toContain("videoCut");
+    const [message] = stored(history) ?? [];
+    expect(message.references).toEqual([
+      {
+        refName: "videoCut",
+        refId: "6a1f",
+        label: "Cut 3",
+        path: "cutFrames.2.content",
+        note: "the conversation was restored from storage, which keeps what the user pointed at but not the value it held",
+      },
+      {
+        refName: "videoCharacter",
+        refId: "c1",
+        label: "Karina",
+        note: "the conversation was restored from storage, which keeps what the user pointed at but not the value it held",
+      },
+    ]);
+  });
+
   test("a zone path keys its own entry, and local storage is the explicit opt-up", () => {
     const zone = sessionHistoryOf(true, "comments");
     zone?.save([{ role: "user", text: "zone" }]);
@@ -84,6 +118,7 @@ describe("sessionHistoryOf", () => {
           { name: "shot.png", mimeType: "image/png", data: "AAAA" },
           { name: "spec.pdf", mimeType: "application/pdf", text: "a very long extraction" },
           { name: "hosted.png", mimeType: "image/png", url: "https://cdn/hosted.png" },
+          { name: "kept.png", mimeType: "image/png", data: "BBBB", ref: "file_42" },
         ],
       },
     ]);
@@ -94,6 +129,8 @@ describe("sessionHistoryOf", () => {
       { name: "shot.png", mimeType: "image/png" },
       { name: "spec.pdf", mimeType: "application/pdf" },
       { name: "hosted.png", mimeType: "image/png", url: "https://cdn/hosted.png" },
+      // The handle is what a restored conversation has left to find the file with; only the bytes are too big to keep.
+      { name: "kept.png", mimeType: "image/png", ref: "file_42" },
     ]);
     history?.clear();
   });

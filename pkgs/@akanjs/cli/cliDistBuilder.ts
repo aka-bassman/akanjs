@@ -138,13 +138,16 @@ export class CliDistBuilder {
     const buildResult = await Bun.build({
       entrypoints: [
         `${this.#cliDir}/index.ts`,
+        // The code-agent SDK is a second published entry, and `naming.entry` is the bare basename — which is
+        // why this file is not called `index.ts` like every other barrel here.
+        `${this.#cliDir}/code/akanCode.ts`,
         `${this.#devkitDir}/incrementalBuilder/incrementalBuilder.proc.ts`,
         `${this.#devkitDir}/incrementalBuilder/buildBatch.proc.ts`,
         `${this.#devkitDir}/typecheck/typecheck.proc.ts`,
       ],
       // Required, not cosmetic: with `splitting: false` Bun inlines every dynamically imported module
       // into the entry and hoists its external `import` statements to the top of the file, so the
-      // lazy imports that keep `typescript`, @trapezedev/project, @langchain/* and the tailwind stack
+      // lazy imports that keep `typescript`, @trapezedev/project and the tailwind stack
       // out of the dev host would all load eagerly anyway.
       splitting: true,
       target: "bun",
@@ -153,20 +156,21 @@ export class CliDistBuilder {
       // through `import.meta.dir` (e.g. the `templates/` and `guidelines/` lookups) would otherwise
       // look for them under `chunks/`.
       naming: { entry: "[name].js", chunk: "[name]-[hash].js" },
-      external: Object.keys({ ...packageJson.dependencies, ...packageJson.peerDependencies }).filter(
-        (name) => name !== "@akanjs/devkit",
-      ),
+      // devkit is bundled in rather than resolved at runtime, which it already is by being absent here.
+      external: Object.keys({ ...packageJson.dependencies, ...packageJson.peerDependencies }),
       plugins: [],
     });
     if (!buildResult.success) throw new AggregateError(buildResult.logs, "CLI build failed");
-    await $`rm -rf ${this.#outDir}/templates ${this.#outDir}/guidelines`;
+    await $`rm -rf ${this.#outDir}/templates ${this.#outDir}/guidelines ${this.#outDir}/skills`;
     await $`cp -R ${this.#cliDir}/templates ${this.#outDir}/templates`;
     await $`cp -R ${this.#cliDir}/guidelines ${this.#outDir}/guidelines`;
+    await $`cp -R ${this.#devkitDir}/codeAgent/skills ${this.#outDir}/skills`;
     const distPackageJson = {
       ...packageJson,
-      bin: { akan: "./index.js", akan2: "./index.js" },
+      bin: { akan: "./index.js" },
       exports: {
         ".": { import: "./index.js", default: "./index.js" },
+        "./code": { import: "./akanCode.js", default: "./akanCode.js" },
         "./package.json": "./package.json",
       },
     };

@@ -34,7 +34,7 @@ const shouldSkipNodeModule = (absPath: string) => NODE_MODULES_RE.test(absPath) 
  * the traversal matches the module graph the bundler will actually see.
  */
 export class GraphClientEntryDiscovery implements ClientEntryDiscovery {
-  #akanConfig: AkanConfig;
+  #akanConfig: Pick<AkanConfig, "barrelImports">;
   #resolvePackage: PackageResolver;
   #analyzer: BarrelAnalyzer;
   #tsTranspiler = new Bun.Transpiler({ loader: "tsx" });
@@ -57,7 +57,7 @@ export class GraphClientEntryDiscovery implements ClientEntryDiscovery {
   #unresolvedPaths = new Set<string>();
   #unresolvedSpecifiers = new Set<string>();
 
-  constructor(akanConfig: AkanConfig, resolvePackage: PackageResolver) {
+  constructor(akanConfig: Pick<AkanConfig, "barrelImports">, resolvePackage: PackageResolver) {
     this.#akanConfig = akanConfig;
     this.#resolvePackage = resolvePackage;
     this.#analyzer = new BarrelAnalyzer({ resolvePackage });

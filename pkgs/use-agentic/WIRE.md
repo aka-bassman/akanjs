@@ -44,7 +44,7 @@ tools, and the loop stay in the client; the server serves exactly one stateless 
 ## Attachments
 
 A message may carry files in `attachments` (`MessageAttachment`, `types.ts`) — one of `data` (base64 bytes), `url`,
-or `text` (already-extracted content), plus `name` and `mimeType`:
+or `text` (already-extracted content), plus `name` and `mimeType`, and an optional `ref`:
 
 ```jsonc
 { "role": "user", "text": "What does this chart say?",
@@ -56,6 +56,11 @@ silently drop one its model cannot read** — a file the model never saw is a fi
 it with a note in the message text saying which file was not read and why, so the model can say so and ask for
 another form. `text` is readable by every provider by definition, which is what makes an extracted PDF work against
 a text-only model.
+
+`ref` is the host's own handle on the file — a file id, a storage key — opaque to everything in between. A backend
+carries it and never reads it; it is not shown to the model, and a tool the host published is what spends it.
+Without one, a host that stores its uploads has to identify a file by name and size, which collides for two crops
+of one export.
 
 Nothing here is stored: the wire carries the bytes for exactly one turn's request.
 

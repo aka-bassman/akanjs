@@ -15,7 +15,8 @@ export interface StAgentic {
   /** A read-only derived value the agent can read while the component is mounted: `.desc()` then `.value()`. */
   expose: <T extends AgentFieldType>(name: string | null, type: T, meta?: StExposeMeta) => StExposeDraft<T>;
   /**
-   * A component tool: `.desc()`, then `.arg()` / `.opt()`, chained onto one `.exec()` hook.
+   * A component tool: `.desc()`, then `.arg()` / `.opt()`, chained onto one terminal hook — `.exec()` for a tool
+   * a function answers, `.card()` for one the user answers in the chat.
    *
    * A falsy name declares the tool without publishing it — the callable still drives the click a person makes.
    * Every one of these ends in a hook, so a conditional surface withholds the name rather than skipping the chain.

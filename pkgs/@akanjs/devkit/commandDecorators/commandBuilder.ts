@@ -23,9 +23,24 @@ type PrimitiveValue<T extends PrimitiveArgType> = T extends StringConstructor
     ? number
     : boolean;
 type MaybeNullable<Value, Option> = Option extends { nullable: true } ? Value | null : Value;
+/**
+ * The literal union a static `enum` declares, or `never` for a `DynamicEnum` — a function does not extend
+ * a readonly array, so a runtime-resolved choice list falls back to the primitive type. `{ label, value }`
+ * choices contribute their `value`.
+ */
+type EnumValue<Option> = Option extends { enum: infer Choices }
+  ? Choices extends readonly (infer Choice)[]
+    ? Choice extends { value: infer Value }
+      ? Value
+      : Choice
+    : never
+  : never;
+type ArgValue<Type extends PrimitiveArgType, Option> = [EnumValue<Option>] extends [never]
+  ? PrimitiveValue<Type>
+  : EnumValue<Option>;
 type AddArg<Params extends unknown[], Type extends PrimitiveArgType, Option> = [
   ...Params,
-  MaybeNullable<PrimitiveValue<Type>, Option>,
+  MaybeNullable<ArgValue<Type, Option>, Option>,
 ];
 type AddInternalArg<Params extends unknown[], Token extends InternalArgToken> = [...Params, Token["_value"]];
 type AddInternalArgs<Params extends unknown[], Tokens extends readonly InternalArgToken[]> = Tokens extends readonly [
@@ -68,7 +83,7 @@ class TargetBuilder<Deps extends readonly DependencyCls[], Params extends unknow
     this.#args = args;
   }
 
-  arg<Type extends PrimitiveArgType, Option extends ArgsOption<Context> = ArgsOption<Context>>(
+  arg<Type extends PrimitiveArgType, const Option extends ArgsOption<Context> = ArgsOption<Context>>(
     name: string,
     type: Type,
     argsOption: Option = {} as Option,
@@ -85,7 +100,7 @@ class TargetBuilder<Deps extends readonly DependencyCls[], Params extends unknow
     ]);
   }
 
-  option<Type extends PrimitiveArgType, Option extends ArgsOption<Context> = ArgsOption<Context>>(
+  option<Type extends PrimitiveArgType, const Option extends ArgsOption<Context> = ArgsOption<Context>>(
     name: string,
     type: Type,
     argsOption: Option = {} as Option,
@@ -135,12 +150,12 @@ type CommandBuilderContext<Deps extends readonly DependencyCls[]> = {
   public: (targetOption?: Omit<TargetOption, "type">) => TargetBuilder<Deps>;
   cloud: (targetOption?: Omit<TargetOption, "type">) => TargetBuilder<Deps>;
   dev: (targetOption?: Omit<TargetOption, "type">) => TargetBuilder<Deps>;
-  arg: <Type extends PrimitiveArgType, Option extends ArgsOption<CommandContext> = ArgsOption<CommandContext>>(
+  arg: <Type extends PrimitiveArgType, const Option extends ArgsOption<CommandContext> = ArgsOption<CommandContext>>(
     name: string,
     type: Type,
     argsOption?: Option,
   ) => ArgMeta;
-  option: <Type extends PrimitiveArgType, Option extends ArgsOption<CommandContext> = ArgsOption<CommandContext>>(
+  option: <Type extends PrimitiveArgType, const Option extends ArgsOption<CommandContext> = ArgsOption<CommandContext>>(
     name: string,
     type: Type,
     argsOption?: Option,

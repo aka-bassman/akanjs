@@ -1,4 +1,6 @@
 import type { option as utilOption } from "@libs/util/server";
+import { getEnv } from "akanjs/base";
+import { authTokenKey, legacyAuthTokenKey } from "akanjs/common";
 import { decodeJwt, importPKCS8, SignJWT } from "jose";
 
 import { Err } from "../lib/dict";
@@ -166,6 +168,51 @@ export type OAuthType = Exclude<utilOption.SSOType, "apple">;
 export const headerSafeLocation = (redirect: string) =>
   redirect.replace(/[^ -~]/gu, (char) => encodeURIComponent(char));
 
+const userRefreshTokenLegacyKey = "userRefreshToken";
+const adminRefreshTokenLegacyKey = "adminRefreshToken";
+const cookieAttrs = "Path=/; SameSite=Lax";
+
+export const userRefreshTokenKey = () => `${userRefreshTokenLegacyKey}:${getEnv().appName}`;
+export const adminRefreshTokenKey = () => `${adminRefreshTokenLegacyKey}:${getEnv().appName}`;
+
+type RefreshKind = "user" | "admin";
+
+const refreshTokenKeys = (kind: RefreshKind) =>
+  kind === "user"
+    ? { scoped: userRefreshTokenKey(), legacy: userRefreshTokenLegacyKey }
+    : { scoped: adminRefreshTokenKey(), legacy: adminRefreshTokenLegacyKey };
+
+export const readRefreshTokenCookie = (
+  cookies: { get: (key: string) => string | null | undefined },
+  kind: RefreshKind,
+) => {
+  const { scoped, legacy } = refreshTokenKeys(kind);
+  return cookies.get(scoped) ?? cookies.get(legacy) ?? undefined;
+};
+
+export const ssoSessionCookies = (jwt: string, refreshToken: string, kind: RefreshKind): Record<string, string> => ({
+  [authTokenKey()]: jwt,
+  [refreshTokenKeys(kind).scoped]: refreshToken,
+});
+
+const expireCookie = (key: string, httpOnly = false) =>
+  `${key}=; ${cookieAttrs}${httpOnly ? "; HttpOnly" : ""}; Max-Age=0`;
+
+const setHttpOnlyCookie = (key: string, value: string) =>
+  `${key}=${encodeURIComponent(value)}; ${cookieAttrs}; HttpOnly`;
+
+const isRefreshTokenCookieKey = (key: string) =>
+  key === userRefreshTokenLegacyKey ||
+  key === adminRefreshTokenLegacyKey ||
+  key.startsWith(`${userRefreshTokenLegacyKey}:`) ||
+  key.startsWith(`${adminRefreshTokenLegacyKey}:`);
+
+const appendRefreshTokenCookies = (headers: Headers, kind: RefreshKind, refreshToken?: string) => {
+  const { scoped, legacy } = refreshTokenKeys(kind);
+  headers.append("Set-Cookie", refreshToken ? setHttpOnlyCookie(scoped, refreshToken) : expireCookie(scoped, true));
+  headers.append("Set-Cookie", expireCookie(legacy, true));
+};
+
 export const makeSsoRedirectResponse = (redirect: string, cookie?: Record<string, string>) => {
   const headers = new Headers({
     Location: headerSafeLocation(redirect),
@@ -174,56 +221,39 @@ export const makeSsoRedirectResponse = (redirect: string, cookie?: Record<string
 
   if (cookie) {
     for (const [key, value] of Object.entries(cookie)) {
-      const httpOnly = key === "userRefreshToken" || key === "adminRefreshToken" ? "; HttpOnly" : "";
-      headers.append("Set-Cookie", `${key}=${encodeURIComponent(value)}; Path=/; SameSite=Lax${httpOnly}`);
+      const httpOnly = isRefreshTokenCookieKey(key) ? "; HttpOnly" : "";
+      headers.append("Set-Cookie", `${key}=${encodeURIComponent(value)}; ${cookieAttrs}${httpOnly}`);
     }
+    headers.append("Set-Cookie", expireCookie(legacyAuthTokenKey));
+    headers.append("Set-Cookie", expireCookie(userRefreshTokenLegacyKey, true));
+    headers.append("Set-Cookie", expireCookie(adminRefreshTokenLegacyKey, true));
   }
 
   return new Response(null, { status: 302, headers });
 };
 
 export const makeAccessTokenResponse = (accessToken: AccessTokenResponse) => {
-  return new Response(JSON.stringify(accessToken), {
-    headers: {
-      "Content-Type": "application/json",
-      ...(accessToken.refreshToken
-        ? {
-            "Set-Cookie": `userRefreshToken=${encodeURIComponent(accessToken.refreshToken)}; Path=/; SameSite=Lax; HttpOnly`,
-          }
-        : {}),
-    },
-  });
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (accessToken.refreshToken) appendRefreshTokenCookies(headers, "user", accessToken.refreshToken);
+  return new Response(JSON.stringify(accessToken), { headers });
 };
 
 export const makeSignoutResponse = (accessToken: AccessTokenResponse) => {
-  return new Response(JSON.stringify(accessToken), {
-    headers: {
-      "Content-Type": "application/json",
-      "Set-Cookie": "userRefreshToken=; Path=/; SameSite=Lax; HttpOnly; Max-Age=0",
-    },
-  });
+  const headers = new Headers({ "Content-Type": "application/json" });
+  appendRefreshTokenCookies(headers, "user");
+  return new Response(JSON.stringify(accessToken), { headers });
 };
 
 export const makeAdminAccessTokenResponse = (accessToken: AccessTokenResponse) => {
-  return new Response(JSON.stringify(accessToken), {
-    headers: {
-      "Content-Type": "application/json",
-      ...(accessToken.refreshToken
-        ? {
-            "Set-Cookie": `adminRefreshToken=${encodeURIComponent(accessToken.refreshToken)}; Path=/; SameSite=Lax; HttpOnly`,
-          }
-        : {}),
-    },
-  });
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (accessToken.refreshToken) appendRefreshTokenCookies(headers, "admin", accessToken.refreshToken);
+  return new Response(JSON.stringify(accessToken), { headers });
 };
 
 export const makeAdminSignoutResponse = (accessToken: AccessTokenResponse) => {
-  return new Response(JSON.stringify(accessToken), {
-    headers: {
-      "Content-Type": "application/json",
-      "Set-Cookie": "adminRefreshToken=; Path=/; SameSite=Lax; HttpOnly; Max-Age=0",
-    },
-  });
+  const headers = new Headers({ "Content-Type": "application/json" });
+  appendRefreshTokenCookies(headers, "admin");
+  return new Response(JSON.stringify(accessToken), { headers });
 };
 
 export const getSsoCode = (request: Bun.BunRequest) => {

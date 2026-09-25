@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Docs } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -425,8 +426,8 @@ export class InventoryService extends serve(db.inventory, ({ use, service }) => 
         <Docs.Description>
           <div>
             {l.trans({
-              en: `Now comes the magic - connecting the inventory system to our existing ice cream order flow. When a customer places an order, the system should automatically deduct the used ingredients from inventory. This is like how a real POS system updates stock counts in real-time as sales are made.`,
-              ko: `이제 마법이 시작됩니다 - 재고 시스템을 기존 아이스크림 주문 흐름에 연결합니다. 고객이 주문을 하면 시스템이 자동으로 사용된 재료를 재고에서 차감해야 합니다. 이는 실제 POS 시스템이 판매가 이루어질 때 실시간으로 재고 수량을 업데이트하는 것과 같습니다.`,
+              en: `Now let's connect the inventory system to our existing ice cream order flow. When a customer places an order, the system should automatically deduct the used ingredients from inventory. This is like how a real POS system updates stock counts in real-time as sales are made.`,
+              ko: `이제 재고 시스템을 기존 아이스크림 주문 흐름에 연결합니다. 고객이 주문을 하면 시스템이 자동으로 사용된 재료를 재고에서 차감해야 합니다. 이는 실제 POS 시스템이 판매가 이루어질 때 실시간으로 재고 수량을 업데이트하는 것과 같습니다.`,
             })}
           </div>
           <div>
@@ -503,8 +504,8 @@ export class IcecreamOrderService extends serve(db.icecreamOrder, ({ use, servic
               <div>
                 <strong>_preCreate</strong>:{" "}
                 {l.trans({
-                  en: "A lifecycle hook that runs before creating a new order. Perfect for validation and side effects like inventory deduction.",
-                  ko: "새 주문을 생성하기 전에 실행되는 라이프사이클 훅입니다. 검증과 재고 차감 같은 부수 효과에 완벽합니다.",
+                  en: "A lifecycle hook that runs before creating a new order. Used for validation and side effects like inventory deduction.",
+                  ko: "새 주문을 생성하기 전에 실행되는 라이프사이클 훅입니다. 검증과 재고 차감 같은 부수 효과에 사용됩니다.",
                 })}
               </div>
             </div>
@@ -657,8 +658,8 @@ export class InventoryStore extends store(sig.inventory, () => ({
         <Docs.Description>
           <div>
             {l.trans({
-              en: `Now let's bring everything together in the UI. The customer-facing order form needs to check inventory and disable options that are out of stock. Staff also need a dashboard to monitor inventory levels and refill when needed. This creates a complete inventory management system!`,
-              ko: `이제 모든 것을 UI에서 하나로 모아봅시다. 고객용 주문 양식은 재고를 확인하고 품절된 옵션을 비활성화해야 합니다. 직원도 재고 수준을 모니터링하고 필요할 때 보충할 수 있는 대시보드가 필요합니다. 이것으로 완전한 재고 관리 시스템이 만들어집니다!`,
+              en: `Now let's bring everything together in the UI. The customer-facing order form needs to check inventory and disable options that are out of stock. Staff also need a dashboard to monitor inventory levels and refill when needed.`,
+              ko: `이제 모든 것을 UI에서 하나로 모아봅시다. 고객용 주문 양식은 재고를 확인하고 품절된 옵션을 비활성화해야 합니다. 직원도 재고 수준을 모니터링하고 필요할 때 보충할 수 있는 대시보드가 필요합니다.`,
             })}
           </div>
           <div>
@@ -1094,66 +1095,17 @@ export default function Page() {
   );
 }`}
           />
-          <div className="my-6 rounded-lg bg-gradient-to-r from-purple-100 to-green-100 p-6">
-            <div className="mb-3 font-bold text-lg text-purple-800">
-              {l.trans({ en: "🎉 What You've Accomplished:", ko: "🎉 달성한 것들:" })}
-            </div>
-            <ul className="space-y-2 text-purple-700 text-sm">
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Created a reusable Stock scalar for inventory items",
-                  ko: "재고 아이템을 위한 재사용 가능한 Stock 스칼라 생성",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Built an Inventory module with daily records",
-                  ko: "일일 기록이 있는 Inventory 모듈 구축",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Implemented stock usage and refill business logic",
-                  ko: "재고 사용 및 보충 비즈니스 로직 구현",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Connected inventory to order creation flow",
-                  ko: "재고를 주문 생성 흐름에 연결",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Created visual dashboard with real-time updates",
-                  ko: "실시간 업데이트가 있는 시각적 대시보드 생성",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Disabled out-of-stock options in customer UI",
-                  ko: "고객 UI에서 품절 옵션 비활성화",
-                })}
-              </li>
-            </ul>
-          </div>
           <div>
             {l.trans({
-              en: `In the next tutorial, we'll explore Insight - a powerful feature for aggregating and analyzing data across your models. This will allow you to create analytics dashboards and gain business intelligence from your ice cream shop data.`,
-              ko: `다음 튜토리얼에서는 모델 전체에서 데이터를 집계하고 분석하는 강력한 기능인 Insight를 살펴볼 것입니다. 이를 통해 분석 대시보드를 만들고 아이스크림 가게 데이터에서 비즈니스 인사이트를 얻을 수 있게 됩니다.`,
+              en: `In the next tutorial, we'll explore Insight, which aggregates and analyzes data across your models. This will allow you to create analytics dashboards and gain business intelligence from your ice cream shop data.`,
+              ko: `다음 튜토리얼에서는 모델 전체에서 데이터를 집계하고 분석하는 Insight를 살펴볼 것입니다. 이를 통해 분석 대시보드를 만들고 아이스크림 가게 데이터에서 비즈니스 인사이트를 얻을 수 있게 됩니다.`,
             })}
           </div>
         </Docs.Description>
       </Scroll.Slide>
       <div className="my-4 h-px w-full bg-border" />
 
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
+      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 xl:flex" />
     </Scroll>
   );
-}
+});

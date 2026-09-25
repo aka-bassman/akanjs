@@ -42,7 +42,7 @@ export class EmbedNode extends DecoratorNode<JSX.Element> {
     return $createEmbedNode(serialized);
   }
 
-  constructor(payload: EmbedPayload, key?: NodeKey) {
+  constructor(payload: EmbedPayload = {}, key?: NodeKey) {
     super(key);
     this.__url = payload.url ?? "";
     this.__embedUrl = payload.embedUrl ?? "";

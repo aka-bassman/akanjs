@@ -1,4 +1,6 @@
-const DEFAULT_DISALLOW_PATHS = ["/api", "/_akan", "/admin", "/manager", "/private"] as const;
+import { getApiPrefix } from "akanjs/base";
+
+const DEFAULT_DISALLOW_PATHS = ["/_akan", "/admin", "/manager", "/private"] as const;
 
 const DEFAULT_AI_CRAWLERS = [
   "GPTBot",
@@ -24,7 +26,7 @@ export function createDefaultRobotsTxt(): string {
   const lines = [
     "User-agent: *",
     "Allow: /",
-    ...DEFAULT_DISALLOW_PATHS.map((path) => `Disallow: ${path}`),
+    ...[getApiPrefix(), ...DEFAULT_DISALLOW_PATHS].map((path) => `Disallow: ${path}`),
     "",
     ...DEFAULT_AI_CRAWLERS.flatMap((crawler) => [`User-agent: ${crawler}`, "Disallow: /", ""]),
   ];

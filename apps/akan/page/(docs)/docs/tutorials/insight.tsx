@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -38,7 +39,8 @@ export default function Page() {
             className="w-full"
             title="apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts"
             code={`
-import { ID } from "akanjs/base"; // [!code collapse:13]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:14]
+import { ID } from "akanjs/base";
 import { endpoint, internal, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
@@ -52,7 +54,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder, // [!code collapse:2]
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init().exec(function () { // [!code --:3]
       return this.icecreamOrderService.queryAny();
@@ -102,8 +104,7 @@ export class IcecreamOrderEndpoint extends endpoint(srv.icecreamOrder, ({ query,
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🔍</span>
+              <div className="mb-2">
                 <strong className="text-primary">{".search()"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -114,8 +115,7 @@ export class IcecreamOrderEndpoint extends endpoint(srv.icecreamOrder, ({ query,
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">⚡</span>
+              <div className="mb-2">
                 <strong className="text-primary">inWaiting / inPickup</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -240,8 +240,7 @@ export const dictionary = modelDictionary(["en", "ko"])
             className="w-full"
             title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Util.tsx"
             code={`
-"use client"; // [!code collapse:3]
-import { cn } from "akanjs/client";
+"use client"; // [!code collapse:2]
 import { st, usePage } from "@apps/koyo/client";
 import { cnst } from "@apps/koyo/client"; // [!code ++:2]
 import { Select, buttonRecipe } from "akanjs/ui";
@@ -350,28 +349,22 @@ export const PublicQueryMaker = ({ className }: PublicQueryMakerProps) => {
               ko: `쿼리 메이커 컴포넌트의 주요 기능:`,
             })}
           </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🎣</span>
-              <div>
-                <strong>st.use.queryArgsOfIcecreamOrderInPublic()</strong>:{" "}
-                {l.trans({
-                  en: "Auto-generated hook that reads the current query arguments from the store. Returns the statuses array.",
-                  ko: "스토어에서 현재 쿼리 인자를 읽는 자동 생성된 훅입니다. statuses 배열을 반환합니다.",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">📝</span>
-              <div>
-                <strong>st.do.setQueryArgsOfIcecreamOrderInPublic()</strong>:{" "}
-                {l.trans({
-                  en: "Updates the query arguments in the store, which automatically triggers a re-fetch of the filtered data.",
-                  ko: "스토어의 쿼리 인자를 업데이트하며, 이는 자동으로 필터링된 데이터의 재조회를 트리거합니다.",
-                })}
-              </div>
-            </div>
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              <strong>st.use.queryArgsOfIcecreamOrderInPublic()</strong>:{" "}
+              {l.trans({
+                en: "Auto-generated hook that reads the current query arguments from the store. Returns the statuses array.",
+                ko: "스토어에서 현재 쿼리 인자를 읽는 자동 생성된 훅입니다. statuses 배열을 반환합니다.",
+              })}
+            </li>
+            <li>
+              <strong>st.do.setQueryArgsOfIcecreamOrderInPublic()</strong>:{" "}
+              {l.trans({
+                en: "Updates the query arguments in the store, which automatically triggers a re-fetch of the filtered data.",
+                ko: "스토어의 쿼리 인자를 업데이트하며, 이는 자동으로 필터링된 데이터의 재조회를 트리거합니다.",
+              })}
+            </li>
+          </ul>
           <div>
             {l.trans({
               en: `Finally, add the Query Maker to your page so users can filter orders dynamically:`,
@@ -382,12 +375,13 @@ export const PublicQueryMaker = ({ className }: PublicQueryMakerProps) => {
             className="w-full"
             title="apps/koyo/page/_index.tsx"
             code={`
-import { Load, Model } from "akanjs/ui"; // [!code collapse:3]
+import { Model, buttonRecipe } from "akanjs/ui"; // [!code collapse:4]
 import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
-  const { icecreamOrderInitInPublic } = await fetch.initIcecreamOrderInPublic();
+  const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
   return (
     <div className="space-y-4">
@@ -400,7 +394,7 @@ export default async function Page() {
         <div className="text-5xl font-bold">{l("icecreamOrder.modelName")}</div>
         <IcecreamOrder.Util.PublicQueryMaker /> // [!code ++]
         <Model.New
-          className={buttonRecipe({ variant: "primary" })}
+          trigger={<button className={buttonRecipe({ variant: "primary" })}>{l("base.new")}</button>}
           slice={fetch.slice.icecreamOrderInPublic}
           renderTitle="name"
           partial={icecreamOrderForm}
@@ -415,7 +409,7 @@ export default async function Page() {
       />
     </div>
   );
-}`}
+});`}
           />
         </Docs.Description>
       </Scroll.Slide>
@@ -429,8 +423,8 @@ export default async function Page() {
         <Docs.Description>
           <div>
             {l.trans({
-              en: `Now that we can filter our queries, let's extract meaningful insights from the data. Insight counts documents across the current query and optional per-field query filters. Think of it like a kitchen display system that shows the chef exactly how many active orders or topping requests are waiting.`,
-              ko: `이제 쿼리를 필터링할 수 있으니, 데이터에서 의미 있는 인사이트를 추출해봅시다. Insight는 현재 쿼리와 필드별 추가 쿼리 필터를 기준으로 문서 수를 계산합니다. 주방 디스플레이 시스템이 셰프에게 대기 중인 주문 수나 토핑 요청 수를 보여주는 것처럼 생각해보세요.`,
+              en: `Now that we can filter our queries, let's aggregate the data. Insight counts documents across the current query and optional per-field query filters. Think of it like a kitchen display system that shows the chef exactly how many active orders or topping requests are waiting.`,
+              ko: `이제 쿼리를 필터링할 수 있으니, 데이터를 집계해봅시다. Insight는 현재 쿼리와 필드별 추가 쿼리 필터를 기준으로 문서 수를 계산합니다. 주방 디스플레이 시스템이 셰프에게 대기 중인 주문 수나 토핑 요청 수를 보여주는 것처럼 생각해보세요.`,
             })}
           </div>
           <div>
@@ -521,8 +515,7 @@ export class IcecreamOrderInsight extends via(IcecreamOrder, (field) => ({
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🍦</span>
+              <div className="mb-2">
                 <strong className="text-primary">{"{}"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -533,8 +526,7 @@ export class IcecreamOrderInsight extends via(IcecreamOrder, (field) => ({
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🍓</span>
+              <div className="mb-2">
                 <strong className="text-primary">{'{ toppings: "strawberry" }'}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -664,8 +656,8 @@ export const dictionary = modelDictionary(["en", "ko"])
           />
           <div>
             {l.trans({
-              en: `Now let's create a View component to display the aggregated insights in a beautiful dashboard layout:`,
-              ko: `이제 집계된 인사이트를 아름다운 대시보드 레이아웃으로 표시하는 View 컴포넌트를 만들어봅시다:`,
+              en: `Now let's create a View component to display the aggregated insights in a dashboard layout:`,
+              ko: `이제 집계된 인사이트를 대시보드 레이아웃으로 표시하는 View 컴포넌트를 만들어봅시다:`,
             })}
           </div>
           <Code.Snippet
@@ -873,22 +865,26 @@ export const Insight = ({ className, slice = fetch.slice.icecreamOrder }: Insigh
           />
           <div>
             {l.trans({
-              en: `Key feature of the Zone component:`,
+              en: `Key features of the Zone component:`,
               ko: `Zone 컴포넌트의 주요 기능:`,
             })}
           </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🔗</span>
-              <div>
-                <strong>st.slice[slice.sliceName].use.icecreamOrderInsight()</strong>:{" "}
-                {l.trans({
-                  en: "Auto-generated hook that retrieves the aggregated insight data for the specified slice. The framework handles all the aggregation pipeline execution.",
-                  ko: "지정된 슬라이스에 대한 집계된 인사이트 데이터를 가져오는 자동 생성된 훅입니다. 프레임워크가 모든 집계 파이프라인 실행을 처리합니다.",
-                })}
-              </div>
-            </div>
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              <strong>st.slice[slice.sliceName].use.icecreamOrderInsight()</strong>:{" "}
+              {l.trans({
+                en: "Auto-generated hook that retrieves the aggregated insight data for the specified slice. The framework handles all the aggregation pipeline execution.",
+                ko: "지정된 슬라이스에 대한 집계된 인사이트 데이터를 가져오는 자동 생성된 훅입니다. 프레임워크가 모든 집계 파이프라인 실행을 처리합니다.",
+              })}
+            </li>
+            <li>
+              <strong>useInterval</strong>:{" "}
+              {l.trans({
+                en: "Carried over from the slice tutorial, and still a plain 3-second poll - the insight is recounted on a timer, not pushed. A slice that declares .live() sends each change to its subscribers instead.",
+                ko: "슬라이스 튜토리얼에서 이어진 코드이며, 여전히 단순한 3초 폴링입니다 - 인사이트는 푸시되는 것이 아니라 타이머에 맞춰 다시 집계됩니다. 슬라이스에 .live()를 선언하면 변경분이 구독자에게 전달됩니다.",
+              })}
+            </li>
+          </ul>
           <div>
             {l.trans({
               en: `Finally, add the Insight Zone to your page to display real-time aggregated statistics:`,
@@ -899,12 +895,13 @@ export const Insight = ({ className, slice = fetch.slice.icecreamOrder }: Insigh
             className="w-full"
             title="apps/koyo/page/_index.tsx"
             code={`
-import { Load, Model } from "akanjs/ui"; // [!code collapse:21]
+import { Model, buttonRecipe } from "akanjs/ui"; // [!code collapse:22]
 import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
-  const { icecreamOrderInitInPublic } = await fetch.initIcecreamOrderInPublic();
+  const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
   return (
     <div className="space-y-4">
@@ -918,7 +915,7 @@ export default async function Page() {
           <div className="text-5xl font-bold">{l("icecreamOrder.modelName")}</div> // [!code collapse:10]
           <IcecreamOrder.Util.PublicQueryMaker />
           <Model.New
-            className={buttonRecipe({ variant: "primary" })}
+            trigger={<button className={buttonRecipe({ variant: "primary" })}>{l("base.new")}</button>}
             slice={fetch.slice.icecreamOrderInPublic}
             renderTitle="name"
             partial={icecreamOrderForm}
@@ -935,60 +932,18 @@ export default async function Page() {
       </div> // [!code collapse:10]
     </div>
   );
-}`}
+});`}
           />
           <div>
             {l.trans({
-              en: `Now when users filter orders by status, the insight dashboard automatically updates to show aggregated statistics for only those filtered orders. This is incredibly powerful for real-time operational decisions!`,
-              ko: `이제 사용자가 상태별로 주문을 필터링하면, 인사이트 대시보드가 자동으로 업데이트되어 필터링된 주문에 대한 집계 통계만 보여줍니다. 이는 실시간 운영 결정에 매우 강력합니다!`,
+              en: `When users filter orders by status, the insight dashboard automatically updates to show aggregated statistics for only those filtered orders.`,
+              ko: `사용자가 상태별로 주문을 필터링하면, 인사이트 대시보드가 자동으로 업데이트되어 필터링된 주문에 대한 집계 통계만 보여줍니다.`,
             })}
-          </div>
-          <div className="my-6 rounded-lg bg-linear-to-r from-background to-border p-6">
-            <div className="mb-3 font-bold text-lg text-primary">
-              {l.trans({ en: "🎉 What You've Accomplished:", ko: "🎉 달성한 것들:" })}
-            </div>
-            <ul className="space-y-2 text-foreground/70 text-sm">
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Created dynamic Query Makers with searchable parameters",
-                  ko: "검색 가능한 파라미터가 있는 동적 쿼리 메이커 생성",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Learned how to define Insight classes with Akan document query filters",
-                  ko: "Akan 문서 쿼리 필터를 사용한 Insight 클래스 정의 방법 학습",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Built View components to display aggregated statistics",
-                  ko: "집계 통계를 표시하는 View 컴포넌트 구축",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Connected Zone components to auto-generated store hooks",
-                  ko: "자동 생성된 스토어 훅에 Zone 컴포넌트 연결",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Integrated insights with filtered queries for real-time analytics",
-                  ko: "실시간 분석을 위해 필터링된 쿼리와 인사이트 통합",
-                })}
-              </li>
-            </ul>
           </div>
           <div>
             {l.trans({
-              en: `In the next tutorial, we'll explore how to relate data between different models. This will allow you to create rich relationships like associating orders with customers, linking products to categories, and building complex data graphs.`,
-              ko: `다음 튜토리얼에서는 서로 다른 모델 간의 데이터 연결 방법을 살펴볼 것입니다. 이를 통해 주문과 고객 연결, 제품과 카테고리 연결, 복잡한 데이터 그래프 구축 같은 풍부한 관계를 만들 수 있게 됩니다.`,
+              en: `In the next tutorial, we'll explore how to relate data between different models. This will allow you to create relationships like associating orders with customers, linking products to categories, and building complex data graphs.`,
+              ko: `다음 튜토리얼에서는 서로 다른 모델 간의 데이터 연결 방법을 살펴볼 것입니다. 이를 통해 주문과 고객 연결, 제품과 카테고리 연결, 복잡한 데이터 그래프 구축 같은 관계를 만들 수 있게 됩니다.`,
             })}
           </div>
         </Docs.Description>
@@ -998,4 +953,4 @@ export default async function Page() {
       <DocsToc />
     </Scroll>
   );
-}
+});

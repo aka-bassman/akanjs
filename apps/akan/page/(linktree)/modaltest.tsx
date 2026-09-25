@@ -1,5 +1,4 @@
 import { ModalTests } from "@apps/akan/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
-  return <ModalTests />;
-}
+export default page().render(() => <ModalTests />);

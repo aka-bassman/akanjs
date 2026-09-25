@@ -7,7 +7,7 @@ export class PackageCommand extends command("package", [PackageScript], ({ publi
     .exec(async function (workspace) {
       await this.packageScript.version(workspace);
     }),
-  createPackage: target({ desc: "Create a new package in pkgs/akanjs/" })
+  createPackage: target({ desc: "Create a new package in pkgs/<name>/" })
     .option("name", String, { desc: "name of package" })
     .with(Workspace)
     .exec(async function (name, workspace) {

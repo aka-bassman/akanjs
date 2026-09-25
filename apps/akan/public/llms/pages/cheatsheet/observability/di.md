@@ -9,160 +9,241 @@
 ## Headings
 
 - Dependency Injection (#overview)
-- Register With use (#use)
-- Adapt And Plug (#adaptor)
 - Inject Services (#service)
+- Adapt And Plug (#adaptor)
 - Read Environment (#env)
-- One Key, One Owner (#duplicate)
 - Tips (#tips)
 
 ## Content
 
 Dependency Injection
 
-Dependency injection means a service receives what it needs instead of creating everything by itself. This keeps business code small and makes external systems easier to replace.
+injector
 
-`use` receives values registered in app or library options.
+A helper like `service()` or `plug()` inside `serve()` or `adapt()`. Each one fills one field.
 
-`adapt` and `plug` are good for replaceable tools such as storage, cache, or message APIs.
+A class built with `adapt()` that wraps one outside tool, such as storage or a mail API.
 
-`service` connects one service to another service.
+A slot for a built-in adaptor, such as `StorageAdaptorRole`. The app decides what fills it.
 
-`env` reads runtime configuration without passing it through every function.
+One instance per server process, shared by everything that injects it.
 
-Register With use
+The object in `env/env.server.<environment>.ts`, typed by `ModulesOptions` in `lib/option.ts`.
 
-`AkanOption.use()` is a simple place to prepare global values. Put API clients, generated secrets, host values, and shared settings there.
+Pick in this order: the first that fits wins
 
-Option registers values
+Another service's business method.
 
-Service receives values
+A replaceable tool such as storage, a cache or a message API.
 
-Adapt And Plug
+A legacy singleton registered in `option.ts`. Recognise it; do not write new ones.
 
-Use an adaptor when a tool has behavior and can be replaced later. The service only asks for the role it needs.
+Runtime configuration, read without passing it through every function.
 
-Declare adaptor
+For one specific job
 
-Plug adaptor into service
+A small value that survives between calls.
+
+A server signal, to publish an event or queue a job. The field name ends in `Signal`.
+
+Role
+
+Default
+
+Used for
+
+Documents and queries
+
+`memory()` values and the document cache
+
+Uploaded files, on local disk by default
+
+Background jobs queued by signals
+
+Cron and interval jobs
+
+Writing log lines by level
+
+Pubsub rooms for websocket clients
+
+Encoding a typed value to bytes and back
+
+LLM calls from the in-page agent relay
+
+What you need
+
+Read it with
+
+A server env field: hostname, a feature flag, an API option
+
+App identity: appName, environment, operationMode
+
+A container variable or a secret
+
+Injection Types
+
+Every injector with its naming rules, in the service convention.
+
+Adaptor And plug
+
+Where adaptors live in `srvkit/` and how they are shaped.
+
+Service Memory
+
+`memory()` values that survive between calls.
+
+Chat Flow
+
+A service that publishes through an injected `signal()`.
+
+Words used on this page
+
+Term
+
+Which injector to use
+
+Reach for them in this order; the first that fits is the right one. The marks show where each works.
+
+Injector
+
+Available
+
+Not available
 
 Inject Services
 
-Use `service()` when one service needs another service's business method. This is clearer than importing and creating the other service yourself.
+Adapt And Plug
 
-Service to service
+Use an adaptor for a tool that has behavior of its own and may be replaced later. The service asks for the class or the role; it never builds the client.
+
+1. Declare it in srvkit/
+
+2. Plug it into a service
+
+3. Swap a built-in role
 
 Read Environment
 
-`env()` is useful when the service needs runtime identity such as app name, operation mode, hostname, or a feature flag.
+Add a setting of your own
 
-Environment value
+Steps 1 and 2 take a few lines each:
 
-One Key, One Owner
-
-A `use` key and an adaptor `refName` may be claimed once. Claiming either twice is last-write-wins everywhere downstream: the second registration replaces the first, and the replaced adaptor's `onInit` never runs. Akan refuses the boot instead, naming both claimants.
-
-Boot fails with both owners named
-
-The check is per key, not per registration. One adaptor class reached from two services is one adaptor and passes; two different classes under the same name do not. Fix it by renaming one of them, or by declaring it once in a lib both sides plug.
+Step 3 reads it next to the app's identity:
 
 Tips
 
-Do not create external clients inside every method. Register them once with `use` or `adapt`.
-
-Use `service()` for business collaboration, and `plug()` for replaceable infrastructure.
-
-Keep secrets in env/options and inject prepared clients, not raw credentials, when possible.
-
-If a value is shared across many services, `AkanOption.use()` is usually the cleanest home.
+Read next
 
 ## Code Examples
 
-### Code
+### apps/koyo/lib/article/article.service.ts
 
 ```ts
-export const option = new AkanOption<AppEnv>().use((env) => ({
-  mailApi: env.mail ? new MailApi(env.mail) : null,
-  storageApi: env.storage ? new CloudStorage(env.storage) : new LocalStorage(),
-  appHost: env.operationMode === "local" ? "localhost" : env.hostname,
-}));
-```
+import { serve } from "akanjs/service";
 
-### Code
+import * as db from "../db";
+import type * as srv from "../srv";
 
-```ts
-export class ArticleService extends serve(db.article, ({ use }) => ({
-  mailApi: use<MailApi>(),
-  storageApi: use<StorageApi>(),
-  appHost: use<string>(),
+export class ArticleService extends serve(db.article, ({ service }) => ({
+  fileService: service<srv.shared.FileService>(),
+  subscriptionService: service<srv.SubscriptionService>(),
 })) {
-  async sendPublishedMail(articleId: string) {
-    await this.mailApi.send(`${this.appHost}/article/${articleId}`);
+  async publish(articleId: string) {
+    const article = await this.updateArticle(articleId, { status: "published" });
+    await this.subscriptionService.notifySubscribers(article.id);
+    return article;
+  }
+  async getCoverUrl(articleId: string) {
+    const { cover } = await this.getArticle(articleId);
+    const file = cover ? await this.fileService.getFile(cover) : null;
+    return file?.url ?? null;
   }
 }
 ```
 
-### Code
+### apps/koyo/srvkit/imageStorage.ts
 
 ```ts
-export class ImageStorage extends adapt("imageStorage", ({ env }) => ({
-  bucket: env((env: AppEnv) => env.imageBucket),
+import { getEnv } from "akanjs/base";
+import { adapt, StorageAdaptorRole } from "akanjs/service";
+
+export class ImageStorage extends adapt("imageStorage" as const, ({ env, plug }) => ({
+  folder: env(() => `images/${getEnv().environment}`),
+  storage: plug(StorageAdaptorRole),
 })) {
-  async upload(file: File) {
-    return await uploadToBucket(this.bucket, file);
+  async upload(localPath: string, filename: string) {
+    const path = `${this.folder}/${filename}`;
+    return await this.storage.uploadDataFromLocal({ path, localPath });
   }
 }
 ```
 
-### Code
+### apps/koyo/lib/article/article.service.ts
 
 ```ts
+import { ImageStorage } from "@apps/koyo/srvkit";
+import { serve } from "akanjs/service";
+
+import * as db from "../db";
+
 export class ArticleService extends serve(db.article, ({ plug }) => ({
   imageStorage: plug(ImageStorage),
 })) {
-  async setCover(articleId: string, file: File) {
-    const url = await this.imageStorage.upload(file);
-    return await this.articleModel.update(articleId, { cover: url });
+  async setCover(articleId: string, localPath: string) {
+    const filename = `${articleId}.webp`;
+    const coverUrl = await this.imageStorage.upload(localPath, filename);
+    return await this.updateArticle(articleId, { coverUrl });
   }
 }
 ```
 
-### Code
+### apps/koyo/lib/option.ts
 
 ```ts
-export class ArticleService extends serve(db.article, ({ service }) => ({
-  fileService: service<srv.FileService>(),
-  notificationService: service<srv.NotificationService>(),
-})) {
-  async publish(articleId: string) {
-    const article = await this.articleModel.update(articleId, { status: "published" });
-    await this.notificationService.notify("articlePublished", article.id);
-    return article;
-  }
-}
+import { R2Storage } from "@apps/koyo/srvkit";
+import { AkanOption } from "akanjs/server";
+import { StorageAdaptorRole } from "akanjs/service";
+
+export const option = new AkanOption<ModulesOptions>()
+  .applyAdaptor(StorageAdaptorRole, R2Storage);
 ```
 
-### Code
+### apps/koyo/lib/option.ts · apps/koyo/env/env.server.local.ts
 
 ```ts
+// lib/option.ts
+export type ModulesOptions = LibOptions & {
+  shareEnabled?: boolean;
+};
+
+// env/env.server.local.ts
+export const env: ModulesOptions = {
+  ...libEnv,
+  shareEnabled: true,
+};
+```
+
+### apps/koyo/lib/article/article.service.ts
+
+```ts
+import { getEnv } from "akanjs/base";
+import { serve } from "akanjs/service";
+
+import * as db from "../db";
+import type { ModulesOptions } from "../option";
+
 export class ArticleService extends serve(db.article, ({ env }) => ({
-  publicUrl: env((env: AppEnv) =>
-    env.operationMode === "local" ? "http://localhost:8282" : `https://${env.hostname}`,
-  ),
+  publicUrl: env((options: ModulesOptions) => {
+    const isLocal = getEnv().operationMode === "local";
+    return isLocal ? "http://localhost:8282" : `https://${options.hostname}`;
+  }),
+  isShareEnabled: env((options: ModulesOptions) => !!options.shareEnabled),
 })) {
   getShareUrl(articleId: string) {
+    if (!this.isShareEnabled) return null;
     return `${this.publicUrl}/article/${articleId}`;
   }
 }
-```
-
-### Code
-
-```bash
-[DI:use] 1 duplicate registration(s):
-  • "storageApi" is registered by lib "util" and by lib "shared"
-[DI:adaptor] 1 duplicate registration(s):
-  • "imageStorage" is registered by service "article" and by service "gallery"
 ```
 
 ## Agent Notes

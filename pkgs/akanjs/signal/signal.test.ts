@@ -4,22 +4,26 @@ import { ConstantRegistry, via } from "akanjs/constant";
 import { by, type DatabaseCls, DatabaseRegistry, from, into, type ModelCls } from "akanjs/document";
 import {
   adapt,
+  CacheAdaptorRole,
   type DatabaseService,
   getDefaultInjectRegistry,
+  getDefaultLiveRegistry,
+  type InjectRegistry,
   type LiveRegistry,
+  type Service,
   ServiceModel,
   serve,
 } from "akanjs/service";
 import { endpoint } from "./endpoint";
 import { buildEndpoint, type EndpointInfo } from "./endpointInfo";
 import { Exception } from "./exception";
-import type { Guard, GuardCls } from "./guard";
+import type { Guard, GuardCls, GuardScope } from "./guard";
 import { None, Public } from "./guards";
 import { type Internal, internal } from "./internal";
 import type { InternalArg } from "./internalArg";
 import { Ws } from "./internalArg";
 import { buildInternal } from "./internalInfo";
-import { middleware } from "./middleware";
+import { middleware, Timeout } from "./middleware";
 import { FetchSerializer } from "./serializer";
 import { serverSignal } from "./serverSignal";
 import { SignalContext } from "./signalContext";
@@ -88,6 +92,34 @@ ConstantRegistry.buildModel(
   },
 );
 
+const SignalTestHolderInput = via((f) => ({
+  label: f(String),
+  related: f(SignalTestRelatedFull).optional(),
+  relateds: f([SignalTestRelatedFull]),
+  requiredRelated: f(SignalTestRelatedFull),
+}));
+const SignalTestHolderObject = via(SignalTestHolderInput, () => ({}));
+const SignalTestHolderLight = via(SignalTestHolderObject, ["label"] as const, () => ({}));
+const SignalTestHolderFull = via(SignalTestHolderObject, SignalTestHolderLight, () => ({}));
+const SignalTestHolderInsight = via(SignalTestHolderFull, (f) => ({
+  total: f(Int, { default: 0, accumulate: {} }),
+}));
+ConstantRegistry.buildModel(
+  "signalTestHolder",
+  SignalTestHolderInput,
+  SignalTestHolderObject,
+  SignalTestHolderFull,
+  SignalTestHolderLight,
+  SignalTestHolderInsight,
+  {
+    SignalTestHolderInput,
+    SignalTestHolderObject,
+    SignalTestHolderFull,
+    SignalTestHolderLight,
+    SignalTestHolderInsight,
+  },
+);
+
 class SignalTestFilter extends from(SignalTestFull, (filter) => ({
   query: {
     byOwner: filter()
@@ -113,7 +145,7 @@ const signalTestDatabase = DatabaseRegistry.buildModel(
   SignalTestDoc,
   SignalTestModel,
   SignalTestObject,
-  SignalTestInsight,
+  SignalTestInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   SignalTestFilter,
 );
 
@@ -133,12 +165,14 @@ const signalTestServiceModel = ServiceModel.fromModel(SignalTestService, signalT
 
 class TestAdmin implements Guard {
   static name = "TestAdmin";
+  static scope: GuardScope = "account";
   canPass() {
     return true;
   }
 }
 class TestDeny implements Guard {
   static name = "TestDeny";
+  static scope: GuardScope = "account";
   canPass() {
     return false;
   }
@@ -175,20 +209,9 @@ class EndpointMiddleware extends middleware("endpoint") {
 }
 let signalTestOrder: string[] = [];
 
-const makeLiveRegistry = (): LiveRegistry => ({
-  adaptor: new Map(),
-  adaptorCls: new Map(),
-  service: new Map(),
-  serviceCls: new Map(),
-  endpoint: new Map(),
-  endpointCls: new Map(),
-  slice: new Map(),
-  sliceCls: new Map(),
-  internal: new Map(),
-  internalCls: new Map(),
-  serverSignal: new Map(),
-  serverSignalCls: new Map(),
-});
+// Through the framework's own builder, so a field added to or dropped from `LiveRegistry` reaches the tests
+// instead of leaving a literal that still lists the eight keys it had when it was written.
+const makeLiveRegistry = (): LiveRegistry => getDefaultLiveRegistry();
 
 const makeHttpRequest = ({
   url = "http://localhost/api?ownerId=u1&ids=a&ids=b",
@@ -205,7 +228,9 @@ const makeHttpRequest = ({
     url,
     params,
     body: body ? {} : undefined,
-    headers: new Headers(headers),
+    // What `HttpClient` sends for a JSON body, because `CrossSiteGuard` requires it: a body with any other
+    // content type is a cross-site form post that skipped its preflight.
+    headers: new Headers(body ? { "content-type": "application/json", ...headers } : headers),
     json: async () => body ?? {},
   }) as unknown as Bun.BunRequest;
 
@@ -215,21 +240,42 @@ const makeSignalContext = ({
   adaptor = new (adapt("signalTestContextAdaptor"))(),
   live = makeLiveRegistry(),
   middlewareMap = new Map(),
+  registry = getDefaultInjectRegistry(),
 }: {
-  endpointInfo?: ReturnType<typeof buildEndpoint.query>;
+  endpointInfo?: EndpointInfo;
   request?: Bun.BunRequest;
   adaptor?: InstanceType<ReturnType<typeof adapt>>;
   live?: LiveRegistry;
   middlewareMap?: Map<string, typeof GlobalMiddleware>;
+  registry?: InjectRegistry;
 } = {}) =>
   new SignalContext("contextKey", request, {
     endpointInfo,
     adaptor,
-    registry: getDefaultInjectRegistry(),
+    registry,
     env: {} as never,
     live,
     middleware: middlewareMap,
   });
+
+class FakeCacheAdaptor {
+  readonly store = new Map<string, string>();
+  async get<T>(topic: string, key: string) {
+    return this.store.get(`${topic}:${key}`) as T | undefined;
+  }
+  async set(topic: string, key: string, value: string | number | Buffer) {
+    this.store.set(`${topic}:${key}`, String(value));
+  }
+  async delete(topic: string, key: string) {
+    this.store.delete(`${topic}:${key}`);
+  }
+}
+
+const makeCacheRegistry = (cache: FakeCacheAdaptor) => {
+  const registry = getDefaultInjectRegistry();
+  registry.adaptor.set(CacheAdaptorRole as never, cache as never);
+  return registry;
+};
 
 describe("signal metadata builders", () => {
   test("builds endpoint metadata, paths, nullable search args, and validation errors", () => {
@@ -253,7 +299,7 @@ describe("signal metadata builders", () => {
       ["search", "tags", 1, true],
       ["body", "input", 0, true],
     ]);
-    expect(endpointInfo.returns.returnRef).toBe(SignalTestFull);
+    expect(endpointInfo.returns.returnRef as unknown).toBe(SignalTestFull);
     expect(endpointInfo.returns.arrDepth).toBe(1);
     expect(endpointInfo.returns.nullable).toBe(true);
     expect(endpointInfo.signalOption.partial).toEqual(["title"]);
@@ -275,7 +321,9 @@ describe("signal metadata builders", () => {
   test("builds slice metadata with query, internal args, and nullable search args", () => {
     const sliceInfo = buildSlice(
       "signalTestItem",
-      SignalTestInput,
+      // `buildSlice` infers `Input` from the class, and a `via()` input does not line up with what it derives —
+      // the same escape `DatabaseRegistry.buildModel` already takes for the same argument.
+      SignalTestInput as unknown as Parameters<typeof buildSlice>[1],
       SignalTestFull,
       SignalTestLight,
       SignalTestInsight,
@@ -298,7 +346,7 @@ describe("signal metadata builders", () => {
     expect(() =>
       buildSlice(
         "signalTestItem",
-        SignalTestInput,
+        SignalTestInput as unknown as Parameters<typeof buildSlice>[1],
         SignalTestFull,
         SignalTestLight,
         SignalTestInsight,
@@ -377,8 +425,9 @@ describe("signal class factories and composition", () => {
     expect(MainEndpoint[ENDPOINT_META].getTitle?.args[0]?.name).toBe("id");
     expect(MainEndpoint[ENDPOINT_META].publish?.type).toBe("pubsub");
     expect(Object.keys(MainEndpoint.srv.srvMap).sort()).toEqual(["signalTestAuxService", "signalTestItemService"]);
-    expect(MainEndpoint[INJECT_META].signalTestItemService.type).toBe("service");
-    expect(MainEndpoint[INJECT_META].signalTestAuxService.type).toBe("service");
+    const mainInjects = MainEndpoint[INJECT_META] as Record<string, { type: string }>;
+    expect(mainInjects.signalTestItemService?.type).toBe("service");
+    expect(mainInjects.signalTestAuxService?.type).toBe("service");
   });
 
   test("creates internal classes and merges lib internals", () => {
@@ -399,8 +448,8 @@ describe("signal class factories and composition", () => {
     expect(MainInternal[INTERNAL_META].hourly?.signalOption.scheduleType).toBe("cron");
     expect(MainInternal[INTERNAL_META].auxProcess?.type).toBe("process");
     expect(Object.keys(MainInternal.srv.srvMap).sort()).toEqual(["signalTestAuxService", "signalTestItemService"]);
-    expect(MainInternal[INJECT_META].schedule.type).toBe("plug");
-    expect(MainInternal[INJECT_META].queue.type).toBe("plug");
+    expect((MainInternal[INJECT_META] as unknown as Record<string, { type: string }>).schedule?.type).toBe("plug");
+    expect((MainInternal[INJECT_META] as unknown as Record<string, { type: string }>).queue?.type).toBe("plug");
   });
 
   test("creates slice classes with default root slice, guards, and lib slice metadata", () => {
@@ -467,6 +516,25 @@ describe("signal serialization and registry", () => {
   ) {}
   class RegistryServerSignal extends serverSignal(RegistryEndpoint, RegistryInternal) {}
 
+  test("resolves the mcp map the way it resolves the guards map, and ships only what is off", () => {
+    // Same keys, same fallbacks, same scope as `guards`: `create`/`update`/`remove` inherit `cru`, and a verb
+    // that names itself wins over it. Only the `false` answers travel — `true` is the default, so serializing it
+    // would put a field on every signal that says nothing.
+    class McpSlice extends slice(
+      signalTestServiceModel,
+      { guards: { root: Public, get: Public, cru: Public }, mcp: { cru: false, update: true, root: false } },
+      (init) => ({}),
+    ) {}
+    expect(McpSlice.mcp).toEqual({ get: true, create: false, update: true, remove: false });
+    const serialized = FetchSerializer.serializeDatabaseSignal(McpSlice, RegistryEndpoint);
+    expect(serialized.mcp).toEqual({ create: false, remove: false });
+    // `root` is not a generated verb but the root slice itself, so its answer rides on that slice.
+    expect(serialized.slice?.[""]?.mcp).toBe(false);
+
+    class QuietSlice extends slice(signalTestServiceModel, { guards: { root: Public }, mcp: false }, () => ({})) {}
+    expect(QuietSlice.mcp).toEqual({ get: false, create: false, update: false, remove: false });
+  });
+
   test("serializes database and service signals", () => {
     const databaseSignal = FetchSerializer.serializeDatabaseSignal(RegistrySlice, RegistryEndpoint);
     const serviceEndpoint = endpoint(ServiceModel.from(SignalTestAuxService), (builder) => ({
@@ -514,6 +582,18 @@ describe("signal serialization and registry", () => {
         ping: { type: "query", args: [], returns: { refName: "String" } },
       },
     });
+  });
+
+  test("serializes a declared timeout so the client can size its own request budget", () => {
+    const TimedEndpoint = endpoint(ServiceModel.from(SignalTestAuxService), (builder) => ({
+      provision: builder.mutation(String, { guards: [Public], timeout: 300_000 }).exec(() => "done"),
+      ping: builder.query(String).exec(() => "pong"),
+    }));
+
+    const serialized = FetchSerializer.serializeServiceSignal(TimedEndpoint);
+
+    expect(serialized.endpoint.provision?.timeout).toBe(300_000);
+    expect(serialized.endpoint.ping).not.toHaveProperty("timeout");
   });
 
   test("registers signals and serializes live registry", () => {
@@ -579,7 +659,7 @@ describe("signal serialization and registry", () => {
 
     expect(Object.keys(SignalRef[ENDPOINT_META])).toEqual(["publishItem"]);
     expect(Object.keys(SignalRef[INTERNAL_META])).toEqual(["queueItem"]);
-    expect(SignalRef[INJECT_META].queue.type).toBe("plug");
+    expect((SignalRef[INJECT_META] as unknown as Record<string, { type: string }>).queue?.type).toBe("plug");
   });
 });
 
@@ -591,7 +671,7 @@ describe("SignalContext execution", () => {
       .search("ids", [ID])
       .search("maybe", String)
       .body("title", String)
-      .exec((id, ids, maybe, title) => `${id}:${ids.join(",")}:${maybe ?? "none"}:${title}`);
+      .exec((id, ids, maybe, title) => `${id}:${(ids ?? []).join(",")}:${maybe ?? "none"}:${title}`);
     const context = makeSignalContext({
       endpointInfo,
       request: makeHttpRequest({
@@ -787,6 +867,124 @@ describe("SignalContext execution", () => {
     ]);
   });
 
+  test("bounds an endpoint that declared a timeout, and stands aside for one that did not", async () => {
+    const slowExec = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return "late";
+    };
+    const boundedInfo = buildEndpoint.query(String, { guards: [Public], timeout: 5 }).exec(slowExec);
+    const unboundedInfo = buildEndpoint.query(String, { guards: [Public] }).exec(slowExec);
+    const adaptor = new (adapt("signalTestTimeoutAdaptor"))();
+    const middlewareMap = new Map([["timeout", Timeout]]) as never;
+
+    const bounded = (await SignalContext.try(adaptor, boundedInfo, "bounded", async () => {
+      const context = makeSignalContext({ endpointInfo: boundedInfo, adaptor, middlewareMap });
+      await context.init();
+      return (await context.exec()) as Response;
+    })) as Response;
+    const unboundedContext = makeSignalContext({ endpointInfo: unboundedInfo, adaptor, middlewareMap });
+    await unboundedContext.init();
+    const unbounded = (await unboundedContext.exec()) as Response;
+
+    expect(bounded.status).toBe(504);
+    expect(await bounded.json()).toMatchObject({ error: "base.error.gatewayTimeout", statusCode: 504 });
+    expect(await unbounded.json()).toBe("late");
+  });
+
+  test("clears the deadline of a call that answered in time", async () => {
+    const info = buildEndpoint.query(String, { guards: [Public], timeout: 60_000 }).exec(() => "ok");
+    const context = makeSignalContext({
+      endpointInfo: info,
+      middlewareMap: new Map([["timeout", Timeout]]) as never,
+    });
+    const originalClearTimeout = globalThis.clearTimeout;
+    let cleared = 0;
+    globalThis.clearTimeout = ((id?: number | Timer) => {
+      cleared++;
+      originalClearTimeout(id);
+    }) as typeof clearTimeout;
+
+    try {
+      await context.init();
+      expect(await ((await context.exec()) as Response).json()).toBe("ok");
+    } finally {
+      globalThis.clearTimeout = originalClearTimeout;
+    }
+    expect(cleared).toBeGreaterThan(0);
+  });
+
+  test("serves a declared cache only after the guards admitted a caller the middleware resolved", async () => {
+    let runs = 0;
+    let passes = 0;
+    class SignedInOnly implements Guard {
+      static name = "SignedInOnly";
+      static scope: GuardScope = "account";
+      canPass(context: SignalContext) {
+        passes++;
+        return context.get<{ id?: string }>("account")?.id === "user-1";
+      }
+    }
+    class ResolveAccount extends middleware("signalTestResolveAccount") {
+      override async use() {
+        return async (context: SignalContext, next: () => Promise<unknown>) => {
+          Object.assign(context.getHttpContext().req, { account: { id: "user-1" } });
+          return await next();
+        };
+      }
+    }
+    const info = buildEndpoint.query(String, { guards: [SignedInOnly], cache: 60_000 }).exec(() => {
+      runs++;
+      return `run-${runs}`;
+    });
+    const adaptor = new (adapt("signalTestCacheAdaptor"))();
+    const cache = new FakeCacheAdaptor();
+    const call = async (middlewareMap: Map<string, typeof GlobalMiddleware>) =>
+      (await SignalContext.try(adaptor, info, "cached", async () => {
+        const context = makeSignalContext({
+          endpointInfo: info,
+          adaptor,
+          middlewareMap,
+          registry: makeCacheRegistry(cache),
+        });
+        await context.init();
+        return (await context.exec()) as Response;
+      })) as Response;
+    const signedIn = new Map([["resolveAccount", ResolveAccount]]) as never;
+
+    expect(await (await call(signedIn)).json()).toBe("run-1");
+    expect(await (await call(signedIn)).json()).toBe("run-1");
+    expect((await call(new Map())).status).toBe(403);
+    expect(runs).toBe(1);
+    expect(passes).toBe(3);
+  });
+
+  test("refuses a cache on a mutation and on a query that takes an internal argument", async () => {
+    let mutations = 0;
+    const mutationInfo = buildEndpoint.mutation(String, { guards: [Public], cache: 60_000 }).exec(() => {
+      mutations++;
+      return `mutation-${mutations}`;
+    });
+    const perCallerInfo = buildEndpoint
+      .query(String, { guards: [Public], cache: 60_000 })
+      .with(TestInternalArg)
+      .exec((internalValue) => internalValue);
+    const cache = new FakeCacheAdaptor();
+    const call = async (endpointInfo: EndpointInfo) => {
+      const context = makeSignalContext({
+        endpointInfo,
+        request: makeHttpRequest({ body: {} }),
+        registry: makeCacheRegistry(cache),
+      });
+      await context.init();
+      return await ((await context.exec()) as Response).json();
+    };
+
+    expect(await call(mutationInfo)).toBe("mutation-1");
+    expect(await call(mutationInfo)).toBe("mutation-2");
+    expect(await call(perCallerInfo)).toBe("internal-value");
+    expect(cache.store.size).toBe(0);
+  });
+
   test("reports guard and internal argument failures through HTTP responses", async () => {
     const denyInfo = buildEndpoint.query(String, { guards: [TestDeny] }).exec(() => "blocked");
     const missingInternalInfo = buildEndpoint
@@ -827,8 +1025,33 @@ describe("SignalContext execution", () => {
     expect(await nullableResponse.json()).toBe("nullable");
   });
 
+  test("forwards a rethrown remote failure instead of generalizing it to a 500", async () => {
+    // What `restoreRemoteError` hands a server process that calls another with `{ origin }` and rethrows.
+    const remote = Object.assign(new Error("signalTest.error.applyTimeout"), {
+      statusCode: 400,
+      toJSON: () => ({ error: "signalTest.error.applyTimeout", statusCode: 400, data: { timeout: 3000 } }),
+    });
+    const endpointInfo = buildEndpoint.query(String).exec(() => {
+      throw remote;
+    });
+    const adaptor = new (adapt("signalTestRemoteAdaptor"))();
+
+    const response = (await SignalContext.try(adaptor, endpointInfo, "remote", async () => {
+      const context = makeSignalContext({ endpointInfo, adaptor });
+      await context.init();
+      return (await context.exec()) as Response;
+    })) as Response;
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "signalTest.error.applyTimeout",
+      statusCode: 400,
+      data: { timeout: 3000 },
+    });
+  });
+
   test("passes through raw Response results", async () => {
-    const endpointInfo = buildEndpoint.query(Response as never).exec(() => Response.json({ ok: true }));
+    const endpointInfo = buildEndpoint.query(Response as never).exec(() => Response.json({ ok: true }) as never);
     const context = makeSignalContext({ endpointInfo });
 
     await context.init();
@@ -995,7 +1218,7 @@ describe("SignalContext return resolution", () => {
     class ResolveInternal extends internal(signalTestServiceModel, (builder) => ({
       resolvedLabel: builder.resolveField(String).exec((parent) => `resolved:${(parent as { title: string }).title}`),
     })) {}
-    live.service.set("signalTestRelated", relatedService);
+    live.service.set("signalTestRelated", relatedService as unknown as Service);
     live.internal.set("signalTestItemInternal", new ResolveInternal() as unknown as Internal);
 
     const resolved = await SignalContext.resolveReturn(
@@ -1051,6 +1274,65 @@ describe("SignalContext return resolution", () => {
     expect(resolvedArray).toEqual([
       [{ title: "A", nested: { label: "N" }, relatedIds: [], resolvedLabel: "resolved:A" }],
     ]);
+  });
+
+  test("loads and walks a relation once per response, however many rows name it", async () => {
+    const loaded: string[] = [];
+    const live = makeLiveRegistry();
+    live.service.set("signalTestRelated", {
+      __load: async (id: string) => {
+        loaded.push(id);
+        return { toJSON: () => ({ id, title: `related:${id}` }) };
+      },
+    } as unknown as Service);
+    const resolveHolders = async () =>
+      (await SignalContext.resolveReturn(
+        [
+          { label: "a", related: "rel-1", relateds: ["rel-1", "rel-2"], requiredRelated: "rel-1" },
+          { label: "b", related: "rel-1", relateds: ["rel-2"], requiredRelated: "rel-2" },
+        ],
+        {
+          signalContext: null,
+          returnRef: SignalTestHolderFull,
+          arrDepth: 1,
+          registry: getDefaultInjectRegistry(),
+          live,
+        },
+      )) as { related: unknown; relateds: unknown[]; requiredRelated: unknown }[];
+
+    const holders = await resolveHolders();
+
+    expect(loaded.toSorted((a, b) => a.localeCompare(b))).toEqual(["rel-1", "rel-2"]);
+    expect(holders[0].related).toMatchObject({ id: "rel-1", title: "related:rel-1" });
+    expect(holders[0].related).toBe(holders[1].related);
+    expect(holders[0].relateds[0]).toBe(holders[0].related);
+    expect(holders[1].requiredRelated).toBe(holders[0].relateds[1]);
+
+    await resolveHolders();
+    // The cache is the response's, not the process's, so the second one loads both documents again.
+    expect(loaded).toHaveLength(4);
+  });
+
+  test("refuses a missing document for a non-nullable relation even when a nullable one cached the miss", async () => {
+    const live = makeLiveRegistry();
+    live.service.set("signalTestRelated", {
+      __load: async () => null,
+    } as unknown as Service);
+    const resolveHolder = async (holder: object) =>
+      await SignalContext.resolveReturn(holder, {
+        signalContext: null,
+        returnRef: SignalTestHolderFull,
+        arrDepth: 0,
+        registry: getDefaultInjectRegistry(),
+        live,
+      });
+
+    await expect(resolveHolder({ label: "a", related: "gone", relateds: [], requiredRelated: "gone" })).rejects.toThrow(
+      "Document gone is not found",
+    );
+    await expect(resolveHolder({ label: "a", related: "gone", relateds: [], requiredRelated: null })).rejects.toThrow(
+      "Document null is not found",
+    );
   });
 
   test("loadNested handles nullable and non-nullable missing documents", async () => {
@@ -1136,7 +1418,9 @@ describe("representative signal usage regressions", () => {
       .query(String, { path: "wsl/homes/:dongho/erv", prefix: false })
       .param("dongho", String)
       .exec((dongho) => dongho);
-    const wildcard = buildEndpoint.query(Response as never, { path: "localFile/getBlob/*" }).exec(() => new Response());
+    const wildcard = buildEndpoint
+      .query(Response as never, { path: "localFile/getBlob/*" })
+      .exec(() => new Response() as never);
     const processInternal = buildInternal
       .process(Boolean, { serverMode: "all" })
       .msg("force", Boolean)

@@ -30,7 +30,11 @@ export type DocumentModel<T> = unknown extends T
         : Docify<T>;
 
 export type FieldState<T> = T extends { id: string } ? T | null : T;
-export type DefaultOf<S> = GetStateObject<{ [K in keyof S]: FieldState<S[K]> }>;
+export type DefaultOf<S> = {
+  [K in keyof S as S[K] extends (...args: never[]) => unknown ? never : K extends "prototype" ? never : K]: FieldState<
+    S[K]
+  >;
+};
 
 export type DefaultOfSchema<Schema, RelationKey = never> = [RelationKey] extends [never]
   ? Schema
@@ -59,26 +63,29 @@ export class BaseInsight {
   declare count: number;
 }
 
-// TODO: migrate this to shared
-export interface ProtoFile {
+// The projection a `LightFile` carries, so a field declared `field(LightFile)` feeds the upload UI too.
+export interface ProtoLightFile {
   id: string;
   filename: string;
   abstractData: string | null;
   imageSize: [number, number];
-  progress: number | null;
+  progress?: number | null;
   url: string;
   size: number;
   status: string;
   createdAt: Dayjs;
   updatedAt: Dayjs;
   removedAt: Dayjs | null;
+}
+
+export interface ProtoFile extends ProtoLightFile {
+  progress: number | null;
   mimetype: string;
   encoding: string;
   origin: string | null;
   lastModifiedAt: Dayjs;
 }
 
-// TODO: migrate this to shared
 export interface ProtoAppInfo {
   appId: string | null;
   appName: string;
@@ -93,7 +100,6 @@ export interface ProtoAppInfo {
   isEmulator: boolean | null;
 }
 
-// TODO: migrate this to shared
 export interface ProtoPatch {
   source: ProtoFile;
   build: ProtoFile;
@@ -103,6 +109,28 @@ export interface ProtoPatch {
 }
 
 export const DEFAULT_PAGE_SIZE = 20;
+/**
+ * The most rows one list request may take, whatever it asks for.
+ *
+ * A page size arrives from the client, so without a ceiling anyone who may read one page may read the whole
+ * table in a single request — and `LIMIT 0` or `LIMIT -1` reaches SQLite as "no limit at all", so the two ways
+ * of asking for nothing were the two ways of asking for everything. `resolvePageLimit` is the one place that
+ * decides; a caller wanting more pages asks for more pages.
+ */
+export const MAX_PAGE_SIZE = 500;
+
+/** Clamps a caller-supplied page size into `[1, MAX_PAGE_SIZE]`, falling back to `DEFAULT_PAGE_SIZE`. */
+export const resolvePageLimit = (limit: unknown, fallback: number = DEFAULT_PAGE_SIZE): number => {
+  const asked = Math.trunc(Number(limit));
+  if (!Number.isFinite(asked) || asked <= 0) return Math.min(fallback, MAX_PAGE_SIZE);
+  return Math.min(asked, MAX_PAGE_SIZE);
+};
+
+/** Clamps an offset to a non-negative integer; a negative `OFFSET` is silently read as zero by the database. */
+export const resolvePageSkip = (skip: unknown): number => {
+  const asked = Math.trunc(Number(skip));
+  return Number.isFinite(asked) && asked > 0 ? asked : 0;
+};
 export type NonFunctionalKeys<T> = {
   [K in keyof T]: T[K] extends (...args: never[]) => unknown ? never : K;
 }[keyof T];
@@ -110,6 +138,5 @@ export type NonFunctionalKeys<T> = {
 export const unsetDate = dayjs(new Date("0000"));
 export const MAX_INT = 2147483647;
 
-// TODO: migrate this to akanjs/client
 export class Responsive extends enumOf("responsive", ["xl", "lg", "md", "sm", "xs"] as const) {}
 export const responsiveWidths = [1200, 992, 768, 576, 0] as const;

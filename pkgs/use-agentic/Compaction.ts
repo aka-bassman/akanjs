@@ -101,7 +101,17 @@ export class Compaction {
   static #line(message: ChatMessage): string {
     const parts: string[] = [];
     if (message.text) parts.push(Compaction.#clip(message.text, 1200));
-    for (const attachment of message.attachments ?? []) parts.push(`[attached ${attachment.name}]`);
+    // Named as gone, not merely named: a fold keeps no carrier, and a model shown `[attached photo.png]` alone
+    // answers about the picture from its filename.
+    for (const attachment of message.attachments ?? [])
+      parts.push(`[attached ${attachment.name}, content not carried into this summary]`);
+    // Named as gone for the same reason as an attachment, and it matters more: the pointer survives the fold, so
+    // a model that needs the value again has a tool and an id to read it with rather than a memory of it.
+    for (const reference of message.references ?? [])
+      parts.push(
+        `[referenced ${reference.refName}/${reference.refId}${reference.path ? `#${reference.path}` : ""}` +
+          ` (${reference.label}), value not carried into this summary]`,
+      );
     for (const call of message.toolCalls ?? [])
       parts.push(`[called ${call.name} ${Compaction.#clip(JSON.stringify(call.args), 200)}]`);
     for (const result of message.toolResults ?? [])

@@ -2,13 +2,13 @@ import { describe, expect, test } from "bun:test";
 
 type GetContent = (
   scanInfo: unknown,
-  dict: { Model: string; model: string; appName: string },
+  dict: { Model: string; model: string; appName: string; clientPath: string },
 ) => { filename: string; content: string };
 
 // The CRUD page scaffolds are `getContent(scanInfo, dict)` factories under templates/. They render the
 // _index.tsx / edit page source a fresh workspace ships with, so their output must itself pass
 // `akan typecheck`/`akan lint` without hand edits. These golden checks guard the two mistakes that are
-// mechanically always avoidable: `await` inside a non-async `Page`, and app-client imports that skip the
+// mechanically always avoidable: `await` inside a non-async `render` callback, and app-client imports that skip the
 // `@apps/*` path alias.
 const templates = [
   { name: "crudPages list", path: "../templates/crudPages/page.tsx" },
@@ -18,19 +18,19 @@ const templates = [
   { name: "crudSinglePage", path: "../templates/crudSinglePage/page.tsx" },
 ] as const;
 
-const dict = { Model: "Task", model: "task", appName: "myapp" } as const;
+const dict = { Model: "Task", model: "task", appName: "myapp", clientPath: "@apps/myapp/client" } as const;
 
-const renderContent = async (path: string) => {
+const renderContent = async (path: string, clientPath: string = dict.clientPath) => {
   const mod = (await import(path)) as { default: GetContent };
-  return mod.default(null, dict).content;
+  return mod.default(null, { ...dict, clientPath }).content;
 };
 
 describe("crud page scaffolds", () => {
   for (const { name, path } of templates) {
-    test(`${name}: a Page that awaits is declared async`, async () => {
+    test(`${name}: a render callback that awaits is declared async`, async () => {
       const content = await renderContent(path);
       if (content.includes("await ")) {
-        expect(content).toContain("export default async function Page");
+        expect(content).toContain(".render(async (");
       }
     });
 
@@ -39,6 +39,12 @@ describe("crud page scaffolds", () => {
       // Bare `from "myapp/client"` (no @apps/ prefix) fails module resolution in a generated app.
       expect(content).not.toMatch(/from\s+["']myapp\/(client|lib|server)/);
       if (content.includes("/client")) expect(content).toContain('from "@apps/myapp/client"');
+    });
+
+    test(`${name}: a lib module imports its own lib's client`, async () => {
+      const content = await renderContent(path, "@libs/shared/client");
+      expect(content).not.toContain("@apps/");
+      if (content.includes("/client")) expect(content).toContain('from "@libs/shared/client"');
     });
 
     test(`${name}: no unused named imports`, async () => {

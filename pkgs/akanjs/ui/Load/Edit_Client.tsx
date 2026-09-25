@@ -2,11 +2,13 @@
 import { deepObjectify } from "akanjs/common";
 import type { ClientEdit, ServerEdit, SliceMeta } from "akanjs/fetch";
 import type { CreateOption } from "akanjs/store";
-import { useFetch } from "akanjs/webkit";
 import type { ReactNode } from "react";
 
 import { Empty } from "../Empty";
+import { Loading } from "../Loading";
 import { Model } from "../Model";
+import type { DraftProp } from "../Model/draftScope";
+import Stream from "./Stream";
 
 interface DefaultProps {
   type?: "modal" | "form" | "empty";
@@ -15,6 +17,8 @@ interface DefaultProps {
   checkSubmit?: boolean;
   slice: SliceMeta;
   modal?: string;
+  /** Custom fallback shown while an unawaited `edit` is pending. */
+  loading?: ReactNode;
   children?: ReactNode;
   onSubmit?: string;
   onCancel?: string;
@@ -22,6 +26,8 @@ interface DefaultProps {
   submitClassName?: string;
   submitOption?: CreateOption<any>;
   renderSubmit?: boolean;
+  /** Draft recovery for this form. `false` turns it off; a string names the scope explicitly. */
+  draft?: DraftProp;
 }
 
 export interface EditProps<T extends string, Full extends { id: string }> extends DefaultProps {
@@ -47,6 +53,7 @@ function Render<T extends string, Full extends { id: string }>({
   submitClassName,
   submitOption,
   renderSubmit,
+  draft,
 }: RenderProps<T, Full>) {
   const editType: "edit" | "new" =
     (edit as ServerEdit<string, Full>).refName &&
@@ -77,6 +84,7 @@ function Render<T extends string, Full extends { id: string }>({
       submitClassName={submitClassName}
       submitOption={submitOption}
       renderSubmit={renderSubmit}
+      draft={draft}
     >
       {children}
     </Model.EditModal>
@@ -91,6 +99,7 @@ export default function Edit_Client<T extends string, Full extends { id: string 
   edit,
   modal,
   slice,
+  loading,
   children,
   onSubmit,
   onCancel,
@@ -98,6 +107,7 @@ export default function Edit_Client<T extends string, Full extends { id: string 
   submitClassName,
   submitOption,
   renderSubmit,
+  draft,
 }: EditProps<T, Full>) {
   const props: EditProps<T, Full> = {
     className,
@@ -107,6 +117,7 @@ export default function Edit_Client<T extends string, Full extends { id: string 
     edit,
     modal,
     slice,
+    loading,
     children,
     onSubmit,
     onCancel,
@@ -114,7 +125,11 @@ export default function Edit_Client<T extends string, Full extends { id: string 
     submitClassName,
     submitOption,
     renderSubmit,
+    draft,
   };
-  const { fulfilled, value: promiseEdit } = useFetch(edit);
-  return fulfilled ? promiseEdit ? <Render {...props} edit={promiseEdit} /> : <Empty /> : <Empty />;
+  return (
+    <Stream of={edit} fallback={loading === undefined ? <Loading.Skeleton active /> : loading}>
+      {(serverEdit) => (serverEdit ? <Render {...props} edit={serverEdit} /> : <Empty />)}
+    </Stream>
+  );
 }

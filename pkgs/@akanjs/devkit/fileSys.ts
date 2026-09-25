@@ -1,4 +1,4 @@
-import { lstat, stat } from "node:fs/promises";
+import { lstat, rename, rm, stat } from "node:fs/promises";
 import { Logger } from "akanjs/common";
 
 export class FileSys {
@@ -38,6 +38,24 @@ export class FileSys {
   }
   static async writeText(path: string, content: string) {
     return await Bun.file(path).write(content);
+  }
+  /**
+   * Replaces a file in one `rename`, so a concurrent reader sees either the old bytes or the new ones.
+   * Generated barrels are written by every dev server watching the same `libs/` tree while those same
+   * servers' watchers are reading them, and a half-written barrel reads back as a user edit.
+   *
+   * The temp file is a sibling because `rename` is only atomic within a filesystem, and it lands in a
+   * watched directory — the `.tmp` suffix is what `HmrChangeClassifier` ignores it by.
+   */
+  static async writeTextAtomic(filePath: string, content: string) {
+    const temp = `${filePath}.${process.pid}.${Date.now().toString(36)}.tmp`;
+    try {
+      await Bun.write(temp, content);
+      await rename(temp, filePath);
+    } catch (error) {
+      await rm(temp, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
   static async writeJson(path: string, content: object) {
     return await Bun.file(path).write(`${JSON.stringify(content, null, 2)}\n`);

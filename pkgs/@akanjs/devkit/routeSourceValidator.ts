@@ -3,9 +3,26 @@ import ts from "typescript";
 
 /** What the build needs out of a route module without evaluating it. */
 export interface RouteSourceInfo {
-  /** `pageConfig.devOnly === true`, read straight off the AST. */
+  /** `pageConfig.devOnly === true`, or `.config({ devOnly: true })` on a chain, read straight off the AST. */
   devOnly: boolean;
+  /** Present when the default export is a `page()` / `layout()` / `rootLayout()` chain. */
+  chain?: RouteSourceChain;
 }
+
+export interface RouteSourceChain {
+  kind: "page" | "layout" | "rootLayout";
+  /** The `.param()` names, in chain order. */
+  params: string[];
+  /** The `.prompt()` name, when the page publishes itself as an MCP prompt. */
+  prompt?: string;
+}
+
+interface ChainStage {
+  name: string;
+  args: ts.NodeArray<ts.Expression>;
+}
+
+const chainRoots = new Set(["page", "layout", "rootLayout"]);
 
 /**
  * Static enforcement of the `page/` route conventions, split out of `executors.ts` so that importing
@@ -21,7 +38,7 @@ export class RouteSourceValidator {
     source: string,
     filePath: string,
     kind: "page" | "layout",
-    options: { rootLayout?: boolean } = {},
+    options: { rootLayout?: boolean; pattern?: string } = {},
   ): RouteSourceInfo {
     const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const allowed = getRouteExports(kind, { rootLayout: options.rootLayout });
@@ -69,19 +86,91 @@ export class RouteSourceValidator {
     if (exported.has("head") && exported.has("generateHead")) {
       throw new Error(`[route-convention] head and generateHead cannot both be exported in ${filePath}`);
     }
-    if (
-      !options.rootLayout &&
-      (exported.has("head") || exported.has("generateHead")) &&
-      (exported.has("metadata") || exported.has("generateMetadata"))
-    ) {
+    const chain = RouteSourceValidator.#readChain(sourceFile, filePath);
+    if (!chain) return { devOnly: RouteSourceValidator.#readDevOnly(sourceFile, filePath) };
+    const named = [...exported].filter((name) => name !== "default");
+    if (named.length)
       throw new Error(
-        `[route-convention] head/generateHead and metadata/generateMetadata cannot both be exported in ${filePath}`,
+        `[route-convention] ${filePath} exports ${named.join(", ")} beside its ${chain.kind}() chain — every route setting is a stage of the chain`,
       );
+    if (kind === "page" && chain.kind !== "page")
+      throw new Error(`[route-convention] ${filePath} is a page file but exports ${chain.kind}()`);
+    if (kind === "layout" && chain.kind === "page")
+      throw new Error(`[route-convention] ${filePath} is a layout file but exports page()`);
+    if (options.pattern) RouteSourceValidator.#assertChainParams(chain, options.pattern, filePath);
+    return {
+      devOnly: chain.devOnly,
+      chain: { kind: chain.kind, params: chain.params, ...(chain.prompt ? { prompt: chain.prompt } : {}) },
+    };
+  }
+
+  /**
+   * The default export as a `page()` / `layout()` / `rootLayout()` chain, or null when the module is the legacy
+   * shape. Read off the source for the same reason `devOnly` is: the build enumerates routes without importing
+   * them, and `akan sync` should name a `[projectId]` folder whose page declares no `.param("projectId")` before
+   * the first request does.
+   */
+  static #readChain(sourceFile: ts.SourceFile, filePath: string) {
+    for (const statement of sourceFile.statements) {
+      if (!ts.isExportAssignment(statement) || statement.isExportEquals) continue;
+      let node = RouteSourceValidator.#unwrapExpression(statement.expression);
+      const stages: ChainStage[] = [];
+      while (node && ts.isCallExpression(node)) {
+        const callee = node.expression;
+        if (ts.isPropertyAccessExpression(callee)) {
+          stages.unshift({ name: callee.name.text, args: node.arguments });
+          node = callee.expression;
+          continue;
+        }
+        if (ts.isIdentifier(callee) && chainRoots.has(callee.text))
+          return RouteSourceValidator.#chainOf(callee.text as RouteSourceChain["kind"], stages, filePath);
+        return null;
+      }
+      return null;
     }
-    if (exported.has("metadata") && exported.has("generateMetadata")) {
-      throw new Error(`[route-convention] metadata and generateMetadata cannot both be exported in ${filePath}`);
+    return null;
+  }
+
+  static #chainOf(kind: RouteSourceChain["kind"], stages: ChainStage[], filePath: string) {
+    const params: string[] = [];
+    let prompt: string | undefined;
+    let devOnly = false;
+    const literal = (stage: ChainStage) => {
+      const first = stage.args[0];
+      if (!first || !ts.isStringLiteralLike(first))
+        throw new Error(
+          `[route-convention] .${stage.name}() takes a string literal first in ${filePath} — the build reads it without evaluating the module`,
+        );
+      return first.text;
+    };
+    for (const stage of stages) {
+      if (stage.name === "param") params.push(literal(stage));
+      else if (stage.name === "prompt") prompt = literal(stage);
+      else if (stage.name === "config")
+        devOnly = RouteSourceValidator.#devOnlyOf(RouteSourceValidator.#unwrapExpression(stage.args[0]), filePath);
     }
-    return { devOnly: RouteSourceValidator.#readDevOnly(sourceFile, filePath) };
+    return { kind, params, prompt, devOnly };
+  }
+
+  /** The same rule the loader applies: a page names every `[x]` it sits under, a layout may name a subset. */
+  static #assertChainParams(chain: { kind: string; params: string[] }, pattern: string, filePath: string) {
+    const inPath = pattern
+      .split("/")
+      .filter((part) => part.startsWith(":"))
+      .map((part) => part.slice(1))
+      .filter((name) => name !== "lang");
+    if (chain.params.includes("lang"))
+      throw new Error(`[route-convention] ${filePath} declares .param("lang"), which every route receives undeclared`);
+    const unknown = chain.params.find((name) => !inPath.includes(name));
+    if (unknown)
+      throw new Error(
+        `[route-convention] ${filePath} declares .param("${unknown}") but no [${unknown}] segment is in its path`,
+      );
+    const undeclared = inPath.find((name) => !chain.params.includes(name));
+    if (chain.kind === "page" && undeclared)
+      throw new Error(
+        `[route-convention] ${filePath} sits under [${undeclared}] but declares no .param("${undeclared}") — a page reads only what it declares`,
+      );
   }
 
   /**
@@ -98,20 +187,26 @@ export class RouteSourceValidator {
       for (const declaration of statement.declarationList.declarations) {
         if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "pageConfig") continue;
         const initializer = RouteSourceValidator.#unwrapExpression(declaration.initializer);
-        if (!initializer || !ts.isObjectLiteralExpression(initializer)) continue;
-        for (const property of initializer.properties) {
-          if (!ts.isPropertyAssignment(property)) continue;
-          const name = property.name;
-          const key = ts.isIdentifier(name) ? name.text : ts.isStringLiteral(name) ? name.text : null;
-          if (key !== "devOnly") continue;
-          const value = RouteSourceValidator.#unwrapExpression(property.initializer);
-          if (value?.kind === ts.SyntaxKind.TrueKeyword) return true;
-          if (value?.kind === ts.SyntaxKind.FalseKeyword) return false;
-          throw new Error(
-            `[route-convention] pageConfig.devOnly must be a literal true or false in ${filePath} — the build reads it without evaluating the module`,
-          );
-        }
+        if (initializer && ts.isObjectLiteralExpression(initializer))
+          return RouteSourceValidator.#devOnlyOf(initializer, filePath);
       }
+    }
+    return false;
+  }
+
+  static #devOnlyOf(config: ts.Expression | undefined, filePath: string): boolean {
+    if (!config || !ts.isObjectLiteralExpression(config)) return false;
+    for (const property of config.properties) {
+      if (!ts.isPropertyAssignment(property)) continue;
+      const name = property.name;
+      const key = ts.isIdentifier(name) ? name.text : ts.isStringLiteral(name) ? name.text : null;
+      if (key !== "devOnly") continue;
+      const value = RouteSourceValidator.#unwrapExpression(property.initializer);
+      if (value?.kind === ts.SyntaxKind.TrueKeyword) return true;
+      if (value?.kind === ts.SyntaxKind.FalseKeyword) return false;
+      throw new Error(
+        `[route-convention] devOnly must be a literal true or false in ${filePath} — the build reads it without evaluating the module`,
+      );
     }
     return false;
   }

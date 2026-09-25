@@ -1,7 +1,8 @@
 "use client";
 import { loadCapacitorApp, loadCapacitorDevice, loadCapacitorUpdater } from "akanjs/client/capacitor";
-import { HttpClient, mergeVersion, splitVersion } from "akanjs/common";
+import { mergeVersion, splitVersion } from "akanjs/common";
 import type { ProtoAppInfo, ProtoFile } from "akanjs/constant";
+import { HttpClient } from "akanjs/fetch";
 import { useState } from "react";
 
 // export const useCodepush = ({ serverUrl, branch }: { serverUrl: string; branch: "debug" | "develop" | "main" }) => {

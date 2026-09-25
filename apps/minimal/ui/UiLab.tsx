@@ -726,7 +726,7 @@ export const LabSkin = () => (
     </Section>
     <Section
       title="input 슬롯도 같이"
-      note="recipes.input → neonInputRecipe. Input/TextArea/Select 가 같은 셸을 쓰므로 세 컨트롤이 한 번에 바뀐다."
+      note="recipes.input → neonInputRecipe. Input/TextArea 가 이 슬롯으로 셸을 그리므로 함께 바뀐다. Select 는 자기 클래스를 써서 그대로다."
     >
       <SkinInputs />
     </Section>

@@ -17,9 +17,26 @@ interface RemoveProps {
   slice: SliceMeta;
   modal?: string | null;
   redirect?: string;
+  /** Confirmation heading. */
+  title?: ReactNode;
+  /** Confirmation body. */
+  description?: ReactNode;
+  /** Confirmation footer. Replacing it takes over the removal — call nothing else and the record stays. */
+  action?: ReactNode;
   children: ReactNode;
 }
-export default function Remove({ className, name, modelId, slice, modal, redirect, children }: RemoveProps) {
+export default function Remove({
+  className,
+  name,
+  modelId,
+  slice,
+  modal,
+  redirect,
+  title,
+  description,
+  action,
+  children,
+}: RemoveProps) {
   const { l } = usePage();
   const [modalOpen, setModalOpen] = useState(false);
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
@@ -64,25 +81,31 @@ export default function Remove({ className, name, modelId, slice, modal, redirec
           setModalOpen(false);
         }}
         title={
-          <div className="font-bold text-destructive text-lg">
-            {l("base.removeModel", { model: l(`${modelName}.modelName` as "base.new") })}
-          </div>
+          title ?? (
+            <div className="font-bold text-destructive text-lg">
+              {l("base.removeModel", { model: l(`${modelName}.modelName` as "base.new") })}
+            </div>
+          )
         }
         action={
-          <Button
-            variant="warning"
-            className="w-full"
-            onClick={async (e, { onError }) => {
-              await removeModel(modelId, { onError });
-            }}
-          >
-            {l("base.yesRemove", { model: l(`${modelName}.modelName` as "base.new") })}
-          </Button>
+          action ?? (
+            <Button
+              variant="warning"
+              className="w-full"
+              onClick={async (e, { onError }) => {
+                await removeModel(modelId, { onError });
+              }}
+            >
+              {l("base.yesRemove", { model: l(`${modelName}.modelName` as "base.new") })}
+            </Button>
+          )
         }
       >
-        <div className="flex w-full items-center justify-center">
-          {l("base.sureToRemove", { model: l(`${modelName}.modelName` as "base.new"), name: name ?? "" })}
-        </div>
+        {description ?? (
+          <div className="flex w-full items-center justify-center">
+            {l("base.sureToRemove", { model: l(`${modelName}.modelName` as "base.new"), name: name ?? "" })}
+          </div>
+        )}
       </Modal>
     </>
   );

@@ -44,7 +44,7 @@ describe("banner signal test", () => {
     });
 
     it("admin can create banners with images", async () => {
-      const [image] = await fileSpec.getActiveFiles();
+      const [image] = await fileSpec.getActiveFiles(1, adminAgent.fetch);
       const bannerInput = { ...sampleOf(cnst.BannerInput), image: image.id };
       banner = await adminAgent.fetch.createBanner(bannerInput);
       expect(banner.image).toBeTruthy();

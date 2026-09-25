@@ -1,7 +1,7 @@
 import "../../test/registerDom";
 import { describe, expect, test } from "bun:test";
 import { dayjs, enumOf, Float, ID, Int } from "akanjs/base";
-import { act, type ReactNode } from "react";
+import { act, type ReactNode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
 import { actionTagOf } from "../actionTag";
@@ -56,10 +56,10 @@ describe("StToolBuilder", () => {
   test("a model class or Map is rejected by name where it is declared", () => {
     class NotAScalar {}
     expect(() => StToolBuilder.schemaOf(NotAScalar as unknown as typeof ID)).toThrow(
-      "the type NotAScalar, and st.tool takes scalar and enum arguments only.",
+      "the type NotAScalar, and st.tool takes a scalar, an enum, or one array of either.",
     );
     expect(() => StToolBuilder.schemaOf(Map as unknown as typeof ID)).toThrow(
-      "the type Map, and st.tool takes scalar and enum arguments only.",
+      "the type Map, and st.tool takes a scalar, an enum, or one array of either.",
     );
   });
 
@@ -84,7 +84,7 @@ describe("StToolBuilder", () => {
       const unmount = mount(<AgentProvider surface={surface}>{<Widget />}</AgentProvider>);
       expect(surface.snapshot().tools.map((tool) => tool.name)).toEqual([]);
       expect(errors).toEqual([
-        'st.tool("editProject") is not published: its "info" argument is the type PortfolioInfo, and st.tool takes scalar and enum arguments only.',
+        'st.tool("editProject") is not published: its "info" argument is the type PortfolioInfo, and st.tool takes a scalar, an enum, or one array of either.',
       ]);
       unmount();
     } finally {
@@ -150,6 +150,49 @@ describe("StToolBuilder", () => {
     );
   });
 
+  test("one array level of a scalar or an enum is describable, the same shape a form field publishes", () => {
+    const args = [
+      { name: "bodies", type: [String] as const, optional: false },
+      { name: "modes", type: [StToolMode] as const, optional: true },
+    ];
+    expect(StToolBuilder.parametersOf(args)).toEqual({
+      type: "object",
+      properties: {
+        bodies: { type: "array", items: { type: "string" } },
+        modes: { type: "array", items: { type: "string", enum: ["fit", "fill"] } },
+      },
+      required: ["bodies"],
+      additionalProperties: false,
+    });
+    expect(StToolBuilder.positionalOf("rewrite", args, { bodies: ["one", "two"] })).toEqual([["one", "two"], null]);
+    expect(() => StToolBuilder.positionalOf("rewrite", args, { bodies: "one\ntwo" })).toThrow(
+      'Argument "bodies" of rewrite must be an array.',
+    );
+    expect(() => StToolBuilder.positionalOf("rewrite", args, { bodies: ["one", 2] })).toThrow(
+      'Argument "bodies[1]" of rewrite must be a string.',
+    );
+  });
+
+  test("oneOf narrows the elements of an array argument", () => {
+    const args = [{ name: "keys", type: [String] as const, optional: false, oneOf: ["latest", "oldest"] as const }];
+    expect(StToolBuilder.parametersOf(args)).toEqual({
+      type: "object",
+      properties: { keys: { type: "array", items: { type: "string", enum: ["latest", "oldest"] } } },
+      required: ["keys"],
+      additionalProperties: false,
+    });
+    expect(StToolBuilder.positionalOf("sortList", args, { keys: ["oldest"] })).toEqual([["oldest"]]);
+    expect(() => StToolBuilder.positionalOf("sortList", args, { keys: ["title"] })).toThrow(
+      'Argument "keys[0]" of sortList must be one of: latest, oldest.',
+    );
+  });
+
+  test("a second array level is refused where it is declared, like any undescribable type", () => {
+    expect(() => StToolBuilder.parametersOf([{ name: "grid", type: [[String]] as never, optional: false }])).toThrow(
+      "an array of arrays, and st.tool takes one array level of a scalar or an enum.",
+    );
+  });
+
   test("positionalOf maps named arguments into declared order and nulls omitted optionals", () => {
     const args = [
       { name: "sceneId", type: ID, optional: false },
@@ -186,6 +229,46 @@ describe("StToolBuilder.exec", () => {
     expect(seen).toEqual(["two"]);
     await expect(surface.call("switchTab", { menu: "three" })).rejects.toThrow(
       'Argument "menu" of switchTab must be one of: one, two.',
+    );
+    unmount();
+  });
+
+  test("an array argument reaches the callable as an array of its element", async () => {
+    const surface = new AgenticSurface();
+    // The declared type is the assertion: one array level carries through to the callable, `oneOf` and all.
+    const held: { rewrite?: (bodies: string[], keys: ("a" | "b")[] | null) => Promise<void> } = {};
+    const seen: unknown[] = [];
+    const Plan = () => {
+      held.rewrite = new StToolDraft("rewriteBeats")
+        .desc("Rewrite every beat of the plan.")
+        .arg("bodies", [String])
+        .opt("keys", [String], { oneOf: ["a", "b"] })
+        // The callback's own parameters are the assertion the declaration above cannot make: a wider
+        // `unknown[]` would still assign to `held.rewrite`, and neither of these lines would compile.
+        .exec((bodies, keys) => {
+          const narrowed: ("a" | "b")[] = keys ?? [];
+          seen.push([bodies.map((body) => body.trim()), narrowed.length ? narrowed : keys]);
+        });
+      return null;
+    };
+    const unmount = mount(
+      <AgentProvider surface={surface}>
+        <Plan />
+      </AgentProvider>,
+    );
+    expect(surface.snapshot().tools[0]?.parameters).toEqual({
+      type: "object",
+      properties: {
+        bodies: { type: "array", items: { type: "string" } },
+        keys: { type: "array", items: { type: "string", enum: ["a", "b"] } },
+      },
+      required: ["bodies"],
+      additionalProperties: false,
+    });
+    await surface.call("rewriteBeats", { bodies: ["one", "two"] });
+    expect(seen).toEqual([[["one", "two"], null]]);
+    await expect(surface.call("rewriteBeats", { bodies: ["one"], keys: ["c"] })).rejects.toThrow(
+      'Argument "keys[0]" of rewriteBeats must be one of: a, b.',
     );
     unmount();
   });
@@ -250,6 +333,46 @@ describe("StToolBuilder.exec", () => {
     await tab.switchTab?.("two");
     expect(seen).toEqual(["two"]);
     unmount();
+  });
+
+  test("a name withheld and later offered publishes, and one withdrawn stops being published", async () => {
+    const surface = new AgenticSurface();
+    const held: { flip?: () => void; call?: (id: string) => Promise<void> } = {};
+    const Row = ({ start }: { start: boolean }) => {
+      const [canRemove, setCanRemove] = useState(start);
+      held.flip = () => setCanRemove((value) => !value);
+      held.call = new StToolDraft(canRemove ? "removeThing" : null)
+        .desc("Remove the thing.")
+        .arg("id", String)
+        .exec(() => undefined);
+      return null;
+    };
+
+    // Withheld first: the condition a conditional surface is written against can start false.
+    const unmountHidden = mount(
+      <AgentProvider surface={surface}>
+        <Row start={false} />
+      </AgentProvider>,
+    );
+    expect(surface.snapshot().tools).toHaveLength(0);
+    expect(actionTagOf(held.call)).toBeUndefined();
+    act(() => held.flip?.());
+    expect(surface.snapshot().tools.map((tool) => tool.name)).toEqual(["removeThing"]);
+    expect(actionTagOf(held.call)?.action).toBe("removeThing");
+    unmountHidden();
+
+    // And the direction that matters more: a lever the screen stopped offering must stop being pullable.
+    const withdrawn = new AgenticSurface();
+    const unmountShown = mount(
+      <AgentProvider surface={withdrawn}>
+        <Row start={true} />
+      </AgentProvider>,
+    );
+    expect(withdrawn.snapshot().tools.map((tool) => tool.name)).toEqual(["removeThing"]);
+    act(() => held.flip?.());
+    expect(withdrawn.snapshot().tools).toHaveLength(0);
+    expect(actionTagOf(held.call)).toBeUndefined();
+    unmountShown();
   });
 
   test("opt leaves the argument out of required and hands the exec a null when it is omitted", async () => {
@@ -320,5 +443,76 @@ describe("StToolBuilder.exec", () => {
     } finally {
       console.warn = warn;
     }
+  });
+});
+
+describe("StToolBuilder.card", () => {
+  test("publishes a tool with no runnable side of its own, and hands the card its declared arguments", () => {
+    const surface = new AgenticSurface();
+    const drawn: unknown[] = [];
+    const Widget = () => {
+      new StToolDraft("collectContact")
+        .desc("Ask the user for their name and phone number.")
+        .arg("reason", String)
+        .card((control, reason) => {
+          drawn.push(reason);
+          control.submit({ name: "Bora" });
+          return null;
+        });
+      return null;
+    };
+    const unmount = mount(
+      <AgentProvider surface={surface}>
+        <Widget />
+      </AgentProvider>,
+    );
+    const entry = surface.tool("collectContact");
+    expect(entry?.run).toBeUndefined();
+    expect(surface.snapshot().tools).toEqual([
+      {
+        name: "collectContact",
+        description: "Ask the user for their name and phone number.",
+        parameters: {
+          type: "object",
+          properties: { reason: { type: "string" } },
+          required: ["reason"],
+          additionalProperties: false,
+        },
+        needsConfirm: false,
+      },
+    ]);
+    const answered: unknown[] = [];
+    entry?.card?.({ args: { reason: "booking" }, submit: (value) => answered.push(value), cancel: () => undefined });
+    expect(drawn).toEqual(["booking"]);
+    expect(answered).toEqual([{ name: "Bora" }]);
+    unmount();
+  });
+
+  // Checked as a verdict rather than inside the render: the host draws the card in its own tree, so a throw there
+  // takes the chat down instead of reaching the model as something it can correct.
+  test("a missing or mistyped argument is refused before the card is ever drawn", () => {
+    const surface = new AgenticSurface();
+    let drawn = 0;
+    const Widget = () => {
+      new StToolDraft("schedule")
+        .desc("Ask the user to pick a time.")
+        .arg("startAt", Date)
+        .card(() => {
+          drawn += 1;
+          return null;
+        });
+      return null;
+    };
+    const unmount = mount(
+      <AgentProvider surface={surface}>
+        <Widget />
+      </AgentProvider>,
+    );
+    const entry = surface.tool("schedule");
+    expect(entry?.guard?.({})).toBe('Missing argument "startAt" for schedule.');
+    expect(entry?.guard?.({ startAt: "not-a-date" })).toContain("ISO 8601");
+    expect(entry?.guard?.({ startAt: "2026-08-19T09:00:00Z" })).toBe(true);
+    expect(drawn).toBe(0);
+    unmount();
   });
 });

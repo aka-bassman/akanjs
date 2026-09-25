@@ -1,55 +1,39 @@
 "use client";
+import { type MarkdownSpan, MarkdownSpans } from "akanjs/common";
 import type { ReactNode } from "react";
 
-// The href alternation carries one level of nested parens, so a url that ends in one — a wiki title, a
-// `javascript:alert(1)` this then refuses — is captured whole instead of cut at its first `)`.
-const inline =
-  /(!?)\[([^\]]*)\]\(((?:[^\s()]|\([^\s()]*\))+)\)|`([^`]+)`|\*\*([\s\S]+?)\*\*|\*([^*\n]+?)\*|~~([\s\S]+?)~~/g;
+/** The browser rendering of {@link MarkdownSpans}; the scanner, and which hrefs are refused, live there. */
+export const spans = (text: string): ReactNode[] => MarkdownSpans.of(text).map((span, at) => node(span, at));
 
-// React writes a `javascript:` href out as given, and this text comes from a model and from tool results that
-// carry stored user input — so anything but a known scheme renders as its label instead of as a link.
-const isSafeHref = (href: string) => !/^[a-z][a-z0-9+.-]*:/i.test(href) || /^(?:https?|mailto|tel):/i.test(href);
-
-// Underscore emphasis is deliberately unmatched: snake_case is everywhere in this content, and `some_var_name`
-// italicising mid-word reads worse than a literal `_emphasis_` does.
-export const spans = (text: string): ReactNode[] => {
-  const nodes: ReactNode[] = [];
-  let cut = 0;
-  for (const match of text.matchAll(inline)) {
-    const at = match.index;
-    const [, image, label, href, code, strong, em, del] = match;
-    if (at > cut) nodes.push(text.slice(cut, at));
-    cut = at + match[0].length;
-    if (href)
-      nodes.push(
-        image || !isSafeHref(href) ? (
-          label
-        ) : (
-          <a className="underline" href={href} key={at} rel="noreferrer" target="_blank">
-            {spans(label)}
-          </a>
-        ),
+const node = (span: MarkdownSpan, at: number): ReactNode => {
+  switch (span.kind) {
+    case "link":
+      return (
+        <a className="underline" href={span.href} key={at} rel="noreferrer" target="_blank">
+          {spans(span.text)}
+        </a>
       );
-    else if (code)
-      nodes.push(
+    case "code":
+      return (
         <code className="rounded-field bg-muted px-1 font-mono text-[11px]" key={at}>
-          {code}
-        </code>,
+          {span.text}
+        </code>
       );
-    else if (strong)
-      nodes.push(
+    case "strong":
+      return (
         <strong className="font-semibold" key={at}>
-          {spans(strong)}
-        </strong>,
+          {spans(span.text)}
+        </strong>
       );
-    else if (em) nodes.push(<em key={at}>{spans(em)}</em>);
-    else if (del)
-      nodes.push(
+    case "em":
+      return <em key={at}>{spans(span.text)}</em>;
+    case "del":
+      return (
         <del className="opacity-60" key={at}>
-          {spans(del)}
-        </del>,
+          {span.text}
+        </del>
       );
+    default:
+      return span.text;
   }
-  if (cut < text.length) nodes.push(text.slice(cut));
-  return nodes;
 };

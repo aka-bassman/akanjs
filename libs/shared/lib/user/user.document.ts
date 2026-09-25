@@ -14,6 +14,9 @@ import * as cnst from "../cnst";
 import type * as db from "../db";
 import { Err } from "../dict";
 
+/** cnst.UserInput 의 nickname maxlength 와 같아야 한다. */
+const NICKNAME_MAX_LENGTH = 12;
+
 export class UserFilter extends from(cnst.User, (filter) => ({
   query: {
     byStatuses: filter()
@@ -140,13 +143,20 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     await this.userCache.delete("signToken", userId);
     return true;
   }
-  async createRefreshSession(userId: string, refreshTokenHash: string, expiresAt: Date, userAgent?: string) {
+  async createRefreshSession(
+    userId: string,
+    refreshTokenHash: string,
+    expiresAt: Date,
+    userAgent?: string,
+    clientId?: string,
+  ) {
     return await createRefreshSession(this.userCache, {
       subject: "user",
       subjectId: userId,
       refreshTokenHash,
       expiresAt,
       userAgent,
+      clientId,
     });
   }
   async rotateRefreshSession(refreshTokenHash: string, nextRefreshTokenHash: string, nextExpiresAt: Date) {
@@ -174,7 +184,7 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     const isSignable = inactiveUser ? inactiveUser.createdAt.isBefore(dayjs().subtract(resignupDays, "day")) : true;
     if (!isSignable) throw new Err("user.error.resignupNotAvailable", { days: resignupDays });
     await this.User.updateMany({ accountId, status: "prepare" }, ({ unset }) => ({ accountId: unset() }));
-    const modifiedCount = await this.User.updateOne({ id: userId }, ({ pull }) => ({
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, ({ pull }) => ({
       accountId,
       verifies: pull("password"),
     }));
@@ -184,7 +194,7 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     const userExists = await this.existsByAccountId(accountId, ["active", "dormant", "restricted"]);
     if (userExists) throw new Err("user.error.accountIdAlreadyExists");
     await this.User.updateMany({ accountId, status: "prepare" }, ({ unset }) => ({ accountId: unset() }));
-    const modifiedCount = await this.User.updateOne({ id: userId }, { accountId });
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, { accountId });
     return !!modifiedCount;
   }
   async setPasswordInPrepareUser(userId: string, accountId: string, password: string) {
@@ -192,7 +202,7 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     if (!existingAccountId) throw new Err("user.error.noAccountIdInUser");
     if (existingAccountId !== accountId) throw new Err("user.error.invalidAccountId");
     const hashedPassword = await hashPassword(password);
-    const modifiedCount = await this.User.updateOne({ id: userId }, ({ addToSet }) => ({
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, ({ addToSet }) => ({
       password: hashedPassword,
       verifies: addToSet("password"),
     }));
@@ -212,7 +222,7 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
   }
   async setPasswordInActiveUser(userId: string, password: string) {
     const hashedPassword = await hashPassword(password);
-    const modifiedCount = await this.User.updateOne({ id: userId }, ({ addToSet }) => ({
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, ({ addToSet }) => ({
       password: hashedPassword,
       verifies: addToSet("password"),
     }));
@@ -222,8 +232,8 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     await this.userCache.set("lastResetAt", userId, at.toDate().getTime(), { expireAt: at.add(3, "minute") });
   }
   async isResetable(userId: string) {
-    const lastResetTime = await this.userCache.get<number>("lastResetAt", userId);
-    const lastResetAt = lastResetTime ? dayjs(lastResetTime) : undefined;
+    const lastResetTime = await this.userCache.get<string | number>("lastResetAt", userId);
+    const lastResetAt = lastResetTime ? dayjs(Number(lastResetTime)) : undefined;
     const isResetable = !lastResetAt || lastResetAt.isBefore(dayjs().subtract(3, "minute"));
     return isResetable;
   }
@@ -337,7 +347,7 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
       accountId: unset(),
       verifies: pull(ssoType),
     }));
-    const modifiedCount = await this.User.updateOne({ id: userId }, ({ addToSet }) => ({
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, ({ addToSet }) => ({
       accountId,
       verifies: addToSet(ssoType),
     }));
@@ -354,6 +364,16 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
   async setName(userId: string, name: string) {
     const { modifiedCount } = await this.User.updateOne({ id: userId }, { name });
     return !!modifiedCount;
+  }
+  /** SSO 프로필 이름을 nickname 규격(최대 12자, active 유저와 중복 불가)으로 다듬는다. */
+  async makeUniqueNickname(seed: string, fallback = "user") {
+    const base = (seed.split("@")[0] ?? "").replace(/\s+/gu, " ").trim().slice(0, NICKNAME_MAX_LENGTH) || fallback;
+    for (let count = 0; count < 100; count++) {
+      const suffix = count ? String(count) : "";
+      const nickname = `${base.slice(0, NICKNAME_MAX_LENGTH - suffix.length)}${suffix}`;
+      if (!(await this.findIdByNickname(nickname, "active"))) return nickname;
+    }
+    return `${base.slice(0, NICKNAME_MAX_LENGTH - 6)}${randomString(6)}`;
   }
   async setNickname(userId: string, nickname: string) {
     const { modifiedCount } = await this.User.updateOne({ id: userId }, { nickname });

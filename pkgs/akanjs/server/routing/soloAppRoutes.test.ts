@@ -23,7 +23,7 @@ describe("solo app routes", () => {
     };
     expect(body).toMatchObject({ status: "running", solo: true });
     // A probe reads `children[].ready && role !== "batch"`; keeping the shape is what lets it stay unchanged.
-    expect(body.children).toEqual([
+    expect(body.children as unknown).toEqual([
       { idx: 0, role: "all", status: "healthy", ready: true, pid: process.pid, upstream: expect.anything() },
     ]);
   });

@@ -1,4 +1,10 @@
-import { clientAddressFromHeaders, clientPortFromHeaders, forwardedHeaders, normalizeIpAddress } from "akanjs/common";
+import {
+  clientAddressFromHeaders,
+  clientPortFromHeaders,
+  forwardedHeaders,
+  isAuthTokenKey,
+  TrustedProxy,
+} from "akanjs/common";
 
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "user-agent"] as const;
 
@@ -32,20 +38,21 @@ export class AppWsData {
     if (jwt) data.headers.set("authorization", `Bearer ${jwt}`);
     else {
       data.headers.delete("authorization");
-      data.cookies.delete("jwt");
+      // Swept by key shape rather than by this app's own key: the jar the handshake copied is the whole
+      // host's, so it can hold the pre-scoping global key alongside the scoped ones.
+      for (const name of [...data.cookies].map(([name]) => name)) {
+        if (isAuthTokenKey(name)) data.cookies.delete(name);
+      }
       const cookie = [...data.cookies].map(([name, value]) => `${name}=${value}`).join("; ");
       if (cookie) data.headers.set("cookie", cookie);
       else data.headers.delete("cookie");
     }
     data.account = undefined;
-    data.resolvedAuthorization = undefined;
   }
   createdAt: number;
   headers: Headers;
   cookies: Bun.CookieMap;
   account?: unknown;
-  /** The `authorization` value `account` was resolved from, so each frame need not re-verify it. */
-  resolvedAuthorization?: string;
   /**
    * Identity of this connection, minted here so every app socket carries one from its first frame and
    * adaptors and endpoints only ever read it. Per-connection and process-local — a reconnect gets a new
@@ -53,7 +60,13 @@ export class AppWsData {
    * It outlives a credential swap on purpose: the socket is still the same socket.
    */
   socketId: string;
-  /** The caller's address as the nearest proxy recorded it, or null when nothing did. */
+  /**
+   * The caller's address as the nearest proxy recorded it, or null when nothing did.
+   *
+   * The handshake headers alone cannot say whether a proxy wrote them or the client did, so this trusts them —
+   * a socket that reached a child came through the gateway, which already resolved the question. `ipOf` is what
+   * an endpoint should read: it has the peer, so it can decide.
+   */
   get ip(): string | null {
     return clientAddressFromHeaders(this.headers);
   }
@@ -63,7 +76,7 @@ export class AppWsData {
   }
   /** The address to answer on: what a proxy recorded, else this socket's own peer. */
   ipOf(ws: Bun.ServerWebSocket<unknown>): string | null {
-    return this.ip ?? (ws.remoteAddress ? normalizeIpAddress(ws.remoteAddress) : null);
+    return TrustedProxy.clientAddress(this.headers, ws.remoteAddress);
   }
   constructor(headers: Headers) {
     this.createdAt = Date.now();

@@ -1,4 +1,6 @@
 export type {
+  AkanApiConfig,
+  AkanAssetsConfig,
   AkanConfigFile,
   AkanExecutor,
   AkanMobileConfig,
@@ -23,6 +25,7 @@ export type {
   DockerOption,
   DockerRun,
   FileConventionScanResult,
+  LibAssetsConfig,
   LibConfig,
   LibConfigInput,
   LibConfigResult,

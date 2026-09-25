@@ -143,7 +143,7 @@ describe("route convention", () => {
 
   test("allows every root-layout config export the framework honors", () => {
     const rootLayout = getRouteExports("layout", { rootLayout: true });
-    for (const name of ["wsConnect", "reconnect", "theme", "fonts", "manifest", "layoutStyle", "gaTrackingId"]) {
+    for (const name of ["wsConnect", "reconnect", "theme", "fonts", "manifest", "layoutStyle"]) {
       expect(rootLayout.has(name)).toBe(true);
       expect(RESERVED_ROUTE_CONFIG_EXPORTS.has(name)).toBe(true);
     }

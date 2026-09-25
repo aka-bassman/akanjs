@@ -36,25 +36,25 @@ Don't forget to add the translation labels for the dashboard sections:
 
 Let's break down how this dashboard page works:
 
-The Load.Page component handles data loading before rendering. It fetches both waiting and pickup orders simultaneously using Promise.all for optimal performance.
+Notice there is no await. Both slice queries leave the moment they are called, and destructuring the result gives one promise per field instead of a resolved object. Each promise goes straight to the Zone that renders it, so the pickup board and the waiting board arrive independently — a slow query on one never delays the other, and the page heading is on the wire before either lands.
 
-Zone components connect slice data to UI rendering. By passing the init data and slice, the Zone automatically subscribes to real-time updates for that specific slice.
+Zone components connect slice data to UI rendering. init is the window the route already resolved, and slice names the store slice the Zone hydrates and that its controls write back to.
 
 For the customer-facing dashboard, we hide the action controls. Customers should only see the status, not modify orders. This is a common pattern for read-only displays.
 
 Zone with Slice
 
-For a real-time dashboard, the data needs to stay fresh. When a staff member changes an order status, customers watching the display should see it update automatically. The Zone component combined with useInterval creates this "live" experience - just like how airport departure boards constantly refresh to show the latest flight information.
+For a real-time dashboard, the data needs to stay fresh. When a staff member changes an order status, customers watching the display should see it update on their own. The Zone component combined with useInterval refreshes the board on a timer - just like how airport departure boards re-read the schedule every few seconds.
 
 Let's look at how to control the display with props and automatic refresh:
 
-The Unit component now accepts a showControls prop that determines whether to display action buttons. This simple flag allows the same card component to be used in both staff management views (with controls) and customer dashboard views (without controls).
+The Unit component now accepts a showControls prop that determines whether to display action buttons. This simple flag allows the same Unit card component to be used in both staff management views (with controls) and customer dashboard views (without controls).
 
 Now let's see how the Zone component manages automatic data refresh:
 
 Let's understand the key features of this Zone component:
 
-The useInterval hook refreshes the slice data every 3 seconds. This ensures the dashboard stays current without manual user interaction - perfect for displays that need to show live order status.
+This is a plain 3-second poll: every mounted Zone re-runs the slice query whether anything changed or not, which is enough for one shop's board. Live sync is the real answer - a slice that declares .live() pushes each change to its subscribers, and Load.Units subscribes on its own with no interval at all.
 
 The refresh function is automatically generated for each slice. It re-queries the data using the same conditions defined in the slice, ensuring consistent data fetching.
 
@@ -80,18 +80,6 @@ Dictionary for All Labels
 
 Always define slice names and related translations in the dictionary. This ensures consistent labeling across the application and enables proper internationalization.
 
-🎉 What You've Accomplished:
-
-Created multiple slices for different data views
-
-Built a real-time customer dashboard
-
-Connected slices to Zone components
-
-Implemented automatic data refresh
-
-Learned slice component best practices
-
 In the next tutorial, we'll explore how to create dynamic page navigation and user experiences using Pages in Akan.js. This will allow customers to navigate through multi-step ordering flows and interactive interfaces.
 
 ## Code Examples
@@ -99,7 +87,8 @@ In the next tutorial, we'll explore how to create dynamic page navigation and us
 ### apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts
 
 ```ts
-import { ID } from "akanjs/base"; // [!code collapse:13]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:14]
+import { ID } from "akanjs/base";
 import { endpoint, internal, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
@@ -113,7 +102,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder, // [!code collapse:2]
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init().exec(function () {
       return this.icecreamOrderService.queryAny();
@@ -232,15 +221,13 @@ export const dictionary = modelDictionary(["en", "ko"])
 ### apps/koyo/page/dashboard.tsx
 
 ```ts
-import { Load, buttonRecipe } from "akanjs/ui";
 import { fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
-  const [{ icecreamOrderInitInWaiting }, { icecreamOrderInitInPickup }] = await Promise.all([
-    fetch.initIcecreamOrderInWaiting(),
-    fetch.initIcecreamOrderInPickup(),
-  ]);
+  const { icecreamOrderInitInWaiting } = fetch.initIcecreamOrderInWaiting();
+  const { icecreamOrderInitInPickup } = fetch.initIcecreamOrderInPickup();
   return (
     <div className="flex size-full gap-2 p-4">
       <div className="w-2/3">
@@ -263,7 +250,7 @@ export default async function Page() {
       </div>
     </div>
   );
-}
+});
 ```
 
 ### apps/koyo/lib/icecreamOrder/icecreamOrder.dictionary.ts
@@ -351,7 +338,7 @@ export const dictionary = modelDictionary(["en", "ko"])
 
 ```ts
 import { cn, type ModelProps } from "akanjs/client"; // [!code collapse:4]
-import { Model } from "akanjs/ui";
+import { Model, buttonRecipe } from "akanjs/ui";
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
 
 interface CardProps extends ModelProps<"icecreamOrder", cnst.LightIcecreamOrder> { // [!code ++:4]

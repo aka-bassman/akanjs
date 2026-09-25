@@ -28,7 +28,7 @@ export class Transcript {
         if (results.length) kept.push({ ...message, toolResults: results });
         continue;
       }
-      if (message.role === "assistant" && !Transcript.#carries(message)) continue;
+      if (message.role === "assistant" && !Transcript.carries(message)) continue;
       kept.push(message);
       const calls = message.toolCalls ?? [];
       for (const call of calls) called.add(call.id);
@@ -45,7 +45,13 @@ export class Transcript {
   }
 
   /** An empty assistant message is a draft a reload or an abort caught before it said anything. */
-  static #carries(message: ChatMessage) {
-    return !!message.text || !!message.error || !!message.toolCalls?.length || !!message.attachments?.length;
+  static carries(message: ChatMessage) {
+    return (
+      !!message.text ||
+      !!message.error ||
+      !!message.toolCalls?.length ||
+      !!message.attachments?.length ||
+      !!message.references?.length
+    );
   }
 }

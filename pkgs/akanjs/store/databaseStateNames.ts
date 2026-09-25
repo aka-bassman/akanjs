@@ -18,6 +18,7 @@ export const databaseStateNames = (refName: string) => {
     modelSubmit: `${refName}Submit`,
     modelViewAt: `${refName}ViewAt`,
     modelModal: `${refName}Modal`,
+    modelDraft: `${refName}FormDraft`,
     modelOperation: `${refName}Operation`,
     defaultModel: `default${className}`,
   };

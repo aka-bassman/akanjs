@@ -19,73 +19,174 @@
 
 Model.Unit.tsx
 
-The hydrated list rendered by Load.Units. This is the current visible list state.
+The slim version of a model: only the fields its constant picks for lists, plus display methods.
 
-The first list snapshot from the server init object. It is useful for reset or comparison flows.
+server component
 
-Timestamp for when the server initialized the list.
+A component without "use client". It becomes HTML on the server and ships no JavaScript.
 
-Marks the list as ready after hydration.
+A named list query such as `inProject`. Its name becomes the `<Suffix>` in generated names.
 
-Insight data returned with the slice, such as count or summary values.
+Putting data the server already loaded into the browser's store, so nothing is fetched twice.
 
-Pagination state hydrated from the init object.
+What the Unit does itself
 
-The current query arguments used to load the slice.
+Light model fields
 
-The current sort value used to load the slice.
+Title, status, dates: drawn as a card, a row or a tile.
 
-A Unit file contains reusable renderers for one model item or one list/table representation. Common exports are cards, compact rows, avatars, gallery tiles, and column helpers.
+Translation works on the server, so labels need no client code.
 
-Units are usually presentational. They may include thin UI actions such as edit buttons, but forms belong in Template files and larger interactions belong in Util or Store.
+Navigation belongs to the Unit; the caller decides where it goes.
+
+What it hands to another file
+
+A thin action such as edit or remove is a Util that the Unit renders.
+
+A form is a Template, never part of a list item.
+
+A larger interaction: a Util starts it and a store action runs it.
+
+The page loads the data and hands each record to the Unit as a prop.
+
+required
+
+The record to draw. The prop is named by the first type argument.
+
+Extra classes from the caller. Merge them last with `cn`.
+
+Where the Unit links to. Without it, `Layout.Unit` and `Link` render a plain `div`.
+
+A click callback that a client parent can pass.
+
+The slice the list belongs to, passed by `Data.ListContainer`.
+
+Row actions (`edit`, `view`, `remove` or an element), passed by `Data.ListContainer`.
+
+Which fields to show, passed by `Data.ListContainer`.
+
+The normal card for lists and grids.
+
+A compact row for dense lists. `Admin.Unit.Row` also carries its action buttons.
+
+A short summary for feeds and list previews.
+
+An image-first tile for image grids.
+
+A small picture of the record, such as `User.Unit.Avatar`.
+
+The page holds
+
+Render with
+
+What you get
+
+`init` passed to a Zone
+
+Loading, pagination, refresh and empty states, plus a hydrated store.
+
+An awaited list
+
+Plain server HTML in the first response. Common on server-rendered pages.
+
+The un-awaited `<model>List<Suffix>`
+
+The list renders behind its own boundary instead of holding the route.
+
+The list `Load.Units` draws, as it is on screen now.
+
+The first list the server sent, kept for reset and comparison.
+
+When the server built that first list.
+
+`false` once the list is hydrated, and `true` again while a refetch runs.
+
+Insight returned with the slice, such as `count` or summary values.
+
+Pagination state taken from the init object.
+
+Whether more rows follow, and whether the list keeps rows appended by `loadMoreOf<Model><Suffix>()`.
+
+The filter arguments the slice was loaded with.
+
+The sort key the slice was loaded with.
+
+Mistake, then the fix
+
+Do this
+
+A Util takes an id, so pass `articleId={article.id}`.
+
+Move the handler into a Util and render that Util from the Unit.
+
+Export `Card`. The namespace names the model: `<Article.Unit.Card />`.
+
+A Light model has only the fields its constant picks. Add the field there, or draw it in a View.
+
+A Unit never fetches. Load in the page and pass the record down as a prop.
+
+A Unit file draws one record of a model: a card, a compact row, an avatar, a gallery tile, or a column helper for tables. Every list and relation that shows the model reuses these exports.
+
+Open it when a list needs a new look, or a row should show another field. A Unit only draws; everything else has a file of its own:
+
+What
+
+Lives here
+
+Not here
+
+Words used on this page
+
+Term
 
 ModelProps And Light Models
 
-Use ModelProps to type the model prop, href, className, and common interaction props. Unit components usually receive Light models because they are rendered repeatedly in lists.
+A list renders a Unit many times, so it takes a Light model. The smallest complete Unit file:
+
+What ModelProps gives you
 
 Unit Variants
 
-A single Unit file can export several display shapes for the same model. Name them by usage: Card for normal cards, Mini for compact rows, Abstract for feed/list summaries, Gallery for image grids.
-
-Units are server components by default, so avoid putting browser events such as onClick directly in the Unit. Move interactive behavior into a small Util component, such as Article.Util.Remove, and compose it from the Unit.
+A compact row and an image tile from the same file:
 
 Actions Inside Units
 
-Units may show small UI actions such as remove, copy, or detail buttons. Keep the Unit thin: render a small Util component for the browser behavior, while forms and async workflows stay outside the Unit.
+A Unit may show small actions such as remove, copy or a detail button. The Unit only places a small Util component; the Util owns the browser behaviour.
+
+The Unit puts the button in a corner, next to the link rather than inside it:
+
+The Util is the client component. It takes the id, not the model:
 
 Load.Units And Direct Rendering
 
-Use Load.Units when a slice manages loading, pagination, refresh, and empty states. If the page already has an array, render Units directly with map, which is common in server-rendered pages.
+A list of Units reaches the screen in one of three ways. Pick by what the page holds:
 
-Load.Units also hydrates slice state into the client store so generated pagination, query, sort, refresh, and insight helpers can keep working after the first render.
+Load.Units in a Zone
 
-Description
+What Load.Units puts in the store
 
-Example
+Store key
+
+Direct rendering on the server
+
+When the page already holds the list, map it straight into Units. Nothing hydrates, and the rows are in the first response:
 
 Practical Rules
 
-Use Light models for lists and repeated Unit rendering.
+Six rules keep a Unit reusable:
 
-Accept className and href when the Unit may be reused in different layouts or links.
-
-Use cn to merge caller styling with the Unit's base styling.
-
-Prefer Layout.Unit or Link for clickable card/list containers.
-
-Keep forms in Template and complex async interactions in Util or Store.
-
-Export variants by display purpose instead of adding many flags to one Card.
+Common mistakes
 
 ## Code Examples
 
-### Article.Unit.tsx
+### apps/koyo/lib/article/Article.Unit.tsx
 
 ```ts
-import { type ModelProps, cn } from "akanjs/client";
+import type { cnst } from "@apps/koyo/client";
+import { cn, type ModelProps } from "akanjs/client";
 import { Layout } from "akanjs/ui";
 
-export const Card = ({ article, className, href }: ModelProps<"article", cnst.LightArticle>) => {
+export const Card = ({ className, article, href }: ModelProps<"article", cnst.LightArticle>) => {
   return (
     <Layout.Unit className={cn("rounded-lg border", className)} href={href}>
       <div className="font-bold">{article.title}</div>
@@ -95,59 +196,176 @@ export const Card = ({ article, className, href }: ModelProps<"article", cnst.Li
 };
 ```
 
-### Article.Unit.tsx
+### apps/koyo/lib/article/Article.Unit.tsx
 
 ```ts
-interface MiniProps extends ModelProps<"article", cnst.LightArticle> {}
+import { Article, type cnst } from "@apps/koyo/client"; // [!code collapse:3]
+import { cn, type ModelProps } from "akanjs/client";
+import { Image, Link } from "akanjs/ui";
 
-export const Mini = ({ article, className, href }: MiniProps) => (
-  <div className={cn("flex items-center gap-2", className)}>
-    <Link href={href}>{article.title}</Link>
-    <Article.Util.Remove article={article} />
-  </div>
-);
+export const Mini = ({ className, article, href }: ModelProps<"article", cnst.LightArticle>) => {
+  return (
+    <div className={cn("flex items-center gap-2", className)}>
+      <Link href={href}>{article.title}</Link>
+      <Article.Util.Remove articleId={article.id} />
+    </div>
+  );
+};
+
+export const Gallery = ({ className, article, href }: ModelProps<"article", cnst.LightArticle>) => {
+  return (
+    <Link
+      href={href}
+      className={cn("block overflow-hidden rounded-md border", className)}
+    >
+      <Image file={article.cover} className="aspect-video w-full object-cover" />
+      <div className="p-2">{article.title}</div>
+    </Link>
+  );
+};
 ```
 
-### Article.Unit.tsx
+### apps/koyo/lib/article/Article.Unit.tsx
 
 ```ts
-export const Gallery = ({ article, href }: ModelProps<"article", cnst.LightArticle>) => (
-  <Link href={href} className="overflow-hidden rounded-md border">
-    <Image src={article.cover.url} width={320} height={200} />
-    <div>{article.title}</div>
-  </Link>
-);
+export const Card = ({ className, article, href }: ModelProps<"article", cnst.LightArticle>) => {
+  return (
+    <div className={cn("relative", className)}>
+      <Layout.Unit className="rounded-lg border" href={href}>
+        <div className="font-bold">{article.title}</div>
+      </Layout.Unit>
+      <div className="absolute top-2 right-2">
+        <Article.Util.Remove articleId={article.id} />
+      </div>
+    </div>
+  );
+};
 ```
 
-### Article.Unit.tsx
+### apps/koyo/lib/article/Article.Util.tsx
 
 ```ts
-<Layout.Unit className="relative rounded-lg border">
-  <div>{article.title}</div>
-  <div className="absolute top-2 right-2">
-    <Article.Util.Remove article={article} />
-  </div>
-</Layout.Unit>
+"use client";
+import { fetch, usePage } from "@apps/koyo/client";
+import { Model } from "akanjs/ui";
+
+interface RemoveProps {
+  articleId: string;
+}
+export const Remove = ({ articleId }: RemoveProps) => {
+  const { l } = usePage();
+  return (
+    <Model.Remove modelId={articleId} slice={fetch.slice.article}>
+      {l("base.remove")}
+    </Model.Remove>
+  );
+};
 ```
 
-### Load.Units
+### apps/koyo/lib/article/Article.Zone.tsx
 
 ```ts
-<Load.Units
-  init={articleInit}
-  renderEmpty={() => <Model.NewWrapper slice={fetch.slice.article}>+ New</Model.NewWrapper>}
-  renderItem={(article) => <Article.Unit.Card key={article.id} article={article} />}
-/>
+"use client"; // [!code collapse:4]
+import { Article, type cnst, fetch, usePage } from "@apps/koyo/client";
+import type { ClientInit } from "akanjs/fetch";
+import { buttonRecipe, Load, Model } from "akanjs/ui";
+
+interface CardProps {
+  className?: string;
+  init: ClientInit<"article", cnst.LightArticle>;
+  projectId: string;
+}
+export const Card = ({ className, init, projectId }: CardProps) => {
+  const { l } = usePage();
+  return (
+    <>
+      <Load.Units
+        className={className}
+        init={init}
+        renderEmpty={() => (
+          <Model.NewWrapper
+            slice={fetch.slice.articleInProject}
+            partial={{ projectId }}
+          >
+            <button className={buttonRecipe({ variant: "secondary" })}>
+              {l("base.new")}
+            </button>
+          </Model.NewWrapper>
+        )}
+        renderItem={(article) => (
+          <Article.Unit.Card
+            key={article.id}
+            href={`/article/${article.id}`}
+            article={article}
+          />
+        )}
+      />
+      <Model.EditModal slice={fetch.slice.articleInProject}>
+        <Article.Template.General />
+      </Model.EditModal>
+    </>
+  );
+};
 ```
 
-### Direct SSR rendering
+### apps/koyo/page/project/[projectId]/_index.tsx
 
 ```ts
-<div className="flex flex-col gap-2">
-  {articleList.map((article) => (
-    <Article.Unit.Card key={article.id} href={"/article/" + article.id} article={article} />
-  ))}
-</div>
+import { Article, fetch } from "@apps/koyo/client"; // [!code collapse:3]
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+
+export default page()
+  .param("projectId", ID)
+  .render(async ({ projectId }) => {
+    const [{ articleListInProject }] = await Promise.all([
+      fetch.initArticleInProject(projectId),
+    ]);
+    return (
+      <div className="flex flex-col gap-2">
+        {articleListInProject.map((article) => (
+          <Article.Unit.Card
+            key={article.id}
+            href={`/article/${article.id}`}
+            article={article}
+          />
+        ))}
+      </div>
+    );
+  });
+```
+
+### apps/koyo/page/project/[projectId]/_index.tsx
+
+```ts
+import { Article, fetch } from "@apps/koyo/client"; // [!code collapse:4]
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+import { Load, Loading } from "akanjs/ui";
+
+export default page()
+  .param("projectId", ID)
+  .render(({ projectId }) => {
+    const { articleListInProject } = fetch.initArticleInProject(projectId);
+    return (
+      <Load.Stream
+        of={articleListInProject}
+        fallback={<Loading.Skeleton active />}
+      >
+        {(articleList) => (
+          <div className="flex flex-col gap-2">
+            {articleList.map((article) => (
+              <Article.Unit.Card
+                key={article.id}
+                href={`/article/${article.id}`}
+                article={article}
+              />
+            ))}
+          </div>
+        )}
+      </Load.Stream>
+    );
+  });
 ```
 
 ## Agent Notes

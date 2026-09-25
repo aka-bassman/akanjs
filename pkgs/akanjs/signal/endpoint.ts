@@ -64,7 +64,7 @@ export function endpoint<
     Object.assign(endpointCls.srv.srvMap, libEndpoint.srv.srvMap);
   });
   applyMixins(endpointCls, [...libEndpoints]);
-  return endpointCls as any;
+  return endpointCls as any; // the declared return is a generic instantiation built from this call's own type arguments, so there is no `T` to name
 }
 
 export function sliceEndpoint<SrvModule extends ServiceModel, Builder extends EndpointBuilder<SrvModule>>(
@@ -80,5 +80,5 @@ export function sliceEndpoint<SrvModule extends ServiceModel, Builder extends En
   };
   Object.assign(sigRef[ENDPOINT_META], builder(buildEndpoint));
   Object.assign(sigRef.srv.srvMap, srv.srvMap);
-  return sigRef as any;
+  return sigRef as any; // the declared return is a generic instantiation built from this call's own type arguments, so there is no `T` to name
 }

@@ -1,13 +1,13 @@
 import { getEnv } from "akanjs/base";
 import { cn } from "akanjs/client";
-import type { ProtoFile } from "akanjs/constant";
+import type { ProtoLightFile } from "akanjs/constant";
 import type { ImgHTMLAttributes } from "react";
 import { preload as preloadResource } from "react-dom";
 // import NextImage, { ImageProps } from "next/image";
 
 import { CsrImage } from "./CsrImage";
 
-type ImageLikeFile = ProtoFile | { url: string; imageSize: [number, number]; abstractData?: string | null } | null;
+type ImageLikeFile = ProtoLightFile | { url: string; imageSize: [number, number]; abstractData?: string | null } | null;
 
 const DEFAULT_IMAGE_DEVICE_SIZES = [640, 750, 828, 1080, 1200, 1920, 2048, 3840];
 const DEFAULT_IMAGE_SIZES = [32, 48, 64, 96, 128, 256, 384];
@@ -59,7 +59,7 @@ export const Image = ({
   (
     | {
         src?: string;
-        file?: ProtoFile;
+        file?: ProtoLightFile;
         abstractData?: string | null;
         alt?: string;
       }
@@ -80,6 +80,7 @@ export const Image = ({
     return (
       <CsrImage
         src={src}
+        alt={alt}
         file={file}
         abstractData={abstractData}
         className={className}

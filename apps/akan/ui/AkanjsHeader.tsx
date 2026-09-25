@@ -159,7 +159,10 @@ export const AkanjsHeader = ({
           </div>
         </div>
         {notice && (
-          <div className="flex w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 border-foreground/10 border-b bg-foreground/6 px-4 py-2 text-center font-medium text-foreground text-xs shadow-sm backdrop-blur-xl md:text-sm">
+          <div
+            data-akanjs-notice
+            className="flex w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 border-foreground/10 border-b bg-foreground/6 px-4 py-2 text-center font-medium text-foreground text-xs shadow-sm backdrop-blur-xl md:text-sm"
+          >
             <span>{l.trans(notice.text)}</span>
             <Link href={notice.link.href} className="font-bold text-primary underline-offset-4 hover:underline">
               {l.trans(notice.link.label)}
@@ -196,7 +199,7 @@ export const AkanjsHeader = ({
           <input type="checkbox" id="mobile-menu-toggle" className="peer hidden" />
           <div className="fixed inset-y-0 left-0 z-40 w-full -translate-x-full transform transition-transform duration-50 ease-in-out peer-checked:translate-x-0 lg:hidden">
             <div className="h-full overflow-y-auto bg-muted shadow-lg">
-              <div className="mt-28 p-5">
+              <div className="mt-[var(--akanjs-header-offset)] p-5">
                 {mobileDrawerLinks.map((link) => (
                   <Link
                     key={link.href}

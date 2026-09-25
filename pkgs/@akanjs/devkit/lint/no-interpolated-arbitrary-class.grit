@@ -7,9 +7,9 @@ language js(typescript, jsx)
 // literal of the same shape happens to exist elsewhere in the codebase: the default value works by accident
 // while every override dies quietly (that is exactly how `Empty`'s minHeight went unnoticed).
 //
-// Grit port of styleGuard's `interpolated-arbitrary` rule (frontendBuild/styleGuard.ts) — keep the two
-// regexes in sync. Matching template *chunks* is what makes this detectable: the chunk before `${` still
-// carries the unterminated `-[`.
+// Matching template *chunks* is what makes this detectable: the chunk before `${` still carries the
+// unterminated `-[`.
+// Cases: lint/__fixtures__/no-interpolated-arbitrary-class/{bad,good}.tsx
 //
 // The fix is a style prop for the runtime value (`style={{ minHeight }}`) — dimensions are not colors, so
 // no-inline-color does not apply — or a fixed set of literal classes when the value comes from an enum.

@@ -41,6 +41,7 @@ import {
 } from "./agentsIndex";
 import { AkanAppConfig, AkanLibConfig, decreaseBuildNum, increaseBuildNum } from "./akanConfig";
 import { getRootBoundarySegments, isRootBoundarySegments } from "./artifact/implicitRootLayout";
+import { CodegenLock } from "./codegenLock";
 import { FileSys } from "./fileSys";
 import { getDirname } from "./getDirname";
 import { Linter } from "./linter";
@@ -432,7 +433,9 @@ export class Executor {
     const writePath = this.getPath(filePath);
     const dir = path.dirname(writePath);
     if (!(await FileSys.dirExists(dir))) await mkdir(dir, { recursive: true });
-    let contentStr = typeof content === "string" ? content : JSON.stringify(content, null, 2);
+    //? Biome formats every tracked .json and always ends a file with a newline, so a JSON write without one
+    //? loses a byte to `akan lint` and takes it back on the next `akan sync` — a permanent one-line git diff.
+    let contentStr = typeof content === "string" ? content : `${JSON.stringify(content, null, 2)}\n`;
 
     if (await FileSys.fileExists(writePath)) {
       const currentContent = await FileSys.readText(writePath);
@@ -688,7 +691,30 @@ export class Executor {
         Object.entries(options.dict ?? {}).map(([key, value]) => [capitalize(key), capitalize(value)]),
       ),
     };
-    return this._applyTemplate({ ...options, dict });
+    const fileContents = await this._applyTemplate({ ...options, dict });
+    await this.#formatAppliedTemplate(fileContents);
+    return fileContents;
+  }
+
+  /**
+   * A template emits identifiers it cannot sort. `import { fetch, Task, usePage }` is correctly ordered for
+   * a model named Task and wrong for one named Zoo, and `organizeImports` fails `biome check` — so a
+   * scaffold that is not formatted on the way out is red for most model names, whatever the template says.
+   *
+   * Best-effort: `create-akan-workspace` scaffolds before `bun install`, so there is no local Biome binary
+   * and often no config above the target yet. An unformatted file is a lint fix; a failed scaffold is not.
+   */
+  async #formatAppliedTemplate(fileContents: FileContent[]) {
+    const filePaths = fileContents
+      .map((fileContent) => fileContent.filePath)
+      .filter((filePath) => filePath.endsWith(".ts") || filePath.endsWith(".tsx"));
+    if (filePaths.length === 0) return;
+    try {
+      const { fixed } = await this.getLinter().fixFiles(filePaths);
+      if (fixed.length > 0) this.logger.verbose(`Formatted ${fixed.length} scaffolded file(s)`);
+    } catch (err) {
+      this.logger.verbose(`Skipped formatting scaffolded files: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
   // Async so `typescript` (~65MB resident) is loaded only by the commands that actually typecheck,
   // not by every process that imports an executor. `typeCheckAsync` below runs in a subprocess and
@@ -911,9 +937,30 @@ export class WorkspaceExecutor extends Executor {
     return await getDirs(basePath);
   }
   async commit(message: string, { init = false, add = true }: { init?: boolean; add?: boolean } = {}) {
-    if (init) await this.exec(`git init --quiet`);
-    if (add) await this.exec(`git add .`);
-    await this.exec(`git commit --quiet -m "${message}"`);
+    if (init) await this.spawn("git", ["init", "--quiet"]);
+    if (add) await this.spawn("git", ["add", "."]);
+    // Argument vector, not a shell string: a message carrying a double quote breaks the interpolated form.
+    await this.spawn("git", ["commit", "--quiet", "-m", message]);
+  }
+  /** `git commit` exits non-zero on an empty index, so a re-runnable caller has to ask first. */
+  async hasChanges() {
+    return !!(await this.spawn("git", ["status", "--porcelain"])).trim();
+  }
+  /**
+   * Workspace-relative paths git knows about, sorted. `untracked` adds files that exist but are not
+   * committed yet, still honoring `.gitignore` — which is what a freshly copied library looks like.
+   *
+   * Reading the file set from git is what keeps generated barrels, the `page/**` and `public/libs`
+   * symlinks, env values and the lockfile out of it without any caller restating that list.
+   */
+  async listGitFiles(paths: string[], { untracked = false }: { untracked?: boolean } = {}) {
+    if (!paths.length) return [];
+    const mode = untracked ? ["--cached", "--others", "--exclude-standard"] : ["--cached"];
+    const stdout = await this.spawn("git", ["ls-files", "-z", ...mode, "--", ...paths]);
+    return stdout
+      .split("\0")
+      .filter((file) => !!file)
+      .sort();
   }
   async #getDirHasFile(basePath: string, targetFilename: string) {
     const AVOID_DIRS = ["node_modules", "dist", "public", "webkit"];
@@ -1090,18 +1137,22 @@ export class SysExecutor extends Executor {
         : await LibInfo.fromExecutor(this as unknown as LibExecutor, {
             refresh,
           });
-    if (write) {
-      await Promise.all(this.#getScanTemplateTasks(scanInfo));
-      await this.writeJson(`akan.${this.type}.json`, scanInfo.getScanResult());
-      if (this.type === "lib") this.#updateDependencies(scanInfo);
+    //* `writeLib` regenerates every dependency lib's barrels, and each mounting app's `akan start`
+    //* regenerates the same ones — so this region races the other dev servers in the workspace and the
+    //* builders that watch what it writes.
+    if (write)
+      await CodegenLock.run(this.workspace.workspaceRoot, `scan:${this.name}`, async () => {
+        await Promise.all(this.#getScanTemplateTasks(scanInfo));
+        await this.writeJson(`akan.${this.type}.json`, scanInfo.getScanResult());
+        if (this.type === "lib") this.#updateDependencies(scanInfo);
 
-      if (writeLib) {
-        const libInfos = [...scanInfo.getLibInfos().values()];
-        await this.#updateDependencies(scanInfo);
-        await Promise.all(libInfos.flatMap((libInfo) => libInfo.exec.#getScanTemplateTasks(libInfo)));
-      }
-      await this.syncAgentsIndex(scanInfo);
-    }
+        if (writeLib) {
+          const libInfos = [...scanInfo.getLibInfos().values()];
+          await this.#updateDependencies(scanInfo);
+          await Promise.all(libInfos.flatMap((libInfo) => libInfo.exec.#getScanTemplateTasks(libInfo)));
+        }
+        await this.syncAgentsIndex(scanInfo);
+      });
     this.#scanInfo = scanInfo;
     return scanInfo;
   }
@@ -1359,6 +1410,8 @@ export class AppExecutor extends SysExecutor {
     const databaseMode = process.env.AKAN_DATABASE_MODE ?? akanConfig.defaultDatabaseMode ?? "single";
     const routeEnv = {
       AKAN_PUBLIC_BASE_PATHS: [...akanConfig.basePaths].join(","),
+      AKAN_PUBLIC_API_PREFIX: akanConfig.api.prefix,
+      AKAN_PUBLIC_WS_PREFIX: akanConfig.api.websocketPrefix,
       AKAN_DATABASE_MODE: databaseMode,
     };
     Object.assign(process.env, routeEnv);
@@ -1367,7 +1420,7 @@ export class AppExecutor extends SysExecutor {
       //* generated against and typechecked. Drop the cache so the build phases re-read it without them.
       this.#excludeDevOnlyPages = true;
       this.#pageKeys = null;
-      if (await this.exists(this.dist.cwdPath)) await this.dist.exec(`rm -rf ${this.dist.cwdPath}`);
+      await this.dist.removeDir(this.dist.cwdPath);
       await Promise.all([this.dist.mkdir("private"), this.dist.mkdir("public")]);
       //* Lib assets are symlinks in the app dir (see syncAssets). dist is the docker build context and the
       //* release tarball root, neither of which follows a link out of itself, so materialize them here.
@@ -1402,7 +1455,15 @@ export class AppExecutor extends SysExecutor {
     // which filters to AKAN_PUBLIC_*) sees AKAN_PUBLIC_APP_NAME — otherwise SSR throws
     // "environment variable AKAN_PUBLIC_APP_NAME is required". Only AKAN_PUBLIC_* is baked into bundles, so
     // this does not leak non-public env.
-    if (type === "build") Object.assign(process.env, env);
+    // The port keys are this machine's dev allocation, and `define` turns an `AKAN_PUBLIC_*` into a literal the
+    // artifact can never be run with a different value for — a baked port would outrank the `PORT` the container
+    // is started with and send every SSR self-call to a port nothing bound.
+    if (type === "build") {
+      const buildEnv = { ...env };
+      delete buildEnv.AKAN_PUBLIC_CLIENT_PORT;
+      delete buildEnv.AKAN_PUBLIC_SERVER_PORT;
+      Object.assign(process.env, buildEnv);
+    }
     return { env };
   }
   #publicEnv: Record<string, string> | null = null;
@@ -1487,6 +1548,7 @@ export class AppExecutor extends SysExecutor {
         else {
           const info = validator.validateRouteSourceExports(routeSource, absPath, parsed.kind, {
             rootLayout: isRootLayout,
+            pattern: parsed.pattern,
           });
           if (info.devOnly) {
             devOnlyKeys.add(key);
@@ -1652,6 +1714,7 @@ export class AppExecutor extends SysExecutor {
       executor: this,
       getPath: (rel) => this.getPath(rel),
       fileExists: (rel) => FileSys.fileExists(this.getPath(rel)),
+      readFile: (rel) => this.readFile(rel),
       writeFile: async (rel, content, opts) => {
         await this.writeFile(rel, content, opts);
       },
@@ -1769,6 +1832,11 @@ export class PkgExecutor extends Executor {
     };
     const rootVersion = rootDeps[dep];
     if (rootVersion) return rootVersion;
+    // A transitive dependency the workspace pins rather than imports is only ever written as an override, and
+    // that pin has to reach the published package: neither an override nor a dependency's own shrinkwrap is
+    // applied to a consumer's install, so the version has to be a dependency of what we publish.
+    const overrideVersion = rootPackageJson.overrides?.[dep];
+    if (typeof overrideVersion === "string") return overrideVersion;
 
     try {
       const packageJsonPath = `pkgs/${dep}/package.json`;

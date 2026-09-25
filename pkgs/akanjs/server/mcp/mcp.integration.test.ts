@@ -2,15 +2,18 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type BackendEnv, ID } from "akanjs/base";
+import { type BackendEnv, dayjs, enumOf, ID } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { endpoint } from "../../signal/endpoint";
 import type { Guard, GuardScope } from "../../signal/guard";
 import { None, Public } from "../../signal/guards";
 import { internal } from "../../signal/internal";
-import { McpProgress, Msg } from "../../signal/mcp";
+import { McpProgress } from "../../signal/mcp";
+import type { PagePromptEntry, PagePromptRun, PagePromptSource } from "../../signal/mcp/pagePrompt";
+import { middleware } from "../../signal/middleware";
 import { serverSignal } from "../../signal/serverSignal";
+import type { SignalContext } from "../../signal/signalContext";
 import { SignalRegistry } from "../../signal/signalRegistry";
 import { slice } from "../../signal/slice";
 import { AkanLib } from "../akanLib";
@@ -37,6 +40,50 @@ import { McpRouter, type McpRouterProps } from "./McpRouter";
 class SignedIn implements Guard {
   static name = "SignedIn";
   static scope: GuardScope = "account";
+  canPass() {
+    return true;
+  }
+}
+
+/**
+ * Resolves the caller from the `Authorization` header or a `session` cookie, the two channels an app's account
+ * middleware reads — so the suite can show which of the two `/mcp` honours.
+ */
+class McpAccountMiddleware extends middleware("mcpAccount") {
+  override async use() {
+    return async (context: SignalContext, next: () => Promise<unknown>) => {
+      const { req } = context.getHttpContext<{ account?: { id: string } }>();
+      const bearer = req.headers.get("authorization")?.replace(/^Bearer /, "");
+      const cookie = req.headers.get("cookie")?.match(/(?:^|;\s*)session=([^;]+)/)?.[1];
+      const id = bearer ?? cookie;
+      Object.assign(req, { account: id ? { id } : undefined });
+      return await next();
+    };
+  }
+}
+
+class HasAccount implements Guard {
+  static name = "HasAccount";
+  static scope: GuardScope = "account";
+  canPass(context: SignalContext) {
+    return !!context.get<{ id?: string }>("account");
+  }
+}
+
+/** Marked `account` yet reads an argument — the mismark a listing evaluates with none, and throws on. */
+class ReadsArgument implements Guard {
+  static name = "ReadsArgument";
+  static scope: GuardScope = "account";
+  canPass(context: SignalContext) {
+    return (context.getArg<string>("id") as string).length > 0;
+  }
+}
+
+/** Would pass anyone at call time; what keeps it off the shelf is the declaration that no model may. */
+class PersonOnly implements Guard {
+  static name = "PersonOnly";
+  static scope: GuardScope = "account";
+  static agents = false;
   canPass() {
     return true;
   }
@@ -77,6 +124,8 @@ class McpItemSlice extends slice(
   }),
 ) {}
 
+class Period extends enumOf("mcpItemPeriod", ["day", "month"] as const) {}
+
 class McpItemEndpoint extends endpoint(serverResolverTestServiceModel, (builder) => ({
   echoTitle: builder
     .query(String, { guards: [Public] })
@@ -92,6 +141,10 @@ class McpItemEndpoint extends endpoint(serverResolverTestServiceModel, (builder)
     .query(String, { guards: [Public] })
     .search("tags", [String])
     .exec((tags) => (tags ?? []).join("|")),
+  periodTitle: builder
+    .query(String, { guards: [Public] })
+    .search("period", Period)
+    .exec((period) => `period:${period ?? "none"}`),
   maybeItem: builder
     .query(ServerResolverTestLight, { guards: [Public], nullable: true })
     .search("title", String)
@@ -101,9 +154,8 @@ class McpItemEndpoint extends endpoint(serverResolverTestServiceModel, (builder)
             id: "507f1f77bcf86cd799439011",
             title,
             category: "all",
-            createdAt: new Date(0),
-            updatedAt: new Date(0),
-            removedAt: null,
+            createdAt: dayjs(0),
+            updatedAt: dayjs(0),
           }
         : null,
     ),
@@ -111,14 +163,19 @@ class McpItemEndpoint extends endpoint(serverResolverTestServiceModel, (builder)
     id: "507f1f77bcf86cd799439011",
     title: "shot",
     preview: "data:image/png;base64,AAAA",
-    createdAt: new Date(0),
-    updatedAt: new Date(0),
-    removedAt: null,
+    createdAt: dayjs(0),
+    updatedAt: dayjs(0),
   })),
   failingTitle: builder.query(String, { guards: [Public] }).exec(() => {
     throw new Error("boom: internal detail that must not travel");
   }),
   deniedTitle: builder.query(String, { guards: [None] }).exec(() => "denied"),
+  ownedTitle: builder.query(String, { guards: [HasAccount] }).exec(() => "owned"),
+  personTitle: builder.query(String, { guards: [SignedIn, PersonOnly] }).exec(() => "signed by a person"),
+  mismarkedTitle: builder
+    .query(String, { guards: [ReadsArgument] })
+    .param("id", ID)
+    .exec((id) => `${id}:mismarked`),
   slowTitle: builder.query(String, { guards: [Public] }).exec(async () => {
     McpProgress.report(1, { total: 2, message: "counting" });
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -134,16 +191,6 @@ class McpItemEndpoint extends endpoint(serverResolverTestServiceModel, (builder)
     .mutation(String, { guards: [Public] })
     .param("id", ID)
     .exec((id) => `${id}:public`),
-  reviewItem: builder
-    .prompt({ guards: [Public] })
-    .param("id", ID)
-    .search("tone", String)
-    .exec((id, tone) => [Msg.user(`Review ${id} in a ${tone ?? "neutral"} tone.`), Msg.link(`akan://item/${id}`)]),
-  briefItem: builder.prompt({ guards: [Public] }).exec(() => "Answer in three sentences."),
-  brokenItem: builder
-    .prompt({ guards: [Public] })
-    .exec(() => [{ role: "system", content: { type: "text", text: "x" } }] as never),
-  deniedItem: builder.prompt({ guards: [None] }).exec(() => "denied"),
 })) {}
 
 class McpItemInternal extends internal(serverResolverTestServiceModel, () => ({})) {}
@@ -172,6 +219,11 @@ let post: (body: object) => Promise<{ res: Response; json: any }>;
 let postPaged: (body: object, pageSize: number) => Promise<{ res: Response; json: any }>;
 let postWith: (body: object, props: Partial<McpRouterProps>) => Promise<{ res: Response; json: any }>;
 let postRaw: (body: object, headers: Record<string, string>) => Promise<Response>;
+let postAs: (
+  body: object,
+  headers: Record<string, string>,
+  props: Partial<McpRouterProps>,
+) => Promise<{ res: Response; json: any }>;
 let mcpRouter: (props?: Partial<McpRouterProps>) => McpRouter;
 let mcpRoutes: (props?: Partial<McpRouterProps>) => Record<string, Record<string, (req: Request) => Promise<Response>>>;
 
@@ -201,7 +253,7 @@ beforeAll(async () => {
     ],
     services: [],
     scalars: [],
-    option: new AkanOption(),
+    option: new AkanOption().applyMiddleware(McpAccountMiddleware),
   });
   di = new DiLifecycle({ env }, lib);
   httpRoutes = (await di.initializeAll()).routes ?? {};
@@ -224,6 +276,8 @@ beforeAll(async () => {
   postPaged = async (body: object, pageSize: number) => await withJson(await send(body, {}, { pageSize }));
   postWith = async (body: object, props: Partial<McpRouterProps>) => await withJson(await send(body, {}, props));
   postRaw = async (body: object, headers: Record<string, string>) => await send(body, headers);
+  postAs = async (body: object, headers: Record<string, string>, props: Partial<McpRouterProps>) =>
+    await withJson(await send(body, headers, props));
 });
 
 afterAll(async () => {
@@ -234,15 +288,80 @@ afterAll(async () => {
 const call = async (name: string, args: Record<string, unknown> = {}) =>
   (await post({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } })).json;
 
+const itemId = "507f1f77bcf86cd799439011";
+const briefEntry: PagePromptEntry = {
+  name: "briefItem",
+  description: "Brief the item screen: what it shows and what is due.",
+  arguments: [
+    { name: "serverResolverTestItemId", description: "The item.", required: true },
+    { name: "tags", description: "Comma-separated list.", required: false },
+  ],
+  pattern: "/:lang/item/:serverResolverTestItemId",
+};
+const rows = (count: number) =>
+  Array.from({ length: count }, (_, idx) => ({
+    id: `507f1f77bcf86cd7994390${String(idx).padStart(2, "0")}`,
+    title: `row ${idx}`,
+    category: "all",
+    createdAt: "1970-01-01T00:00:00.000Z",
+    updatedAt: "1970-01-01T00:00:00.000Z",
+  }));
+const okRun = (count = 2): PagePromptRun => ({
+  ok: true,
+  url: `http://127.0.0.1/en/item/${itemId}`,
+  records: [
+    {
+      key: "serverResolverTestItemListInCategory",
+      args: { category: "all" },
+      returns: { refName: "serverResolverTestItem", modelType: "light", arrDepth: 1 },
+      value: rows(count),
+    },
+    { key: "echoTitle", args: { id: itemId, suffix: "x" }, returns: { refName: "String" }, value: `${itemId}:x` },
+  ],
+});
+/** What the RSC worker would answer, without a worker: the router's half is what these tests are about. */
+const pagePromptsOf = (run: PagePromptRun, entries: PagePromptEntry[] = [briefEntry]): PagePromptSource => ({
+  list: async () => entries,
+  run: async () => run,
+});
+const promptsGet = (args: Record<string, string>) => ({
+  jsonrpc: "2.0",
+  id: 1,
+  method: "prompts/get",
+  params: { name: "briefItem", arguments: args },
+});
+
 describe("MCP over a booted container", () => {
+  test("names an account guard that reaches for arguments, once, and hides its entry without an error line", async () => {
+    // First in the file on purpose: the warning is said once per guard and endpoint for the life of the process,
+    // so it has to be caught on the first listing that evaluates the guard.
+    const lines: string[] = [];
+    const stop = Logger.addSink(({ message }) => void lines.push(message));
+    try {
+      const { json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+      expect(json.result.tools.map((tool: { name: string }) => tool.name)).not.toContain("mismarkedTitle");
+      // Absent from the document, not merely hidden for this caller: `PersonOnly` would have passed anyone.
+      expect(json.result.tools.map((tool: { name: string }) => tool.name)).not.toContain("personTitle");
+      await post({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+    } finally {
+      stop();
+    }
+    const warned = lines.filter((line) => line.includes("Guard ReadsArgument threw while listing"));
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain('"mismarkedTitle"');
+    expect(warned[0]).toContain('static scope = "resource"');
+    // A refusal at listing time is the expected answer for most of a catalogue, not an error to log.
+    expect(lines.some((line) => line.startsWith("Error query-"))).toBe(false);
+  });
+
   test("lists every endpoint its guards admit", async () => {
     const { json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(json.result.tools.map((tool: { name: string }) => tool.name)).toEqual([
       "echoTitle",
       "failingTitle",
       "joinTags",
-      "lightServerResolverTestItem",
       "maybeItem",
+      "periodTitle",
       "renameTitle",
       "serverResolverTestItem",
       "serverResolverTestItemInsight",
@@ -275,8 +394,6 @@ describe("MCP over a booted container", () => {
     // evaluated here at all, which is why `renameTitle` above stays listed and is stopped at call time instead.
     const { json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(json.result.tools.map((tool: { name: string }) => tool.name)).not.toContain("deniedTitle");
-    const prompts = await post({ jsonrpc: "2.0", id: 1, method: "prompts/list" });
-    expect(prompts.json.result.prompts.map((prompt: { name: string }) => prompt.name)).not.toContain("deniedItem");
   });
 
   test("runs an opted-in guarded mutation", async () => {
@@ -354,8 +471,8 @@ describe("MCP over a booted container", () => {
     const positional = await post({
       jsonrpc: "2.0",
       id: 1,
-      method: "prompts/get",
-      params: { name: "reviewItem", arguments: ["507f1f77bcf86cd799439011"] },
+      method: "tools/call",
+      params: { name: "echoTitle", arguments: ["507f1f77bcf86cd799439011"] },
     });
     expect(positional.json.error.code).toBe(-32602);
     expect(positional.json.error.message).toBe("`arguments` must be an object of named values.");
@@ -363,13 +480,17 @@ describe("MCP over a booted container", () => {
 
   test("advertises only the capabilities it actually has entries for", async () => {
     // A fixed `{ tools, resources, prompts }` invites three listing round-trips whatever the server carries.
-    const { json } = await post({
+    const initialize = {
       jsonrpc: "2.0",
       id: 1,
       method: "initialize",
       params: { protocolVersion: "2025-11-25", capabilities: {} },
-    });
-    expect(json.result.capabilities).toEqual({ tools: {}, resources: {}, prompts: {} });
+    };
+    const { json } = await post(initialize);
+    expect(json.result.capabilities).toEqual({ tools: {}, resources: {} });
+    // Prompts are the pages', so the capability follows whether there are pages to ask.
+    const { json: withPages } = await postWith(initialize, { pagePrompts: pagePromptsOf(okRun()) });
+    expect(withPages.result.capabilities).toEqual({ tools: {}, resources: {}, prompts: {} });
   });
 
   test("says at boot what it published and what it refused", async () => {
@@ -377,7 +498,7 @@ describe("MCP over a booted container", () => {
     // is not there. `akan quality scan` cannot cover it — it reads source, where a return type and a guard list
     // are names rather than resolved types — so the boot log is the only place an author can be told.
     const lines: string[] = [];
-    const stop = Logger.addSink(({ message }) => lines.push(message));
+    const stop = Logger.addSink(({ message }) => void lines.push(message));
     try {
       mcpRouter().report();
       mcpRouter({ readOnly: true }).report();
@@ -387,11 +508,14 @@ describe("MCP over a booted container", () => {
     const log = lines.join("\n");
     // The whole build, not one caller's view: `deniedTitle` and `deniedItem` are in the catalogue and are hidden
     // per credential at listing time, so these counts run ahead of what `tools/list` returned above.
-    expect(log).toContain("MCP catalogue: tools=14 prompts=4 resourceTemplates=4");
+    expect(log).toContain("MCP catalogue: tools=16 resourceTemplates=3 · listing ");
+    // Which signals a listing went to, so a catalogue that grew can say where. Every entry inlines the schema of
+    // every model it mentions, and the whole thing is re-sent to every agent that connects.
+    expect(log).toContain("MCP catalogue cost: serverResolverTestItem 16/");
     expect(lines.find((line) => line.includes('"publicRenameTitle"'))).toContain("`[Public]` is having none");
     // The read-only valve reports itself the same way, rather than leaving an author to wonder where a guarded,
     // deliberately exposed mutation went.
-    expect(log).toContain("MCP catalogue: tools=13 prompts=4 resourceTemplates=4 (read-only deployment)");
+    expect(log).toContain("MCP catalogue: tools=15 resourceTemplates=3 (read-only deployment)");
     expect(lines.find((line) => line.includes('did not expose "renameTitle"'))).toContain("read-only");
     // Published with nothing an agent can pick it by, which is a broken tool rather than an untidy one. These
     // signals carry no dictionary at all, so every entry is named — including the generated ones, whose only
@@ -406,9 +530,67 @@ describe("MCP over a booted container", () => {
     // slice call's `get: Public` reaches base CRUD and the root slice and never a named slice, which is how an
     // endpoint arrives here without anyone writing anything down.
     expect(lines.find((line) => line.includes('did not expose "hiddenTitle"'))).toContain("declares no guards");
+    // A guard that admits no model takes the entry out of the document itself — not hidden per caller, absent —
+    // and the reason names the guards so the author can find the one that said so.
+    expect(lines.find((line) => line.includes('did not expose "personTitle"'))).toContain("SignedIn, PersonOnly");
     // The root list took `root: Public`, and `echoTitle` wrote `[Public]` itself: both are decisions, both quiet.
     expect(lines.find((line) => line.includes('exposed "serverResolverTestItemList", which'))).toBeUndefined();
     expect(lines.find((line) => line.includes('exposed "echoTitle", which'))).toBeUndefined();
+    // Three tools need a credential (`deniedTitle`, `ownedTitle`, `renameTitle`) and nothing here can issue or
+    // check one, so the shelf lists tools no client can reach. Said once, at boot; quiet once an issuer is named.
+    expect(log).toContain("MCP publishes 3 guarded tool(s) but no authorization server is configured");
+    const configured: string[] = [];
+    const stopConfigured = Logger.addSink(({ message }) => void configured.push(message));
+    try {
+      mcpRouter({ auth: { authorizationServers: ["https://app.example.com"] } }).report();
+    } finally {
+      stopConfigured();
+    }
+    expect(configured.find((line) => line.includes("no authorization server is configured"))).toBeUndefined();
+  });
+
+  test("honours a bearer token and ignores a cookie, the one credential channel the spec admits", async () => {
+    const list = { jsonrpc: "2.0", id: 1, method: "tools/list" };
+    const owned = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "ownedTitle" } };
+    const names = async (res: Response) =>
+      ((await res.json()) as { result: { tools: { name: string }[] } }).result.tools.map((tool) => tool.name);
+    expect(await names(await postRaw(list, { authorization: "Bearer u1" }))).toContain("ownedTitle");
+    // The same session as a cookie is stripped before the account middleware runs, so this caller is anonymous:
+    // the account-guarded tool is off its shelf, and calling it by name is answered with the challenge.
+    expect(await names(await postRaw(list, { cookie: "session=u1" }))).not.toContain("ownedTitle");
+    const cookieCall = await postRaw(owned, { cookie: "session=u1" });
+    expect(cookieCall.status).toBe(401);
+    expect(cookieCall.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
+    const bearerCall = (await (await postRaw(owned, { authorization: "Bearer u1" })).json()) as {
+      result: { content: { text: string }[] };
+    };
+    expect(bearerCall.result.content[0].text).toBe("owned");
+  });
+
+  test("challenges an anonymous initialize once an authorization server is named", async () => {
+    const initialize = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "probe", version: "0" } },
+    };
+    const send = async (headers: Record<string, string>) =>
+      await mcpRoutes({ auth: { authorizationServers: ["https://app.example.com"] } })["/mcp"].POST(
+        new Request("http://127.0.0.1:8080/mcp", {
+          method: "POST",
+          body: JSON.stringify(initialize),
+          headers: { "content-type": "application/json", ...headers },
+        }),
+      );
+    // A client starts its OAuth flow on a 401 and on nothing else; an anonymous handshake that succeeded would leave
+    // it connected to the anonymous shelf, never asking.
+    const anonymous = await send({});
+    expect(anonymous.status).toBe(401);
+    expect(anonymous.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
+    // The same server naming no issuer keeps its anonymous handshake, which is what a public catalogue wants.
+    expect((await postRaw(initialize, {})).status).toBe(200);
+    // With a token the handshake proceeds; whether that token is any good is the next gate's question.
+    expect((await send({ authorization: `Bearer ${"a.b".concat(".c")}` })).status).toBe(200);
   });
 
   test("refuses a guarded call without naming the guard that refused it", async () => {
@@ -507,46 +689,177 @@ describe("MCP over a booted container", () => {
     });
   });
 
-  test("lists prompts with their arguments and never as tools", async () => {
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "prompts/list" });
-    expect(json.result.prompts.map((prompt: { name: string }) => prompt.name)).toEqual([
-      "briefItem",
-      "brokenItem",
-      "reviewItem",
-    ]);
-    expect(json.result.prompts.find((p: { name: string }) => p.name === "reviewItem").arguments).toEqual([
-      { name: "id", required: true },
-      { name: "tone", required: false },
-    ]);
+  test("refuses a value outside its enum", async () => {
+    // `enumOf` erases to `String` in every argRef, so the parser passed `"year"` through and the endpoint ran on
+    // a value the published schema said could not exist.
+    const ok = await call("periodTitle", { period: "day" });
+    expect(ok.result.content[0].text).toBe("period:day");
+    const bad = await call("periodTitle", { period: "year" });
+    expect(bad.result.isError).toBe(true);
+    expect(bad.result.content[0].text).toBe('Invalid argument "period": expected one of day, month.');
+    // A tool's list is a JSON array already; a bare string is lifted whole, comma and all.
+    const joined = await call("joinTags", { tags: "a,b" });
+    expect(joined.result.content[0].text).toBe("a,b");
   });
 
-  test("runs a prompt through the signal pipeline and returns its messages", async () => {
-    const { json } = await post({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "prompts/get",
-      params: { name: "reviewItem", arguments: { id: "507f1f77bcf86cd799439011", tone: "blunt" } },
+  test("lists page prompts as the pages declared them", async () => {
+    const { json } = await postWith(
+      { jsonrpc: "2.0", id: 1, method: "prompts/list" },
+      { pagePrompts: pagePromptsOf(okRun()) },
+    );
+    expect(json.result.prompts).toEqual([
+      { name: "briefItem", description: briefEntry.description, arguments: briefEntry.arguments },
+    ]);
+    // Without pages there is nothing to list, and nothing was advertised.
+    const { json: none } = await post({ jsonrpc: "2.0", id: 1, method: "prompts/list" });
+    expect(none.result.prompts).toEqual([]);
+  });
+
+  test("answers a page prompt with the screen's data, addressed and masked, and the tools of its modules", async () => {
+    const { json } = await postWith(promptsGet({ serverResolverTestItemId: itemId }), {
+      pagePrompts: pagePromptsOf(okRun()),
     });
+    expect(json.result.description).toBe(briefEntry.description);
+    const messages = json.result.messages as { role: string; content: any }[];
+    expect(messages[0]).toEqual({
+      role: "user",
+      content: { type: "text", text: briefEntry.description, annotations: { priority: 1 } },
+    });
+    // A generated read is attached under the uri `resources/read` answers, so a model can fetch it again.
+    expect(messages[1].content).toMatchObject({
+      type: "resource",
+      resource: { uri: "akan://serverResolverTestItem/list/inCategory?category=all", mimeType: "application/json" },
+    });
+    expect(JSON.parse(messages[1].content.resource.text)).toHaveLength(2);
+    // A custom read has no template and is addressed by its own call.
+    expect(messages[2].content.resource.uri).toBe(`akan://echoTitle?id=${itemId}&suffix=x`);
+    expect(JSON.parse(messages[2].content.resource.text)).toBe(`${itemId}:x`);
+    // The screen fetched from one module, so its published tools are the ones offered — not the whole shelf, and
+    // not the reads whose answers are already attached above.
+    const tools = messages.at(-1)?.content.text as string;
+    expect(tools).toStartWith("Tools for this screen: ");
+    expect(tools).toContain("serverResolverTestItemList,");
+    expect(tools).toContain("maybeItem");
+    expect(tools).not.toContain("serverResolverTestItemListInCategory");
+    expect(tools).not.toContain("echoTitle");
+    expect(tools).not.toContain("deniedTitle");
+  });
+
+  test("attaches one document once when a layout and its page read it in two shapes", async () => {
+    const doc = {
+      id: itemId,
+      title: "shot",
+      category: "all",
+      createdAt: "1970-01-01T00:00:00.000Z",
+      updatedAt: "1970-01-01T00:00:00.000Z",
+    };
+    const run: PagePromptRun = {
+      ok: true,
+      url: `http://127.0.0.1/en/item/${itemId}`,
+      records: [
+        {
+          key: "lightServerResolverTestItem",
+          args: { serverResolverTestItemId: itemId },
+          returns: { refName: "serverResolverTestItem", modelType: "light" },
+          value: { id: doc.id, title: doc.title },
+        },
+        {
+          key: "serverResolverTestItem",
+          args: { serverResolverTestItemId: itemId },
+          returns: { refName: "serverResolverTestItem", modelType: "full" },
+          value: doc,
+        },
+      ],
+    };
+    const { json } = await postWith(promptsGet({ serverResolverTestItemId: itemId }), {
+      pagePrompts: pagePromptsOf(run),
+    });
+    const resources = (json.result.messages as { content: any }[]).filter((m) => m.content.type === "resource");
+    expect(resources).toHaveLength(1);
+    expect(resources[0]?.content.resource.uri).toBe(`akan://serverResolverTestItem/${itemId}`);
+    expect(JSON.parse(resources[0]?.content.resource.text)).toMatchObject({ category: "all" });
+  });
+
+  test("points a prompt missing its required argument at the tool that finds the id", async () => {
+    const { json } = await postWith(promptsGet({}), { pagePrompts: pagePromptsOf(okRun()) });
     expect(json.result.messages).toEqual([
-      { role: "user", content: { type: "text", text: "Review 507f1f77bcf86cd799439011 in a blunt tone." } },
-      // `name` is required by the spec — `ResourceLink` extends `BaseMetadata` — and a client SDK parses this
-      // reply against a union a nameless block matches no member of, so leaving it off threw on the client.
       {
         role: "user",
         content: {
-          type: "resource_link",
-          uri: "akan://item/507f1f77bcf86cd799439011",
-          name: "507f1f77bcf86cd799439011",
+          type: "text",
+          text: 'No serverResolverTestItemId was named for "briefItem". Find it with `serverResolverTestItemList`, then run this prompt again with serverResolverTestItemId=<id>.',
         },
       },
     ]);
   });
 
-  test("wraps a bare string return into one user message", async () => {
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "prompts/get", params: { name: "briefItem" } });
-    expect(json.result.messages).toEqual([
-      { role: "user", content: { type: "text", text: "Answer in three sentences." } },
-    ]);
+  test("cuts the largest list to the prompt budget and says how much was cut", async () => {
+    const { json } = await postWith(promptsGet({ serverResolverTestItemId: itemId }), {
+      pagePrompts: pagePromptsOf(okRun(64)),
+      promptBudget: 3000,
+    });
+    const messages = json.result.messages as { content: any }[];
+    const attached = JSON.parse(messages[1].content.resource.text) as unknown[];
+    expect(attached.length).toBeLessThan(64);
+    expect(attached.length).toBeGreaterThan(0);
+    const note = messages.find((m) => m.content.type === "text" && m.content.text.startsWith("Attached the first"));
+    expect(note?.content.text).toBe(
+      `Attached the first ${attached.length} of 64 rows of \`serverResolverTestItemListInCategory\`; call it for the rest.`,
+    );
+  });
+
+  test("turns a page's refusals into the caller's, and a sign-in redirect into the credential challenge", async () => {
+    const argument: PagePromptRun = {
+      ok: false,
+      reason: "argument",
+      message: 'Invalid argument "tags": expected String[].',
+    };
+    const { json: bad } = await postWith(promptsGet({ serverResolverTestItemId: itemId, tags: "x" }), {
+      pagePrompts: pagePromptsOf(argument),
+    });
+    expect(bad.error).toEqual({ code: -32602, message: 'Invalid argument "tags": expected String[].' });
+    const redirect: PagePromptRun = { ok: false, reason: "redirect", message: "The page redirects to /signin." };
+    // No credential: told to get one, the way a guarded tool tells a client.
+    const { res } = await postWith(promptsGet({ serverResolverTestItemId: itemId }), {
+      pagePrompts: pagePromptsOf(redirect),
+    });
+    expect(res.status).toBe(401);
+    // With one, the account simply may not see this screen — and the location it was sent to stays private.
+    const { json: refused } = await postAs(
+      promptsGet({ serverResolverTestItemId: itemId }),
+      { Authorization: "Bearer not-a-real-token" },
+      { pagePrompts: pagePromptsOf(redirect) },
+    );
+    expect(refused.error.code).toBe(-32602);
+    expect(refused.error.message).toBe("This screen is not available to the signed-in account.");
+    expect(JSON.stringify(refused)).not.toContain("/signin");
+    // A guard refusing a query inside the body is the screen refusing this account, said the same way.
+    const forbidden: PagePromptRun = {
+      ok: false,
+      reason: "forbidden",
+      message: "A query the screen makes refused the caller (403).",
+    };
+    const { res: challenged } = await postWith(promptsGet({ serverResolverTestItemId: itemId }), {
+      pagePrompts: pagePromptsOf(forbidden),
+    });
+    expect(challenged.status).toBe(401);
+    const { json: gated } = await postAs(
+      promptsGet({ serverResolverTestItemId: itemId }),
+      { Authorization: "Bearer not-a-real-token" },
+      { pagePrompts: pagePromptsOf(forbidden) },
+    );
+    expect(gated.error.message).toBe("This screen is not available to the signed-in account.");
+    const failed: PagePromptRun = { ok: false, reason: "error", message: "boom: internal detail" };
+    const { json: internal } = await postWith(promptsGet({ serverResolverTestItemId: itemId }), {
+      pagePrompts: pagePromptsOf(failed),
+    });
+    expect(internal.error.message).toBe("The page failed to load.");
+    expect(JSON.stringify(internal)).not.toContain("boom");
+    const { json: unknown } = await postWith(
+      { ...promptsGet({}), params: { name: "nope", arguments: {} } },
+      { pagePrompts: pagePromptsOf(okRun()) },
+    );
+    expect(unknown.error.message).toBe("Unknown prompt: nope.");
   });
 
   test("leaves a visual field out of what an agent is handed, and in what the page is", async () => {
@@ -593,6 +906,20 @@ describe("MCP over a booted container", () => {
     expect(once.result.content[0].text).toBe("The result is in this call's structuredContent.");
   });
 
+  test("reads a resource whole when the legacy text block is turned off", async () => {
+    // `ReadResourceResult` has no `structuredContent`, so the pointer a tool result leaves in its text block would
+    // send a client to a field this reply cannot have. Every resource of a deployment that took the option was
+    // answering with that one sentence.
+    const body = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "resources/read",
+      params: { uri: "akan://serverResolverTestItem/list/inCategory?category=all" },
+    };
+    const { json } = await postWith(body, { legacyTextBlock: false });
+    expect(json.result.contents[0].text).toBe('{"items":[]}');
+  });
+
   test("keeps the text block whole for a scalar return, which has no structured half to point at", async () => {
     const body = {
       jsonrpc: "2.0",
@@ -602,46 +929,6 @@ describe("MCP over a booted container", () => {
     };
     const { json } = await postWith(body, { legacyTextBlock: false });
     expect(json.result.content[0].text).toBe("507f1f77bcf86cd799439011:tail");
-  });
-
-  test("returns the same messages over the plain HTTP route", async () => {
-    // That route exists so a web UI can preview a prompt, and it is only a preview if both transports produce
-    // the same thing. A prompt rides the `Any` carrier, so normalizing in the MCP dispatcher alone would leave
-    // the HTTP route handing back whatever `exec` happened to return — here, a bare string.
-    const routes = httpRoutes as Record<string, { GET: (req: Request) => Promise<Response> }>;
-    const response = await routes["/serverResolverTestItem/briefItem"].GET(
-      new Request("http://127.0.0.1:8080/api/serverResolverTestItem/briefItem"),
-    );
-    expect(await response.json()).toEqual([
-      { role: "user", content: { type: "text", text: "Answer in three sentences." } },
-    ]);
-  });
-
-  test("refuses a prompt call that omits a required argument", async () => {
-    // Caught against the published catalogue: an absent value would otherwise deserialize to an empty string
-    // and reach the endpoint as if the caller had sent one.
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "prompts/get", params: { name: "reviewItem" } });
-    expect(json.error.code).toBe(-32602);
-    expect(json.error.message).toBe("Missing prompt arguments: id.");
-  });
-
-  test("names a bad prompt argument instead of reporting an internal error", async () => {
-    // A prompt has no `isError` result, so the code is the only place left to say whose mistake it was — and the
-    // *missing*-argument check right above answers -32602 for what is the same class of caller error.
-    const { json } = await post({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "prompts/get",
-      params: { name: "reviewItem", arguments: { id: "not-an-id" } },
-    });
-    expect(json.error.code).toBe(-32602);
-    expect(json.error.message).toBe('Invalid argument "id": expected ID.');
-  });
-
-  test("rejects a malformed message set instead of passing it through", async () => {
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "prompts/get", params: { name: "brokenItem" } });
-    expect(json.error.code).toBe(-32603);
-    expect(json.result).toBeUndefined();
   });
 
   test("walks the catalogue a page at a time and stops without a cursor", async () => {
@@ -821,7 +1108,6 @@ describe("MCP over a booted container", () => {
   test("advertises the templates its exposed reads are addressable by", async () => {
     const { json } = await post({ jsonrpc: "2.0", id: 1, method: "resources/templates/list" });
     expect(json.result.resourceTemplates.map((t: { uriTemplate: string }) => t.uriTemplate)).toEqual([
-      "akan://serverResolverTestItem/light/{serverResolverTestItemId}",
       "akan://serverResolverTestItem/{serverResolverTestItemId}",
       "akan://serverResolverTestItem/list{?queryKey,skip,limit,sort}",
       "akan://serverResolverTestItem/list/inCategory{?category,skip,limit,sort}",

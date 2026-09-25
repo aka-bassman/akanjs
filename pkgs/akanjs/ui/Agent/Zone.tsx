@@ -1,5 +1,6 @@
 "use client";
 import { usePage } from "akanjs/client";
+import type { AgentVisualOption } from "akanjs/store";
 import { type ReactNode, useEffect, useMemo, useRef } from "react";
 import {
   AgenticSurface,
@@ -42,6 +43,14 @@ export interface ZoneProps {
   /** Called after a compaction replaced messages with one summary — where a host syncs its own watermark. */
   onCompact?: AgentSessionOptions["onCompact"];
   /**
+   * What the page itself draws while this agent drives it: the control a call was published from is ringed where
+   * it stands, and a pointer presses it, waits out the model's turn as a spinner where it landed, and goes when
+   * the turn ends. On by default — the chat panel is closed as often as it is open, and a change nothing
+   * attributes is one the user watches happen for no reason they can see. `false` draws nothing, and an object
+   * turns one effect off (`visual={{ cursor: false }}` keeps the ring, `{ reveal: false }` keeps the pointer).
+   */
+  visual?: boolean | AgentVisualOption;
+  /**
    * Runs this zone on a session the app built instead of one of its own, and the app then owns it: unmounting the
    * zone leaves it running. Read once at mount, like every other session option here.
    */
@@ -72,6 +81,7 @@ export const Zone = ({
   builtins,
   persist,
   onCompact,
+  visual = true,
   session: provided,
   onSession,
   children,
@@ -93,6 +103,7 @@ export const Zone = ({
       builtins,
       persist,
       onCompact,
+      visual,
     });
   const session = held.current;
   useEffect(

@@ -53,7 +53,7 @@ const searchTestDatabase = DatabaseRegistry.buildModel(
   SearchTestDoc,
   SearchTestModel,
   SearchTestObject,
-  SearchTestInsight,
+  SearchTestInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   SearchTestFilter,
 );
 

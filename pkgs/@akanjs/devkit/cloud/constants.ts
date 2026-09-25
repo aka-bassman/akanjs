@@ -1,5 +1,4 @@
 import type { Dayjs } from "dayjs";
-import type { SupportedLlmModel } from "../aiEditor";
 import { GlobalConfig } from "./globalConfig";
 
 export const basePath = `${Bun.env.HOME ?? Bun.env.USERPROFILE}/.akan`;
@@ -28,12 +27,10 @@ export interface RemoteEnvServerConfig {
 export interface AkanGlobalConfig {
   cloudHost: { [key: string]: HostConfigDto };
   remoteEnvServers: Record<string, RemoteEnvServerConfig>;
-  llm: { model: SupportedLlmModel; apiKey: string } | null;
 }
 export const defaultAkanGlobalConfig: AkanGlobalConfig = {
   cloudHost: {},
   remoteEnvServers: {},
-  llm: null,
 };
 
 export interface AccessTokenDto {

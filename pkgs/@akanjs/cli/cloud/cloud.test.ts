@@ -4,7 +4,7 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { CommandContainer, getArgMetas, getTargetMetas } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor } from "@akanjs/devkit/executors";
-import { createCallRecorder, createFakeExecutor, makeCliTempWorkspace, writeText } from "../testHelpers";
+import { createCallRecorder, createFakeExecutor, makeCliTempWorkspace, writeText } from "@akanjs/devkit/testHelpers";
 import { CloudCommand } from "./cloud.command";
 import { CloudRunner } from "./cloud.runner";
 import { CloudScript } from "./cloud.script";
@@ -29,7 +29,7 @@ describe("CloudCommand", () => {
     command.cloudScript.deployAkan = async (...args) => recorder.record("deployAkan", ...args);
 
     try {
-      const [metas] = getArgMetas(CloudCommand, "deployAkan");
+      const [, metas] = getArgMetas(CloudCommand, "deployAkan");
       const registryMeta = metas.find((meta) => meta.name === "registry");
       expect(registryMeta?.argsOption.enum).toContainEqual({ label: "npm", value: "npm" });
       expect(registryMeta?.argsOption.enum).toContainEqual({ label: "local", value: "local" });
@@ -116,6 +116,17 @@ describe("CloudRunner", () => {
     ]);
   });
 
+  test("update installs the package that ships the akan binary at the requested tag", async () => {
+    const recorder = createCallRecorder();
+    const workspace = createFakeExecutor("workspace", { exists: async () => false }, recorder);
+
+    await new CloudRunner().update(workspace as never, "dev");
+
+    expect(recorder.calls).toEqual([
+      { name: "workspace.spawn", args: ["bun", ["add", "-g", "@akanjs/cli@dev"], { env: process.env }] },
+    ]);
+  });
+
   test("publishes to a custom registry and normalizes internal Akan dependency versions", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = mock(async () => new Response(JSON.stringify({ "dist-tags": { rc: "2.1.0-rc.10" } }))) as never;
@@ -165,8 +176,9 @@ describe("CloudRunner", () => {
       version: "2.1.0-rc.11",
       dependencies: { akanjs: "2.1.0-rc.11" },
     });
+    // No `npm login`: it takes no registry argument, so it would ask for npmjs.org credentials to authorize a
+    // publish that never reaches npmjs.org — and being interactive, it makes the local-registry flow unscriptable.
     expect(recorder.calls.filter((call) => call.name === "workspace.spawn").map((call) => call.args)).toEqual([
-      ["npm", ["login"], { stdio: "inherit" }],
       [
         "npm",
         [
@@ -229,6 +241,56 @@ describe("CloudRunner", () => {
       },
       recorder,
     );
+
+  const createSlicedEnvWorkspace = (root: string, recorder = createCallRecorder()) =>
+    createFakeExecutor(
+      "workspace",
+      {
+        workspaceRoot: root,
+        getExecs: async () => [["demo", "other"], ["kit", "unused"], []],
+        readdir: async (dirPath: string) =>
+          ["apps/demo/env", "apps/other/env", "libs/kit/env", "libs/unused/env"].includes(dirPath)
+            ? ["env.server.local.ts"]
+            : [],
+        mkdir: async (...args: unknown[]) => recorder.record("workspace.mkdir", ...args),
+        remove: async (...args: unknown[]) => recorder.record("workspace.remove", ...args),
+        exists: async (filePath: string) => existsSync(path.join(root, filePath)),
+        readFile: async (filePath: string) => readFile(path.join(root, filePath), "utf8"),
+        writeFile: async (filePath: string, content: string) => writeText(path.join(root, filePath), content),
+      },
+      recorder,
+    );
+
+  test("archives one subspace's slice while the managed .gitignore block still names every app", async () => {
+    const { root } = await makeCliTempWorkspace();
+    await writeText(`${root}/apps/demo/secrets/token.json`, "{}");
+    await writeText(`${root}/apps/other/secrets/other.json`, "{}");
+    stubAppConfigs({ demo: ["secrets/**/*"], other: ["secrets/**/*"] });
+    const recorder = createCallRecorder();
+    const workspace = createSlicedEnvWorkspace(root, recorder);
+
+    try {
+      const result = await new CloudRunner().gatherEnvFiles(workspace as never, {
+        scope: { apps: ["demo"], libs: ["kit"] },
+        archivePath: "local/env.acme.tar",
+      });
+
+      const expectedFiles = [
+        "apps/demo/env/env.server.local.ts",
+        "apps/demo/secrets/token.json",
+        "libs/kit/env/env.server.local.ts",
+      ];
+      expect(result).toEqual({ files: expectedFiles, path: "local/env.acme.tar" });
+      const tarCall = recorder.calls.find((call) => call.name === "workspace.spawn");
+      expect(tarCall?.args).toEqual(["tar", ["-cf", "local/env.acme.tar", ...expectedFiles], { cwd: root }]);
+      // The slice never narrows the workspace's own .gitignore: the other app's secrets stay ignored.
+      const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
+      expect(gitignore).toContain("apps/demo/secrets/**/*");
+      expect(gitignore).toContain("apps/other/secrets/**/*");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 
   test("archives custom secret files resolved from app config globs alongside default env files", async () => {
     const { root } = await makeCliTempWorkspace();

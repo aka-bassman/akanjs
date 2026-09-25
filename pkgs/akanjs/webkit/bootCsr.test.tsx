@@ -62,6 +62,8 @@ beforeAll(() => {
       setActiveLocale: () => undefined,
       setActivePath: () => undefined,
     },
+    // `akanjs/store` reads the auth token to scope a form draft, so the barrel links this even here.
+    getAuthToken: () => undefined,
     getExplicitPageConfigKeys: () => ({}),
     normalizeDeepLinkHref: (href: string) => href,
     getPathInfo: (requestUrl: string, lang: string, prefix: string) => {
@@ -112,10 +114,10 @@ beforeAll(() => {
         cache: false,
       };
     },
-    storage: {
-      getItem: async (key: string) => (key === "jwt" ? storageState.jwt : null),
-    },
+    getStoredAuthToken: async () => storageState.jwt ?? undefined,
     validatePageConfig: () => undefined,
+    // The fixtures are legacy-shaped modules, which the real resolver passes through untouched.
+    resolveRouteModule: (mod: unknown) => ({ module: mod }),
   }));
   mock.module("react-dom/client", () => ({
     createRoot: () => ({ render: () => undefined }),

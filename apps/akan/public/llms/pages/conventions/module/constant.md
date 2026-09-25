@@ -9,129 +9,296 @@
 ## Headings
 
 - model.constant.ts (#constant-overview)
-- Model Layering Pattern (#model-layering)
-- Fields And enumOf (#fields-enums)
-- field.hidden And field.secret (#hidden-secret-fields)
+- Field Options (#field-options)
+- Hidden, Secret, Visual (#masking)
+- The Instance And Its Logic (#instance-and-helpers)
 - Text Search Fields (#text-search-fields)
 - Cascade Remove Fields (#cascade-fields)
-- Extending Generated Models (#generated-extension)
-- Light And Full Model Helpers (#model-helpers)
 - Resolved Fields (#resolve-fields)
-- Scalar Constants And Static Utilities (#scalar-static-utilities)
-- Insight Constants (#insight-constants)
+- Extending Library Models (#generated-extension)
 - Practical Rules (#practical-rules)
 
 ## Content
 
 model.constant.ts
 
-A constant file defines the business shape of a model. It declares fields, enums, embedded scalar values, generated views, and small helper behavior that should travel with the data type.
+One stored record of a model, such as one ticket.
 
-The current Akan pattern is based on via(). Each class builds a different view of the same business model, and later document, service, signal, store, and UI code reuse those generated types.
+A field whose type is another model, like `File`. It stores the id and loads the model.
 
-Model Layering Pattern
+A value object declared under `lib/__scalar/`, stored inside the document, not as its own row.
 
-Most document models use the same five layers: Input, Object, Light, full Model, and Insight. Start with this shape unless the model is a small embedded scalar.
+Turning fetched plain data back into a model instance, with its methods and `Dayjs` dates.
 
-Fields accepted when creating or editing the model.
+A read option naming extra fields to load, such as `{ secret: true }`.
 
-Input plus stored fields controlled by the system or service.
+An AI caller: the in-page agent or an MCP client.
 
-Small view for list, relation, and card-style queries.
+Fields a user fills in when creating or editing the model.
 
-Full model that combines Object and Light, often with static helpers.
+Input plus stored fields that the system or a service manages.
 
-Aggregation or reporting fields for analytics.
+The few fields a list, a relation or a card returns. Server and client both hold it.
 
-Fields And enumOf
+The full model: Object and Light combined. Collection helpers go here as statics.
 
-Use field() to describe values and enumOf() to define categorical values. Keep field options close to business needs: defaults, optional values, references, hidden or secret fields, examples, and aggregation.
+Counters for dashboards. It always has `count`, and you write it even when it is empty.
 
-field.hidden And field.secret
+JavaScript globals, so no import. A `Date` field reads back as a `Dayjs`.
 
-field.hidden() and field.secret() are helper forms for fields that should not behave like normal public properties. Both create hidden, nullable fields. field.secret() also sets select: false, so it is not selected by default when documents are loaded.
+Whole and decimal numbers from `akanjs/base`. `Number` does not typecheck as a field type.
 
-Use it for internal state that may exist on the document but should not be treated as a normal visible field.
+Another document's id. Name the model it points at with the `ref` option.
 
-Use it for sensitive values such as password, phone, token, account id, wallet, or notification settings that should not be selected by default.
+A free-form payload. Use it only when the content really is open.
+
+An `enumOf` class. The stored value must be one of its values.
+
+An array of any type on this list. It defaults to `[]`.
+
+A string-keyed map. The `of` option names the value type and is required.
+
+A scalar class: a value object embedded in the document.
+
+A model class, which makes the field a relation. It stores the id.
+
+Never a model field. Store bytes by referencing the `File` model instead.
+
+[] for an array, else null
+
+A literal for a plain value, a thunk such as `() => dayjs()` for anything constructed.
+
+The model an `ID` field points at, when you store an id instead of a relation.
+
+The field holding a polymorphic owner's model name: an `enumOf`, or a `String` for `removeWithAny`.
+
+scalar or model class
+
+The value type of a `Map` field. Required for a Map.
+
+A label for the kind of relation, shown in the schema docs. It changes no behavior.
+
+Adds the field to the full-text index under this role. See Text Search Fields.
+
+Which side of the relation is removed along with the other. See Cascade Remove Fields.
+
+The page renders it and an agent never sees it. `field.visual(T)` is the short form.
+
+Runs when a document is created or saved, and `false` refuses it. `null` and `undefined` skip it.
+
+Changing it in a document save throws. Query-level writes skip the check.
+
+A lower bound for the schema docs and `sampleOf()`. Enforce it with `validate`.
+
+An upper bound, used the same way.
+
+A length lower bound shown in the schema docs. On an array, the store checks the item count.
+
+A length upper bound, handled the same way.
+
+A sample value for the schema docs and the API explorer's example request and response.
+
+Makes `sampleOf()` produce a realistic email, password or URL. It does not validate.
+
+query object
+
+Insight fields only: the condition this counter counts. `{}` counts every match.
+
+Plain
+
+An ordinary stored property. Every side gets it.
+
+Secrecy: the value stays on the server
+
+Stored and read by the server, never sent to a client. Always nullable.
+
+Like hidden, and even the server's default read skips it until a projection asks.
+
+Cost: only the agent skips it
+
+Sent to the page as usual; stripped from agent reads, MCP results and the MCP schema.
+
+Methods about one record: display text and predicates.
+
+Helpers about a list of records.
+
+Math that belongs to the value itself, not to whoever stored it.
+
+The one line a person scans for, like a name or a headline.
+
+A keyword list, such as a category or labels.
+
+Prose, like a body or a description.
+
+`String`, `ID`, relation
+
+A scoping value such as status, role or owner. It matches but never outranks a title.
+
+Kept so a hit can be drawn. It is not indexed and never matches.
+
+The owner's own relation
+
+When this document is removed, what the field points at is removed too.
+
+The child's reference to its owner
+
+When the owner is removed, this document is removed too.
+
+The child's reference, when the owner can be any model
+
+When the owner is removed, whatever its model, this document is removed too.
+
+Write `field(Int)` or `field(Float)`. `Number` does not typecheck.
+
+Write `enumOf("ticketStatus", [...] as const)`. A TypeScript `enum` is not a field type.
+
+Write `default: () => dayjs()`. A bare `dayjs()` runs once, so every row shares that moment.
+
+Write `ticket.isOverdue()` on `LightTicket`, which both server and client hold.
+
+Write `new cnst.User().set(user)`. A spread drops every `Date` field.
+
+Write `field(File)`. Bytes are not storable in a document; a `File` is.
+
+Write `user.phone ?? ""`. A hidden or secret value arrives as `null`, not `undefined`.
+
+This one file describes the shape of one business object. The storage schema, the generated CRUD, form state, the API contract, the admin explorer and the schema an AI agent reads all come from it, so no other file in the module restates the fields.
+
+Open it whenever a field is added, changed or removed, and whenever the model needs display or predicate logic.
+
+Words Used On This Page
+
+Term
+
+Five Classes, Always In This Order
+
+Class
+
+Here is the complete file for a support ticket:
+
+Field Options
+
+Types
+
+Type
+
+Values And References
+
+Search, Cascade And Agents
+
+Validation
+
+Samples And Counters
+
+Not In The Options Object
+
+Hidden, Secret, Visual
+
+Declaration
+
+Server default read
+
+Page
+
+AI agent
+
+Gets the value
+
+Left out
+
+The Instance And Its Logic
+
+Put display and predicate logic on the Light class as methods. Server and client both hold a Light, so one method there works in a page, a card, a store action and a service.
+
+Put it on
+
+Logic about
+
+The board model shows the first two in one file:
+
+Copying An Instance
+
+Date Fields Go Missing
+
+These read own properties only, so the dates are missing.
+
+Date Fields Are There
+
+These walk the prototype too, so the dates are there.
 
 Text Search Fields
 
-A field joins the full-text index by declaring a text role. There is no separate index file and no per-model switch: the role on the field is the whole configuration.
+Role
 
-Choose the role by what the value is, because the roles are weighted differently when results are ranked.
+Weight
 
-The one line a human scans for. Weighted highest.
+Accepts
 
-A keyword list. Weighted above prose, below the title.
-
-Prose. Weighted lowest of the matchable roles.
-
-A scoping value such as status, role, or owner. Matchable but weighted zero, so it never outranks a real title hit.
-
-Mirrored so a hit can be rendered, but never indexed. Do not expect it to match.
-
-Relations and arrays
-
-A role works on a File reference and on an array field. An array of objects is indexed by leaf key, including a leaf that is itself an array. A field inside a Map is not indexed, because there is no fixed path to read it from.
-
-A secret, hidden, or resolved field with a text role throws while the class is being built, not at query time. The same throw covers a role declared underneath one of them: field.secret(Noti) is rejected when Noti carries a role of its own, because the stored document holds that subtree in plaintext too. The search mirror stores plaintext, so indexing a secret would leak it through search. Treat the error as the rule working, not as something to route around.
+What it holds
 
 Cascade Remove Fields
 
-The value names the direction, because both actions can sit on the same field shape. removeRef removes what the field points at when this document goes; removeWith removes this document when what the field points at goes.
+Value
 
-removeRef goes on the relation an owner holds, arrays included. Only a relation accepts it: a String, an ID, or a scalar throws while the class is being built, because none of them names a document to remove.
+Declared on
 
-removeWith goes on the child's own reference to its owner, so the owner never learns its children exist and a lib model can be extended by an app's. It takes a relation, an ID with ref, or an ID with refPath for a polymorphic owner.
+Meaning
 
-A refPath must name an enumOf field. A free-form owner type is unknowable at build time, so every model's removal would have to sweep the polymorphic table on the chance it is the owner.
+removeRef: On The Owner
 
-The removal runs through the target's service, so the target's own _postRemove runs with it — that is how a File cascade also deletes the stored object. When the target provably has no removal side effect, the boot-time plan collapses it into one query instead.
+Story owns its images
 
-Nothing checks for other references to the same target. Declaring removeRef asserts that this field owns its target exclusively, and query-level removal fires no hooks and therefore no cascade.
+Story is removed
 
-Extending Generated Models
+the File it points at
 
-Some apps extend generated model hooks from the app or library template. Spread generated inputs, objects, lights, models, and insights into via() so custom fields and generated fields stay together.
+is removed too
 
-Light And Full Model Helpers
+points at
 
-A constant class can include small helper methods when the behavior belongs to the data type itself. Instance helpers fit Light classes, while list or lookup helpers often fit the full Model class as static methods.
+Declare it on the relation the owner holds, arrays included:
+
+removeWith: On The Child
+
+A session takes its chats with it
+
+AgentSession is removed
+
+every SessionChat naming it
+
+by its id
+
+removeWithAny: An Owner Of Any Model
+
+What Every Cascade Shares
 
 Resolved Fields
 
-Light and full models can declare resolved fields with the resolve helper. A resolved field is not stored directly on the document. The constant declares the field name and type, and an internal signal defines how to calculate it when the client fetches the model.
+Some values belong to the record and the person looking at it: whether this user liked a story, how many times they read it, whether they may edit it. Storing those on the document would mean one row per viewer.
 
-This is useful for viewer-specific values such as whether the current user liked a story, read count for this user, permission flags, or other values that depend on request context.
+The Constant Names And Types It
 
-Scalar Constants And Static Utilities
+An Internal Signal Computes It
 
-Scalars are embedded values without their own collection. They can still expose useful static helpers, especially for calculations or transforms that belong to the scalar value.
+Runs on every request, with whatever caller context it asks for.
 
-Insight Constants
+The story's Light declares two resolved fields:
 
-Insight constants describe aggregated or reporting-oriented values. Use them for dashboard counts, summaries, and grouped statistics instead of mixing reporting fields into the normal model shape.
+Extending Library Models
 
 Practical Rules
 
-Use the Input, Object, Light, Model, Insight layers for document models unless the value is a small embedded scalar.
+Check these before you commit a constant file.
 
-Use enumOf for business categories and refer to its value type when you need the union.
+Common Mistakes
 
-Use generated extension spreads when the app template provides inputs, objects, lights, models, or insights.
+Instead of
 
-Use field.hidden for hidden internal values and field.secret for sensitive values that should not be selected by default.
-
-Use resolve fields for values calculated by signal context instead of storing viewer-specific data directly on the model.
-
-Put pure helper behavior on constants only when it clearly belongs to the data type.
-
-Import other constants from direct file paths to avoid circular barrel references.
+Write
 
 ## Code Examples
 
-### ticket.constant.ts
+### apps/koyo/lib/ticket/ticket.constant.ts
 
 ```ts
 import { dayjs, enumOf, Int } from "akanjs/base";
@@ -152,111 +319,55 @@ export class TicketInput extends via((field) => ({
 
 export class TicketObject extends via(TicketInput, (field) => ({
   status: field(TicketStatus, { default: "active" }),
-  due: field(Date, { default: () => dayjs().set("hour", 19) }),
+  due: field(Date, { default: () => dayjs().hour(19) }), // shop closes at 7pm
 })) {}
 
-export class LightTicket extends via(TicketObject, ["title", "status", "due"] as const, (resolve) => ({})) {}
+export class LightTicket extends via(
+  TicketObject,
+  ["title", "status", "due"] as const,
+  (resolve) => ({}),
+) {}
 
-export class Ticket extends via(TicketObject, LightTicket, (resolve) => ({})) {}
+export class Ticket extends via(
+  TicketObject,
+  LightTicket,
+  (resolve) => ({}),
+) {}
 
 export class TicketInsight extends via(Ticket, (field) => ({
   activeCount: field(Int, { default: 0, accumulate: { status: "active" } }),
 })) {}
 ```
 
-### status enum
+### libs/shared/lib/file/file.constant.ts
 
 ```ts
-import { enumOf } from "akanjs/base";
-
-export class TicketStatus extends enumOf("ticketStatus", [
-  "active",
-  "opened",
-  "completed",
-] as const) {}
-
-type TicketStatusValue = TicketStatus["value"];
-```
-
-### practical field options
-
-```ts
-export class TicketInput extends via((field) => ({
-  title: field(String, { example: "Fix payment bug" }),
-  content: field(String, { default: "" }),
-  owner: field(LightUser).optional(),
-  draftReason: field.hidden(String).optional(),
-  accessToken: field.secret(String).optional(),
-  status: field(TicketStatus, { default: "active" }),
+export class FileInput extends via((field) => ({
+  filename: field(String, { text: "title" }),
+  mimetype: field.hidden(String),
+  encoding: field.hidden(String),
+  imageSize: field<[number, number]>([Int], { default: [0, 0] }),
+  url: field(String, { default: "" }),
+  abstractData: field.visual(String).optional(),
+  size: field(Int, { default: 0 }),
+  origin: field.hidden(String).optional(),
 })) {}
 ```
 
-### user.constant.ts
+### libs/shared/lib/user/user.constant.ts
 
 ```ts
 export class UserObject extends via(UserInput, (field) => ({
   accountId: field.secret(String).optional(),
   password: field.secret(String).optional(),
   phone: field.secret(String).optional(),
-  adminMemo: field.hidden(String).optional(),
+  notiInfo: field.secret(NotiInfo),
+  restrictInfo: field.secret(RestrictInfo).optional(),
+  roles: field([UserRole], { default: ["user"], text: "filter" }),
 })) {}
 ```
 
-### user.constant.ts
-
-```ts
-export class UserInput extends via((field) => ({
-  nickname: field(String, { default: "", text: "title" }),
-  bio: field(String, { default: "", text: "desc" }),
-  playing: field([String], { text: "tag" }),
-  image: field(File, { text: "thumb" }).optional(),
-  status: field(UserStatus, { default: "prepare", text: "filter" }),
-})) {}
-```
-
-### user.constant.ts
-
-```ts
-export class UserInput extends via((field) => ({
-  nickname: field(String, { default: "", text: "title" }),
-  image: field(File, { text: "thumb", cascade: "removeRef" }).optional(),
-  images: field([File], { cascade: "removeRef" }),
-})) {}
-```
-
-### sessionChat.constant.ts
-
-```ts
-export class SessionChatInput extends via((field) => ({
-  agentSession: field(ID, { ref: "agentSession", cascade: "removeWith" }),
-  content: field(String, { default: "", text: "desc" }),
-})) {}
-```
-
-### user.constant.ts
-
-```ts
-import { via } from "akanjs/constant";
-import { user } from "../__lib/lib.constant";
-
-export class UserInput extends via((field) => ({}), ...user.inputs) {}
-
-export class UserObject extends via(
-  UserInput,
-  (field) => ({
-    githubInfo: field(GithubInfo).optional(),
-  }),
-  ...user.objects,
-) {}
-
-export class LightUser extends via(UserObject, ["roles"] as const, (resolve) => ({}), ...user.lights) {}
-
-export class User extends via(UserObject, LightUser, (resolve) => ({}), ...user.models) {}
-
-export class UserInsight extends via(User, (field) => ({}), ...user.insights) {}
-```
-
-### LightBoard helper
+### apps/koyo/lib/board/board.constant.ts
 
 ```ts
 export class LightBoard extends via(
@@ -269,14 +380,10 @@ export class LightBoard extends via(
   }
 
   canWrite(user?: { roles: string[] }) {
-    return user && this.roles.some((role) => user.roles.includes(role));
+    return !!user && this.roles.some((role) => user.roles.includes(role));
   }
 }
-```
 
-### Board static helper
-
-```ts
 export class Board extends via(BoardObject, LightBoard, (resolve) => ({})) {
   static getBoard(boardList: LightBoard[], boardId: string) {
     return boardList.find((board) => board.id === boardId);
@@ -284,12 +391,72 @@ export class Board extends via(BoardObject, LightBoard, (resolve) => ({})) {
 }
 ```
 
-### story.constant.ts
+### libs/shared/lib/banner/banner.constant.ts
+
+```ts
+export class BannerInput extends via((field) => ({
+  category: field(String, { text: "tag" }).optional(),
+  title: field(String, { text: "title" }).optional(),
+  content: field(String, { text: "desc" }).optional(),
+  image: field(File, { text: "thumb" }).optional(),
+  href: field(String),
+})) {}
+
+export class BannerObject extends via(BannerInput, (field) => ({
+  status: field(BannerStatus, { default: "active", text: "filter" }),
+})) {}
+```
+
+### apps/koyo/lib/story/story.constant.ts
+
+```ts
+export class StoryInput extends via((field) => ({
+  title: field(String, { text: "title" }),
+  thumbnail: field(File, { text: "thumb", cascade: "removeRef" }).optional(),
+  images: field([File], { cascade: "removeRef" }),
+})) {}
+```
+
+### apps/koyo/lib/sessionChat/sessionChat.constant.ts
+
+```ts
+export class SessionChatInput extends via((field) => ({
+  agentSession: field(ID, { ref: "agentSession", cascade: "removeWith" }),
+  content: field(String, { default: "", text: "desc" }),
+})) {}
+```
+
+### apps/koyo/lib/reaction/reaction.constant.ts
+
+```ts
+export class ReactionParent extends enumOf("reactionParent", [
+  "icecreamOrder",
+  "story",
+] as const) {}
+
+export class ReactionInput extends via((field) => ({
+  parent: field(ID, { refPath: "parentType", cascade: "removeWith" }),
+  parentType: field(ReactionParent, { default: "icecreamOrder" }),
+  emoji: field(String, { default: "" }),
+})) {}
+```
+
+### apps/koyo/lib/comment/comment.constant.ts
+
+```ts
+export class CommentInput extends via((field) => ({
+  parent: field(ID, { refPath: "parentType", cascade: "removeWithAny" }),
+  parentType: field(String),
+  content: field(String, { default: "", text: "desc" }),
+})) {}
+```
+
+### apps/koyo/lib/story/story.constant.ts
 
 ```ts
 export class LightStory extends via(
   StoryObject,
-  ["root", "rootType", "user", "title", "policy", "totalStat", "status"] as const,
+  ["root", "user", "title", "totalStat", "status"] as const,
   (resolve) => ({
     view: resolve(Int),
     like: resolve(Int),
@@ -297,70 +464,68 @@ export class LightStory extends via(
 ) {
   setLike() {
     if (this.like > 0) return false;
-    this.totalStat.likes += this.like <= 0 ? 1 : 0;
+    this.totalStat.likes += 1;
     this.like = 1;
     return true;
   }
 }
 ```
 
-### story.signal.ts
+### apps/koyo/lib/story/story.signal.ts
 
 ```ts
-export class StoryInternal extends internal(srv.story.with(srv.actionLog), ({ resolveField }) => ({
-  view: resolveField(Int)
-    .with(Self, { nullable: true })
-    .exec(async function (story, self) {
-      return self
-        ? ((await this.actionLogService.queryLoad({ action: "view", target: story.id, user: self.id }))?.value ?? 0)
-        : 0;
-    }),
-  like: resolveField(Int)
-    .with(Self, { nullable: true })
-    .exec(async function (story, self) {
-      return self
-        ? ((await this.actionLogService.queryLoad({ action: "like", target: story.id, user: self.id }))?.value ?? 0)
-        : 0;
-    }),
-})) {}
+export class StoryInternal extends internal(
+  srv.story.with(srv.actionLog),
+  ({ resolveField }) => ({
+    like: resolveField(Int)
+      .with(Self, { nullable: true })
+      .exec(async function (story, self) {
+        if (!self) return 0;
+        return await this.actionLogService.countByTarget(
+          "like",
+          story.id,
+          self.id,
+        );
+      }),
+  }),
+) {}
 ```
 
-### coordinate.constant.ts
+### apps/koyo/lib/user/user.constant.ts
 
 ```ts
-import { enumOf, Float } from "akanjs/base";
 import { via } from "akanjs/constant";
+import { user } from "../__lib/lib.constant";
 
-export class CoordinateType extends enumOf("coordinateType", ["Point"] as const) {}
+export class UserInput extends via((field) => ({}), ...user.inputs) {}
 
-export class Coordinate extends via((field) => ({
-  type: field(CoordinateType, { default: "Point" }),
-  coordinates: field([Float], { default: [0, 0] }),
-  altitude: field(Float, { default: 0 }),
-})) {
-  static getTotalDistanceKm(...coords: Coordinate[]) {
-    return coords.reduce((acc, cur, idx) => {
-      if (idx === 0) return 0;
-      return acc + Coordinate.getDistanceKm(coords[idx - 1], cur);
-    }, 0);
-  }
+export class UserObject extends via(
+  UserInput,
+  (field) => ({
+    favoriteFlavor: field(String, { default: "" }),
+  }),
+  ...user.objects,
+) {}
 
-  static getDistanceKm(loc1: Coordinate, loc2: Coordinate) {
-    // distance calculation belongs to Coordinate itself
-    return 0;
-  }
-}
-```
+export class LightUser extends via(
+  UserObject,
+  ["roles"] as const,
+  (resolve) => ({}),
+  ...user.lights,
+) {}
 
-### ticket.constant.ts
+export class User extends via(
+  UserObject,
+  LightUser,
+  (resolve) => ({}),
+  ...user.models,
+) {}
 
-```ts
-import { Int } from "akanjs/base";
-
-export class TicketInsight extends via(Ticket, (field) => ({
-  appCount: field(Int, { default: 0, accumulate: { type: "app" } }),
-  sharedCount: field(Int, { default: 0, accumulate: { type: "shared" } }),
-})) {}
+export class UserInsight extends via(
+  User,
+  (field) => ({}),
+  ...user.insights,
+) {}
 ```
 
 ## Agent Notes

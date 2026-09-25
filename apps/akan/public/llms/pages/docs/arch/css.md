@@ -18,47 +18,117 @@
 
 CSS And Styling
 
+A color named for its role (primary, background, destructive) instead of its value.
+
+One set of values for every token. The data-theme attribute picks which set applies.
+
+A ready-made akanjs/ui component (Button, Input, Badge, Field) that already uses the tokens.
+
+A CSS variable such as --primary. Tokens are custom properties underneath.
+
+Brand decisions turned into names such as primary, background, warning and destructive.
+
+Functions that compose token classes into one named look, such as buttonRecipe.
+
+akanjs/ui primitives (Button, Input, Badge) and Tailwind utilities that use those names.
+
+Business screens assembled from components, without repeating raw color and spacing rules.
+
+The font's name. It becomes the class font-<name>, such as font-pretendard.
+
+One entry per font file: its src and the weight it covers.
+
+The font the whole app uses when no font class is set. Only one font can be the default.
+
 Styling Foundation
 
-Akan uses Tailwind CSS with a semantic design-token layer and the akanjs/ui primitives as the default styling foundation. Tailwind gives screens a fast utility language for layout, spacing, responsive behavior, and one-off composition. The token layer + primitives add semantic names, so app screens can say primary, background, warning, or destructive instead of hard-coding every color.
+When every screen writes its own colors (#ff493b here, a red utility class there), changing the brand or adding a dark theme means hunting down each one. Akan avoids that by naming colors for what they are for, and letting every screen use the names.
 
-Use Tailwind for structure and layout. Use akanjs/ui primitives (Button, Badge, Input, Field …) and semantic tokens for theme-aware components and colors.
+Akan uses Tailwind CSS with a semantic design-token layer and the akanjs/ui primitives as the default styling foundation. So app screens say primary, background, warning or destructive instead of hard-coding every color. The two halves split the work like this:
+
+Structure and layout
+
+A fast utility language for layout, spacing, responsive behavior and one-off composition.
+
+Tokens + akanjs/ui
+
+Theme-aware colors and components
+
+Semantic color names and primitives (Button, Badge, Input, Field …) that follow the theme.
+
+Words used on this page
+
+Term
 
 How the layers work together
 
-Imports Tailwind, Akan UI styles, and the semantic design-token layer.
+Four layers, each built from the one below
 
-Turns brand decisions into reusable names such as primary, base, warning, and error.
+From the bottom up: semantic tokens, recipes that compose them into looks, components that add behavior, and screens that assemble components. Every color on a screen traces back to a token.
 
-Use those names through akanjs/ui primitives (Button, Input, Badge) and Tailwind utility classes.
+Layer
 
-Assemble consistent business screens without repeating raw color and spacing rules.
+What it does
+
+Tokens are declared in page/styles.css, which also imports Tailwind and the Akan UI styles. The Theme System section below shows that file; the UI Recipe page covers the recipe layer.
 
 Design System First
 
-Do not design every page from scratch. Define the app's basic component style first, then let pages assemble those components. Buttons, inputs, cards, forms, alerts, tabs, modals, and navigation should share the same spacing, radius, text color, border, and state behavior.
+A page designed from scratch drifts: its buttons end up a little rounder, its borders a little lighter than the page next to it. So define the app's basic component style first, and let pages only assemble those components.
 
-Buttons, inputs, cards, forms, alerts, tabs, modals, and navigation should use shared classes.
+Buttons, inputs, cards, forms, alerts, tabs, modals and navigation share the same spacing, radius, text color, border and state behavior, through shared classes.
 
-Business pages should assemble the design system instead of redefining colors and spacing.
+Business pages assemble the design system instead of redefining colors and spacing.
 
-Imported modules feel consistent when they use the same Tailwind and semantic design tokens.
+Imported modules feel consistent too, because they use the same Tailwind and semantic design tokens.
+
+A block built this way uses no color values at all, only token names and recipes:
+
+Switch the theme and the whole block restyles itself, because every class in it points at a token rather than a color.
 
 Theme System Declaration
 
-Theme and color are declared from the app style entry. The app imports Tailwind and Akan UI styles, defines raw CSS variables per theme under :root / [data-theme], then maps them to Tailwind color names with @theme inline. Switching themes is just toggling the data-theme attribute.
+Components write bg-primary once. Which red that means is decided in a single file, the app style entry, once per theme. Declaring it takes four steps:
 
-Because @theme inline references var(), the same class (bg-primary, text-foreground …) resolves to different colors per data-theme — so one app can define light, dark, brand, or admin themes without changing any component class.
+Import Tailwind and the Akan UI styles.
+
+Define the raw values per theme as CSS variables under :root and [data-theme].
+
+Map those variables to Tailwind color names with @theme inline.
+
+Switch themes by changing the data-theme attribute. Nothing else changes.
+
+A color that text sits on comes with a -foreground partner for that text: bg-primary pairs with text-primary-foreground, so a label on a primary button stays readable in every theme.
+
+Because @theme inline references var(), the same class (bg-primary, text-foreground …) resolves to a different color per data-theme. One app can define light, dark, brand or admin themes without changing any component class.
 
 Lib-Owned Tokens
 
-A lib whose components need fixed colors — a vendor sign-in button, a brand mark — declares them once in libs/<lib>/ui/tokens.css. Every app whose pages reach that lib compiles the file automatically, ahead of its own stylesheets, so the app stays the last word on any variable both declare. Nothing is imported by hand, and adding an app cannot forget it.
+Some colors must not follow the theme. A Kakao sign-in button is Kakao yellow in the light theme and in the dark one. When a lib's components need fixed colors like that, the lib declares them itself:
 
-These are plain custom properties, not a Tailwind @theme extension: the color vocabulary is closed per stylesheet, so bg-kakao would generate no CSS. Reference them as bg-[var(--kakao)], which the color lint rules allow by design. An @import the pipeline cannot resolve fails the build rather than compiling to nothing.
+Theme tokens
+
+Follow the theme
+
+Declared in the app's page/styles.css and mapped with @theme inline.
+
+Lib tokens
+
+Fixed in every theme
+
+Declared once in libs/<lib>/ui/tokens.css as plain custom properties.
+
+Every app whose pages reach that lib picks the file up automatically, ahead of its own stylesheets, so the app still has the last word on any variable both declare. Nothing is imported by hand, and a new app cannot forget it.
+
+Why not a Tailwind @theme extension? The color vocabulary is closed per stylesheet, so bg-kakao would generate no CSS. Reference the variable as bg-[var(--kakao)], a form the color lint rules allow on purpose.
 
 Font Declaration
 
-Fonts are declared from the root layout. Export a fonts array with a font name, file paths, weights, and an optional default flag. Akan then exposes those fonts as Tailwind-like classes, so components can use className values such as font-pretendard or font-lemonmilk.
+Fonts are declared once, in the root layout, and then used like any other Tailwind class. Hand the .fonts() stage of the rootLayout() chain an array; each entry takes three fields:
+
+Field
+
+Each name is now a class. Text without one uses the default font, Pretendard here:
 
 ## Code Examples
 
@@ -67,7 +137,7 @@ Fonts are declared from the root layout. Export a fonts array with a font name, 
 ```typescript
 <div className="space-y-3 rounded-xl bg-background p-4 text-foreground">
   <button className={buttonRecipe({ variant: "primary" })}>Save</button>
-  <input className="h-10 w-full rounded-field border border-input bg-background px-3 text-sm focus:border-primary focus:outline-none" placeholder="Product name" />
+  <input className={inputRecipe({}, "w-full")} placeholder="Product name" />
   <div className="rounded-box border border-border bg-card p-4">
     Product summary
   </div>
@@ -128,22 +198,29 @@ Fonts are declared from the root layout. Export a fonts array with a font name, 
 <button className="bg-[var(--kakao)] text-[var(--kakao-foreground)]">Kakao</button>
 ```
 
-### apps/myapp/page/akanjs/_layout.tsx
+### apps/myapp/page/_layout.tsx
 
 ```typescript
-import type { Font } from "akanjs/client";
+import "./styles.css";
+import { rootLayout } from "akanjs/client";
 
-export const fonts: Font[] = [
-  {
-    name: "pretendard",
-    default: true,
-    paths: [
-      { src: "/libs/shared/fonts/Pretendard-Regular.woff2", weight: 400 },
-      { src: "/libs/shared/fonts/Pretendard-SemiBold.woff2", weight: 600 },
-      { src: "/libs/shared/fonts/Pretendard-Bold.woff2", weight: 700 },
-    ],
-  },
-];
+export default rootLayout()
+  .fonts([
+    {
+      name: "pretendard",
+      default: true,
+      paths: [
+        { src: "/libs/shared/fonts/Pretendard-Regular.woff2", weight: 400 },
+        { src: "/libs/shared/fonts/Pretendard-SemiBold.woff2", weight: 600 },
+        { src: "/libs/shared/fonts/Pretendard-Bold.woff2", weight: 700 },
+      ],
+    },
+    {
+      name: "lemonmilk",
+      paths: [{ src: "/fonts/LemonMilk-Bold.woff2", weight: 700 }],
+    },
+  ])
+  .render(({ children }) => children);
 ```
 
 ### Using font classes

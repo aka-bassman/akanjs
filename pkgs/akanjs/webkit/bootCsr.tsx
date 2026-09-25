@@ -3,6 +3,7 @@ import {
   csrContext,
   Device,
   getExplicitPageConfigKeys,
+  getStoredAuthToken,
   initAuth,
   type LayoutModule,
   type PageConfig,
@@ -10,10 +11,11 @@ import {
   type Route,
   type RouteGuide,
   type RouteModule,
+  type RouteModuleSource,
   type RouteRender,
   readCssSafeAreaInsets,
   resolvePageState,
-  storage,
+  resolveRouteModule,
   validatePageConfig,
 } from "akanjs/client";
 import {
@@ -31,7 +33,7 @@ import { useCsrValues } from "./useCsrValues";
 import { useFetch } from "./useFetch";
 
 type RouteModuleWithConfig = RouteModule & { pageConfig?: PageConfig };
-type CsrRouteModuleLoader = () => Promise<RouteModule>;
+type CsrRouteModuleLoader = () => Promise<RouteModuleSource>;
 type CsrRouteModuleEntry = CsrRouteModuleLoader | { loader: CsrRouteModuleLoader; isAsyncDefault?: boolean };
 
 declare global {
@@ -87,7 +89,7 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
   if (pathname === "/404") return;
 
   // 1. Collect Device Information
-  const [device, jwt] = await Promise.all([Device.load({ supportLanguages: i18n.locales }), storage.getItem("jwt")]);
+  const [device, jwt] = await Promise.all([Device.load({ supportLanguages: i18n.locales }), getStoredAuthToken()]);
   if (!window.__AKAN_MOBILE_TARGET__ && !pathname.startsWith(`/${device.lang}`))
     window.location.replace(`/${device.lang}${pathname}${window.location.search}${window.location.hash}`);
 
@@ -112,7 +114,11 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
         if (pageBasePath && otherBasePaths.includes(pageBasePath)) return; // ignore other base paths
       }
       const entry = typeof value === "function" ? { loader: value } : value;
-      const pageContent = await entry.loader();
+      const loaded = await entry.loader();
+      const pageContent =
+        parsed.kind === "overrides"
+          ? (loaded as RouteModule)
+          : resolveRouteModule(loaded, key, { kind: parsed.kind, pattern: parsed.pattern }).module;
       validateRouteModuleExports(key, pageContent);
       validatePageConfig(key, (pageContent as RouteModuleWithConfig).pageConfig);
       asyncDefaultMap[key] = entry.isAsyncDefault;
@@ -318,17 +324,5 @@ function validateRouteModuleExports(key: string, mod: RouteModule) {
   }
   if ("head" in mod && "generateHead" in mod) {
     throw new Error(`[route-convention] head and generateHead cannot both be exported in ${key}`);
-  }
-  if (
-    !parsed.isInternalRootLayout &&
-    ("head" in mod || "generateHead" in mod) &&
-    ("metadata" in mod || "generateMetadata" in mod)
-  ) {
-    throw new Error(
-      `[route-convention] head/generateHead and metadata/generateMetadata cannot both be exported in ${key}`,
-    );
-  }
-  if ("metadata" in mod && "generateMetadata" in mod) {
-    throw new Error(`[route-convention] metadata and generateMetadata cannot both be exported in ${key}`);
   }
 }

@@ -67,7 +67,7 @@ export interface ListContainerProps<
   /** Show create/new-model controls. */
   create?: boolean;
   /** Optional list title. */
-  title?: string;
+  title?: ReactNode;
   /** Initial sort value. */
   sort?: unknown;
   /** Table/list columns. */

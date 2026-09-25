@@ -130,4 +130,32 @@ describe("fetchRscNavigationResponse", () => {
     expect(requests[1].headers.get(AKAN_RSC_STATE_VERSION_HEADER)).toBeNull();
     expect(requests[1].headers.get(AKAN_RSC_CURRENT_STATE_HEADER)).toBeNull();
   });
+
+  test("reports a 404 as not-found and never hands its body to the decoder", async () => {
+    Object.defineProperty(globalThis, "window", {
+      value: { location: { origin: "https://example.test" } },
+      configurable: true,
+    });
+    let bodyCancelled = false;
+    globalThis.fetch = (async () =>
+      // What the RSC route actually answers for a target that resolves to nothing: a Flight payload whose root
+      // is `null`. Decoded, it commits an empty tree over the whole document.
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("0:null\n"));
+            controller.close();
+          },
+          cancel() {
+            bodyCancelled = true;
+          },
+        }),
+        { status: 404, headers: { "Content-Type": RSC_CONTENT_TYPE } },
+      )) as unknown as typeof fetch;
+
+    const result = await fetchRscNavigationResponse("https://example.test/nope", { currentRouterState: null });
+
+    expect(result.type).toBe("not-found");
+    expect(bodyCancelled).toBe(true);
+  });
 });

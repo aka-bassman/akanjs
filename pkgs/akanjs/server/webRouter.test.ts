@@ -1,7 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { DEFAULT_AKAN_I18N } from "akanjs/common";
 import { createRequestStore } from "akanjs/fetch";
 import {
@@ -200,17 +197,6 @@ async function withFullSsrCacheHarness<T>(
       else process.env[key] = value;
     }
   }
-}
-
-async function createTempAppWithClientEnv(firebaseConfig: Record<string, unknown>): Promise<string> {
-  const appDir = await mkdtemp(path.join(os.tmpdir(), "akan-web-router-app-"));
-  const envDir = path.join(appDir, "env");
-  await mkdir(envDir, { recursive: true });
-  await writeFile(
-    path.join(envDir, "env.client.ts"),
-    `export const env = ${JSON.stringify({ firebase: firebaseConfig }, null, 2)};\n`,
-  );
-  return appDir;
 }
 
 describe("WebRouter RSC target normalization", () => {
@@ -462,88 +448,70 @@ describe("WebRouter deep link associations", () => {
     );
   });
 
+  interface AssetLink {
+    relation: string[];
+    target: { namespace: string; package_name: string; sha256_cert_fingerprints: string[] };
+  }
+  const requestAssetLinks = async (env: string) => {
+    const previous = process.env.AKAN_PUBLIC_ENV;
+    process.env.AKAN_PUBLIC_ENV = env;
+    try {
+      return await withFullSsrCacheHarness(
+        async ({ renderEnvRoutes }) => {
+          const response = await renderEnvRoutes["/.well-known/assetlinks.json"](
+            new Request("https://minimal.app/.well-known/assetlinks.json"),
+          );
+          expect(response.headers.get("Content-Type")).toContain("application/json");
+          return (await response.json()) as AssetLink[];
+        },
+        { artifact: artifactWithDeepLinks() },
+      );
+    } finally {
+      if (previous === undefined) delete process.env.AKAN_PUBLIC_ENV;
+      else process.env.AKAN_PUBLIC_ENV = previous;
+    }
+  };
+
   test("serves android asset links from deep link metadata", async () => {
-    await withFullSsrCacheHarness(
-      async ({ renderEnvRoutes }) => {
-        const response = await renderEnvRoutes["/.well-known/assetlinks.json"](
-          new Request("https://minimal.app/.well-known/assetlinks.json"),
-        );
-        expect(response.headers.get("Content-Type")).toContain("application/json");
-        await expect(response.json()).resolves.toEqual([
-          {
-            relation: ["delegate_permission/common.handle_all_urls"],
-            target: {
-              namespace: "android_app",
-              package_name: "com.minimal.app",
-              sha256_cert_fingerprints: ["AA:BB"],
-            },
-          },
-          {
-            relation: ["delegate_permission/common.handle_all_urls"],
-            target: {
-              namespace: "android_app",
-              package_name: "com.minimal.admin",
-              sha256_cert_fingerprints: ["CC:DD"],
-            },
-          },
-        ]);
+    expect(await requestAssetLinks("main")).toEqual([
+      {
+        relation: ["delegate_permission/common.handle_all_urls"],
+        target: {
+          namespace: "android_app",
+          package_name: "com.minimal.app",
+          sha256_cert_fingerprints: ["AA:BB"],
+        },
       },
-      { artifact: artifactWithDeepLinks() },
-    );
+      {
+        relation: ["delegate_permission/common.handle_all_urls"],
+        target: {
+          namespace: "android_app",
+          package_name: "com.minimal.admin",
+          sha256_cert_fingerprints: ["CC:DD"],
+        },
+      },
+    ]);
+  });
+
+  test("vouches for the .debug package of a debug build only outside main", async () => {
+    const assetLinks = await requestAssetLinks("debug");
+    expect(assetLinks.map((assetLink) => assetLink.target.package_name)).toEqual([
+      "com.minimal.app",
+      "com.minimal.app.debug",
+      "com.minimal.admin",
+      "com.minimal.admin.debug",
+    ]);
+    expect(assetLinks[1]?.target.sha256_cert_fingerprints).toEqual(["AA:BB"]);
   });
 });
 
-describe("WebRouter Firebase messaging service worker", () => {
-  test("serves generated Firebase messaging service worker from client env config only", async () => {
-    const appDir = await createTempAppWithClientEnv({
-      apiKey: "public-api-key",
-      authDomain: "example.firebaseapp.com",
-      projectId: "public-project",
-      storageBucket: "public-project.appspot.com",
-      messagingSenderId: "1234567890",
-      appId: "public-app-id",
-      vapidKey: "public-vapid-key",
-      private_key: "SERVER_PRIVATE_KEY_MUST_NOT_LEAK",
-    });
+describe("WebRouter firebase messaging service worker", () => {
+  //* The worker is the push plugin's asset (it writes `public/firebase-messaging-sw.js`). A framework route
+  //* for the same path matches ahead of the static fallback and shadows it with no way to tell from outside.
+  test("is not a framework route, so the app's own public asset is what gets served", async () => {
+    const routeKeys = await withFullSsrCacheHarness(async ({ renderEnvRoutes }) => Object.keys(renderEnvRoutes));
 
-    try {
-      await withFullSsrCacheHarness(
-        async ({ renderEnvRoutes }) => {
-          const serviceWorkerRoute = renderEnvRoutes["/firebase-messaging-sw.js"];
-          expect(serviceWorkerRoute).toBeDefined();
-          if (!serviceWorkerRoute) return;
-          const response = await serviceWorkerRoute(new Request("https://example.test/firebase-messaging-sw.js"));
-          const body = await response.text();
-
-          expect(response.status).toBe(200);
-          expect(response.headers.get("Content-Type")).toContain("application/javascript");
-          expect(response.headers.get("Cache-Control")).toBe("no-store");
-          expect(body).toContain("public-api-key");
-          expect(body).toContain("public-project");
-          expect(body).toContain("firebase-messaging-compat.js");
-          expect(body).not.toContain("SERVER_PRIVATE_KEY_MUST_NOT_LEAK");
-          expect(body).not.toContain("private_key");
-        },
-        { appDir },
-      );
-    } finally {
-      await rm(appDir, { recursive: true, force: true });
-    }
-  });
-
-  test("serves no-op Firebase messaging service worker without client env config", async () => {
-    await withFullSsrCacheHarness(async ({ renderEnvRoutes }) => {
-      const serviceWorkerRoute = renderEnvRoutes["/firebase-messaging-sw.js"];
-      expect(serviceWorkerRoute).toBeDefined();
-      if (!serviceWorkerRoute) return;
-      const response = await serviceWorkerRoute(new Request("https://example.test/firebase-messaging-sw.js"));
-      const body = await response.text();
-
-      expect(response.status).toBe(200);
-      expect(response.headers.get("Cache-Control")).toBe("no-store");
-      expect(body).toContain("const firebaseConfig = null");
-      expect(body).toContain("notificationclick");
-    });
+    expect(routeKeys).not.toContain("/firebase-messaging-sw.js");
   });
 });
 
@@ -668,6 +636,7 @@ describe("WebRouter RSC stream response", () => {
         navId: "8",
         pathname: "/en/docs",
         routeId: "/:lang/docs",
+        cache: "miss" as const,
         partial: "patch",
         partialReason: "same-route-search-params",
         partialCommonPrefixLength: 3,

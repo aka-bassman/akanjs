@@ -8,7 +8,7 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dic
     filename: "_index.tsx",
     content: `
 import { getEnv } from "akanjs/base";
-import { usePage } from "akanjs/client";
+import { page, usePage } from "akanjs/client";
 import { Link, System } from "akanjs/ui";
 import {
   FaBookOpen,
@@ -22,7 +22,7 @@ import {
   FaTerminal,
 } from "react-icons/fa";
 
-export default function Page() {
+export default page().render(() => {
   const appName = getEnv().appName;
   const { l } = usePage();
   return (
@@ -294,6 +294,6 @@ export default function Page() {
       </section>
     </main>
   );
-}`,
+});`,
   };
 }

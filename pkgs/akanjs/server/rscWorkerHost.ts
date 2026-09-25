@@ -1,11 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { type AkanI18nConfig, DEFAULT_AKAN_I18N, Logger } from "akanjs/common";
+import { type AkanI18nConfig, DEFAULT_AKAN_I18N, Logger, type LogRecord } from "akanjs/common";
 import type { AkanTheme } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
+import type { PagePromptEntry, PagePromptRun, PagePromptRunInput } from "../signal/mcp/pagePrompt";
 import type { ClientManifest } from "./artifact";
 import type { RouteCacheInvalidation, RouteCacheRenderState } from "./cachePolicy";
+import { ChildOutputReader } from "./logging/childOutputReader";
 import { MemoryLimit } from "./memoryLimit";
 import type { RscTraceMetadata, SsrLateRedirect } from "./ssrTypes";
 import type { BaseBuildArtifact, CssAsset } from "./types";
@@ -24,6 +26,11 @@ export interface RscPending {
   onRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
   onLateRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
   onNotFound?: () => void;
+}
+
+interface RscCall {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
 }
 
 export type RscRedirectMethod = "replace" | "push";
@@ -326,6 +333,9 @@ type RscInMsg =
     }
   | { type: "not-found"; requestId: string }
   | { type: "metrics"; metrics: AkanMetricsReport }
+  | { type: "log.records"; records: LogRecord[]; dropped?: number }
+  | { type: "page-prompts.result"; requestId: string; result: PagePromptEntry[] }
+  | { type: "page-prompt.result"; requestId: string; result: PagePromptRun }
   | { type: "error"; requestId: string; message: string; buildId?: number };
 
 export interface RscWorkerReloadInput {
@@ -371,6 +381,8 @@ export interface RscWorkerOptions {
 }
 
 type WorkerStatus = "starting" | "ready" | "restarting" | "stopped";
+/** Piped only in an ndjson deployment, where an inherited stdout would put text lines into the JSON stream. */
+type RscProcess = Bun.Subprocess;
 
 export class RscWorker {
   static readonly #devMaxReloads = 10;
@@ -378,8 +390,9 @@ export class RscWorker {
   readonly ready: Promise<void>;
   #logger = new Logger("RscWorker");
 
-  #proc: Bun.Subprocess<"ignore", "inherit", "inherit">;
+  #proc: RscProcess;
   readonly #pending = new Map<string, RscPending>();
+  readonly #calls = new Map<string, RscCall>();
   #clientManifest: ClientManifest;
   #pagesBundlePath: string;
   #pagesBundleBuildId: number;
@@ -404,10 +417,13 @@ export class RscWorker {
   #lastRecycleAtMono: number | null = null;
   #lastRecycleReason: string | undefined;
   #lastWorkerMetrics: AkanMetricsReport = {};
+  /** Set by the replica: where the worker's forwarded log records go (its hub, or up to the gateway). */
+  onLogRecords: ((records: LogRecord[], dropped: number) => void) | null = null;
+  #logLevel: number | null = null;
   #hostPendingChunkOverflowCount = 0;
   #restartTimer: ReturnType<typeof setTimeout> | null = null;
   #recycleTimer: ReturnType<typeof setTimeout> | null = null;
-  #rollingRecycle: { oldProc: Bun.Subprocess<"ignore", "inherit", "inherit">; reason: string } | null = null;
+  #rollingRecycle: { oldProc: RscProcess; reason: string } | null = null;
   readonly #restartOpts: Required<Pick<RscWorkerRestartOptions, "baseDelayMs" | "maxDelayMs">> & {
     maxAttempts: number | undefined;
   };
@@ -506,6 +522,44 @@ export class RscWorker {
     });
   }
 
+  listPagePrompts(): Promise<PagePromptEntry[]> {
+    return this.#call<PagePromptEntry[]>((requestId) => ({ type: "page-prompts", requestId }));
+  }
+
+  runPagePrompt(input: PagePromptRunInput): Promise<PagePromptRun> {
+    return this.#call<PagePromptRun>((requestId) => ({ type: "page-prompt.run", requestId, input }));
+  }
+
+  /** One request, one reply: the answer is a JSON value rather than a stream, so it rides a promise. */
+  #call<T>(message: (requestId: string) => object): Promise<T> {
+    const requestId = crypto.randomUUID();
+    return new Promise<T>((resolve, reject) => {
+      this.#calls.set(requestId, { resolve: resolve as (value: unknown) => void, reject });
+      const send = () => {
+        if (!this.#calls.has(requestId)) return;
+        try {
+          this.#proc.send(message(requestId));
+        } catch (err) {
+          this.#settleCall(requestId, (call) =>
+            call.reject(new Error(`rsc worker send failed: ${err instanceof Error ? err.message : String(err)}`)),
+          );
+        }
+      };
+      if (this.#status === "ready") send();
+      else if (this.#status === "stopped")
+        this.#settleCall(requestId, (call) => call.reject(new Error("rsc worker is stopped")));
+      else this.#queuedSends.push(send);
+    });
+  }
+
+  #settleCall(requestId: string, fn: (call: RscCall) => void): boolean {
+    const call = this.#calls.get(requestId);
+    if (!call) return false;
+    this.#calls.delete(requestId);
+    fn(call);
+    return true;
+  }
+
   invalidateRouteResultCache(invalidation?: string | RouteCacheInvalidation): void {
     if (this.#status !== "ready") return;
     try {
@@ -531,6 +585,20 @@ export class RscWorker {
     this.#rollingRecycle?.oldProc.kill();
     this.#rollingRecycle = null;
     this.#proc.kill();
+  }
+
+  setLogLevel(minSev: number | null) {
+    this.#logLevel = minSev;
+    this.#sendLogLevel();
+  }
+
+  #sendLogLevel() {
+    if (this.#status !== "ready") return;
+    try {
+      this.#proc.send({ type: "log-level", minSev: this.#logLevel });
+    } catch {
+      // The worker is gone; the `ready` of its replacement re-sends the level.
+    }
   }
 
   getMetrics(): AkanMetricsReport {
@@ -635,12 +703,13 @@ export class RscWorker {
     });
   }
 
-  #spawn(): Bun.Subprocess<"ignore", "inherit", "inherit"> {
+  #spawn(): RscProcess {
     this.#status = "starting";
     this.#reloadsSinceSpawn = 0;
     const workerPath = this.#resolveWorkerPath();
-    let proc!: Bun.Subprocess<"ignore", "inherit", "inherit">;
+    let proc!: RscProcess;
     const earlyMessages: RscInMsg[] = [];
+    const piped = Logger.isNdjson;
     proc = Bun.spawn(["bun", "--conditions", "react-server", workerPath], {
       ipc: (message: RscInMsg) => {
         if (!proc) {
@@ -649,10 +718,11 @@ export class RscWorker {
         }
         this.#handleMessage(message, proc);
       },
-      stdio: ["ignore", "inherit", "inherit"],
+      stdio: ["ignore", piped ? "pipe" : "inherit", piped ? "pipe" : "inherit"],
       serialization: "advanced",
       env: { ...process.env },
     });
+    if (piped) this.#readOutput(proc);
     if (earlyMessages.length > 0) {
       setTimeout(() => {
         for (const message of earlyMessages.splice(0)) this.#handleMessage(message, proc);
@@ -660,6 +730,31 @@ export class RscWorker {
     }
     proc.exited.then((code) => this.#handleExit(proc, code));
     return proc;
+  }
+
+  /** The worker's own stdout and stderr as records of this replica, so a crash stack reaches the collector as JSON. */
+  #readOutput(proc: RscProcess) {
+    const replicaIdx = Number(process.env.AKAN_REPLICA_IDX);
+    const record = (type: "stdout" | "stderr", text: string) =>
+      this.onLogRecords?.(
+        [
+          ChildOutputReader.toRecord({
+            type,
+            text,
+            name: "rsc-worker",
+            role: "rsc-worker",
+            replicaIdx: Number.isInteger(replicaIdx) ? replicaIdx : null,
+            pid: proc.pid,
+          }),
+        ],
+        0,
+      );
+    const reader = new ChildOutputReader({
+      onLine: (line) => record("stdout", line),
+      onBlock: (lines) => record("stderr", lines.join("")),
+    });
+    void reader.pipe(proc.stdout instanceof ReadableStream ? proc.stdout : null, "stdout");
+    void reader.pipe(proc.stderr instanceof ReadableStream ? proc.stderr : null, "stderr");
   }
 
   #resolveWorkerPath(): string {
@@ -675,7 +770,7 @@ export class RscWorker {
     }
   }
 
-  #handleMessage(message: RscInMsg, proc: Bun.Subprocess<"ignore", "inherit", "inherit">): void {
+  #handleMessage(message: RscInMsg, proc: RscProcess): void {
     if (proc !== this.#proc) return;
     if (message.type === "cache-state") {
       this.#pending.get(message.requestId)?.onCacheState?.(message.state);
@@ -703,6 +798,7 @@ export class RscWorker {
         this.#resolveReady();
         this.#finishRollingRecycle();
         this.#flushQueuedSends();
+        if (this.#logLevel !== null) this.#sendLogLevel();
         return;
       case "reloaded":
         if (this.#pendingReload && this.#pendingReload.targetBuildId === message.buildId) {
@@ -738,6 +834,13 @@ export class RscWorker {
         this.#lastWorkerMetrics = message.metrics;
         this.#maybeRecycleFromMetrics(message.metrics);
         return;
+      case "log.records":
+        this.onLogRecords?.(message.records, message.dropped ?? 0);
+        return;
+      case "page-prompts.result":
+      case "page-prompt.result":
+        this.#settleCall(message.requestId, (call) => call.resolve(message.result));
+        return;
       case "error":
         if (message.requestId === "__init__") {
           // Init errors are surfaced on `ready` only for the very first spawn;
@@ -756,6 +859,7 @@ export class RscWorker {
           }
           return;
         }
+        if (this.#settleCall(message.requestId, (call) => call.reject(new Error(String(message.message))))) return;
         this.#resolvePending(message.requestId, (p) => p.onError(String(message.message)));
         return;
     }
@@ -824,7 +928,7 @@ export class RscWorker {
     this.#lastWorkerMetrics = {};
   }
 
-  #handleExit(proc: Bun.Subprocess<"ignore", "inherit", "inherit">, code: number | null): void {
+  #handleExit(proc: RscProcess, code: number | null): void {
     // Stale exits from a proc we've already replaced can still fire if the
     // old subprocess was slow to cleanup; ignore them so we don't
     // double-schedule a restart.
@@ -833,6 +937,8 @@ export class RscWorker {
     const err = new Error(`rsc worker exited with code ${code}`);
     for (const [, p] of this.#pending) p.onError(err.message);
     this.#pending.clear();
+    for (const [, call] of this.#calls) call.reject(err);
+    this.#calls.clear();
     if (this.#pendingReload) {
       this.#pendingReload.reject(err);
       this.#pendingReload = null;

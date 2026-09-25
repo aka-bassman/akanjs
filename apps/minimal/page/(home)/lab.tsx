@@ -1,5 +1,4 @@
 import { LabHub } from "@apps/minimal/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
-  return <LabHub />;
-}
+export default page().render(() => <LabHub />);

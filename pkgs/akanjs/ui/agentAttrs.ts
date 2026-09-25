@@ -9,11 +9,20 @@ import { actionTagOf } from "akanjs/store";
  *
  * What it buys, beyond an in-page agent: an accessibility tree and E2E selectors that name the action rather than a
  * class, and an external browser agent — one this framework has no bridge into — reading the same names.
+ *
+ * `key` is for a control that shares its handler with its siblings — a tab's menus, a list's rows — and names
+ * which one of them this is, in the same vocabulary the call's argument uses. Without it every namesake is
+ * interchangeable in the DOM, so the page can say *what* the agent did but never *where*.
  */
 export const agentAttrs = (
   handler: unknown,
-): { "data-akan-action"?: string; "data-akan-state"?: string } | Record<string, never> => {
+  key?: string | number,
+): { "data-akan-action"?: string; "data-akan-state"?: string; "data-akan-key"?: string } | Record<string, never> => {
   const tag = actionTagOf(handler);
   if (!tag) return {};
-  return { "data-akan-action": tag.action, ...(tag.state ? { "data-akan-state": tag.state } : {}) };
+  return {
+    "data-akan-action": tag.action,
+    ...(tag.state ? { "data-akan-state": tag.state } : {}),
+    ...(key === undefined || key === "" ? {} : { "data-akan-key": String(key) }),
+  };
 };

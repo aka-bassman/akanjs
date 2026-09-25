@@ -63,13 +63,11 @@ describe("AppWsData", () => {
   test("replaces the credential and drops the cached account", () => {
     const data = AppWsData.fromRequest(new Request("http://localhost/api/ws"));
     data.account = { role: "user" };
-    data.resolvedAuthorization = "";
 
     AppWsData.applyCredential(data, "next-token");
 
     expect(data.headers.get("authorization")).toBe("Bearer next-token");
     expect(data.account).toBeUndefined();
-    expect(data.resolvedAuthorization).toBeUndefined();
   });
 
   test("signing out clears the handshake cookie so it cannot re-authenticate the socket", () => {
@@ -86,6 +84,20 @@ describe("AppWsData", () => {
     expect(data.cookies.has("jwt")).toBe(false);
     expect(data.headers.get("cookie")).toBe("theme=dark");
     expect(data.account).toBeUndefined();
+  });
+
+  test("signing out clears the app-scoped cookie too, whichever app on the host wrote it", () => {
+    const data = AppWsData.fromRequest(
+      new Request("http://localhost/api/ws", {
+        headers: { cookie: "jwt:alpha=alpha-token; jwt:beta=beta-token; theme=dark" },
+      }),
+    );
+
+    AppWsData.applyCredential(data, null);
+
+    expect(data.cookies.has("jwt:alpha")).toBe(false);
+    expect(data.cookies.has("jwt:beta")).toBe(false);
+    expect(data.headers.get("cookie")).toBe("theme=dark");
   });
 
   test("removes the cookie header entirely when the jwt was its only entry", () => {

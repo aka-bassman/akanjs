@@ -26,7 +26,7 @@ export class FileNode extends DecoratorNode<JSX.Element> {
     return $createFileNode(serialized);
   }
 
-  constructor(payload: FilePayload, key?: NodeKey) {
+  constructor(payload: FilePayload = { src: "", name: "" }, key?: NodeKey) {
     super(key);
     this.__fileId = payload.fileId;
     this.__src = payload.src;

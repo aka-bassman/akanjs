@@ -2,7 +2,6 @@ import fsPromise from "node:fs/promises";
 import { input, select } from "@inquirer/prompts";
 
 import { getDirname } from "./getDirname";
-import type { GuideGenerateJson } from "./guideline";
 
 interface FileUpdateRequestProps {
   context: string;
@@ -24,7 +23,6 @@ export class Prompter {
   }
 
   static async selectGuideline() {
-    const guidelineRoot = await Prompter.#getGuidelineRoot();
     const guideNames = await Prompter.listGuidelines();
     return await select({
       message: "Select a guideline",
@@ -35,17 +33,17 @@ export class Prompter {
     const guidelineRoot = await Prompter.#getGuidelineRoot();
     return (await fsPromise.readdir(guidelineRoot)).filter((name) => !name.startsWith("_")).sort();
   }
-  static async getGuideJson(guideName: string): Promise<GuideGenerateJson> {
-    const guidelineRoot = await Prompter.#getGuidelineRoot();
-    const filePath = `${guidelineRoot}/${guideName}/${guideName}.generate.json`;
-    const guideJson = await fsPromise.readFile(filePath, "utf-8");
-    return JSON.parse(guideJson) as GuideGenerateJson;
-  }
+  /**
+   * The name is checked against the directory listing rather than interpolated straight into a path:
+   * it arrives from an MCP tool argument, and an unknown one has to name the valid set instead of
+   * surfacing an ENOENT that carries the host's own paths.
+   */
   static async getInstruction(guideName: string): Promise<string> {
+    const guideNames = await Prompter.listGuidelines();
+    if (!guideNames.includes(guideName))
+      throw new Error(`Unknown guideline "${guideName}". Available: ${guideNames.join(", ")}`);
     const guidelineRoot = await Prompter.#getGuidelineRoot();
-    const filePath = `${guidelineRoot}/${guideName}/${guideName}.instruction.md`;
-    const content = await fsPromise.readFile(filePath, "utf-8");
-    return content;
+    return await fsPromise.readFile(`${guidelineRoot}/${guideName}/${guideName}.instruction.md`, "utf-8");
   }
   static async getUpdateRequest(guideName: string) {
     return await input({

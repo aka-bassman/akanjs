@@ -1,6 +1,7 @@
 "use client";
 import { PrimitiveRegistry } from "akanjs/base";
 import { fetch, usePage } from "akanjs/client";
+import type { DynamicRecord } from "akanjs/common";
 import { type ConstantCls, ConstantRegistry } from "akanjs/constant";
 import type { SerializedEndpoint } from "akanjs/signal";
 import { useEffect, useMemo, useState } from "react";
@@ -122,7 +123,9 @@ const PubSubTry = ({ refName, endpointKey, endpoint }: PubSubTryProps) => {
     const request = JSON.parse(gqlRequest) as { [key: string]: string | number | boolean | null };
     const argData = endpoint.args.map((arg) => request[arg.name]);
 
-    const fetchFn = ((fetch as any)[endpointKey] as (...args: any[]) => Promise<any>).bind(fetch) as (
+    const fetchFn = ((fetch as unknown as DynamicRecord)[endpointKey] as (...args: any[]) => Promise<any>).bind(
+      fetch,
+    ) as (
       ...args: [...args: (string | number | boolean | null)[], data: (data: unknown) => void]
     ) => Promise<() => void>;
     setResponse({ status: "loading", data: messages });

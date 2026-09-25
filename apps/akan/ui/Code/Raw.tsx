@@ -8,9 +8,10 @@ import { Shiki_Client } from "./Shiki_Client";
 // Dual theme: shiki emits per-token `--shiki-light`/`--shiki-dark` CSS variables (defaultColor: false)
 // instead of baking one theme's colors inline, so code blocks follow the app's [data-theme] switch.
 // The variable → color wiring lives in ./styles.css.
+const loadedLangs = ["typescript", "tsx", "bash", "yaml", "json", "markdown"] as const;
 const highlighter = createHighlighter({
   themes: ["github-light", "github-dark"],
-  langs: ["typescript", "bash"],
+  langs: [...loadedLangs],
 });
 
 const transformerLineNumbers: ShikiTransformer = {
@@ -24,16 +25,31 @@ const transformerLineNumbers: ShikiTransformer = {
   },
 };
 
-const transformerBashLine: ShikiTransformer = {
+//? a `$` only where a command starts: not on blank lines, comments, or the lines a trailing `\` continues
+const bashPromptLines = (code: string) => {
+  const lines = code.split("\n");
+  return new Set(
+    lines
+      .map((line, idx) => ({
+        text: line.trim(),
+        continued: (lines[idx - 1] ?? "").trimEnd().endsWith("\\"),
+        num: idx + 1,
+      }))
+      .filter(({ text, continued }) => text && !text.startsWith("#") && !continued)
+      .map(({ num }) => num),
+  );
+};
+
+const transformerBashLine = (promptLines: Set<number>): ShikiTransformer => ({
   line(node, line) {
     node.children.unshift({
       type: "element",
       tagName: "span",
       properties: { class: "line-number" },
-      children: [{ type: "text", value: "$" }],
+      children: [{ type: "text", value: promptLines.has(line) ? "$" : "" }],
     });
   },
-};
+});
 
 const transformerLineData: ShikiTransformer = {
   line(node, line) {
@@ -85,9 +101,11 @@ interface RawProps {
 
 export const Raw = ({ className, language = "typescript", code, showLineNumbers = true }: RawProps) => {
   const { cleanedCode, focusLines } = parseCollapseAnnotations(code);
+  //? shiki throws on a grammar it was not loaded with, which used to render an empty block
+  const lang = (loadedLangs as readonly string[]).includes(language) ? language : "text";
   const htmlPromise = highlighter.then((highlighter) =>
     highlighter.codeToHtml(cleanedCode, {
-      lang: language,
+      lang,
       themes: { light: "github-light", dark: "github-dark" },
       defaultColor: false,
       transformers: [
@@ -98,7 +116,11 @@ export const Raw = ({ className, language = "typescript", code, showLineNumbers 
         }),
         transformerNotationHighlight(),
         transformerLineData,
-        ...(showLineNumbers ? (language === "bash" ? [transformerBashLine] : [transformerLineNumbers]) : []),
+        ...(showLineNumbers
+          ? language === "bash"
+            ? [transformerBashLine(bashPromptLines(cleanedCode))]
+            : [transformerLineNumbers]
+          : []),
       ],
     }),
   );

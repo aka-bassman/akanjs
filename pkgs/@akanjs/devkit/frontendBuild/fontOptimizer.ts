@@ -43,7 +43,9 @@ export class FontOptimizer {
   #woff2Ready: Promise<void> | null = null;
 
   static #ksX1001Text: string | null = null;
-  static readonly #cacheVersion = 1;
+  // 2: the key moved to sha256 over a deterministically ordered `auto` text, so v1 entries cannot be
+  // compared against and their subsets were built from `page`/`ui` only.
+  static readonly #cacheVersion = 2;
 
   constructor(app: App, command: FontOptimizerCommand = "start") {
     this.#app = app;
@@ -96,9 +98,18 @@ export class FontOptimizer {
       }
       // `auto` derives the subset from app source text, which no font config hash can capture.
       if (this.#getFontSubsets(font).includes("auto"))
-        sources.push({ autoSubsetText: this.#hashFontConfig(await this.#collectAutoSubsetText()) });
+        sources.push({ autoSubsetText: this.#cacheDigest(await this.#collectAutoSubsetText()) });
     }
-    return this.#hashFontConfig({ version: FontOptimizer.#cacheVersion, fonts, sources });
+    return this.#cacheDigest({ version: FontOptimizer.#cacheVersion, fonts, sources });
+  }
+
+  /**
+   * Cache keys get a cryptographic digest, not the 32-bit FNV `#hashFontConfig` computes for filenames:
+   * a collision there serves a stale subset as if it were current, while a filename only has to be short
+   * and stable.
+   */
+  #cacheDigest(value: unknown) {
+    return new Bun.CryptoHasher("sha256").update(this.#stableStringify(value)).digest("hex");
   }
 
   async #fileStamp(filePath: string): Promise<{ mtimeMs: number; size: number } | null> {
@@ -141,7 +152,7 @@ export class FontOptimizer {
         const file = Bun.file(filePath);
         if (!(await file.exists())) return;
         const source = await file.text();
-        // A declaration named `fonts` cannot exist in text that never mentions it, and parsing the
+        // A `.fonts()` stage or a `fonts` declaration cannot exist in text that never mentions it, and parsing the
         // route files that never declare one is what a cached optimize() otherwise spends its time on.
         if (!source.includes("fonts")) return;
         fonts.push(...this.#extractFontsExport(source, filePath));
@@ -175,23 +186,75 @@ export class FontOptimizer {
     if (faceCss.length > 0) this.#cssParts.push(...faceCss, this.#buildRootVariableRule(font));
   }
 
+  /**
+   * The font list of a route file, from the `.fonts([…])` stage of its default-exported `rootLayout()` chain
+   * or from the legacy `export const fonts`. Only an inline literal is readable, because the build enumerates
+   * routes without evaluating them — and a list it cannot read is warned about rather than skipped in silence:
+   * the runtime still emits `/_akan/fonts` preloads for fonts nothing subset, and every one of them 404s.
+   */
   #extractFontsExport(source: string, filePath: string): ReactFont[] {
     const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    const fonts: ReactFont[] = [];
+    const declaration = this.#findFontsDeclaration(sourceFile);
+    if (!declaration) return [];
+    const value = this.#literalToValue(declaration);
+    const entries: unknown[] = Array.isArray(value) ? value : [];
+    const fonts = entries.filter((entry): entry is ReactFont => this.#isReadableFont(entry));
+    if (fonts.length !== entries.length || !Array.isArray(value))
+      this.#app.logger.warn(
+        `[font] ${path.relative(this.#app.cwdPath, filePath)} declares fonts the build cannot read without evaluating the module — write the list inline, or nothing is subset for it and every /_akan/fonts request 404s`,
+      );
+    return fonts.map((font) => this.#withFontDefaults(font));
+  }
+
+  #isReadableFont(value: unknown): value is ReactFont {
+    if (!value || typeof value !== "object") return false;
+    const font = value as Partial<ReactFont>;
+    return typeof font.name === "string" && Array.isArray(font.paths);
+  }
+
+  #findFontsDeclaration(sourceFile: ts.SourceFile): ts.Expression | null {
     for (const statement of sourceFile.statements) {
+      if (ts.isExportAssignment(statement)) {
+        if (statement.isExportEquals) continue;
+        const stage = this.#findChainStageArgument(statement.expression, "fonts");
+        if (stage) return stage;
+        continue;
+      }
       if (!ts.isVariableStatement(statement)) continue;
       const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
-      const isExported = modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false;
-      if (!isExported) continue;
+      if (!modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue;
       for (const declaration of statement.declarationList.declarations) {
         if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "fonts") continue;
-        const value = declaration.initializer ? this.#literalToValue(declaration.initializer) : null;
-        if (Array.isArray(value)) {
-          fonts.push(...(value as ReactFont[]).map((font) => this.#withFontDefaults(font)));
-        }
+        if (declaration.initializer) return declaration.initializer;
       }
     }
-    return fonts;
+    return null;
+  }
+
+  /** Walks a `rootLayout()` chain from its outermost call inward, so the stage that wins at runtime is the one read. */
+  #findChainStageArgument(expression: ts.Expression, stageName: string): ts.Expression | null {
+    let node = this.#unwrapExpression(expression);
+    let argument: ts.Expression | null = null;
+    while (node && ts.isCallExpression(node)) {
+      const callee = this.#unwrapExpression(node.expression);
+      if (!callee) return null;
+      if (ts.isIdentifier(callee)) return callee.text === "rootLayout" ? argument : null;
+      if (!ts.isPropertyAccessExpression(callee)) return null;
+      if (callee.name.text === stageName) argument ??= node.arguments[0] ?? null;
+      node = this.#unwrapExpression(callee.expression);
+    }
+    return null;
+  }
+
+  #unwrapExpression(expression?: ts.Expression): ts.Expression | undefined {
+    let current = expression;
+    while (
+      current &&
+      (ts.isAsExpression(current) || ts.isSatisfiesExpression(current) || ts.isParenthesizedExpression(current))
+    ) {
+      current = current.expression;
+    }
+    return current;
   }
 
   #literalToValue(node: ts.Node): unknown {
@@ -387,26 +450,34 @@ export class FontOptimizer {
     return "";
   }
 
+  /**
+   * Every source that can put a glyph on screen, concatenated in a **stable** order.
+   *
+   * The order is load-bearing even though a glyph set is not: `#buildCacheKey` hashes this string, so
+   * reading the roots concurrently and pushing as each file resolved made the key depend on i/o
+   * scheduling — measured 8 distinct keys over 8 runs against unchanged sources, which means the cache
+   * never hit and every build re-subset the fonts.
+   *
+   * `lib` is in the roots because that is where user-facing text actually lives: a dictionary's
+   * `[en, ko]` pairs are the Korean in the app, and a subset built from `page` and `ui` alone renders
+   * them as tofu — while hashing the same partial text also stopped a new label from invalidating.
+   */
   async #collectAutoSubsetText() {
     //* Synced lib pages hold app-visible text too, and a glob never crosses the symlink that mounts them.
     const libPageRoots = (await this.#app.getPageRoots()).filter((root) => root.keyPrefix).map((root) => root.dir);
-    const roots = [...["page", "ui"].map((dir) => path.join(this.#app.cwdPath, dir)), ...libPageRoots];
+    const roots = [...["page", "ui", "lib"].map((dir) => path.join(this.#app.cwdPath, dir)), ...libPageRoots];
     const glob = new Bun.Glob("**/*.{ts,tsx,js,jsx,html,md}");
     const parts: string[] = [];
-    await Promise.all(
-      roots.map(async (root) => {
-        if (
-          !(await stat(root).then(
-            (entry) => entry.isDirectory(),
-            () => false,
-          ))
-        )
-          return;
-        for await (const filePath of glob.scan({ cwd: root, absolute: true })) {
-          parts.push(await Bun.file(filePath).text());
-        }
-      }),
-    );
+    for (const root of [...new Set(roots)].sort()) {
+      const isDir = await stat(root).then(
+        (entry) => entry.isDirectory(),
+        () => false,
+      );
+      if (!isDir) continue;
+      const filePaths: string[] = [];
+      for await (const filePath of glob.scan({ cwd: root, absolute: true })) filePaths.push(filePath);
+      for (const filePath of filePaths.sort()) parts.push(await Bun.file(filePath).text());
+    }
     return parts.join("");
   }
 

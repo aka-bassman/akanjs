@@ -10,13 +10,27 @@ export interface Guard {
  * with no arguments — which is what lets a catalogue hide what the caller certainly cannot use. `resource` needs
  * the call's arguments and fails closed without them, so evaluating one early would erase legitimate entries.
  *
- * Required, with no default. Exposure is decided by a guard rather than by an opt-in, so an unmarked guard would
- * silently take the `resource` path and list its endpoint to every caller — the whole guarded surface's names,
- * refused only at call time. There is no safe guess here, so the author states it.
+ * `GuardCls` requires it on a hand-written guard class. Exposure is decided by a guard rather than by an opt-in, so
+ * an unmarked guard would silently take the `resource` path and list its endpoint to every caller — the whole
+ * guarded surface's names, refused only at call time. A class built with `guard(name)` starts as `account`, the
+ * side that errs hidden: a subclass reading the call's arguments without overriding it drops out of every listing.
  */
 export type GuardScope = "account" | "resource";
 
-export type GuardCls<Name extends string = string> = Cls<Guard, { readonly name: Name; readonly scope: GuardScope }>;
+/**
+ * A guard that admits no model — one that refuses every MCP call and every call on an agent's token — says so with
+ * `static agents = false`. The MCP catalogue then refuses every endpoint it guards outright, the way `mcp: false`
+ * does, instead of publishing an entry that every agent would only ever be refused. Optional, unlike `scope`: the
+ * default (agents may pass, subject to the verdict) is the one almost every guard means.
+ */
+export type GuardCls<Name extends string = string> = Cls<
+  Guard,
+  { readonly name: Name; readonly scope: GuardScope; readonly agents?: boolean }
+>;
+
+/** Whether any guard in the list admits no agent at all — the fact the serializer stamps on an endpoint as `agents: false`. */
+export const refusesAgents = (guards: readonly GuardCls[] | undefined): boolean =>
+  !!guards?.some((GuardCls) => GuardCls.agents === false);
 
 /** Creates a named guard base class for signal access checks. */
 export const guard = <T extends string>(name: T): GuardCls<T> => {

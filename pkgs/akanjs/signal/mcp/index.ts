@@ -1,5 +1,6 @@
 export * from "./McpDocument";
 export * from "./McpProgress";
 export * from "./McpUriTemplate";
-export * from "./Msg";
+export type * from "./Msg";
 export * from "./mcpProtocol";
+export * from "./pagePrompt";

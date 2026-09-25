@@ -19,11 +19,15 @@ export const agentTurnDictionary = scalarDictionary(["en", "ko"])
       "클라이언트가 실행할 툴 호출 목록 ({ id, name, args })",
     ]),
     stop: t(["Stop", "종료 사유"]).desc([
-      "Why the turn ended — end, or toolUse when tool results are awaited",
-      "턴이 끝난 이유 — end 또는 툴 결과를 기다리는 toolUse",
+      "Why the turn ended — end, toolUse when tool results are awaited, or length when the provider cut it off",
+      "턴이 끝난 이유 — end, 툴 결과를 기다리는 toolUse, 프로바이더가 잘라낸 length",
     ]),
   }))
   .enum<AgentStop>("agentStop", (t) => ({
     end: t(["End", "종료"]).desc(["The final answer", "최종 응답"]),
     toolUse: t(["Tool Use", "툴 사용"]).desc(["The model awaits tool results", "모델이 툴 결과를 기다린다"]),
+    length: t(["Length", "길이 초과"]).desc([
+      "The provider's answer ceiling cut the turn off, so it is incomplete",
+      "프로바이더의 응답 상한에 걸려 턴이 잘렸다. 미완성이다",
+    ]),
   }));

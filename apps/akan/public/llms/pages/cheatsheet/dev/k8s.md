@@ -10,82 +10,169 @@
 
 - Kubernetes (#overview)
 - Architecture (#architecture)
-- Open Console (#console)
 - Values (#values)
 - Scale (#scale)
+- Open Console (#console)
 - Tips (#tips)
 
 ## Content
 
 Kubernetes
 
-Akan Kubernetes deployment is built around one app container, a Service, an Ingress, and persistent storage for sqlite data.
+Runs the app image in exactly one pod.
 
-Deployment runs the app image.
+Exposes the app on port 8282 inside the cluster.
 
-Service exposes the app inside the cluster.
+Connects your domains to the Service and gets their TLS certificate.
 
-Ingress connects domains to the Service.
+Keeps the sqlite data in `/workspace/sqlite` across pod restarts.
 
-PVC keeps sqlite data across pod restarts.
+Defaults for the `debug`, `develop` and `main` branches: replica, resources, storage.
+
+Values every app shares: `repoName`, `serveDomain`, `image.registry`.
+
+The app's own values: `appName`, `subRoutes`, domains, and any override.
+
+The app's own secret values, and it may be empty.
+
+Names the namespace `<appName>-<branch>`, the image path and the default host.
+
+The workspace part of the image path `<registry>/<repoName>/<appName>`.
+
+The base domain, so the default host is `<appName>-<branch>.<serveDomain>`.
+
+Adds one `<subRoute>-<branch>.<serveDomain>` host and TLS name per basePath.
+
+The registry host.
+
+Write it only to pin one specific build.
+
+Extra hosts and TLS names for that branch, such as a production domain.
+
+Becomes `AKAN_REPLICA` in the pod: process counts for federation, batch and all.
+
+unset
+
+Becomes `AKAN_SOLO`; write `false` to keep a gateway in front of a single replica.
+
+The memory and CPU the pod requests.
+
+The pod's limit; the CPU limit also sets how many images the optimizer encodes at once.
+
+The size of the `ReadWriteOnce` PVC mounted at `/workspace/sqlite`.
+
+Serves requests and skips services and internals pinned to `serverMode: "batch"`.
+
+Never listens, and runs scheduled and queued internals, including those pinned to `batch`.
+
+Serves requests and runs every internal.
+
+Requests
+
+batch internals
+
+One process, no gateway
+
+The chart default: one all-purpose process.
+
+One request process, so nothing pinned to batch runs.
+
+Several processes behind a gateway
+
+Two request processes and one batch worker.
+
+Waits up to 2 minutes for boot, since SSR loads its route artifacts before it listens.
+
+Restarts a stuck server after three misses in a row.
+
+Takes the pod out of the Service after two misses in a row.
+
+AKAN_REPLICA In Depth
+
+Every slot and value, and when a gateway appears.
+
+Container Console
+
+What the console offers, its lifecycle, and its safety rules.
+
+Health And Metrics
+
+Read the numbers before you raise requests and limits.
+
+Resource
+
+Name
+
+What it does
+
+The namespace picks the branch
+
+You never write the branch as a value. The chart reads it from the release namespace:
 
 Architecture
 
-Think of the chart as four connected pieces. Users enter through Ingress, the Service routes traffic to the Pod, and the Pod stores local data through a PVC.
+A request enters through the Ingress, and the Service passes it to the pod, which keeps its data on the PVC. Alongside, the kubelet checks the pod's health.
 
-Mental model
+Request path
 
-Open Console
+Domain
 
-Use `kubectl exec` to run the generated `console.js` already embedded in the built app image.
-
-The console starts a separate no-listen server process in the same pod; it does not attach to the running `main.js` memory.
-
-Pod exec
+TLS, one host per subRoute and domain
 
 Values
 
-Use values to tune each environment. Debug can stay small, while main usually gets more CPU, memory, storage, and replicas.
+File
+
+What it holds
+
+Deploy command
+
+An app's values file
+
+A production app that needs more capacity than the defaults writes something like this:
+
+Top-level keys
+
+Per-branch keys
 
 Scale
 
-`app.replica` becomes `AKAN_REPLICA` inside the pod. Use it with CPU and memory values to scale work safely.
+Role
 
-`1,0,0`: small service with one request child.
+Common values
 
-`2,1,0`: more request capacity plus one batch worker.
+Yes
 
-`0,0,1`: one all-purpose child for simple environments.
+No
 
-A single request-serving replica (`1,0,0` or `0,0,1`) runs in the pod's only process, with no gateway in front of it. That leaves the kubelet as the only thing that can restart a wedged server, so the chart ships liveness, readiness, and startup probes on /_akan/app/health, which a solo process answers itself.
+Health probes
+
+Period
+
+Timeout
+
+Failures
+
+Open Console
 
 Tips
 
-Start with conservative requests and watch metrics before raising limits.
-
-Resize sqlite storage before it becomes urgent.
-
-Keep domain and subRoute values explicit so Ingress rules stay predictable.
+Related pages
 
 ## Code Examples
 
-### Code
-
-```ts
-Domain
-  -> Ingress
-  -> Service:8282
-  -> Deployment Pod
-  -> PVC /workspace/sqlite
-```
-
-### Code
+### Terminal
 
 ```bash
-kubectl exec -it -n prod pod/myapp-xxxxx -c myapp -- sh -lc 'AKAN_CONSOLE=1 bun console.js'
+helm upgrade app ./app/ -i --create-namespace -n myapp-main \
+  -f app/values/_common-values.yaml \
+  -f app/values/_common-secret.yaml \
+  -f app/values/myapp-values.yaml \
+  -f app/values/myapp-secret.yaml
+kubectl rollout restart deployments/app-deployment -n myapp-main
 ```
 
-### values.yaml
+### infra/app/values/myapp-values.yaml
 
 ```yaml
 appName: myapp
@@ -104,6 +191,13 @@ main:
         memory: 4G
         cpu: "4"
       storage: 5Gi
+```
+
+### Terminal
+
+```bash
+kubectl exec -it -n myapp-main deploy/app-deployment -c app -- \
+  sh -lc 'AKAN_CONSOLE=1 bun console.js'
 ```
 
 ## Agent Notes

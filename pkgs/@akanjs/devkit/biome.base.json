@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.12/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -154,7 +154,12 @@
       ]
     },
     {
-      "includes": ["{apps,libs}/**/page/**/*.ts", "{apps,libs}/**/page/**/*.tsx"],
+      "includes": [
+        "{apps,libs}/**/page/**/*.ts",
+        "{apps,libs}/**/page/**/*.tsx",
+        "{apps,libs}/**/*.Unit.tsx",
+        "{apps,libs}/**/*.View.tsx"
+      ],
       "plugins": ["./node_modules/@akanjs/devkit/lint/non-scalar-props-restricted.grit"]
     },
     {
@@ -169,6 +174,10 @@
     {
       "includes": ["{apps,libs}/**/*.store.ts"],
       "plugins": ["./node_modules/@akanjs/devkit/lint/no-return-in-store-action.grit"]
+    },
+    {
+      "includes": ["{apps,libs}/**/*.ts", "{apps,libs}/**/*.tsx"],
+      "plugins": ["./node_modules/@akanjs/devkit/lint/no-deprecated-log-level.grit"]
     },
     {
       "includes": ["{apps,libs}/**/*.signal.ts"],
