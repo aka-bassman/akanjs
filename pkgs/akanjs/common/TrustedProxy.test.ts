@@ -11,16 +11,12 @@ describe("TrustedProxy.clientAddress", () => {
     expect(TrustedProxy.clientAddress(headers({ "x-forwarded-for": "203.0.113.9, 10.0.0.2" }), "10.0.0.2")).toBe(
       "203.0.113.9",
     );
-    // A public peer is the caller itself, whatever it claims about its address.
     expect(TrustedProxy.clientAddress(headers({ "x-real-ip": "203.0.113.9" }), "198.51.100.7")).toBe("198.51.100.7");
   });
 
   test("reads an addressless socket as a local hop and an absent resolver as an unknown one", () => {
-    // `null` is what `requestIP` answers over a unix socket — the transport a gateway reaches its children by —
-    // which only a process on this machine can open, so the headers it forwarded hold.
     expect(TrustedProxy.clientAddress(headers({ "x-real-ip": "203.0.113.9" }), null)).toBe("203.0.113.9");
     expect(TrustedProxy.clientAddress(headers({}), null)).toBeNull();
-    // Nobody asked the socket: a header from a peer nothing vouches for is the client's own word.
     expect(TrustedProxy.clientAddress(headers({ "x-real-ip": "203.0.113.9" }), undefined)).toBeNull();
   });
 

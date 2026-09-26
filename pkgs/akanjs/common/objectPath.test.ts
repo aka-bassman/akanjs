@@ -35,7 +35,6 @@ describe("object and path helpers", () => {
   test("reads bracket paths, so what writeOn can write can be read back", () => {
     const obj = { cutFrames: [{ content: "a wide shot" }, { content: "a slow pan" }] };
 
-    // `pathSet` has always taken both spellings; a read that took only one is a path an agent can write and not read.
     expect(pathGet("cutFrames[1].content", obj)).toBe("a slow pan");
     expect(pathGet("cutFrames.1.content", obj)).toBe("a slow pan");
     expect(pathGet(["cutFrames", 1, "content"], obj)).toBe("a slow pan");
