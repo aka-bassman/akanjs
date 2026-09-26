@@ -40,36 +40,15 @@ export class WorkspaceRunner extends runner("workspace") {
     { overwrite = false, cursorRules = true }: { overwrite?: boolean; cursorRules?: boolean } = {},
   ) {
     const [appNames] = await workspace.getExecs();
-    const dict = {
-      repoName: workspace.repoName,
-      appName: appNames[0] ?? "app",
-    };
-    const created = await workspace.applyTemplate({
-      basePath: ".",
-      template: "workspaceRoot/AGENTS.md.template",
-      dict,
-      overwrite,
-    });
-
-    created.push(
-      ...(await workspace.applyTemplate({
-        basePath: ".",
-        template: "workspaceRoot/CLAUDE.md.template",
-        dict,
-        overwrite,
-      })),
-    );
-
-    if (cursorRules)
-      created.push(
-        ...(await workspace.applyTemplate({
-          basePath: ".cursor/rules",
-          template: "workspaceRoot/.cursor/rules/akan.mdc.template",
-          dict,
-          overwrite,
-        })),
-      );
-
+    const dict = { repoName: workspace.repoName, appName: appNames[0] ?? "app" };
+    const templates = [
+      [".", "workspaceRoot/AGENTS.md.template"],
+      [".", "workspaceRoot/CLAUDE.md.template"],
+      ...(cursorRules ? [[".cursor/rules", "workspaceRoot/.cursor/rules/akan.mdc.template"]] : []),
+    ];
+    const created = [];
+    for (const [basePath, template] of templates)
+      created.push(...(await workspace.applyTemplate({ basePath, template, dict, overwrite })));
     return created;
   }
 
@@ -142,53 +121,43 @@ export class WorkspaceRunner extends runner("workspace") {
   }
 
   async #getCliPackageJson(): Promise<PackageJson> {
-    const packageJsonCandidates = [
+    const found = await this.#findPackageJson("@akanjs/cli", [
       path.join(import.meta.dir, "../package.json"),
       path.join(import.meta.dir, "package.json"),
       path.join(path.dirname(Bun.main), "package.json"),
-    ];
-    try {
-      packageJsonCandidates.unshift(Bun.resolveSync("@akanjs/cli/package.json", import.meta.dir));
-    } catch {
-      // Source builds can execute before the package is linked into node_modules.
-    }
-    for (const packageJsonPath of packageJsonCandidates) {
-      if (!(await Bun.file(packageJsonPath).exists())) continue;
-      const packageJson = await FileSys.readJson<PackageJson>(packageJsonPath);
-      if (packageJson.name === "@akanjs/cli") return packageJson;
-    }
-    return { name: "@akanjs/cli", version: "0.0.0", description: "@akanjs/cli" };
+    ]);
+    return found ?? { name: "@akanjs/cli", version: "0.0.0", description: "@akanjs/cli" };
   }
 
   async #getAkanPackageJson(): Promise<PackageJson> {
-    const packageJsonCandidates = [
+    const ancestors: string[] = [];
+    for (let current = import.meta.dir, depth = 0; depth < 6; depth++) {
+      ancestors.push(path.join(current, "package.json"));
+      if (path.dirname(current) === current) break;
+      current = path.dirname(current);
+    }
+    const found = await this.#findPackageJson("akanjs", [
       path.join(import.meta.dir, "../../../akanjs/package.json"),
       path.join(process.cwd(), "pkgs/akanjs/package.json"),
       path.join(path.dirname(Bun.main), "node_modules/akanjs/package.json"),
-    ];
+      ...ancestors,
+    ]);
+    if (!found) throw new Error(`[workspace] failed to locate akanjs package.json from ${import.meta.dir}`);
+    return found;
+  }
+
+  async #findPackageJson(name: string, candidates: string[]): Promise<PackageJson | null> {
     try {
-      packageJsonCandidates.unshift(Bun.resolveSync("akanjs/package.json", import.meta.dir));
+      candidates.unshift(Bun.resolveSync(`${name}/package.json`, import.meta.dir));
     } catch {
-      // Source workspaces usually resolve Akan packages through tsconfig paths instead of node_modules.
+      // Source builds can run before the package is linked into node_modules.
     }
-    for (const packageJsonPath of packageJsonCandidates) {
+    for (const packageJsonPath of candidates) {
       if (!(await Bun.file(packageJsonPath).exists())) continue;
       const packageJson = await FileSys.readJson<PackageJson>(packageJsonPath);
-      if (packageJson.name === "akanjs") return packageJson;
+      if (packageJson.name === name) return packageJson;
     }
-
-    let current = import.meta.dir;
-    for (let depth = 0; depth < 6; depth++) {
-      const packageJsonPath = path.join(current, "package.json");
-      if (await Bun.file(packageJsonPath).exists()) {
-        const packageJson = await FileSys.readJson<PackageJson>(packageJsonPath);
-        if (packageJson.name === "akanjs") return packageJson;
-      }
-      const parent = path.dirname(current);
-      if (parent === current) break;
-      current = parent;
-    }
-    throw new Error(`[workspace] failed to locate akanjs package.json from ${import.meta.dir}`);
+    return null;
   }
 
   async lint(
