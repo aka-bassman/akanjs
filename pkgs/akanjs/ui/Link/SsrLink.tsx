@@ -40,8 +40,6 @@ export default function SsrLink({
         (activeExact ? currentPath === path : currentPath.startsWith(path)) && (activeClassName ?? ""),
       )}
       href={isExternal ? href : href.startsWith("#") ? href : requestHref}
-      // passHref
-      // replace={replace}
       {...props}
       onClick={(event) => {
         props.onClick?.(event);
