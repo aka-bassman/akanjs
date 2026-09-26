@@ -948,6 +948,23 @@ describe("scan info construction", () => {
   });
 });
 
+describe("WorkspaceExecutor listing", () => {
+  test("lists apps, libs and pkgs in name order", async () => {
+    const root = await makeTempRoot();
+    for (const app of ["zeta", "alpha", "mid"]) await writeText(path.join(root, "apps", app, "akan.config.ts"), "");
+    for (const lib of ["util", "shared"]) await writeText(path.join(root, "libs", lib, "akan.config.ts"), "");
+    for (const pkg of ["zeta-tool", "@sample/tool", "akanjs"])
+      await writeJson(path.join(root, "pkgs", pkg, "package.json"), { name: pkg });
+
+    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+    expect(await workspace.getExecs()).toEqual([
+      ["alpha", "mid", "zeta"],
+      ["shared", "util"],
+      ["@sample/tool", "akanjs", "zeta-tool"],
+    ]);
+  });
+});
+
 describe("SysExecutor module listing", () => {
   test("lists only the module folders that hold the module's own file", async () => {
     const root = await makeTempRoot();

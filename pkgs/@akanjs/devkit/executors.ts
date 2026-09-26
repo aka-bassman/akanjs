@@ -807,7 +807,7 @@ export class WorkspaceExecutor extends Executor {
       );
       return results;
     };
-    return await getDirs(basePath);
+    return (await getDirs(basePath)).sort((a, b) => a.localeCompare(b));
   }
 
   async #fromEverySys<T>(read: (sys: SysExecutor) => Promise<T[]>): Promise<T[]> {
