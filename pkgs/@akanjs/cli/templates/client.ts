@@ -4,36 +4,13 @@ const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { [key: string]: string } = {}) {
   if (!scanInfo) return null;
-  const databaseModules = [...scanInfo.database.entries()]
-    .filter(
-      ([_, fileTypes]) =>
-        fileTypes.has("template") ||
-        fileTypes.has("unit") ||
-        fileTypes.has("util") ||
-        fileTypes.has("view") ||
-        fileTypes.has("zone"),
-    )
-    .map(([key]) => key);
-  const scalarModules = [...scanInfo.scalar.entries()]
-    .filter(
-      ([_, fileTypes]) =>
-        fileTypes.has("template") ||
-        fileTypes.has("unit") ||
-        fileTypes.has("util") ||
-        fileTypes.has("view") ||
-        fileTypes.has("zone"),
-    )
-    .map(([key]) => key);
-  const serviceModules = [...scanInfo.service.entries()]
-    .filter(
-      ([_, fileTypes]) =>
-        fileTypes.has("template") ||
-        fileTypes.has("unit") ||
-        fileTypes.has("util") ||
-        fileTypes.has("view") ||
-        fileTypes.has("zone"),
-    )
-    .map(([key]) => key);
+  const uiModules = (modules: Map<string, Set<string>>) =>
+    [...modules.entries()]
+      .filter(([_, fileTypes]) => ["template", "unit", "util", "view", "zone"].some((type) => fileTypes.has(type)))
+      .map(([key]) => key);
+  const databaseModules = uiModules(scanInfo.database);
+  const scalarModules = uiModules(scanInfo.scalar);
+  const serviceModules = uiModules(scanInfo.service);
   return `
 export * as cnst from "./lib/cnst";
 export { msg, Err, usePage, fetch, sig } from "./lib/useClient";
