@@ -1,9 +1,8 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
-import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
+import { act } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { l, setTestEnv } from "../testHelpers";
+import { l, mountAsync, setTestEnv } from "../testHelpers";
 
 let Dialog: typeof import("./index").Dialog;
 
@@ -21,21 +20,11 @@ const settle = async () => {
     });
 };
 
-const mount = async (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => {
-    root.render(node);
-  });
-  return { container, unmount: () => act(() => root.unmount()) };
-};
-
 describe("Dialog agent surface", () => {
   test("the agent's close takes the same path the X button takes, so onCancel still runs", async () => {
     const surface = new AgenticSurface();
     const onCancel = mock(() => undefined);
-    const { unmount } = await mount(
+    const { unmount } = await mountAsync(
       <AgentProvider surface={surface}>
         <Dialog namespace="review" defaultOpen>
           <Dialog.Modal onCancel={onCancel}>
@@ -63,7 +52,7 @@ describe("Dialog agent surface", () => {
     const original = window.confirm;
     window.confirm = confirm as unknown as typeof window.confirm;
     try {
-      const { unmount } = await mount(
+      const { unmount } = await mountAsync(
         <AgentProvider surface={surface}>
           <Dialog namespace="review" defaultOpen>
             <Dialog.Modal onCancel={onCancel} confirmClose>

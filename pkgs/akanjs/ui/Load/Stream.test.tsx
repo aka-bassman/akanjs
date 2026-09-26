@@ -3,22 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { act, Component, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToReadableStream } from "react-dom/server.browser";
-
+import { mount } from "../testHelpers";
 import Stream from "./Stream";
-
-const mount = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
-  return {
-    container,
-    unmount: () => {
-      act(() => root.unmount());
-      container.remove();
-    },
-  };
-};
 
 /** A suspending first render has to settle inside an awaited `act`, or React warns and commits nothing. */
 const mountAsync = async (node: ReactNode) => {
