@@ -18,6 +18,49 @@ import { ApplicationRunner } from "./application.runner";
 import { ApplicationScript } from "./application.script";
 
 const tempRoots: string[] = [];
+type CallRecorder = ReturnType<typeof createCallRecorder>;
+
+const createRecordedWorkspace = (recorder: CallRecorder) =>
+  createFakeExecutor(
+    "workspace",
+    {
+      getPackageJson: async (...args: unknown[]) => {
+        recorder.record("workspace.getPackageJson", ...args);
+        return {};
+      },
+    },
+    recorder,
+  );
+
+const stubStart = (script: ApplicationScript, recorder: CallRecorder, { confirmed = true } = {}) => {
+  script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
+    recorder.record("confirmInstall", ...args);
+    return confirmed;
+  };
+  script.dbup = async (...args: unknown[]) => {
+    recorder.record("dbup", ...args);
+    return true;
+  };
+  Object.assign(script.applicationRunner, {
+    start: async (...args: unknown[]) => {
+      recorder.record("runner.start", ...args);
+      return {};
+    },
+  });
+};
+
+const stubMobileStart = (script: ApplicationScript, recorder: CallRecorder, { confirmed = true } = {}) => {
+  script.confirmMobileDependencyInstall = async (...args: unknown[]) => {
+    recorder.record("confirmMobileInstall", ...args);
+    return confirmed;
+  };
+  script.applicationRunner.startIos = async (...args: unknown[]) => {
+    recorder.record("runner.startIos", ...args);
+  };
+  script.applicationRunner.startAndroid = async (...args: unknown[]) => {
+    recorder.record("runner.startAndroid", ...args);
+  };
+};
 
 const createStartApp = ({
   databaseMode = "single",
@@ -29,16 +72,7 @@ const createStartApp = ({
   installSpecsByMode?: Partial<Record<DatabaseMode, string[]>>;
 } = {}) => {
   const recorder = createCallRecorder();
-  const workspace = createFakeExecutor(
-    "workspace",
-    {
-      getPackageJson: async (...args: unknown[]) => {
-        recorder.record("workspace.getPackageJson", ...args);
-        return {};
-      },
-    },
-    recorder,
-  );
+  const workspace = createRecordedWorkspace(recorder);
   const getMissingDatabaseModeDependencySpecs = mock((mode: DatabaseMode) => installSpecsByMode[mode] ?? []);
   const akanConfig = {
     database: { modes },
@@ -74,16 +108,7 @@ const createMobileApp = ({
   appDependencies?: Record<string, string>;
 } = {}) => {
   const recorder = createCallRecorder();
-  const workspace = createFakeExecutor(
-    "workspace",
-    {
-      getPackageJson: async (...args: unknown[]) => {
-        recorder.record("workspace.getPackageJson", ...args);
-        return {};
-      },
-    },
-    recorder,
-  );
+  const workspace = createRecordedWorkspace(recorder);
   const getMissingMobileDependencySpecs = mock(() => missingMobileSpecs);
   const getMobileAppCapacitorPlugins = mock(() => appPlugins);
   const akanConfig = {
@@ -172,20 +197,7 @@ describe("ApplicationScript", () => {
   test("startOne skips dependency install for single database mode", async () => {
     const script = CommandContainer.get(ApplicationScript);
     const { app, getMissingDatabaseModeDependencySpecs, recorder } = createStartApp();
-    script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
-      recorder.record("confirmInstall", ...args);
-      return true;
-    };
-    script.dbup = async (...args: unknown[]) => {
-      recorder.record("dbup", ...args);
-      return true;
-    };
-    Object.assign(script.applicationRunner, {
-      start: async (...args: unknown[]) => {
-        recorder.record("runner.start", ...args);
-        return {};
-      },
-    });
+    stubStart(script, recorder);
 
     await script.startOne(app as never, { write: false });
 
@@ -203,20 +215,7 @@ describe("ApplicationScript", () => {
       databaseMode: "multiple",
       installSpecsByMode: { multiple: installSpecs },
     });
-    script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
-      recorder.record("confirmInstall", ...args);
-      return true;
-    };
-    script.dbup = async (...args: unknown[]) => {
-      recorder.record("dbup", ...args);
-      return true;
-    };
-    Object.assign(script.applicationRunner, {
-      start: async (...args: unknown[]) => {
-        recorder.record("runner.start", ...args);
-        return {};
-      },
-    });
+    stubStart(script, recorder);
 
     await script.startOne(app as never, { write: false });
 
@@ -243,20 +242,7 @@ describe("ApplicationScript", () => {
       databaseMode: "multiple",
       installSpecsByMode: { multiple: installSpecs },
     });
-    script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
-      recorder.record("confirmInstall", ...args);
-      return false;
-    };
-    script.dbup = async (...args: unknown[]) => {
-      recorder.record("dbup", ...args);
-      return true;
-    };
-    Object.assign(script.applicationRunner, {
-      start: async (...args: unknown[]) => {
-        recorder.record("runner.start", ...args);
-        return {};
-      },
-    });
+    stubStart(script, recorder, { confirmed: false });
 
     await expect(script.startOne(app as never, { write: false })).rejects.toThrow(
       "Database mode 'multiple' requires missing dependencies",
@@ -274,20 +260,7 @@ describe("ApplicationScript", () => {
   test("startOne does not reinstall existing database-mode dependencies", async () => {
     const script = CommandContainer.get(ApplicationScript);
     const { app, recorder } = createStartApp({ databaseMode: "multiple" });
-    script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
-      recorder.record("confirmInstall", ...args);
-      return true;
-    };
-    script.dbup = async (...args: unknown[]) => {
-      recorder.record("dbup", ...args);
-      return true;
-    };
-    Object.assign(script.applicationRunner, {
-      start: async (...args: unknown[]) => {
-        recorder.record("runner.start", ...args);
-        return {};
-      },
-    });
+    stubStart(script, recorder);
 
     await script.startOne(app as never, { write: false });
 
@@ -307,20 +280,7 @@ describe("ApplicationScript", () => {
         modes: ["multiple", "cluster"],
         installSpecsByMode: { cluster: clusterSpecs },
       });
-      script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
-        recorder.record("confirmInstall", ...args);
-        return true;
-      };
-      script.dbup = async (...args: unknown[]) => {
-        recorder.record("dbup", ...args);
-        return true;
-      };
-      Object.assign(script.applicationRunner, {
-        start: async (...args: unknown[]) => {
-          recorder.record("runner.start", ...args);
-          return {};
-        },
-      });
+      stubStart(script, recorder);
 
       await script.startOne(app as never, { write: false });
 
@@ -464,13 +424,7 @@ describe("ApplicationScript", () => {
   test("startIos skips mobile dependency install when nothing is missing", async () => {
     const script = CommandContainer.get(ApplicationScript);
     const { app, getMissingMobileDependencySpecs, recorder } = createMobileApp();
-    script.confirmMobileDependencyInstall = async (...args: unknown[]) => {
-      recorder.record("confirmMobileInstall", ...args);
-      return true;
-    };
-    script.applicationRunner.startIos = async (...args: unknown[]) => {
-      recorder.record("runner.startIos", ...args);
-    };
+    stubMobileStart(script, recorder);
 
     await script.startIos(app as never, { write: false });
 
@@ -484,13 +438,7 @@ describe("ApplicationScript", () => {
     const script = CommandContainer.get(ApplicationScript);
     const installSpecs = ["firebase@^12.13.0"];
     const { app, recorder } = createMobileApp({ missingMobileSpecs: installSpecs });
-    script.confirmMobileDependencyInstall = async (...args: unknown[]) => {
-      recorder.record("confirmMobileInstall", ...args);
-      return true;
-    };
-    script.applicationRunner.startAndroid = async (...args: unknown[]) => {
-      recorder.record("runner.startAndroid", ...args);
-    };
+    stubMobileStart(script, recorder);
 
     await script.startAndroid(app as never, { write: false });
 
@@ -509,15 +457,10 @@ describe("ApplicationScript", () => {
       appPlugins: ["@capacitor/core", "@capacitor/device", "@capacitor/browser"],
       appDependencies: { "@capacitor/core": "^8.3.4" },
     });
-    script.confirmMobileDependencyInstall = async () => true;
-    script.applicationRunner.startIos = async (...args: unknown[]) => {
-      recorder.record("runner.startIos", ...args);
-    };
+    stubMobileStart(script, recorder);
 
     await script.startIos(app as never, { write: false });
 
-    // Only the plugins absent from the app package.json are added, each pinned to "*"; the
-    // pre-declared "@capacitor/core" keeps its existing range.
     expect(getAppPackageJson().dependencies as Record<string, string>).toEqual({
       "@capacitor/core": "^8.3.4",
       "@capacitor/device": "*",
@@ -537,10 +480,7 @@ describe("ApplicationScript", () => {
       appPlugins: ["@capacitor/core", "@capacitor/device"],
       appDependencies: { "@capacitor/core": "*", "@capacitor/device": "*" },
     });
-    script.confirmMobileDependencyInstall = async () => true;
-    script.applicationRunner.startIos = async (...args: unknown[]) => {
-      recorder.record("runner.startIos", ...args);
-    };
+    stubMobileStart(script, recorder);
 
     await script.startIos(app as never, { write: false });
 
@@ -556,13 +496,7 @@ describe("ApplicationScript", () => {
     const script = CommandContainer.get(ApplicationScript);
     const installSpecs = ["firebase@^12.13.0"];
     const { app, recorder } = createMobileApp({ missingMobileSpecs: installSpecs });
-    script.confirmMobileDependencyInstall = async (...args: unknown[]) => {
-      recorder.record("confirmMobileInstall", ...args);
-      return false;
-    };
-    script.applicationRunner.startIos = async (...args: unknown[]) => {
-      recorder.record("runner.startIos", ...args);
-    };
+    stubMobileStart(script, recorder, { confirmed: false });
 
     await expect(script.startIos(app as never, { write: false })).rejects.toThrow(
       "Mobile builds require missing dependencies",
@@ -573,6 +507,58 @@ describe("ApplicationScript", () => {
     expect(recorder.names()).not.toContain("runner.startIos");
   });
 });
+
+const runsPackageTests = async () => {
+  const { root, pkg } = await createTempPackage();
+  tempRoots.push(root);
+  const runner = new ApplicationRunner();
+  const spawn = mock(async () => "");
+  pkg.spawn = spawn as never;
+
+  await runner.test(pkg);
+  expect(spawn).toHaveBeenCalledWith("bun", ["test", "--isolate"], {
+    stdio: "inherit",
+  });
+};
+
+const runsSignalTargetTests = async () => {
+  const { root, lib } = await createTempLib("shared");
+  tempRoots.push(root);
+  await writeText(
+    `${root}/node_modules/akanjs/package.json`,
+    JSON.stringify({
+      name: "akanjs",
+      version: "0.0.0",
+      exports: { "./package.json": "./package.json" },
+    }),
+  );
+  await writeText(`${root}/node_modules/akanjs/test/signalTest.preload.ts`, "export {};\n");
+  const runner = new ApplicationRunner();
+  const spawn = mock(async () => "");
+  lib.spawn = spawn as never;
+
+  await runner.test(lib);
+
+  expect(spawn).toHaveBeenCalledWith(
+    "bun",
+    [
+      "test",
+      "--isolate",
+      "--preload",
+      expect.stringContaining(path.join("node_modules", "akanjs", "test", "signalTest.preload.ts")),
+    ],
+    {
+      env: {
+        ...process.env,
+        AKAN_TEST_SIGNAL: "1",
+        AKAN_TEST_TARGET_TYPE: "lib",
+        AKAN_TEST_TARGET_NAME: "shared",
+        AKAN_TEST_LIBS: "",
+      },
+      stdio: "inherit",
+    },
+  );
+};
 
 describe("ApplicationRunner", () => {
   test("dbup brings up only what a mode runs on", async () => {
@@ -629,7 +615,6 @@ describe("ApplicationRunner", () => {
     expect(args[1]).toContain(
       `importFrom(${JSON.stringify(path.join(app.workspace.workspaceRoot, "local/transfer"))})`,
     );
-    // As a script the server registers no cron and runs no init job, so nothing writes beside the import.
     expect(options.env).toMatchObject({ AKAN_COMMAND_TYPE: "script", AKAN_DATABASE_MODE: "cluster" });
   });
 
@@ -661,107 +646,8 @@ describe("ApplicationRunner", () => {
     });
   });
 
-  test("runs bun test through the resolved executor", async () => {
-    const { root, pkg } = await createTempPackage();
-    tempRoots.push(root);
-    const runner = new ApplicationRunner();
-    const spawn = mock(async () => "");
-    pkg.spawn = spawn as never;
-
-    await runner.test(pkg);
-    expect(spawn).toHaveBeenCalledWith("bun", ["test", "--isolate"], {
-      stdio: "inherit",
-    });
-  });
-
-  test("runs signal target tests with preload resolved from installed akanjs", async () => {
-    const { root, lib } = await createTempLib("shared");
-    tempRoots.push(root);
-    await writeText(
-      `${root}/node_modules/akanjs/package.json`,
-      JSON.stringify({
-        name: "akanjs",
-        version: "0.0.0",
-        exports: { "./package.json": "./package.json" },
-      }),
-    );
-    await writeText(`${root}/node_modules/akanjs/test/signalTest.preload.ts`, "export {};\n");
-    const runner = new ApplicationRunner();
-    const spawn = mock(async () => "");
-    lib.spawn = spawn as never;
-
-    await runner.test(lib);
-
-    expect(spawn).toHaveBeenCalledWith(
-      "bun",
-      [
-        "test",
-        "--isolate",
-        "--preload",
-        expect.stringContaining(path.join("node_modules", "akanjs", "test", "signalTest.preload.ts")),
-      ],
-      {
-        env: {
-          ...process.env,
-          AKAN_TEST_SIGNAL: "1",
-          AKAN_TEST_TARGET_TYPE: "lib",
-          AKAN_TEST_TARGET_NAME: "shared",
-          AKAN_TEST_LIBS: "",
-        },
-        stdio: "inherit",
-      },
-    );
-  });
-
-  test("runs bun test through the resolved executor", async () => {
-    const { root, pkg } = await createTempPackage();
-    tempRoots.push(root);
-    const runner = new ApplicationRunner();
-    const spawn = mock(async () => "");
-    pkg.spawn = spawn as never;
-
-    await runner.test(pkg);
-    expect(spawn).toHaveBeenCalledWith("bun", ["test", "--isolate"], {
-      stdio: "inherit",
-    });
-  });
-
-  test("runs signal target tests with preload resolved from installed akanjs", async () => {
-    const { root, lib } = await createTempLib("shared");
-    tempRoots.push(root);
-    await writeText(
-      `${root}/node_modules/akanjs/package.json`,
-      JSON.stringify({
-        name: "akanjs",
-        version: "0.0.0",
-        exports: { "./package.json": "./package.json" },
-      }),
-    );
-    await writeText(`${root}/node_modules/akanjs/test/signalTest.preload.ts`, "export {};\n");
-    const runner = new ApplicationRunner();
-    const spawn = mock(async () => "");
-    lib.spawn = spawn as never;
-
-    await runner.test(lib);
-
-    expect(spawn).toHaveBeenCalledWith(
-      "bun",
-      [
-        "test",
-        "--isolate",
-        "--preload",
-        expect.stringContaining(path.join("node_modules", "akanjs", "test", "signalTest.preload.ts")),
-      ],
-      {
-        env: {
-          ...process.env,
-          AKAN_TEST_SIGNAL: "1",
-          AKAN_TEST_TARGET_TYPE: "lib",
-          AKAN_TEST_TARGET_NAME: "shared",
-          AKAN_TEST_LIBS: "",
-        },
-        stdio: "inherit",
-      },
-    );
-  });
+  test("runs bun test through the resolved executor", runsPackageTests);
+  test("runs signal target tests with preload resolved from installed akanjs", runsSignalTargetTests);
+  test("runs bun test through the resolved executor", runsPackageTests);
+  test("runs signal target tests with preload resolved from installed akanjs", runsSignalTargetTests);
 });

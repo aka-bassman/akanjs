@@ -103,7 +103,6 @@ describe("DevLogBuffer", () => {
     buffer.push("akan", "stdout", `${esc}[33mslow ${esc}[39mpayment\n`);
     expect(buffer.select({ grep: "slow payment" })).toHaveLength(1);
     expect(buffer.select({ grep: "SLOW" })).toHaveLength(1);
-    // Stored verbatim: stripping on the way in would throw the colour away.
     expect(buffer.select({})[0]?.text).toContain(esc);
     expect(stripAnsi(buffer.select({})[0]?.text ?? "")).toBe("slow payment");
   });
@@ -273,7 +272,6 @@ describe("devLogWindow", () => {
     expect(up).toBe(lines[7]?.seq);
     expect(windowOf(lines, 3, up).lines.map((line) => line.text)).toEqual(["line-6", "line-7", "line-8"]);
     expect(scrollAnchor(lines, 3, up, 2)).toBeNull();
-    // Past the end is still just "following", never an out-of-range anchor.
     expect(scrollAnchor(lines, 3, up, 99)).toBeNull();
   });
 
@@ -290,7 +288,6 @@ describe("devLogWindow", () => {
 
   test("an anchored line evicted from the ring falls back to the oldest page", () => {
     const lines = linesOf(10);
-    // Anchor at a seq older than anything still held.
     const view = windowOf(lines.slice(5), 3, lines[0]?.seq ?? 0);
     expect(view.lines.map((line) => line.text)).toEqual(["line-6", "line-7", "line-8"]);
   });
