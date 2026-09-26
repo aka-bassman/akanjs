@@ -19,7 +19,6 @@ const groupCommands = (commands: CommandCls[]) => {
 
     const targetMetas = getTargetMetas(command);
     for (const targetMeta of targetMetas) {
-      // Skip devOnly commands in help
       if (targetMeta.targetOption.devOnly) continue;
 
       const [allArgMetas] = getArgMetas(command, targetMeta.key);
@@ -53,7 +52,6 @@ export const formatHelp = (commands: CommandCls[], version: string) => {
   const groups = groupCommands(commands);
   const lines: string[] = [];
 
-  // Header
   lines.push("");
   lines.push(chalk.bold.cyan("  ╔═══════════════════════════════════════════════════╗"));
   lines.push(
@@ -66,18 +64,15 @@ export const formatHelp = (commands: CommandCls[], version: string) => {
   lines.push(chalk.gray(`  Version: ${version}`));
   lines.push("");
 
-  // Usage
   lines.push(chalk.bold.yellow("  USAGE"));
   lines.push("");
   lines.push(chalk.gray("    $ ") + chalk.white("akan") + chalk.gray(" <command> [options]"));
   lines.push("");
 
-  // Commands by category
   lines.push(chalk.bold.yellow("  COMMANDS"));
   lines.push("");
 
   for (const [groupName, group] of groups) {
-    // Skip empty groups (all commands are devOnly)
     if (group.commands.length === 0) continue;
 
     lines.push(chalk.bold.magenta(`    ${groupName}`));
@@ -87,17 +82,14 @@ export const formatHelp = (commands: CommandCls[], version: string) => {
       const cmdName = chalk.green(cmd.key);
       const cmdArgs = cmd.args.length > 0 ? chalk.gray(` ${cmd.args.join(" ")}`) : "";
 
-      // Format description: wrap if too long
       if (cmd.desc) {
         const maxLineLength = 70;
         const cmdPrefix = `      ${cmdName}${cmdArgs}`;
         const indent = "        ";
 
         if (cmdPrefix.length + cmd.desc.length + 3 < maxLineLength) {
-          // Single line
           lines.push(`${cmdPrefix}  ${chalk.gray(cmd.desc)}`);
         } else {
-          // Multi-line
           lines.push(cmdPrefix);
           lines.push(`${indent}${chalk.gray(cmd.desc)}`);
         }
@@ -108,7 +100,6 @@ export const formatHelp = (commands: CommandCls[], version: string) => {
     lines.push("");
   }
 
-  // Global Options
   lines.push(chalk.bold.yellow("  OPTIONS"));
   lines.push("");
   lines.push(`      ${chalk.green("-v, --verbose")}      ${chalk.gray("Enable verbose output")}`);
@@ -116,7 +107,6 @@ export const formatHelp = (commands: CommandCls[], version: string) => {
   lines.push(`      ${chalk.green("-V, --version")}      ${chalk.gray("Output version number")}`);
   lines.push("");
 
-  // Examples
   lines.push(chalk.bold.yellow("  EXAMPLES"));
   lines.push("");
   lines.push(chalk.gray("    # Create a new workspace"));
@@ -129,7 +119,6 @@ export const formatHelp = (commands: CommandCls[], version: string) => {
   lines.push(chalk.white("    $ akan create-module userProfile"));
   lines.push("");
 
-  // Footer
   lines.push(chalk.gray("  Documentation: ") + chalk.cyan("https://akanjs.com/docs"));
   lines.push(chalk.gray("  Report issues: ") + chalk.cyan("https://github.com/akan-team/akanjs/issues"));
   lines.push("");
@@ -153,7 +142,6 @@ export const formatCommandHelp = (command: CommandCls, key: string) => {
   }
   lines.push("");
 
-  // Usage
   const args = allArgMetas
     .filter((arg) => arg.type !== "Option")
     .map((arg) => {
@@ -173,7 +161,6 @@ export const formatCommandHelp = (command: CommandCls, key: string) => {
   lines.push(chalk.gray("    $ ") + chalk.white(`akan ${kebabKey}`) + (args ? chalk.gray(` ${args}`) : ""));
   lines.push("");
 
-  // Arguments
   const nonOptionArgs = allArgMetas.filter((arg) => arg.type !== "Option");
   if (nonOptionArgs.length > 0) {
     lines.push(chalk.bold.yellow("  ARGUMENTS"));
@@ -207,7 +194,6 @@ export const formatCommandHelp = (command: CommandCls, key: string) => {
     lines.push("");
   }
 
-  // Options
   const optionArgs = argMetas.filter((a) => a.type === "Option");
   if (optionArgs.length > 0) {
     lines.push(chalk.bold.yellow("  OPTIONS"));

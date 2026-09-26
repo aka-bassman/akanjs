@@ -83,11 +83,7 @@ export const normalizePrimitiveArgType = (type: PrimitiveArgType): NormalizedPri
 export const App = createInternalArgToken<AppExecutor, "App">("App");
 export type App = AppExecutor;
 
-/**
- * One or more apps, from a variadic positional (`akan start a b`, `akan start a,b`, `akan start all`)
- * or a checkbox when none is named. Reach for it only where running several is meaningful — every other
- * command takes `App`, whose single-select is unchanged.
- */
+/** One or more apps: `akan start a b`, `a,b` or `all`, or a checkbox when none is named. */
 export const Apps = createInternalArgToken<AppExecutor[], "Apps">("Apps");
 export type Apps = AppExecutor[];
 

@@ -243,8 +243,6 @@ describe("enum arg choices", () => {
     expect(await getOptionValue(optionMeta(["text", "json"]), { format: "json" }, context)).toBe("json");
   });
 
-  // Before this check `akan quality --format yaml` reached the script as "yaml" while the declaration
-  // claimed the parameter was "text" | "json".
   test("rejects an undeclared value in commander's wording", async () => {
     await expect(getOptionValue(optionMeta(["text", "json"]), { format: "yaml" }, context)).rejects.toThrow(
       "option '--format' argument 'yaml' is invalid. Allowed choices are text, json.",
@@ -269,8 +267,6 @@ describe("enum arg choices", () => {
     await expect(getOptionValue(labelled, { format: "JSON output" }, context)).rejects.toThrow("is invalid");
   });
 
-  // A DynamicEnum resolves against a context that is not populated yet, and the interactive select is its
-  // only consumer, so an explicit value passes through unchecked rather than being rejected wrongly.
   test("leaves a dynamic choice list unchecked", async () => {
     expect(
       await getOptionValue(
@@ -291,11 +287,7 @@ describe("enum arg type inference", () => {
     CommandContainer.clear();
   });
 
-  /**
-   * Compile-time only. Nothing here can fail at runtime: if `enum` stops narrowing, the parameter widens
-   * to the primitive and these calls stop typechecking, so the regression surfaces in `akan typecheck`
-   * rather than in fifteen `as "a" | "b"` casts creeping back into the command files.
-   */
+  //? Compile-time only: if `enum` stops narrowing, the parameter widens and these calls stop typechecking.
   const expectLiteral = <Expected>(_value: Expected) => undefined;
 
   test("a static enum narrows the exec parameter to its declared choices", () => {

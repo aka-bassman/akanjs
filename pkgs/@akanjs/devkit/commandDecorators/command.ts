@@ -10,9 +10,7 @@ import chalk from "chalk";
 import { type Command, program } from "commander";
 import { AppSelectionMemory } from "../appSelectionMemory";
 import { AppExecutor, Executor, LibExecutor, ModuleExecutor, PkgExecutor, WorkspaceExecutor } from "../executors";
-// Import the owning modules directly, never the root barrel: `..` re-exports all 41 devkit modules,
-// so a barrel import here drags ink, @trapezedev/project, ssh2 and the cloud stack into
-// every process that registers a command (measured: 236MB vs 3MB).
+// Never the root barrel: it drags ink, @trapezedev/project, ssh2 and the cloud stack into every command process.
 import { FileSys } from "../fileSys";
 import { getDirname } from "../getDirname";
 import type { PackageJson } from "../types";
@@ -97,30 +95,16 @@ const normalizeEnumChoices = (enumChoices: EnumChoices) =>
       : { value: choice, name: choice.toString() },
   );
 
-/**
- * The interactive prompt stack, loaded on the first prompt instead of at import.
- *
- * `runCommands` lives in this module, so a static import put `@inquirer/prompts` (~24MB) in the CLI
- * entry's chunk closure — and `akan start` holds that process for the whole dev session while never
- * asking a question, because every argument it needs is already on the command line.
- *
- * The wrappers are typed from the real prompts so no call site changes, and `import type` leaves no
- * runtime edge for the bundler to follow (`entryModuleGraph.test.ts` asserts that).
- */
+// Loaded on the first prompt: a static import keeps @inquirer/prompts (~24MB) resident for a whole `akan start`.
+// The types come through `import type`, which leaves no runtime edge (entryModuleGraph.test.ts asserts that).
 const prompts = async () => await import("@inquirer/prompts");
 const select = ((config, context) => prompts().then((m) => m.select(config, context))) as typeof inquirerSelect;
 const confirm = ((config, context) => prompts().then((m) => m.confirm(config, context))) as typeof inquirerConfirm;
 const input = ((config, context) => prompts().then((m) => m.input(config, context))) as typeof inquirerInput;
 const checkbox = ((config, context) => prompts().then((m) => m.checkbox(config, context))) as typeof inquirerCheckbox;
 
-/**
- * Rejects a value that is not one of the declared choices, in commander's own wording.
- *
- * Only a static choice list can be checked: a `DynamicEnum` resolves against the command context, which
- * is not populated until the internal args are resolved, and it is the interactive `select` that consumes
- * it. Comparison is stringly on purpose — the value still carries commander's raw string here, while a
- * numeric choice list holds numbers.
- */
+// A DynamicEnum is not checked: it resolves against a context the internal args have not populated yet.
+// Compared as strings: the value is still commander's raw string while a numeric choice list holds numbers.
 const assertEnumChoice = (argMeta: ArgMeta, value: unknown) => {
   const enumChoices = argMeta.argsOption.enum;
   if (!enumChoices || typeof enumChoices === "function") return;
@@ -217,18 +201,13 @@ const assertCurrentDirectoryIsWorkspaceRoot = async () => {
   );
 };
 
-/** A variadic positional arrives as an array, and each entry may itself be a comma-separated list. */
 const parseAppNameList = (value: string | string[] | undefined): string[] =>
   (Array.isArray(value) ? value : value === undefined ? [] : [value])
     .flatMap((entry) => entry.split(","))
     .map((entry) => entry.trim())
     .filter(Boolean);
 
-/**
- * The `Apps` token: named apps, `all`, or a checkbox when the command line names none. Kept out of
- * `getInternalArgumentValue` because it is the only internal arg whose positional is variadic, so it is
- * the only one whose raw value is an array.
- */
+// Kept out of getInternalArgumentValue: Apps is the only internal arg whose positional is variadic (an array).
 export const getAppsArgumentValue = async (
   value: string | string[] | undefined,
   workspace: WorkspaceExecutor,
@@ -355,14 +334,10 @@ export const runCommands = async (...commands: CommandCls[]) => {
   }
   process.env.AKAN_VERSION = cliPackageJson?.version ?? "0.0.1";
 
-  // Custom help handling
   const hasHelpFlag = process.argv.includes("--help") || process.argv.includes("-h");
   const hasCommand = process.argv.length > 2 && !process.argv[2]?.startsWith("-");
-
-  // Show help if: 1) explicit --help flag, or 2) no command provided (just "akan")
   if (hasHelpFlag || !hasCommand) {
     if (process.argv.length === 2 || (process.argv.length === 3 && hasHelpFlag)) {
-      // Global help (no specific command)
       Logger.rawLog(formatHelp(commands, process.env.AKAN_VERSION));
       process.exit(0);
     }
@@ -416,8 +391,6 @@ It may cause unexpected behavior. Run \`akan update\` to update latest akanjs.`,
           }
         }
         programCommand = programCommand.option(`-v, --verbose [boolean]`, `verbose output`);
-
-        // Override help completely for each command
         programCommand.helpInformation = () => {
           return formatCommandHelp(command, targetMeta.key);
         };
@@ -446,11 +419,9 @@ It may cause unexpected behavior. Run \`akan update\` to update latest akanjs.`,
                 cmdArgs[argMeta.idx] as string,
                 workspace,
               );
-            // set app name to env
             if (commandArgs[argMeta.idx] instanceof AppExecutor)
               process.env.AKAN_PUBLIC_APP_NAME = (commandArgs[argMeta.idx] as AppExecutor).name;
-            //? Only when exactly one app resolved. Publishing a name while several are in play would make
-            //? every env-derived answer in this process belong to whichever app happened to be last.
+            //? Only for a single app: with several, every env-derived answer would belong to whichever came last.
             else if (Array.isArray(commandArgs[argMeta.idx])) {
               const apps = commandArgs[argMeta.idx] as AppExecutor[];
               if (apps.length === 1 && apps[0]) process.env.AKAN_PUBLIC_APP_NAME = apps[0].name;

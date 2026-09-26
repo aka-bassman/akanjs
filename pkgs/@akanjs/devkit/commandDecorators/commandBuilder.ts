@@ -23,11 +23,7 @@ type PrimitiveValue<T extends PrimitiveArgType> = T extends StringConstructor
     ? number
     : boolean;
 type MaybeNullable<Value, Option> = Option extends { nullable: true } ? Value | null : Value;
-/**
- * The literal union a static `enum` declares, or `never` for a `DynamicEnum` — a function does not extend
- * a readonly array, so a runtime-resolved choice list falls back to the primitive type. `{ label, value }`
- * choices contribute their `value`.
- */
+// A DynamicEnum yields never (a function is no readonly array), so ArgValue falls back to the primitive type.
 type EnumValue<Option> = Option extends { enum: infer Choices }
   ? Choices extends readonly (infer Choice)[]
     ? Choice extends { value: infer Value }
