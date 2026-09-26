@@ -6,15 +6,41 @@ import type {
   CapacitorKeyboardInfo,
   CapacitorKeyboardModule,
 } from "./capacitor";
-import { debugFrame } from "./frameDebug";
 
 type DeviceInfo = CapacitorDeviceInfo;
 type Keyboard = CapacitorKeyboardModule["Keyboard"];
 type Haptics = CapacitorHapticsModule["Haptics"];
 type ImpactStyle = CapacitorHapticsModule["ImpactStyle"];
 type ProcessEnvLike = { env?: Record<string, string | undefined> };
+type DebugPayload = Record<string, unknown>;
 
 const globalWithProcess = globalThis as typeof globalThis & { process?: ProcessEnvLike };
+
+const debugSessionId = Math.random().toString(36).slice(2, 8);
+let debugSeq = 0;
+
+const isFrameDebugEnabled = () => {
+  if (typeof window === "undefined") return false;
+  const windowWithTarget = window as typeof window & { __AKAN_MOBILE_TARGET__?: unknown };
+  const search = new URLSearchParams(window.location.search);
+  return (
+    Boolean(windowWithTarget.__AKAN_MOBILE_TARGET__) ||
+    search.has("akanMobileTarget") ||
+    search.get("akanFrameDebug") === "1" ||
+    window.localStorage.getItem("akan:debug:frame") === "1"
+  );
+};
+
+export function debugFrame(event: string, payload: DebugPayload = {}) {
+  if (!isFrameDebugEnabled()) return;
+  debugSeq += 1;
+  const details = {
+    href: window.location.href,
+    now: Math.round(performance.now()),
+    ...payload,
+  };
+  console.info(`[akan:frame:${debugSessionId}:${debugSeq}] ${event}`, details, JSON.stringify(details));
+}
 
 interface DeviceInitOption {
   lang: string;
