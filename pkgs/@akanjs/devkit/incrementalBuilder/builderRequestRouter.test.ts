@@ -10,7 +10,6 @@ const routeReq = (id: number, routeId: string): BuilderReq => ({
   knownEntries: [],
 });
 
-/** `routeId` is what tells one generation's answer from the other's; the rest is an empty delta. */
 const routeRes = (id: number, routeId: string): Extract<BuilderRes, { ok: true }> => ({
   type: "build-route-res",
   id,
@@ -23,7 +22,6 @@ describe("BuilderRequestRouter", () => {
     const router = new BuilderRequestRouter();
     router.startGeneration();
 
-    // Everything but the id travels untouched; the builder never learns it was renumbered.
     const first = router.issue(routeReq(1, "/home"));
     const second = router.issue(routeReq(2, "/about"));
     expect(first.routeId).toBe("/home");
@@ -35,11 +33,6 @@ describe("BuilderRequestRouter", () => {
     expect(router.inFlightCount).toBe(0);
   });
 
-  /**
-   * The defect this class exists for. `BuilderRpc` numbers from 1 in every backend process, so without
-   * renumbering the second generation's `id: 1` request is settled by the first generation's answer —
-   * a page rendered against another route's client manifest — and its own answer is then dropped.
-   */
   test("does not deliver a dead generation's answer to the backend that replaced it", () => {
     const router = new BuilderRequestRouter();
     router.startGeneration();
@@ -70,7 +63,6 @@ describe("BuilderRequestRouter", () => {
     router.startGeneration();
     const outgoing = router.issue(routeReq(4, "/home"));
 
-    // The caller answers the backend itself in this case, so a late builder answer must not answer it again.
     router.withdraw(outgoing.id);
     expect(router.inFlightCount).toBe(0);
     expect(router.settle(routeRes(outgoing.id, "/home"))).toBeNull();
