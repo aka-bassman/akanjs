@@ -1,5 +1,5 @@
 import path from "node:path";
-import { AkanContextAnalyzer, type AkanModuleContext } from "./akanContext";
+import { AkanContextAnalyzer, type AkanDiagnostic, type AkanModuleContext } from "./akanContext";
 import type { Workspace } from "./commandDecorators";
 import type {
   AkanContextEvidence,
@@ -124,12 +124,6 @@ const optionalString = (args: Record<string, unknown>, key: string) => {
   return typeof value === "string" && value ? value : undefined;
 };
 
-const nestedStringArg = (args: Record<string, unknown>, key: string) => {
-  const value = args[key];
-  if (typeof value !== "string" || !value) throw new Error(`MCP tool argument "${key}" is required.`);
-  return value;
-};
-
 const isInspectAkanContextRequestType = (value: unknown): value is InspectAkanContextRequest["type"] =>
   typeof value === "string" && inspectAkanContextRequestTypes.includes(value as InspectAkanContextRequest["type"]);
 
@@ -192,49 +186,30 @@ export const inspectAkanContextPropsArg = (args: Record<string, unknown>): Inspe
   if (!isInspectAkanContextRequestType(args.request.type)) {
     throw new Error('MCP tool argument "request.type" must be a supported inspect_akan_context request type.');
   }
-  const draft = { reason: nestedStringArg(args.draft, "reason"), type: args.draft.type };
+  const base = { question, draft: { reason: stringArg(args.draft, "reason"), type: args.draft.type }, review };
   const request = args.request;
-  if (request.type === "workspaceOverview") return { question, draft, review, request: { type: request.type } };
+  if (request.type === "workspaceOverview") return { ...base, request: { type: request.type } };
   if (request.type === "moduleContext")
     return {
-      question,
-      draft,
-      review,
-      request: {
-        type: request.type,
-        app: nestedStringArg(request, "app"),
-        module: nestedStringArg(request, "module"),
-      },
+      ...base,
+      request: { type: request.type, app: stringArg(request, "app"), module: stringArg(request, "module") },
     };
   if (request.type === "fieldInsertionContext")
     return {
-      question,
-      draft,
-      review,
+      ...base,
       request: {
         type: request.type,
-        app: nestedStringArg(request, "app"),
-        module: nestedStringArg(request, "module"),
-        field: nestedStringArg(request, "field"),
-        fieldType: nestedStringArg(request, "fieldType"),
+        app: stringArg(request, "app"),
+        module: stringArg(request, "module"),
+        field: stringArg(request, "field"),
+        fieldType: stringArg(request, "fieldType"),
       },
     };
   if (request.type === "workflowDiagnostics")
-    return {
-      question,
-      draft,
-      review,
-      request: { type: request.type, runIdOrPlan: nestedStringArg(request, "runIdOrPlan") },
-    };
+    return { ...base, request: { type: request.type, runIdOrPlan: stringArg(request, "runIdOrPlan") } };
   return {
-    question,
-    draft,
-    review,
-    request: {
-      type: "escape",
-      reason: nestedStringArg(request, "reason"),
-      nextStep: optionalString(request, "nextStep"),
-    },
+    ...base,
+    request: { type: "escape", reason: stringArg(request, "reason"), nextStep: optionalString(request, "nextStep") },
   };
 };
 
@@ -391,11 +366,7 @@ export const applyMcpTools: McpToolDefinition[] = [
   },
 ];
 
-/**
- * `guidelineNames` fills the `get_guideline` enum. Without it the argument is a bare string and a model
- * has to guess one of the ~30 directory names, which it cannot see from here — the names are a
- * filesystem listing, so they can only arrive from a caller that already read it.
- */
+// `guidelineNames` fills the `get_guideline` enum; they are a filesystem listing only the caller has read.
 export const listAkanMcpTools = (
   mode: "readonly" | "plan" | "apply" = "readonly",
   { guidelineNames = [] }: { guidelineNames?: readonly string[] } = {},
@@ -523,29 +494,19 @@ export const inspectAkanContext = async (
       strict: true,
       runIdOrPlan: workspacePath(workspace, props.request.runIdOrPlan),
     });
+    const toWorkflowDiagnostic = (
+      { severity, code, message, scope }: AkanDiagnostic,
+      context: AkanDiagnostic["context"],
+    ): WorkflowDiagnostic => ({ severity, code, message, scope, context });
     const baselineSummary = createWorkflowBaselineSummary(
-      (doctor.baselineDiagnostics ?? []).map(
-        (diagnostic): WorkflowDiagnostic => ({
-          severity: diagnostic.severity,
-          code: diagnostic.code,
-          message: diagnostic.message,
-          scope: diagnostic.scope,
-          context: diagnostic.context,
-        }),
-      ),
+      (doctor.baselineDiagnostics ?? []).map((diagnostic) => toWorkflowDiagnostic(diagnostic, diagnostic.context)),
       { detailsIncluded: false },
     );
     diagnostics.push(
-      ...(doctor.workflowDiagnostics ?? doctor.diagnostics).map(
-        (diagnostic): WorkflowDiagnostic => ({
-          severity: diagnostic.severity,
-          code: diagnostic.code,
-          message: diagnostic.message,
-          scope: diagnostic.scope,
-          context: {
-            ...diagnostic.context,
-            ...(diagnostic.path ? { paths: [diagnostic.path] } : {}),
-          },
+      ...(doctor.workflowDiagnostics ?? doctor.diagnostics).map((diagnostic) =>
+        toWorkflowDiagnostic(diagnostic, {
+          ...diagnostic.context,
+          ...(diagnostic.path ? { paths: [diagnostic.path] } : {}),
         }),
       ),
     );
@@ -574,15 +535,11 @@ export const inspectAkanContext = async (
     );
   }
 
+  const moduleRequest =
+    props.request.type === "moduleContext" || props.request.type === "fieldInsertionContext" ? props.request : null;
   const context = await AkanContextAnalyzer.analyze(workspace, {
-    app:
-      props.request.type === "moduleContext" || props.request.type === "fieldInsertionContext"
-        ? props.request.app
-        : null,
-    module:
-      props.request.type === "moduleContext" || props.request.type === "fieldInsertionContext"
-        ? props.request.module
-        : null,
+    app: moduleRequest?.app ?? null,
+    module: moduleRequest?.module ?? null,
     includeAbstractContent: false,
   });
 
