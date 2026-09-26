@@ -33,11 +33,8 @@ export class Prompter {
     const guidelineRoot = await Prompter.#getGuidelineRoot();
     return (await fsPromise.readdir(guidelineRoot)).filter((name) => !name.startsWith("_")).sort();
   }
-  /**
-   * The name is checked against the directory listing rather than interpolated straight into a path:
-   * it arrives from an MCP tool argument, and an unknown one has to name the valid set instead of
-   * surfacing an ENOENT that carries the host's own paths.
-   */
+  // Checked against the listing, not interpolated into a path: the name is an MCP tool argument, and an unknown one
+  // must not surface an ENOENT carrying the host's paths.
   static async getInstruction(guideName: string): Promise<string> {
     const guideNames = await Prompter.listGuidelines();
     if (!guideNames.includes(guideName))
