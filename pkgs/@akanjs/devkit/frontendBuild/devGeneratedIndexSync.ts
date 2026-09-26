@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import { capitalize } from "akanjs/common";
 import { FileSys } from "../fileSys";
 
 const BARREL_FACETS = new Set(["common", "srvkit", "ui", "webkit", "plugin"]);
@@ -156,7 +157,5 @@ const exists = async (file: string) =>
   stat(file)
     .then(() => true)
     .catch(() => false);
-
-const capitalize = (value: string) => `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 
 const formatError = (err: unknown) => (err instanceof Error ? err.message : String(err));

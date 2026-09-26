@@ -420,8 +420,9 @@ export class FontOptimizer {
   }
 
   async #getSubsetPresetText(subset: ReactFontSubset) {
-    if (subset === "latin") return this.#rangeText(0x20, 0x7e);
-    if (subset === "latin-ext") return `${this.#rangeText(0x20, 0x7e)}${this.#rangeText(0xa0, 0x024f)}`;
+    if (subset === "latin") return FontOptimizer.#rangeText(0x20, 0x7e);
+    if (subset === "latin-ext")
+      return `${FontOptimizer.#rangeText(0x20, 0x7e)}${FontOptimizer.#rangeText(0xa0, 0x024f)}`;
     if (subset === "ks-x-1001") return FontOptimizer.#getKsX1001Text();
     if (subset === "auto") return this.#collectAutoSubsetText();
     return "";
@@ -447,12 +448,6 @@ export class FontOptimizer {
     return parts.join("");
   }
 
-  #rangeText(start: number, end: number) {
-    let text = "";
-    for (let code = start; code <= end; code++) text += String.fromCodePoint(code);
-    return text;
-  }
-
   static #getKsX1001Text() {
     if (FontOptimizer.#ksX1001Text) return FontOptimizer.#ksX1001Text;
     try {
@@ -466,12 +461,12 @@ export class FontOptimizer {
       }
       FontOptimizer.#ksX1001Text = [...chars].join("");
     } catch {
-      FontOptimizer.#ksX1001Text = FontOptimizer.#rangeTextStatic(0xac00, 0xd7a3);
+      FontOptimizer.#ksX1001Text = FontOptimizer.#rangeText(0xac00, 0xd7a3);
     }
     return FontOptimizer.#ksX1001Text;
   }
 
-  static #rangeTextStatic(start: number, end: number) {
+  static #rangeText(start: number, end: number) {
     let text = "";
     for (let code = start; code <= end; code++) text += String.fromCodePoint(code);
     return text;
