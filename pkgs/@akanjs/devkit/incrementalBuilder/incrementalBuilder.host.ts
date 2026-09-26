@@ -240,10 +240,7 @@ export class IncrementalBuilderHost {
     const lost = [...this.#inFlight];
     this.#inFlight.clear();
     this.logger.warn(`failing ${lost.length} unanswered builder request(s): ${reason}`);
-    for (const [id, type] of lost) {
-      if (type === "build-route") this.#onMessage({ type: "build-route-res", id, ok: false, error: reason });
-      else this.#onMessage({ type: "build-csr-res", id, ok: false, error: reason });
-    }
+    for (const [id, type] of lost) this.#onMessage({ type: `${type}-res`, id, ok: false, error: reason });
   }
   stop() {
     this.#manualStop = true;

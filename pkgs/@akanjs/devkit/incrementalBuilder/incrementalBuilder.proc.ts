@@ -38,6 +38,7 @@ interface IncrementalBuilderOptions {
 }
 
 type IncrementalBuilderBootDeps = Pick<IncrementalBuilderOptions, "artifact" | "optimizedFonts" | "discovery">;
+type BatchWork = Pick<BuildBatchRequest, "generation" | "needs" | "changedFiles">;
 
 class IncrementalBuilder {
   #logger = new Logger("IncrementalBuilder");
@@ -257,13 +258,12 @@ class IncrementalBuilder {
     }, 150);
   }
   async installWatcher() {
-    const artifactDir = this.#artifactDir;
     const roots = await new WatchRootResolver(this.#app).resolve();
     const watcher = new HmrWatcher({
       roots,
       logger: this.#logger,
       onBatch: async (batch: ChangeBatch) => {
-        await this.#enqueueWork("hmr-batch", async () => this.#handleWatchBatch(artifactDir, batch));
+        await this.#enqueueWork("hmr-batch", async () => this.#handleWatchBatch(batch));
       },
     });
     await watcher.start();
@@ -271,7 +271,7 @@ class IncrementalBuilder {
     this.#logger.verbose(`watching ${roots.length} roots`);
   }
 
-  async #handleWatchBatch(artifactDir: string, batch: ChangeBatch) {
+  async #handleWatchBatch(batch: ChangeBatch) {
     const rawKinds = new Set(batch.kinds);
     if (rawKinds.size === 0) return;
     const generation = ++this.#generation;
@@ -333,7 +333,7 @@ class IncrementalBuilder {
 
     const needs: BuildBatchNeed[] = [];
     if (kinds.includes("code") && rebuildClient) {
-      if (this.#shouldRebuildCsr()) needs.push("csr");
+      if (this.#csrActive) needs.push("csr");
       else
         this.#logger.verbose(
           `csr-rebundle skipped; request /__csr or ?csr=true (or set AKAN_DEV_CSR_REBUILD=1) to enable per-save CSR rebuilds`,
@@ -354,19 +354,10 @@ class IncrementalBuilder {
     }
   }
 
-  async #runBatch({
-    generation,
-    needs,
-    changedFiles,
-  }: {
-    generation: number;
-    needs: BuildBatchNeed[];
-    changedFiles: string[];
-  }): Promise<BuildBatchResult> {
+  async #runBatch(work: BatchWork): Promise<BuildBatchResult> {
+    const { generation, needs, changedFiles } = work;
     const started = Date.now();
-    const result = await this.#batchRunner.run(await this.#batchRequest({ generation, needs, changedFiles }), (msg) =>
-      BuilderChannel.emit(msg),
-    );
+    const result = await this.#batchRunner.run(await this.#batchRequest(work), (msg) => BuilderChannel.emit(msg));
     if (result.optimizedFonts) this.#optimizedFonts = result.optimizedFonts;
     if (result.cssAssets) this.#artifact = { ...this.#artifact, cssAssets: result.cssAssets };
     // A crashed worker streamed no build-status, so each need goes red here instead of looking silently successful.
@@ -380,15 +371,7 @@ class IncrementalBuilder {
     return result;
   }
 
-  async #batchRequest({
-    generation,
-    needs,
-    changedFiles,
-  }: {
-    generation: number;
-    needs: BuildBatchNeed[];
-    changedFiles: string[];
-  }): Promise<BuildBatchRequest> {
+  async #batchRequest({ generation, needs, changedFiles }: BatchWork): Promise<BuildBatchRequest> {
     return {
       appName: this.#app.name,
       workspaceRoot: this.#app.workspace.workspaceRoot,
@@ -467,10 +450,6 @@ class IncrementalBuilder {
       this.#logger.info(`csr-build ok on demand (${Date.now() - started}ms); rebuilding CSR on every save now`);
       await BuilderChannel.send({ type: "build-csr-res", id: msg.id, ok: true });
     });
-  }
-
-  #shouldRebuildCsr() {
-    return this.#csrActive;
   }
 
   static #csrArmedByEnv() {
@@ -582,23 +561,14 @@ class IncrementalBuilder {
         void builder.shutdown(msg.reason);
         return;
       }
-      if (msg.type === "build-route") {
+      if (msg.type !== "build-route" && msg.type !== "build-csr") return;
+      if (!builder || builder.shuttingDown) {
         const error = builder?.shuttingDown ? recyclingError : bootingError;
-        if (!builder || builder.shuttingDown) {
-          BuilderChannel.emit({ type: "build-route-res", id: msg.id, ok: false, error });
-          return;
-        }
-        void builder.handleBuildRoute(msg);
+        BuilderChannel.emit({ type: `${msg.type}-res`, id: msg.id, ok: false, error });
         return;
       }
-      if (msg.type === "build-csr") {
-        const error = builder?.shuttingDown ? recyclingError : bootingError;
-        if (!builder || builder.shuttingDown) {
-          BuilderChannel.emit({ type: "build-csr-res", id: msg.id, ok: false, error });
-          return;
-        }
-        void builder.handleBuildCsr(msg);
-      }
+      if (msg.type === "build-route") void builder.handleBuildRoute(msg);
+      else void builder.handleBuildCsr(msg);
     });
     // Closes when the host dies (even by SIGKILL): nothing left to drain, and an orphan would rebuild for nobody.
     process.on("disconnect", () => {
