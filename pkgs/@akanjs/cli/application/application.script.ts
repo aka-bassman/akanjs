@@ -21,8 +21,7 @@ import { LibraryScript } from "../library/library.script";
 import { ApplicationRunner, type LogsOptions } from "./application.runner";
 import { DevPortReclaimer } from "./devPortReclaimer";
 import { DevStreamView } from "./devStreamView";
-import { DevSupervisor } from "./devSupervisor";
-import { type DevUiMode, resolveDevUi } from "./devUiMode";
+import { DevSupervisor, type DevUiMode } from "./devSupervisor";
 import { InterruptTeardown } from "./interruptTeardown";
 
 interface StartOptions {
@@ -248,7 +247,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   ) {
     const first = apps[0];
     if (!first) throw new Error("No app selected to start");
-    const { mode, downgraded } = resolveDevUi(plain);
+    const { mode, downgraded } = DevSupervisor.resolveDevUi(plain);
     if (downgraded) first.workspace.log("no sized terminal to draw on; printing prefixed lines instead");
     if (kill) await this.reclaimDevPorts(apps);
     const shares = share ? await this.#shareOnInterrupt(apps) : null;
@@ -319,9 +318,10 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     if (!workspace) throw new Error("No app selected to start");
     const startedDatabase = dbup ? await this.#prepareSharedDatabase(apps) : false;
     const supervisor = new DevSupervisor({ apps, mode, concurrency, open, write, shares });
+    // `ink` stays behind `import()`: entryModuleGraph.test.ts fails if the CLI entry reaches it eagerly.
     const view =
       mode === "tui"
-        ? await (await import("./devTuiView")).createDevTuiView(supervisor)
+        ? new (await import("./devTui")).DevTui(supervisor)
         : new DevStreamView(apps.map((app) => app.name));
     await supervisor.run(view);
     //* Only what this session brought up: the compose project is workspace-wide, shared with other checkouts.

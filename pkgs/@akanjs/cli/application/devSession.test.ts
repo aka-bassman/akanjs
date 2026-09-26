@@ -11,8 +11,8 @@ import { scrollAnchor, windowOf } from "./devLogWindow";
 import { DevPortReclaimer } from "./devPortReclaimer";
 import { DevSessionLog } from "./devSessionLog";
 import { DevSupervisor } from "./devSupervisor";
-import { resolveDevUi } from "./devUiMode";
 
+const { resolveDevUi } = DevSupervisor;
 const tty = { isTty: true, columns: 120 };
 const lineOf = (seq: number, app: string, text: string) => ({
   seq,

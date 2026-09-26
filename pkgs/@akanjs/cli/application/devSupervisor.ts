@@ -3,7 +3,8 @@ import type { App } from "@akanjs/devkit/commandDecorators";
 import { openBrowser } from "../openBrowser";
 import { DevBootConcurrency } from "./devBootConcurrency";
 import { DevSessionLog } from "./devSessionLog";
-import type { DevUiMode } from "./devUiMode";
+
+export type DevUiMode = "stream" | "tui";
 
 export interface DevAppStatus {
   app: App;
@@ -49,6 +50,18 @@ interface DevChild {
 // One `akan start <app>` child process per app, not several `AkanAppHost`s in one: `prepareCommand` publishes
 // per-app values into `process.env`, and a second app would read the first's `AKAN_DATABASE_MODE` as an override.
 export class DevSupervisor {
+  // Ink needs a terminal that reports a size; a pipe, a redirect or CI downgrades (and says so) rather than failing.
+  static resolveDevUi(
+    plain: boolean,
+    {
+      isTty = !!process.stdout.isTTY,
+      columns = process.stdout.columns ?? 0,
+    }: { isTty?: boolean; columns?: number } = {},
+  ): { mode: DevUiMode; downgraded: boolean } {
+    if (plain) return { mode: "stream", downgraded: false };
+    if (!isTty || columns <= 0) return { mode: "stream", downgraded: true };
+    return { mode: "tui", downgraded: false };
+  }
   /** A child that sees it in its env reports its state over ipc instead of only printing it. */
   static readonly supervisedEnvKey = "AKAN_DEV_SUPERVISED";
 
