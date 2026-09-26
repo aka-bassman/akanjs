@@ -3,14 +3,9 @@ import { type App, runner, type Workspace } from "@akanjs/devkit/commandDecorato
 import { Logger } from "akanjs/common";
 import chalk from "chalk";
 import { writeClipboard } from "../clipboard";
-import { TunnelShare } from "./TunnelShare";
+import { TunnelShare, type TunnelShareOptions } from "./TunnelShare";
 
-export interface ShareOptions {
-  workspace: Workspace;
-  host?: string;
-  port?: number;
-  ttlMinutes?: number;
-}
+export type ShareOptions = Omit<TunnelShareOptions, "onLost">;
 
 export class TunnelRunner extends runner("tunnel") {
   /** Opens the share and blocks until the operator interrupts, because the agent is the process. */

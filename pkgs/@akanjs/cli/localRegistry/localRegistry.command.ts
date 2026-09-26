@@ -18,19 +18,9 @@ export class LocalRegistryCommand extends command("local-registry", [LocalRegist
     }),
   smokeRegistry: target({ devOnly: true, desc: "Publish to local registry and build a generated workspace" })
     .with(Workspace)
-    .option("tag", String, {
-      flag: "g",
-      desc: "dist-tag for local registry publish",
-      default: "rc",
-    })
-    .option("test", Boolean, {
-      desc: "run package tests before publishing",
-      default: true,
-    })
-    .option("registry", String, {
-      desc: "local npm registry URL",
-      default: process.env.AKAN_NPM_REGISTRY,
-    })
+    .option("tag", String, { flag: "g", desc: "dist-tag for local registry publish", default: "rc" })
+    .option("test", Boolean, { desc: "run package tests before publishing", default: true })
+    .option("registry", String, { desc: "local npm registry URL", default: process.env.AKAN_NPM_REGISTRY })
     .exec(async function (workspace, tag, test, registry) {
       await this.localRegistryScript.smoke(workspace, { tag, test, registryUrl: registry });
     }),
