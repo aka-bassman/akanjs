@@ -1,22 +1,9 @@
 import ts from "typescript";
 import type { QualityWarning, SourceFileInfo } from "./qualityScanner";
 
-/**
- * The inventory of model fields a screen writes but does not publish.
- *
- * A control handed `onChange={st.do.setTitleOnTask}` **by reference** names the field it writes, so it emits
- * `data-akan-action` and `useFieldTool` publishes the field to the in-page agent. Any wrapper around that setter is
- * an anonymous closure carrying neither, and the field goes quiet — for the agent, for an E2E selector, and for the
- * accessibility tree.
- *
- * `no-unpublished-form-setter.grit` is the per-line enforcement, and it fires only on a pure forwarding wrapper,
- * because every other shape has a legitimate reading and a lint error would be wrong. This is the other half: the
- * per-file count of fields that ended up unreachable whatever the reason, which is the number worth watching. A
- * warning rather than an error for the same reason — the remedy depends on why the wrapper is there.
- *
- * Only a handler that takes a parameter is counted. A zero-parameter handler (`onClick={() => st.do.setStatusOnUser
- * ("active")}`) is a button setting a constant, not a form control, and its remedy is an `st.tool` beside it.
- */
+// Only a setter passed by reference publishes its field (`data-akan-action`, agent tool). The grit rule flags only pure
+// forwarding wrappers; this counts every field left unpublished whatever the reason. A zero-parameter handler is a
+// button setting a constant, not a form control, so it is not counted.
 export class FormSetterScanner {
   static #fieldSetter = /^set[A-Za-z0-9_$]*On[A-Za-z0-9_$]*$/;
 
