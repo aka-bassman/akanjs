@@ -96,31 +96,20 @@ function Render<T extends string, Full extends { id: string }>({
 }
 
 export default function View<T extends string, Full extends { id: string }>({
-  className,
   view,
-  noDiv,
-  loading,
   empty,
-  renderView,
+  ...props
 }: ViewProps<T, Full>) {
-  //get Props
-  const props: ViewProps<T, Full> = {
-    className,
-    view,
-    noDiv,
-    loading,
-    renderView,
-  };
   return (
     <Stream
       of={view}
       fallback={
-        loading === undefined ? (
+        props.loading === undefined ? (
           <div className="size-full">
             <Loading.Skeleton active />
           </div>
         ) : (
-          loading
+          props.loading
         )
       }
     >
