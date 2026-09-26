@@ -33,35 +33,29 @@ describe("Executor filesystem helpers", () => {
     const root = await makeTempRoot();
     const exec = new Executor("fixture", root);
 
-    let error: unknown;
-    try {
-      await exec.spawn(process.execPath, ["--eval", "console.error('spawn failed'); process.exit(7)"]);
-    } catch (caught) {
-      error = caught;
-    }
-
+    const error = await exec
+      .spawn(process.execPath, ["--eval", "console.error('spawn failed'); process.exit(7)"])
+      .catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(CommandExecutionError);
-    expect((error as CommandExecutionError).message).toContain(`Command failed: ${process.execPath}`);
-    expect((error as CommandExecutionError).message).toContain(`cwd: ${root}`);
-    expect((error as CommandExecutionError).message).toContain("exit code: 7");
-    expect((error as CommandExecutionError).message).toContain("spawn failed");
+    const { message } = error as CommandExecutionError;
+    expect(message).toContain(`Command failed: ${process.execPath}`);
+    expect(message).toContain(`cwd: ${root}`);
+    expect(message).toContain("exit code: 7");
+    expect(message).toContain("spawn failed");
   });
 
   test("reports inherited stdio command failures with a fallback message", async () => {
     const root = await makeTempRoot();
     const exec = new Executor("fixture", root);
 
-    let error: unknown;
-    try {
-      await exec.spawn(process.execPath, ["--eval", "process.exit(3)"], { stdio: "inherit" });
-    } catch (caught) {
-      error = caught;
-    }
-
+    const error = await exec
+      .spawn(process.execPath, ["--eval", "process.exit(3)"], { stdio: "inherit" })
+      .catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(CommandExecutionError);
-    expect((error as CommandExecutionError).message).toContain(`Command failed: ${process.execPath}`);
-    expect((error as CommandExecutionError).message).toContain(`cwd: ${root}`);
-    expect((error as CommandExecutionError).message).toContain("exit code: 3");
+    const { message } = error as CommandExecutionError;
+    expect(message).toContain(`Command failed: ${process.execPath}`);
+    expect(message).toContain(`cwd: ${root}`);
+    expect(message).toContain("exit code: 3");
   });
 
   test("resolves paths and reads/writes files relative to cwd", async () => {
