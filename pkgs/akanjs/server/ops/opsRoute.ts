@@ -112,7 +112,8 @@ export class OpsRoute {
       uploadUrls?: { main?: unknown; solid?: unknown; manifest?: unknown };
     } | null;
     const id = typeof body?.id === "string" ? body.id : "";
-    if (!SqliteSnapshot.idPattern.test(id)) return OpsRoute.#json({ error: "id must match [A-Za-z0-9._-]{1,64}" }, 400);
+    if (!SqliteSnapshot.idPattern.test(id))
+      return OpsRoute.#json({ error: `id must match ${SqliteSnapshot.idPattern.source}` }, 400);
     const includeSolid = body?.includeSolid === true;
     const main = OpsRoute.#uploadUrl(body?.uploadUrls?.main);
     const manifest = OpsRoute.#uploadUrl(body?.uploadUrls?.manifest);
