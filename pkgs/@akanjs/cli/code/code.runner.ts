@@ -25,15 +25,7 @@ export class CodeRunner extends runner("code") {
       import("@akanjs/devkit/codeAgent/agent/CodeAgentRpcListener"),
     ]);
     const address = listen ? CodeAgentRpcListener.parse(listen) : null;
-    const profile = CodeRunner.profileOf(options, { hostAttached: true });
-    const agent = await CodeAgent.create({
-      workspace: options.workspace,
-      cwd: profile.paths.root,
-      profile,
-      apps: options.app ? [options.app] : await options.workspace.getApps(),
-      model: CodeRunner.modelOf(options.model),
-      mode: "rpc",
-    });
+    const agent = await CodeAgent.create({ ...(await CodeRunner.#agentOptions(options, true)), mode: "rpc" });
     if (!address) return await new CodeAgentRpcHost(agent).serve();
     const listener = new CodeAgentRpcListener(new CodeAgentRpcHost(agent, null), address).listen();
     process.stderr.write(
@@ -47,22 +39,13 @@ export class CodeRunner extends runner("code") {
       import("@akanjs/devkit/codeAgent/agent/CodeAgent"),
       import("./CodeTui"),
     ]);
-    const profile = CodeRunner.profileOf(options, { hostAttached: false });
-    const apps = options.app ? [options.app] : await options.workspace.getApps();
+    const agentOptions = await CodeRunner.#agentOptions(options, false);
     let resume = options.resume;
     let prompt = seed;
     let notice: string | undefined;
     // A session switch rebuilds the agent: the engine binds extensions, tools and context to it at construction.
     for (;;) {
-      const agent = await CodeAgent.create({
-        workspace: options.workspace,
-        cwd: profile.paths.root,
-        profile,
-        apps,
-        model: CodeRunner.modelOf(options.model),
-        mode: "tui",
-        ...(resume ? { resume } : {}),
-      });
+      const agent = await CodeAgent.create({ ...agentOptions, mode: "tui", ...(resume ? { resume } : {}) });
       let next: CodeTuiExit | undefined;
       try {
         next = await new CodeTui(agent, {
@@ -81,14 +64,7 @@ export class CodeRunner extends runner("code") {
 
   async run(prompt: string, options: CodeRunOptions) {
     const { CodeAgent } = await import("@akanjs/devkit/codeAgent/agent/CodeAgent");
-    const profile = CodeRunner.profileOf(options, { hostAttached: false });
-    const agent = await CodeAgent.create({
-      workspace: options.workspace,
-      cwd: profile.paths.root,
-      profile,
-      apps: options.app ? [options.app] : await options.workspace.getApps(),
-      model: CodeRunner.modelOf(options.model),
-    });
+    const agent = await CodeAgent.create(await CodeRunner.#agentOptions(options, false));
     const printer = new CodeAgentStreamPrinter({ json: options.json, thinking: options.thinking });
     agent.on((event) => printer.print(event));
     agent.announce();
@@ -99,6 +75,17 @@ export class CodeRunner extends runner("code") {
       printer.finish();
       agent.dispose();
     }
+  }
+
+  static async #agentOptions(options: CodeRunOptions, hostAttached: boolean) {
+    const profile = CodeRunner.profileOf(options, { hostAttached });
+    return {
+      workspace: options.workspace,
+      cwd: profile.paths.root,
+      profile,
+      apps: options.app ? [options.app] : await options.workspace.getApps(),
+      model: CodeRunner.modelOf(options.model),
+    };
   }
 
   static profileOf(options: CodeRunOptions, { hostAttached }: { hostAttached: boolean }): CodeAgentProfile {
