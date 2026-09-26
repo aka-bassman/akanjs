@@ -22,14 +22,8 @@ export interface ErrorConstructor {
 }
 
 /**
- * Rebuilds what a remote process reported: the caller's own `Err` when this client was given one, and a
- * duck-typed `Error` carrying the same payload otherwise.
- *
- * The `toJSON` is what makes the second case rethrowable. A server process that calls another with `{ origin }`
- * and lets the failure propagate is answered by `SignalContext.try`, which forwards a payload only when the
- * thrown value carries both `statusCode` and `toJSON`; anything else is this repo's own bug and is generalized
- * to `Internal Server Error`. Without it the hop loses the dictionary key and its data, and the browser toasts
- * the generalization instead of the sentence the remote endpoint chose.
+ * The caller's own `Err` when given one, else a duck-typed `Error` with the same payload, whose `toJSON` lets
+ * `SignalContext.try` forward the remote key and data rather than generalize to `Internal Server Error`.
  */
 export const restoreRemoteError = (
   body: unknown,

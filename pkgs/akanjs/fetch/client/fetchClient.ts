@@ -84,7 +84,6 @@ type ClientSignalMap<SigType extends { fetch: any }> = {
     : never;
 };
 
-/** Runtime fetch client that registers serialized Akan signals as HTTP/WebSocket methods. */
 export class FetchClient {
   static {
     ConstantRegistry.setScalar(agentTurnConstant.refName, agentTurnConstant);
@@ -96,7 +95,6 @@ export class FetchClient {
   readonly handler: Record<string, FetchHandler>;
   readonly slice: Record<string, SliceMeta> = {};
   readonly sortKeyMap = new Map<string, string[]>();
-  /** refName → sort key → the field map that key orders by. Read by live insertion, which has to place a row. */
   readonly sortValueMap = new Map<string, { [key: string]: { [path: string]: 1 | -1 } }>();
   readonly filterQueryMap = new Map<string, { [queryKey: string]: SerializedArg[] }>();
   readonly #originWs = new Map<string, WsClient>();
@@ -119,12 +117,7 @@ export class FetchClient {
     this.handler = this.#makeHandlerProxy();
     this.applySignal(serializedSignal);
   }
-  /**
-   * Every signal any client in this process has applied, which is the whole callable surface of the app.
-   *
-   * A copy, because this is the registry each client merges its own signals into and a reader that mutated it
-   * would change what the next client applies. Read by the agent catalogue, which needs the argument schemas.
-   */
+  /** A copy of every signal any client in this process applied, so a reader cannot change what the next applies. */
   static get sharedSerializedSignal(): { [key: string]: SerializedSignal } {
     return { ...sharedSignalRegistry.signal };
   }
@@ -173,10 +166,7 @@ export class FetchClient {
         }
       : signal;
   }
-  /**
-   * The budget for every call that neither names one nor is served by an endpoint declaring one. `false` waits
-   * as long as the runtime will, which is the browser's own limit — minutes.
-   */
+  /** For calls neither the caller nor the endpoint budgets; `false` waits as long as the runtime will (minutes). */
   setTimeout(timeout?: number | false) {
     this.http.setTimeout(timeout);
   }
@@ -204,8 +194,7 @@ export class FetchClient {
           this.#registerSlice(refName, suffix, slice, signal.prefix);
       }
       if (signal.filter) {
-        // The merged copy, not the incoming one: a lib signal applied on its own carries only its own
-        // filters, and the map a UI reads has to hold every filter the model ended up with.
+        // The merged copy: a lib signal applied on its own carries only its own filters.
         const filter = this.serializedSignal[refName]?.filter ?? signal.filter;
         this.#registerFilterSortKey(refName, filter.sortKeys, filter.sorts);
         this.#registerFilterQuery(refName, filter.filter);
@@ -277,8 +266,7 @@ export class FetchClient {
     this.ws.setJwt(jwt);
     for (const ws of this.#originWs.values()) ws.setJwt(jwt);
   }
-  // A socket's URL is fixed for its lifetime, so `FetchPolicy.origin` cannot redirect the shared one:
-  // it resolves a second socket per origin, connected on first use and torn down by `disconnect()`.
+  // A socket's URL is fixed, so `FetchPolicy.origin` gets a socket of its own, connected on first use.
   #resolveWs(origin?: string) {
     if (!origin) return this.ws;
     const target = origin.replace(/\/+$/, "");
@@ -327,12 +315,10 @@ export class FetchClient {
           const headers = this.#makeAuthHeaders(option);
           const baseUrl = option?.origin;
           const timeout = option?.timeout ?? endpoint.timeout;
-          // A per-request origin override targets an arbitrary server, so the shared
-          // request-query cache (keyed by the client origin) must be bypassed.
+          // An origin override targets another server, so it bypasses the request-query cache keyed by this origin.
           const requestQuery = () => this.http.get(url, { headers, baseUrl, timeout });
-          // Only a caller that did not start the request parses a copy: the memo hands one response object to
-          // every caller in the request and a parsed model can hold references into it. Nothing memoizes outside
-          // a request store — the browser parses what it received.
+          // A caller that did not start the request parses a copy: the memo hands one response to every caller in
+          // the request, and a parsed model can hold references into it.
           const claim = baseUrl
             ? { value: requestQuery(), owned: true }
             : claimRequestQuery(FetchClient.#makeRequestQueryCacheKey(this.origin, url, headers), requestQuery);
@@ -469,12 +455,10 @@ export class FetchClient {
       modelId: `${refName}Id`,
       lightModel: `light${capRefName}`,
     };
-    // create/update/remove fall back to the shared cruGuards when they don't override it.
     const createGuards = signal.createGuards ?? signal.cruGuards;
     const updateGuards = signal.updateGuards ?? signal.cruGuards;
     const removeGuards = signal.removeGuards ?? signal.cruGuards;
-    // These endpoints exist only from here, so the signal's own answer is stamped on as they are built — the
-    // catalogue and the browser explorer then read one resolved field instead of re-deriving the rule.
+    // Stamped on here, where these endpoints are born, so every reader sees one resolved field.
     const mcp = (verb: keyof NonNullable<SerializedSignal["mcp"]>) => ({
       ...(signal.mcp?.[verb] === false ? { mcp: false as const } : {}),
       ...(signal.agents?.[verb] === false ? { agents: false as const } : {}),
@@ -549,8 +533,7 @@ export class FetchClient {
       this.#setHandlerFactory(key, () => this.#makeHttpFn(key, value, signal.prefix));
     });
 
-    // view/edit read through the model's get handler, so they exist exactly when it does; edit also needs a
-    // create/update/remove endpoint to hand the form to, and merge wraps updateModel.
+    // view/edit exist exactly when the get handler does; edit also needs a write endpoint; merge wraps updateModel.
     const anyCruGuards = signal.cruGuards ?? signal.createGuards ?? signal.updateGuards ?? signal.removeGuards;
     const updateGuards = signal.updateGuards ?? signal.cruGuards;
     if (signal.getGuards) {
@@ -615,11 +598,7 @@ export class FetchClient {
     );
   }
 
-  /**
-   * `view<Model>` and `edit<Model>` differ only in the key their payload lands under, so they share one read.
-   * The full model is built lazily for the same reason a slice's list is: a route that only hands the payload to
-   * `Load.View` never reads it, and `ViewAt` is stamped once so two reads agree.
-   */
+  //* The full model is built lazily — a route handing the payload to `Load.View` never reads it; `ViewAt` stamps once.
   #makeModelHandleFn(refName: string, modelKey: string, callerKey: string, payloadKey: string) {
     return ((id: string, option?: FetchPolicy) => {
       const cnst = ConstantRegistry.getDatabase(refName);
@@ -655,8 +634,7 @@ export class FetchClient {
       insight: `${refName}Insight${capSuffix}`,
       live: `${refName}Live${capSuffix}`,
     };
-    // A slice's own answer covers both entries it generates: one `mcp: false` on `init()` takes the list and the
-    // aggregate together, which is what an author writing it means.
+    // One `mcp: false` on `init()` covers both the list and the aggregate.
     const mcp = {
       ...(slice.mcp === false ? { mcp: false as const } : {}),
       ...(slice.agents === false ? { agents: false as const } : {}),
@@ -677,9 +655,8 @@ export class FetchClient {
         ...mcp,
       },
     };
-    // The live room, when the slice declared one. Its arguments are the slice's own, retyped as room arguments so
-    // the client builds the same room id the server does; the envelope rides `Any` because the Light inside it was
-    // already masked and serialized on the way out.
+    // Room args are the slice's own, so the client builds the server's room id; `Any`, as the Light inside was
+    // masked and serialized on the way out.
     if (slice.live)
       endpoint[names.live] = {
         type: "pubsub",
@@ -702,8 +679,7 @@ export class FetchClient {
     };
 
     const endpoint = FetchClient.getEndpointFromSlice(refName, suffix, slice);
-    // Through `#registerEndpoint` rather than `#makeHttpFn` directly: a slice can now generate a pubsub entry as
-    // well, and that one is a socket subscription rather than a request.
+    // Through `#registerEndpoint`: a slice may also generate a pubsub entry, which is no request.
     Object.entries(endpoint).forEach(([key, value]) => {
       this.#registerEndpoint(key, value, prefix);
     });
@@ -899,8 +875,7 @@ export class FetchClient {
           if (handler) return handler;
         }
         const value = (instance as unknown as Record<PropertyKey, unknown>)[prop];
-        // A method read off the proxy runs with `this` bound to the proxy, and `#private` fields are
-        // unreachable from anything but the instance itself — `fetch.setJwt()` would throw on `#originWs`.
+        // Bound to the instance: with `this` as the proxy, `#private` fields throw (`fetch.setJwt()` on `#originWs`).
         return typeof value === "function" ? value.bind(instance) : value;
       },
     }) as FetchProxy<FetchType, SliceMetaObj>;

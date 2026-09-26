@@ -25,13 +25,7 @@ interface SubscribeOption {
   key: string;
   data: unknown[];
   listener: Set<(data: unknown) => void>;
-  /**
-   * Called after this room has been resubscribed following a dropped connection.
-   *
-   * Everything published while the socket was down is gone, and a room has no way to say which messages those
-   * were, so the only honest thing it can report is that it is behind. A plain pubsub subscriber declares none of
-   * these and is unaffected.
-   */
+  /** After a resubscribe following a drop: what was published meanwhile is gone, so a room can only say so. */
   resync: Set<() => void>;
 }
 interface Listener {
@@ -53,12 +47,8 @@ export class WsClient {
   #reconnectAttempts = 0;
   #roomSubscribeMap = new Map<string, SubscribeOption>();
   /**
-   * Server room id → the id this client subscribed under, for the rooms where the two differ.
-   *
-   * A live room's id also carries the caller's resolved internal arguments, which the client cannot know — so the
-   * server names the room it actually joined in the subscribe ack and inbound frames are matched through this.
-   * Keeping the subscription map keyed by the client's own id is what lets resubscribe and unsubscribe stay
-   * exactly as they were.
+   * Server room id → the id subscribed under: a live room's id carries internal args the client cannot know, so the
+   * subscribe ack names it, and the subscription map stays keyed by the client's own id.
    */
   #roomAliasMap = new Map<string, string>();
   #listenerMap = new Map<string, Set<Listener>>();
@@ -85,9 +75,8 @@ export class WsClient {
   }
 
   /**
-   * The handshake only carries a same-origin cookie, so clients that hold the token in memory
-   * (native, cross-origin) authenticate with this frame instead. Signing out sends `null`, which
-   * drops the handshake cookie server-side and revokes the rooms it had authorized.
+   * For clients holding the token in memory (native, cross-origin): the handshake carries only a same-origin cookie.
+   * `null` drops that cookie server-side and revokes the rooms it authorized.
    */
   setJwt(jwt: string | null) {
     if (this.#jwt === jwt) return;
@@ -118,8 +107,7 @@ export class WsClient {
       this.connected = true;
       this.logger.debug(`WebSocket connected`);
       this.#startHeartbeat();
-      // Ordered before the resubscribes: the server applies the credential synchronously, so every
-      // room below is authorized against this token rather than the bare handshake.
+      // Before the resubscribes: the server applies it synchronously, so every room below is authorized with it.
       if (this.#jwt) this.#sendAuth();
       const reconnected = this.#hadConnection;
       this.#hadConnection = true;
@@ -216,8 +204,7 @@ export class WsClient {
   #beat() {
     const ws = this.#ws;
     if (ws?.readyState !== WebSocket.OPEN) return;
-    // A socket the network dropped without a FIN still accepts `send()` forever, so silence is the only tell.
-    // Closing it by hand is what hands it to the reconnect path, which resubscribes every room.
+    // A socket dropped without a FIN accepts `send()` forever; closing it hands it to the resubscribing reconnect.
     if (Date.now() - this.#lastInboundAt > websocketHeartbeatContract.silenceMs) {
       this.logger.warn(`WebSocket is silent, reconnecting`);
       this.#stopHeartbeat();
@@ -329,8 +316,7 @@ export class WsClient {
   emit(key: string, data: WsRequestPayload) {
     const payload: WebsocketReqData = { key, data: Array.isArray(data) ? data : [data] };
     const frame = JSON.stringify(payload);
-    // Queued rather than dropped: a socket opened on demand is still handshaking when the call that
-    // opened it emits, so the caller's first message would otherwise never reach the server.
+    // Queued: a socket opened on demand is still handshaking when the call that opened it emits.
     if (this.#ws?.readyState !== WebSocket.OPEN) {
       this.#outbox.push(frame);
       this.#warnUnconnected("emit", key);

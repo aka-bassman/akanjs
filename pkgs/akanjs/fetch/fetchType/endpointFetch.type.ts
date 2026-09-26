@@ -71,14 +71,12 @@ type PrimaryFetchFn<E, SlceCls extends SliceCls | never> =
         ? MessageEmitFn<E>
         : never;
 
-// Keys kept as-is: query / mutation / prompt / message (emit)
 type PrimaryFetchType<EInfoObj extends { [key: string]: EndpointInfo }, SlceCls extends SliceCls | never> = {
   [K in keyof EInfoObj as EndpInfoReqType<EInfoObj[K]> extends "query" | "mutation" | "prompt" | "message"
     ? K
     : never]: PrimaryFetchFn<EInfoObj[K], SlceCls>;
 };
 
-// Keys remapped to `subscribe${Key}`
 type PubsubFetchType<EInfoObj extends { [key: string]: EndpointInfo }, SlceCls extends SliceCls | never> = {
   [K in keyof EInfoObj as EndpInfoReqType<EInfoObj[K]> extends "pubsub"
     ? K extends string
@@ -87,7 +85,6 @@ type PubsubFetchType<EInfoObj extends { [key: string]: EndpointInfo }, SlceCls e
     : never]: PubsubSubscribeFn<EInfoObj[K], SlceCls>;
 };
 
-// Keys remapped to `listen${Key}`
 type MessageListenFetchType<EInfoObj extends { [key: string]: EndpointInfo }, SlceCls extends SliceCls | never> = {
   [K in keyof EInfoObj as EndpInfoReqType<EInfoObj[K]> extends "message"
     ? K extends string

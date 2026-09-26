@@ -1,18 +1,10 @@
 type FieldFactories<Handle> = { [Key in keyof Handle]: () => Handle[Key] };
 
-/**
- * A fetch result that is both awaitable and destructurable.
- *
- * `await` gives the object the helper has always given, so every existing call site reads unchanged. Reading a
- * field off the un-awaited result gives that field's own promise instead, so a route can hand each one to the
- * section that renders it and let the slowest arrive last rather than holding the whole page.
- */
+/** Awaitable as the shape a helper always gave, and destructurable into one promise per field. */
 export class FetchHandle {
   /**
-   * @param requests the calls already in flight. Each gets a swallowing handler so a field nobody reads cannot
-   *   surface as an unhandled rejection; the handle's own `then` is what reports one.
-   * @param settle builds the awaited shape — its own fields stay lazy, so awaiting costs nothing extra.
-   * @param fields one factory per field of the un-awaited shape, memoized on first read.
+   * Each of `requests` gets a swallowing handler, so a field nobody reads cannot surface as an unhandled rejection;
+   * `fields` factories are memoized on first read.
    */
   static of<Awaited extends object, Handle extends object>(
     requests: Promise<unknown>[],
@@ -39,9 +31,7 @@ export class FetchHandle {
         },
       });
     }
-    // Non-enumerable so spreading the handle yields its fields and not a stray `then` that would make the copy
-    // look awaitable while resolving to nothing. Being awaitable at all is the point: `await fetch.initX()` has
-    // to keep giving the shape it always gave while the same object also hands out its fields.
+    // Non-enumerable, so a spread copy yields the fields and not a stray `then` making it look awaitable.
     return Object.defineProperties(handle, {
       // biome-ignore lint/suspicious/noThenProperty: awaitable by design, see above
       then: { value: (...args: unknown[]) => Reflect.apply(resolve().then, resolve(), args) },

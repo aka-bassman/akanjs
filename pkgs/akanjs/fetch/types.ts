@@ -2,7 +2,6 @@ import { type Environment, getEnv, type SLICE_META } from "akanjs/base";
 import type { DatabaseSignal } from "akanjs/signal";
 import type { SliceMeta } from "./fetchType/appliedReturn.type";
 
-/** Account data made available to services for the current app/environment. */
 export type Account<AddData = unknown> = {
   appName: string;
   environment: Environment;

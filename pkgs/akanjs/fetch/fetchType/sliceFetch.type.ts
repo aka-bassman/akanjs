@@ -17,8 +17,7 @@ import type {
 } from "akanjs/signal";
 import type { EditHandle, InitHandle, ServerEdit, ServerInit, ServerView, ViewHandle } from "./appliedReturn.type";
 
-// Shortcut accessors — avoids re-typing the long lookup path and lets TS
-// memoize each access once per SlceCls instantiation.
+// Shortcut accessors, so TS memoizes each lookup once per SlceCls instantiation.
 type _SliceMap<S extends SliceCls> = S[typeof SLICE_META];
 type _RefName<S extends SliceCls> = SlceCnstRefName<S>;
 type _Cap<S extends SliceCls> = SlceCnstCapitalizedRefName<S>;
@@ -31,10 +30,8 @@ type _Filter<S extends SliceCls> = SlceDbFilter<S>;
 type _Sort<S extends SliceCls> = SlceDbSort<S>;
 type SliceInitOption<S extends SliceCls> = FetchInitOption<_Input<S>, _Filter<S>>;
 
-// The 4 dynamic parts below are each a single homomorphic mapped type over
-// `keyof SliceMap`, which preserves each result key's declaration trace
-// (better hover, slightly better go-to-def) and avoids the
-// `UnionToIntersection`/`MergedValues` blow-up.
+// Each dynamic part below is one homomorphic mapped type over `keyof SliceMap`: it keeps each key's declaration
+// trace for hover and avoids the `UnionToIntersection`/`MergedValues` blow-up.
 
 type SliceListFetch<S extends SliceCls> = {
   [Suffix in keyof _SliceMap<S> as Suffix extends string ? `${_RefName<S>}List${Capitalize<Suffix>}` : never]: (
