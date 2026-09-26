@@ -77,7 +77,6 @@ export class WorkspaceScript extends script("workspace", [
     const workspacePath = path.join(dirname, repoName);
     Logger.rawLog(`\n🎉 Welcome aboard! Workspace created in ${dirname}/${repoName}`);
     Logger.rawLog(`🚀 Run \`cd ${workspacePath} && akan start ${appName}\` to start the development server.`);
-    // Logger.rawLog(`\n💡 Run \`akan deploy\` to deploy the workspace to the cloud.`);
     Logger.rawLog(`\n👋 Happy coding!`);
   }
   async generateAgentRules(
@@ -86,9 +85,7 @@ export class WorkspaceScript extends script("workspace", [
   ) {
     const spinner = workspace.spinning("Generating agent rules...");
     const files = await this.workspaceRunner.generateAgentRules(workspace, { overwrite, cursorRules });
-    // The template writes only the hand-editable preamble around an empty `akan:agent` block — the conventions,
-    // recipe index, and framework guide inside it are rendered from the installed package. Filling it is skipped
-    // when the template left an existing AGENTS.md alone, so `overwrite: false` still means "touch nothing".
+    // The template leaves the `akan:agent` block empty; it is filled only when the template wrote AGENTS.md.
     if (files.some((file) => file.filePath.endsWith("AGENTS.md")))
       await this.agentScript.agent(workspace, "install", "agents-md", { force: overwrite });
     spinner.succeed(`Agent rules ready (${files.length} file${files.length === 1 ? "" : "s"})`);

@@ -331,8 +331,7 @@ describe("WorkspaceRunner", () => {
     // The template carries the comment rule too, so a workspace scaffolded without `agent install` still has it.
     expect(claudeGuide).toContain("## Comments — Overrides Your Default");
     expect(agentsGuide).toContain("repo Agent Guide");
-    // The runner lays down the hand-editable preamble and an empty managed block; the conventions and framework
-    // guide inside it are rendered from the installed package by `akan agent install`, which the script composes.
+    // The conventions inside the managed block are rendered by `akan agent install`, which the script composes.
     expect(agentsGuide).toContain("<!-- akan:agent:start -->");
     expect(agentsGuide).toContain("<!-- akan:agent:end -->");
     // The Cursor rule is a thin reference to AGENTS.md, not a duplicate of its content.
