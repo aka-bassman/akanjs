@@ -3,7 +3,6 @@ import type { SysExecutor } from "./executors";
 
 export type AbstractKind = "domain" | "service" | "scalar" | "other";
 
-/** One `*.abstract.md` file: the agent-facing summary a module carries next to its source. */
 export class AbstractDoc {
   static readonly suffix = ".abstract.md";
   /** `akan quality` warns above this. */
@@ -17,7 +16,6 @@ export class AbstractDoc {
   static lineCountOf(content: string) {
     return content.split(/\r?\n/).length;
   }
-  /** Module kind read off the sys-relative path; anything outside a `lib/` module folder is "other". */
   static kindOf(filePath: string): AbstractKind {
     const [root, folder, ...rest] = filePath.split("/");
     if (root !== "lib" || !folder) return "other";
@@ -60,8 +58,7 @@ export class AbstractDoc {
   get lineCount() {
     return AbstractDoc.lineCountOf(this.content);
   }
-  // An AI editor answers in prose when it decides nothing needs changing, and that prose would silently
-  // replace the abstract — so a candidate must look like a markdown file and be shorter than what it replaces.
+  // An AI editor that decides nothing needs changing answers in prose, which must not replace the abstract.
   canReplaceWith(candidate: string) {
     const next = candidate.trim();
     if (!next.startsWith("#")) return false;

@@ -7,11 +7,7 @@ export interface SnapshotDrift {
   removed: string[];
 }
 
-/**
- * The exact bytes a platform run tests: every tracked file plus every untracked one git would show, which is
- * what `akan deploy-akan` goes on to build and publish. The per-file hashes are kept so the tree can be
- * compared again before publishing — a test run is only a gate if nothing changed underneath it.
- */
+//? Per-file hashes are kept so the tree is re-checked before publishing: a run gates only if nothing changed under it.
 export class TestSnapshot {
   static readonly #secretPatterns = [
     /(^|\/)\.env(\.(?!(template|example|sample)$)[^/]+)?$/,

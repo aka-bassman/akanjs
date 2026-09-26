@@ -1,34 +1,17 @@
-import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { Executor, WorkspaceExecutor } from "./executors";
 import { FileSys } from "./fileSys";
 import { formatSubspaceDiff, formatSubspacePushResults, formatSubspaceStatuses, Subspace } from "./subspace";
 import { SubspaceConfig } from "./subspaceConfig";
+import { isolateEnv, tempDirs, writeText as write } from "./testHelpers";
 
 //? Each case drives several real git clones and pushes; on a 4-core Windows VM that alone lands at 2-5s.
 setDefaultTimeout(20_000);
 
-const tempRoots: string[] = [];
-const originalEnv = { ...process.env };
-
-beforeEach(() => {
-  process.env = { ...originalEnv };
-  process.env.AKAN_PUBLIC_REPO_NAME = "workspace";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-  process.env.AKAN_PUBLIC_ENV = "local";
-});
-
-afterEach(async () => {
-  process.env = { ...originalEnv };
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
-
-const write = async (filePath: string, content: string) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content);
-};
+isolateEnv({ AKAN_PUBLIC_REPO_NAME: "workspace", AKAN_PUBLIC_SERVE_DOMAIN: "example.com", AKAN_PUBLIC_ENV: "local" });
+const makeTempRoot = tempDirs("akan-subspace-");
 
 const git = async (cwd: string, args: string[]) =>
   await new Executor("fixture", cwd).spawn("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args]);
@@ -67,10 +50,8 @@ const makeSys = async (root: string, member: "apps" | "libs", name: string, extr
     await write(path.join(root, member, name, relative), content);
 };
 
-/** A workspace with two apps, one shared library, and a subspace that serves only the first app. */
 const makeMirror = async (servedApp: string, privateApp: string, libName: string) => {
-  const workRoot = await mkdtemp(path.join(os.tmpdir(), "akan-subspace-"));
-  tempRoots.push(workRoot);
+  const workRoot = await makeTempRoot();
   const wsRoot = path.join(workRoot, "workspace");
   const bareRoot = path.join(workRoot, "subspace.git");
   await mkdir(wsRoot, { recursive: true });

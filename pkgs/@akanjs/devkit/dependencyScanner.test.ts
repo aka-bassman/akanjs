@@ -1,22 +1,14 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import { TypeScriptDependencyScanner } from "./dependencyScanner";
+import { tempDirs, writeText } from "./testHelpers";
 import type { PackageJson } from "./types";
 
-const tempRoots: string[] = [];
-
-const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-devkit-depscan-"));
-  tempRoots.push(root);
-  return root;
-};
+const makeTempRoot = tempDirs("akan-devkit-depscan-");
 
 const write = async (root: string, relPath: string, content: string) => {
   const filePath = path.join(root, relPath);
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content);
+  await writeText(filePath, content);
   return filePath;
 };
 
@@ -26,10 +18,6 @@ const scannerFor = async (root: string, dependencies: Record<string, string> = {
     tsconfig: { compilerOptions: { target: "esnext" } },
     rootPackageJson: { dependencies } as unknown as PackageJson,
   });
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 
 describe("TypeScriptDependencyScanner — getPackageBuildDependencies", () => {
   test("collects imports from ordinary source files", async () => {

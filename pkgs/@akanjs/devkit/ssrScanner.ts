@@ -22,34 +22,32 @@ interface ComponentInfo {
   vendorTags: boolean;
 }
 
-// A component with no client-only touch at all never needed the client bundle, so even a small subtree is
-// worth moving. A mostly-static component keeps its interaction and hands the static part to the server, so
-// it only pays off once the static subtree is large enough to matter.
+// A component with no client-only touch is worth moving even when small; a mostly-static one only once its static
+// subtree is large enough to matter.
 const STATIC_COMPONENT_MIN_MASS = 4;
 const MIXED_COMPONENT_MIN_MASS = 10;
 const MIXED_COMPONENT_MAX_TOUCHES = 2;
 const MODULE_SERVER_VIEW_MIN_CLIENT_MASS = 12;
 
+export const fileWarning = (
+  rule: string,
+  scope: QualityWarning["scope"],
+  file: string,
+  message: string,
+  line?: number,
+): QualityWarning =>
+  line === undefined
+    ? { rule, scope, severity: "warning", file, message }
+    : { rule, scope, severity: "warning", file, line, message };
+
 export class SsrScanner {
-  // `usePage` and `getSelf` read request-scoped server context and are legal in server components, so they
-  // must not count as evidence that a file needs "use client".
+  // `usePage` and `getSelf` read request-scoped server context, which server components may do.
   static #serverSafeCalls = new Set(["usePage", "getSelf", "useServer"]);
-  static #clientGlobals = new Set([
-    "window",
-    "document",
-    "navigator",
-    "localStorage",
-    "sessionStorage",
-    "location",
-    "history",
-    "screen",
-    "matchMedia",
-    "IntersectionObserver",
-    "ResizeObserver",
-    "MutationObserver",
-    "requestAnimationFrame",
-    "WebSocket",
-  ]);
+  static #clientGlobals = new Set(
+    "window document navigator localStorage sessionStorage location history screen matchMedia IntersectionObserver"
+      .split(" ")
+      .concat("ResizeObserver MutationObserver requestAnimationFrame WebSocket".split(" ")),
+  );
   // Runtime singletons that only exist in the client bundle; importing either is what forces the directive.
   static #clientRuntimeImports = new Set(["st", "fetch"]);
 
@@ -78,27 +76,29 @@ export class SsrScanner {
       this.#getTouches(sourceFile.sourceFile, sourceFile.sourceFile).length === 0 &&
       !this.#isConventionClientFile(sourceFile.file)
     ) {
-      warnings.push({
-        rule: "akan.ssr.unnecessary-use-client",
-        scope: "ssr",
-        severity: "warning",
-        file: sourceFile.file,
-        line: 1,
-        message: `"use client" is declared but the file uses no client-only capability (hook, event handler, store, or browser API).`,
-      });
+      warnings.push(
+        fileWarning(
+          "akan.ssr.unnecessary-use-client",
+          "ssr",
+          sourceFile.file,
+          `"use client" is declared but the file uses no client-only capability (hook, event handler, store, or browser API).`,
+          1,
+        ),
+      );
     }
 
     for (const component of components) {
       if (component.vendorTags) continue;
       if (component.touches.length === 0 && component.mass >= STATIC_COMPONENT_MIN_MASS) {
-        warnings.push({
-          rule: "akan.ssr.client-static-component",
-          scope: "ssr",
-          severity: "warning",
-          file: sourceFile.file,
-          line: component.line,
-          message: `Client component "${component.name}" renders ${component.mass} JSX elements with no client-only capability. It is server-renderable markup sitting in the client bundle.`,
-        });
+        warnings.push(
+          fileWarning(
+            "akan.ssr.client-static-component",
+            "ssr",
+            sourceFile.file,
+            `Client component "${component.name}" renders ${component.mass} JSX elements with no client-only capability. It is server-renderable markup sitting in the client bundle.`,
+            component.line,
+          ),
+        );
         continue;
       }
       if (
@@ -106,14 +106,15 @@ export class SsrScanner {
         component.touches.length <= MIXED_COMPONENT_MAX_TOUCHES &&
         component.mass >= MIXED_COMPONENT_MIN_MASS
       ) {
-        warnings.push({
-          rule: "akan.ssr.client-static-markup",
-          scope: "ssr",
-          severity: "warning",
-          file: sourceFile.file,
-          line: component.line,
-          message: `Client component "${component.name}" renders ${component.mass} JSX elements around only ${component.touches.length} client-only touch (${[...new Set(component.touches)].join(", ")}). Most of this subtree does not need the client bundle.`,
-        });
+        warnings.push(
+          fileWarning(
+            "akan.ssr.client-static-markup",
+            "ssr",
+            sourceFile.file,
+            `Client component "${component.name}" renders ${component.mass} JSX elements around only ${component.touches.length} client-only touch (${[...new Set(component.touches)].join(", ")}). Most of this subtree does not need the client bundle.`,
+            component.line,
+          ),
+        );
       }
     }
 
@@ -122,8 +123,7 @@ export class SsrScanner {
     return warnings;
   }
 
-  // A database module whose rendering happens entirely in Template/Zone/Util has no server-rendered surface at
-  // all, so every consumer pays for hydration even when it only needs to display the model.
+  // A module rendered only from Template/Zone/Util makes every consumer pay for hydration just to display it.
   #scanModules(sourceFiles: SourceFileInfo[]): QualityWarning[] {
     const modules = new Map<string, { clientMass: number; serverFiles: number; line: string }>();
     for (const sourceFile of sourceFiles) {
@@ -136,36 +136,32 @@ export class SsrScanner {
     }
     return [...modules]
       .filter(([, entry]) => entry.serverFiles === 0 && entry.clientMass >= MODULE_SERVER_VIEW_MIN_CLIENT_MASS)
-      .map(([moduleDir, entry]) => ({
-        rule: "akan.ssr.module-missing-server-view",
-        scope: "ssr" as const,
-        severity: "warning" as const,
-        file: entry.line,
-        message: `Module "${moduleDir}" renders ${entry.clientMass} JSX elements from client files only; it declares no Unit or View server component.`,
-      }));
+      .map(([moduleDir, entry]) =>
+        fileWarning(
+          "akan.ssr.module-missing-server-view",
+          "ssr",
+          entry.line,
+          `Module "${moduleDir}" renders ${entry.clientMass} JSX elements from client files only; it declares no Unit or View server component.`,
+        ),
+      );
   }
 
-  // A load fired from a mount-only effect is data the route already could have fetched: the client renders an
-  // empty shell, hydrates, then fetches. A reactive effect (non-empty deps) responds to client state instead
-  // and has no server-side equivalent, so only the empty-dependency form is a finding.
+  // Only an empty-dependency effect is a finding: a reactive effect answers client state and has no server equivalent.
   #getMountLoadWarnings(sourceFile: SourceFileInfo): QualityWarning[] {
     const warnings: QualityWarning[] = [];
-    const visit = (node: ts.Node) => {
-      if (this.#isMountEffect(sourceFile.sourceFile, node)) {
-        for (const load of this.#getLoadCalls(sourceFile.sourceFile, node)) {
-          warnings.push({
-            rule: "akan.ssr.client-mount-load",
-            scope: "ssr",
-            severity: "warning",
-            file: sourceFile.file,
-            line: this.#getLine(sourceFile.sourceFile, load.node),
-            message: `Mount-only effect loads server data with ${load.callee}(). The route can fetch this before the first byte instead.`,
-          });
-        }
-      }
-      ts.forEachChild(node, visit);
-    };
-    ts.forEachChild(sourceFile.sourceFile, visit);
+    SsrScanner.#walk(sourceFile.sourceFile, (node) => {
+      if (!this.#isMountEffect(sourceFile.sourceFile, node)) return;
+      for (const load of this.#getLoadCalls(sourceFile.sourceFile, node))
+        warnings.push(
+          fileWarning(
+            "akan.ssr.client-mount-load",
+            "ssr",
+            sourceFile.file,
+            `Mount-only effect loads server data with ${load.callee}(). The route can fetch this before the first byte instead.`,
+            this.#getLine(sourceFile.sourceFile, load.node),
+          ),
+        );
+    });
     return warnings;
   }
 
@@ -179,35 +175,30 @@ export class SsrScanner {
 
   #getLoadCalls(sourceFile: ts.SourceFile, node: ts.Node) {
     const calls: Array<{ callee: string; node: ts.Node }> = [];
-    const visit = (child: ts.Node) => {
-      if (ts.isCallExpression(child)) {
-        const callee = child.expression.getText(sourceFile);
-        if (/^fetch\.[a-z]/.test(callee) || /^st\.do\.(init|get|view|load|list|count|insight)[A-Z]/.test(callee))
-          calls.push({ callee, node: child });
-      }
-      ts.forEachChild(child, visit);
-    };
-    ts.forEachChild(node, visit);
+    SsrScanner.#walk(node, (child) => {
+      if (!ts.isCallExpression(child)) return;
+      const callee = child.expression.getText(sourceFile);
+      if (/^fetch\.[a-z]/.test(callee) || /^st\.do\.(init|get|view|load|list|count|insight)[A-Z]/.test(callee))
+        calls.push({ callee, node: child });
+    });
     return calls;
   }
 
   #getTemplateStateWarnings(sourceFile: SourceFileInfo): QualityWarning[] {
     if (!sourceFile.file.endsWith(".Template.tsx")) return [];
     const warnings: QualityWarning[] = [];
-    const visit = (node: ts.Node) => {
-      if (ts.isCallExpression(node) && node.expression.getText(sourceFile.sourceFile) === "useState") {
-        warnings.push({
-          rule: "akan.ssr.template-client-state",
-          scope: "ssr",
-          severity: "warning",
-          file: sourceFile.file,
-          line: this.#getLine(sourceFile.sourceFile, node),
-          message: "Template holds form state in useState. Templates are store-driven and carry no local state.",
-        });
-      }
-      ts.forEachChild(node, visit);
-    };
-    ts.forEachChild(sourceFile.sourceFile, visit);
+    SsrScanner.#walk(sourceFile.sourceFile, (node) => {
+      if (ts.isCallExpression(node) && node.expression.getText(sourceFile.sourceFile) === "useState")
+        warnings.push(
+          fileWarning(
+            "akan.ssr.template-client-state",
+            "ssr",
+            sourceFile.file,
+            "Template holds form state in useState. Templates are store-driven and carry no local state.",
+            this.#getLine(sourceFile.sourceFile, node),
+          ),
+        );
+    });
     return warnings;
   }
 
@@ -261,7 +252,7 @@ export class SsrScanner {
 
   #getTouches(sourceFile: ts.SourceFile, node: ts.Node): string[] {
     const touches: string[] = [];
-    const visit = (child: ts.Node) => {
+    SsrScanner.#walk(node, (child) => {
       if (ts.isCallExpression(child)) {
         const callee = child.expression.getText(sourceFile);
         const bareName = callee.split(".").pop() ?? callee;
@@ -275,31 +266,33 @@ export class SsrScanner {
         if (root === "st") touches.push("st");
         else if (SsrScanner.#clientGlobals.has(root)) touches.push(root);
       }
-      ts.forEachChild(child, visit);
-    };
-    ts.forEachChild(node, visit);
+    });
     return touches;
   }
 
   #getTagNames(sourceFile: ts.SourceFile, node: ts.Node): Set<string> {
     const tags = new Set<string>();
-    const visit = (child: ts.Node) => {
+    SsrScanner.#walk(node, (child) => {
       if (ts.isJsxOpeningElement(child) || ts.isJsxSelfClosingElement(child))
         tags.add(child.tagName.getText(sourceFile).split(".")[0]);
-      ts.forEachChild(child, visit);
-    };
-    ts.forEachChild(node, visit);
+    });
     return tags;
   }
 
   #getMass(node: ts.Node) {
     let mass = 0;
-    const visit = (child: ts.Node) => {
+    SsrScanner.#walk(node, (child) => {
       if (ts.isJsxOpeningElement(child) || ts.isJsxSelfClosingElement(child)) mass += 1;
-      ts.forEachChild(child, visit);
-    };
-    ts.forEachChild(node, visit);
+    });
     return mass;
+  }
+
+  static #walk(node: ts.Node, visit: (descendant: ts.Node) => void) {
+    const walk = (child: ts.Node) => {
+      visit(child);
+      ts.forEachChild(child, walk);
+    };
+    ts.forEachChild(node, walk);
   }
 
   #hasUseClient(sourceFile: ts.SourceFile) {
@@ -308,8 +301,7 @@ export class SsrScanner {
     return first.expression.text === "use client";
   }
 
-  // A bare specifier is a third-party package: it may be client-only, which is a legitimate reason for the
-  // directive that no amount of AST reading can rule out.
+  // A third-party package may be client-only, a legitimate reason for the directive no AST reading can rule out.
   #hasVendorImport(sourceFile: ts.SourceFile) {
     return sourceFile.statements.some(
       (statement) => ts.isImportDeclaration(statement) && isVendorSpecifier(getSpecifier(statement)),
@@ -340,9 +332,7 @@ export class SsrScanner {
     return false;
   }
 
-  // Zone/Template/Util carry the directive mechanically by file role, and `index_.tsx` is the declared
-  // "use client" + lazy() boundary. In neither case is the directive a stray — for module UI it means markup
-  // belongs in a Unit or View instead, which the component rules already cover.
+  // Zone/Template/Util carry the directive by file role, and `index_.tsx` is the declared lazy() boundary.
   #isConventionClientFile(file: string) {
     if (file.endsWith("/index_.tsx")) return true;
     return /\.(Zone|Template|Util)\.tsx$/.test(file) && this.#getModuleDir(file) !== null;

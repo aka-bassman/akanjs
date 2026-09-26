@@ -3,12 +3,7 @@ import ts from "typescript";
 import type { SourceFileInfo } from "./qualityScanner";
 import { formatSsrBalance, SSR_SERVER_SHARE_TARGET, SsrScanner } from "./ssrScanner";
 
-/**
- * `SsrScanner` is a documented gate — `akan quality ssr` prints the server share and AGENTS.md names 50% as
- * the floor — so both halves matter: a rule that stops firing lets the share rot, and a rule that
- * over-reports is what makes developers stop reading the output. Every rule here gets a positive and the
- * negative that must stay quiet.
- */
+//? Each rule gets a positive and a negative: one that stops firing lets the share rot, one that over-reports is ignored
 const fileOf = (file: string, content: string): SourceFileInfo => ({
   file,
   absolutePath: `/repo/${file}`,

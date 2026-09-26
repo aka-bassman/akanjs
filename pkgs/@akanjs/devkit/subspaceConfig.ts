@@ -5,13 +5,7 @@ import { FileSys } from "./fileSys";
 
 export type { SubspaceConfigInput, SubspaceDeclaration };
 
-/**
- * `akan.subspace.ts` at the workspace root: which customer repo each app is mirrored to.
- *
- * There is no branch field. The branch is whichever one the workspace is on, so the same declaration
- * serves `develop` and `main`, and every subspace on one branch holds the same akanjs version and the
- * same library source.
- */
+// No branch field: the workspace's current branch is used, so every subspace on it holds the same akanjs and libs.
 export class SubspaceConfig {
   static readonly fileName = "akan.subspace.ts";
   static readonly defaultPushableBranches = ["main", "develop", "debug"];
@@ -48,8 +42,7 @@ export class SubspaceConfig {
         throw new Error(`${SubspaceConfig.fileName}: subspace "${subspace.name}" declares no apps`);
       for (const app of subspace.apps) {
         const owner = appOwners.get(app);
-        //* One app never goes to two subspaces: the two would need per-subspace domains and ids, which
-        //* this declaration cannot express. Share code through a lib instead.
+        //* One app never goes to two subspaces: per-subspace domains and ids are not expressible. Share a lib instead.
         if (owner)
           throw new Error(
             `${SubspaceConfig.fileName}: app "${app}" is claimed by both "${owner}" and "${subspace.name}"`,
@@ -58,8 +51,7 @@ export class SubspaceConfig {
       }
       if (!subspace.workspaceId) continue;
       const idOwner = idOwners.get(subspace.workspaceId);
-      //* An env upload replaces the cloud workspace's archive whole, so two subspaces sharing one would
-      //* each overwrite the other's values.
+      //* An env upload replaces the cloud workspace's archive whole, so two subspaces would overwrite each other.
       if (idOwner)
         throw new Error(
           `${SubspaceConfig.fileName}: subspaces "${idOwner}" and "${subspace.name}" declare the same workspaceId`,

@@ -1,33 +1,23 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Logger } from "akanjs/common";
 import type { App } from "../commandDecorators";
+import { tempDirs, writeText } from "../testHelpers";
 import { BackendImportGraph } from "./BackendImportGraph";
 import { filesChangedSince } from "./devHostPolicy";
 
 describe("BackendImportGraph", () => {
-  const tempRoots: string[] = [];
+  const makeTempRoot = tempDirs("akan-devkit-graph-");
 
   const makeGraph = async (files: Record<string, string>) => {
-    // Realpath, not the mkdtemp path: `Bun.resolveSync` returns real paths, and on macOS `/var/folders`
-    // is a symlink, so an unresolved root makes every resolved import look like it escapes the workspace.
-    const workspaceRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "akan-devkit-graph-")));
-    tempRoots.push(workspaceRoot);
+    // Realpath: `Bun.resolveSync` returns real paths, and macOS `/var/folders` is a symlink.
+    const workspaceRoot = await realpath(await makeTempRoot());
     const cwdPath = path.join(workspaceRoot, "apps/demo");
-    for (const [rel, source] of Object.entries(files)) {
-      const filePath = path.join(cwdPath, rel);
-      await mkdir(path.dirname(filePath), { recursive: true });
-      await writeFile(filePath, source);
-    }
+    for (const [rel, source] of Object.entries(files)) await writeText(path.join(cwdPath, rel), source);
     const app = { cwdPath, workspace: { workspaceRoot } } as unknown as App;
     return { graph: new BackendImportGraph(app, new Logger("test")), cwdPath };
   };
-
-  afterEach(async () => {
-    await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-  });
 
   test("walks the backend entrypoints' import graph", async () => {
     const { graph, cwdPath } = await makeGraph({
@@ -51,7 +41,6 @@ describe("BackendImportGraph", () => {
     await graph.refresh();
     expect(graph.has(path.join(cwdPath, "lib/added.ts"))).toBe(false);
 
-    // The scan cache is keyed on (mtimeMs, size), so the rewrite must invalidate it.
     await writeFile(path.join(cwdPath, "server.ts"), 'import "./lib/added";\nexport default 1;\n');
 
     await graph.refresh();
@@ -81,8 +70,7 @@ describe("BackendImportGraph", () => {
     await graph.refresh();
     const before = await graph.fingerprint();
 
-    // The builder is gone here, so no watcher event exists for this save — which is the whole reason
-    // the stamps are taken. `mtimeMs` has a coarse clock on Linux, so the size has to move too.
+    // `mtimeMs` has a coarse clock on Linux, so the size has to move too.
     await writeFile(path.join(cwdPath, "lib/handler.ts"), "export const handler = () => 'changed';\n");
 
     expect(filesChangedSince(before, await graph.fingerprint())).toEqual([path.join(cwdPath, "lib/handler.ts")]);
@@ -96,11 +84,9 @@ describe("BackendImportGraph", () => {
     });
     await graph.refresh();
     const before = await graph.fingerprint();
-    // A recycle with no edit in it is the common case, and it must not cost a backend restart.
     expect(filesChangedSince(before, await graph.fingerprint())).toEqual([]);
 
     await rm(path.join(cwdPath, "lib/handler.ts"));
-    // Deleted counts as changed: the backend is still running what used to be there.
     expect(filesChangedSince(before, await graph.fingerprint())).toEqual([path.join(cwdPath, "lib/handler.ts")]);
   });
 

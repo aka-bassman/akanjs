@@ -63,8 +63,7 @@ export type IosRunFailureKind =
   | "simulator-runtime"
   | "unknown";
 
-// Recent iOS SDKs (iOS 18+) split SwiftUI into a SwiftUICore dylib that does not exist on older
-// runtimes, so an app built against them dyld-crashes at launch on an iOS <18 simulator/device.
+// iOS 18+ SDKs split SwiftUI into a SwiftUICore dylib older runtimes lack, so such a build dyld-crashes below iOS 18.
 export const SWIFTUICORE_MIN_IOS_MAJOR = 18;
 
 export interface IosRunFailureClassification {
@@ -73,30 +72,11 @@ export interface IosRunFailureClassification {
   detail: string;
 }
 
-const iosNativeBlockedEnvKeys = new Set([
-  "AR",
-  "AS",
-  "CC",
-  "CFLAGS",
-  "CONDA_BUILD_SYSROOT",
-  "CONDA_PREFIX",
-  "CPP",
-  "CPPFLAGS",
-  "CPATH",
-  "CXX",
-  "CXXFLAGS",
-  "LD",
-  "LDFLAGS",
-  "LIBRARY_PATH",
-  "MACOSX_DEPLOYMENT_TARGET",
-  "NM",
-  "OBJC",
-  "OBJCXX",
-  "PREFIX",
-  "RANLIB",
-  "SDKROOT",
-  "STRIP",
-]);
+const iosNativeBlockedEnvKeys = new Set(
+  "AR AS CC CFLAGS CONDA_BUILD_SYSROOT CONDA_PREFIX CPP CPPFLAGS CPATH CXX CXXFLAGS LD LDFLAGS LIBRARY_PATH"
+    .split(" ")
+    .concat("MACOSX_DEPLOYMENT_TARGET NM OBJC OBJCXX PREFIX RANLIB SDKROOT STRIP".split(" ")),
+);
 
 export const rootCapacitorConfigFilenames = [
   "capacitor.config.ts",
@@ -123,11 +103,6 @@ interface MaterializeCapacitorConfigOptions {
 }
 type MobilePlatform = "ios" | "android";
 
-/**
- * `AppExecutor.spawn`'s own options plus the two the Capacitor config is written from before the spawn:
- * the platform the command targets, and — for iOS — whether it targets a device or a simulator, which
- * decide the `capacitor.config.json` that command reads.
- */
 type SpawnMobileOptions = Parameters<AppExecutor["spawn"]>[2] & {
   platform?: MobilePlatform;
   iosRunTargetKind?: IosRunTargetKind;
@@ -139,24 +114,8 @@ export interface LocalDevHostResolution {
   candidates: { name: string; address: string }[];
 }
 
-// Interface-name prefixes that are almost never the routable LAN NIC a physical device can reach:
-// bridges (Thunderbolt/USB), tunnels, AirDrop/awrl, VM/container virtual adapters.
-const virtualInterfacePrefixes = [
-  "bridge",
-  "utun",
-  "llw",
-  "awdl",
-  "ap",
-  "vmnet",
-  "vnic",
-  "tap",
-  "tun",
-  "docker",
-  "veth",
-  "vboxnet",
-  "gif",
-  "stf",
-];
+// Almost never a LAN NIC a device can reach: bridges, tunnels, AirDrop/awdl, VM and container adapters.
+const virtualInterfacePrefixes = "bridge utun llw awdl ap vmnet vnic tap tun docker veth vboxnet gif stf".split(" ");
 const physicalInterfacePrefixes = ["en", "eth", "wlan", "wlp", "enp", "eno", "wlo"];
 
 const isPrivateLanIpv4 = (address: string): boolean => {
@@ -165,8 +124,7 @@ const isPrivateLanIpv4 = (address: string): boolean => {
   return Number.isFinite(secondOctet) && secondOctet >= 16 && secondOctet <= 31;
 };
 
-// Higher = more likely to be the reachable LAN address. Link-local (169.254) is never routable;
-// virtual/bridge interfaces are demoted below real NICs; private-LAN ranges get a small boost.
+// Link-local (169.254) is never routable.
 const scoreDevHostCandidate = (name: string, address: string): number => {
   const lowerName = name.toLowerCase();
   let score = 0;
@@ -177,9 +135,7 @@ const scoreDevHostCandidate = (name: string, address: string): number => {
   return score;
 };
 
-// Pick the dev-server host a physical device should connect to. An explicit override always wins;
-// otherwise rank non-internal IPv4 interfaces so a down/virtual interface (e.g. an inactive
-// Thunderbolt bridge enumerated first) never shadows a real LAN NIC. Deterministic tie-break.
+// Ranked, not first-found: an inactive Thunderbolt bridge is often enumerated before the real LAN NIC.
 export const selectLocalDevHost = (
   interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]>,
   { override }: { override?: string } = {},
@@ -227,8 +183,7 @@ const dedupeIosRunTargets = (targets: IosRunTarget[]) => {
   return [...byKey.values()];
 };
 
-// Normalize a simctl runtime — either the JSON key ("com.apple.CoreSimulator.SimRuntime.iOS-18-2")
-// or a per-device `runtimeIdentifier` / text header ("iOS 18.2") — into a "iOS 18.2" display string.
+// simctl spells a runtime as a JSON key ("com.apple.CoreSimulator.SimRuntime.iOS-18-2") or as "iOS 18.2".
 const formatSimctlRuntime = (key?: string): string | undefined => {
   if (!key) return undefined;
   if (/^(iOS|watchOS|tvOS|visionOS)\s+[\d.]+$/i.test(key)) return key;
@@ -237,18 +192,11 @@ const formatSimctlRuntime = (key?: string): string | undefined => {
   return `${match[1]} ${match[2]}${match[3] ? `.${match[3]}` : ""}`;
 };
 
-// Extract the major OS version from a runtime display string ("iOS 18.2" → 18). Undefined for
-// physical devices (no runtime) or unparseable values.
 export const parseIosRuntimeMajor = (runtime?: string): number | undefined => {
-  const major = runtime?.match(/(\d+)/)?.[1];
-  if (major === undefined) return undefined;
-  const parsed = Number.parseInt(major, 10);
-  return Number.isNaN(parsed) ? undefined : parsed;
+  const major = runtime?.match(/\d+/)?.[0];
+  return major === undefined ? undefined : Number.parseInt(major, 10);
 };
 
-// Rank for default-target ordering: ready targets (booted simulator / connected device) first, then
-// physical devices, then newer simulator runtimes. Fixes the old ascending-runtime order that made a
-// stale iOS 17.x simulator the default pick.
 const iosRunTargetRank = (target: IosRunTarget): number => {
   const state = target.state?.toLowerCase() ?? "";
   const ready = state.includes("booted") || state.includes("connected") || state.includes("available") ? 1000 : 0;
@@ -515,9 +463,8 @@ export function sanitizeIosNativeRunEnv(env: MobileCommandEnv): MobileCommandEnv
   return Object.fromEntries(Object.entries(env).filter(([key]) => !iosNativeBlockedEnvKeys.has(key)));
 }
 
-// Bundle IDs that ship as scaffold placeholders (or use an obviously generic org segment) and are
-// almost always already claimed on Apple's developer portal, so device signing fails with
-// "cannot be registered to your development team". A unique reverse-DNS id fixes it.
+// Placeholder bundle IDs are already claimed on Apple's portal, so device signing fails with "cannot be registered
+// to your development team".
 export const PLACEHOLDER_APP_IDS = [
   "com.myapp.app",
   "com.myorg.myapp",
@@ -643,9 +590,7 @@ export function assertJsonSerializable(value: unknown, label = "capacitor.config
   if (seen.has(objectValue)) throw new Error(`${label} must be JSON serializable. Found circular reference.`);
   seen.add(objectValue);
   if (Array.isArray(value)) {
-    value.forEach((item, index) => {
-      assertJsonSerializable(item, `${label}[${index}]`, seen);
-    });
+    for (const [index, item] of value.entries()) assertJsonSerializable(item, `${label}[${index}]`, seen);
     return;
   }
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
@@ -750,8 +695,6 @@ export class CapacitorApp {
   readonly iosProjectPath = "ios/App";
   readonly androidRootPath = "android";
   readonly androidAssetsPath = "android/app/src/main/assets";
-  //* Accumulates iOS entitlements contributed by deep links and plugins during a prepare,
-  //* then flushed to App/App.entitlements once (see #flushIosEntitlements).
   #iosEntitlements: Record<string, string | string[]> = {};
   constructor(
     private readonly app: AppExecutor,
@@ -814,7 +757,6 @@ export class CapacitorApp {
     await this.#prepareIos({ operation: "release", env, regenerate });
     await this.#spawnMobile("npx", ["cap", "build", "ios"], { operation: "release", env }, { stdio: "inherit" });
     this.app.verbose(`build completed iOS.`);
-    return;
   }
   async syncIos() {
     await this.#spawnMobile("npx", ["cap", "sync", "ios"], { operation: "local", env: "local" });
@@ -839,7 +781,10 @@ export class CapacitorApp {
   }
 
   async #selectIosRunTarget(deviceId?: string) {
-    const targets = sortIosRunTargets(await this.#loadIosRunTargets());
+    const targets = sortIosRunTargets([
+      ...(await this.#loadPhysicalIosDevices()),
+      ...(await this.#loadIosSimulators()),
+    ]);
     if (deviceId) {
       const needle = deviceId.toLowerCase();
       const found =
@@ -879,12 +824,6 @@ export class CapacitorApp {
     this.app.logger.warn(
       `Selected simulator runs ${target.runtime ?? "an older iOS"}. Recent SDK builds link SwiftUICore and require iOS ${SWIFTUICORE_MIN_IOS_MAJOR}+; if the app crashes at launch with a "Library not loaded: SwiftUICore" dyld error, pick an iOS ${SWIFTUICORE_MIN_IOS_MAJOR}+ simulator instead.`,
     );
-  }
-
-  async #loadIosRunTargets() {
-    const devices = await this.#loadPhysicalIosDevices();
-    const simulators = await this.#loadIosSimulators();
-    return [...devices, ...simulators];
   }
 
   async #loadPhysicalIosDevices() {
@@ -929,12 +868,11 @@ export class CapacitorApp {
       { operation, platform: "ios", iosRunTargetKind: runTarget.kind },
       mobileEnv,
     );
-    await this.#writeRootCapacitorConfig(configContent);
-    const scheme = this.#iosScheme();
+    await writeRootCapacitorConfig(this.app.cwdPath, configContent);
     const command = buildIosNativeRunCommand({
       appRoot: this.app.cwdPath,
       device: runTarget,
-      scheme,
+      scheme: isRecord(this.target.ios) && typeof this.target.ios.scheme === "string" ? this.target.ios.scheme : "App",
       configuration: operation === "release" ? "Release" : "Debug",
     });
     const xcodebuildArgs = noAllowProvisioningUpdates
@@ -946,16 +884,10 @@ export class CapacitorApp {
         env: mobileEnv,
       });
       const devicectlId = runTarget.devicectlId ?? runTarget.id;
-      await this.#spawn("xcrun", ["devicectl", "device", "install", "app", "--device", devicectlId, command.appPath], {
-        env: mobileEnv,
-      });
-      await this.#spawn(
-        "xcrun",
-        ["devicectl", "device", "process", "launch", "--device", devicectlId, this.target.appId],
-        {
-          env: mobileEnv,
-        },
-      );
+      const devicectl = (verb: string[], subject: string) =>
+        this.#spawn("xcrun", ["devicectl", "device", ...verb, "--device", devicectlId, subject], { env: mobileEnv });
+      await devicectl(["install", "app"], command.appPath);
+      await devicectl(["process", "launch"], this.target.appId);
     } catch (error) {
       throw new Error(
         formatIosRunFailureMessage({
@@ -966,12 +898,8 @@ export class CapacitorApp {
         }),
       );
     } finally {
-      await this.#clearRootCapacitorConfigs();
+      await clearRootCapacitorConfigs(this.app.cwdPath);
     }
-  }
-
-  #iosScheme() {
-    return isRecord(this.target.ios) && typeof this.target.ios.scheme === "string" ? this.target.ios.scheme : "App";
   }
 
   async #getIosDevelopmentTeam() {
@@ -996,15 +924,13 @@ export class CapacitorApp {
     await this.#disableNativeKeyboardResizeInAndroid();
     await this.project.commit();
     await this.#generateAssets({ operation, env });
-    await this.#ensureAndroidAssetsDir();
+    await mkdir(path.join(this.app.cwdPath, this.androidAssetsPath), { recursive: true });
     await this.#ensureAndroidDebugKeystore();
     await this.#spawnMobile("npx", ["cap", "sync", "android"], { operation, env });
     await this.#setDeepLinksInAndroid(this.target.deepLinks?.schemes ?? [], this.target.deepLinks?.domains ?? []);
   }
 
   async #updateAndroidBuildTypes() {
-    //keystore 기본 설정 및 debug, release 설정
-
     const appGradle = await FileEditor.create(path.join(this.app.cwdPath, this.androidRootPath, "app/build.gradle"));
     const buildTypesBlock = `
       debug {
@@ -1048,10 +974,7 @@ export class CapacitorApp {
     await this.#prepareAndroid({ operation: "release", env, regenerate });
     await this.#assertAndroidReleaseSigningConfig();
     await this.#updateAndroidBuildTypes();
-    //윈도우는 gradlew.bat 사용
-    const isWindows = process.platform === "win32";
-    const gradleCommand = isWindows ? "gradlew.bat" : "./gradlew";
-
+    const gradleCommand = process.platform === "win32" ? "gradlew.bat" : "./gradlew";
     await this.app.spawn(gradleCommand, [assembleType === "apk" ? "assembleRelease" : "bundleRelease"], {
       stdio: "inherit",
       cwd: path.join(this.app.cwdPath, this.androidRootPath),
@@ -1079,30 +1002,18 @@ export class CapacitorApp {
     });
     if (changed) await writeFile(manifestPath, manifest);
   }
-  async #ensureAndroidAssetsDir() {
-    await mkdir(path.join(this.app.cwdPath, this.androidAssetsPath), { recursive: true });
-  }
   async #ensureAndroidDebugKeystore() {
     const keystorePath = path.join(this.app.cwdPath, this.androidRootPath, "app/debug.keystore");
     if (await Bun.file(keystorePath).exists()) return;
 
+    const options =
+      "-storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000";
     await this.#spawn("keytool", [
       "-genkeypair",
       "-v",
       "-keystore",
       keystorePath,
-      "-storepass",
-      "android",
-      "-alias",
-      "androiddebugkey",
-      "-keypass",
-      "android",
-      "-keyalg",
-      "RSA",
-      "-keysize",
-      "2048",
-      "-validity",
-      "10000",
+      ...options.split(" "),
       "-dname",
       "CN=Android Debug,O=Android,C=US",
     ]);
@@ -1117,8 +1028,7 @@ export class CapacitorApp {
     await this.#prepareAndroid({ operation, env, regenerate });
     await this.#assertAndroidAdbReady();
     this.app.logger.info(`Running Android in ${operation} mode on ${env} env`);
-    const args = ["cap", "run", "android"];
-    await this.#spawnMobile("npx", args, { operation, env }, { stdio: "inherit" });
+    await this.#spawnMobile("npx", ["cap", "run", "android"], { operation, env }, { stdio: "inherit" });
   }
 
   async #assertAndroidReleaseSigningConfig() {
@@ -1194,8 +1104,7 @@ export class CapacitorApp {
     await Bun.write(path.join(this.targetRoot, "capacitor.config.json"), content);
     return content;
   }
-  // An explicit override always wins; an emulator/simulator run reaches the host machine through a
-  // loopback alias (10.0.2.2 / localhost), so LAN detection only applies to physical-device runs.
+  // Emulators and simulators reach the host through a loopback alias (10.0.2.2 / localhost); only devices need the LAN.
   async #resolveLocalDevHost({
     override,
     platform,
@@ -1219,8 +1128,6 @@ export class CapacitorApp {
     }
     return resolution;
   }
-  // Surface the live-reload URL a physical device must reach, and warn when auto-detection landed on
-  // a likely-unreachable host so a blank WebView is not mistaken for an app bug.
   #logDevHostResolution(resolution: LocalDevHostResolution, commandEnv: MobileCommandEnv) {
     this.app.log(`Mobile live-reload server: ${this.#localCsrUrl(resolution.host, commandEnv)}`);
     if (resolution.source === "override" || resolution.source === "platform") return;
@@ -1237,14 +1144,12 @@ export class CapacitorApp {
   async #prepareTargetAssets() {
     if (!this.target.assets) return;
     await mkdir(this.targetAssetRoot, { recursive: true });
-    if (this.target.assets.icon)
-      await cp(path.join(this.app.cwdPath, this.target.assets.icon), path.join(this.targetAssetRoot, "icon.png"), {
-        force: true,
-      });
-    if (this.target.assets.splash)
-      await cp(path.join(this.app.cwdPath, this.target.assets.splash), path.join(this.targetAssetRoot, "splash.png"), {
-        force: true,
-      });
+    for (const [name, source] of [
+      ["icon", this.target.assets.icon],
+      ["splash", this.target.assets.splash],
+    ] as const)
+      if (source)
+        await cp(path.join(this.app.cwdPath, source), path.join(this.targetAssetRoot, `${name}.png`), { force: true });
   }
   async #prepareExternalFiles(platform: "ios" | "android") {
     const files = this.target.files?.[platform];
@@ -1327,20 +1232,11 @@ export class CapacitorApp {
       operation,
       env,
       setIosUsageDescriptions: (descriptions) => this.#setPermissionInIos(descriptions),
-      updateIosInfoPlist: async (values) => {
-        await Promise.all([
-          this.project.ios.updateInfoPlist(this.iosTargetName, "Debug", values),
-          this.project.ios.updateInfoPlist(this.iosTargetName, "Release", values),
-        ]);
-      },
+      updateIosInfoPlist: (values) => this.#updateIosInfoPlist(values),
       addIosEntitlements: (entitlements) => this.#addIosEntitlements(entitlements),
       editIosAppDelegate: (transform) => this.#editIosAppDelegate(transform),
-      addAndroidPermissions: (permissions) => {
-        this.#setPermissionsInAndroid(permissions);
-      },
-      addAndroidFeatures: (features) => {
-        this.#setFeaturesInAndroid(features);
-      },
+      addAndroidPermissions: (permissions) => this.#setPermissionsInAndroid(permissions),
+      addAndroidFeatures: (features) => this.#setFeaturesInAndroid(features),
     };
   }
   async #applyDeepLinks(platform: "ios" | "android", { operation, env }: Pick<RunConfig, "operation" | "env">) {
@@ -1420,12 +1316,6 @@ export class CapacitorApp {
     if (this.target.indexPath) params.set("akanMobileIndexPath", this.target.indexPath);
     return `http://${ip}:${port}/${pathname}?${params}`;
   }
-  async #clearRootCapacitorConfigs() {
-    await clearRootCapacitorConfigs(this.app.cwdPath);
-  }
-  async #writeRootCapacitorConfig(content: string) {
-    await writeRootCapacitorConfig(this.app.cwdPath, content);
-  }
   async #spawn(command: string, args: string[] = [], options: Parameters<AppExecutor["spawn"]>[2] = {}) {
     return await this.app.spawn(command, args, { cwd: this.app.cwdPath, ...options });
   }
@@ -1441,14 +1331,11 @@ export class CapacitorApp {
       { operation, platform: platform ?? this.#inferMobilePlatform(args), iosRunTargetKind },
       mobileEnv,
     );
-    await this.#writeRootCapacitorConfig(configContent);
+    await writeRootCapacitorConfig(this.app.cwdPath, configContent);
     try {
-      return await this.#spawn(command, args, {
-        ...spawnOptions,
-        env: mobileEnv,
-      });
+      return await this.#spawn(command, args, { ...spawnOptions, env: mobileEnv });
     } finally {
-      await this.#clearRootCapacitorConfigs();
+      await clearRootCapacitorConfigs(this.app.cwdPath);
     }
   }
   #inferMobilePlatform(args: string[]): MobilePlatform | undefined {
@@ -1481,7 +1368,6 @@ export class CapacitorApp {
   #addIosEntitlements(entitlements: Record<string, string | string[]>) {
     Object.assign(this.#iosEntitlements, entitlements);
   }
-  //* Generic in-place transform of ios/App/App/AppDelegate.swift (no-op if the file is absent).
   //* Feature-specific native wiring (e.g. Firebase) lives in plugins, not the framework.
   async #editIosAppDelegate(transform: (content: string) => string) {
     const appDelegatePath = path.join(this.app.cwdPath, this.iosProjectPath, "App/AppDelegate.swift");
@@ -1491,22 +1377,20 @@ export class CapacitorApp {
     const next = transform(content);
     if (next !== content) await editor.setContent(next).save();
   }
+  async #updateIosInfoPlist(values: Record<string, unknown>) {
+    await Promise.all(
+      (["Debug", "Release"] as const).map((build) =>
+        this.project.ios.updateInfoPlist(this.iosTargetName, build, values),
+      ),
+    );
+  }
   async #setPermissionInIos(permissions: { [key: string]: string }) {
-    const updateNs = toIosInfoPlistUsageDescriptions(permissions);
-    await Promise.all([
-      this.project.ios.updateInfoPlist(this.iosTargetName, "Debug", updateNs),
-      this.project.ios.updateInfoPlist(this.iosTargetName, "Release", updateNs),
-    ]);
+    await this.#updateIosInfoPlist(toIosInfoPlistUsageDescriptions(permissions));
   }
   async #setUrlSchemesInIos(schemes: string[]) {
-    const urlTypes = schemes.map((scheme) => ({
-      CFBundleURLName: this.target.appId,
-      CFBundleURLSchemes: [scheme],
-    }));
-    await Promise.all([
-      this.project.ios.updateInfoPlist(this.iosTargetName, "Debug", { CFBundleURLTypes: urlTypes }),
-      this.project.ios.updateInfoPlist(this.iosTargetName, "Release", { CFBundleURLTypes: urlTypes }),
-    ]);
+    await this.#updateIosInfoPlist({
+      CFBundleURLTypes: schemes.map((scheme) => ({ CFBundleURLName: this.target.appId, CFBundleURLSchemes: [scheme] })),
+    });
   }
   #serializeIosEntitlements(entitlements: Record<string, string | string[]>) {
     const lines: string[] = [];
@@ -1520,8 +1404,6 @@ export class CapacitorApp {
     }
     return lines;
   }
-  //* Write the accumulated iOS entitlements (from deep links + plugins) to App/App.entitlements
-  //* once per prepare. Skipped entirely when nothing contributed entitlements.
   async #flushIosEntitlements() {
     if (Object.keys(this.#iosEntitlements).length === 0) return;
     const entitlementsRelPath = "App/App.entitlements";
@@ -1579,73 +1461,51 @@ export class CapacitorApp {
     if (!(await Bun.file(entitlementsPath).exists())) return;
     await this.#setCodeSignEntitlementsInIos(entitlementsRelPath);
   }
-  async #setUrlSchemesInAndroid(schemes: string[]) {
+  async #setDeepLinksInAndroid(schemes: string[], domains: string[]) {
     const manifestPath = path.join(this.app.cwdPath, this.androidRootPath, "app/src/main/AndroidManifest.xml");
-    let manifest = await readFile(manifestPath, "utf8");
-    let changed = false;
+    const original = await readFile(manifestPath, "utf8");
+    const pathPrefix = resolveMobilePath(this.target, "/");
+    let manifest = original;
     for (const scheme of schemes) {
       if (manifest.includes(`android:scheme="${scheme}"`)) continue;
-      const filter = [
-        "            <intent-filter>",
-        '                <action android:name="android.intent.action.VIEW" />',
-        '                <category android:name="android.intent.category.DEFAULT" />',
-        '                <category android:name="android.intent.category.BROWSABLE" />',
-        `                <data android:scheme="${scheme}" />`,
-        "            </intent-filter>",
-      ].join("\n");
-      manifest = manifest.replace(/(\s*<\/activity>)/, `\n${filter}$1`);
-      changed = true;
+      manifest = CapacitorApp.#withIntentFilter(manifest, "<intent-filter>", `<data android:scheme="${scheme}" />`);
     }
-    if (changed) await writeFile(manifestPath, manifest);
-  }
-  async #setDeepLinksInAndroid(schemes: string[], domains: string[]) {
-    await this.#setUrlSchemesInAndroid(schemes);
-    const manifestPath = path.join(this.app.cwdPath, this.androidRootPath, "app/src/main/AndroidManifest.xml");
-    let manifest = await readFile(manifestPath, "utf8");
-    let changed = false;
-    const pathPrefix = resolveMobilePath(this.target, "/");
     for (const domain of domains) {
       if (manifest.includes(`android:host="${domain}"`) && manifest.includes('android:scheme="https"')) continue;
-      const filter = [
-        '            <intent-filter android:autoVerify="true">',
-        '                <action android:name="android.intent.action.VIEW" />',
-        '                <category android:name="android.intent.category.DEFAULT" />',
-        '                <category android:name="android.intent.category.BROWSABLE" />',
-        `                <data android:scheme="https" android:host="${domain}" android:pathPrefix="${pathPrefix}" />`,
-        "            </intent-filter>",
-      ].join("\n");
-      manifest = manifest.replace(/(\s*<\/activity>)/, `\n${filter}$1`);
-      changed = true;
+      manifest = CapacitorApp.#withIntentFilter(
+        manifest,
+        '<intent-filter android:autoVerify="true">',
+        `<data android:scheme="https" android:host="${domain}" android:pathPrefix="${pathPrefix}" />`,
+      );
     }
-    if (changed) await writeFile(manifestPath, manifest);
+    if (manifest !== original) await writeFile(manifestPath, manifest);
+  }
+  static #withIntentFilter(manifest: string, open: string, data: string) {
+    const filter = [
+      `            ${open}`,
+      '                <action android:name="android.intent.action.VIEW" />',
+      '                <category android:name="android.intent.category.DEFAULT" />',
+      '                <category android:name="android.intent.category.BROWSABLE" />',
+      `                ${data}`,
+      "            </intent-filter>",
+    ].join("\n");
+    return manifest.replace(/(\s*<\/activity>)/, `\n${filter}$1`);
   }
   #setFeaturesInAndroid(features: string[]) {
     for (const feature of features) {
-      if (this.#hasFeatureInAndroid(feature)) {
+      if (this.#androidManifestNames("uses-feature").includes(feature)) {
         this.app.logger.info(`${feature} already exists in android`);
-        return this;
+        return;
       }
       this.app.logger.info(`Adding ${feature} to android`);
       this.project.android
         .getAndroidManifest()
         .injectFragment("manifest", `<uses-feature android:name="${feature}" />`);
     }
-    return this;
   }
-  #getFeaturesInAndroid() {
-    const androidManifest = this.project.android.getAndroidManifest();
-    const element = androidManifest.getDocumentElement();
-    if (!element) throw new Error("manifest not found");
-    const usesFeature = element.getElementsByTagName("uses-feature");
-    return Array.from(usesFeature).map((feature) => feature.getAttribute("android:name"));
-  }
-  #hasFeatureInAndroid(feature: string) {
-    return this.#getFeaturesInAndroid().includes(feature);
-  }
-
   #setPermissionsInAndroid(permissions: string[]) {
     for (const permission of permissions) {
-      if (this.#hasPermissionInAndroid(permission)) {
+      if (this.#androidManifestNames("uses-permission").includes(`android.permission.${permission}`)) {
         this.app.logger.info(`${permission} already exists in android`);
         continue;
       }
@@ -1654,16 +1514,10 @@ export class CapacitorApp {
         .getAndroidManifest()
         .injectFragment("manifest", `<uses-permission android:name="android.permission.${permission}" />`);
     }
-    return this;
   }
-  #getPermissionsInAndroid() {
-    const androidManifest = this.project.android.getAndroidManifest();
-    const element = androidManifest.getDocumentElement();
+  #androidManifestNames(tagName: "uses-feature" | "uses-permission") {
+    const element = this.project.android.getAndroidManifest().getDocumentElement();
     if (!element) throw new Error("manifest not found");
-    const usesPermission = element.getElementsByTagName("uses-permission");
-    return Array.from(usesPermission).map((permission) => permission.getAttribute("android:name"));
-  }
-  #hasPermissionInAndroid(permission: string) {
-    return this.#getPermissionsInAndroid().includes(`android.permission.${permission}`);
+    return Array.from(element.getElementsByTagName(tagName)).map((node) => node.getAttribute("android:name"));
   }
 }

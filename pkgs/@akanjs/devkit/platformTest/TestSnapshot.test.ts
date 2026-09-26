@@ -1,10 +1,10 @@
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { unlink } from "node:fs/promises";
 import path from "node:path";
+import { tempDirs, writeText } from "../testHelpers";
 import { TestSnapshot } from "./TestSnapshot";
 
-const roots: string[] = [];
+const makeRoot = tempDirs("akan-snapshot-");
 const git = async (cwd: string, ...args: string[]) => {
   const proc = Bun.spawn(["git", ...args], {
     cwd,
@@ -20,13 +20,9 @@ const git = async (cwd: string, ...args: string[]) => {
   });
   expect(await proc.exited).toBe(0);
 };
-const write = async (root: string, file: string, content: string) => {
-  await mkdir(path.dirname(path.join(root, file)), { recursive: true });
-  await writeFile(path.join(root, file), content);
-};
+const write = async (root: string, file: string, content: string) => await writeText(path.join(root, file), content);
 const makeRepo = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-snapshot-"));
-  roots.push(root);
+  const root = await makeRoot();
   await git(root, "init", "-q");
   await write(root, ".gitignore", "ignored/\nlocal/\n.env\n");
   await write(root, "tracked.ts", "export {};\n");
@@ -43,10 +39,6 @@ const tarEntries = async (tarPath: string) => {
   const proc = Bun.spawn(["tar", "-tf", tarPath], { stdout: "pipe" });
   return (await new Response(proc.stdout).text()).split(/\r?\n/).filter(Boolean).sort();
 };
-
-afterAll(async () => {
-  await Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
-});
 
 describe("TestSnapshot", () => {
   test("packs what git would show — tracked and untracked, never ignored or deleted", async () => {

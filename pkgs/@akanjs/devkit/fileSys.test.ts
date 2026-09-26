@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { getDirname } from "./getDirname";
+import { getDirname } from "./fileSys";
 
 describe("getDirname", () => {
   test("converts file URLs to filesystem paths", () => {

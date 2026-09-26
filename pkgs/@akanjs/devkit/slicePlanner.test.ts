@@ -1,30 +1,13 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { AppExecutor, Executor, WorkspaceExecutor } from "./executors";
 import { formatSlicePlan, SlicePlanner } from "./slicePlanner";
+import { isolateEnv, tempDirs, writeText as write } from "./testHelpers";
 import type { PackageJson } from "./types";
 
-const tempRoots: string[] = [];
-const originalEnv = { ...process.env };
-
-beforeEach(() => {
-  process.env = { ...originalEnv };
-  process.env.AKAN_PUBLIC_REPO_NAME = "workspace";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-  process.env.AKAN_PUBLIC_ENV = "local";
-});
-
-afterEach(async () => {
-  process.env = { ...originalEnv };
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
-
-const write = async (filePath: string, content: string) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content);
-};
+isolateEnv({ AKAN_PUBLIC_REPO_NAME: "workspace", AKAN_PUBLIC_SERVE_DOMAIN: "example.com", AKAN_PUBLIC_ENV: "local" });
+const makeTempRoot = tempDirs("akan-slice-");
 
 const gitignore = [
   "node_modules",
@@ -36,8 +19,7 @@ const gitignore = [
 
 // `AppExecutor.from` and `AppInfo.fromExecutor` both memoise by name, so each fixture needs a fresh one.
 const makeWorkspace = async (appName: string, libName: string) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-slice-"));
-  tempRoots.push(root);
+  const root = await makeTempRoot();
   const rootPackageJson: PackageJson = {
     name: "workspace",
     version: "0.0.1",

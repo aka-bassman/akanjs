@@ -1,25 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
 import path from "node:path";
+import { tempDirs, writeText as write } from "../testHelpers";
 import { resolveSsrPageEntries } from "./implicitRootLayout";
 
-const tempRoots: string[] = [];
-
-const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-implicit-root-layout-"));
-  tempRoots.push(root);
-  return root;
-};
-
-const write = async (filePath: string, content: string) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content);
-};
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
+const makeTempRoot = tempDirs("akan-implicit-root-layout-");
 
 describe("resolveSsrPageEntries", () => {
   test("inherits root layout static exports for grouped root boundaries", async () => {

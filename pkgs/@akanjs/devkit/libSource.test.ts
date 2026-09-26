@@ -1,25 +1,14 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import { Executor, LibExecutor, WorkspaceExecutor } from "./executors";
 import { formatLibStatuses, LibSource } from "./libSource";
+import { tempDirs, writeText as write } from "./testHelpers";
 
-const tempRoots: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
-
-const write = async (filePath: string, content: string) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content);
-};
+const makeTempRoot = tempDirs("akan-libsource-");
 
 // `LibExecutor.from` memoises by name, so each fixture needs a name no other test has used.
 const makeLib = async (libName: string) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-libsource-"));
-  tempRoots.push(root);
+  const root = await makeTempRoot();
   await write(
     path.join(root, "package.json"),
     '{ "name": "workspace", "version": "0.0.1", "description": "workspace" }\n',

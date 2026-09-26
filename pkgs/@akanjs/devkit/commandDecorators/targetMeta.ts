@@ -1,5 +1,5 @@
 import type { ArgMeta, InternalArgMeta } from "./argMeta";
-import type { DependencyCls } from "./types";
+import type { Cls, DependencyCls } from "./dependencyBuilder";
 
 export const COMMAND_META: unique symbol = Symbol("akan.command.meta");
 
@@ -24,10 +24,7 @@ export const getTargetMetas = (command: CommandCls): TargetMeta[] => {
 
 const camelToKebabCase = (str: string) => str.replace(/([A-Z])/g, "-$1").toLowerCase();
 
-/**
- * CLI names a target answers to. Shared with the command-manifest generator so a lazily-loaded CLI
- * resolves `argv[2]` to the same module that `runCommands` would have registered it under.
- */
+/** Shared with the command-manifest generator, so a lazily loaded CLI maps argv[2] to the module runCommands would. */
 export const getTargetCommandNames = (targetMeta: TargetMeta): string[] => {
   const kebabKey = camelToKebabCase(targetMeta.key);
   if (targetMeta.targetOption.short !== true) return [kebabKey];
@@ -48,3 +45,9 @@ export interface TargetOption {
   runsOnWorkspaceRoot?: boolean;
   stdio?: boolean;
 }
+
+export const Commands = () => {
+  return (target: Cls) => {
+    // not implemented yet
+  };
+};

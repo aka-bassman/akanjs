@@ -58,16 +58,8 @@ interface LintResponse {
   warnings: LintMessage[];
 }
 
-/**
- * Extracts the `--reporter=json` report from Biome's output.
- *
- * Biome mixes configuration and IO diagnostics into the same stream as the report, so the output is not
- * always JSON alone. Slicing from the first `{` to the last `}` mis-parses as soon as that leading text
- * carries a brace of its own, which is not hypothetical: a config error printed ahead of the report made
- * one unchanged command alternate between 2 and 10 diagnostics. So every `{` is tried as a start, its
- * match is found by depth while string literals are skipped, and the first candidate that both parses and
- * carries a report field wins — a brace in prose parses as nothing, and `{"a":1}` in prose is not a report.
- */
+// Biome mixes config and IO diagnostics into the report stream, and that text can carry braces of its own, so every
+// `{` is tried as a start (string literals skipped) and the first candidate that parses and carries a report field wins.
 export const parseBiomeReport = (output: string): BiomeReport => {
   for (let start = output.indexOf("{"); start !== -1; start = output.indexOf("{", start + 1)) {
     const end = objectEndAt(output, start);
@@ -110,6 +102,15 @@ const asBiomeReport = (candidate: string): BiomeReport | null => {
 
 /** Biome reads `biome.json` first and `biome.jsonc` second; only the latter may carry comments. */
 const BIOME_CONFIG_FILES = ["biome.json", "biome.jsonc"] as const;
+
+const emptyResult = (filePath: string): LintResult => ({
+  filePath,
+  messages: [],
+  errorCount: 0,
+  warningCount: 0,
+  fixableErrorCount: 0,
+  fixableWarningCount: 0,
+});
 
 export class Linter {
   //? Bun links a package bin as `<name>.exe` (plus a `.bunx` stub) on Windows, and a bare `<name>` elsewhere.
@@ -202,16 +203,7 @@ export class Linter {
     for (const diagnostic of report.diagnostics ?? []) {
       if (diagnostic.severity !== "error" && diagnostic.severity !== "warning") continue;
       const diagnosticFilePath = this.#diagnosticFilePath(diagnostic, filePath);
-      const result =
-        resultsByPath.get(diagnosticFilePath) ??
-        ({
-          filePath: diagnosticFilePath,
-          messages: [],
-          errorCount: 0,
-          warningCount: 0,
-          fixableErrorCount: 0,
-          fixableWarningCount: 0,
-        } satisfies LintResult);
+      const result = resultsByPath.get(diagnosticFilePath) ?? emptyResult(diagnosticFilePath);
       const message = this.#createLintMessage(diagnostic);
       result.messages.push(message);
       if (message.severity === 2) result.errorCount += 1;
@@ -220,15 +212,7 @@ export class Linter {
     }
 
     return [
-      resultsByPath.get(filePath) ??
-        ({
-          filePath,
-          messages: [],
-          errorCount: 0,
-          warningCount: 0,
-          fixableErrorCount: 0,
-          fixableWarningCount: 0,
-        } satisfies LintResult),
+      resultsByPath.get(filePath) ?? emptyResult(filePath),
       ...[...resultsByPath.entries()].filter(([resultPath]) => resultPath !== filePath).map(([, result]) => result),
     ];
   }
@@ -272,22 +256,12 @@ export class Linter {
     return await this.lintFile(filePath);
   }
 
-  /**
-   * Lint a single file using Biome.
-   * @param filePath - Path to the file to lint
-   * @returns Array of Biome results in the legacy lint result shape
-   */
   async lintFile(filePath: string): Promise<LintResponse> {
     const resolvedFilePath = this.#resolveFilePath(filePath);
     if (!existsSync(resolvedFilePath)) throw new Error(`File not found: ${filePath}`);
     return await this.#checkFile(resolvedFilePath);
   }
 
-  /**
-   * Format lint results for console output
-   * @param results - Array of Biome results
-   * @returns Formatted string
-   */
   formatLintResults(results: LintResult[]): string {
     if (results.length === 0) return "No files to lint";
 
@@ -308,7 +282,7 @@ export class Linter {
             const sourceContent = readFileSync(result.filePath, "utf8");
             sourceLines = sourceContent.split("\n");
           } catch {
-            // Ignore read errors
+            //? An unreadable source only loses its code frame.
           }
         }
 
@@ -321,14 +295,12 @@ export class Linter {
           output.push(`\n  ${icon} ${typeColor(type)}: ${message.message}${ruleInfo}`);
           output.push(`     ${chalk.gray("at")} ${result.filePath}:${chalk.bold(`${message.line}:${message.column}`)}`);
 
-          // Show source line with underline
           if (sourceLines.length > 0 && message.line <= sourceLines.length) {
             const sourceLine = sourceLines[message.line - 1];
             const lineNumber = message.line.toString().padStart(5, " ");
 
             output.push(`\n${chalk.dim(`${lineNumber} |`)} ${sourceLine}`);
 
-            // Create underline
             const underlinePrefix = " ".repeat(message.column - 1);
             const underlineLength = message.endColumn ? message.endColumn - message.column : 1;
             const underline = "^".repeat(Math.max(1, underlineLength));
@@ -348,27 +320,7 @@ export class Linter {
     return summary.concat(output).join("\n");
   }
 
-  /**
-   * Get detailed lint information
-   * @param filePath - Path to the file to lint
-   * @returns Object containing detailed lint information
-   */
-  async getDetailedLintInfo(filePath: string): Promise<{
-    results: LintResult[];
-    details: {
-      line: number;
-      column: number;
-      message: string;
-      ruleId: string | null;
-      severity: "error" | "warning";
-    }[];
-    stats: {
-      errorCount: number;
-      warningCount: number;
-      fixableErrorCount: number;
-      fixableWarningCount: number;
-    };
-  }> {
+  async getDetailedLintInfo(filePath: string) {
     const { results } = await this.lintFile(filePath);
 
     const details = results.flatMap((result) =>
@@ -388,22 +340,13 @@ export class Linter {
         fixableErrorCount: acc.fixableErrorCount + result.fixableErrorCount,
         fixableWarningCount: acc.fixableWarningCount + result.fixableWarningCount,
       }),
-      {
-        errorCount: 0,
-        warningCount: 0,
-        fixableErrorCount: 0,
-        fixableWarningCount: 0,
-      },
+      { errorCount: 0, warningCount: 0, fixableErrorCount: 0, fixableWarningCount: 0 },
     );
 
     return { results, details, stats };
   }
 
-  /**
-   * Check if a file has lint errors
-   * @param filePath - Path to the file to check
-   * @returns true if there are no errors, false otherwise
-   */
+  /** Also false when the file cannot be linted at all. */
   async hasNoLintErrors(filePath: string): Promise<boolean> {
     try {
       const { results } = await this.lintFile(filePath);
@@ -413,32 +356,17 @@ export class Linter {
     }
   }
 
-  /**
-   * Get only error messages (excluding warnings)
-   * @param filePath - Path to the file to lint
-   * @returns Array of error messages
-   */
   async getErrors(filePath: string): Promise<LintMessage[]> {
     const { results } = await this.lintFile(filePath);
     return results.flatMap((result) => result.messages.filter((message) => message.severity === 2));
   }
 
-  /**
-   * Get only warning messages
-   * @param filePath - Path to the file to lint
-   * @returns Array of warning messages
-   */
   async getWarnings(filePath: string): Promise<LintMessage[]> {
     const { results } = await this.lintFile(filePath);
     return results.flatMap((result) => result.messages.filter((message) => message.severity === 1));
   }
 
-  /**
-   * Fix lint errors automatically
-   * @param filePath - Path to the file to fix
-   * @param dryRun - If true, returns the fixed content without writing to file
-   * @returns Fixed content and remaining issues
-   */
+  /** `dryRun` returns the fixed content in `output` without writing the file. */
   async fixFile(filePath: string, dryRun = false): Promise<LintResponse> {
     const resolvedFilePath = this.#resolveFilePath(filePath);
     if (!existsSync(resolvedFilePath)) throw new Error(`File not found: ${filePath}`);
@@ -454,19 +382,8 @@ export class Linter {
     return { ...lintResult, fixed: stdout !== source, output: stdout };
   }
 
-  /**
-   * Get Biome configuration for a file
-   * @param filePath - Path to the file
-   * @returns Biome configuration object
-   */
-  /**
-   * Applies Biome's safe fixes to many files in one process.
-   *
-   * One spawn, not one per file: Biome's startup dominates a small file, so the per-file path turns a
-   * fifteen-file scaffold into three seconds of process launches. Paths that do not exist are dropped
-   * rather than thrown on, because the caller is usually reporting what a template just wrote and a
-   * template is allowed to decline a file.
-   */
+  // One spawn for all files: Biome's startup dominates a small file. Missing paths are dropped (a template may
+  // decline a file).
   async fixFiles(filePaths: string[]): Promise<{ fixed: string[] }> {
     const resolved = filePaths.map((filePath) => this.#resolveFilePath(filePath)).filter(existsSync);
     if (resolved.length === 0) return { fixed: [] };
@@ -492,21 +409,11 @@ export class Linter {
     return JSON.parse(readFileSync(this.configPath, "utf8")) as unknown;
   }
 
-  /**
-   * Get rules that are causing errors in a file
-   * @param filePath - Path to the file to check
-   * @returns Object mapping rule IDs to their error counts
-   */
   async getProblematicRules(filePath: string): Promise<Record<string, number>> {
     const { results } = await this.lintFile(filePath);
     const ruleCounts: Record<string, number> = {};
-
-    results.forEach((result) => {
-      result.messages.forEach((message) => {
-        if (message.ruleId) ruleCounts[message.ruleId] = (ruleCounts[message.ruleId] || 0) + 1;
-      });
-    });
-
+    for (const message of results.flatMap((result) => result.messages))
+      if (message.ruleId) ruleCounts[message.ruleId] = (ruleCounts[message.ruleId] || 0) + 1;
     return ruleCounts;
   }
 }

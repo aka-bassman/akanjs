@@ -31,12 +31,8 @@ export class GlobalConfig {
       testTargets: akanConfig.testTargets ?? defaultAkanGlobalConfig.testTargets,
     };
   }
-  /**
-   * This file holds the cloud jwt and a refresh token that does not expire, so it is
-   * written owner-only — the same `0600` the runtime gives its control socket. `Bun.write` takes no mode
-   * and lands on `0666 & ~umask` (0644 on a default shell), so the mode is applied after the write; an
-   * existing world-readable file is tightened by the next write rather than left as it was found.
-   */
+  // Holds the cloud jwt and a non-expiring refresh token, so owner-only 0600; Bun.write takes no mode (0644 on a
+  // default umask), so chmod follows the write and also tightens an existing world-readable file.
   static async #setAkanGlobalConfig(akanConfig: AkanGlobalConfig) {
     await mkdir(basePath, { recursive: true, mode: 0o700 });
     await Bun.write(configPath, JSON.stringify(akanConfig, null, 2));
@@ -52,30 +48,22 @@ export class GlobalConfig {
     await GlobalConfig.#setAkanGlobalConfig(akanConfig);
   }
   static async getRemoteEnvServers(): Promise<AkanGlobalConfig["remoteEnvServers"]> {
-    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    return akanConfig.remoteEnvServers;
+    return (await GlobalConfig.#getAkanGlobalConfig()).remoteEnvServers;
   }
   static async setRemoteEnvServer(name: string, config: RemoteEnvServerConfig) {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
     await GlobalConfig.#setAkanGlobalConfig({
       ...akanConfig,
-      remoteEnvServers: {
-        ...akanConfig.remoteEnvServers,
-        [name]: config,
-      },
+      remoteEnvServers: { ...akanConfig.remoteEnvServers, [name]: config },
     });
   }
   static async removeRemoteEnvServer(name: string) {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
     const { [name]: _, ...remoteEnvServers } = akanConfig.remoteEnvServers;
-    await GlobalConfig.#setAkanGlobalConfig({
-      ...akanConfig,
-      remoteEnvServers,
-    });
+    await GlobalConfig.#setAkanGlobalConfig({ ...akanConfig, remoteEnvServers });
   }
   static async getTestTargets(): Promise<TestTargetsConfig> {
-    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    return akanConfig.testTargets;
+    return (await GlobalConfig.#getAkanGlobalConfig()).testTargets;
   }
   static async setTestTargets(testTargets: TestTargetsConfig) {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
