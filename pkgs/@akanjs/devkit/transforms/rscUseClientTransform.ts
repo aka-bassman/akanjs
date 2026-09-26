@@ -1,12 +1,5 @@
 import path from "node:path";
 
-// Pure "use client" transform: when `source` starts with the `"use client"`
-// directive, replace its exports with `registerClientReference` stubs so the
-// RSC renderer can serialize them as client component references instead of
-// trying to run them on the server.
-
-// Matches `"use client"` or `'use client'` at the start of a file,
-// optionally after leading whitespace and JS comments.
 const USE_CLIENT_RE = /^\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*["']use client["']/;
 const IMPLICIT_ROOT_LAYOUT_RE =
   /[/\\]\.akan[/\\]generated[/\\](?:implicit-root-layout|root-layouts[/\\].*__root_layout)\.(tsx|ts|jsx|js)$/;
@@ -20,10 +13,7 @@ export function toClientReferencePath(absPath: string, workspaceRoot: string): s
   return path.relative(path.resolve(workspaceRoot), path.resolve(absPath)).split(path.sep).join("/");
 }
 
-/**
- * Returns the stubbed module source if `source` is a client module, else null.
- * The returned source is TypeScript-compatible (loader "ts" is safe).
- */
+/** `null` unless `source` is a `"use client"` module; the stub source is valid under loader `"ts"`. */
 export function transformUseClient(source: string, args: UseClientTransformArgs): string | null {
   if (!USE_CLIENT_RE.test(source)) return null;
   if (IMPLICIT_ROOT_LAYOUT_RE.test(args.path)) return null;

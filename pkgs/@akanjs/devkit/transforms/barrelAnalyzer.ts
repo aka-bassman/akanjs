@@ -2,43 +2,34 @@ import path from "node:path";
 import { Logger } from "akanjs/common";
 
 export interface BarrelExportTarget {
-  /** Subpath specifier to emit in rewritten import, e.g. `akanjs/ui/Empty`. */
   subpath: string;
-  /** Name as it is exported by the leaf module. */
   originalName: string;
 }
 
 export type BarrelExportMap = Map<string, BarrelExportTarget>;
 
 export interface PackageEntry {
-  /** Package specifier (e.g. `akanjs/ui`). */
   pkgName: string;
   /** Absolute path of the barrel entry file. */
   entryFile: string;
-  /** Absolute directory used as the base for subpath computation. Typically dirname(entryFile). */
+  /** Absolute base directory for subpath computation, typically `dirname(entryFile)`. */
   pkgDir: string;
-  /** Preserve concrete file paths for package exports that do not support extensionless deep imports. */
+  /** Emit concrete file paths, for package exports that do not support extensionless deep imports. */
   preserveFilePath?: boolean;
 }
 
 export interface BarrelAnalyzerOptions {
   resolvePackage: (pkgName: string) => Promise<PackageEntry | null>;
-  /** Resolve a relative specifier from `fromFile` to an absolute file path on disk. */
+  /** Resolves to an absolute file path on disk. */
   resolveRelative?: (fromFile: string, relSpec: string) => Promise<string | null>;
 }
 
-// Re-export statements with an explicit source: `export { A, B as C } from "./x"`,
-// `export * from "./x"`, `export * as ns from "./x"`. We rely on `Transpiler.scan`
-// for the authoritative export name set; this regex only needs to give us the
-// name↔source mapping that scan doesn't expose.
+// `Transpiler.scan` gives the export names but not their sources; this regex supplies the name↔source mapping.
 const REEXPORT_RE =
   /(?:^|\n)\s*export\s+(?:type\s+)?(?:(\*)(?:\s+as\s+(\w+))?|\{\s*([^}]*?)\s*\})\s+from\s+(["'])([^"']+)\4;?/g;
 
-// Local named re-export without `from`: `export { A, B as C };`
-// `Transpiler.scan` currently omits these from its `exports` list so we keep a
-// small regex fallback. The lookahead sits immediately after `}` so that
-// greedy whitespace matching cannot backtrack past it — otherwise it would
-// also match `export type { X } from "./y"` statements.
+// `Transpiler.scan` omits `export { A, B as C };`. The lookahead sits right after `}` so whitespace backtracking
+// cannot also match `export type { X } from "./y"`.
 const LOCAL_NAMED_RE = /(?:^|\n)\s*export\s+\{\s*([^}]*?)\s*\}(?!\s*from)/g;
 
 const CANDIDATE_EXTS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
@@ -88,20 +79,13 @@ export class BarrelAnalyzer {
     const currentSubpath = this.#subpathFor(pkg, absFile);
     if (!currentSubpath) return;
 
-    // Authoritative export names from Bun's transpiler. Filters type-only,
-    // comments, strings, etc. automatically. `export *` re-exports are NOT
-    // flooded here — they only show up as imports, so we recurse separately.
+    // scan leaves out `export *` names (they surface only as imports), so star re-exports are walked below.
     const authoritative = this.#scanExports(source, absFile);
-    // `default` is intentionally skipped — barrels rarely proxy defaults and
-    // rewriting `import X from "pkg"` requires different semantics.
+    // Barrels rarely proxy defaults, and rewriting `import X from "pkg"` needs different semantics.
     authoritative.delete("default");
 
-    // Names attributed to a specific leaf via `export ... from "./path"`.
-    // Everything left over in `authoritative` after this is treated as a local
-    // declaration at this file's own subpath.
     const attributed = new Set<string>();
 
-    // Pass 1: `export { ... } from "./x"` and `export * [as ns] from "./x"`.
     REEXPORT_RE.lastIndex = 0;
     let m: RegExpExecArray | null = REEXPORT_RE.exec(source);
     while (m !== null) {
@@ -114,17 +98,12 @@ export class BarrelAnalyzer {
 
       if (star) {
         if (nsAs) {
-          // `export * as ns from "./x"` exposes a namespace object that we
-          // cannot flatten into direct subpath imports. Ensure it's not misread
-          // as a local declaration.
+          // A namespace re-export cannot be flattened into subpath imports, nor is it a local declaration.
           authoritative.delete(nsAs);
           continue;
         }
         const targetAbs = await this.#resolveRel(absFile, spec);
         if (!targetAbs) continue;
-        // Recurse: target's exports will land in `map` with target's subpath.
-        // These names don't appear in this file's `authoritative` set, so the
-        // local-declaration pass below won't misattribute them.
         await this.#walk(targetAbs, pkg, map, visited);
         continue;
       }
@@ -137,8 +116,6 @@ export class BarrelAnalyzer {
         for (const item of parseNamedList(namedList)) {
           if (item.isType) continue;
           if (item.imported === "default") continue;
-          // Validate against scan — drops anything hidden behind `export type`
-          // or otherwise not actually exported at runtime.
           if (!authoritative.has(item.local)) continue;
           attributed.add(item.local);
           if (!map.has(item.local)) {
@@ -148,8 +125,6 @@ export class BarrelAnalyzer {
       }
     }
 
-    // Pass 2: `export { A, B as C };` (no `from`). scan omits these, so the
-    // regex is authoritative for this narrow case.
     LOCAL_NAMED_RE.lastIndex = 0;
     let n: RegExpExecArray | null = LOCAL_NAMED_RE.exec(source);
     while (n !== null) {
@@ -158,8 +133,6 @@ export class BarrelAnalyzer {
       for (const item of parseNamedList(body)) {
         if (item.isType) continue;
         if (item.imported === "default") continue;
-        // Validate against scan — ensures we don't treat commented-out or
-        // otherwise dead code as a real local re-export.
         if (!authoritative.has(item.local)) continue;
         attributed.add(item.local);
         if (!map.has(item.local)) {
@@ -168,9 +141,6 @@ export class BarrelAnalyzer {
       }
     }
 
-    // Pass 3: remaining authoritative names are local declarations defined in
-    // this file (const/function/class/...). scan already filtered out
-    // type-only and namespace-only exports for us.
     for (const name of authoritative) {
       if (attributed.has(name)) continue;
       if (map.has(name)) continue;
@@ -194,8 +164,7 @@ export class BarrelAnalyzer {
     if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
     if (pkg.preserveFilePath) return `${pkg.pkgName}/${rel.split(path.sep).join("/")}`;
     const noExt = stripKnownExt(rel);
-    // index files collapse to the directory — but the barrel entry is itself an index.
-    // For nested `xxx/index.*`, callers are expected to import `@pkg/xxx` (not `xxx/index`).
+    // `xxx/index` collapses to `xxx`: callers import `@pkg/xxx`, never `@pkg/xxx/index`.
     const tail = collapseIndex(noExt);
     if (tail === "") return pkg.pkgName;
     return `${pkg.pkgName}/${tail.split(path.sep).join("/")}`;

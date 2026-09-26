@@ -7,8 +7,7 @@ type TypeScript = typeof ts;
 export class AsyncDefaultExportDetector {
   static #typescriptLoad: Promise<TypeScript> | undefined;
 
-  // `typescript` costs ~70 MB resident and this detector is reached from the cli entry through the root
-  // layout generator, so the compiler loads on first use rather than at import (`entryModuleGraph.test.ts`).
+  // Lazy: `typescript` is ~70 MB resident and the cli entry reaches this file (`entryModuleGraph.test.ts`).
   static #loadTypescript(): Promise<TypeScript> {
     AsyncDefaultExportDetector.#typescriptLoad ??= import("typescript").then(
       (mod) => (mod.default ?? mod) as TypeScript,

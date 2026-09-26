@@ -5,15 +5,9 @@ import type { App } from "../commandDecorators";
 import { BarrelAnalyzer, type BarrelExportMap, type PackageEntry } from "./barrelAnalyzer";
 
 export interface BarrelImportsPluginOptions {
-  /** Absolute paths whose content should be returned unchanged (e.g. node_modules). */
+  /** Absolute paths whose content is returned unchanged (e.g. node_modules). */
   skipPath?: (absPath: string) => boolean;
-  /**
-   * Optional transform applied after the barrel rewrite in the same onLoad
-   * pass. Useful to chain further transforms (e.g. `"use client"` stubbing)
-   * that would otherwise be blocked — Bun's `onLoad` cannot fall through to a
-   * second plugin once a response is returned.
-   * Return the transformed source, or `null` to indicate no change.
-   */
+  /** Runs after the rewrite in the same onLoad (Bun's onLoad cannot fall through); null means no change. */
   pipeAfter?: (source: string, args: { path: string }) => string | Promise<string | null> | null;
 }
 
@@ -30,13 +24,8 @@ export const createBarrelImportsPlugin = async (
   return {
     name: "barrel-imports",
     setup(build) {
-      // Exclude third-party node_modules, but keep node_modules/akanjs in generated
-      // workspaces so framework `"use client"` modules are still stubbed for RSC.
-      //
-      // The optional `(\?v=\d+)?` tail lets the filter match paths that HMR
-      // has version-tagged (`./_index.tsx?v=3`). We strip the query before
-      // reading and normalize it away from the path we pass downstream so
-      // only the cache-bust `pipeAfter` step (if any) knows about it.
+      // node_modules/akanjs stays in: framework `"use client"` modules still need RSC stubbing in generated workspaces.
+      // The optional `?v=N` tail matches HMR cache-busted paths; it is stripped before reading.
       build.onLoad(
         {
           filter:
@@ -52,20 +41,11 @@ export const createBarrelImportsPlugin = async (
 
           let source = await Bun.file(realPath).text();
 
-          // Bun's macro evaluator has a race condition when the plugin returns
-          // rewritten source for a module that also contains
-          // `with { type: "macro" }` imports *and* another macro-host file is
-          // being evaluated concurrently in the same graph: one of the macro
-          // identifiers ends up undefined at runtime (e.g. `getSerializedSignal
-          // is not defined`). Returning the unmodified source for macro hosts
-          // sidesteps the race. The trade-off is that a handful of `useClient`-
-          // style files keep their original barrel imports; the rest of the
-          // tree still benefits from flattening.
+          // Bun's macro evaluator races when a rewritten module holds `with { type: "macro" }` imports while another
+          // macro host evaluates (a macro identifier ends up undefined), so macro hosts keep their barrel imports.
           const hasMacroAttr = MACRO_ATTR_RE.test(source);
 
           if (!hasMacroAttr && barrels.length > 0) {
-            // The pre-check that used to live here — "does this file mention a barrel at all" — now
-            // lives inside `rewriteBarrelImports`, so every caller gets it rather than just this one.
             const rewritten = await rewriteBarrelImports(source, barrels, analyzer);
             if (rewritten !== null) source = rewritten;
           }
@@ -82,22 +62,17 @@ export const createBarrelImportsPlugin = async (
   };
 };
 
-/**
- * Build a `resolvePackage` that maps a package specifier (like `akanjs/ui`)
- * to its barrel entry file using the workspace tsconfig `paths`. If no direct
- * mapping exists, falls back to node_modules resolution.
- */
+/** Resolves a package specifier to its barrel entry via tsconfig `paths`, falling back to node_modules. */
 export const createTsconfigPackageResolver = async (
   app: App,
 ): Promise<(pkgName: string) => Promise<PackageEntry | null>> => {
   const tsconfig = await app.getTsConfig();
   const tsconfigPaths = tsconfig.compilerOptions.paths ?? {};
-  // Pre-compute wildcard entries so we don't walk the full map per lookup.
-  // Longer prefixes sort first so `@libs/util/*` wins over `@libs/*`.
+  // Longest prefix first so `@libs/util/*` wins over `@libs/*`.
   const wildcardEntries = Object.entries(tsconfigPaths)
     .filter(([k]) => k.endsWith("/*"))
     .map(([k, v]) => ({
-      prefix: k.slice(0, -1), // keep trailing `/`
+      prefix: k.slice(0, -1),
       replacements: v,
     }))
     .sort((a, b) => b.prefix.length - a.prefix.length);
@@ -109,16 +84,8 @@ export const createTsconfigPackageResolver = async (
       if (!raw) return null;
       const entryFile = path.resolve(app.workspace.workspaceRoot, raw);
       if (!(await Bun.file(entryFile).exists())) return null;
-      // Detect "facet" barrels: specifiers like `@libs/util/server` whose entry
-      // file is a sibling inside the parent directory (`libs/util/server.ts`)
-      // rather than an `index.*` inside a dedicated package directory
-      // (`libs/util/server/index.ts`). For facets, the subpath the analyzer
-      // generates for a leaf like `libs/util/lib/sig.ts` must be computed
-      // against the parent package (`@libs/util`) so that the rewritten
-      // import resolves via the workspace's `@libs/*` tsconfig wildcard
-      // (`libs/util/lib/sig`). Using the raw `pkgName` (`@libs/util/server`)
-      // would generate `@libs/util/server/lib/sig`, a path that does not exist
-      // on disk and cannot be imported.
+      // A facet barrel (`@libs/util/server` -> `libs/util/server.ts`) takes subpaths from its parent package, so a leaf
+      // rewrites to `@libs/util/lib/sig` (resolvable via `@libs/*`), not the missing `@libs/util/server/lib/sig`.
       const parsed = path.parse(entryFile);
       const lastSlash = pkgName.lastIndexOf("/");
       if (parsed.name !== "index" && lastSlash !== -1) {
@@ -131,12 +98,7 @@ export const createTsconfigPackageResolver = async (
       return { pkgName, entryFile, pkgDir: path.dirname(entryFile) };
     }
 
-    // Wildcard fallback: tsconfig entries like `@libs/*` → `./libs/*` map a
-    // whole family of specifiers to workspace directories. Without this,
-    // barrels such as `@libs/util/ui` or `@apps/minimal/client` never resolve
-    // to an entry file — the analyzer returns `null`, the plugin skips them,
-    // and the consumer falls back to Bun's default resolution which loads the
-    // full barrel (pulling the entire transitive macro / side-effect graph).
+    // Without the wildcard fallback `@libs/util/ui`-style barrels never resolve and load whole, macro graph included.
     for (const { prefix, replacements } of wildcardEntries) {
       if (!pkgName.startsWith(prefix)) continue;
       const suffix = pkgName.slice(prefix.length);
@@ -144,13 +106,7 @@ export const createTsconfigPackageResolver = async (
         if (!repl) continue;
         const replPath = repl.endsWith("/*") ? repl.slice(0, -1) : repl;
         const candidate = path.resolve(app.workspace.workspaceRoot, replPath + suffix);
-        // Try `candidate.<ext>` first (facet-barrel: sibling file like
-        // `apps/minimal/client.ts`). If it exists we treat the PARENT directory
-        // as `pkgDir` and the PARENT specifier (`@apps/minimal`) as `pkgName`
-        // so a leaf at `apps/minimal/lib/useClient.ts` rewrites to
-        // `@apps/minimal/lib/useClient` and resolves via the same `@apps/*`
-        // wildcard. Using the raw `pkgName` would yield
-        // `@apps/minimal/client/lib/useClient`, a path that does not exist.
+        // A sibling file (`apps/minimal/client.ts`) is a facet barrel too: parent specifier, as above.
         for (const ext of CANDIDATE_EXTS) {
           const file = `${candidate}${ext}`;
           if (await Bun.file(file).exists()) {
@@ -171,14 +127,11 @@ export const createTsconfigPackageResolver = async (
           }
         }
       }
-      // A prefix matched but nothing on disk — stop so a shorter, less specific
-      // prefix doesn't accidentally resolve to an unrelated location.
+      // A matched prefix with nothing on disk stops here, so a shorter prefix cannot resolve somewhere unrelated.
       return null;
     }
 
-    // Fallback: resolve package exports from node_modules. This supports
-    // single-package subpaths such as `akanjs/ui`, whose package.json lives at
-    // node_modules/akanjs/package.json rather than node_modules/akanjs/ui.
+    // `akanjs/ui` resolves through node_modules/akanjs/package.json exports, not node_modules/akanjs/ui.
     const exported = await resolveNodePackageExport(app.workspace.workspaceRoot, pkgName);
     if (exported) return exported;
 
@@ -290,22 +243,14 @@ const resolveFileCandidate = async (candidate: string): Promise<string | null> =
   return null;
 };
 
-// Matches `with { type: "macro" }` import attributes (single or double quotes,
-// tolerant of whitespace). Used to detect macro-host modules so the plugin
-// can leave their source untouched.
 const MACRO_ATTR_RE = /with\s*\{\s*type\s*:\s*["']macro["']\s*\}/;
 
-/** Exposed for testing. */
 export const rewriteBarrelImports = async (
   source: string,
   barrels: string[],
   analyzer: BarrelAnalyzer,
 ): Promise<string | null> => {
-  // Establish there is something to rewrite before the TypeScript parser is involved. This runs on
-  // every source file of every dev rebuild, and parsing was by far the most expensive thing in one:
-  // measured across 1189 files here, 299ms and 161MB of RSS, of which **63% of files import no barrel
-  // at all**. A static import cannot name a specifier without that specifier appearing literally in the
-  // text, so a substring test is a sound filter and costs 4ms for the whole corpus.
+  // Sound pre-filter before the costly parse: a static import cannot name a specifier absent from the text.
   if (!barrels.some((barrel) => source.includes(barrel))) return null;
   const statements = findImportStatements(source);
   if (statements.length === 0) return null;
@@ -338,9 +283,7 @@ interface ImportStatement {
 
 const findImportStatements = (source: string): ImportStatement[] => {
   const statements: ImportStatement[] = [];
-  // `setParentNodes: false`: nothing below reads `node.parent`, and every position comes from
-  // `getStart(sourceFile)`, which takes the file explicitly. Building the parent links cost 132ms and
-  // 143MB of RSS across 1189 files for no reader.
+  // `setParentNodes: false` holds only while nothing reads `node.parent` and positions use `getStart(sourceFile)`.
   const sourceFile = ts.createSourceFile(
     "barrel-imports.tsx",
     source,
@@ -377,7 +320,6 @@ interface ParsedClause {
   defaultImport?: string;
   namespaceImport?: string;
   named?: NamedImportItem[];
-  /** Whole clause is `import type { ... } from "..."`. */
   typeOnly: boolean;
 }
 
@@ -389,7 +331,6 @@ const parseImportClause = (clause: string): ParsedClause | null => {
     rest = rest.slice(5).trim();
   }
   const parsed: ParsedClause = { typeOnly };
-  // Try pattern: default + rest
   const commaMatch = /^(\w+)\s*,\s*(.+)$/.exec(rest);
   if (commaMatch) {
     parsed.defaultImport = commaMatch[1];
@@ -445,7 +386,6 @@ const rewriteSingleStatement = (stmt: ImportStatement, map: BarrelExportMap): st
   // Pure type imports are erased at build; leave them alone.
   if (clause.typeOnly && !clause.defaultImport) return null;
   if (!clause.named || clause.named.length === 0) {
-    // Only default import — nothing to split.
     return null;
   }
 
@@ -462,7 +402,6 @@ const rewriteSingleStatement = (stmt: ImportStatement, map: BarrelExportMap): st
       continue;
     }
     const list = rewrites.get(target.subpath) ?? [];
-    // Use the leaf's original name, keeping the consumer's local alias.
     list.push({ imported: target.originalName, local: item.local, isType: false });
     rewrites.set(target.subpath, list);
   }
@@ -470,15 +409,12 @@ const rewriteSingleStatement = (stmt: ImportStatement, map: BarrelExportMap): st
   if (rewrites.size === 0) return null;
 
   const lines: string[] = [];
-  // Always emit trailing semicolons; safe even when the source omitted them.
   const tail = ";";
 
   if (shouldPreserveBarrelSideEffects(stmt.specifier)) {
     lines.push(`import "${stmt.specifier}"${tail}`);
   }
 
-  // Re-emit an import from the original barrel that carries whatever we could
-  // not flatten (default import, type-only items, unknown names).
   if (clause.defaultImport || remaining.length > 0) {
     const parts: string[] = [];
     if (clause.defaultImport) parts.push(clause.defaultImport);
