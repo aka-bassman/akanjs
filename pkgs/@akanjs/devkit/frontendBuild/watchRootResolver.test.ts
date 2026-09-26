@@ -1,15 +1,14 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { App } from "../commandDecorators";
+import { tempDirs } from "../testHelpers";
 import { WatchRootResolver } from "./watchRootResolver";
 
-const roots: string[] = [];
+const tempRoot = tempDirs("akan-watch-roots-");
 
 const makeWorkspace = async (dirs: string[]) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-watch-roots-"));
-  roots.push(root);
+  const root = await tempRoot();
   await Promise.all(dirs.map((dir) => mkdir(path.join(root, dir), { recursive: true })));
   return root;
 };
@@ -32,10 +31,6 @@ const resolveRoots = (workspaceRoot: string, { paths = {}, libDeps = null }: App
     getTsConfig: async () => ({ compilerOptions: { paths } }),
     getScanInfo: () => (libDeps ? { type: "app", libDeps } : null),
   } as unknown as App).resolve();
-
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 
 describe("WatchRootResolver", () => {
   test("narrows the apps container to the app being served", async () => {

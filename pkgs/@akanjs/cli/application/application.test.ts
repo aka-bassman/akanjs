@@ -4,12 +4,12 @@ import type { AkanAppConfig, DatabaseMode } from "@akanjs/devkit/akanConfig";
 import { CommandContainer, getArgMetas, getTargetMetas } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, LibExecutor, PkgExecutor } from "@akanjs/devkit/executors";
 import {
-  cleanupCliTempWorkspace,
   createCallRecorder,
   createFakeExecutor,
   createTempApp,
   createTempLib,
   createTempPackage,
+  tempRoots,
   writeText,
 } from "@akanjs/devkit/testHelpers";
 import { DatabaseModes } from "akanjs/base";
@@ -17,7 +17,6 @@ import { ApplicationCommand } from "./application.command";
 import { ApplicationRunner } from "./application.runner";
 import { ApplicationScript } from "./application.script";
 
-const tempRoots: string[] = [];
 type CallRecorder = ReturnType<typeof createCallRecorder>;
 
 const createRecordedWorkspace = (recorder: CallRecorder) =>
@@ -144,11 +143,11 @@ const createMobileApp = ({
   };
 };
 
-afterEach(async () => {
+afterEach(() => {
   CommandContainer.clear();
   mock.restore();
-  await Promise.all(tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)));
 });
+const track = tempRoots();
 
 describe("ApplicationCommand", () => {
   test("exposes command metadata and delegates normalized app creation", async () => {
@@ -509,8 +508,7 @@ describe("ApplicationScript", () => {
 });
 
 const runsPackageTests = async () => {
-  const { root, pkg } = await createTempPackage();
-  tempRoots.push(root);
+  const { pkg } = track(await createTempPackage());
   const runner = new ApplicationRunner();
   const spawn = mock(async () => "");
   pkg.spawn = spawn as never;
@@ -522,8 +520,7 @@ const runsPackageTests = async () => {
 };
 
 const runsSignalTargetTests = async () => {
-  const { root, lib } = await createTempLib("shared");
-  tempRoots.push(root);
+  const { root, lib } = track(await createTempLib("shared"));
   await writeText(
     `${root}/node_modules/akanjs/package.json`,
     JSON.stringify({
@@ -562,8 +559,7 @@ const runsSignalTargetTests = async () => {
 
 describe("ApplicationRunner", () => {
   test("dbup brings up only what a mode runs on", async () => {
-    const { root, app } = await createTempApp("demo");
-    tempRoots.push(root);
+    const { app } = track(await createTempApp("demo"));
     const runner = new ApplicationRunner();
     const calls: string[][] = [];
     app.workspace.spawn = (async (_command: string, args: string[]) => {
@@ -578,8 +574,7 @@ describe("ApplicationRunner", () => {
   });
 
   test("dbup names the service an older local compose file lacks instead of failing inside docker", async () => {
-    const { root, app } = await createTempApp("demo");
-    tempRoots.push(root);
+    const { app } = track(await createTempApp("demo"));
     await writeText(
       `${app.workspace.workspaceRoot}/local/docker-compose.yaml`,
       "services:\n  redis:\n    image: redis\n",
@@ -595,8 +590,7 @@ describe("ApplicationRunner", () => {
   });
 
   test("transfers a database by booting the app as a script in the mode the shell names", async () => {
-    const { root, app } = await createTempApp("demo");
-    tempRoots.push(root);
+    const { app } = track(await createTempApp("demo"));
     await writeText(`${app.cwdPath}/server.ts`, "export const server = {};\n");
     const runner = new ApplicationRunner();
     const spawn = mock(async () => "");
@@ -619,8 +613,7 @@ describe("ApplicationRunner", () => {
   });
 
   test("validates app script filenames and spawns bun with command env", async () => {
-    const { root, app } = await createTempApp("demo");
-    tempRoots.push(root);
+    const { app } = track(await createTempApp("demo"));
     await writeText(`${app.cwdPath}/script/hello.ts`, "export default 1;\n");
     const runner = new ApplicationRunner();
     const spawn = mock(async () => "");

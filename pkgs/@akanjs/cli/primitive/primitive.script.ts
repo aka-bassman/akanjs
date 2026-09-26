@@ -30,7 +30,6 @@ import {
   insertLightProjectionField,
   insertSignalFactoryEntry,
   insertTemplateField,
-  lowerlize,
   moduleComponentName,
   moduleSourcePaths,
   nextActionsForTarget,
@@ -45,7 +44,7 @@ import {
   type WorkflowDiagnostic,
   workflowStatus,
 } from "@akanjs/devkit/workflow";
-import { capitalize } from "akanjs/common";
+import { capitalize, lowerlize } from "akanjs/common";
 import { ModuleScript } from "../module/module.script";
 
 export class PrimitiveScript extends script("primitive", [ModuleScript]) {

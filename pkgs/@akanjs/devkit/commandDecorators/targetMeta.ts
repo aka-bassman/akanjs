@@ -1,4 +1,5 @@
 import type { ArgMeta, InternalArgMeta } from "./argMeta";
+import { camelToKebabCase } from "./camelToKebabCase";
 import type { Cls, DependencyCls } from "./dependencyBuilder";
 
 export const COMMAND_META: unique symbol = Symbol("akan.command.meta");
@@ -21,8 +22,6 @@ export const getTargetMetas = (command: CommandCls): TargetMeta[] => {
   if (!targetMetaMap) throw new Error(`TargetMeta is not defined for ${command.name}`);
   return [...targetMetaMap.values()];
 };
-
-const camelToKebabCase = (str: string) => str.replace(/([A-Z])/g, "-$1").toLowerCase();
 
 /** Shared with the command-manifest generator, so a lazily loaded CLI maps argv[2] to the module runCommands would. */
 export const getTargetCommandNames = (targetMeta: TargetMeta): string[] => {

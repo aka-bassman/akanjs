@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import type { App } from "../commandDecorators";
+import { FontPruner } from "./fontPruner";
 
 const COMPRESSIBLE_EXTS = new Set([".css", ".html", ".js", ".json", ".svg"]);
 const MIN_COMPRESS_BYTES = 1024;
@@ -9,6 +10,7 @@ const MIN_COMPRESS_BYTES = 1024;
 const BROTLI_QUALITY_BY_EXT = { ".css": 11 } as const;
 const DEFAULT_BROTLI_QUALITY = 9;
 const GZIP_LEVEL = 9;
+const { formatBytes } = FontPruner;
 
 export interface PrecompressArtifactsResult {
   files: number;
@@ -69,10 +71,4 @@ async function shouldPrecompress(filePath: string): Promise<boolean> {
   const file = Bun.file(filePath);
   if (!(await file.exists())) return false;
   return file.size >= MIN_COMPRESS_BYTES;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }

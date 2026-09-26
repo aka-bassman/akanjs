@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { parseJsonLine, readJsonLines } from "./jsonLines";
 
 export interface CodePeer {
   id: string;
@@ -58,7 +59,7 @@ export class CodeMailbox {
     mkdirSync(path.join(this.#dir, "live"), { recursive: true });
     mkdirSync(path.join(this.#dir, "inbox"), { recursive: true });
     // What is already in the inbox belongs to an earlier run; delivering it would replay a past conversation.
-    this.#read = CodeMailbox.#lines(this.inbox).length;
+    this.#read = readJsonLines(this.inbox).length;
     this.beat(cwd);
     this.#beat = setInterval(() => this.beat(cwd), CodeMailbox.beatMs);
     this.#poll = setInterval(() => {
@@ -127,12 +128,12 @@ export class CodeMailbox {
   }
 
   #drain(): CodeMail[] {
-    const lines = CodeMailbox.#lines(this.inbox);
+    const lines = readJsonLines(this.inbox);
     if (lines.length <= this.#read) return [];
     const fresh = lines.slice(this.#read);
     this.#read = lines.length;
     return fresh
-      .map((line) => CodeMailbox.#parse(line))
+      .map((line) => parseJsonLine<CodeMail>(line))
       .filter((mail): mail is CodeMail => !!mail?.text && typeof mail.from === "string");
   }
 
@@ -140,24 +141,6 @@ export class CodeMailbox {
     try {
       const peer = JSON.parse(readFileSync(file, "utf8")) as CodePeer;
       return typeof peer.id === "string" ? { ...peer, at: peer.at || statSync(file).mtimeMs } : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  static #lines(file: string) {
-    try {
-      return readFileSync(file, "utf8")
-        .split("\n")
-        .filter((line) => !!line.trim());
-    } catch {
-      return [];
-    }
-  }
-
-  static #parse(line: string) {
-    try {
-      return JSON.parse(line) as CodeMail;
     } catch {
       return undefined;
     }

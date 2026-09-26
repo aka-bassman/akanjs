@@ -8,6 +8,7 @@ import {
   codeAgentLabelChars,
   codeAgentOutputChars,
 } from "akanjs/common";
+import { stringArg } from "./stringArg";
 
 const toolOps: { [key: string]: CodeAgentToolOp } = {
   read: "read",
@@ -161,7 +162,7 @@ export class CodeAgentEventMapper {
   }
 
   #summary(toolCallId: string, name: string, args: unknown): CodeAgentToolSummary {
-    const path = CodeAgentEventMapper.#pathOf(args);
+    const path = stringArg(args, "path");
     return {
       toolCallId,
       name,
@@ -184,12 +185,6 @@ export class CodeAgentEventMapper {
     const text = CodeAgentEventMapper.#renderContent(message.content);
     if (!text) return [];
     return [{ type: "message", turnId: this.#turnId, role: message.role, text }];
-  }
-
-  static #pathOf(args: unknown) {
-    if (!args || typeof args !== "object") return undefined;
-    const value = (args as { path?: unknown }).path;
-    return typeof value === "string" && value ? value : undefined;
   }
 
   static #renderArgs(args: unknown) {

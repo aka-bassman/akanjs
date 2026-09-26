@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import { codeAgentPresets } from "akanjs/common";
-import { cleanupCliTempWorkspace, makeCliTempWorkspace, writeText } from "../../testHelpers";
+import { makeCliTempWorkspace, tempRoots, writeText } from "../../testHelpers";
 import { SubagentPool } from "../agent/SubagentPool";
 import { DevLogFeedback } from "../feedback/DevLogFeedback";
 import { PreviewView } from "../feedback/PreviewView";
@@ -14,17 +14,8 @@ import { McpToolPack } from "./McpToolPack";
 import { SessionToolPack } from "./SessionToolPack";
 import { WebToolPack } from "./WebToolPack";
 
-const tempRoots: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)));
-});
-
-const tempRoot = async () => {
-  const { root } = await makeCliTempWorkspace();
-  tempRoots.push(root);
-  return root;
-};
+const track = tempRoots();
+const tempRoot = async () => track(await makeCliTempWorkspace()).root;
 
 type ToolExecute = (id: string, params: never) => Promise<{ content: { text: string }[]; isError?: boolean }>;
 

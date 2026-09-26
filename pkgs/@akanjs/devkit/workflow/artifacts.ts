@@ -1,3 +1,4 @@
+import { capitalize } from "akanjs/common";
 import type { Workspace } from "../commandDecorators";
 import type {
   GeneratedSyncState,
@@ -145,6 +146,23 @@ export const workflowCommandsForPlan = (plan: WorkflowPlan) =>
     reason: validation.reason,
     kind: validation.kind,
   })) satisfies WorkflowApplyCommand[];
+
+const planInputString = (plan: WorkflowPlan, key: string) => {
+  const value = plan.inputs[key];
+  return typeof value === "string" ? value : "";
+};
+
+export const workflowPathsForPlan = (plan: WorkflowPlan) => {
+  const app = planInputString(plan, "app");
+  const module = planInputString(plan, "module");
+  const moduleClass = module ? capitalize(module) : "<Module>";
+  return plan.predictedChanges.map((change) =>
+    change.target
+      .replace(/^\*\//, app ? `apps/${app}/` : "")
+      .replaceAll("<module>", module || "<module>")
+      .replaceAll("<Module>", moduleClass),
+  );
+};
 
 export const workflowRunsDir = ".akan/workflows/runs";
 

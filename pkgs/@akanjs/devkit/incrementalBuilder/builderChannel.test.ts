@@ -1,14 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
 import path from "node:path";
+import { tempDirs } from "../testHelpers";
 import { BuilderChannel } from "./builderChannel";
 
-const tempDirs: string[] = [];
-
-afterEach(async () => {
-  for (const dir of tempDirs.splice(0)) await rm(dir, { recursive: true, force: true });
-});
+const tempDir = tempDirs("builder-channel-");
 
 type SendMode = "drain" | "await" | "bare";
 
@@ -17,8 +12,7 @@ const sendThenExit = async (
   bytes: number,
   { mode, payload }: { mode: SendMode; payload: "manifest" | "css" },
 ): Promise<Array<{ type?: string }>> => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "builder-channel-"));
-  tempDirs.push(dir);
+  const dir = await tempDir();
   const entry = path.join(dir, "child.ts");
   const modulePath = JSON.stringify(path.join(import.meta.dir, "builderChannel"));
   const build =

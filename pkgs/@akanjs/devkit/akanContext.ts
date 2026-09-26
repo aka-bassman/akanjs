@@ -12,6 +12,7 @@ import {
   type WorkflowApplyReport,
   type WorkflowPlan,
   type WorkflowRunArtifact,
+  workflowPathsForPlan,
   workflowRunArtifactPath,
   workflowSyncDir,
 } from "./workflow";
@@ -343,24 +344,6 @@ const isWorkflowApplyReport = (value: unknown): value is WorkflowApplyReport =>
 
 const isWorkflowRunArtifact = (value: unknown): value is WorkflowRunArtifact =>
   typeof value === "object" && value !== null && "schemaVersion" in value && value.schemaVersion === 1;
-
-const planInputString = (plan: WorkflowPlan, key: string) => {
-  const value = plan.inputs[key];
-  return typeof value === "string" ? value : "";
-};
-
-const expandWorkflowTarget = (target: string, plan: WorkflowPlan) => {
-  const app = planInputString(plan, "app");
-  const module = planInputString(plan, "module");
-  const moduleClass = module ? capitalize(module) : "<Module>";
-  return target
-    .replace(/^\*\//, app ? `apps/${app}/` : "")
-    .replaceAll("<module>", module || "<module>")
-    .replaceAll("<Module>", moduleClass);
-};
-
-const workflowPathsForPlan = (plan: WorkflowPlan) =>
-  plan.predictedChanges.map((change) => expandWorkflowTarget(change.target, plan));
 
 const workflowPathsForArtifact = (artifact: WorkflowRunArtifact) => {
   if (isWorkflowPlan(artifact)) return workflowPathsForPlan(artifact);

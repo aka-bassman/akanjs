@@ -21,11 +21,11 @@ import {
   getArgMetas,
   type InternalArgMeta,
 } from "./argMeta";
+import { camelToKebabCase } from "./camelToKebabCase";
 import { CommandContainer } from "./dependencyBuilder";
 import { formatCommandHelp, formatHelp } from "./helpFormatter";
 import { type CommandCls, getTargetCommandNames, getTargetMetas } from "./targetMeta";
 
-const camelToKebabCase = (str: string) => str.replace(/([A-Z])/g, "-$1").toLowerCase();
 const loggedCliErrorObjects = new WeakSet<object>();
 const loggedCliErrorMessages = new Set<string>();
 
