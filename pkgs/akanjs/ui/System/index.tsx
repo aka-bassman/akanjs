@@ -15,6 +15,7 @@ export const Provider = (props: CSRProviderProps | SSRProviderProps) => {
 export const System = {
   Provider,
   ThemeToggle,
+  /** @deprecated Renders `children` and ignores `st`; render the children directly. */
   Root,
   SelectLanguage,
   Reconnect,
