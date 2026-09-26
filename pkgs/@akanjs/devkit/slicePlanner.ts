@@ -103,10 +103,6 @@ export class SlicePlanner {
     this.#app = app;
   }
 
-  async #trackedFiles(paths: string[]) {
-    return await this.#app.workspace.listGitFiles(paths);
-  }
-
   async #untrackedFiles(paths: string[]) {
     const [tracked, all] = await Promise.all([
       this.#app.workspace.listGitFiles(paths),
@@ -152,14 +148,16 @@ export class SlicePlanner {
     const slicePaths = [`apps/${this.#app.name}`, ...libs.map((lib) => `libs/${lib}`)];
 
     const [appFiles, allTracked, untracked, rootPackageJson] = await Promise.all([
-      this.#trackedFiles([`apps/${this.#app.name}`]),
-      this.#trackedFiles(["."]),
+      this.#app.workspace.listGitFiles([`apps/${this.#app.name}`]),
+      this.#app.workspace.listGitFiles(["."]),
       this.#untrackedFiles(slicePaths),
       this.#app.workspace.getPackageJson(),
     ]);
 
     const libFiles = Object.fromEntries(
-      await Promise.all(libs.map(async (lib) => [lib, await this.#trackedFiles([`libs/${lib}`])] as const)),
+      await Promise.all(
+        libs.map(async (lib) => [lib, await this.#app.workspace.listGitFiles([`libs/${lib}`])] as const),
+      ),
     );
     const rootFiles = allTracked.filter((file) => !this.#isMemberFile(file));
 

@@ -186,9 +186,7 @@ export class Subspace {
     if (!theirs || !ours) return true;
     const normalize = (content: string) => {
       try {
-        const manifest = JSON.parse(content) as Record<string, unknown>;
-        delete manifest[LibSource.manifestKey];
-        return JSON.stringify(manifest);
+        return LibSource.unstamped(content);
       } catch {
         return content;
       }
@@ -196,7 +194,10 @@ export class Subspace {
     return normalize(theirs) !== normalize(ours);
   }
 
-  async #meaningfulFiles(ref: string, files: string[]) {
+  async #changedSliceFiles(ref: string, diffArgs: string[]) {
+    const files = (await this.#git(["diff", "--name-only", ...diffArgs]))
+      .split("\n")
+      .filter((file) => !!file.trim() && !this.#isSubspaceOwned(file));
     const kept = await Promise.all(
       files.map(async (file) => (this.#isStamped(file) ? await this.#differsBeyondStamp(ref, file) : true)),
     );
@@ -211,14 +212,7 @@ export class Subspace {
     ]);
     if (!hasBranch) return { name: this.name, branch, hasBranch, anchor, behindPaths: [], driftedLibs: [] };
     const ref = `${this.#remote}/${branch}`;
-    const diff = await this.#git(["diff", "--name-only", "HEAD", ref, "--", ...paths]);
-    const behindPaths = await this.#meaningfulFiles(
-      ref,
-      diff
-        .split("\n")
-        .filter((file) => !!file.trim())
-        .filter((file) => !this.#isSubspaceOwned(file)),
-    );
+    const behindPaths = await this.#changedSliceFiles(ref, ["HEAD", ref, "--", ...paths]);
     const driftedLibs = libs.filter((lib) => behindPaths.some((file) => file.startsWith(`libs/${lib}/`)));
     return { name: this.name, branch, hasBranch, anchor, behindPaths, driftedLibs };
   }
@@ -450,19 +444,9 @@ export class Subspace {
       candidates.map(async (file) => await FileSys.entryExists(path.join(this.#clonePath, file))),
     );
     const files = candidates.filter((_, index) => present[index]);
-    const hasher = new Bun.CryptoHasher("sha256");
-    for (const file of files) {
-      const content = await FileSys.readText(path.join(this.#clonePath, file));
-      hasher.update(file);
-      hasher.update("\0");
-      if (file === `libs/${lib}/package.json`) {
-        const manifest = JSON.parse(content) as Record<string, unknown>;
-        delete manifest[LibSource.manifestKey];
-        hasher.update(JSON.stringify(manifest));
-      } else hasher.update(content);
-      hasher.update("\0");
-    }
-    return hasher.digest("hex").slice(0, 32);
+    return await LibSource.hashFiles(files, `libs/${lib}/package.json`, (file) =>
+      FileSys.readText(path.join(this.#clonePath, file)),
+    );
   }
 
   /** Direction is subspace → workspace, so the patch reads as what a push would apply rather than its inverse. */
@@ -482,15 +466,7 @@ export class Subspace {
     const scoped = filter ? paths.filter((entry) => entry.startsWith(filter) || filter.startsWith(entry)) : paths;
     if (!scoped.length) return { files: [], patch: "" };
     const from = `${this.#remote}/${branch}`;
-    const pathspec = filter ? [filter] : scoped;
-    const names = await this.#git(["diff", "--name-only", from, "HEAD", "--", ...pathspec]);
-    const files = await this.#meaningfulFiles(
-      from,
-      names
-        .split("\n")
-        .filter((file) => !!file.trim())
-        .filter((file) => !this.#isSubspaceOwned(file)),
-    );
+    const files = await this.#changedSliceFiles(from, [from, "HEAD", "--", ...(filter ? [filter] : scoped)]);
     if (!files.length) return { files: [], patch: "" };
     //? argv, not a shell: a route path such as `page/(docs)/…` would need quoting through one.
     return { files, patch: await this.#git(["diff", from, "HEAD", "--", ...files]) };

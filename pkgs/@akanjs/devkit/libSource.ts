@@ -40,13 +40,23 @@ export class LibSource {
     return !LibSource.unhashedDirs.includes(relative.split("/")[0] ?? "");
   }
 
-  /** `package.json` cannot hash the stamp it carries, so the key comes off before hashing. */
-  async #hashableContent(file: string) {
-    const content = await this.#lib.workspace.readFile(file);
-    if (file !== `${this.#prefix}package.json`) return content;
-    const manifest = JSON.parse(content) as PackageJson;
+  static unstamped(manifestContent: string) {
+    const manifest = JSON.parse(manifestContent) as PackageJson;
     delete manifest[LibSource.manifestKey];
     return JSON.stringify(manifest);
+  }
+
+  //* `package.json` cannot hash the stamp it carries, so the key comes off before hashing.
+  static async hashFiles(files: string[], manifestFile: string, read: (file: string) => Promise<string>) {
+    const hasher = new Bun.CryptoHasher("sha256");
+    for (const file of files) {
+      const content = await read(file);
+      hasher.update(file);
+      hasher.update("\0");
+      hasher.update(file === manifestFile ? LibSource.unstamped(content) : content);
+      hasher.update("\0");
+    }
+    return hasher.digest("hex").slice(0, 32);
   }
 
   // Untracked files count: a freshly copied library is not committed yet.
@@ -54,14 +64,9 @@ export class LibSource {
     const files = (await this.#lib.workspace.listGitFiles([`libs/${this.#lib.name}`], { untracked: true })).filter(
       (file) => this.#isHashed(file),
     );
-    const hasher = new Bun.CryptoHasher("sha256");
-    for (const file of files) {
-      hasher.update(file);
-      hasher.update("\0");
-      hasher.update(await this.#hashableContent(file));
-      hasher.update("\0");
-    }
-    return hasher.digest("hex").slice(0, 32);
+    return await LibSource.hashFiles(files, `${this.#prefix}package.json`, (file) =>
+      this.#lib.workspace.readFile(file),
+    );
   }
 
   async read(): Promise<LibSourceStamp | null> {
