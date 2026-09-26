@@ -14,8 +14,7 @@ import {
   useUiRecipe,
 } from "./UiOverride";
 
-// The shipped `../Modal` transitively loads the store, which reads these at import time. Default them so this
-// test is self-contained (it never imports `../Modal` statically — see the dynamic import below).
+// `../Modal` loads the store, which reads these at import time — hence its dynamic import below.
 process.env.AKAN_PUBLIC_APP_NAME ??= "test";
 process.env.AKAN_PUBLIC_REPO_NAME ??= "akanjs";
 process.env.AKAN_PUBLIC_SERVE_DOMAIN ??= "akanjs.com";
@@ -29,7 +28,6 @@ const DefaultTestModal: AkanModalComponent = ({ title }) => <div data-skin="defa
 const BrandModal: AkanModalComponent = ({ title }) => <div data-skin="brand">{title}</div>;
 const InnerModal: AkanModalComponent = ({ title }) => <div data-skin="inner">{title}</div>;
 
-// Uses the real "Modal" override slot, exactly like the shipped `Modal` proxy.
 const Widget = createOverridable("Modal", DefaultTestModal);
 
 describe("UiOverride", () => {
@@ -74,7 +72,6 @@ describe("UiOverride", () => {
   });
 
   test("the shipped Modal export routes through the override", async () => {
-    // Imported dynamically so its store-loading dependency chain runs after the env defaults above are set.
     const { Modal } = await import("../Modal");
     const html = await renderToText(
       <UiOverrideProvider value={{ Modal: BrandModal }}>
@@ -144,7 +141,6 @@ describe("UiOverride", () => {
         {children}
       </button>
     );
-    // Mirrors the shipped Button: the public signature stays generic; resolution goes through the erased slot.
     const LocalButton = <Result = unknown>(props: ButtonProps<Result>) => {
       const Override = useUiOverride("Button");
       return createElement((Override ?? DefaultLocalButton) as unknown as ComponentType<ButtonProps<Result>>, props);
@@ -172,7 +168,6 @@ describe("UiOverride", () => {
 
   test("recipe slot: falls back to the framework recipe when no swap is active", async () => {
     const { buttonRecipe } = await import("../recipe");
-    // Mirrors the shipped Button's resolution line: useUiRecipe("button") ?? buttonRecipe.
     const RecipeWidget = ({ variant }: { variant?: "primary" | "ghost" }) => {
       const recipe = useUiRecipe("button") ?? buttonRecipe;
       return <button type="button" data-cls={recipe({ variant })} />;
@@ -202,7 +197,6 @@ describe("UiOverride", () => {
     const { inputRecipe } = await import("../recipe");
     const brandInput: AkanUiRecipes["input"] = (variants, className) =>
       ["brand-input", variants?.kind ?? "field", className].filter(Boolean).join(" ");
-    // Mirrors the shipped Input/TextArea resolution line: (useUiRecipe("input") ?? inputRecipe)(...).
     const FieldShell = () => {
       const inputBase = (useUiRecipe("input") ?? inputRecipe)({ kind: "area" });
       return <textarea data-cls={inputBase} />;
@@ -254,19 +248,16 @@ describe("UiOverride", () => {
   });
 
   test("the SHIPPED Button routes its recipe through the override slot (real wiring, not a mirror)", async () => {
-    // Register a minimal client runtime so the real Button's usePage() resolves. State lives on
-    // globalThis, so this stub is shared with the runtime Button reads through "akanjs/client".
+    // Runtime state lives on globalThis, so this stub is the one the real Button's `usePage()` reads.
     const { registerClientRuntime } = await import("../../client/clientRuntime");
     registerClientRuntime({ usePage: () => ({ l: (key: string) => key }) } as never, { scope: "app" });
     const { Button } = await import("../Button");
     const neon: AkanUiRecipes["button"] = (variants, className) =>
       ["neon", variants?.variant ?? "primary", className].filter(Boolean).join(" ");
 
-    // No override → the real Button renders with the framework recipe.
     const def = await renderToText(<Button onClick={() => {}}>GO</Button>);
     expect(def).toContain("bg-primary");
 
-    // With a recipe swap in the subtree → the SAME <Button> renders the swapped recipe, unchanged call site.
     const swapped = await renderToText(
       <UiOverrideProvider value={{ recipes: { button: neon } }}>
         <Button variant="ghost" onClick={() => {}}>
@@ -308,7 +299,6 @@ describe("UiOverride", () => {
     const BrandToastItem: AkanUiOverrides["ToastItem"] = ({ message: toast }) => (
       <div data-slot="brand-card">{toast.content}</div>
     );
-    // Only the card is bound: the framework stack still renders, and hands it the message.
     const cardOnly = await renderToText(
       <UiOverrideProvider value={{ ToastItem: BrandToastItem }}>
         <Toast {...props} />

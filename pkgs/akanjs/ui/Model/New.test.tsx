@@ -88,7 +88,6 @@ describe("Model.New", () => {
     const names = () => surface.snapshot().tools.map((tool) => tool.name);
     await waitFor(() => names().includes("newNewTestItem"));
 
-    // The trigger carries the same name `readScreen` reads, so an agent can tie the button to the tool.
     expect(container.querySelector('[data-akan-action="newNewTestItem"]')).not.toBeNull();
     expect(names()).not.toContain("submitNewTestItem");
 
@@ -97,7 +96,6 @@ describe("Model.New", () => {
     });
     await waitFor(() => names().includes("submitNewTestItem"));
     expect(names()).toContain("cancelEditOfNewTestItem");
-    // The open editor subscribes the form, which is what makes the fields writable.
     expect(names()).toContain("fillNewTestItemForm");
 
     await act(async () => {

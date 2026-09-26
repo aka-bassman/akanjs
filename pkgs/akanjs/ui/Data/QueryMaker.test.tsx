@@ -28,7 +28,6 @@ const filterQuery = {
 };
 const ownerFilterQuery = {
   any: [],
-  // The ref model's own filter points back at a model, which is what makes a picker open inside a picker.
   byManager: [{ type: "search", name: "managerId", refName: "ID", ref: "queryMakerTestOwner" }],
 };
 
@@ -89,7 +88,6 @@ beforeAll(async () => {
   });
   const OwnerInput = via((f) => ({ nickname: f(String) }));
   const OwnerObj = via(OwnerInput, () => ({}));
-  // A model that writes its own one-liner, which is what a picker row should show instead of the id.
   class OwnerLight extends via(OwnerObj, ["nickname"] as const, () => ({})) {
     label() {
       return this.nickname ? `@${this.nickname}` : "";
@@ -160,9 +158,7 @@ describe("Data.QueryMaker", () => {
     const options = document.querySelector("[data-akan-overlay]")?.textContent ?? "";
     expect(options).toContain("Any");
     expect(options).toContain("By Title");
-    // `byAuthor` takes a model, which no input here can type, so the filter that needs it is not offered.
     expect(options).not.toContain("By Author");
-    // The selected filter and the one arg it declares, both labelled through the dictionary.
     expect(container.textContent).toContain("By Title");
     expect(container.textContent).toContain("Title");
     unmount();
@@ -173,8 +169,6 @@ describe("Data.QueryMaker", () => {
     const { container, unmount } = await mount(<QueryMaker slice={slice} />);
 
     await pickOption("By Title");
-    // The pick lands — the maker keeps the filter the user chose — but `byTitle` has nowhere to read a title
-    // from yet, and the server refuses a filter arg it was not given. Only the request waits.
     expect(container.textContent).toContain("By Title");
     expect(calls.queryMakerTestItemList).not.toHaveBeenCalled();
 
@@ -193,11 +187,9 @@ describe("Data.QueryMaker", () => {
     ];
     const { container, unmount } = await mount(<QueryMaker slice={slice} query={{ queryKey: "byOwner" }} />);
 
-    // An id pointing at a model is picked, not typed, so the arg gets a picker instead of a hex field.
     expect(container.querySelector("input")).toBeNull();
     await clickButton("Select");
 
-    // Rows are labelled by the method the ref model's Light class wrote, with the id kept beside it.
     const modal = document.querySelector("[role=dialog]");
     expect(modal?.textContent).toContain("@ada");
     expect(modal?.textContent).toContain("@linus");
@@ -206,7 +198,6 @@ describe("Data.QueryMaker", () => {
     await clickButton("@ada");
     await settleDebounce();
     expect(calls.queryMakerTestItemList.mock.calls[0]?.slice(0, 2)).toEqual(["byOwner", [adaId]]);
-    // The modal closes onto the row that was picked, by its label rather than its id.
     expect(document.querySelector("[role=dialog]")).toBeNull();
     expect(container.textContent).toContain("@ada");
     unmount();

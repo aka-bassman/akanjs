@@ -96,7 +96,6 @@ describe("Model row wrappers", () => {
       const tools = surface.snapshot().tools;
       expect(tools.map((tool) => tool.name)).toEqual(["editRowTestItem"]);
       expect(warnings).toEqual([]);
-      // Every row carries the annotation, because every row is a working entry point to the same verb.
       expect(container.querySelectorAll('[data-akan-action="editRowTestItem"]')).toHaveLength(rowIds.length);
       expect(tools[0].parameters?.properties).toEqual({ modelId: { type: "string" } });
 
@@ -126,7 +125,6 @@ describe("Model row wrappers", () => {
 
     const tools = surface.snapshot().tools;
     expect(tools.map((tool) => tool.name).sort()).toEqual(["removeRowTestItem", "viewRowTestItem"]);
-    // The Popconfirm a person answers; the approval card is the agent's half of it.
     expect(tools.find((tool) => tool.name === "removeRowTestItem")?.needsConfirm).toBe(true);
     expect(tools.find((tool) => tool.name === "viewRowTestItem")?.needsConfirm).toBe(false);
     unmount();

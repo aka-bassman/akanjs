@@ -54,7 +54,6 @@ beforeAll(async () => {
 
   const render = async (onChange: unknown) =>
     new Response(await renderToReadableStream(createElement(Input, { value: "", onChange } as never))).text();
-  // The house form for a model field — the setter itself, nothing else written by the app.
   html = await render(st.do.setNicknameOnAttrMember);
   plainHtml = await render((value: string) => value);
 });
