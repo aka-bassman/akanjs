@@ -149,7 +149,7 @@ export class DevTui implements DevSupervisorView {
     const logRows = Math.max(1, bodyHeight - DevTui.paneChromeRows);
     const rows = this.#railRows();
     const view = windowOf(this.#filtered(this.#target), logRows, this.#anchor);
-    const status = this.#statuses.find((candidate) => candidate.name === this.#target.app);
+    const status = this.#selectedStatus();
     const railLabelWidth = rows.reduce((max, row) => Math.max(max, row.label.length + row.depth * 2), 0);
     this.#cachedSnapshot = {
       rows,
@@ -223,8 +223,7 @@ export class DevTui implements DevSupervisorView {
   #setTarget(target: DevLogTarget) {
     this.#target = { app: target.app ?? null, source: target.source ?? null };
     // A different slice has a different tail, so a carried-over anchor would land somewhere arbitrary.
-    this.#anchor = null;
-    this.#renderNow();
+    this.#follow();
   }
 
   #scroll = (delta: number) => {
@@ -239,8 +238,7 @@ export class DevTui implements DevSupervisorView {
 
   #setGrep = (grep: string) => {
     this.#grep = grep;
-    this.#anchor = null;
-    this.#renderNow();
+    this.#follow();
   };
 
   #setEditingGrep = (editing: boolean) => {
@@ -250,14 +248,12 @@ export class DevTui implements DevSupervisorView {
 
   #toggleErrorsOnly = () => {
     this.#errorsOnly = !this.#errorsOnly;
-    this.#anchor = null;
-    this.#renderNow();
+    this.#follow();
   };
 
   #clear = () => {
     this.#buffer.clear(this.#target.app ?? null);
-    this.#anchor = null;
-    this.#renderNow();
+    this.#follow();
   };
 
   // A drag-selection is truncated, bordered and cleared by the next repaint; this copies filtered lines in full.

@@ -1,5 +1,5 @@
 import type { DevHostEvent } from "@akanjs/devkit/akanApp";
-import type { AkanAppConfig, DatabaseMode, MobileEnv } from "@akanjs/devkit/akanConfig";
+import type { AkanAppConfig, DatabaseMode } from "@akanjs/devkit/akanConfig";
 import { ApplicationBuildReporter } from "@akanjs/devkit/applicationBuildReporter";
 import type { TypecheckOptions } from "@akanjs/devkit/applicationBuildRunner";
 import type { ReleaseSourceOptions } from "@akanjs/devkit/applicationReleasePackager";
@@ -18,7 +18,13 @@ import { formatSlicePlan } from "@akanjs/devkit/slicePlanner";
 import { confirm } from "@inquirer/prompts";
 import { Logger } from "akanjs/common";
 import { LibraryScript } from "../library/library.script";
-import { ApplicationRunner, type LogsOptions } from "./application.runner";
+import {
+  ApplicationRunner,
+  type IosStartOptions,
+  type LogsOptions,
+  type MobileStartOptions,
+  type MobileTargetOptions,
+} from "./application.runner";
 import { DevPortReclaimer } from "./devPortReclaimer";
 import { DevStreamView } from "./devStreamView";
 import { DevSupervisor, type DevUiMode } from "./devSupervisor";
@@ -42,16 +48,12 @@ interface StartOneOptions {
   onDevEvent?: (event: DevHostEvent) => void;
 }
 
-type MobileOperation = "local" | "release";
-type MobileCommandOptions = {
-  target?: string;
-  env?: MobileEnv;
+interface MobileCommandOptions extends MobileTargetOptions {
   write?: boolean;
-  regenerate?: boolean;
-};
-type MobileReleaseOptions = MobileCommandOptions & {
+}
+interface MobileReleaseOptions extends MobileCommandOptions {
   allowLocalRelease?: boolean;
-};
+}
 
 export class ApplicationScript extends script("application", [ApplicationRunner, LibraryScript]) {
   /** Long enough for `docker compose down` on a healthy daemon, short enough that a wedged one still exits. */
@@ -73,18 +75,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     const shouldInstall = await this.confirmDatabaseModeDependencyInstall(databaseMode, installSpecs);
     if (!shouldInstall)
       throw new Error(`Database mode '${databaseMode}' requires missing dependencies: ${installSpecs.join(", ")}.`);
-
-    const spinner = app.workspace.spinning(`Installing database dependencies for ${databaseMode} mode...`);
-    try {
-      await app.workspace.spawn("bun", ["add", ...installSpecs], {
-        stdio: "inherit",
-      });
-      await app.workspace.getPackageJson({ refresh: true });
-      spinner.succeed(`Installed database dependencies for ${databaseMode} mode`);
-    } catch (error) {
-      spinner.fail(`Failed to install database dependencies for ${databaseMode} mode`);
-      throw error;
-    }
+    await this.#addDependencies(app, installSpecs, `database dependencies for ${databaseMode} mode`);
   }
   async confirmMobileDependencyInstall(installSpecs: string[]) {
     return await confirm({
@@ -100,16 +91,16 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
 
     const shouldInstall = await this.confirmMobileDependencyInstall(installSpecs);
     if (!shouldInstall) throw new Error(`Mobile builds require missing dependencies: ${installSpecs.join(", ")}.`);
-
-    const spinner = app.workspace.spinning("Installing mobile dependencies...");
+    await this.#addDependencies(app, installSpecs, "mobile dependencies");
+  }
+  async #addDependencies(app: App, installSpecs: string[], what: string) {
+    const spinner = app.workspace.spinning(`Installing ${what}...`);
     try {
-      await app.workspace.spawn("bun", ["add", ...installSpecs], {
-        stdio: "inherit",
-      });
+      await app.workspace.spawn("bun", ["add", ...installSpecs], { stdio: "inherit" });
       await app.workspace.getPackageJson({ refresh: true });
-      spinner.succeed("Installed mobile dependencies");
+      spinner.succeed(`Installed ${what}`);
     } catch (error) {
-      spinner.fail("Failed to install mobile dependencies");
+      spinner.fail(`Failed to install ${what}`);
       throw error;
     }
   }
@@ -360,16 +351,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       device,
       regenerate = false,
       noAllowProvisioningUpdates = false,
-    }: {
-      operation?: MobileOperation;
-      env?: MobileEnv;
-      open?: boolean;
-      write?: boolean;
-      target?: string;
-      device?: string;
-      regenerate?: boolean;
-      noAllowProvisioningUpdates?: boolean;
-    } = {},
+    }: IosStartOptions & { write?: boolean } = {},
   ) {
     await app.scanSync({ write });
     const akanConfig = await app.getConfig();
@@ -409,14 +391,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       write = true,
       target,
       regenerate = false,
-    }: {
-      open?: boolean;
-      env?: MobileEnv;
-      operation?: MobileOperation;
-      write?: boolean;
-      target?: string;
-      regenerate?: boolean;
-    } = {},
+    }: MobileStartOptions & { write?: boolean } = {},
   ) {
     await app.scanSync({ write });
     const akanConfig = await app.getConfig();
@@ -523,21 +498,12 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     }, "Abandoning the local database teardown; containers are left running.");
   }
   async #stopDatabase(workspace: Workspace) {
-    // Cleared, not left to fire: the losing timer would hold the event loop open for its full budget.
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const timeout = new Promise<"timeout">((resolve) => {
-      timer = setTimeout(() => resolve("timeout"), ApplicationScript.dbShutdownTimeoutMs);
-    });
-    try {
-      const result = await Promise.race([this.dbdown(workspace).catch(() => undefined), timeout]);
-      if (result !== "timeout") return;
-      Logger.rawLog(
-        `Local database did not stop within ${ApplicationScript.dbShutdownTimeoutMs}ms; run \`akan dbdown\` once Docker responds.`,
-        undefined,
-        "error",
-      );
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
+    const stopped = this.dbdown(workspace).catch(() => undefined);
+    if (!(await DevSupervisor.timesOut(stopped, ApplicationScript.dbShutdownTimeoutMs))) return;
+    Logger.rawLog(
+      `Local database did not stop within ${ApplicationScript.dbShutdownTimeoutMs}ms; run \`akan dbdown\` once Docker responds.`,
+      undefined,
+      "error",
+    );
   }
 }

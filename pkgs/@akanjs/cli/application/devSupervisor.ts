@@ -177,18 +177,23 @@ export class DevSupervisor {
   }
 
   async #waitForReady(child: DevChild) {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const expired = new Promise<"expired">((resolve) => {
-      timer = setTimeout(() => resolve("expired"), DevSupervisor.readyTimeoutMs);
+    if (await DevSupervisor.timesOut(child.ready, DevSupervisor.readyTimeoutMs))
+      this.#note(
+        `${child.status.name} has not reported ready after ${Math.round(DevSupervisor.readyTimeoutMs / 1000)}s; starting the next app anyway`,
+        "warn",
+      );
+  }
+
+  // Cleared, not left to fire: the losing timer would hold the event loop open for its full budget.
+  static async timesOut(work: Promise<unknown>, ms: number): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<true>((resolve) => {
+      timer = setTimeout(() => resolve(true), ms);
     });
     try {
-      if ((await Promise.race([child.ready.then(() => "ready" as const), expired])) === "expired")
-        this.#note(
-          `${child.status.name} has not reported ready after ${Math.round(DevSupervisor.readyTimeoutMs / 1000)}s; starting the next app anyway`,
-          "warn",
-        );
+      return await Promise.race([work.then(() => false), expired]);
     } finally {
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
     }
   }
 
@@ -325,21 +330,11 @@ export class DevSupervisor {
     );
     for (const child of running) child.proc.kill("SIGTERM");
     const exited = Promise.all(running.map(async (child) => await child.proc.exited));
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const expired = new Promise<"expired">((resolve) => {
-      timer = setTimeout(() => resolve("expired"), DevSupervisor.shutdownGraceMs);
-    });
-    try {
-      if ((await Promise.race([exited.then(() => "exited" as const), expired])) === "expired") {
-        for (const child of running) {
-          if (!child.proc.killed) {
-            this.#note(`${child.status.name} did not exit in time; killing it`, "warn");
-            child.proc.kill("SIGKILL");
-          }
-        }
-      }
-    } finally {
-      if (timer) clearTimeout(timer);
+    if (!(await DevSupervisor.timesOut(exited, DevSupervisor.shutdownGraceMs))) return;
+    for (const child of running) {
+      if (child.proc.killed) continue;
+      this.#note(`${child.status.name} did not exit in time; killing it`, "warn");
+      child.proc.kill("SIGKILL");
     }
   }
 }

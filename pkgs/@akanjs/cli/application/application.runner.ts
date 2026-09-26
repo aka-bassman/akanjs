@@ -26,6 +26,19 @@ export interface LogsOptions {
   follow?: boolean;
   runtimeDir?: string | null;
 }
+export interface MobileTargetOptions {
+  target?: string;
+  env?: MobileEnv;
+  regenerate?: boolean;
+}
+export interface MobileStartOptions extends MobileTargetOptions {
+  open?: boolean;
+  operation?: "local" | "release";
+}
+export interface IosStartOptions extends MobileStartOptions {
+  device?: string;
+  noAllowProvisioningUpdates?: boolean;
+}
 
 // Lazy, so the `akan start` hot path never loads the build, mobile and prompt stacks.
 const loadBuildRunner = async () => (await import("@akanjs/devkit/applicationBuildRunner")).ApplicationBuildRunner;
@@ -251,10 +264,7 @@ try {
     return appHost;
   }
 
-  async buildIos(
-    app: App,
-    { target, env = "debug", regenerate = false }: { target?: string; env?: MobileEnv; regenerate?: boolean } = {},
-  ) {
+  async buildIos(app: App, { target, env = "debug", regenerate = false }: MobileTargetOptions = {}) {
     const targets = await resolveMobileTargets(app, target);
     await this.#buildMobileCsr(app, env);
     await this.#runMobileTargets(targets, async (mobileTarget) => {
@@ -271,15 +281,7 @@ try {
       device,
       regenerate = false,
       noAllowProvisioningUpdates = false,
-    }: {
-      open?: boolean;
-      operation?: "local" | "release";
-      env?: MobileEnv;
-      target?: string;
-      device?: string;
-      regenerate?: boolean;
-      noAllowProvisioningUpdates?: boolean;
-    } = {},
+    }: IosStartOptions = {},
   ) {
     const targets = await resolveMobileTargets(app, target);
     if (operation === "release") await this.#buildMobileCsr(app, env);
@@ -289,10 +291,7 @@ try {
       if (open) await capacitorApp.openIos();
     });
   }
-  async releaseIos(
-    app: App,
-    { target, env = "main", regenerate = false }: { target?: string; env?: MobileEnv; regenerate?: boolean } = {},
-  ) {
+  async releaseIos(app: App, { target, env = "main", regenerate = false }: MobileTargetOptions = {}) {
     const targets = await resolveMobileTargets(app, target);
     await this.#buildMobileCsr(app, env);
     for (const mobileTarget of targets) {
@@ -300,10 +299,7 @@ try {
     }
   }
 
-  async buildAndroid(
-    app: App,
-    { target, env = "debug", regenerate = false }: { target?: string; env?: MobileEnv; regenerate?: boolean } = {},
-  ) {
+  async buildAndroid(app: App, { target, env = "debug", regenerate = false }: MobileTargetOptions = {}) {
     const targets = await resolveMobileTargets(app, target);
     await this.#buildMobileCsr(app, env);
     await this.#runMobileTargets(targets, async (mobileTarget) => {
@@ -313,19 +309,7 @@ try {
 
   async startAndroid(
     app: App,
-    {
-      open = false,
-      operation = "local",
-      env = "local",
-      target,
-      regenerate = false,
-    }: {
-      open?: boolean;
-      operation?: "local" | "release";
-      env?: MobileEnv;
-      target?: string;
-      regenerate?: boolean;
-    } = {},
+    { open = false, operation = "local", env = "local", target, regenerate = false }: MobileStartOptions = {},
   ) {
     const targets = await resolveMobileTargets(app, target);
     if (operation === "release") await this.#buildMobileCsr(app, env);
@@ -339,7 +323,7 @@ try {
   async releaseAndroid(
     app: App,
     assembleType: "apk" | "aab",
-    { target, env = "main", regenerate = false }: { target?: string; env?: MobileEnv; regenerate?: boolean } = {},
+    { target, env = "main", regenerate = false }: MobileTargetOptions = {},
   ) {
     const targets = await resolveMobileTargets(app, target);
     await this.#buildMobileCsr(app, env);
@@ -390,10 +374,14 @@ try {
   }
 
   async codepush(app: App, os: "ios" | "android") {
+    await this.#initCapacitorApp(app);
+  }
+  async #initCapacitorApp(app: App) {
     const [target] = await resolveMobileTargets(app, undefined);
     if (!target) throw new Error(`No mobile target configured for ${app.name}`);
     const capacitorApp = new (await loadCapacitorApp())(app, target.config);
     await capacitorApp.init();
+    return capacitorApp;
   }
 
   // multiple keeps its data in the SQLite file single uses, so only Redis joins it; cluster adds Postgres.
@@ -459,10 +447,7 @@ try {
   }
 
   async configureApp(app: App) {
-    const [target] = await resolveMobileTargets(app, undefined);
-    if (!target) throw new Error(`No mobile target configured for ${app.name}`);
-    const capacitorApp = new (await loadCapacitorApp())(app, target.config);
-    await capacitorApp.init();
+    const capacitorApp = await this.#initCapacitorApp(app);
     // TODO: 이미 있으면 패스하는 로직 추가 필요
     if (await (await loadPrompts()).confirm({ message: "want to add camera permission?" }))
       await capacitorApp.addCamera();
