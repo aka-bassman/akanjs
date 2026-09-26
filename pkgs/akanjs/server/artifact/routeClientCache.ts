@@ -3,11 +3,7 @@ import type { SsrManifest } from "../ssrTypes";
 import type { BuildRouteClientResult, ClientManifest } from "./manifestTypes";
 import type { RoutesManifest } from "./routesManifestStore";
 
-/**
- * Snapshot of every per-route build's accumulated output for one HMR
- * generation. Callers should take a `snapshot()` before rendering so an
- * invalidate cannot mutate the manifest while a request is consuming it.
- */
+/** One HMR generation's merged route builds; render from a `snapshot()`, which an invalidate cannot mutate. */
 export interface MergedManifest {
   generation: number;
   clientManifest: ClientManifest;
@@ -55,11 +51,7 @@ export class RouteClientCache {
     this.#onMerge = onMerge;
   }
 
-  /**
-   * Bumped on every mutation of `merged`, including a delta merge that leaves `generation` where it was. It lets a
-   * consumer memoize work derived from the manifest — merging the runtime manifest over it, say — without having to
-   * copy the manifest to find out whether anything changed. In production nothing after `seed` moves it at all.
-   */
+  /** Bumped on every change to `merged`, even a delta merge that keeps `generation`: a memo key for derived work. */
   get revision(): number {
     return this.#revision;
   }

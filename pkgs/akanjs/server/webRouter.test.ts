@@ -506,8 +506,7 @@ describe("WebRouter deep link associations", () => {
 });
 
 describe("WebRouter firebase messaging service worker", () => {
-  //* The worker is the push plugin's asset (it writes `public/firebase-messaging-sw.js`). A framework route
-  //* for the same path matches ahead of the static fallback and shadows it with no way to tell from outside.
+  //* The push plugin writes `public/firebase-messaging-sw.js`; a framework route would silently shadow that asset.
   test("is not a framework route, so the app's own public asset is what gets served", async () => {
     const routeKeys = await withFullSsrCacheHarness(async ({ renderEnvRoutes }) => Object.keys(renderEnvRoutes));
 

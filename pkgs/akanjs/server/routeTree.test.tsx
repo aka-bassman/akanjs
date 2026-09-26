@@ -441,11 +441,9 @@ describe("RouteTreeBuilder _overrides", () => {
   const DefaultModal: AkanModalComponent = ({ title }) => <div data-skin="default">{title}</div>;
   const BrandModal: AkanModalComponent = ({ title }) => <div data-skin="brand">{title}</div>;
   const InnerModal: AkanModalComponent = ({ title }) => <div data-skin="inner">{title}</div>;
-  // The page renders through the real "Modal" override slot, exactly like a shipped `<Modal>` call site.
   const Widget = createOverridable("Modal", DefaultModal);
 
-  // Mirrors the build: a `_overrides.tsx` manifest's default is `override({ ... })` (a plain slot map), served
-  // through a generated `"use client"` wrapper whose default mounts the provider with that map.
+  // Mirrors the generated "use client" wrapper: its default mounts UiOverrideProvider with the manifest's slot map.
   const overridesWrapperModule = (slots: { Modal: AkanModalComponent }) => {
     const value = override(slots);
     return {
@@ -486,10 +484,7 @@ describe("RouteTreeBuilder _overrides", () => {
     expect(html).toContain("PANEL");
   });
 
-  // What a root layout renders beside `{children}` — the agent chat, a dock, a shell control — is the position a
-  // manifest used to miss: the override rode the non-root layout stream, so the root layout wrapped the provider
-  // instead of sitting inside it, and every slot silently resolved to its default. Asserting on the resolved
-  // output rather than on the provider being present is what makes this catch it: the provider was there.
+  // Assert the resolved skin, not provider presence: in the regression the provider existed, inside the root layout.
   const shellLayoutModule = (title: string) => ({
     default: ({ children }: { children: ReactNode }) => (
       <>

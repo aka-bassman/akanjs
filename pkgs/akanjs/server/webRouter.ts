@@ -174,8 +174,7 @@ export function cacheHtmlWhileStreaming(
 
 export function cancelStreamForHeadResponse(stream: ReadableStream<Uint8Array>, reason: unknown): void {
   void stream.cancel(reason).catch(() => {
-    // The response will not expose a body. Cancellation is best-effort because
-    // upstream streams may already be closed by the time HEAD handling runs.
+    // Best-effort: upstream may already be closed by the time HEAD handling runs.
   });
 }
 
@@ -214,10 +213,7 @@ export function isHtmlRouteCachePathAllowed(
 export async function createRscNavigationStreamResponse(
   result: Extract<RscRenderResult, { type: "stream" }>,
 ): Promise<Response> {
-  // P7a streams normal RSC navigation payloads immediately. Redirects that are
-  // known before stream start still use the header envelope in the caller;
-  // redirects discovered after Flight bytes have left the worker stay in the
-  // Flight stream with an Akan digest that the client strips before RSDW sees it.
+  // A redirect found after Flight bytes left the worker stays in-stream: an Akan digest the client strips before RSDW.
   const response = createRscStreamResponse(result.stream, result.status ?? 200);
   appendRscTraceHeaders(response.headers, result.trace);
   return response;
@@ -286,12 +282,8 @@ export class WebRouter {
   #subRoutes: Record<string, string[]>;
   #rsc: RscWorker;
   #hub: HmrWsHub | null = null;
-  /**
-   * `akan start` is the dev server whatever the environment claims. Its artifact directory carries no routes
-   * manifest — only `akan build` writes one — so the production branch cannot build a route on demand and
-   * throws on every request instead. `NODE_ENV` arrives by accident often enough (a workspace `.env` Bun loads
-   * on its own, a CI image default) that the command which started this process has to outrank it.
-   */
+  // `akan start` outranks a stray NODE_ENV=production (a Bun-loaded `.env`, a CI default): its artifact has no
+  // routes manifest, so production mode would throw on every request.
   #prodMode = process.env.NODE_ENV === "production" && process.env.AKAN_COMMAND_TYPE !== "start";
   #builderRpc: BuilderRpc | null;
   #routeCache: RouteClientCache;
@@ -367,8 +359,7 @@ export class WebRouter {
       await this.#rsc.reload({
         clientManifest: this.#mergeRuntimeManifest().clientManifest,
         cssAssets: this.renderState.cssAssets,
-        // The worker booted on the artifact's id; any other id is a fresh `?v=` URL, so Bun re-evaluates the whole
-        // pages bundle and keeps both copies in its ESM registry for the life of the worker.
+        // The worker's boot id: any other is a fresh `?v=` URL, and Bun keeps both bundle copies in its ESM registry.
         buildId: this.#artifact.pagesBundleBuildId,
       });
     }
@@ -468,7 +459,7 @@ export class WebRouter {
         this.#requestStats.rscNavigation += 1;
         try {
           const reqUrl = new URL(req.url);
-          /** After TLS/pass-through proxies Bun often sees internal http origins; forwarded headers preserve the browser origin for same-origin checks. */
+          // Behind proxies req.url is internal; forwarded headers give the browser's origin for the same-origin check.
           const clientOrigin = WebRouter.#clientFacingOrigin(req);
           const target = reqUrl.searchParams.get("url");
           const rawTargetUrl = target ? new URL(target, clientOrigin) : reqUrl;
@@ -515,11 +506,8 @@ export class WebRouter {
         WebRouter.#deepLinkAssociationResponse(ANDROID_ASSET_LINKS_PATH, this.#artifact, {
           cacheControl: this.#prodMode ? "public, max-age=3600" : "no-store",
         }) ?? new Response("Not Found", { status: 404 }),
-      // Everything under `/.well-known/` is fetched by a machine reading a fixed document, so the `/*` SSR
-      // fallback's 404 *page* is both useless to the caller and a full route render — Chrome asks for
-      // `appspecific/com.chrome.devtools.json` on every load with DevTools open. Exact well-known routes
-      // (the deep-link pair above, MCP's OAuth metadata in `builtinRoutes`) still win: Bun matches a static
-      // route ahead of a wildcard.
+      // Machines fetch these (Chrome asks for com.chrome.devtools.json on every DevTools load): no SSR 404 render.
+      // Exact well-known routes (deep links, MCP OAuth metadata) still win — Bun matches static before wildcard.
       "/.well-known/*": () =>
         new Response("Not Found", {
           status: 404,
@@ -722,7 +710,6 @@ export class WebRouter {
     this.#rsc.setLogLevel(minSev);
   }
 
-  /** Page prompts live with the pages, in the RSC worker; the MCP router reaches them through this. */
   pagePrompts(): PagePromptSource {
     return {
       list: () => this.#rsc.listPagePrompts(),
@@ -755,7 +742,6 @@ export class WebRouter {
     };
   }
 
-  /** @internal Clears or scopes invalidation for local route result caches owned by the host and RSC worker. */
   invalidateRouteCaches(invalidation?: string | RouteCacheInvalidation): void {
     const payload = typeof invalidation === "string" ? { reason: invalidation } : invalidation;
     if (!hasRouteCacheInvalidationScope(payload)) {
@@ -775,19 +761,11 @@ export class WebRouter {
     this.#rsc.invalidateRouteResultCache(invalidation);
   }
 
-  /**
-   * Reconstruct origin as the browser saw it when behind Ingress / reverse proxies
-   * (prevents `/__rsc` same-origin rejecting because `req.url` is internal).
-   */
   static #clientFacingOrigin(req: Request): string {
     return getClientFacingOrigin(req);
   }
 
-  /**
-   * `x-base-path` is set by `HostBasePathWebProxy`, but it reaches here from the wire too, so it is checked against
-   * the basePaths this build serves — the same check `getBasePathFromPathname` already applies to it. An unknown
-   * value falls through to host matching instead of routing the request into a basePath that resolves to nothing.
-   */
+  // `x-base-path` can arrive from the wire, not just HostBasePathWebProxy: trust only a basePath this build serves.
   #requestBasePath(req: Request): string | null {
     const headerBasePath = req.headers.get("x-base-path");
     if (headerBasePath && this.#artifact.basePaths.includes(headerBasePath)) return headerBasePath;
@@ -867,13 +845,7 @@ export class WebRouter {
     return this.#mergeRuntimeManifest();
   }
 
-  /**
-   * Memoized on the route cache's revision. Both the snapshot and the runtime merge copy the whole client manifest
-   * and SSR module map, which is a few hundred KB of structure for a small app — and this ran on every request. In
-   * production the revision never moves after `seed`, so the manifest is built once; in dev a rebuild bumps it and
-   * the next request pays for one fresh copy. The cached object is still a copy, so an in-flight request keeps
-   * consuming a stable manifest across an invalidate exactly as the per-request snapshot made it.
-   */
+  // Still a copy, so an in-flight request keeps a stable manifest across an invalidate.
   #mergeRuntimeManifest(): MergedManifest {
     const revision = this.#routeCache.revision;
     if (this.#runtimeManifest?.revision === revision) return this.#runtimeManifest.manifest;
@@ -897,12 +869,8 @@ export class WebRouter {
     });
   }
 
-  /**
-   * A build with subRoutes must keep every route file under `page/<basePath>`, so the site root owns no page and
-   * answers 404 — including the URL `akan start` opens a browser on. Locally that reads as a broken app, so serve a
-   * picker of the basePaths this build carries instead. Deployed hosts never reach it: `HostBasePathWebProxy`
-   * rewrites the root onto the basePath its host maps to before the router sees it.
-   */
+  // A subRoutes build has no root page (routes live under `page/<basePath>`), so local dev serves a basePath picker;
+  // deployed hosts never get here, HostBasePathWebProxy rewrites the root first.
   #localSubRouteIndexResponse(req: Request, url: URL): Promise<Response> | null {
     if (process.env.AKAN_PUBLIC_ENV !== "local" || !this.#artifact.basePaths.length) return null;
     if (!WebRouter.#isSiteRootPathname(url.pathname, this.#artifact.i18n)) return null;
@@ -997,11 +965,6 @@ export class WebRouter {
     if (this.#prodMode) return html;
     return WebRouter.#injectBeforeBodyEnd(html, `<script>${HMR_CLIENT_SCRIPT}</script>`);
   }
-  /**
-   * Resolve a CSR html file, asking the builder to build the artifact first if it is not there yet.
-   * Dev CSR is only reachable through `/__csr` and `?csr=true`, so the builder skips it until one of
-   * them is requested; the first request pays for the build and every save keeps it in sync after.
-   */
   async #resolveCsrHtml(csrOutputDir: string, pathname: string): Promise<string | null> {
     const resolved = WebRouter.#resolveCsrHtmlPath(csrOutputDir, pathname, this.#artifact);
     if (resolved) return resolved;
@@ -1010,8 +973,7 @@ export class WebRouter {
   }
   #armCsrArtifact(reason: string): Promise<unknown> {
     const rpc = this.#builderRpc;
-    // Arm once per process: after a successful build the builder rebuilds CSR on every save, so a
-    // still-missing html file means the basePath does not exist rather than that CSR is unbuilt.
+    // Arm once: after a build the builder keeps CSR current, so a still-missing file means an unknown basePath.
     if (this.#csrArmed || !rpc) return Promise.resolve();
     this.#csrOnDemandBuild ??= rpc
       .buildCsr(reason)
@@ -1052,10 +1014,7 @@ export class WebRouter {
     });
   }
 
-  /**
-   * `null` when the build produced no web artifact — an api-only build, or a workspace with no `page/` at all.
-   * The caller boots without a web surface instead of failing on the missing file.
-   */
+  /** `null` when the build has no web artifact (an api-only build, or no `page/`): boot without a web surface. */
   static async create({ web, upgradeHmrWs }: SsrRoutesInputs): Promise<WebRouter | null> {
     const artifactDir = WebRouter.#resolveArtifactDir();
     const artifactFile = Bun.file(path.join(artifactDir, "base-artifact.json"));
@@ -1065,9 +1024,8 @@ export class WebRouter {
     if (!builtWeb.ssr) return null;
     const cssBytesByUrl = await WebRouter.#loadCssBytesByUrl(artifact, artifactDir);
     const prodMode = process.env.NODE_ENV === "production" && process.env.AKAN_COMMAND_TYPE !== "start";
-    //* Production listens before the worker has imported the pages bundle (~70ms) and renders queue until `ready`.
-    //* A bundle that cannot load exits the process rather than restart-looping behind a healthy API. Dev keeps
-    //* awaiting and retrying, since the next rebuild hands a restarting worker a fixed bundle.
+    //* Production listens before the bundle loads (renders queue until `ready`) and exits if it cannot load rather
+    //* than restart-loop behind a healthy API; dev awaits, as the next rebuild hands the worker a fixed bundle.
     const rsc = new RscWorker(artifact, { failBeforeReady: prodMode });
     if (prodMode)
       void rsc.ready.catch((error: unknown) => {
@@ -1273,16 +1231,8 @@ export class WebRouter {
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   }
 
-  /**
-   * Headers every response carries, whatever it is.
-   *
-   * `nosniff` because `Bun.file().type` falls back to `application/octet-stream` for an extension it does not
-   * know, and a sniffing browser then guesses again — on a `public/` tree the app serves from its own origin,
-   * that guess is script execution. `Referrer-Policy` because route paths carry ids.
-   *
-   * `X-Frame-Options` is on the HTML only: framing an image or a stylesheet means nothing, and the header is
-   * what stops a page authenticated by a `SameSite=None` cookie from being clickjacked inside somebody else's.
-   */
+  // nosniff: Bun.file().type falls back to octet-stream, and a sniffing browser may run a public/ file as script.
+  // Referrer-Policy: paths carry ids. X-Frame-Options (HTML only): stops clickjacking of SameSite=None-cookie pages.
   static #applySecurityHeaders(headers: Headers, { html = false } = {}): Headers {
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Referrer-Policy", "strict-origin-when-cross-origin");

@@ -226,22 +226,13 @@ export function shouldInvalidateRouteCacheEntry(
 }
 
 export interface LruTtlCacheOptions<T> {
-  /**
-   * Measures one entry's payload. Entry count alone says nothing about a cache whose entries span
-   * three orders of magnitude, and a byte ceiling needs a running total to enforce. The default
-   * reports 0 rather than guessing, so `byteSize` stays honest about not knowing.
-   */
+  /** Defaults to reporting 0 rather than guessing, so `byteSize` stays honest about not knowing. */
   sizeOf?: (value: T) => number;
   /** Total payload ceiling. 0 leaves the cache bounded only by `maxEntries`. */
   maxBytes?: number;
   /** An entry over this is not stored at all, rather than evicting everything else to fit it. */
   maxEntryBytes?: number;
-  /**
-   * Cadence of the idle sweep. Without one a filled cache never shrinks: an entry is dropped only
-   * when its own key is fetched after expiry or when a write evicts it, so a pod that stops
-   * serving holds its peak forever — measured at 100 entries / 21.4 MiB still resident 310s after
-   * the last request, with a 30s TTL. 0 disables it.
-   */
+  /** Idle sweep cadence; without it a cache nobody reads or writes never releases expired entries. 0 disables it. */
   sweepIntervalMs?: number;
 }
 
@@ -288,7 +279,6 @@ export class LruTtlCache<T> {
     return entry.value;
   }
 
-  /** Returns whether the entry was stored; a payload over `maxEntryBytes` is rejected. */
   set(key: string, value: T, ttlSeconds: number): boolean {
     this.#remove(key);
     const byteLength = LruTtlCache.#measure(this.#sizeOf, value);
@@ -306,12 +296,7 @@ export class LruTtlCache<T> {
     return true;
   }
 
-  /**
-   * Drops every expired entry. Deliberately a full scan rather than a walk from the oldest that
-   * stops at the first live entry: insertion order is *LRU* order because `get` reinserts, and TTLs
-   * differ per entry, so expiry is not monotonic in map order and an early break would leave
-   * expired entries behind. The map is bounded by `maxEntries`, so the scan is cheap.
-   */
+  // A full scan on purpose: map order is LRU (`get` reinserts) and TTLs differ, so expiry is not monotonic in it.
   sweepExpired(now = Date.now()): number {
     let removed = 0;
     for (const [key, entry] of this.#entries) {
@@ -322,7 +307,6 @@ export class LruTtlCache<T> {
     return removed;
   }
 
-  /** Stops the idle sweep. The cache stays usable; only the timer goes away. */
   dispose(): void {
     if (!this.#sweepTimer) return;
     clearInterval(this.#sweepTimer);

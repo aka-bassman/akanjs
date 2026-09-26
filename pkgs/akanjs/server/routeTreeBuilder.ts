@@ -193,10 +193,8 @@ export class RouteTreeBuilder {
     const pathSegments = [...parentPaths, ...(currentPathSegment ? [currentPathSegment] : [])];
     const currentRootLayout = isRoot && route.renderLayout ? route.renderLayout : null;
     const currentLayout = !isRoot && route.renderLayout ? route.renderLayout : null;
-    // Overrides wrap the whole stack, root layouts included. Riding the non-root stream instead left a root
-    // layout wrapping the provider, so its own JSX — and the overlay host it mounts, which portalled Modals
-    // render into — sat outside every manifest and silently took the framework default. Nested manifests still
-    // stack in node order, and `parentRootLayouts` stays override-free because the root-boundary test counts it.
+    // Overrides wrap root layouts too, or a root layout's own UI (the overlay host portalled Modals use) misses them.
+    // `parentRootLayouts` stays override-free: the isRoot test counts its length.
     const currentOverrideRenders = route.renderOverrides ? [route.renderOverrides] : [];
     const overrideRenders = [...parentOverrides, ...currentOverrideRenders];
     const rootLayoutStack = [...parentRootLayouts, ...(currentRootLayout ? [currentRootLayout] : [])];
@@ -263,10 +261,6 @@ export class RouteTreeBuilder {
     };
   }
 
-  /**
-   * A `page()` / `layout()` chain is unfolded into the named-export shape the rest of this file reads. The legacy
-   * shape still loads, and is named once per module so an app finds every file the migration guide covers.
-   */
   static #resolveModule(key: string, kind: RouteModuleKindWithOverrides, mod: RouteModuleSource): ResolvedRouteModule {
     if (kind === "overrides") return { module: mod as RouteModule };
     const parsed = parseRouteModuleKey(key);
@@ -282,7 +276,6 @@ export class RouteTreeBuilder {
 
   static #validateRouteModuleExports(key: string, kind: RouteModuleKindWithOverrides, mod: RouteModule) {
     if (kind === "overrides") {
-      // The loaded module is the generated `"use client"` override wrapper, whose default mounts the provider.
       if (!mod.default) throw new Error(`[route-convention] ${key} generated override wrapper has no default export`);
       return;
     }
@@ -356,9 +349,7 @@ export class RouteTreeBuilder {
     return routeRender;
   }
 
-  // A `_overrides.tsx` renders through its generated `"use client"` wrapper layout: the wrapper's default mounts
-  // the `UiOverrideProvider` (with the manifest's slot bindings) around the subtree. On the server the wrapper is
-  // a client reference, on the client the real component — `createElement` handles both. No head/config/fallback.
+  // `_overrides.tsx` renders via its generated "use client" wrapper, a client reference on the server: createElement.
   #makeOverridesRender(key: string, loader: () => Promise<RouteModuleSource>): RouteRender {
     const loadModule = RouteTreeBuilder.#makeLazyModule(key, "overrides", loader);
     return {

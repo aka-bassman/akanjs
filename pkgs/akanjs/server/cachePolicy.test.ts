@@ -369,7 +369,6 @@ describe("route cache policy helpers", () => {
     expect(cache.byteSize).toBe(9);
 
     await new Promise((resolve) => setTimeout(resolve, 5));
-    // No `get` of the expired key, which is the only thing that used to reclaim it.
     expect(cache.sweepExpired()).toBe(1);
     expect(cache.size).toBe(1);
     expect(cache.byteSize).toBe(4);
@@ -377,8 +376,6 @@ describe("route cache policy helpers", () => {
   });
 
   test("sweeps entries whose expiry does not follow map order", async () => {
-    // `get` reinserts, and TTLs differ per entry, so the oldest map entry can outlive a newer one.
-    // A sweep that stopped at the first live entry would leave the expired one behind.
     const cache = new LruTtlCache<string>(10);
     cache.set("long", "L", 30);
     cache.set("short", "S", 0.001);
