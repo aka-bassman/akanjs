@@ -161,7 +161,6 @@
     "react-server-dom-bun": "0.0.0-experimental-603e6108-20241029",
     "react-server-dom-webpack": "^19.2.7",
     "react-simple-image-viewer": "^1.2.2",
-    "react-simple-pull-to-refresh": "^1.3.4",
     "react-spring": "^10.0.4",
     "react-to-print": "^3.3.0",
     "react-tweet": "3.2.1",
