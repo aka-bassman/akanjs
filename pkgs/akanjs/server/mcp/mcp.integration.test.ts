@@ -330,8 +330,10 @@ afterAll(async () => {
   if (tmp) await rm(tmp, { recursive: true, force: true });
 });
 
+const rpc = (method: string, params?: object) => ({ jsonrpc: "2.0", id: 1, method, ...(params ? { params } : {}) });
+
 const call = async (name: string, args: Record<string, unknown> = {}) =>
-  (await post({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } })).json;
+  (await post(rpc("tools/call", { name, arguments: args }))).json;
 
 const itemId = "507f1f77bcf86cd799439011";
 const briefEntry: PagePromptEntry = {
@@ -368,12 +370,7 @@ const pagePromptsOf = (run: PagePromptRun, entries: PagePromptEntry[] = [briefEn
   list: async () => entries,
   run: async () => run,
 });
-const promptsGet = (args: Record<string, string>) => ({
-  jsonrpc: "2.0",
-  id: 1,
-  method: "prompts/get",
-  params: { name: "briefItem", arguments: args },
-});
+const promptsGet = (args: Record<string, string>) => rpc("prompts/get", { name: "briefItem", arguments: args });
 
 describe("MCP over a booted container", () => {
   test("names an account guard that reaches for arguments, once, and hides its entry without an error line", async () => {
@@ -381,7 +378,7 @@ describe("MCP over a booted container", () => {
     const lines: string[] = [];
     const stop = Logger.addSink(({ message }) => void lines.push(message));
     try {
-      const { json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+      const { json } = await post(rpc("tools/list"));
       expect(json.result.tools.map((tool: { name: string }) => tool.name)).not.toContain("mismarkedTitle");
       // Absent from the document, not merely hidden for this caller: `PersonOnly` would have passed anyone.
       expect(json.result.tools.map((tool: { name: string }) => tool.name)).not.toContain("personTitle");
@@ -397,7 +394,7 @@ describe("MCP over a booted container", () => {
   });
 
   test("lists every endpoint its guards admit", async () => {
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const { json } = await post(rpc("tools/list"));
     expect(json.result.tools.map((tool: { name: string }) => tool.name)).toEqual([
       "echoTitle",
       "failingTitle",
@@ -419,20 +416,20 @@ describe("MCP over a booted container", () => {
   });
 
   test("refuses an exposed mutation whose only guard is Public", async () => {
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const { json } = await post(rpc("tools/list"));
     expect(json.result.tools.map((tool: { name: string }) => tool.name)).not.toContain("publicRenameTitle");
     const called = await call("publicRenameTitle", { id: "507f1f77bcf86cd799439011" });
     expect(called.error.message).toBe("Unknown tool: publicRenameTitle.");
   });
 
   test("answers ping", async () => {
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "ping" });
+    const { json } = await post(rpc("ping"));
     expect(json.result).toEqual({});
     expect(json.error).toBeUndefined();
   });
 
   test("hides what an account-scoped guard already refuses this caller", async () => {
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const { json } = await post(rpc("tools/list"));
     expect(json.result.tools.map((tool: { name: string }) => tool.name)).not.toContain("deniedTitle");
   });
 
@@ -464,12 +461,7 @@ describe("MCP over a booted container", () => {
     const list = await call("serverResolverTestItemList", { limit: 5 });
     expect(list.result.isError).toBe(false);
     expect(list.result.structuredContent).toEqual({ items: [] });
-    const read = await post({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "resources/read",
-      params: { uri: "akan://serverResolverTestItem/list?limit=5" },
-    });
+    const read = await post(rpc("resources/read", { uri: "akan://serverResolverTestItem/list?limit=5" }));
     expect(read.json.result.contents[0].text).toBe('{"items":[]}');
     const single = await call("serverResolverTestItem", { serverResolverTestItemId: "507f1f77bcf86cd799439011" });
     expect(single.result.isError).toBe(true);
@@ -484,37 +476,22 @@ describe("MCP over a booted container", () => {
     expect("structuredContent" in empty.result).toBe(false);
     const found = await call("maybeItem", { title: "here" });
     expect(found.result.structuredContent).toMatchObject({ title: "here" });
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const { json } = await post(rpc("tools/list"));
     // No outputSchema either: a declared one obliges every result to match.
     expect(json.result.tools.find((tool: { name: string }) => tool.name === "maybeItem").outputSchema).toBeUndefined();
   });
 
   test("reports arguments that are not an object as the caller's own mistake", async () => {
-    const called = await post({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: { name: "echoTitle", arguments: "oops" },
-    });
+    const called = await post(rpc("tools/call", { name: "echoTitle", arguments: "oops" }));
     expect(called.json.error.code).toBe(-32602);
     expect(called.json.error.message).toBe("`arguments` must be an object of named values.");
-    const positional = await post({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: { name: "echoTitle", arguments: ["507f1f77bcf86cd799439011"] },
-    });
+    const positional = await post(rpc("tools/call", { name: "echoTitle", arguments: ["507f1f77bcf86cd799439011"] }));
     expect(positional.json.error.code).toBe(-32602);
     expect(positional.json.error.message).toBe("`arguments` must be an object of named values.");
   });
 
   test("advertises only the capabilities it actually has entries for", async () => {
-    const initialize = {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2025-11-25", capabilities: {} },
-    };
+    const initialize = rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {} });
     const { json } = await post(initialize);
     expect(json.result.capabilities).toEqual({ tools: {}, resources: {} });
     const { json: withPages } = await postWith(initialize, { pagePrompts: pagePromptsOf(okRun()) });
@@ -562,8 +539,8 @@ describe("MCP over a booted container", () => {
   });
 
   test("honours a bearer token and ignores a cookie, the one credential channel the spec admits", async () => {
-    const list = { jsonrpc: "2.0", id: 1, method: "tools/list" };
-    const owned = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "ownedTitle" } };
+    const list = rpc("tools/list");
+    const owned = rpc("tools/call", { name: "ownedTitle" });
     const names = async (res: Response) =>
       ((await res.json()) as { result: { tools: { name: string }[] } }).result.tools.map((tool) => tool.name);
     expect(await names(await postRaw(list, { authorization: "Bearer u1" }))).toContain("ownedTitle");
@@ -578,12 +555,11 @@ describe("MCP over a booted container", () => {
   });
 
   test("challenges an anonymous initialize once an authorization server is named", async () => {
-    const initialize = {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "probe", version: "0" } },
-    };
+    const initialize = rpc("initialize", {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "probe", version: "0" },
+    });
     const send = async (headers: Record<string, string>) =>
       await mcpRoutes({ auth: { authorizationServers: ["https://app.example.com"] } })["/mcp"].POST(
         new Request("http://127.0.0.1:8080/mcp", {
@@ -601,15 +577,7 @@ describe("MCP over a booted container", () => {
 
   test("refuses a guarded call without naming the guard that refused it", async () => {
     // A credential was presented, so this is a tool error rather than a 401 challenge.
-    const routes = mcpRoutes();
-    const res = await routes["/mcp"].POST(
-      new Request("http://127.0.0.1:8080/mcp", {
-        method: "POST",
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "deniedTitle" } }),
-        headers: { "content-type": "application/json", authorization: "Bearer whatever" },
-      }),
-    );
-    const json = (await res.json()) as { result: { isError: boolean; content: { text: string }[] } };
+    const { json } = await postAs(rpc("tools/call", { name: "deniedTitle" }), { authorization: "Bearer whatever" }, {});
     expect(json.result.isError).toBe(true);
     expect(json.result.content[0].text).toBe("You are not permitted to perform this action.");
   });
@@ -631,7 +599,7 @@ describe("MCP over a booted container", () => {
 
   test("says a document is missing rather than that the server failed", async () => {
     const uri = "akan://serverResolverTestItem/507f1f77bcf86cd799439011";
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "resources/read", params: { uri } });
+    const { json } = await post(rpc("resources/read", { uri }));
     expect(json.error.code).toBe(-32602);
     expect(json.error.message).toBe("No serverResolverTestItem found for the arguments given.");
   });
@@ -665,12 +633,9 @@ describe("MCP over a booted container", () => {
   });
 
   test("reads a resource through the same path as its tool", async () => {
-    const { json } = await post({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "resources/read",
-      params: { uri: "akan://serverResolverTestItem/list/inCategory?category=all" },
-    });
+    const { json } = await post(
+      rpc("resources/read", { uri: "akan://serverResolverTestItem/list/inCategory?category=all" }),
+    );
     expect(json.result.contents[0]).toEqual({
       uri: "akan://serverResolverTestItem/list/inCategory?category=all",
       mimeType: "application/json",
@@ -691,14 +656,11 @@ describe("MCP over a booted container", () => {
   });
 
   test("lists page prompts as the pages declared them", async () => {
-    const { json } = await postWith(
-      { jsonrpc: "2.0", id: 1, method: "prompts/list" },
-      { pagePrompts: pagePromptsOf(okRun()) },
-    );
+    const { json } = await postWith(rpc("prompts/list"), { pagePrompts: pagePromptsOf(okRun()) });
     expect(json.result.prompts).toEqual([
       { name: "briefItem", description: briefEntry.description, arguments: briefEntry.arguments },
     ]);
-    const { json: none } = await post({ jsonrpc: "2.0", id: 1, method: "prompts/list" });
+    const { json: none } = await post(rpc("prompts/list"));
     expect(none.result.prompts).toEqual([]);
   });
 
@@ -902,7 +864,7 @@ describe("MCP over a booted container", () => {
   });
 
   test("stops sending the structured result twice when the legacy text block is turned off", async () => {
-    const body = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "visualItem", arguments: {} } };
+    const body = rpc("tools/call", { name: "visualItem", arguments: {} });
     const { json: both } = await postWith(body, {});
     expect(JSON.parse(both.result.content[0].text)).toEqual(both.result.structuredContent);
     const { json: once } = await postWith(body, { legacyTextBlock: false });
@@ -911,23 +873,16 @@ describe("MCP over a booted container", () => {
   });
 
   test("reads a resource whole when the legacy text block is turned off", async () => {
-    const body = {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "resources/read",
-      params: { uri: "akan://serverResolverTestItem/list/inCategory?category=all" },
-    };
+    const body = rpc("resources/read", { uri: "akan://serverResolverTestItem/list/inCategory?category=all" });
     const { json } = await postWith(body, { legacyTextBlock: false });
     expect(json.result.contents[0].text).toBe('{"items":[]}');
   });
 
   test("keeps the text block whole for a scalar return, which has no structured half to point at", async () => {
-    const body = {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: { name: "echoTitle", arguments: { id: "507f1f77bcf86cd799439011", suffix: "tail" } },
-    };
+    const body = rpc("tools/call", {
+      name: "echoTitle",
+      arguments: { id: "507f1f77bcf86cd799439011", suffix: "tail" },
+    });
     const { json } = await postWith(body, { legacyTextBlock: false });
     expect(json.result.content[0].text).toBe("507f1f77bcf86cd799439011:tail");
   });
@@ -943,25 +898,20 @@ describe("MCP over a booted container", () => {
       names.push(...json.result.tools.map((tool: { name: string }) => tool.name));
       cursor = json.result.nextCursor;
     } while (cursor);
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const { json } = await post(rpc("tools/list"));
     expect(names).toEqual(json.result.tools.map((tool: { name: string }) => tool.name));
     expect(json.result.nextCursor).toBeUndefined();
   });
 
   test("refuses a cursor that addresses nothing rather than serving a short page", async () => {
-    const { json } = await post({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/list",
-      params: { cursor: Buffer.from("999").toString("base64url") },
-    });
+    const { json } = await post(rpc("tools/list", { cursor: Buffer.from("999").toString("base64url") }));
     expect(json.error.code).toBe(-32602);
     expect(json.error.message).toBe("Invalid cursor.");
   });
 
   test("refuses a cursor that decodes to nothing instead of restarting the walk", async () => {
     for (const cursor of ["", "===="]) {
-      const { json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/list", params: { cursor } });
+      const { json } = await post(rpc("tools/list", { cursor }));
       expect(json.error?.message).toBe("Invalid cursor.");
     }
   });
@@ -973,17 +923,14 @@ describe("MCP over a booted container", () => {
     };
     const modern = async (method: string) =>
       await (
-        await postRaw(
-          { jsonrpc: "2.0", id: 1, method, params: { _meta: meta } },
-          { "mcp-method": method, "mcp-protocol-version": "2026-07-28" },
-        )
+        await postRaw(rpc(method, { _meta: meta }), { "mcp-method": method, "mcp-protocol-version": "2026-07-28" })
       ).json();
     const json = await modern("tools/list");
     expect(json.result.cacheScope).toBe("private");
     expect(json.result.ttlMs).toBe(300_000);
     const discover = await modern("server/discover");
     expect(discover.result.cacheScope).toBe("public");
-    const legacy = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const legacy = await post(rpc("tools/list"));
     expect(legacy.json.result.cacheScope).toBeUndefined();
   });
 
@@ -1015,7 +962,7 @@ describe("MCP over a booted container", () => {
   });
 
   test("answers with plain JSON unless the caller asks for a stream and names a token", async () => {
-    const call = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "slowTitle", arguments: {} } };
+    const call = rpc("tools/call", { name: "slowTitle", arguments: {} });
     const tokenOnly = await postRaw({ ...call, params: { ...call.params, _meta: { progressToken: "t" } } }, {});
     expect(tokenOnly.headers.get("content-type")).toContain("application/json");
     const streamOnly = await postRaw(call, { accept: "text/event-stream" });
@@ -1025,12 +972,7 @@ describe("MCP over a booted container", () => {
 
   test("keeps the 401 challenge reachable by deciding to stream only after guards pass", async () => {
     const res = await postRaw(
-      {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: { name: "deniedTitle", arguments: {}, _meta: { progressToken: "t" } },
-      },
+      rpc("tools/call", { name: "deniedTitle", arguments: {}, _meta: { progressToken: "t" } }),
       { accept: "text/event-stream" },
     );
     expect(res.status).toBe(401);
@@ -1052,7 +994,7 @@ describe("MCP over a booted container", () => {
     const res = await routes["/mcp"].POST(
       new Request("http://127.0.0.1:8080/mcp", {
         method: "POST",
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+        body: JSON.stringify(rpc("tools/list")),
         headers: { "content-type": "application/json", ...headers },
       }),
     );
@@ -1079,7 +1021,7 @@ describe("MCP over a booted container", () => {
       mcpRoutes()["/mcp"].POST(
         new Request("http://akan-child:9001/mcp", {
           method: "POST",
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+          body: JSON.stringify(rpc("tools/list")),
           headers: { "content-type": "application/json", origin: "https://app.example.com", ...headers },
         }),
       );
@@ -1090,7 +1032,7 @@ describe("MCP over a booted container", () => {
   });
 
   test("advertises the templates its exposed reads are addressable by", async () => {
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "resources/templates/list" });
+    const { json } = await post(rpc("resources/templates/list"));
     expect(json.result.resourceTemplates.map((t: { uriTemplate: string }) => t.uriTemplate)).toEqual([
       "akan://serverResolverTestItem/{serverResolverTestItemId}",
       "akan://serverResolverTestItem/list{?queryKey,skip,limit,sort}",

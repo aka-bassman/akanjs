@@ -96,6 +96,13 @@ function createHostRenderHarness(options: { maxPendingChunks?: number; signal?: 
   };
 }
 
+const streamResultOf = async (harness: ReturnType<typeof createHostRenderHarness>) => {
+  const result = await harness.result;
+  expect(result.type).toBe("stream");
+  if (result.type !== "stream") throw new Error("expected stream result");
+  return result;
+};
+
 describe("RscWorker process metric projection", () => {
   const processLevelKeys = [
     "role",
@@ -188,9 +195,7 @@ describe("RscWorker host render stream", () => {
 
     expect(harness.sendCount()).toBe(1);
     harness.pending().onMeta?.({ theme: "dark", status: 404 });
-    const result = await harness.result;
-    expect(result.type).toBe("stream");
-    if (result.type !== "stream") throw new Error("expected stream result");
+    const result = await streamResultOf(harness);
 
     harness.pending().onChunk(new TextEncoder().encode("flight"));
     harness.pending().onEnd();
@@ -205,9 +210,7 @@ describe("RscWorker host render stream", () => {
     const harness = createHostRenderHarness();
 
     harness.pending().onChunk(new TextEncoder().encode("early"));
-    const result = await harness.result;
-    expect(result.type).toBe("stream");
-    if (result.type !== "stream") throw new Error("expected stream result");
+    const result = await streamResultOf(harness);
 
     harness.pending().onEnd();
 
@@ -222,9 +225,7 @@ describe("RscWorker host render stream", () => {
     const reason = new Error("client disconnected");
 
     harness.pending().onMeta?.({});
-    const result = await harness.result;
-    expect(result.type).toBe("stream");
-    if (result.type !== "stream") throw new Error("expected stream result");
+    const result = await streamResultOf(harness);
 
     await result.stream.cancel(reason);
     result.cancel(new Error("duplicate cancel"));
@@ -250,9 +251,7 @@ describe("RscWorker host render stream", () => {
     const harness = createHostRenderHarness({ maxPendingChunks: 1 });
 
     harness.pending().onChunk(new Uint8Array([1]));
-    const result = await harness.result;
-    expect(result.type).toBe("stream");
-    if (result.type !== "stream") throw new Error("expected stream result");
+    const result = await streamResultOf(harness);
     const reader = result.stream.getReader();
     const closed = reader.closed.catch((streamError: unknown) => streamError);
 
@@ -290,9 +289,7 @@ describe("RscWorker host render stream", () => {
     const harness = createHostRenderHarness();
 
     harness.pending().onChunk(new TextEncoder().encode("shell"));
-    const result = await harness.result;
-    expect(result.type).toBe("stream");
-    if (result.type !== "stream") throw new Error("expected stream result");
+    const result = await streamResultOf(harness);
 
     harness.pending().onLateRedirect?.("/target", "push", 308);
     harness.pending().onEnd();
@@ -310,9 +307,7 @@ describe("RscWorker host render stream", () => {
     const harness = createHostRenderHarness();
 
     harness.pending().onMeta?.({});
-    const result = await harness.result;
-    expect(result.type).toBe("stream");
-    if (result.type !== "stream") throw new Error("expected stream result");
+    const result = await streamResultOf(harness);
 
     harness.pending().onCacheState?.({
       cacheable: true,
@@ -361,24 +356,8 @@ describe("RscWorker cache invalidation", () => {
   });
 
   test("creates patch cache keys that distinguish route and patch variants", () => {
-    const routerState: AkanRouterStateV1 = {
-      version: 1,
-      buildId: 7,
-      href: "https://example.test/docs?page=1",
-      routeId: "/docs",
-      segments: [
-        { kind: "root-layout", path: "/", key: "root:/:0" },
-        { kind: "layout", path: "/docs", key: "layout:/docs:1" },
-        { kind: "page", path: "/docs", key: "page:/docs:2" },
-      ],
-    };
-    const patch: AkanRscPatchMetadata = {
-      patchStartIndex: 2,
-      patchStartSegmentKey: "page:/docs:2",
-      segmentPath: ["root:/:0", "layout:/docs:1", "page:/docs:2"],
-      headSafe: true,
-      headSnapshot: { version: 1, nodes: [{ tag: "title", text: "Docs" }] },
-    };
+    const routerState = makePatchRouterState();
+    const patch = makeHeadSafePatch();
     const baseEntry = { key: "https://example.test\n\n\n\n/docs\n?page=1\n\ndark", ttl: 30 };
 
     const entry = createRscPatchCacheEntry({ baseEntry, targetRouterState: routerState, patch });

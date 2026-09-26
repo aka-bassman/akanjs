@@ -1,18 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { AppWsData } from "./appWsData";
 
+const handshake = (headers: Record<string, string> = {}) =>
+  AppWsData.fromRequest(new Request("http://localhost/api/ws", { headers }));
+
 describe("AppWsData", () => {
   test("snapshots only the credential headers from the handshake", () => {
-    const data = AppWsData.fromRequest(
-      new Request("http://localhost/api/ws", {
-        headers: {
-          authorization: "Bearer handshake-token",
-          cookie: "jwt=cookie-token; theme=dark",
-          "user-agent": "akan-test",
-          "x-secret": "should-not-be-kept",
-        },
-      }),
-    );
+    const data = handshake({
+      authorization: "Bearer handshake-token",
+      cookie: "jwt=cookie-token; theme=dark",
+      "user-agent": "akan-test",
+      "x-secret": "should-not-be-kept",
+    });
 
     expect(data.headers.get("authorization")).toBe("Bearer handshake-token");
     expect(data.headers.get("user-agent")).toBe("akan-test");
@@ -22,16 +21,12 @@ describe("AppWsData", () => {
   });
 
   test("keeps the forwarded set, which is the only record of who connected", () => {
-    const data = AppWsData.fromRequest(
-      new Request("http://localhost/api/ws", {
-        headers: {
-          "x-real-ip": "203.0.113.10",
-          "x-forwarded-for": "203.0.113.10, 10.0.0.5",
-          "x-forwarded-port": "54321",
-          "x-secret": "should-not-be-kept",
-        },
-      }),
-    );
+    const data = handshake({
+      "x-real-ip": "203.0.113.10",
+      "x-forwarded-for": "203.0.113.10, 10.0.0.5",
+      "x-forwarded-port": "54321",
+      "x-secret": "should-not-be-kept",
+    });
 
     expect(data.ip).toBe("203.0.113.10");
     expect(data.port).toBe(54321);
@@ -39,7 +34,7 @@ describe("AppWsData", () => {
   });
 
   test("falls back to the socket peer only when nothing proxied the handshake", () => {
-    const data = AppWsData.fromRequest(new Request("http://localhost/api/ws"));
+    const data = handshake();
     const peer = { remoteAddress: "::ffff:198.51.100.7" } as Bun.ServerWebSocket<unknown>;
 
     expect(data.ip).toBeNull();
@@ -47,8 +42,8 @@ describe("AppWsData", () => {
   });
 
   test("mints one socketId per connection and keeps it across a credential swap", () => {
-    const data = AppWsData.fromRequest(new Request("http://localhost/api/ws"));
-    const other = AppWsData.fromRequest(new Request("http://localhost/api/ws"));
+    const data = handshake();
+    const other = handshake();
     const { socketId } = data;
 
     expect(socketId).toBeTruthy();
@@ -61,7 +56,7 @@ describe("AppWsData", () => {
   });
 
   test("replaces the credential and drops the cached account", () => {
-    const data = AppWsData.fromRequest(new Request("http://localhost/api/ws"));
+    const data = handshake();
     data.account = { role: "user" };
 
     AppWsData.applyCredential(data, "next-token");
@@ -71,11 +66,7 @@ describe("AppWsData", () => {
   });
 
   test("signing out clears the handshake cookie so it cannot re-authenticate the socket", () => {
-    const data = AppWsData.fromRequest(
-      new Request("http://localhost/api/ws", {
-        headers: { authorization: "Bearer handshake-token", cookie: "jwt=cookie-token; theme=dark" },
-      }),
-    );
+    const data = handshake({ authorization: "Bearer handshake-token", cookie: "jwt=cookie-token; theme=dark" });
     data.account = { role: "user" };
 
     AppWsData.applyCredential(data, null);
@@ -87,11 +78,7 @@ describe("AppWsData", () => {
   });
 
   test("signing out clears the app-scoped cookie too, whichever app on the host wrote it", () => {
-    const data = AppWsData.fromRequest(
-      new Request("http://localhost/api/ws", {
-        headers: { cookie: "jwt:alpha=alpha-token; jwt:beta=beta-token; theme=dark" },
-      }),
-    );
+    const data = handshake({ cookie: "jwt:alpha=alpha-token; jwt:beta=beta-token; theme=dark" });
 
     AppWsData.applyCredential(data, null);
 
@@ -101,9 +88,7 @@ describe("AppWsData", () => {
   });
 
   test("removes the cookie header entirely when the jwt was its only entry", () => {
-    const data = AppWsData.fromRequest(
-      new Request("http://localhost/api/ws", { headers: { cookie: "jwt=cookie-token" } }),
-    );
+    const data = handshake({ cookie: "jwt=cookie-token" });
 
     AppWsData.applyCredential(data, null);
 
