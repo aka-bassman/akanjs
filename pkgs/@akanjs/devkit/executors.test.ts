@@ -955,4 +955,17 @@ describe("SysExecutor module listing", () => {
       "apps/modlist/lib/__scalar/money/money.constant.ts",
     ]);
   });
+
+  test("reads scalar dictionaries from the scalar folder", async () => {
+    const root = await makeTempRoot();
+    const scalarDir = path.join(root, "apps/scalardict/lib/__scalar/money");
+    await writeText(path.join(scalarDir, "money.constant.ts"), "export {};\n");
+    await writeText(path.join(scalarDir, "money.dictionary.ts"), "export const money = {};\n");
+
+    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+    const app = AppExecutor.from(workspace, "scalardict");
+    expect(await app.getScalarDictionaryFiles()).toEqual([
+      { filePath: "apps/scalardict/lib/__scalar/money/money.dictionary.ts", content: "export const money = {};\n" },
+    ]);
+  });
 });

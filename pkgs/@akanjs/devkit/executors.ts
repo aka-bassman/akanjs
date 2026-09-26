@@ -1059,7 +1059,9 @@ export class SysExecutor extends Executor {
   async getScalarDictionaryFiles() {
     const scalarModules = await this.getScalarModules();
     return Promise.all(
-      scalarModules.map((scalarModule) => this.getLocalFile(`lib/${scalarModule}/${scalarModule}.dictionary.ts`)),
+      scalarModules.map((scalarModule) =>
+        this.getLocalFile(`lib/__scalar/${scalarModule}/${scalarModule}.dictionary.ts`),
+      ),
     );
   }
 
