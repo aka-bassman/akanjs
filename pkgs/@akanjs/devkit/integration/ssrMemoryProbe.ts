@@ -1,17 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DevResourceProbe, type DevResourceProc } from "./devResourceProbe";
 
 export type SsrProcRole = "gateway" | "replica" | "rsc" | "other";
 
-export interface SsrProc {
-  pid: number;
-  ppid: number;
-  rssMb: number;
-  cpuSec: number;
-  role: SsrProcRole;
-  command: string;
-}
+export type SsrProc = DevResourceProc<SsrProcRole>;
 
 export interface SsrCgroupSample {
   currentMb: number;
@@ -70,14 +64,7 @@ export class SsrMemoryProbe {
   static readonly #columns: SsrProcRole[] = ["gateway", "replica", "rsc"];
 
   static parseArgs(argv: string[]): SsrMemoryProbeOptions {
-    const args = new Map(
-      argv.slice(1).map((arg) => {
-        const [key, value] = arg.replace(/^--/, "").split("=");
-        return [key ?? "", value ?? "1"];
-      }),
-    );
-    const appName = argv[0] ?? "akan";
-    const num = (key: string, fallback: number) => Number(args.get(key) ?? fallback);
+    const { appName, args, num } = DevResourceProbe.parseArgMap(argv);
     const list = (key: string, fallback: number[]) =>
       args.has(key)
         ? (args.get(key) ?? "")
@@ -147,7 +134,7 @@ export class SsrMemoryProbe {
     try {
       await this.#measure();
     } finally {
-      await this.#cleanup(gateway);
+      await DevResourceProbe.killTree(gateway, () => this.#sampleTree());
     }
   }
 
@@ -299,32 +286,30 @@ export class SsrMemoryProbe {
     }
     if (children.length === 0) return null;
     if (!fresh) console.info(`${"".padEnd(24)} WARNING cache columns are stale — no fresh report within the wait`);
-    {
-      const sum = (key: string) => children.reduce((total, metrics) => total + Number(metrics[key] ?? 0), 0);
-      const mb = (key: string) => sum(key) / 1024 / 1024;
-      return {
-        replicaRssMb: sum("rssBytes") / 1024 / 1024,
-        rscWorkerRssMb: sum("rscWorkerRssBytes") / 1024 / 1024,
-        htmlEntries: sum("httpHtmlCacheEntries"),
-        htmlBytes: sum("httpHtmlCacheBytes"),
-        rscEntries: sum("rscResultCacheEntries"),
-        rscBytes: sum("rscResultCacheBytes"),
-        patchEntries: sum("rscPatchResultCacheEntries"),
-        patchBytes: sum("rscPatchResultCacheBytes"),
-        ssrChunkKeys: sum("ssrChunkRegistrySize"),
-        loadedRouteModules: sum("rscLoadedRouteModuleCount"),
-        fullSsr: sum("httpFullSsrCount"),
-        rscNavigation: sum("httpRscNavigationCount"),
-        heap: {
-          replicaHeapUsedMb: mb("heapUsedBytes"),
-          replicaJscHeapMb: mb("jscHeapSizeBytes"),
-          replicaJscExtraMb: mb("jscExtraMemorySizeBytes"),
-          workerHeapUsedMb: mb("rscWorkerHeapUsedBytes"),
-          workerJscHeapMb: mb("rscWorkerJscHeapSizeBytes"),
-          workerJscExtraMb: mb("rscWorkerJscExtraMemorySizeBytes"),
-        },
-      };
-    }
+    const sum = (key: string) => children.reduce((total, metrics) => total + Number(metrics[key] ?? 0), 0);
+    const mb = (key: string) => sum(key) / 1024 / 1024;
+    return {
+      replicaRssMb: mb("rssBytes"),
+      rscWorkerRssMb: mb("rscWorkerRssBytes"),
+      htmlEntries: sum("httpHtmlCacheEntries"),
+      htmlBytes: sum("httpHtmlCacheBytes"),
+      rscEntries: sum("rscResultCacheEntries"),
+      rscBytes: sum("rscResultCacheBytes"),
+      patchEntries: sum("rscPatchResultCacheEntries"),
+      patchBytes: sum("rscPatchResultCacheBytes"),
+      ssrChunkKeys: sum("ssrChunkRegistrySize"),
+      loadedRouteModules: sum("rscLoadedRouteModuleCount"),
+      fullSsr: sum("httpFullSsrCount"),
+      rscNavigation: sum("httpRscNavigationCount"),
+      heap: {
+        replicaHeapUsedMb: mb("heapUsedBytes"),
+        replicaJscHeapMb: mb("jscHeapSizeBytes"),
+        replicaJscExtraMb: mb("jscExtraMemorySizeBytes"),
+        workerHeapUsedMb: mb("rscWorkerHeapUsedBytes"),
+        workerJscHeapMb: mb("rscWorkerJscHeapSizeBytes"),
+        workerJscExtraMb: mb("rscWorkerJscExtraMemorySizeBytes"),
+      },
+    };
   }
 
   async #fetchChildMetrics(): Promise<Array<Record<string, number>>> {
@@ -347,42 +332,8 @@ export class SsrMemoryProbe {
     return "other";
   }
 
-  async #sampleTree(): Promise<SsrProc[]> {
-    const proc = Bun.spawn(["ps", "-eo", "pid=,ppid=,rss=,time=,command="], { stdout: "pipe" });
-    const text = await new Response(proc.stdout).text();
-    await proc.exited;
-    const all = text
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const match = /^(\d+)\s+(\d+)\s+(\d+)\s+([\d:.]+)\s+(.*)$/.exec(line);
-        if (!match) return null;
-        const [, pid, ppid, rss, time, command] = match;
-        const parts = (time ?? "0:0").split(":");
-        const cpuSec =
-          parts.length === 3
-            ? Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2])
-            : Number(parts[0] ?? 0) * 60 + Number(parts[1] ?? 0);
-        return {
-          pid: Number(pid),
-          ppid: Number(ppid),
-          rssMb: Number(rss) / 1024,
-          cpuSec,
-          role: this.#roleOf(command ?? ""),
-          command: command ?? "",
-        } satisfies SsrProc;
-      })
-      .filter((proc): proc is SsrProc => proc !== null);
-    const kept = new Map<number, SsrProc>();
-    const root = all.find((proc) => proc.pid === this.#gatewayPid);
-    if (root) kept.set(this.#gatewayPid, root);
-    for (let pass = 0; pass < 12; pass++) {
-      const before = kept.size;
-      for (const proc of all) if (kept.has(proc.ppid) && !kept.has(proc.pid)) kept.set(proc.pid, proc);
-      if (kept.size === before) break;
-    }
-    return [...kept.values()].filter((proc) => proc.role !== "other" || proc.pid === this.#gatewayPid);
+  #sampleTree(): Promise<SsrProc[]> {
+    return DevResourceProbe.sampleTree(this.#gatewayPid, (command) => this.#roleOf(command));
   }
 
   async #staticRoutes(): Promise<string[]> {
@@ -459,19 +410,6 @@ export class SsrMemoryProbe {
     }
     if (lastError) console.info(`[probe] no child became ready; last child error: ${lastError}`);
     return false;
-  }
-
-  async #cleanup(gateway: { kill: (signal: NodeJS.Signals) => void }): Promise<void> {
-    for (const proc of (await this.#sampleTree()).reverse()) {
-      try {
-        process.kill(proc.pid, "SIGKILL");
-      } catch {}
-    }
-    try {
-      gateway.kill("SIGKILL");
-    } catch {}
-    await Bun.sleep(1_000);
-    console.info(`[probe] survivors after kill: ${(await this.#sampleTree()).length}`);
   }
 }
 
