@@ -81,8 +81,7 @@ describe("LibraryRunner", () => {
     expect(workspace.commit).toHaveBeenCalledWith("Merge shared library dependencies");
   });
 
-  // `installLibrary` has always assumed a git repo — it commits — and now also hashes the copy through
-  // `git ls-files`, so the fixture initializes one and only `commit` itself stays mocked.
+  // `installLibrary` commits and hashes the copy via `git ls-files`, so the fixture is a real repo, `commit` mocked.
   const createInstallableLib = async (libName: string) => {
     const { root, workspace } = await createTempLib(libName);
     tempRoots.push(root);

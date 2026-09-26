@@ -1,12 +1,9 @@
 import { script, type Workspace } from "@akanjs/devkit/commandDecorators";
-import { createWorkflowStepRegistry, type WorkflowFormat, type WorkflowPlanInputs } from "@akanjs/devkit/workflow";
+import type { WorkflowFormat, WorkflowPlanInputs } from "@akanjs/devkit/workflow";
 import { Logger } from "akanjs/common";
-import { ModuleScript } from "../module/module.script";
-import { PrimitiveScript } from "../primitive/primitive.script";
-import { ScalarScript } from "../scalar/scalar.script";
 import { WorkflowRunner } from "./workflow.runner";
 
-export class WorkflowScript extends script("workflow", [WorkflowRunner, ModuleScript, ScalarScript, PrimitiveScript]) {
+export class WorkflowScript extends script("workflow", [WorkflowRunner]) {
   async workflow(
     action: string,
     workflow: string | null,
@@ -33,23 +30,8 @@ export class WorkflowScript extends script("workflow", [WorkflowRunner, ModuleSc
     }
     if (action === "apply") {
       if (!workspace) throw new Error("Workspace is required for workflow apply.");
-      Logger.rawLog(
-        await this.workflowRunner.apply(workflow, {
-          dryRun,
-          format,
-          workspace,
-          registry: createWorkflowStepRegistry({
-            workspace,
-            createModule: (sys, module) => this.moduleScript.createModuleTemplate(sys, module),
-            createScalar: (sys, scalar) => this.scalarScript.createScalar(sys, scalar),
-            createUi: (input) => this.primitiveScript.createUi(workspace, input),
-            addField: (input) => this.primitiveScript.addField(workspace, input),
-            addEnumField: (input) => this.primitiveScript.addEnumField(workspace, input),
-            addMutation: (input) => this.primitiveScript.addMutation(workspace, input),
-            addSlice: (input) => this.primitiveScript.addSlice(workspace, input),
-          }),
-        }),
-      );
+      const registry = WorkflowRunner.stepRegistry(workspace);
+      Logger.rawLog(await this.workflowRunner.apply(workflow, { dryRun, format, workspace, registry }));
       return;
     }
     if (action === "validate") {

@@ -1,13 +1,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AkanContextAnalyzer } from "@akanjs/devkit/akanContext";
-import { runner, type Workspace } from "@akanjs/devkit/commandDecorators";
+import { CommandContainer, runner, type Workspace } from "@akanjs/devkit/commandDecorators";
 import {
   compactWorkflowInputs,
   createDryRunWorkflowApplyReport,
   createWorkflowApplyReport,
   createWorkflowBaselineSummary,
   createWorkflowPlan,
+  createWorkflowStepRegistry,
   createWorkflowValidationRunReport,
   getWorkflowSpec,
   jsonText,
@@ -38,6 +39,10 @@ import {
   writeWorkflowRunArtifact,
 } from "@akanjs/devkit/workflow";
 import { capitalize } from "akanjs/common";
+import { ModuleScript } from "../module/module.script";
+import { PrimitiveScript } from "../primitive/primitive.script";
+import { spawnShell } from "../repair/repair.runner";
+import { ScalarScript } from "../scalar/scalar.script";
 import { workflowSpecs } from "../workflows";
 
 const resolvePath = (filePath: string) => (path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath));
@@ -77,8 +82,9 @@ const failedPlan = (workflow: string, diagnostics: WorkflowApplyReport["diagnost
   approval: workflowPlanApproval,
 });
 
-const failedApplyReport = (workflow: string, diagnostics: WorkflowApplyReport["diagnostics"], plan?: WorkflowPlan) =>
-  createWorkflowApplyReport({
+const failedApplyReport = (workflow: string, code: string, message: string, plan?: WorkflowPlan) => {
+  const diagnostics: WorkflowDiagnostic[] = [{ severity: "error", code, message }];
+  return createWorkflowApplyReport({
     workflow,
     mode: "apply",
     changedFiles: [],
@@ -88,8 +94,7 @@ const failedApplyReport = (workflow: string, diagnostics: WorkflowApplyReport["d
     nextActions: [],
     plan: plan ?? failedPlan(workflow, diagnostics),
   });
-
-const commandForShell = (command: string) => (command.startsWith("akan ") ? `bun run ${command}` : command);
+};
 
 const inferValidationKind = (command: WorkflowApplyCommand): WorkflowValidationKind => {
   if (command.kind) return command.kind;
@@ -125,25 +130,13 @@ const classifyValidationFailure = (
 const defaultValidationExecutor =
   (workspace: Workspace): WorkflowValidationCommandExecutor =>
   async (command) => {
-    const kind = inferValidationKind(command);
+    const base = { command: command.command, reason: command.reason, kind: inferValidationKind(command) };
     try {
-      const stdout = await workspace.spawn("bash", ["-lc", commandForShell(command.command)], {
-        cwd: workspace.workspaceRoot,
-      });
-      return {
-        command: command.command,
-        reason: command.reason,
-        kind,
-        status: "passed",
-        exitCode: 0,
-        stdout,
-      };
+      return { ...base, status: "passed", exitCode: 0, stdout: await spawnShell(workspace, command.command) };
     } catch (error) {
       const commandError = error as { code?: number | null; stdout?: string; stderr?: string; message?: string };
       return {
-        command: command.command,
-        reason: command.reason,
-        kind,
+        ...base,
         status: "failed",
         exitCode: commandError.code ?? 1,
         failureScope: classifyValidationFailure(command, commandError),
@@ -173,27 +166,20 @@ const workflowPathsForPlanLike = (plan: WorkflowPlan) => {
 };
 
 const workflowDiagnosticFromDoctor = (
-  diagnostic: {
-    severity: "warning" | "error";
-    code: string;
-    message: string;
-    scope?: "baseline" | "workflow" | "unknown";
-    context?: WorkflowDiagnostic["context"];
-  },
+  {
+    severity,
+    code,
+    message,
+    scope,
+    context,
+  }: Pick<WorkflowDiagnostic, "severity" | "code" | "message" | "scope" | "context">,
   fallbackScope: "baseline" | "workflow",
-): WorkflowDiagnostic => ({
-  severity: diagnostic.severity,
-  code: diagnostic.code,
-  message: diagnostic.message,
-  scope: diagnostic.scope ?? fallbackScope,
-  failureScope:
-    (diagnostic.scope ?? fallbackScope) === "baseline"
-      ? "workspace-config"
-      : (diagnostic.scope ?? fallbackScope) === "workflow"
-        ? "source-change"
-        : "unknown",
-  context: diagnostic.context,
-});
+): WorkflowDiagnostic => {
+  const resolvedScope = scope ?? fallbackScope;
+  const failureScope =
+    resolvedScope === "baseline" ? "workspace-config" : resolvedScope === "workflow" ? "source-change" : "unknown";
+  return { severity, code, message, scope: resolvedScope, failureScope, context };
+};
 
 interface BaselineBlockerCache {
   schemaVersion: 1;
@@ -278,6 +264,19 @@ const withBaselineDetailsPolicy = (report: WorkflowValidationRunReport, includeB
 };
 
 export class WorkflowRunner extends runner("workflow") {
+  static stepRegistry(workspace: Workspace) {
+    return createWorkflowStepRegistry({
+      workspace,
+      createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
+      createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
+      createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
+      addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
+      addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
+      addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
+      addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
+    });
+  }
+
   list({ format = "markdown" }: { format?: WorkflowFormat } = {}) {
     const workflows = listWorkflowSpecs(workflowSpecs);
     if (format === "json")
@@ -326,59 +325,26 @@ export class WorkflowRunner extends runner("workflow") {
     };
     let plan: WorkflowPlan;
     try {
-      const parsed = JSON.parse(await readFile(resolvePath(planPath), "utf8"));
-      if (!isWorkflowPlan(parsed)) {
-        const report = failedApplyReport("unknown", [
-          {
-            severity: "error",
-            code: "workflow-plan-invalid",
-            message: `Workflow plan file is invalid: ${planPath}.`,
-          },
-        ]);
-        return await renderApplyReport(report);
-      }
+      const parsed = await readJsonFile(planPath);
+      if (!isWorkflowPlan(parsed))
+        return await renderApplyReport(
+          failedApplyReport("unknown", "workflow-plan-invalid", `Workflow plan file is invalid: ${planPath}.`),
+        );
       plan = parsed;
     } catch (error) {
-      const report = failedApplyReport("unknown", [
-        {
-          severity: "error",
-          code: "workflow-plan-read-failed",
-          message:
-            `Could not read workflow plan file: ${planPath}. ${error instanceof Error ? error.message : ""}`.trim(),
-        },
-      ]);
-      return await renderApplyReport(report);
+      const message = `Could not read workflow plan file: ${planPath}. ${error instanceof Error ? error.message : ""}`;
+      return await renderApplyReport(failedApplyReport("unknown", "workflow-plan-read-failed", message.trim()));
     }
 
     const spec = getWorkflowSpec(workflowSpecs, plan.workflow);
     if (!spec) {
-      const report = failedApplyReport(
-        plan.workflow,
-        [
-          {
-            severity: "error",
-            code: "workflow-unknown",
-            message: `Unknown workflow in plan: ${plan.workflow}.`,
-          },
-        ],
-        plan,
-      );
-      return await renderApplyReport(report);
+      const message = `Unknown workflow in plan: ${plan.workflow}.`;
+      return await renderApplyReport(failedApplyReport(plan.workflow, "workflow-unknown", message, plan));
     }
     if (dryRun) return await renderApplyReport(createDryRunWorkflowApplyReport(plan));
     if (!registry) {
-      const report = failedApplyReport(
-        plan.workflow,
-        [
-          {
-            severity: "error",
-            code: "workflow-registry-missing",
-            message: "Workflow apply requires a step runner registry.",
-          },
-        ],
-        plan,
-      );
-      return await renderApplyReport(report);
+      const message = "Workflow apply requires a step runner registry.";
+      return await renderApplyReport(failedApplyReport(plan.workflow, "workflow-registry-missing", message, plan));
     }
     return await renderApplyReport(await new WorkflowExecutor(registry, workspace).apply(plan));
   }
@@ -457,6 +423,15 @@ export class WorkflowRunner extends runner("workflow") {
   }
 
   async loadValidationTarget(runIdOrPlan: string, workspace: Workspace) {
+    const unreadable = (code: string, message: string) => ({
+      workflow: "unknown",
+      source: { type: "run-report" as const, runId: runIdOrPlan },
+      plan: undefined,
+      commands: [] as WorkflowApplyCommand[],
+      diagnostics: [{ severity: "error" as const, code, message }],
+      changedFiles: [],
+      repairActions: [],
+    });
     const loadFromArtifact = (artifact: WorkflowRunArtifact, sourcePath: string) => {
       if (isWorkflowApplyReport(artifact)) {
         return {
@@ -482,21 +457,10 @@ export class WorkflowRunner extends runner("workflow") {
           repairActions: artifact.repairActions,
         };
       }
-      return {
-        workflow: "unknown",
-        source: { type: "run-report" as const, runId: runIdOrPlan },
-        plan: undefined,
-        commands: [] as WorkflowApplyCommand[],
-        diagnostics: [
-          {
-            severity: "error" as const,
-            code: "workflow-validation-source-unsupported",
-            message: `Workflow validation source is not supported: ${runIdOrPlan}.`,
-          },
-        ],
-        changedFiles: [],
-        repairActions: [],
-      };
+      return unreadable(
+        "workflow-validation-source-unsupported",
+        `Workflow validation source is not supported: ${runIdOrPlan}.`,
+      );
     };
 
     try {
@@ -521,23 +485,8 @@ export class WorkflowRunner extends runner("workflow") {
       const artifact = await readWorkflowRunArtifact(workspace, runIdOrPlan);
       return loadFromArtifact(artifact, runIdOrPlan);
     } catch (error) {
-      return {
-        workflow: "unknown",
-        source: { type: "run-report" as const, runId: runIdOrPlan },
-        plan: undefined,
-        commands: [] as WorkflowApplyCommand[],
-        diagnostics: [
-          {
-            severity: "error" as const,
-            code: "workflow-validation-source-read-failed",
-            message: `Could not read workflow validation source: ${runIdOrPlan}. ${
-              error instanceof Error ? error.message : ""
-            }`.trim(),
-          },
-        ],
-        changedFiles: [],
-        repairActions: [],
-      };
+      const message = `Could not read workflow validation source: ${runIdOrPlan}. ${error instanceof Error ? error.message : ""}`;
+      return unreadable("workflow-validation-source-read-failed", message.trim());
     }
   }
 }

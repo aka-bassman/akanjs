@@ -57,10 +57,6 @@ describe("CodeTranscript", () => {
     expect(assistant[0]).toMatchObject({ text: "Hello there", streaming: false, truncated: false });
   });
 
-  /**
-   * The fold hazard this whole class was written around: the first tool call of a turn is index 0, and a
-   * truthy check on the looked-up index sends its end frame down the append path.
-   */
   test("the FIRST tool call of a turn is upserted, not appended twice", () => {
     const transcript = feed(new CodeTranscript(), [
       { type: "turn_start", turnId: "t1" },
@@ -243,17 +239,9 @@ describe("CodeTranscript", () => {
     expect(notices({ type: "compaction", phase: "end", reason: "threshold" })).toEqual([
       "info: Compacted the conversation (threshold).",
     ]);
-    // `/compact` throws to its caller, which reports it — a second line here would say the same thing twice.
     expect(notices({ type: "compaction", phase: "end", reason: "manual", error: "Compaction failed: x" })).toEqual([]);
   });
 
-  /**
-   * The checklist made into a test.
-   *
-   * Three times running, the contract carried a value with nowhere to draw it — `turn_end` unrendered,
-   * `contextTokens` unrendered, `context` never emitted. A human checklist catches that once; the next person
-   * does not run it.
-   */
   test("every event in the contract changes something in the fold", () => {
     const samples: { [key in CodeAgentEventType]: CodeAgentEventBody } = {
       session: { type: "session", info },
@@ -297,8 +285,7 @@ describe("CodeTranscript", () => {
       idle: { type: "idle" },
       host: { type: "host", kind: "step", payload: "p" },
     };
-    // Three of them are idempotent against the setup that makes the others meaningful, so those three are
-    // probed with a second, different value rather than the same one twice.
+    // These three are idempotent against the setup, so they are probed with a different value.
     const probes: { [key in CodeAgentEventType]: CodeAgentEventBody } = {
       ...samples,
       session: { type: "session", info: { ...info, sessionId: "s2" } },
@@ -318,8 +305,7 @@ describe("CodeTranscript", () => {
       ]);
     const unread: string[] = [];
     for (const type of Object.keys(codeAgentEventPersistence) as CodeAgentEventType[]) {
-      // The setup gives a resolution something to resolve and a queue for `idle` to clear; probing
-      // `turn_start` needs the turn closed first, or there is no flag left for it to flip.
+      // `turn_start` is probed after `idle` closes the turn, or there is no flag left for it to flip.
       const transcript = feed(new CodeTranscript(), [
         samples.session,
         samples.turn_start,
@@ -344,7 +330,6 @@ describe("assistant rendering", () => {
       { type: "text_delta", turnId: "t1", text: "## Results\n\n- **one** item" },
     ]);
     const lines = drawn(transcript);
-    // No markers on screen: the reader spends most of an answer looking at this state.
     expect(lines.join("\n")).not.toContain("##");
     expect(lines.join("\n")).not.toContain("**");
     expect(lines).toContain("Results");
@@ -363,7 +348,6 @@ describe("CodeTui layout", () => {
     for (let terminalRows = 10; terminalRows <= 60; terminalRows += 1)
       for (const askRows of [1, 2, 5, 12, 40]) {
         const { ask, bodyHeight } = CodeTui.layout(terminalRows, askRows);
-        // Ink overwrites rather than clips, so one row too many prints the prompt through its own content.
         expect(bodyHeight + ask + CodeTui.chromeRows).toBe(terminalRows);
         expect(bodyHeight).toBeGreaterThanOrEqual(CodeTui.minBodyRows);
         expect(ask).toBeLessThanOrEqual(askRows);
@@ -372,13 +356,6 @@ describe("CodeTui layout", () => {
   });
 });
 
-/**
- * The two terminal hosts read the same wire, so a session replayed through both has to say the same things.
- *
- * Not the same bytes — one streams into a scrolling pane and the other appends to a log — but every fact a
- * user needs must survive both. This is the check that catches a host quietly dropping a field, which has
- * happened three times in this contract's short life.
- */
 describe("printer and transcript agree", () => {
   test("the same session says the same things through both hosts", async () => {
     const { CodeAgentStreamPrinter } = await import("@akanjs/devkit/codeAgent/agent/CodeAgentStreamPrinter");
@@ -434,7 +411,6 @@ describe("printer and transcript agree", () => {
         ["transcript", rendered],
       ] as const)
         expect(`${host}: ${text.includes(fact)}`).toBe(`${host}: true`);
-    // Both have to say the answer was cut off; neither may let it read as a finished one.
     expect(plain.toLowerCase()).toContain("cut off");
     expect(rendered.toLowerCase()).toContain("output limit");
   });

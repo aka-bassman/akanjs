@@ -6,24 +6,15 @@ export interface InterruptTeardownHooks {
   report?: (message: string) => void;
 }
 
-/**
- * The session's only SIGINT listener, installed by whichever teardown registers first.
- *
- * Registering any listener replaces the kernel's "terminate now" with the callback, so a teardown that forgets
- * to exit leaves Ctrl+C doing nothing at all, and two that each exit cut one another short — whichever finishes
- * first takes the process with it. Both failures are silent, and both are why the teardowns collect here
- * instead of taking a listener each: they run together, and the exit happens once, after all of them.
- */
+// The session's only SIGINT listener: a listener replaces Ctrl+C's default exit, and two that each exit cut one
+// another short, so teardowns collect here and the exit runs once, after all of them.
 export class InterruptTeardown {
   readonly #teardowns: { run: () => Promise<void>; abandoned: string; running: boolean }[] = [];
   readonly #exit: (code: number) => void;
   readonly #listen: (onSignal: () => void) => void;
   readonly #report: (message: string) => void;
   #interrupted: boolean = false;
-  /**
-   * False when something else drives the shutdown — a supervised session's `DevSupervisor` resolves on this
-   * same signal and stops the children and the database itself, so exiting here would abandon both.
-   */
+  /** False when a supervised session's `DevSupervisor` drives the shutdown on this same signal. */
   ownsExit: boolean = true;
 
   constructor({ exit, listen, report }: InterruptTeardownHooks = {}) {
@@ -49,8 +40,7 @@ export class InterruptTeardown {
     }
     this.#interrupted = true;
     void Promise.all(
-      // Caught per teardown rather than across them: `Promise.all` rejects on the first failure, and the exit
-      // would then run while the others are still tearing down.
+      // Caught per teardown: `Promise.all` rejects on the first failure and would exit mid-teardown.
       this.#teardowns.map(async (one) => {
         one.running = true;
         await one.run().catch(() => undefined);

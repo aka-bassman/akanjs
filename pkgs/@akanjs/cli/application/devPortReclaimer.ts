@@ -16,24 +16,8 @@ export interface ReclaimReport {
   foreign: PortHolder[];
 }
 
-/**
- * Frees the ports a dev session is about to bind.
- *
- * A port is claimed by whoever got there first, which in a monorepo is usually this workspace's own
- * orphan or another checkout's dev server — neither of which the developer can name a pid for. So
- * `--kill` resolves the holder from the port rather than from an app name, which is why a *different*
- * app on the same port is reclaimed too.
- *
- * **A holder that is not recognisably an akan process is reported, never killed.** The flag is a
- * convenience for reclaiming dev servers; a database, a tunnel or an unrelated service that happens to
- * sit on 8282 is a conflict the developer has to see, and killing it silently would be the kind of
- * damage a convenience flag must not be able to do.
- *
- * **What gets signalled is the top of the dev tree, not the process on the port.** A dev server's
- * listener is a backend replica whose dev host watches it and restarts it on exit — measured: killing
- * the listener alone frees the port for about a second and then the host puts a replacement on it, so
- * the session that asked for the port fails to bind anyway.
- */
+// A holder that is not recognisably an akan process is reported, never killed. What gets signalled is the top of
+// the dev tree: the dev host restarts a killed listener, so the port would be taken again within a second.
 export class DevPortReclaimer {
   /** How long a signalled holder may take to release the port before it is reported as still holding. */
   static readonly releaseTimeoutMs = 8_000;
@@ -49,7 +33,6 @@ export class DevPortReclaimer {
     );
   }
 
-  /** `true` for a command line that belongs to an akan dev tree — the CLI, an app entry, or a worker. */
   static isAkanCommand(command: string): boolean {
     const normalized = command.replaceAll("\\", "/");
     return (
@@ -91,8 +74,7 @@ export class DevPortReclaimer {
   async holdersOf(port: number): Promise<PortHolder[]> {
     const holders: PortHolder[] = [];
     for (const listenerPid of await this.#probe.listenersOn(port)) {
-      // Never this process or its parent: `--kill` runs before the session boots, so the only tree on
-      // these ports that includes us would be one we are about to create.
+      // Never this process or its parent: `--kill` runs before the session boots.
       if (listenerPid === process.pid || listenerPid === process.ppid) continue;
       const command = await this.#probe.commandOf(listenerPid);
       if (!command) continue;
@@ -106,7 +88,6 @@ export class DevPortReclaimer {
     return holders;
   }
 
-  /** The highest ancestor still recognisable as part of the same akan dev tree. */
   async #akanRootOf(pid: number, command: string): Promise<{ pid: number; command: string }> {
     let root = { pid, command };
     for (let depth = 0; depth < DevPortReclaimer.maxAncestorDepth; depth += 1) {
@@ -119,10 +100,7 @@ export class DevPortReclaimer {
     return root;
   }
 
-  /**
-   * SIGTERM first so a dev server runs its own shutdown — it has children of its own, and a SIGKILLed
-   * gateway strands them. SIGKILL only once the grace period is gone.
-   */
+  // SIGTERM first: a SIGKILLed gateway strands its own children.
   async #terminate(pid: number): Promise<boolean> {
     //? Windows has no SIGTERM — `process.kill` is TerminateProcess on that one pid — so the whole tree goes at once.
     if (this.#probe.platform === "win32") {

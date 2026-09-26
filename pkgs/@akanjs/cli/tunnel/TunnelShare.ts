@@ -10,11 +10,7 @@ export interface TunnelShareOptions {
   onLost?: (reason: string) => void;
 }
 
-/**
- * One app shared on a public URL: the control plane issues the hostname and the connector token, and the agent
- * holds the link open from here. The agent lives in this process rather than in a binary the user installs —
- * that is the whole point of the feature, so there is no step between `akan tunnel` and a URL to paste.
- */
+// The agent lives in this process, not in a binary the user installs, so nothing stands between `akan tunnel` and a URL.
 export class TunnelShare {
   readonly #api: CloudApi;
   readonly #agent: TunnelAgent;

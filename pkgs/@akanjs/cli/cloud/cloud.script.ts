@@ -36,8 +36,7 @@ export class CloudScript extends script("cloud", [CloudRunner, ApplicationScript
       archivePath,
     }: { host?: string; workspaceId?: string; scope?: EnvScope; archivePath?: string } = {},
   ) {
-    //* The scp target is one path per repo, so a slice archive sent there would replace the whole
-    //* workspace's values with a subset of them.
+    //* The scp target is one path per repo, so a slice archive would replace the workspace's values with a subset.
     if (scope && !workspaceId)
       throw new Error("A scoped env upload needs a cloud workspace id — the scp target is workspace-wide.");
     const { files, path } = await this.cloudRunner.gatherEnvFiles(workspace, { scope, archivePath });

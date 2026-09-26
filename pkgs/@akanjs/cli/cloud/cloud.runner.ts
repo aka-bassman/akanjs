@@ -67,31 +67,20 @@ export class CloudRunner extends runner("cloud") {
       : process.env;
   }
 
+  async #ask(message: string, validate?: (value: string) => boolean | string) {
+    return (await input({ message, validate })).trim();
+  }
+
   async #addRemoteEnvServer(): Promise<SelectedRemoteEnvServer> {
-    const name = (
-      await input({
-        message: "Remote server name: ",
-        validate: (value) => (value.trim() ? true : "Remote server name is required"),
-      })
-    ).trim();
-    const host = (
-      await input({
-        message: "Remote server host: ",
-        validate: (value) => (value.trim() ? true : "Remote server host is required"),
-      })
-    ).trim();
-    const username = (await input({ message: "Remote server username (optional): " })).trim() || undefined;
-    const portInput = (
-      await input({
-        message: "Remote server SSH port (optional): ",
-        validate: (value) => {
-          const trimmed = value.trim();
-          if (!trimmed) return true;
-          const port = Number(trimmed);
-          return Number.isInteger(port) && port > 0 ? true : "SSH port must be a positive integer";
-        },
-      })
-    ).trim();
+    const name = await this.#ask("Remote server name: ", (value) => !!value.trim() || "Remote server name is required");
+    const host = await this.#ask("Remote server host: ", (value) => !!value.trim() || "Remote server host is required");
+    const username = (await this.#ask("Remote server username (optional): ")) || undefined;
+    const portInput = await this.#ask("Remote server SSH port (optional): ", (value) => {
+      const trimmed = value.trim();
+      if (!trimmed) return true;
+      const port = Number(trimmed);
+      return Number.isInteger(port) && port > 0 ? true : "SSH port must be a positive integer";
+    });
     const config: RemoteEnvServerConfig = {
       host,
       ...(username ? { username } : {}),
@@ -111,10 +100,7 @@ export class CloudRunner extends runner("cloud") {
     const selectedName = await select<string>({
       message: "Select the remote env server",
       choices: [
-        ...serverEntries.map(([name, config]) => ({
-          name: `${name} (${config.username ? `${config.username}@` : ""}${config.host}${config.port ? `:${config.port}` : ""})`,
-          value: name,
-        })),
+        ...serverEntries.map((entry) => this.#serverChoice(entry)),
         { name: "Add new remote server", value: addRemoteEnvServerValue },
         { name: "Remove remote server", value: removeRemoteEnvServerValue },
       ],
@@ -132,35 +118,22 @@ export class CloudRunner extends runner("cloud") {
   async #removeRemoteEnvServer(serverEntries: [string, RemoteEnvServerConfig][]) {
     const selectedName = await select<string>({
       message: "Select the remote env server to remove",
-      choices: serverEntries.map(([name, config]) => ({
-        name: `${name} (${config.username ? `${config.username}@` : ""}${config.host}${config.port ? `:${config.port}` : ""})`,
-        value: name,
-      })),
+      choices: serverEntries.map((entry) => this.#serverChoice(entry)),
     });
-    const shouldRemove = await confirm({
-      message: `Remove remote env server "${selectedName}"?`,
-      default: false,
-    });
-    if (!shouldRemove) return;
+    if (!(await confirm({ message: `Remove remote env server "${selectedName}"?`, default: false }))) return;
     await GlobalConfig.removeRemoteEnvServer(selectedName);
     Logger.info(`Removed remote env server "${selectedName}"`);
+  }
+
+  #serverChoice([name, config]: [string, RemoteEnvServerConfig]) {
+    return { name: `${name} (${this.#getSshTarget(config)}${config.port ? `:${config.port}` : ""})`, value: name };
   }
 
   async #getRemoteEnvServerWithUsername(): Promise<SelectedRemoteEnvServer> {
     const remoteServer = await this.#selectRemoteEnvServer();
     if (remoteServer.config.username) return remoteServer;
-    const username = (
-      await input({
-        message: `SSH username for ${remoteServer.config.host} (optional): `,
-      })
-    ).trim();
-    return {
-      ...remoteServer,
-      config: {
-        ...remoteServer.config,
-        ...(username ? { username } : {}),
-      },
-    };
+    const username = await this.#ask(`SSH username for ${remoteServer.config.host} (optional): `);
+    return { ...remoteServer, config: { ...remoteServer.config, ...(username ? { username } : {}) } };
   }
 
   #getRemoteEnvArchivePath() {
@@ -173,7 +146,7 @@ export class CloudRunner extends runner("cloud") {
   }
 
   #getScpTarget(config: RemoteEnvServerConfig, remotePath: string) {
-    return `${config.username ? `${config.username}@` : ""}${config.host}:${remotePath}`;
+    return `${this.#getSshTarget(config)}:${remotePath}`;
   }
 
   #getSshTarget(config: RemoteEnvServerConfig) {
@@ -301,13 +274,12 @@ export class CloudRunner extends runner("cloud") {
   }
   async #askWindowsTestTarget(): Promise<WindowsTestTargetConfig> {
     Logger.info("No Windows test target is configured yet; it is saved to ~/.akan/config.json once entered.");
-    const host = (await input({ message: "Windows host (ip or name): ", validate: (value) => !!value.trim() })).trim();
-    const user = (await input({ message: "SSH user: ", validate: (value) => !!value.trim() })).trim();
-    const identityFile = (
-      await input({ message: "SSH private key path: ", validate: (value) => !!value.trim() })
-    ).trim();
-    const knownHostsFile = (await input({ message: "known_hosts file (optional): " })).trim();
-    const utmVm = (await input({ message: "UTM VM name, to start it and find its ip (optional): " })).trim();
+    const required = (value: string) => !!value.trim();
+    const host = await this.#ask("Windows host (ip or name): ", required);
+    const user = await this.#ask("SSH user: ", required);
+    const identityFile = await this.#ask("SSH private key path: ", required);
+    const knownHostsFile = await this.#ask("known_hosts file (optional): ");
+    const utmVm = await this.#ask("UTM VM name, to start it and find its ip (optional): ");
     return {
       host,
       user,
@@ -333,29 +305,17 @@ export class CloudRunner extends runner("cloud") {
       ? `${majorVersion}.${minorVersion}`
       : `${majorVersion}.${minorVersion}.${patchVersion}`;
     const tag = distTag ?? (isOfficialRelease ? "latest" : (patchVersion.split("-").at(1) ?? "dev"));
-    const getNextVersion = async (prefix: string, tag: string) => {
-      try {
-        const latestPublishedVersion = await getLatestPackageVersion("akanjs", tag, registry);
-        const latestPatch = latestPublishedVersion.startsWith(prefix)
-          ? parseInt(latestPublishedVersion.split(".").at(-1) ?? "-1")
-          : -1;
-        const nextVersion = `${prefix}.${latestPatch + 1}`;
-        return { nextVersion, latestPublishedVersion };
-      } catch {
-        return { nextVersion: `${prefix}.0`, latestPublishedVersion: null };
-      }
-    };
-    const { nextVersion, latestPublishedVersion } = await getNextVersion(targetVersionPrefix, tag);
+    const latestPublishedVersion = await getLatestPackageVersion("akanjs", tag, registry).catch(() => null);
+    const latestPatch = latestPublishedVersion?.startsWith(targetVersionPrefix)
+      ? parseInt(latestPublishedVersion.split(".").at(-1) ?? "-1")
+      : -1;
+    const nextVersion = `${targetVersionPrefix}.${latestPatch + 1}`;
     Logger.info(`Latest published version of akanjs: ${latestPublishedVersion ?? "none"}`);
     Logger.info(`Next version of akanjs: ${nextVersion}`);
     for (const library of akanPkgs) {
       const packageJson = (await workspace.readJson(`pkgs/${library}/package.json`)) as { version: string };
-      const newPackageJsonStr = JSON.stringify(
-        this.#normalizeAkanPackageJson(packageJson, library, nextVersion),
-        null,
-        2,
-      );
-      await workspace.writeFile(`pkgs/${library}/package.json`, newPackageJsonStr);
+      const newPackageJson = this.#normalizeAkanPackageJson(packageJson, library, nextVersion);
+      await workspace.writeFile(`pkgs/${library}/package.json`, JSON.stringify(newPackageJson, null, 2));
       const distPackageJson = (await workspace.readJson(`dist/pkgs/${library}/package.json`)) as {
         version: string;
         dependencies?: Record<string, string>;
@@ -363,18 +323,11 @@ export class CloudRunner extends runner("cloud") {
       const newDistPackageJson = this.#normalizeAkanPackageJson(distPackageJson, library, nextVersion);
       await workspace.writeJson(`dist/pkgs/${library}/package.json`, newDistPackageJson);
     }
-    if (confirmPublish) {
-      const isDeployConfirmed = await confirm({
-        message: "Are you sure you want to deploy the libraries?",
-      });
-      if (!isDeployConfirmed) {
-        Logger.error("Deployment cancelled");
-        return;
-      }
+    if (confirmPublish && !(await confirm({ message: "Are you sure you want to deploy the libraries?" }))) {
+      Logger.error("Deployment cancelled");
+      return;
     }
-    // The local registry carries its own token on every publish below, and `npm login` has no registry argument —
-    // it would prompt for npmjs.org credentials to authorize a publish that never reaches npmjs.org, which also
-    // makes the whole local-registry flow interactive and therefore unscriptable.
+    // No `npm login` for a local registry: it takes no registry argument and would prompt for npmjs.org credentials.
     if (!registry) {
       Logger.info("Logging in to npm...");
       await workspace.spawn("npm", ["login"], { stdio: "inherit" });
@@ -411,12 +364,10 @@ export class CloudRunner extends runner("cloud") {
     const latestPublishedVersion = await getLatestPackageVersion("akanjs", tag, registryUrl);
     const rootPackageJson = await workspace.getPackageJson();
     if (!rootPackageJson.dependencies) throw new Error("No dependencies found in package.json");
-    if (rootPackageJson.dependencies.akanjs) rootPackageJson.dependencies.akanjs = latestPublishedVersion;
-    if (rootPackageJson.devDependencies?.akanjs) rootPackageJson.devDependencies.akanjs = latestPublishedVersion;
-    if (rootPackageJson.dependencies["@akanjs/devkit"])
-      rootPackageJson.dependencies["@akanjs/devkit"] = latestPublishedVersion;
-    if (rootPackageJson.devDependencies?.["@akanjs/devkit"])
-      rootPackageJson.devDependencies["@akanjs/devkit"] = latestPublishedVersion;
+    for (const name of ["akanjs", "@akanjs/devkit"]) {
+      if (rootPackageJson.dependencies[name]) rootPackageJson.dependencies[name] = latestPublishedVersion;
+      if (rootPackageJson.devDependencies?.[name]) rootPackageJson.devDependencies[name] = latestPublishedVersion;
+    }
     await workspace.setPackageJson(rootPackageJson);
     await workspace.spawn("bun", ["install", ...this.#getRegistryArgs(registryUrl)], {
       env: this.#getRegistryEnv(registryUrl),
@@ -446,8 +397,7 @@ export class CloudRunner extends runner("cloud") {
   async downloadEnv(cloudApi: CloudApi, workspace: Workspace, workspaceId: string) {
     await workspace.mkdir("local");
     const localPath = (await cloudApi.downloadEnv(workspaceId)) as string;
-    // Pass a path relative to workspaceRoot so tar never sees a Windows drive letter
-    // (e.g. "C:\...") which GNU tar would interpret as a remote "host:file" spec.
+    // Relative, so GNU tar never reads a Windows drive letter (`C:\…`) as a remote `host:file` spec.
     const relativePath = path.relative(workspace.workspaceRoot, localPath).split(path.sep).join("/");
     await workspace.spawn("tar", ["-xf", relativePath], { cwd: workspace.workspaceRoot });
     await workspace.remove(localPath);
@@ -469,9 +419,7 @@ export class CloudRunner extends runner("cloud") {
         cwd: workspace.workspaceRoot,
         stdio: "inherit",
       });
-      await workspace.spawn("tar", ["-xf", envArchivePath], {
-        cwd: workspace.workspaceRoot,
-      });
+      await workspace.spawn("tar", ["-xf", envArchivePath], { cwd: workspace.workspaceRoot });
       await workspace.remove(envArchivePath);
     } catch (error) {
       throw new Error(`Failed to download env archive from remote server "${remoteServer.name}"`, { cause: error });
@@ -520,8 +468,7 @@ export class CloudRunner extends runner("cloud") {
         ),
       )
     ).flat();
-    //* The managed block is a workspace-level file listing every app: syncing it from one slice would drop
-    //* every other app's secret patterns from it.
+    //* Every app, not the slice: the managed block is workspace-wide, so a slice would drop the others' patterns.
     await this.#syncSecretGitignore(workspace, workspaceAppNames);
     const customSecretPaths = await this.#gatherCustomSecretFiles(workspace, appNames);
     const envFilePaths = [...new Set([...defaultEnvFilePaths, ...customSecretPaths])].sort();
@@ -533,9 +480,7 @@ export class CloudRunner extends runner("cloud") {
           ? `No environment files found to archive for ${appNames.join(", ") || "(no apps)"}`
           : "No environment files found to archive",
       );
-    await workspace.spawn("tar", ["-cf", archivePath, ...envFilePaths], {
-      cwd: workspace.workspaceRoot,
-    });
+    await workspace.spawn("tar", ["-cf", archivePath, ...envFilePaths], { cwd: workspace.workspaceRoot });
     Logger.info(`Archived ${envFilePaths.length} environment files to ${archivePath}`);
     return { files: envFilePaths, path: archivePath };
   }

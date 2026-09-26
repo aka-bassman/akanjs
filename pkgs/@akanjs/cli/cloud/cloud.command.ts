@@ -19,10 +19,7 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
     .exec(async function (host, workspace) {
       await this.cloudScript.logout(workspace, host);
     }),
-  deployAkan: target({
-    devOnly: true,
-    desc: "Deploy Akan.js framework to cloud (internal use)",
-  })
+  deployAkan: target({ devOnly: true, desc: "Deploy Akan.js framework to cloud (internal use)" })
     .option("test", Boolean, { desc: "test the deployment", default: true })
     .option("registry", String, {
       desc: "registry target for publishing Akan packages",
@@ -84,21 +81,15 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
       default: process.env.USE_AKANJS_PKGS === "true" ? undefined : "npm",
     })
     .exec(async function (workspace, tag, registry) {
-      await this.cloudScript.update(workspace, tag, {
-        registryUrl: resolveRegistryUrl(registry),
-      });
+      await this.cloudScript.update(workspace, tag, { registryUrl: resolveRegistryUrl(registry) });
     }),
-  downloadEnv: target({
-    desc: "Download environment variables from cloud or SCP server",
-  })
+  downloadEnv: target({ desc: "Download environment variables from cloud or SCP server" })
     .option("host", String, { desc: "host of the cloud to target", default: GlobalConfig.akanCloudHost })
     .with(Workspace)
     .exec(async function (host, workspace) {
       await this.cloudScript.downloadEnv(workspace, undefined, { host });
     }),
-  uploadEnv: target({
-    desc: "Upload environment variables to cloud or SCP server",
-  })
+  uploadEnv: target({ desc: "Upload environment variables to cloud or SCP server" })
     .option("host", String, { desc: "host of the cloud to target", default: GlobalConfig.akanCloudHost })
     .with(Workspace)
     .exec(async function (host, workspace) {

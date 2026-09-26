@@ -1,5 +1,5 @@
 import type { WorkflowSpec } from "@akanjs/devkit/workflow";
-import { baseValidation, moduleInput, sysInputs } from "./shared";
+import { baseValidation, inspectModuleStep, moduleInput, syncGeneratedStep, sysInputs, validateTarget } from "./shared";
 
 export const addFieldWorkflowSpec: WorkflowSpec = {
   schemaVersion: 1,
@@ -40,12 +40,7 @@ export const addFieldWorkflowSpec: WorkflowSpec = {
     store: "infer",
   },
   steps: [
-    {
-      id: "inspect-module",
-      title: "Inspect module",
-      tool: "inspectModule",
-      description: "Read module files and detect existing field/UI patterns.",
-    },
+    inspectModuleStep("Read module files and detect existing field/UI patterns."),
     {
       id: "update-constant",
       title: "Update constant",
@@ -65,18 +60,8 @@ export const addFieldWorkflowSpec: WorkflowSpec = {
       description: "Plan optional Template, Unit, View, and Store updates according to inferred surfaces.",
       when: "optionalSurfaces.* is include or infer",
     },
-    {
-      id: "sync-generated",
-      title: "Sync generated files",
-      tool: "syncTarget",
-      description: "Refresh generated files after source changes.",
-    },
-    {
-      id: "validate-target",
-      title: "Validate target",
-      tool: "lintTarget",
-      description: "Run validation commands for the target.",
-    },
+    syncGeneratedStep("Refresh generated files after source changes."),
+    validateTarget,
   ],
   predictedChanges: [
     {

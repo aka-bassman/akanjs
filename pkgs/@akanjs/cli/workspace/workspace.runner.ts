@@ -40,37 +40,15 @@ export class WorkspaceRunner extends runner("workspace") {
     { overwrite = false, cursorRules = true }: { overwrite?: boolean; cursorRules?: boolean } = {},
   ) {
     const [appNames] = await workspace.getExecs();
-    const dict = {
-      repoName: workspace.repoName,
-      appName: appNames[0] ?? "app",
-    };
-    const created = await workspace.applyTemplate({
-      basePath: ".",
-      template: "workspaceRoot/AGENTS.md.template",
-      dict,
-      overwrite,
-    });
-
-    // CLAUDE.md only imports AGENTS.md so Claude Code shares the same source of truth.
-    created.push(
-      ...(await workspace.applyTemplate({
-        basePath: ".",
-        template: "workspaceRoot/CLAUDE.md.template",
-        dict,
-        overwrite,
-      })),
-    );
-
-    if (cursorRules)
-      created.push(
-        ...(await workspace.applyTemplate({
-          basePath: ".cursor/rules",
-          template: "workspaceRoot/.cursor/rules/akan.mdc.template",
-          dict,
-          overwrite,
-        })),
-      );
-
+    const dict = { repoName: workspace.repoName, appName: appNames[0] ?? "app" };
+    const templates = [
+      [".", "workspaceRoot/AGENTS.md.template"],
+      [".", "workspaceRoot/CLAUDE.md.template"],
+      ...(cursorRules ? [[".cursor/rules", "workspaceRoot/.cursor/rules/akan.mdc.template"]] : []),
+    ];
+    const created = [];
+    for (const [basePath, template] of templates)
+      created.push(...(await workspace.applyTemplate({ basePath, template, dict, overwrite })));
     return created;
   }
 
@@ -89,7 +67,6 @@ export class WorkspaceRunner extends runner("workspace") {
     const workspaceRoot = path.join(cwdPath, dirname, repoName);
     const normalizedRegistryUrl = registryUrl ? getNpmRegistryUrl(registryUrl) : undefined;
 
-    // 1. create root files
     const workspace = WorkspaceExecutor.fromRoot({ workspaceRoot, repoName });
     const templateSpinner = workspace.spinning(`Creating workspace template files in ${dirname}/${repoName}...`);
     const latestTypesBunVersion = await getLatestPackageVersion("@types/bun", "latest", normalizedRegistryUrl);
@@ -100,7 +77,6 @@ export class WorkspaceRunner extends runner("workspace") {
     });
     if (normalizedRegistryUrl) await workspace.writeFile(".npmrc", `registry=${normalizedRegistryUrl}/\n`);
     templateSpinner.succeed(`Workspace files created in ${dirname}/${repoName}`);
-    // 2. update default package.json dependencies
     const [rootPackageJson, peerDependencies] = await Promise.all([
       workspace.getPackageJson(),
       this.#getAkanPeerDependencies(),
@@ -123,7 +99,6 @@ export class WorkspaceRunner extends runner("workspace") {
     };
     await workspace.setPackageJson(packageJson);
 
-    // 3. bun install
     if (init) {
       const installSpinner = workspace.spinning("Installing dependencies with bun...");
       await workspace.spawn("bun", ["install"]);
@@ -146,53 +121,43 @@ export class WorkspaceRunner extends runner("workspace") {
   }
 
   async #getCliPackageJson(): Promise<PackageJson> {
-    const packageJsonCandidates = [
+    const found = await this.#findPackageJson("@akanjs/cli", [
       path.join(import.meta.dir, "../package.json"),
       path.join(import.meta.dir, "package.json"),
       path.join(path.dirname(Bun.main), "package.json"),
-    ];
-    try {
-      packageJsonCandidates.unshift(Bun.resolveSync("@akanjs/cli/package.json", import.meta.dir));
-    } catch {
-      // Source builds can execute before the package is linked into node_modules.
-    }
-    for (const packageJsonPath of packageJsonCandidates) {
-      if (!(await Bun.file(packageJsonPath).exists())) continue;
-      const packageJson = await FileSys.readJson<PackageJson>(packageJsonPath);
-      if (packageJson.name === "@akanjs/cli") return packageJson;
-    }
-    return { name: "@akanjs/cli", version: "0.0.0", description: "@akanjs/cli" };
+    ]);
+    return found ?? { name: "@akanjs/cli", version: "0.0.0", description: "@akanjs/cli" };
   }
 
   async #getAkanPackageJson(): Promise<PackageJson> {
-    const packageJsonCandidates = [
+    const ancestors: string[] = [];
+    for (let current = import.meta.dir, depth = 0; depth < 6; depth++) {
+      ancestors.push(path.join(current, "package.json"));
+      if (path.dirname(current) === current) break;
+      current = path.dirname(current);
+    }
+    const found = await this.#findPackageJson("akanjs", [
       path.join(import.meta.dir, "../../../akanjs/package.json"),
       path.join(process.cwd(), "pkgs/akanjs/package.json"),
       path.join(path.dirname(Bun.main), "node_modules/akanjs/package.json"),
-    ];
+      ...ancestors,
+    ]);
+    if (!found) throw new Error(`[workspace] failed to locate akanjs package.json from ${import.meta.dir}`);
+    return found;
+  }
+
+  async #findPackageJson(name: string, candidates: string[]): Promise<PackageJson | null> {
     try {
-      packageJsonCandidates.unshift(Bun.resolveSync("akanjs/package.json", import.meta.dir));
+      candidates.unshift(Bun.resolveSync(`${name}/package.json`, import.meta.dir));
     } catch {
-      // Source workspaces usually resolve Akan packages through tsconfig paths instead of node_modules.
+      // Source builds can run before the package is linked into node_modules.
     }
-    for (const packageJsonPath of packageJsonCandidates) {
+    for (const packageJsonPath of candidates) {
       if (!(await Bun.file(packageJsonPath).exists())) continue;
       const packageJson = await FileSys.readJson<PackageJson>(packageJsonPath);
-      if (packageJson.name === "akanjs") return packageJson;
+      if (packageJson.name === name) return packageJson;
     }
-
-    let current = import.meta.dir;
-    for (let depth = 0; depth < 6; depth++) {
-      const packageJsonPath = path.join(current, "package.json");
-      if (await Bun.file(packageJsonPath).exists()) {
-        const packageJson = await FileSys.readJson<PackageJson>(packageJsonPath);
-        if (packageJson.name === "akanjs") return packageJson;
-      }
-      const parent = path.dirname(current);
-      if (parent === current) break;
-      current = parent;
-    }
-    throw new Error(`[workspace] failed to locate akanjs package.json from ${import.meta.dir}`);
+    return null;
   }
 
   async lint(
@@ -205,12 +170,9 @@ export class WorkspaceRunner extends runner("workspace") {
       "check",
       ...(fix ? ["--write"] : []),
       "--no-errors-on-unmatched",
-      //? Biome caps output at 20 diagnostics by default, which reads as "only 20 problems left" while the
-      //? rest are hidden — a shrinking list then looks like progress when the mix of findings merely changed.
+      //? Biome caps output at 20 by default, so a list whose mix merely changed reads as progress.
       `--max-diagnostics=${maxDiagnostics > 0 ? maxDiagnostics : "none"}`,
-      //? Pinning the config makes a malformed biome.json fail as a parse error on the offending line. Without
-      //? it Biome 2.5.12 falls back to discovery and reports whatever nested config the walk finds first —
-      //? typically inside a directory `files.includes` excludes, which names the wrong file entirely.
+      //? Pinned: without it a malformed biome.json makes Biome fall back to discovery and name the wrong file.
       ...(configPath ? ["--config-path", configPath] : []),
       exec.cwdPath,
     ]);
@@ -228,11 +190,7 @@ export class WorkspaceRunner extends runner("workspace") {
     return null;
   }
 
-  /**
-   * 스코프 에이전트 색인 신선도: 소스 재스캔 결과와 apps|libs/<name>/AGENTS.md 의 managed block 이
-   * 다르면 실패시킨다. 색인이 소스와 어긋난 채 커밋되면 에이전트가 색인을 믿고 틀리므로("추가했는데
-   * 목록에 없어 안 씀"), 조용한 어긋남을 CI 에서 시끄러운 진단으로 바꾸는 것이 이 게이트의 존재 이유다.
-   */
+  // Agents trust the committed index, so a silent drift from the sources becomes a loud diagnostic here.
   async #enforceAgentsIndex(exec: Exec) {
     if (!(exec instanceof SysExecutor)) return;
     const scope = { type: exec.type, name: exec.name };
@@ -252,11 +210,7 @@ export class WorkspaceRunner extends runner("workspace") {
     );
   }
 
-  /**
-   * recipe 자격 게이트: 고를 옵션(값 2개 이상인 variant 축, 또는 불리언 플래그)이 없는 look 은 recipe 가
-   * 아니다 — 함수로 감쌀 이유가 없어 간접층만 늘고, 컴포넌트/상수와의 경계가 무너진다(docsList 사례).
-   * 자기 마크업이 있으면 컴포넌트로, 남의 컴포넌트 className 에 주입하면 공유 클래스 상수로 승격시킨다.
-   */
+  // A look with nothing to pick (no 2+ value axis, no boolean flag) is not a recipe, only an indirection.
   async #enforceRecipeGate(exec: Exec) {
     const cwdPath = exec.cwdPath;
     if (!cwdPath) return;
@@ -280,13 +234,7 @@ export class WorkspaceRunner extends runner("workspace") {
     );
   }
 
-  /**
-   * Enforces the WCAG contrast contract, at error level, as part of lint.
-   *
-   * Only contrast. The vocabulary closure is caught by the grit plugins in the biome run above, so it is
-   * not re-scanned here; contrast is arithmetic over resolved token values, which no lint pattern can
-   * express, so this is its only home.
-   */
+  // Contrast only: the vocabulary closure is the grit plugins' job, but contrast is arithmetic no lint pattern expresses.
   async #enforceStyleContract(exec: Exec) {
     const cwdPath = exec.cwdPath;
     if (!cwdPath) return;

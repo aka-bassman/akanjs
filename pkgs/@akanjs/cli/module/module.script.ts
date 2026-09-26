@@ -1,4 +1,4 @@
-import { type App, type Module, type Sys, script, type Workspace } from "@akanjs/devkit/commandDecorators";
+import { type App, type Module, type Sys, script } from "@akanjs/devkit/commandDecorators";
 import { ModuleExecutor } from "@akanjs/devkit/executors";
 import {
   createPassedPrimitiveReport,
@@ -49,9 +49,6 @@ export class ModuleScript extends script("module", [ModuleRunner, PageScript]) {
       generatedFiles: generatedFilesForSync(sys, "Generated files were refreshed after service creation."),
       target: sys.name,
     });
-  }
-  async createTest(workspace: Workspace, name: string) {
-    //
   }
   async createTemplate(mod: Module): Promise<PrimitiveWriteReport> {
     return await this.#createComponent(mod, "template");

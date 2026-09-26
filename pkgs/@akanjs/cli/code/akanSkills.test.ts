@@ -20,17 +20,9 @@ describe("akan skills", () => {
     expect(front).toContain(`name: ${name}`);
     const description = /description:\s*(.+)/.exec(front)?.[1]?.trim() ?? "";
     expect(description.length).toBeGreaterThan(40);
-    // The description is the only part that always sits in the window, so it is the trigger, not a title.
     expect(description.length).toBeLessThan(260);
   });
 
-  /**
-   * Every tool and guideline these skills name has to exist.
-   *
-   * A skill naming a tool the session does not carry is worse than a missing skill: it teaches the model to
-   * call something that will never answer, and the failure reads as the model being confused rather than as
-   * a stale document.
-   */
   test("every tool, workflow and guideline the skills name is one the runtime publishes", async () => {
     const { ContextRunner } = await import("../context/context.runner");
     const { Prompter } = await import("@akanjs/devkit/prompter");
@@ -53,8 +45,7 @@ describe("akan skills", () => {
       // A backticked snake_case identifier in these documents is always a tool name.
       for (const match of body.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)[`(]/g)) named.tools.add(match[1] ?? "");
       for (const match of body.matchAll(/`((?:create|add)-[a-z-]+)`/g)) named.workflows.add(match[1] ?? "");
-      // Only the paragraphs that offer a deeper read, so an ordinary identifier in prose is not mistaken
-      // for a guideline name.
+      // Only paragraphs offering a deeper read, so a prose identifier is not taken for a guideline name.
       for (const paragraph of body.split(/\n\s*\n/).filter((block) => block.includes("get_guideline")))
         for (const match of paragraph.matchAll(/`([a-zA-Z]+)`/g))
           if (match[1] !== "get_guideline") named.guidelines.add(match[1] ?? "");
@@ -66,12 +57,6 @@ describe("akan skills", () => {
     expect([...named.guidelines].filter((name) => !guidelines.has(name))).toEqual([]);
   });
 
-  /**
-   * The manual is the only place the model can read about the host, and the host is in another package.
-   *
-   * `CodeTuiCommands` is the live list — it builds the menu, the completion and `/help` — so a command added
-   * there and not here is a command the agent will answer "there is no such thing" about, confidently.
-   */
   test("every slash command the host offers is in the manual", async () => {
     const { CodeTuiCommands } = await import("./CodeTuiCommands");
     const manual = bodyOf("akan-code");

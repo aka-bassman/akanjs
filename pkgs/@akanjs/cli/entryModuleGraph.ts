@@ -1,18 +1,7 @@
 import path from "node:path";
 
-/**
- * The static module graph of the four entrypoints `CliDistBuilder` ships, built in the same shape the
- * dist build produces.
- *
- * **Why a closure walk rather than a grep of the entry file.** `splitting: true` moves shared code
- * into chunks, so a dependency the entry loads eagerly usually lands in a chunk the entry statically
- * imports — not in the entry itself. Grepping the entry alone reports a false green: measured,
- * `index.js` reaches `@inquirer/prompts` through exactly one chunk hop, which the original guard
- * could not see.
- *
- * Only static `from "…"` specifiers are followed. A dynamic `import("x")` has no `from` clause, so a
- * lazily-loaded module is correctly not counted — that distinction is the whole point of the guard.
- */
+// A closure walk, not a grep of the entry: `splitting: true` moves eager deps into chunks the entry imports. Only static
+// `from "…"` specifiers are followed, so a dynamic `import("x")` is correctly not counted.
 export class EntryModuleGraph {
   /** Measured at 9-76 MB resident each on import. Each is loaded by *some* command or worker. */
   static readonly heavyDependencies = [
@@ -37,8 +26,7 @@ export class EntryModuleGraph {
       peerDependencies?: { [name: string]: string };
     };
     const result = await Bun.build({
-      // Must stay in sync with `CliDistBuilder.#bundle`: same entrypoints, same splitting, same
-      // externals. A guard built differently from the artifact guards nothing.
+      // Must match `CliDistBuilder.#bundle` (entrypoints, splitting, externals): a differently built guard guards nothing.
       entrypoints: [
         `${cliDir}/index.ts`,
         `${devkitDir}/incrementalBuilder/incrementalBuilder.proc.ts`,

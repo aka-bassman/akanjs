@@ -2,10 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { AkanContextAnalyzer } from "@akanjs/devkit/akanContext";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
 import { cleanupCliTempWorkspace, createTempModule, writeText } from "@akanjs/devkit/testHelpers";
-import type { RepairReport } from "@akanjs/devkit/workflow";
+import type { RepairReport, WorkflowValidationCommandExecutor } from "@akanjs/devkit/workflow";
 import { RepairRunner } from "./repair.runner";
 
 const tempRoots: string[] = [];
+const passes: WorkflowValidationCommandExecutor = async (command) => ({
+  command: command.command,
+  reason: command.reason,
+  status: "passed",
+  exitCode: 0,
+});
 
 afterEach(async () => {
   CommandContainer.clear();
@@ -21,12 +27,7 @@ describe("RepairRunner", () => {
       workspace,
       app: "demo",
       format: "json",
-      execute: async (command) => ({
-        command: command.command,
-        reason: command.reason,
-        status: "passed",
-        exitCode: 0,
-      }),
+      execute: passes,
     });
     const report = JSON.parse(output) as RepairReport;
 
@@ -48,12 +49,7 @@ describe("RepairRunner", () => {
       workspace,
       target: "demo",
       format: "json",
-      execute: async (command) => ({
-        command: command.command,
-        reason: command.reason,
-        status: "passed",
-        exitCode: 0,
-      }),
+      execute: passes,
     });
     const report = JSON.parse(output) as RepairReport;
 
@@ -78,12 +74,7 @@ describe("RepairRunner", () => {
       app: "demo",
       module: "task",
       format: "json",
-      execute: async (command) => ({
-        command: command.command,
-        reason: command.reason,
-        status: "passed",
-        exitCode: 0,
-      }),
+      execute: passes,
     });
     const report = JSON.parse(output) as RepairReport;
 
@@ -105,12 +96,7 @@ describe("RepairRunner", () => {
       app: "demo",
       module: "task",
       format: "json",
-      execute: async (command) => ({
-        command: command.command,
-        reason: command.reason,
-        status: "passed",
-        exitCode: 0,
-      }),
+      execute: passes,
     });
     const report = JSON.parse(output) as RepairReport;
 

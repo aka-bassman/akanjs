@@ -8,14 +8,8 @@ export interface DevLogWindow {
   following: boolean;
 }
 
-/**
- * Which slice of a filtered log the pane shows.
- *
- * The scroll position is a **line seq**, not an offset from the tail. An offset would move under the
- * reader: lines keep arriving while they read, and the ring drops old ones from the front, so the same
- * offset names a different line a second later. A seq names the line itself, survives both, and makes
- * "following" simply mean there is no anchor.
- */
+// The scroll position is a line seq, not a tail offset: lines keep arriving and the ring drops old ones, so an
+// offset names a different line a second later. Following means no anchor.
 export const windowOf = (lines: DevLogLine[], rows: number, anchor: number | null): DevLogWindow => {
   const height = Math.max(1, Math.trunc(rows));
   const end = anchor === null ? lines.length : endOf(lines, height, anchor);
@@ -28,11 +22,7 @@ export const windowOf = (lines: DevLogLine[], rows: number, anchor: number | nul
   };
 };
 
-/**
- * Where the anchor lands after a scroll. Negative goes toward older lines, positive toward newer, and
- * reaching the newest end drops the anchor so the pane resumes following instead of pinning to what is
- * momentarily the last line.
- */
+// Reaching the newest end drops the anchor, so the pane resumes following instead of pinning the last line.
 export const scrollAnchor = (
   lines: DevLogLine[],
   rows: number,

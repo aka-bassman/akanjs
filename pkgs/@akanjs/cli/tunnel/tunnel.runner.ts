@@ -3,14 +3,9 @@ import { type App, runner, type Workspace } from "@akanjs/devkit/commandDecorato
 import { Logger } from "akanjs/common";
 import chalk from "chalk";
 import { writeClipboard } from "../clipboard";
-import { TunnelShare } from "./TunnelShare";
+import { TunnelShare, type TunnelShareOptions } from "./TunnelShare";
 
-export interface ShareOptions {
-  workspace: Workspace;
-  host?: string;
-  port?: number;
-  ttlMinutes?: number;
-}
+export type ShareOptions = Omit<TunnelShareOptions, "onLost">;
 
 export class TunnelRunner extends runner("tunnel") {
   /** Opens the share and blocks until the operator interrupts, because the agent is the process. */
@@ -53,10 +48,7 @@ export class TunnelRunner extends runner("tunnel") {
     else Logger.rawLog(`No tunnel named ${code} is open.`, undefined, "error");
   }
 
-  /**
-   * Holds the process open with the tunnel, and hands the hostname back on the way out. A second interrupt
-   * abandons the release rather than looking hung — the share then expires on its own TTL.
-   */
+  // A second interrupt abandons the release rather than looking hung; the share then expires on its own TTL.
   static holdUntilInterrupt(onInterrupt: () => Promise<void>) {
     return new Promise<void>((resolve) => {
       let closing = false;

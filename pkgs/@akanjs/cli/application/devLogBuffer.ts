@@ -20,23 +20,14 @@ export interface DevLogQuery extends DevLogTarget {
   errorsOnly?: boolean;
 }
 
-/**
- * Selected lines as text to hand somebody — no ANSI, no pane truncation, no border. The app name is
- * prefixed only when apps are merged, because within one app the replica tag is already in the text.
- */
+// The app name is prefixed only when apps are merged: within one app the replica tag is already in the text.
 export const plainTextOf = (lines: DevLogLine[], { withApp = false }: { withApp?: boolean } = {}): string => {
   const width = withApp ? lines.reduce((max, line) => Math.max(max, line.app.length), 0) : 0;
   return lines.map((line) => `${withApp ? `${line.app.padEnd(width)} │ ` : ""}${stripAnsi(line.text)}`).join("\n");
 };
 
-/**
- * Where a line came from inside an app.
- *
- * `AkanApp.#writeChildLine` prefixes every line it forwards from a replica with
- * `[child:<idx> <role>] [<stream>] `, in plain text ahead of whatever the child rendered — so the tag is
- * a framework-written literal, not a guess about the message. Anything without it is the host process's
- * own stdio: the dev host, the gateway and the RSC worker, none of which is a replica.
- */
+// `AkanApp.#writeChildLine` prefixes each forwarded replica line with `[child:<idx> <role>] [<stream>] `;
+// anything else is the host process's own stdio (dev host, gateway, RSC worker).
 export const HOST_SOURCE = "host";
 const childPrefix = /^\[child:(\d+) ([a-z-]+)\] \[(?:stdout|stderr)\] /;
 export const sourceOf = (text: string): string => {
@@ -44,14 +35,7 @@ export const sourceOf = (text: string): string => {
   return match ? `#${match[1]} ${match[2]}` : HOST_SOURCE;
 };
 
-/**
- * What the supervised session has seen, bounded, with a per-stream remainder so a chunk that ends
- * mid-line does not become a line of its own.
- *
- * Children write already-rendered `Logger` lines, so the text is stored verbatim — ANSI included, which
- * is the level colour. Only matching strips it, never storage: a grep must not have to know that
- * `payment` might arrive with a colour escape in the middle of it.
- */
+// Stored verbatim, ANSI (the level colour) included; only matching strips it, so a grep ignores escapes.
 export class DevLogBuffer {
   static readonly defaultLimit = 5_000;
 

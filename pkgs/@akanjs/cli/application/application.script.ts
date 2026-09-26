@@ -1,5 +1,5 @@
 import type { DevHostEvent } from "@akanjs/devkit/akanApp";
-import type { AkanAppConfig, DatabaseMode, MobileEnv } from "@akanjs/devkit/akanConfig";
+import type { AkanAppConfig, DatabaseMode } from "@akanjs/devkit/akanConfig";
 import { ApplicationBuildReporter } from "@akanjs/devkit/applicationBuildReporter";
 import type { TypecheckOptions } from "@akanjs/devkit/applicationBuildRunner";
 import type { ReleaseSourceOptions } from "@akanjs/devkit/applicationReleasePackager";
@@ -18,11 +18,16 @@ import { formatSlicePlan } from "@akanjs/devkit/slicePlanner";
 import { confirm } from "@inquirer/prompts";
 import { Logger } from "akanjs/common";
 import { LibraryScript } from "../library/library.script";
-import { ApplicationRunner, type LogsOptions } from "./application.runner";
+import {
+  ApplicationRunner,
+  type IosStartOptions,
+  type LogsOptions,
+  type MobileStartOptions,
+  type MobileTargetOptions,
+} from "./application.runner";
 import { DevPortReclaimer } from "./devPortReclaimer";
 import { DevStreamView } from "./devStreamView";
-import { DevSupervisor } from "./devSupervisor";
-import { type DevUiMode, resolveDevUi } from "./devUiMode";
+import { DevSupervisor, type DevUiMode } from "./devSupervisor";
 import { InterruptTeardown } from "./interruptTeardown";
 
 interface StartOptions {
@@ -43,16 +48,12 @@ interface StartOneOptions {
   onDevEvent?: (event: DevHostEvent) => void;
 }
 
-type MobileOperation = "local" | "release";
-type MobileCommandOptions = {
-  target?: string;
-  env?: MobileEnv;
+interface MobileCommandOptions extends MobileTargetOptions {
   write?: boolean;
-  regenerate?: boolean;
-};
-type MobileReleaseOptions = MobileCommandOptions & {
+}
+interface MobileReleaseOptions extends MobileCommandOptions {
   allowLocalRelease?: boolean;
-};
+}
 
 export class ApplicationScript extends script("application", [ApplicationRunner, LibraryScript]) {
   /** Long enough for `docker compose down` on a healthy daemon, short enough that a wedged one still exits. */
@@ -60,10 +61,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   readonly #interrupt = new InterruptTeardown();
   async confirmDatabaseModeDependencyInstall(databaseMode: DatabaseMode, installSpecs: string[]) {
     return await confirm({
-      message: [
-        `Database mode '${databaseMode}' requires missing dependencies: ${installSpecs.join(", ")}.`,
-        "Install them now?",
-      ].join(" "),
+      message: `Database mode '${databaseMode}' requires missing dependencies: ${installSpecs.join(", ")}. Install them now?`,
       default: true,
     });
   }
@@ -74,24 +72,11 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     const shouldInstall = await this.confirmDatabaseModeDependencyInstall(databaseMode, installSpecs);
     if (!shouldInstall)
       throw new Error(`Database mode '${databaseMode}' requires missing dependencies: ${installSpecs.join(", ")}.`);
-
-    const spinner = app.workspace.spinning(`Installing database dependencies for ${databaseMode} mode...`);
-    try {
-      await app.workspace.spawn("bun", ["add", ...installSpecs], {
-        stdio: "inherit",
-      });
-      await app.workspace.getPackageJson({ refresh: true });
-      spinner.succeed(`Installed database dependencies for ${databaseMode} mode`);
-    } catch (error) {
-      spinner.fail(`Failed to install database dependencies for ${databaseMode} mode`);
-      throw error;
-    }
+    await this.#addDependencies(app, installSpecs, `database dependencies for ${databaseMode} mode`);
   }
   async confirmMobileDependencyInstall(installSpecs: string[]) {
     return await confirm({
-      message: [`Mobile builds require missing dependencies: ${installSpecs.join(", ")}.`, "Install them now?"].join(
-        " ",
-      ),
+      message: `Mobile builds require missing dependencies: ${installSpecs.join(", ")}. Install them now?`,
       default: true,
     });
   }
@@ -101,23 +86,20 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
 
     const shouldInstall = await this.confirmMobileDependencyInstall(installSpecs);
     if (!shouldInstall) throw new Error(`Mobile builds require missing dependencies: ${installSpecs.join(", ")}.`);
-
-    const spinner = app.workspace.spinning("Installing mobile dependencies...");
+    await this.#addDependencies(app, installSpecs, "mobile dependencies");
+  }
+  async #addDependencies(app: App, installSpecs: string[], what: string) {
+    const spinner = app.workspace.spinning(`Installing ${what}...`);
     try {
-      await app.workspace.spawn("bun", ["add", ...installSpecs], {
-        stdio: "inherit",
-      });
+      await app.workspace.spawn("bun", ["add", ...installSpecs], { stdio: "inherit" });
       await app.workspace.getPackageJson({ refresh: true });
-      spinner.succeed("Installed mobile dependencies");
+      spinner.succeed(`Installed ${what}`);
     } catch (error) {
-      spinner.fail("Failed to install mobile dependencies");
+      spinner.fail(`Failed to install ${what}`);
       throw error;
     }
   }
-  // `npx cap sync` discovers plugins from the app directory's package.json, so the default Capacitor
-  // plugins must be declared there (not just installed at the workspace root) before a mobile target
-  // is built. Declaring the missing ones with a "*" range lets bun resolve them to the version
-  // already hoisted at the workspace root.
+  // `npx cap sync` reads plugins from the app's own package.json; a "*" range resolves to the root-hoisted version.
   async syncMobileAppCapacitorPlugins(app: App, akanConfig: AkanAppConfig) {
     const plugins = akanConfig.getMobileAppCapacitorPlugins();
     if (plugins.length === 0) return;
@@ -187,10 +169,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     await app.scanSync({ write });
     if (!quiet) Logger.rawLog(`Creating an optimized production build for ${app.name}...`);
     try {
-      const result = await this.applicationRunner.build(app, {
-        fast,
-        spinner: !quiet,
-      });
+      const result = await this.applicationRunner.build(app, { fast, spinner: !quiet });
       Logger.rawLog(`${app.name} built in dist/apps/${app.name}`);
       if (!quiet) ApplicationBuildReporter.printSummary(result);
     } catch (error) {
@@ -219,8 +198,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   async test(exec: Exec, { write = true }: { write?: boolean } = {}) {
     if (exec instanceof LibExecutor) {
       await this.libraryScript.syncLibrary(exec);
-      const spinner = exec.spinning(`Preparing ${exec.name}...`);
-      spinner.succeed(`${exec.name} prepared`);
+      exec.spinning(`Preparing ${exec.name}...`).succeed(`${exec.name} prepared`);
       await this.applicationRunner.test(exec);
       return;
     }
@@ -251,12 +229,11 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   ) {
     const first = apps[0];
     if (!first) throw new Error("No app selected to start");
-    const { mode, downgraded } = resolveDevUi(plain);
+    const { mode, downgraded } = DevSupervisor.resolveDevUi(plain);
     if (downgraded) first.workspace.log("no sized terminal to draw on; printing prefixed lines instead");
     if (kill) await this.reclaimDevPorts(apps);
     const shares = share ? await this.#shareOnInterrupt(apps) : null;
-    //? `--plain` on a single app is the pre-supervisor path, kept whole: no extra process, this
-    //? process's own stdio, and the same Ctrl+C handling it always had.
+    //? `--plain` on one app keeps the pre-supervisor path: no extra process, own stdio and Ctrl+C handling.
     if (mode === "stream" && apps.length === 1)
       return await this.startOne(first, { open, dbup, write, ...DevSupervisor.childHooks() });
     this.#interrupt.ownsExit = false;
@@ -276,22 +253,15 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       if (!wasDbAlreadyUp) this.#stopDatabaseOnInterrupt(app.workspace);
     }
     const spinner = app.spinning("Preparing backend...");
-    const akanAppHost = await this.applicationRunner.start(app, {
+    return await this.applicationRunner.start(app, {
       open,
-      onStart: () => {
-        spinner.succeed(`${app.name} prepared, ready to start`);
-      },
+      onStart: () => spinner.succeed(`${app.name} prepared, ready to start`),
       onDevEvent,
       stdio,
     });
-    return akanAppHost;
   }
 
-  /**
-   * Frees the ports this session is about to bind. Reported line by line rather than silently: the
-   * holder is often another checkout's dev server, and "why did my other terminal die" must be
-   * answerable from this output alone.
-   */
+  // Reported line by line: the holder is often another checkout's dev server, which must be explainable from here.
   async reclaimDevPorts(apps: Apps) {
     const workspace = apps[0]?.workspace;
     if (!workspace) return;
@@ -308,11 +278,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     if (killed.length === 0 && foreign.length === 0) workspace.log("dev ports are free; nothing to kill");
   }
 
-  /**
-   * The supervised session: one `akan start <app>` child per app, and this process owning the database,
-   * the boot order and the terminal. The children are told `--dbup false` because a workspace-level
-   * `docker compose down` on the first Ctrl+C would take the other apps' database with it.
-   */
+  // Children get `--dbup false`: a child's `docker compose down` on Ctrl+C would take the other apps' database.
   async #startMany(
     apps: Apps,
     {
@@ -331,21 +297,17 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     if (!workspace) throw new Error("No app selected to start");
     const startedDatabase = dbup ? await this.#prepareSharedDatabase(apps) : false;
     const supervisor = new DevSupervisor({ apps, mode, concurrency, open, write, shares });
+    // `ink` stays behind `import()`: entryModuleGraph.test.ts fails if the CLI entry reaches it eagerly.
     const view =
       mode === "tui"
-        ? await (await import("./devTuiView")).createDevTuiView(supervisor)
+        ? new (await import("./devTui")).DevTui(supervisor)
         : new DevStreamView(apps.map((app) => app.name));
     await supervisor.run(view);
-    //* Only what this session brought up: the compose project is workspace-wide, so tearing down a
-    //* database that was already running would take another checkout's dev servers with it.
+    //* Only what this session brought up: the compose project is workspace-wide, shared with other checkouts.
     if (startedDatabase) await this.#stopDatabase(workspace);
   }
 
-  /**
-   * One `docker compose up` for every app that wants one. Apps may declare different modes, and the
-   * services are a union rather than a choice: they share one compose project, so bringing up the
-   * superset is what lets a `cluster` app and a `multiple` app run side by side.
-   */
+  // A union of services, not a choice: one compose project serves every app, whatever mode each declares.
   async #prepareSharedDatabase(apps: Apps): Promise<boolean> {
     const workspace = apps[0]?.workspace;
     if (!workspace) return false;
@@ -377,16 +339,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       device,
       regenerate = false,
       noAllowProvisioningUpdates = false,
-    }: {
-      operation?: MobileOperation;
-      env?: MobileEnv;
-      open?: boolean;
-      write?: boolean;
-      target?: string;
-      device?: string;
-      regenerate?: boolean;
-      noAllowProvisioningUpdates?: boolean;
-    } = {},
+    }: IosStartOptions & { write?: boolean } = {},
   ) {
     await app.scanSync({ write });
     const akanConfig = await app.getConfig();
@@ -426,28 +379,14 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       write = true,
       target,
       regenerate = false,
-    }: {
-      open?: boolean;
-      env?: MobileEnv;
-      operation?: MobileOperation;
-      write?: boolean;
-      target?: string;
-      regenerate?: boolean;
-    } = {},
+    }: MobileStartOptions & { write?: boolean } = {},
   ) {
     await app.scanSync({ write });
     const akanConfig = await app.getConfig();
     await this.syncMobileDependencies(app, akanConfig);
     await this.syncMobileAppCapacitorPlugins(app, akanConfig);
-    await this.applicationRunner.startAndroid(app, {
-      open,
-      operation,
-      env,
-      target,
-      regenerate,
-    });
+    await this.applicationRunner.startAndroid(app, { open, operation, env, target, regenerate });
   }
-  //* 안드로이드 릴리즈(apk or aab 추출) 메서드
   async releaseAndroid(
     app: App,
     assembleType: "apk" | "aab",
@@ -458,11 +397,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       throw new Error(
         "releaseAndroid --env local is blocked. Pass allowLocalRelease only for explicit local release testing.",
       );
-    await this.applicationRunner.releaseAndroid(app, assembleType, {
-      target,
-      env,
-      regenerate,
-    });
+    await this.applicationRunner.releaseAndroid(app, assembleType, { target, env, regenerate });
   }
 
   async configureApp(app: App) {
@@ -477,7 +412,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   async transferDatabase(app: App, direction: "export" | "import", dir: string) {
     await this.applicationRunner.transferDatabase(app, direction, dir);
   }
-  /** One compose project serves every app, so without a named mode it brings up what all of them declare. */
+  // One compose project serves every app, so without a named mode it brings up what all of them declare.
   async dbupDeclared(workspace: Workspace, mode: DatabaseMode | null) {
     const declared = mode
       ? [mode]
@@ -509,14 +444,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     }
     spinner.succeed("Local database (/local/docker-compose.yaml) is down");
   }
-  /**
-   * Opens a public share per app and hands the hostnames back when the session ends.
-   *
-   * The agent runs in *this* process rather than inside the dev server, so it is unaffected by which supervisor
-   * mode `start` picked, and by the dev server restarting under it. A share opened before the app is listening
-   * is not a problem either: until the origin answers, a public request is refused rather than dropped, and the
-   * share starts working the moment the port opens.
-   */
+  // Runs in this process, so dev server restarts do not touch it; until the port opens, requests are refused.
   async #shareOnInterrupt(apps: Apps): Promise<Map<string, string>> {
     const shares: { close: () => Promise<void> }[] = [];
     const urls = new Map<string, string>();
@@ -529,8 +457,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
         const share = await TunnelShare.open(app, { workspace: app.workspace });
         shares.push(share);
         urls.set(app.name, share.url);
-        // Printed for `--plain`; the full-screen view owns the terminal and carries the URL in its own
-        // header instead, because anything written before `render` is wiped by the first repaint.
+        // For `--plain`; the full-screen view's first repaint wipes this, so its header carries the URL.
         Logger.rawLog(`${app.name} is shared at ${share.url}`);
       }),
     ).catch((error: unknown) => {
@@ -543,32 +470,18 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     return urls;
   }
 
-  /**
-   * `docker compose down` takes tens of seconds on a healthy daemon and never returns on a wedged one, so the
-   * teardown is bounded and the exit runs even when it fails.
-   */
   #stopDatabaseOnInterrupt(workspace: Workspace) {
     this.#interrupt.add(async () => {
       await this.#stopDatabase(workspace);
     }, "Abandoning the local database teardown; containers are left running.");
   }
   async #stopDatabase(workspace: Workspace) {
-    // Cleared rather than left to fire: the losing timer of this race is a live handle, and it holds the
-    // event loop open for its full budget after a teardown that already succeeded.
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const timeout = new Promise<"timeout">((resolve) => {
-      timer = setTimeout(() => resolve("timeout"), ApplicationScript.dbShutdownTimeoutMs);
-    });
-    try {
-      const result = await Promise.race([this.dbdown(workspace).catch(() => undefined), timeout]);
-      if (result !== "timeout") return;
-      Logger.rawLog(
-        `Local database did not stop within ${ApplicationScript.dbShutdownTimeoutMs}ms; run \`akan dbdown\` once Docker responds.`,
-        undefined,
-        "error",
-      );
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
+    const stopped = this.dbdown(workspace).catch(() => undefined);
+    if (!(await DevSupervisor.timesOut(stopped, ApplicationScript.dbShutdownTimeoutMs))) return;
+    Logger.rawLog(
+      `Local database did not stop within ${ApplicationScript.dbShutdownTimeoutMs}ms; run \`akan dbdown\` once Docker responds.`,
+      undefined,
+      "error",
+    );
   }
 }

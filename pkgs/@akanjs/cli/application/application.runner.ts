@@ -26,11 +26,21 @@ export interface LogsOptions {
   follow?: boolean;
   runtimeDir?: string | null;
 }
+export interface MobileTargetOptions {
+  target?: string;
+  env?: MobileEnv;
+  regenerate?: boolean;
+}
+export interface MobileStartOptions extends MobileTargetOptions {
+  open?: boolean;
+  operation?: "local" | "release";
+}
+export interface IosStartOptions extends MobileStartOptions {
+  device?: string;
+  noAllowProvisioningUpdates?: boolean;
+}
 
-// `akan start` is the hot path and must not pay for the build, mobile, release and AI stacks:
-// `applicationBuildRunner` pulls tailwind + fonteditor + typescript (~140MB), `capacitorApp` pulls
-// @trapezedev/project (~76MB) and @inquirer ~24MB. Import them inside the
-// methods that use them so only those commands pay.
+// Lazy, so the `akan start` hot path never loads the build, mobile and prompt stacks.
 const loadBuildRunner = async () => (await import("@akanjs/devkit/applicationBuildRunner")).ApplicationBuildRunner;
 const loadReleasePackager = async () =>
   (await import("@akanjs/devkit/applicationReleasePackager")).ApplicationReleasePackager;
@@ -52,9 +62,6 @@ export class ApplicationRunner extends runner("application") {
   }
   async removeApplication(app: App) {
     await app.workspace.removeDir(`apps/${app.name}`);
-  }
-  async getConfig(app: App) {
-    return await app.getConfig();
   }
 
   async getScriptFilename(app: App) {
@@ -81,7 +88,7 @@ export class ApplicationRunner extends runner("application") {
       stdio: "inherit",
     });
   }
-  /** Where the gateway (or solo replica) of this app keeps its sockets and logs: the same answer `resolveRuntimeDir` gives from the workspace root. */
+  // Must match what `resolveRuntimeDir` answers from the workspace root.
   #runtimeDirOf(app: App, override?: string | null) {
     return path.resolve(
       override ??
@@ -103,10 +110,7 @@ export class ApplicationRunner extends runner("application") {
     const print = (record: LogRecord) =>
       process.stdout.write(options.json ? `${JSON.stringify(record)}\n` : Logger.render(record));
     const note = (text: string) => process.stderr.write(`[akan logs] ${text}\n`);
-    let finish: (() => void) | null = null;
-    const closed = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
+    const { promise: closed, resolve: finish } = Promise.withResolvers<void>();
     let client: Awaited<ReturnType<typeof LogTailClient.connect>>;
     try {
       client = await LogTailClient.connect(socketPath, {
@@ -114,7 +118,7 @@ export class ApplicationRunner extends runner("application") {
         onEvent: (response) => {
           if (response.type === "dropped") note(`${response.count} records dropped (reader too slow)`);
         },
-        onClose: () => finish?.(),
+        onClose: () => finish(),
       });
     } catch (error) {
       if (error instanceof LogControlUnavailableError)
@@ -180,10 +184,7 @@ try {
       stdio: "inherit",
     });
   }
-  /**
-   * Boots the app as a script — no listener, no cron, no init job, so nothing writes beside the import — in the
-   * database mode the shell names, and copies its model tables to or from `dir`.
-   */
+  // Booted as a script (no listener, cron or init job), so nothing writes beside the import.
   async transferDatabase(app: App, direction: "export" | "import", dir: string) {
     const serverPath = `${app.cwdPath}/server.ts`;
     if (!(await app.exists("server.ts"))) throw new Error(`Server file not found: apps/${app.name}/server.ts`);
@@ -257,10 +258,7 @@ try {
     return appHost;
   }
 
-  async buildIos(
-    app: App,
-    { target, env = "debug", regenerate = false }: { target?: string; env?: MobileEnv; regenerate?: boolean } = {},
-  ) {
+  async buildIos(app: App, { target, env = "debug", regenerate = false }: MobileTargetOptions = {}) {
     const targets = await resolveMobileTargets(app, target);
     await this.#buildMobileCsr(app, env);
     await this.#runMobileTargets(targets, async (mobileTarget) => {
@@ -277,29 +275,17 @@ try {
       device,
       regenerate = false,
       noAllowProvisioningUpdates = false,
-    }: {
-      open?: boolean;
-      operation?: "local" | "release";
-      env?: MobileEnv;
-      target?: string;
-      device?: string;
-      regenerate?: boolean;
-      noAllowProvisioningUpdates?: boolean;
-    } = {},
+    }: IosStartOptions = {},
   ) {
     const targets = await resolveMobileTargets(app, target);
     if (operation === "release") await this.#buildMobileCsr(app, env);
-    // else await this.start(app);
     await this.#runMobileTargets(targets, async (mobileTarget) => {
       const capacitorApp = new (await loadCapacitorApp())(app, mobileTarget.config);
       await capacitorApp.runIos({ operation, env, regenerate, noAllowProvisioningUpdates, iosDeviceId: device });
       if (open) await capacitorApp.openIos();
     });
   }
-  async releaseIos(
-    app: App,
-    { target, env = "main", regenerate = false }: { target?: string; env?: MobileEnv; regenerate?: boolean } = {},
-  ) {
+  async releaseIos(app: App, { target, env = "main", regenerate = false }: MobileTargetOptions = {}) {
     const targets = await resolveMobileTargets(app, target);
     await this.#buildMobileCsr(app, env);
     for (const mobileTarget of targets) {
@@ -307,10 +293,7 @@ try {
     }
   }
 
-  async buildAndroid(
-    app: App,
-    { target, env = "debug", regenerate = false }: { target?: string; env?: MobileEnv; regenerate?: boolean } = {},
-  ) {
+  async buildAndroid(app: App, { target, env = "debug", regenerate = false }: MobileTargetOptions = {}) {
     const targets = await resolveMobileTargets(app, target);
     await this.#buildMobileCsr(app, env);
     await this.#runMobileTargets(targets, async (mobileTarget) => {
@@ -320,23 +303,10 @@ try {
 
   async startAndroid(
     app: App,
-    {
-      open = false,
-      operation = "local",
-      env = "local",
-      target,
-      regenerate = false,
-    }: {
-      open?: boolean;
-      operation?: "local" | "release";
-      env?: MobileEnv;
-      target?: string;
-      regenerate?: boolean;
-    } = {},
+    { open = false, operation = "local", env = "local", target, regenerate = false }: MobileStartOptions = {},
   ) {
     const targets = await resolveMobileTargets(app, target);
     if (operation === "release") await this.#buildMobileCsr(app, env);
-    // else await this.start(app);
     await this.#runMobileTargets(targets, async (mobileTarget) => {
       const capacitorApp = new (await loadCapacitorApp())(app, mobileTarget.config);
       await capacitorApp.runAndroid({ operation, env, regenerate });
@@ -347,7 +317,7 @@ try {
   async releaseAndroid(
     app: App,
     assembleType: "apk" | "aab",
-    { target, env = "main", regenerate = false }: { target?: string; env?: MobileEnv; regenerate?: boolean } = {},
+    { target, env = "main", regenerate = false }: MobileTargetOptions = {},
   ) {
     const targets = await resolveMobileTargets(app, target);
     await this.#buildMobileCsr(app, env);
@@ -398,12 +368,14 @@ try {
   }
 
   async codepush(app: App, os: "ios" | "android") {
+    await this.#initCapacitorApp(app);
+  }
+  async #initCapacitorApp(app: App) {
     const [target] = await resolveMobileTargets(app, undefined);
     if (!target) throw new Error(`No mobile target configured for ${app.name}`);
     const capacitorApp = new (await loadCapacitorApp())(app, target.config);
     await capacitorApp.init();
-
-    // await this.release;
+    return capacitorApp;
   }
 
   // multiple keeps its data in the SQLite file single uses, so only Redis joins it; cluster adds Postgres.
@@ -412,8 +384,7 @@ try {
     if (mode === "multiple") return ["redis"];
     return ["redis", "postgres"];
   }
-  // `local/docker-compose.yaml` is written once and then left to the developer, so a workspace older than a service
-  // would otherwise fail inside `docker compose` with "no such service".
+  // docker-compose.yaml is written once and left to the developer, so an older one may lack a service.
   async #assertComposeHas(workspace: Workspace, services: string[]) {
     const compose = Bun.YAML.parse(await Bun.file(`${workspace.workspaceRoot}/local/docker-compose.yaml`).text()) as {
       services?: Record<string, unknown>;
@@ -470,10 +441,7 @@ try {
   }
 
   async configureApp(app: App) {
-    const [target] = await resolveMobileTargets(app, undefined);
-    if (!target) throw new Error(`No mobile target configured for ${app.name}`);
-    const capacitorApp = new (await loadCapacitorApp())(app, target.config);
-    await capacitorApp.init();
+    const capacitorApp = await this.#initCapacitorApp(app);
     // TODO: 이미 있으면 패스하는 로직 추가 필요
     if (await (await loadPrompts()).confirm({ message: "want to add camera permission?" }))
       await capacitorApp.addCamera();
@@ -488,31 +456,7 @@ try {
     app: App,
     { rebuild, buildNum = 0, environment = "debug", local = true }: ReleaseSourceOptions = {},
   ) {
-    await new (await loadReleasePackager())(app, { build: () => this.build(app).then(() => undefined) }).releaseSource({
-      rebuild,
-      buildNum,
-      environment,
-      local,
-    });
-    return;
-  }
-
-  async createApplicationTemplate(workspace: Workspace, appName: string) {
-    await workspace.applyTemplate({ basePath: `apps/${appName}`, template: "appRoot", dict: { appName } });
-  }
-
-  async compressProjectFiles(
-    app: App,
-    { rebuild, buildNum = 0, environment = "debug", local = true }: ReleaseSourceOptions = {},
-  ) {
-    await new (await loadReleasePackager())(app, {
-      build: () => this.build(app).then(() => undefined),
-    }).compressProjectFiles({
-      rebuild,
-      buildNum,
-      environment,
-      local,
-    });
-    return;
+    const packager = new (await loadReleasePackager())(app, { build: () => this.build(app).then(() => undefined) });
+    await packager.releaseSource({ rebuild, buildNum, environment, local });
   }
 }
