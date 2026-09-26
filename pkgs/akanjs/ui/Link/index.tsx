@@ -1,11 +1,7 @@
 import { getEnv } from "akanjs/base";
 
-import Back from "./Back";
-import Close from "./Close";
-import CsrLink from "./CsrLink";
-import Lang from "./Lang";
-import SsrLink from "./SsrLink";
-import type { CommonLinkProps } from "./types";
+import { Back, Close, Lang } from "./Action";
+import { type CommonLinkProps, CsrLink, SsrLink } from "./Anchor";
 
 export const Link = ({ className, href, disabled = false, children, ...props }: CommonLinkProps) => {
   if (disabled || !href)
