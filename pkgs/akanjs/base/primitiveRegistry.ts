@@ -293,34 +293,20 @@ declare global {
   }
 }
 
+const isBlankOrInvalid = (refName: string, value: PrimitiveValue) =>
+  value === "" ||
+  (refName === "Date" && typeof value === "string" && Number.isNaN(new Date(value).getTime())) ||
+  (refName === "Date" && value instanceof Date && Number.isNaN(value.getTime())) ||
+  (!!value && typeof value === "object" && "isValid" in value && !(value as { isValid: () => boolean }).isValid());
+
 const scalarPrimitiveStatics = {
-  _parse(
-    this: typeof PrimitiveScalar,
-    input: PrimitiveValue,
-    { optional = false }: { optional?: boolean } = {},
-  ): PrimitiveValue {
-    if (optional && (input === null || input === undefined)) return undefined;
-    const value = this.parseValue(input);
-    this._checkValue(value, { optional });
-    return value;
-  },
+  _parse: PrimitiveScalar._parse,
   _serialize(
     this: typeof PrimitiveScalar,
     value: PrimitiveValue,
     { optional = false }: { optional?: boolean } = {},
   ): PrimitiveValue {
-    if (optional && value === "") return undefined;
-    if (this.refName === "Date" && optional && typeof value === "string" && Number.isNaN(new Date(value).getTime()))
-      return undefined;
-    if (this.refName === "Date" && optional && value instanceof Date && Number.isNaN(value.getTime())) return undefined;
-    if (
-      optional &&
-      value &&
-      typeof value === "object" &&
-      "isValid" in value &&
-      !(value as { isValid: () => boolean }).isValid()
-    )
-      return undefined;
+    if (optional && isBlankOrInvalid(this.refName, value)) return undefined;
     this._checkValue(value, { optional });
     if (value === null || value === undefined) return undefined;
     return this.serializeValue(value);
@@ -334,18 +320,7 @@ const scalarPrimitiveStatics = {
       if (optional) return;
       else throw new Error(`Required ${this.refName} value: ${value}`);
     }
-    if (optional && value === "") return;
-    if (this.refName === "Date" && optional && typeof value === "string" && Number.isNaN(new Date(value).getTime()))
-      return;
-    if (this.refName === "Date" && optional && value instanceof Date && Number.isNaN(value.getTime())) return;
-    if (
-      optional &&
-      value &&
-      typeof value === "object" &&
-      "isValid" in value &&
-      !(value as { isValid: () => boolean }).isValid()
-    )
-      return;
+    if (optional && isBlankOrInvalid(this.refName, value)) return;
     if (!this.validate(value)) throw new Error(`Invalid ${this.refName} value: ${value}`);
   },
 };
