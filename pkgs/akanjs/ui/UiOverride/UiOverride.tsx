@@ -21,7 +21,7 @@ import type { EmptyProps } from "../Empty";
 import type { CheckboxProps, EmailProps, InputProps, NumberProps, PasswordProps, TextAreaProps } from "../Input";
 import type { ProgressBarProps } from "../Loading/ProgressBar";
 import type { SkeletonProps } from "../Loading/Skeleton";
-import type { SpinProps } from "../Loading/Spin";
+import type { AreaProps, SpinProps } from "../Loading/Spin";
 import type { MenuProps } from "../Menu";
 import type { ModalProps } from "../Modal";
 import type { DraftBarViewProps } from "../Model/DraftBar";
@@ -93,7 +93,7 @@ export interface AkanUiOverrides {
   LoadingProgressBar: ComponentType<ProgressBarProps>;
   LoadingButton: ComponentType<SkeletonProps>;
   LoadingInput: ComponentType<SkeletonProps>;
-  LoadingArea: ComponentType<Record<string, never>>;
+  LoadingArea: ComponentType<AreaProps>;
 }
 
 export type AkanUiOverrideName = keyof AkanUiOverrides;
