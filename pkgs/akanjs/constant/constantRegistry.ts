@@ -201,12 +201,7 @@ export class ConstantRegistry {
       _StateInsight: null as unknown as GetStateObject<Insight>,
     };
     ConstantRegistry.setDatabase(refName, cnst as unknown as ConstantModel);
-    Object.entries(constExports).forEach(([key, value]) => {
-      if ((modelRefSet as Set<unknown>).has(value)) return;
-      else if (typeof value === "function" && isEnum(value as Cls))
-        ConstantRegistry.enum.set(lowerlize(key), value as EnumInstance);
-      else ConstantRegistry.value.set(key, value);
-    });
+    ConstantRegistry.#registerExports(constExports, modelRefSet);
     return cnst;
   }
   static buildScalar<T extends string, Model>(
@@ -223,12 +218,7 @@ export class ConstantRegistry {
       _PurifiedInput: null as unknown as PurifiedModel<Model>,
     };
     ConstantRegistry.setScalar(refName, cnst as unknown as ScalarConstantModel);
-    Object.entries(constExports).forEach(([key, value]) => {
-      if (value === Model) return;
-      else if (typeof value === "function" && isEnum(value as Cls))
-        ConstantRegistry.enum.set(lowerlize(key), value as EnumInstance);
-      else ConstantRegistry.value.set(key, value);
-    });
+    ConstantRegistry.#registerExports(constExports, new Set([Model]));
     return cnst as unknown as ScalarConstantModel<
       T,
       Model,
@@ -236,6 +226,14 @@ export class ConstantRegistry {
       DocumentModel<Model>,
       PurifiedModel<Model>
     >;
+  }
+  static #registerExports(constExports: Record<string, unknown>, modelRefs: Set<unknown>) {
+    for (const [key, value] of Object.entries(constExports)) {
+      if (modelRefs.has(value)) continue;
+      if (typeof value === "function" && isEnum(value as Cls))
+        ConstantRegistry.enum.set(lowerlize(key), value as EnumInstance);
+      else ConstantRegistry.value.set(key, value);
+    }
   }
   static serialize<Value>(modelRef: Cls | Cls[], value: Value, nullable: boolean = false, of?: Cls | Cls[]): Value {
     if (Array.isArray(value) && Array.isArray(modelRef)) {

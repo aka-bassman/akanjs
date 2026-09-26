@@ -57,12 +57,14 @@ type ResolvedSchema<ResolveField extends (resolve: FieldResolver) => FieldInfoOb
 type ResolvedFieldObject<ResolveField extends (resolve: FieldResolver) => FieldInfoObject> =
   FieldInfoObjectToFieldObject<ReturnType<ResolveField>>;
 
+const toFieldObject = (fieldMap: FieldInfoObject): FieldObject =>
+  Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()]));
+
 const objectModelOf = <T>(
   inputRef: ConstantCls<T>,
   fieldMap: FieldInfoObject,
 ): ConstantCls<WithBase<T>, FieldObject, WithBase<T>, FieldObject, "object"> => {
-  const fieldObject = Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()]));
-  const applyFieldObject = { ...inputRef[FIELD_META], ...fieldObject };
+  const applyFieldObject = { ...inputRef[FIELD_META], ...toFieldObject(fieldMap) };
   const field = Object.assign(ConstantField.getBaseModelField(), applyFieldObject);
   const baseObjectModelRef = getBaseConstantClass(field);
   applyConstantStatics(baseObjectModelRef, applyFieldObject);
@@ -84,7 +86,7 @@ const lightModelOf = <T, F extends keyof OmitBase<T>>(
 > => {
   const libLightModelRef = libLightModelRefs.at(0);
   const applyFieldObject = {
-    ...Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()])),
+    ...toFieldObject(fieldMap),
     ...Object.fromEntries(fields.map((field) => [field, objectRef[FIELD_META][field as string] as ConstantField])),
   };
   const field = Object.assign(libLightModelRef?.[FIELD_META] ?? ConstantField.getBaseModelField(), applyFieldObject);
@@ -108,11 +110,7 @@ const fullModelOf = <A, B = undefined>(
   ...libFullModelRefs: ConstantCls[]
 ): ConstantCls<Merge<A, B>, FieldObject, Merge<A, B>, FieldObject, "full"> => {
   const fullRef = libFullModelRefs.at(0) ?? getBaseConstantClass(ConstantField.getBaseModelField());
-  const applyFieldObject = {
-    ...objectRef[FIELD_META],
-    ...lightRef[FIELD_META],
-    ...Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()])),
-  };
+  const applyFieldObject = { ...objectRef[FIELD_META], ...lightRef[FIELD_META], ...toFieldObject(fieldMap) };
   Object.assign(fullRef[FIELD_META], applyFieldObject);
   applyMixins(fullRef, [objectRef, lightRef, ...libFullModelRefs]);
   libFullModelRefs.forEach((libFullModelRef) => {
@@ -129,7 +127,7 @@ const extendModelInputs = <T extends ConstantCls[]>(
   ...libInputModelRefs: T
 ): ConstantCls<MergeOwnSchemas<T>, FieldObject, MergeOwnSchemas<T>, FieldObject, "input"> => {
   const baseInputModelRef = libInputModelRefs.at(0);
-  const applyFieldObject = Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()]));
+  const applyFieldObject = toFieldObject(fieldMap);
   const fieldObject = Object.assign(baseInputModelRef?.[FIELD_META] ?? {}, applyFieldObject);
   const baseInputRef = getBaseConstantClass(fieldObject);
   applyConstantStatics(baseInputRef, applyFieldObject);
@@ -154,10 +152,7 @@ const extendModelObjects = <Input, ObjectModels extends ConstantCls[]>(
   "object"
 > => {
   const baseObjectModelRef = libObjectModelRefs.at(0);
-  const applyFieldObject = {
-    ...inputRef[FIELD_META],
-    ...Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()])),
-  };
+  const applyFieldObject = { ...inputRef[FIELD_META], ...toFieldObject(fieldMap) };
   const field = Object.assign(baseObjectModelRef?.[FIELD_META] ?? {}, applyFieldObject);
   const baseInputRef = getBaseConstantClass(field, "object");
   applyConstantStatics(baseInputRef, applyFieldObject);
@@ -175,7 +170,7 @@ const extendModelInsights = <InsightModels extends ConstantCls[]>(
   ...insightModelRefs: InsightModels
 ): ConstantCls<MergeOwnSchemas<InsightModels>, FieldObject, MergeOwnSchemas<InsightModels>, FieldObject, "insight"> => {
   const baseInsightModelRef = insightModelRefs.at(0);
-  const applyFieldObject = Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()]));
+  const applyFieldObject = toFieldObject(fieldMap);
   const field = Object.assign(
     baseInsightModelRef?.[FIELD_META] ?? ConstantField.getBaseInsightField(),
     applyFieldObject,
@@ -226,7 +221,7 @@ const makeBaseScalar = <FieldMap extends FieldInfoObject>(
   FieldObject,
   "scalar"
 > => {
-  const fieldObject = Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()]));
+  const fieldObject = toFieldObject(fieldMap);
   const baseScalarRef = getBaseConstantClass(fieldObject, "scalar");
   applyConstantStatics(baseScalarRef, fieldObject);
   return baseScalarRef as unknown as ConstantCls<
