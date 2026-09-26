@@ -80,14 +80,12 @@ const untilFlushed = async (done: () => boolean) => {
   for (let i = 0; i < 100 && !done(); i += 1) await Promise.resolve();
 };
 
-/** A transcript already in storage, which is how a test opens a chat on messages nothing had to run to produce. */
 const stored = (...messages: ChatMessage[]) => ({
   load: () => messages,
   save: () => {},
   clear: () => {},
 });
 
-/** A turn slot that puts what it was handed where the DOM can be read, so a re-render cannot double-count it. */
 const stepsSkin = {
   AgentSteps: ({ messages, isRunning }: { messages: readonly ChatMessage[]; isRunning: boolean }) => (
     <div data-running={isRunning ? "yes" : "no"} data-skin="steps">
@@ -100,10 +98,7 @@ const stepsSkin = {
 
 const turns = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>('[data-skin="steps"]')];
 
-/**
- * happy-dom dispatch never reaches React's synthetic handlers, so the composer is driven through its props — and
- * they are re-read every time, because each keystroke renders a new closure over the draft.
- */
+// happy-dom dispatch never reaches React's synthetic handlers, so the composer is driven through its (re-read) props.
 const composer = (container: HTMLElement) => {
   const field = () => container.querySelector<HTMLTextAreaElement>("textarea");
   const props = () => {
@@ -114,8 +109,7 @@ const composer = (container: HTMLElement) => {
   return {
     value: () => field()?.value ?? "",
     type: (value: string) => act(() => props().onChange({ target: { value } })),
-    // The caret is stated rather than read: the handler reads it to decide whether a vertical arrow belongs to
-    // recall or to the textarea, and happy-dom does not track a selection through a props-driven keystroke.
+    // The caret is stated: happy-dom does not track a selection through a props-driven keystroke.
     press: (key: string, options: { shiftKey?: boolean; caret?: number } = {}) =>
       act(() => {
         const value = field()?.value ?? "";
@@ -132,7 +126,6 @@ const composer = (container: HTMLElement) => {
   };
 };
 
-/** A voice engine the test drives: `partial`/`say` are what a real engine's recognition callbacks do. */
 const voiceOf = () => {
   const spoken: string[] = [];
   let handlers: {
@@ -268,7 +261,6 @@ describe("Agent.Chat", () => {
       sendDone = session.send("set the theme");
       await untilFlushed(() => !!session.pendingQuestion);
     });
-    // The card holds the question while it is pending, so the text is on screen once, not twice.
     expect(container.innerHTML.split("Which theme?").length - 1).toBe(1);
     const dark = [...container.querySelectorAll("button")].find((button) => button.textContent === "Dark");
     expect(dark).toBeTruthy();
@@ -277,7 +269,6 @@ describe("Agent.Chat", () => {
       await sendDone;
     });
     expect(session.messages.find((message) => message.role === "tool")?.toolResults?.[0].result).toBe("Dark");
-    // A settled ask reads as the exchange it was, so the tool's name never surfaces as a row.
     expect(container.innerHTML).not.toContain("askUser");
     expect(container.innerHTML).toContain("Which theme?");
     expect(container.innerHTML).toContain("Applied.");
@@ -298,7 +289,6 @@ describe("Agent.Chat", () => {
       sendDone = session.send("name the draft");
       await untilFlushed(() => !!session.pendingQuestion);
     });
-    // One input, not two: the card holds the picks and the composer is the free-text answer.
     expect(container.querySelectorAll("textarea")).toHaveLength(1);
     const input = container.querySelector('textarea[placeholder="base.agentAnswer"]');
     const propsKey = Object.keys(input ?? {}).find((key) => key.startsWith("__reactProps$")) ?? "";
@@ -361,13 +351,11 @@ describe("Agent.Chat", () => {
     await act(async () => {
       await session.send("find the routing docs");
     });
-    // The call and its result are two wire messages — the model needs both — and one row on screen.
     expect(session.messages.filter((message) => message.toolCalls?.length || message.toolResults?.length)).toHaveLength(
       2,
     );
     expect(container.innerHTML.split("searchDocs").length - 1).toBe(1);
     expect(container.innerHTML).toContain("✓");
-    // Two calls of one tool differ only by their arguments, so the row carries them.
     expect(container.innerHTML).toContain("routing");
     expect(container.innerHTML).toContain("Found it.");
     unmount();
@@ -403,7 +391,6 @@ describe("Agent.Chat", () => {
       release();
       await sendDone;
     });
-    // The report is for the wait: once the row resolves it goes back to naming the call.
     expect(container.innerHTML).not.toContain("resizing");
     expect(container.innerHTML).toContain("uploadImages");
     expect(container.innerHTML).toContain("Uploaded.");
@@ -455,7 +442,6 @@ describe("Agent.Chat", () => {
     const { container, unmount } = mountChat(session, { onOpenChange: (next) => asked.push(next), open: false });
     const launcher = document.body.querySelector<HTMLButtonElement>('button[aria-label="base.agent"]');
     act(() => launcher?.click());
-    // The panel stays closed because the prop still says closed: the app owns the state, and only heard the ask.
     expect(asked).toEqual([true]);
     expect(document.body.querySelector("aside")).toBeNull();
     unmount();
@@ -528,13 +514,10 @@ describe("Agent.Chat", () => {
     });
     input.type("line one");
     input.press("Enter", { shiftKey: true });
-    // Nothing was sent, and the draft is still the user's to finish.
     expect(input.value()).toBe("line one");
     input.type("line one\nline two");
-    // A caret on the second line: the arrow moves within the text, so recall may not take it.
     input.press("ArrowUp");
     expect(input.value()).toBe("line one\nline two");
-    // On the first line it is recall's again.
     input.press("ArrowUp", { caret: 3 });
     expect(input.value()).toBe("first ask");
     unmount();
@@ -554,7 +537,6 @@ describe("Agent.Chat", () => {
     });
     expect(container.innerHTML).toContain('data-skin="bubble"');
     expect(container.innerHTML).toContain("ask");
-    // The composer, the launcher and the loop are the default's still: one slot replaced one part.
     expect(container.innerHTML).toContain("base.agentPlaceholder");
     unmount();
   });
@@ -578,14 +560,11 @@ describe("Agent.Chat", () => {
         </UiOverrideProvider>
       </lib.AgentProvider>,
     );
-    // Three turns: a transcript whose head is a compaction summary opens one without a user message to start it,
-    // and the tool message is in none of them — its result is already drawn by the call row that claims it.
     expect(turns(container).map((turn) => [...turn.children].map((step) => step.textContent))).toEqual([
       ["Earlier they asked about routing."],
       ["Looking.", "Found it."],
       ["Any time."],
     ]);
-    // The user's own messages are not in a turn, and the rest of the panel is the default's still.
     expect(container.innerHTML).toContain("find it");
     expect(container.innerHTML).toContain("thanks");
     expect(container.innerHTML).toContain("base.agentPlaceholder");
@@ -635,7 +614,6 @@ describe("Agent.Chat", () => {
       second = session.send("second");
       await untilFlushed(() => session.messages.some((message) => message.text === "turn 2"));
     });
-    // The turn that settled stays settled: only the last one is the one the session is working on.
     expect(running()).toEqual(["no", "yes"]);
     await act(async () => {
       gates[1].release();
@@ -654,15 +632,12 @@ describe("Agent.Chat", () => {
       ),
     });
     const { container, unmount } = mountChat(session);
-    // One transcript child per message, exactly as before a turn was a group: the default is a Fragment, not a box.
     const log = container.querySelector('[role="log"]');
     expect([...(log?.children ?? [])].map((child) => child.textContent)).toEqual(["ask", "Working.", "Done."]);
     unmount();
   });
 
   test("groups a restored transcript by the same boundary, with the turn folded to one assistant message", () => {
-    // What a host storing rows of its own hands back: the calls are folded into the assistant's text, so a
-    // restored turn is assistant text and nothing else. The boundary is the user message either way.
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }), {
       history: stored(
         { role: "user", text: "find it" },
@@ -774,7 +749,6 @@ describe("Agent.Chat", () => {
     expect(input.value()).toBe("first ask");
     input.press("ArrowDown");
     expect(input.value()).toBe("second ask");
-    // Back at the bottom the draft that was walked away from is still there.
     input.press("ArrowDown");
     expect(input.value()).toBe("half-written");
     unmount();
@@ -795,7 +769,6 @@ describe("Agent.Chat", () => {
     });
     expect(container.innerHTML).toContain("base.agentSummary");
     expect(container.innerHTML).toContain("base.agentCompacted");
-    // The summary is not a user bubble: it stands in for the exchange above it, which is gone.
     expect(container.innerHTML).not.toContain("summarize this");
     unmount();
   });
@@ -812,10 +785,8 @@ describe("Agent.Chat", () => {
       await session.send("read the rows");
     });
     const row = [...container.querySelectorAll("details")].find((one) => one.textContent?.includes("readState"));
-    // The value the model was handed is the one thing a transcript never showed, and it is what fills a window.
     expect(row?.querySelector("pre")?.textContent).toContain("alpha");
     expect(row?.textContent).toContain("base.agentTokens");
-    // The header measures against the point it compacts at, which the default ceiling always gives it.
     expect(container.querySelector("header")?.textContent).toContain("base.agentTokensOf");
     unmount();
   });
@@ -865,7 +836,6 @@ describe("Agent.Chat", () => {
       text: "what does this say?",
       attachments: [{ name: "q3.png", mimeType: "image/png", data: btoa("abc") }],
     });
-    // Staged files leave with the draft, so the next turn cannot re-send them.
     expect(container.querySelector('button[aria-label="base.agentAttachRemove"]')).toBeNull();
     unmount();
   });
@@ -956,7 +926,6 @@ describe("Agent.Chat", () => {
       input.paste([new File(["%PDF"], "spec.pdf", { type: "application/pdf" })]);
       await untilFlushed(() => container.innerHTML.includes("base.agentAttachReading"));
     });
-    // The upload an `attach` performs is seconds long, and the chip for it cannot exist until it resolves.
     expect(container.innerHTML).not.toContain("spec.pdf");
     await act(async () => {
       finish({ name: "spec.pdf", mimeType: "application/pdf", text: "page one" });
@@ -981,13 +950,11 @@ describe("Agent.Chat", () => {
     expect(composer(container).value()).toBe("show me");
     act(() => voice.say("show me the tasks"));
     expect(composer(container).value()).toBe("show me the tasks");
-    // Recognition ended with the final result, so the button is offering to listen again.
     expect(voice.listening()).toBe(false);
     await act(async () => {
       composer(container).press("Enter");
       await untilFlushed(() => !session.isRunning && voice.spoken.length >= 2);
     });
-    // One utterance per sentence, never per delta and never the whole answer at once.
     expect(voice.spoken).toEqual(["Two sentences.", "Here is the second."]);
     unmount();
   });
@@ -1048,7 +1015,6 @@ describe("Agent.Chat", () => {
       input.press("Enter");
       await untilFlushed(() => session.messages.length === 0);
     });
-    // Answered as text, "/new" would have gone to the model as the user's decision instead of clearing the chat.
     expect(session.messages).toEqual([]);
     expect(session.pendingQuestion).toBeNull();
     unmount();
@@ -1084,7 +1050,6 @@ describe("Agent.Chat", () => {
     expect(container.querySelector('[role="option"]')).toBeTruthy();
     input.press("Escape");
     expect(container.querySelector('[role="option"]')).toBeNull();
-    // The draft is untouched: dismissing the menu is not dismissing what was being typed.
     expect(input.value()).toBe("/");
     input.press("Escape");
     expect(container.querySelector("aside")).toBeNull();
@@ -1112,7 +1077,6 @@ describe("Agent.Chat", () => {
       input.paste([shot("c.png"), shot("d.png"), shot("e.png"), shot("f.png")]);
       await untilFlushed(() => session.messages.length > 1);
     });
-    // The cap is the message's, so the fifth file is staged and the sixth is refused by name.
     expect(chips()).toBe(5);
     expect(session.messages[1]?.text).toBe("base.agentAttachTooMany");
     unmount();
@@ -1185,7 +1149,6 @@ describe("Agent.Chat", () => {
     });
     expect(turn.signal?.aborted).toBe(false);
     unmount();
-    // Aborted by the unmount rather than left running against a screen whose approvals nobody renders.
     expect(turn.signal?.aborted).toBe(true);
     await act(async () => {
       finishTurn();
@@ -1193,7 +1156,6 @@ describe("Agent.Chat", () => {
     });
   });
 
-  /** A turn that stays running until `release` — what a parked message has to wait behind. */
   const runningTurn = (...after: Turn[]) => {
     const surface = new lib.AgenticSurface();
     let release = () => {};
@@ -1218,10 +1180,7 @@ describe("Agent.Chat", () => {
     container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
   const captioned = (container: HTMLElement, text: string) =>
     [...container.querySelectorAll("button")].find((button) => button.textContent === text);
-  /**
-   * Opens the held turn and waits until its tool is the thing the loop is parked on. The turn's own promise comes
-   * back wrapped: returned bare from an async function it would be adopted, and awaited until the release it waits for.
-   */
+  // Returned wrapped: a bare promise returned from an async function is adopted, awaiting the release it waits for.
   const openHeldTurn = async (session: InstanceType<typeof lib.AgentSession>) => {
     let first: Promise<void> = Promise.resolve();
     await act(async () => {
@@ -1238,7 +1197,6 @@ describe("Agent.Chat", () => {
     const input = composer(container);
     expect(container.innerHTML).toContain("base.agentQueuePlaceholder");
     input.type("then the second");
-    // The composer offers to park rather than to send while the turn runs, and Stop stays where it was.
     expect(captioned(container, "base.agentQueue")).toBeTruthy();
     expect(captioned(container, "base.stop")).toBeTruthy();
     input.press("Enter");
@@ -1303,7 +1261,6 @@ describe("Agent.Chat", () => {
     await act(async () => {
       await untilFlushed(() => !session.isRunning);
     });
-    // Neither reached the transcript, and the draft taken back is still there to be sent.
     expect(session.messages.filter((message) => message.role === "user")).toEqual([
       { role: "user", text: "do the first thing" },
     ]);
@@ -1449,7 +1406,6 @@ describe("Agent chat references", () => {
     });
     expect(session.messages[0].text).toContain("make it dynamic");
     expect(session.messages[0].references).toEqual([cut("a wide shot")]);
-    // What was pointed at belongs to the message it was pointed with, so the next turn cannot re-send it.
     expect(session.staged).toEqual([]);
     unmount();
   });
@@ -1529,6 +1485,16 @@ describe("Agent chat @ menu", () => {
       [{ refId: "c1", label: "Karina" }].filter((one) => one.label.toLowerCase().startsWith(query.toLowerCase())),
     resolve,
   });
+  // Two acts: a nested sync act inside an async one does not flush until the outer act exits, so a sleep sharing
+  // the act with the keystroke would wait out the debounce against the draft as it was before it.
+  const typeAndSettle = async (input: ReturnType<typeof composer>, text: string) => {
+    await act(async () => {
+      input.type(text);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+  };
 
   test("typing @ offers the app's own rows and picking one writes the token and stages the value", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
@@ -1539,15 +1505,7 @@ describe("Agent chat @ menu", () => {
     });
     try {
       const input = composer(container);
-      // Two acts, not one: a nested sync act inside an async one does not flush until the outer act exits, so a
-      // sleep sharing the act with the keystroke waits out the debounce against the draft as it was before it.
-      await act(async () => {
-        input.type("compare @Kar");
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      });
-      // The row is drawn under its source's own heading, which is how two sources stay told apart.
+      await typeAndSettle(input, "compare @Kar");
       expect(container.innerHTML).toContain("People");
       await act(async () => {
         input.press("Enter");
@@ -1555,7 +1513,6 @@ describe("Agent chat @ menu", () => {
       });
       expect(input.value()).toBe("compare @[Karina](mention:videoCharacter/c1) ");
       expect(session.staged[0].value).toBe("a dancer in a red coat");
-      // The trailing space closes the query, so the menu cannot reopen onto the token it just wrote.
       expect(container.innerHTML).not.toContain("People");
     } finally {
       unmount();
@@ -1571,14 +1528,7 @@ describe("Agent chat @ menu", () => {
     });
     try {
       const input = composer(container);
-      // Two acts, not one: a nested sync act inside an async one does not flush until the outer act exits, so a
-      // sleep sharing the act with the keystroke waits out the debounce against the draft as it was before it.
-      await act(async () => {
-        input.type("compare @Kar");
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      });
+      await typeAndSettle(input, "compare @Kar");
       await act(async () => {
         input.press("Enter");
         await untilFlushed(() => session.messages.length > 0);
@@ -1596,12 +1546,7 @@ describe("Agent chat @ menu", () => {
     const { container, unmount } = mountChat(session);
     try {
       const input = composer(container);
-      await act(async () => {
-        input.type("mail me @kar");
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      });
+      await typeAndSettle(input, "mail me @kar");
       await act(async () => {
         input.press("Enter");
         await untilFlushed(() => !session.isRunning && session.messages.length >= 2);
@@ -1666,7 +1611,6 @@ describe("Agent chat tool cards", () => {
     }
   });
 
-  // The frame draws it even when the card does not, so a turn can never park on something with no way out of it.
   test("the frame's own skip closes a card the app gave no way out of", async () => {
     const surface = new lib.AgenticSurface();
     surface.registerTool([], { name: "collectContact", description: "Ask for a contact.", card: () => <p>Name?</p> });
@@ -1717,8 +1661,6 @@ describe("Agent chat mention pills", () => {
       });
   };
 
-  // The whole point of the editor: the draft still carries the token — it is what puts the reference on the
-  // message — and the person sees the name they picked.
   test("a picked pointer is drawn as the name it points at, never as the token that carries it", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
     const { container, unmount } = mountChat(session, {
