@@ -103,8 +103,7 @@ export abstract class PlatformTestTarget {
     const tolerable =
       failedScripts.length > 0 && failedScripts.every((pkg) => this.tolerateScriptFailures.includes(pkg));
     if (!tolerable) throw new Error(`bun install failed — see ${logPath}`);
-    //* A failed lifecycle script makes bun skip linking the workspace root's `.bin`, so every tool the suites
-    //* spawn from there disappears; a second pass without scripts links them.
+    //* A failed lifecycle script makes bun skip linking the root `.bin`; a second pass without scripts links it.
     envWarnings.push(`install script failed for ${failedScripts.join(", ")} — tolerated on ${this.platform}`);
     const relink = await this.exec(
       "bun install --frozen-lockfile --ignore-scripts",

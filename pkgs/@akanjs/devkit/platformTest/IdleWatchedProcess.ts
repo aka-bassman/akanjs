@@ -19,11 +19,7 @@ interface IdleWatchedOptions {
   onOutput?: (text: string) => void;
 }
 
-/**
- * Runs a command with its output teed into a log, and gives up on it once the output goes quiet.
- * Silence is the only reliable hang signal: a runner stuck in a synchronous loop (Bun 1.4.2's Windows
- * websocket crash spun at 100% CPU) never lets bun's own per-test timeout fire.
- */
+// Silence is the only reliable hang signal: a runner stuck in a synchronous loop never lets bun's test timeout fire.
 export class IdleWatchedProcess {
   readonly #command: string[];
   readonly #options: IdleWatchedOptions;

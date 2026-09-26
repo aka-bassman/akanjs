@@ -18,8 +18,7 @@ export class LinuxDockerTarget extends PlatformTestTarget {
     this.policy = config.policy ?? "gate";
   }
 
-  //* No compiler in the image, on purpose: with a toolchain present at install time ssh2 builds its native
-  //* addon, and Bun then panics loading it (`uv_version_string`, oven-sh/bun#18546).
+  //* No compiler in the image: with one, ssh2 builds its native addon and Bun panics loading it (oven-sh/bun#18546).
   static readonly dockerfile = [
     `FROM oven/bun:${Bun.version}-slim`,
     "RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates procps lsof && rm -rf /var/lib/apt/lists/*",
