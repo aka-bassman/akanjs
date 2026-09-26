@@ -126,23 +126,7 @@ export class CodeTuiMarkdown {
       line += word;
     }
     if (line.trim() || !lines.length) lines.push(line.trimEnd());
-    return lines.flatMap((entry) =>
-      CodeTuiLines.width(entry) <= width ? [entry] : CodeTuiMarkdown.#hardSplit(entry, width),
-    );
-  }
-
-  static #hardSplit(text: string, width: number) {
-    const chunks: string[] = [];
-    let chunk = "";
-    for (const char of text) {
-      if (CodeTuiLines.width(chunk + char) > width) {
-        chunks.push(chunk);
-        chunk = "";
-      }
-      chunk += char;
-    }
-    if (chunk) chunks.push(chunk);
-    return chunks;
+    return lines.flatMap((entry) => (CodeTuiLines.width(entry) <= width ? [entry] : CodeTuiLines.chunks(entry, width)));
   }
 
   /** Inline markers as terminal styling, with `base` applied under whatever the markers add. */

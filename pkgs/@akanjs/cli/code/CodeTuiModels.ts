@@ -23,13 +23,7 @@ export class CodeTuiModels {
         "",
         ...CodeTuiModels.usage,
       ].join("\n");
-    const rows = ready.flatMap((provider) =>
-      provider.models.map((model) => [
-        `${model.current ? "❯ " : "  "}${provider.id}/${model.id}`,
-        model.name,
-        CodeTuiModels.#window(model.contextWindow),
-      ]),
-    );
+    const rows = ready.flatMap((provider) => CodeTuiModels.#modelRows(provider));
     return [
       `${rows.length} model${rows.length === 1 ? "" : "s"} ready · ${ready.map((provider) => provider.id).join(", ")}`,
       "",
@@ -63,19 +57,19 @@ export class CodeTuiModels {
   static ofProvider(catalogue: CodeAgentProviderInfo[], id: string) {
     const provider = catalogue.find((entry) => entry.id === id);
     if (!provider) return undefined;
-    const rows = provider.models.map((model) => [
-      `${model.current ? "❯ " : "  "}${provider.id}/${model.id}`,
-      model.name,
-      CodeTuiModels.#window(model.contextWindow),
-    ]);
+    const rows = CodeTuiModels.#modelRows(provider);
     const head = provider.authorized
       ? `${provider.name} · ${rows.length} models · ready`
       : `${provider.name} · ${rows.length} models · set ${CodeTuiModels.envKeyOf(provider.id)} to use it`;
     return [head, "", ...CodeTuiModels.#table(rows)].join("\n");
   }
 
-  static #window(tokens: number | undefined) {
-    return tokens ? `${Math.round(tokens / 1000)}k ctx` : "";
+  static #modelRows(provider: CodeAgentProviderInfo) {
+    return provider.models.map((model) => [
+      `${model.current ? "❯ " : "  "}${provider.id}/${model.id}`,
+      model.name,
+      model.contextWindow ? `${Math.round(model.contextWindow / 1000)}k ctx` : "",
+    ]);
   }
 
   static #table(rows: string[][]) {

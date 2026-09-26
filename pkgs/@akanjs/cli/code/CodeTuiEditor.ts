@@ -132,7 +132,8 @@ export class CodeTuiEditor {
     const rows: CodeTuiEditorRow[] = [];
     let at = 0;
     for (const line of this.#text.split("\n")) {
-      for (const text of CodeTuiEditor.#wrap(line, room)) {
+      // Character wrap, not word wrap: an editor must never move text the writer placed.
+      for (const text of line ? CodeTuiLines.chunks(line, room) : [""]) {
         rows.push({ text, at });
         at += text.length;
       }
@@ -153,22 +154,6 @@ export class CodeTuiEditor {
       at += char.length;
     }
     return at;
-  }
-
-  // Character wrap, not word wrap: an editor must never move text the writer placed.
-  static #wrap(line: string, width: number) {
-    if (!line.length) return [""];
-    const rows: string[] = [];
-    let row = "";
-    for (const char of line) {
-      if (row && CodeTuiLines.width(row + char) > width) {
-        rows.push(row);
-        row = "";
-      }
-      row += char;
-    }
-    if (row) rows.push(row);
-    return rows;
   }
 
   static #prev(text: string, at: number) {

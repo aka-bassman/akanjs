@@ -77,7 +77,7 @@ export class CodeTuiLines {
           if (!word.trim() && !used && soft) continue;
           if (used && used + size > width) push(true);
           if (size > width) {
-            for (const chunk of CodeTuiLines.#chunks(word, width)) {
+            for (const chunk of CodeTuiLines.chunks(word, width)) {
               if (used) push(true);
               line.push({ ...style, text: chunk });
               used = CodeTuiLines.width(chunk);
@@ -98,7 +98,7 @@ export class CodeTuiLines {
     return text.match(/\S+\s*|\s+/g) ?? [];
   }
 
-  static #chunks(word: string, width: number) {
+  static chunks(word: string, width: number) {
     const chunks: string[] = [];
     let chunk = "";
     for (const char of word) {
