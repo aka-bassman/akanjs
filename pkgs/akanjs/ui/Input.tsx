@@ -450,10 +450,6 @@ const DefaultNumber = ({
 
   useEffect(() => {
     setFormatValue(generateFormat());
-  }, []);
-
-  useEffect(() => {
-    setFormatValue(generateFormat());
   }, [value]);
 
   return (
