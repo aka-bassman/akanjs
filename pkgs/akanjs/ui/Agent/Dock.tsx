@@ -209,7 +209,7 @@ interface ContextProps {
 export function Context({ className }: ContextProps) {
   const [shown, setShown] = useState("");
   // Production visitors never see the turn snapshot — tool names, guides, and the assembled context.
-  if (process.env.AKAN_PUBLIC_ENV === "main" || process.env.NODE_ENV === "develop") return null;
+  if (process.env.AKAN_PUBLIC_ENV === "main") return null;
   const assemble = () => {
     try {
       const { guides, tools } = AgenticSurface.shared.snapshot();

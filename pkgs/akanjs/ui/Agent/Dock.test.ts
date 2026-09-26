@@ -76,6 +76,19 @@ describe("Agent.Dock", () => {
     expect(html).toContain("Assemble");
   });
 
+  test("offers the assemble preview on every env but main, whatever NODE_ENV says", async () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "develop";
+    try {
+      const develop = await new Response(
+        await renderToReadableStream(createElement(Dock, { bridge, open: true })),
+      ).text();
+      expect(develop).toContain("Assemble");
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
+  });
+
   test("renders nothing in production", async () => {
     const previous = process.env.AKAN_PUBLIC_ENV;
     process.env.AKAN_PUBLIC_ENV = "main";
