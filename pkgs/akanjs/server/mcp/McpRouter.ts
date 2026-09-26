@@ -31,42 +31,21 @@ import { PagePromptComposer } from "./PagePromptComposer";
 
 export interface McpRouterProps {
   registry: InjectRegistry;
-  /** Spread into every `SignalContext` this router's dispatcher builds; middleware reads it. */
   env: BackendEnv;
   live: LiveRegistry;
   middleware: Map<string, MiddlewareCls>;
   path?: string;
   version?: string;
-  /** Free-text usage guidance handed to the model alongside the tool list. */
   instructions?: string;
-  /** Extra origins allowed past the DNS-rebinding check, beyond the server's own host. */
   allowedOrigins?: string[];
   readOnly?: boolean;
-  /** Entries per catalogue page. A client that wants the whole list follows `nextCursor` until it stops. */
   pageSize?: number;
-  /**
-   * The one language every title, description and domain error text is resolved in. The catalogue is built once
-   * at boot and cached by clients, so it is a server-wide choice rather than a per-request one: `Accept-Language`
-   * would mean a document per language, re-deriving every tool schema, for a surface a model reads and a human
-   * rarely sees. Defaults to `en`, falling back to the first registered language when the app has no `en`.
-   */
   language?: string;
-  /** Whether a structured result also ships as serialized JSON in the text block. Default `true`. */
   legacyTextBlock?: boolean;
-  /**
-   * Where `prompts/list` and `prompts/get` are answered from: the pages, through the RSC worker. Absent on an
-   * API-only build, which then publishes no prompts at all.
-   */
   pagePrompts?: PagePromptSource;
-  /** Characters of screen data one prompt may attach before its lists are cut; see `PagePromptComposer`. */
   promptBudget?: number;
   outputSchema?: McpOutputSchemaMode;
   auth?: McpAuthOption;
-  /**
-   * Budget per caller for the methods that execute an endpoint (`tools/call`, `resources/read`, `prompts/get`).
-   * On by default at `McpRateLimiter.defaults`; `false` takes it off. Listings are not counted — they are served
-   * from memory and a client polls them.
-   */
   rateLimit?: McpRateLimitOption | false;
 }
 
@@ -91,31 +70,16 @@ interface McpCacheHint {
 
 const notAllowed = () => new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
 const defaultPageSize = 100;
-/**
- * Named rather than left to `DictionaryLookup`'s own fallback, which is whichever language registered first —
- * true today only because dictionaries are written `[en, ko]`, and nothing keeps it true.
- */
+// Explicit: `DictionaryLookup`'s own fallback is whichever language happened to register first.
 const defaultLanguage = "en";
-/**
- * The catalogue is fixed for the life of the process, so the ceiling is how long a client may keep serving a
- * list from a server that has since been redeployed. `private` because the listing is filtered per credential
- * (`filterForAccount`): a shared cache would hand one caller another's view of the shelf.
- */
+// `private`: the listing is filtered per credential, so a shared cache would hand one caller another's view.
 const listCache: McpCacheHint = { ttlMs: 300_000, cacheScope: "private" };
-/** Capabilities name what this build implements — they do not vary by caller and change only with the binary. */
+// Capabilities do not vary by caller and change only with the binary.
 const discoverCache: McpCacheHint = { ttlMs: 3_600_000, cacheScope: "public" };
 
-/**
- * Serves the app's signals as one MCP endpoint.
- *
- * Answers both protocol eras from the same stateless handler. `2026-07-28` is stateless by design; the legacy
- * revisions only *offer* sessions — a server may decline to issue `Mcp-Session-Id`, and a client that never
- * receives one neither sends one back nor asks to resume a stream. So the legacy era costs an `initialize` reply
- * and a laxer `_meta` check, not a session store. (Measured against Claude Code 2.1.226, which speaks it.)
- */
+// Stateless in both eras: legacy revisions only offer sessions, and a client never issued `Mcp-Session-Id` sends none.
 export class McpRouter {
   static readonly logger = new Logger("McpRouter");
-  /** Past this a listing is a meaningful slice of a model's window, which is where it becomes worth saying so. */
   static readonly listingWarnBytes = 1000 * 1024;
 
   readonly #props: McpRouterProps;
@@ -126,11 +90,9 @@ export class McpRouter {
 
   constructor(props: McpRouterProps) {
     this.#props = props;
-    // Resolved here rather than left to each side's own default, so a domain error a call fails with reads in the
-    // language its tool was described in.
-    // A client validates `structuredContent` only against a declared `outputSchema`; with none declared the text
-    // block is the result, so `outputSchema: "none"` keeps it whatever `legacyTextBlock` said.
+    // Clients validate `structuredContent` only against a declared `outputSchema`, so with none the text block stays.
     const legacyTextBlock = props.outputSchema === "none" ? undefined : props.legacyTextBlock;
+    // Resolved here so a call's domain error reads in the language its tool was described in.
     this.#dispatcher = new McpDispatcher({ ...props, legacyTextBlock, language: props.language ?? defaultLanguage });
     this.#auth = new McpAuth({ ...props.auth, path: props.path ?? "/mcp" });
     this.#limiter =
@@ -147,9 +109,7 @@ export class McpRouter {
       [this.#props.path ?? "/mcp"]: {
         POST: async (req: Request) => this.#cors(req, await this.#post(req)),
         OPTIONS: (req: Request) => this.#preflight(req),
-        // Neither era has a server-opened stream or a session to delete here, so both verbs are simply absent.
-        // Answered through `#cors` like every other response: a browser-hosted client that probes the legacy
-        // GET stream reads an unlabelled network error otherwise, and cannot tell "wrong verb" from "refused".
+        // No server stream or session in either era; still CORS-labelled so a browser can tell 405 from a refusal.
         GET: (req: Request) => this.#cors(req, notAllowed()),
         DELETE: (req: Request) => this.#cors(req, notAllowed()),
       },
@@ -157,22 +117,8 @@ export class McpRouter {
     };
   }
 
-  /**
-   * Says once, at boot, what this build actually published — and names every endpoint that was kept out.
-   *
-   * The rejections are fail-closed by design: an endpoint MCP cannot carry, or whose guards do not admit it, is
-   * simply not in the catalogue. That is the right default and the wrong silence, and it matters more now that
-   * exposure follows the guards — nobody wrote an opt-in whose absence would explain a missing tool, so this log
-   * is the only place the answer exists. A refusal turns on a resolved return type and a resolved guard list, so
-   * it reads only from here.
-   *
-   * An entry published with no description rides here for the same reason: the text every generated entry borrows
-   * is a *model* `.desc()`, which no source rule would read as that entry's description. This holds the resolved
-   * catalogue, so it can simply look.
-   *
-   * Called by whatever mounts the router rather than from `createRoutes`, so building a router to answer one
-   * request — which tests and tooling do — does not narrate a catalogue nobody asked about.
-   */
+  // The only place a refusal is explained: it turns on resolved types and guards, which no source scan can read.
+  // Called by the mounter, not `createRoutes`, so a router built for one request (tests, tooling) logs nothing.
   report() {
     try {
       const document = this.#getDocument();
@@ -184,9 +130,6 @@ export class McpRouter {
       if (cost.bySignal.length) McpRouter.logger.debug(`MCP catalogue cost: ${McpRouter.#costLine(cost.bySignal)}`);
       if (this.#limiter) McpRouter.logger.debug(`MCP rate limit: ${this.#limiter.describe()}`);
       else McpRouter.logger.warn("MCP rate limit is off: an authenticated agent may call tools as fast as it likes.");
-      // A catalogue nobody can see the size of is one nobody narrows. Every entry inlines the schema of every
-      // model it mentions, so this grows with models × generated entries and is spent by every agent that
-      // connects, before its first turn.
       if (cost.bytes > McpRouter.listingWarnBytes)
         McpRouter.logger.warn(
           `MCP listing is ${McpRouter.#kb(cost.bytes)}, which every agent that connects pays before its first turn. Narrow it with \`mcp: false\` on an endpoint or the \`mcp\` map on \`slice()\`.`,
@@ -195,8 +138,6 @@ export class McpRouter {
         McpRouter.logger.warn(
           '`outputSchema: "none"` keeps the text block on: a client reads `structuredContent` only against a declared schema, so `legacyTextBlock: false` would hand it nothing.',
         );
-      // Exposure follows the guards, so an empty catalogue on an app that has endpoints means every one of them
-      // was refused — the lines below say which rule took each.
       if (!tools.length)
         McpRouter.logger.warn(
           "MCP is enabled but published nothing. Every candidate was refused; see the reasons below.",
@@ -207,19 +148,14 @@ export class McpRouter {
       for (const { key, reason } of undescribed)
         McpRouter.logger.warn(`MCP exposed "${key}" with no description: ${reason}`);
     } catch (error) {
-      // This is the only thing that builds the catalogue early, so a failure here must not be what stops a server
-      // from booting. Nothing was cached, so the first request rebuilds it and raises this properly.
+      // Must not stop the boot; nothing was cached, so the first request rebuilds the catalogue and raises it.
       McpRouter.logger.warn(
         `MCP catalogue could not be built at boot: ${error instanceof Error ? error.message : error}`,
       );
     }
   }
 
-  /**
-   * A guarded tool is only reachable with a credential, and this server can neither issue one nor check one unless
-   * something configured `auth`. Left silent, the shelf lists tools no client can ever call and a forged token
-   * reads as anonymous — so it is said once at boot, and said louder anywhere but a developer's machine.
-   */
+  // Security: without `auth` no client can obtain a token for a guarded tool, and a forged one reads as anonymous.
   #reportUnverifiable(toolNames: string[]) {
     const { verify, authorizationServers } = this.#props.auth ?? {};
     if (verify || authorizationServers?.length) return;
@@ -237,7 +173,6 @@ export class McpRouter {
     return bytes < 1024 ? `${bytes}B` : `${Math.round(bytes / 1024)}KB`;
   }
 
-  /** The heaviest signals first, capped: a fleet of forty models would otherwise wrap the line off the screen. */
   static #costLine(bySignal: McpSignalCost[]) {
     const shown = bySignal.slice(0, 8);
     const rest = bySignal.length - shown.length;
@@ -247,7 +182,6 @@ export class McpRouter {
     return rest > 0 ? `${line} · +${rest} more` : line;
   }
 
-  /** Rebuilding per request would re-derive every tool schema on a list agents poll; the set is fixed at boot. */
   #getDocument() {
     if (this.#document) return this.#document;
     const lookup = new DictionaryLookup(this.#props.language ?? defaultLanguage);
@@ -261,10 +195,8 @@ export class McpRouter {
 
   async #post(req: Request) {
     if (!this.#originAllowed(req)) return new Response("Forbidden", { status: 403 });
-    // The spec admits one credential, the `Authorization` header. A cookie that reached the account middleware
-    // would let a same-site page drive `tools/call` on the visitor's ambient session — the request class every
-    // mutation is shielded from by `CrossSiteGuard`, which this route never passes through. Deleted on the request
-    // itself rather than on a copy so the `BunRequest` keeps its peer address and `req.cookies` reads empty.
+    // Security: the spec's only credential is `Authorization`; an ambient cookie would let a same-site page drive
+    // tools/call past `CrossSiteGuard`. Deleted in place so the `BunRequest` keeps its peer address.
     req.headers.delete("cookie");
     const rejected = this.#auth.challengeAnonymous(req) ?? (await this.#auth.reject(req));
     if (rejected) return rejected;
@@ -282,8 +214,7 @@ export class McpRouter {
     if (method.startsWith("notifications/")) return new Response(null, { status: 202 });
 
     const params = (body.params ?? {}) as Record<string, unknown>;
-    // Era is decided by the modern version key specifically, not by `_meta` at all: legacy `_meta` exists too
-    // (it carries `progressToken`), and reading that as modern would reject a correct legacy request.
+    // Keyed on the modern version key, not on `_meta` itself: legacy `_meta` exists too (it carries `progressToken`).
     const meta = McpRouter.#meta(params);
     const era: McpEra = method !== "initialize" && meta && MCP_META_PROTOCOL_VERSION in meta ? "modern" : "legacy";
     const rejection = era === "modern" ? McpRouter.#validateModern(req, method, params, meta ?? {}, id) : null;
@@ -355,17 +286,14 @@ export class McpRouter {
         }
       }
       default:
-        // The 404 is a modern-era rule: it exists so a client can tell an MCP server's "no such method" from a
-        // proxy's "no such path". The legacy era spends that status on something else entirely — a 404 there means
-        // the session is gone and the client must start a new one — so answering a legacy client with one invites
-        // it to re-handshake in a loop over a method that will still not exist. It reads the JSON-RPC error at 200.
+        // Legacy clients read a 404 as "session gone" and would re-handshake in a loop, so they get the error at 200.
         return McpRouter.#error(call.id, McpErrorCode.methodNotFound, McpRouter.#methodNotFound(call.method), {
           status: call.era === "modern" ? 404 : 200,
         });
     }
   }
 
-  /** Filter first, then page: an offset has to address the list the caller can actually see. */
+  // Filter first, then page: an offset has to address the list the caller can actually see.
   async #list<T extends { name: string }>(call: McpCall, key: string, items: T[]) {
     const visible = await this.#dispatcher.filterForAccount(items, call.req);
     const page = McpRouter.#page(visible, call.params.cursor, this.#props.pageSize ?? defaultPageSize);
@@ -374,11 +302,7 @@ export class McpRouter {
     return this.#result(call, result, listCache);
   }
 
-  /**
-   * Counted before the tool is even looked up, so a loop over an unknown name is a loop this stops too. The 429
-   * carries a JSON-RPC body like every other envelope-level refusal, and `Retry-After` because a client that
-   * backs off by that header is the one behaviour a limit is asking for.
-   */
+  // Counted before the tool lookup, so a loop over an unknown name is throttled too.
   async #acquire(call: McpCall): Promise<{ refused: Response } | { release: () => void }> {
     if (!this.#limiter) return { release: () => {} };
     const verdict = await this.#limiter.acquire(McpAuth.callerKey(call.req));
@@ -396,15 +320,13 @@ export class McpRouter {
     };
   }
 
-  /** `release` frees the caller's in-flight slot: at the answer here, or when a streamed call settles. */
   async #toolsCall(call: McpCall, document: McpDocument, release: () => void) {
     let streaming = false;
     try {
       const name = call.params.name;
       if (typeof name !== "string") return McpRouter.#error(call.id, McpErrorCode.invalidParams, "Missing tool name.");
       const exposed = document.findTool(name);
-      // Unknown and not-exposed deliberately land on the same message: an endpoint that opted out must be
-      // indistinguishable from one that does not exist, or the error itself enumerates the private surface.
+      // Security: not-exposed must read like nonexistent, or the error itself enumerates the private surface.
       if (!exposed) return McpRouter.#error(call.id, McpErrorCode.invalidParams, `Unknown tool: ${name}.`);
       const args = McpRouter.#arguments(call.params);
       if (!args) return McpRouter.#error(call.id, McpErrorCode.invalidParams, McpRouter.#badArguments);
@@ -417,14 +339,8 @@ export class McpRouter {
     }
   }
 
-  /**
-   * Runs the tool and only commits to a stream once it actually reports progress.
-   *
-   * Deciding late is what keeps the failure modes intact: an HTTP status is fixed the moment the response is
-   * returned, so a call that opened a stream up front could no longer answer 401 with a `WWW-Authenticate`
-   * challenge. Guards run before an endpoint body can report anything, so by the time this switches to SSE the
-   * authorization decision has already been made — which is why the streamed path below need not carry one.
-   */
+  // Commits to SSE only once progress is reported: a stream opened up front could no longer answer a 401 challenge.
+  // Guards run before a body can report, so authorization is settled by the time it streams.
   async #streamedToolCall(
     call: McpCall,
     exposed: McpExposedEndpoint,
@@ -449,7 +365,6 @@ export class McpRouter {
       return this.#result(call, outcome.result);
     }
     const stream = new McpEventStream(() => channel.abort());
-    // The response is already on its way back, so the pump outlives this call and has nowhere left to throw.
     void this.#pump(call, channel, settled, stream, progressToken).catch((error: unknown) => {
       McpRouter.logger.error(`MCP stream for ${exposed.key} failed: ${error instanceof Error ? error.stack : error}`);
     });
@@ -467,9 +382,7 @@ export class McpRouter {
       for await (const report of channel.reports())
         stream.write({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken, ...report } });
       const outcome = await settled;
-      // A tool failure comes back as an `isError` result, and the one error the dispatcher rethrows is raised by
-      // its guards — before any progress could have been reported. So this branch should be unreachable, and is
-      // here because "should be" is not a thing to leave a client hanging on.
+      // Should be unreachable (guards throw before any progress); kept so a client is never left hanging.
       stream.write(
         "error" in outcome
           ? McpRouter.#errorBody(call.id, McpErrorCode.internal, "Internal server error.")
@@ -482,13 +395,7 @@ export class McpRouter {
 
   static readonly #badArguments = "`arguments` must be an object of named values.";
 
-  /**
-   * `arguments` is an object or it is not there at all; anything else is the caller's own mistake and is reported
-   * as one. Coercing it to `{}` ran the call with every argument missing — a tool that takes none then simply
-   * succeeded, and one that takes some answered "Missing required argument", which sends a model looking for a
-   * value it did send. An array is refused with the rest: MCP names its arguments, and positional ones would
-   * silently be read as the properties `0`, `1`, `2`.
-   */
+  // Not coerced to `{}`: that ran the call with every argument missing. An array would read as properties "0", "1".
   static #arguments(params: Record<string, unknown>) {
     const args = params.arguments;
     if (args === undefined || args === null) return {};
@@ -496,12 +403,7 @@ export class McpRouter {
     return args as Record<string, unknown>;
   }
 
-  /**
-   * Derived from the catalogue rather than fixed, so a server with nothing to list does not invite a listing that
-   * can only come back empty. Read from the unfiltered document on purpose: a capability says what this build
-   * implements, and one that narrowed per credential would contradict itself across a cached handshake. Prompts
-   * are the pages', so the capability follows whether there are pages to ask — the RSC worker answers the count.
-   */
+  // Unfiltered on purpose: per-credential capabilities would contradict themselves across a cached handshake.
   #capabilities(document: McpDocument) {
     return {
       ...(document.tools.length ? { tools: {} } : {}),
@@ -510,10 +412,6 @@ export class McpRouter {
     };
   }
 
-  /**
-   * Pages load lazily in the RSC worker, so the prompt catalogue is read once the worker is up rather than built
-   * here at boot; the line lands in the same log a little after the tool counts.
-   */
   #reportPagePrompts() {
     const source = this.#props.pagePrompts;
     if (!source) return;
@@ -538,28 +436,19 @@ export class McpRouter {
     return { name, description, ...(args.length ? { arguments: args } : {}) };
   }
 
-  /** Only the credential travels into the page run: the page decides with it exactly as a browser tab would. */
+  // Only the credential travels into the page run: the page decides with it exactly as a browser tab would.
   static #forwardedHeaders(req: Request): [string, string][] {
     const authorization = req.headers.get("authorization");
     return authorization ? [["authorization", authorization]] : [];
   }
 
-  /**
-   * A client asks for progress by naming a token, and can only receive it over a stream — so both have to be
-   * true. Only `tools/call` is offered one: a listing is served from memory, and a prompt is a user-triggered
-   * read that a client renders as a slash command rather than something it watches run.
-   */
+  // Only tools/call streams progress: listings are served from memory and prompts render as slash commands.
   static #progressToken(call: McpCall) {
     if (!call.req.headers.get("accept")?.includes("text/event-stream")) return undefined;
     const token = McpRouter.#meta(call.params)?.progressToken;
     return typeof token === "string" || typeof token === "number" ? token : undefined;
   }
 
-  /**
-   * A prompt is a screen: the page named by `page().prompt()` runs in the RSC worker with the caller's token, and
-   * what it fetched comes back as the messages. A missing required argument is answered with a pointer to the tool
-   * that finds the id rather than with a guess — a prompt cannot re-run itself, so a guess would go unused.
-   */
   async #promptsGet(call: McpCall, document: McpDocument) {
     const name = call.params.name;
     if (typeof name !== "string") return McpRouter.#error(call.id, McpErrorCode.invalidParams, "Missing prompt name.");
@@ -592,9 +481,8 @@ export class McpRouter {
       language: this.#props.language,
     });
     if (!run.ok) {
-      // A redirect is the page's own sign-in gate, and a 401/403 from a query inside the body is a guard's. With no
-      // credential the client is told to get one, the same way a guarded tool tells it; with one, the account
-      // simply may not see this screen — and the answer says no more than that, so an id is never confirmed.
+      // A redirect or a guard's 401/403: no credential gets the auth challenge; with one, a bare refusal that never
+      // confirms an id exists.
       const gated = run.reason === "redirect" || run.reason === "forbidden";
       if (gated && !call.req.headers.get("authorization")) throw new McpAuthRequiredError();
       if (run.reason === "error") McpRouter.logger.warn(`page prompt "${name}" failed: ${run.message}`);
@@ -617,12 +505,10 @@ export class McpRouter {
     const resolved = document.resolveResource(uri);
     if (!resolved) return McpRouter.#error(call.id, McpErrorCode.invalidParams, `Unknown resource: ${uri}.`);
     const result = await this.#dispatcher.call(resolved.exposed, resolved.args, call.req);
-    // An unreadable resource must be an explicit error rather than an empty `contents` array, which a client
-    // would read as "this exists and is empty".
+    // An explicit error: a client reads an empty `contents` array as "this exists and is empty".
     if (result.isError)
       return McpRouter.#error(call.id, McpErrorCode.invalidParams, result.content[0]?.text ?? "Read failed.");
-    // `ReadResourceResult` has no `structuredContent`, so the pointer `legacyTextBlock: false` leaves in a tool's
-    // text block would name a field this reply cannot have; the text is the resource's only channel.
+    // `ReadResourceResult` has no `structuredContent`, so the text is the resource's only channel.
     const text =
       result.structuredContent === undefined
         ? (result.content[0]?.text ?? "null")
@@ -630,38 +516,22 @@ export class McpRouter {
     return this.#result(call, { contents: [{ uri, mimeType: "application/json", text }] });
   }
 
-  /**
-   * Cross-origin gate. MCP clients are not browsers and normally send no `Origin` at all, so absence is allowed;
-   * a present one has to name this server or an explicitly configured peer.
-   *
-   * Matching against our own host stops a page served from somewhere else, and that is all it stops — a rebinding
-   * attack points its *own* name at this server, so the `Origin` it sends and the host it arrives on agree and it
-   * passes. `allowedOrigins` is the list that actually decides who may drive this server from a browser; leave it
-   * unset unless a browser-hosted client needs it.
-   */
+  // MCP clients normally send no `Origin`. Matching our own host stops other sites but not DNS rebinding (the
+  // attacker's name resolves here, so Origin and host agree): `allowedOrigins` is what decides browser access.
   #originAllowed(req: Request) {
     const origin = req.headers.get("origin");
     if (!origin) return true;
     if ((this.#props.allowedOrigins ?? []).includes(origin)) return true;
     try {
-      // The *public* host, for the same reason the resource identifier uses it: behind a proxy `req.url` names
-      // the internal child that was dialed, so a browser client whose `Origin` is the public URL — the only
-      // caller that sends one — would be refused on every request. With a configured resource the host is that
-      // URL's, and a forwarded header no longer decides who is same-origin.
+      // The public host: behind a proxy `req.url` names the internal child; a configured resource pins it.
       return new URL(origin).host === new URL(this.#auth.publicOrigin(req)).host;
     } catch {
       return false;
     }
   }
 
-  /**
-   * Answers the preflight a browser-hosted client is forced to make. `content-type: application/json` and the
-   * `mcp-*` mirror headers each put the call past the simple-request bar, so without this the request never
-   * leaves the browser and `allowedOrigins` grants nothing it can use.
-   *
-   * The requested header list is echoed rather than fixed: the decision that matters is the origin, and a fixed
-   * list only breaks clients that send one more header than we predicted.
-   */
+  // JSON bodies and `mcp-*` mirror headers force a preflight. Requested headers are echoed, not fixed: the origin
+  // is the decision, and a fixed list only breaks clients that send one more header.
   #preflight(req: Request) {
     if (!req.headers.get("origin") || !this.#originAllowed(req)) return new Response("Forbidden", { status: 403 });
     return this.#cors(
@@ -678,12 +548,7 @@ export class McpRouter {
     );
   }
 
-  /**
-   * Grants the one origin that already passed `#originAllowed`, so the rebinding defence stays exactly as wide
-   * as it was. Never `access-control-allow-credentials`: an MCP client presents its bearer token in a header it
-   * sets deliberately, and allowing ambient cookies is what would turn a permitted origin into one that can ride
-   * a signed-in user's session.
-   */
+  // Never `access-control-allow-credentials`: ambient cookies would let a permitted origin ride a signed-in session.
   #cors(req: Request, res: Response) {
     const origin = req.headers.get("origin");
     if (!origin || !this.#originAllowed(req)) return res;
@@ -702,9 +567,7 @@ export class McpRouter {
   }
 
   #envelope(call: McpCall, result: object, cache?: McpCacheHint) {
-    // `resultType`, the server-info `_meta` and the cache hints are modern-era fields. A legacy client would
-    // ignore them, but emitting only what an era defines keeps the two wire formats separable in a capture —
-    // and `nextCursor`, which both eras define, travels inside `result` either way.
+    // `resultType`, server-info `_meta` and cache hints are modern-era only; `nextCursor` (both eras) is in `result`.
     const meta =
       call.era === "modern"
         ? { resultType: "complete", _meta: { [MCP_META_SERVER_INFO]: this.#serverInfo() }, ...cache }
@@ -712,12 +575,7 @@ export class McpRouter {
     return { jsonrpc: "2.0", id: call.id, result: { ...meta, ...result } };
   }
 
-  /**
-   * The cursor is an offset into the filtered list, base64url-wrapped so a client treats it as opaque rather
-   * than arithmetic it may do itself. The catalogue is built once at boot, so an offset stays meaningful for the
-   * life of the process; one minted by an earlier process may address a position that no longer exists, and that
-   * is refused rather than clamped — a silently shortened page reads as "the list ends here".
-   */
+  // An out-of-range cursor (minted by an earlier process) is refused, not clamped: a short page reads as the end.
   static #page<T>(items: T[], cursor: unknown, size: number) {
     const offset = McpRouter.#offset(cursor);
     if (offset === null || offset > items.length) return null;
@@ -732,8 +590,7 @@ export class McpRouter {
     if (cursor === undefined || cursor === null) return 0;
     if (typeof cursor !== "string") return null;
     const decoded = Buffer.from(cursor, "base64url").toString("utf8");
-    // `Number("")` is 0, so an empty cursor — or one whose base64url decodes to nothing — would silently read
-    // as "start from the beginning" and hand a client that corrupted its cursor page one again, forever.
+    // `Number("")` is 0: an empty decode would restart a corrupted cursor at page one, forever.
     if (!decoded) return null;
     const offset = Number(decoded);
     return Number.isInteger(offset) && offset >= 0 ? offset : null;
@@ -744,16 +601,8 @@ export class McpRouter {
     return meta && typeof meta === "object" ? (meta as Record<string, unknown>) : null;
   }
 
-  /**
-   * Legacy clients propose a version; answer with theirs when we speak it, and otherwise with whichever end of our
-   * list they are likelier to accept.
-   *
-   * A client proposes the newest revision *it* speaks, so an unknown proposal is either newer than everything here
-   * — in which case the newest we have is the closest thing it may still know — or older than everything here, in
-   * which case the newest is hopeless and the oldest is the only candidate. The spec's "SHOULD be the latest
-   * version supported by the server" covers the first case and would strand the second, which is the one an old
-   * client is actually in. Revision names are ISO dates, so they order as strings.
-   */
+  // An unknown proposal newer than ours gets our newest, an older one our oldest: the spec's "latest supported" would
+  // strand old clients. Revision names are ISO dates, so they order as strings.
   static #negotiate(requested: unknown) {
     if (typeof requested !== "string") return MCP_LEGACY_VERSION;
     if (MCP_SUPPORTED_VERSIONS.includes(requested as (typeof MCP_SUPPORTED_VERSIONS)[number])) return requested;
@@ -761,17 +610,11 @@ export class McpRouter {
     return requested > newest ? newest : MCP_SUPPORTED_VERSIONS[MCP_SUPPORTED_VERSIONS.length - 1];
   }
 
-  /** Legacy clients have no way to fall forward, so the one diagnostic they get is this message. */
   static #methodNotFound(method: string) {
     return `Method not found: ${method}. This server speaks MCP ${MCP_SUPPORTED_VERSIONS.join(", ")}.`;
   }
 
-  /**
-   * Modern requests mirror parts of the body into headers so a proxy can route and audit without parsing JSON.
-   * A mismatch is rejected rather than resolved in the body's favour: whatever a gateway in front of us allowed
-   * was decided from the header, so honouring a body that disagrees is how that check gets bypassed. A mirror
-   * that is simply absent is refused on the same ground — see `#headerMismatch`.
-   */
+  // Security: a header/body mismatch is rejected, not resolved for the body — a gateway in front judged the header.
   static #validateModern(
     req: Request,
     method: string,
@@ -797,15 +640,12 @@ export class McpRouter {
 
   static #headerMismatch(req: Request, header: string, expected: string) {
     const raw = req.headers.get(header);
-    // Absence is refused with contradiction, because they bypass the same check. A gateway policy is written as
-    // "deny when `mcp-method` is tools/call", and a rule keyed on a header does not fire for a request that left
-    // the header out — so tolerating absence hands back exactly what rejecting a mismatch was protecting. The
-    // modern era requires the mirror on every POST, and only a request that declared itself modern reaches here.
+    // Absence is refused like a mismatch: a gateway rule keyed on the header does not fire for a request omitting it.
     if (raw === null) return `Header \`${header}\` is required by this protocol version and was not sent.`;
     return McpRouter.#decodeHeader(raw) === expected ? undefined : `Header \`${header}\` does not match the body.`;
   }
 
-  /** Values that are not ASCII-safe travel wrapped in a lowercase base64 sentinel: `=?base64?…?=`. */
+  // Values that are not ASCII-safe travel wrapped in a lowercase base64 sentinel: `=?base64?…?=`.
   static #decodeHeader(value: string) {
     if (!value.startsWith("=?base64?") || !value.endsWith("?=")) return value;
     try {
@@ -815,11 +655,7 @@ export class McpRouter {
     }
   }
 
-  /**
-   * A JSON-RPC error body is what tells a client that a 400 or 404 came from an MCP server rather than from a
-   * proxy in front of it, so the status never travels alone. Tool-level failures stay at 200 and are carried in
-   * the JSON-RPC error itself; only envelope problems escalate to an HTTP status.
-   */
+  // The JSON-RPC body is what tells a client a 4xx came from MCP, not a proxy; tool-level failures stay at 200.
   static #error(
     id: string | number | null,
     code: number,
