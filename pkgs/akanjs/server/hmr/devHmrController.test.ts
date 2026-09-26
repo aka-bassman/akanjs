@@ -149,3 +149,33 @@ describe("DevHmrController pages-updated broadcast", () => {
     expect(await broadcastTypesFor("/repo/apps/demo/lib/task/task.service.ts")).toEqual(["rsc-refresh"]);
   });
 });
+
+describe("DevHmrController route ensure", () => {
+  test("builds the nearest layout route for a path only a route prefix matches", async () => {
+    const originalSend = process.send;
+    const requestedRouteIds: string[] = [];
+    process.send = ((message: { type?: string; id?: number; routeId?: string }): boolean => {
+      if (message.type !== "build-route" || !message.routeId) return true;
+      requestedRouteIds.push(message.routeId);
+      const data = { manifestDelta: {}, ssrManifestDelta: {}, newEntries: [], clientDeps: [] };
+      queueMicrotask(() => process.emit("message", { type: "build-route-res", id: message.id, ok: true, data }));
+      return true;
+    }) as typeof process.send;
+    const controller = new DevHmrController({
+      renderState: { buildId: 0, cssAssets: {}, cssBytesByUrl: {} },
+      rsc: { reload: async () => undefined, updateCssAssets: () => undefined } as unknown as RscWorker,
+      seedIndex: {
+        entries: [{ routeId: "/:lang/blog", pattern: "/:lang/blog", seeds: ["/repo/apps/demo/page/blog/_layout.tsx"] }],
+        globalLayoutFiles: [],
+      },
+      upgradeHmrWs: () => true,
+    });
+    try {
+      await controller.ensureRoute(new URL("https://example.test/ko/blog/missing"));
+      expect(requestedRouteIds).toEqual(["/:lang/blog"]);
+    } finally {
+      controller.dispose();
+      process.send = originalSend;
+    }
+  });
+});

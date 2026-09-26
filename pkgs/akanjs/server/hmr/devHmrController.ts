@@ -160,7 +160,9 @@ export class DevHmrController {
 
   async ensureRoute(url: URL) {
     const started = Date.now();
-    const matched = RouteSeedIndexStore.match(url.pathname, this.#seedIndex.entries);
+    const matched =
+      RouteSeedIndexStore.match(url.pathname, this.#seedIndex.entries) ??
+      RouteSeedIndexStore.matchPrefix(url.pathname, this.#seedIndex.entries);
     if (matched) await this.routeCache.ensure(matched.entry.routeId, matched.entry.seeds);
     this.#logger.verbose(
       `[route-cache] ensure pathname=${url.pathname} routeId=${matched?.entry.routeId ?? "(none)"} in ${Date.now() - started}ms`,
