@@ -11,6 +11,7 @@ import type {
   LlmUsage,
 } from "./llm.adaptor";
 import { LlmOverflow } from "./llmOverflow";
+import { eachSseData } from "./sseData";
 
 type AnthropicSource = { type: "base64"; media_type: string; data: string } | { type: "url"; url: string };
 type AnthropicBlock =
@@ -375,12 +376,7 @@ export class AnthropicLlm
     let text = "";
     let stopReason: string | null = null;
     let usage: AnthropicUsage = {};
-    let buffer = "";
-    const decoder = new TextDecoder();
-    const feed = (line: string) => {
-      if (!line.startsWith("data:")) return;
-      const payload = line.slice(5).trim();
-      if (!payload) return;
+    await eachSseData(body, (payload) => {
       const event = JSON.parse(payload) as AnthropicStreamEvent;
       const index = event.index ?? 0;
       if (event.type === "content_block_start" && event.content_block?.type === "tool_use")
@@ -400,26 +396,7 @@ export class AnthropicLlm
       //* `message_start` carries the prompt side and `message_delta` the running output count.
       if (event.type === "message_start" && event.message?.usage) usage = { ...usage, ...event.message.usage };
       if (event.type === "message_delta" && event.usage) usage = { ...usage, ...event.usage };
-    };
-    /** A frame the provider mangled costs that frame. Throwing would lose the whole answer, text already streamed
-     * and all, over one line of a protocol the caller cannot fix. */
-    const tolerate = (line: string) => {
-      try {
-        feed(line);
-      } catch {
-        // Nothing to say: the payload is by definition unreadable, and a partial answer beats none.
-      }
-    };
-    for await (const piece of body) {
-      buffer += decoder.decode(piece as Uint8Array, { stream: true });
-      let cut = buffer.indexOf("\n");
-      while (cut !== -1) {
-        tolerate(buffer.slice(0, cut).trimEnd());
-        buffer = buffer.slice(cut + 1);
-        cut = buffer.indexOf("\n");
-      }
-    }
-    tolerate(buffer.trimEnd());
+    });
     const toolCalls = [...calls.entries()]
       .sort(([a], [b]) => a - b)
       .flatMap(([, call]) =>

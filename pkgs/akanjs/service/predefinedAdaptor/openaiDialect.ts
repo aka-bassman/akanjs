@@ -1,4 +1,5 @@
 import type { AgentWireMessage, LlmAccepts, LlmTurnAnswer, LlmTurnRequest, LlmUsage } from "./llm.adaptor";
+import { eachSseData } from "./sseData";
 
 export interface OpenaiToolCall {
   id?: string;
@@ -181,12 +182,8 @@ export class OpenaiDialect {
     let text = "";
     let finish: string | null = null;
     let usage: LlmUsage | undefined;
-    let buffer = "";
-    const decoder = new TextDecoder();
-    const feed = (line: string) => {
-      if (!line.startsWith("data:")) return;
-      const payload = line.slice(5).trim();
-      if (!payload || payload === "[DONE]") return;
+    await eachSseData(body, (payload) => {
+      if (payload === "[DONE]") return;
       const chunk = JSON.parse(payload) as OpenaiStreamChunk;
       if (chunk.usage) usage = OpenaiDialect.usageOf(chunk.usage);
       const choice = chunk.choices?.[0];
@@ -204,26 +201,7 @@ export class OpenaiDialect {
         calls.set(index, call);
       }
       if (choice.finish_reason) finish = choice.finish_reason;
-    };
-    /** A frame the provider mangled costs that frame. Throwing would lose the whole answer, text already streamed
-     * and all, over one line of a protocol the caller cannot fix. */
-    const tolerate = (line: string) => {
-      try {
-        feed(line);
-      } catch {
-        // Nothing to say: the payload is by definition unreadable, and a partial answer beats none.
-      }
-    };
-    for await (const piece of body) {
-      buffer += decoder.decode(piece as Uint8Array, { stream: true });
-      let cut = buffer.indexOf("\n");
-      while (cut !== -1) {
-        tolerate(buffer.slice(0, cut).trimEnd());
-        buffer = buffer.slice(cut + 1);
-        cut = buffer.indexOf("\n");
-      }
-    }
-    tolerate(buffer.trimEnd());
+    });
     const toolCalls = [...calls.entries()]
       .sort(([a], [b]) => a - b)
       .flatMap(([, call]) =>
