@@ -1043,11 +1043,6 @@ export class CodeTui {
     this.#renderNow();
   }
 
-  #note(text: string) {
-    this.#transcript.note("info", text);
-    this.#renderNow();
-  }
-
   #say(text: string) {
     this.#notice = text;
     if (this.#noticeTimer) clearTimeout(this.#noticeTimer);

@@ -69,7 +69,8 @@ export class CodeTuiClipboard {
 
   // `osascript` cannot write bytes, so macOS hands the PNG over as AppleScript's hex literal `«data PNGf…»`.
   static async #darwin() {
-    return CodeTuiClipboard.fromAppleScript(await CodeTuiClipboard.#text(["osascript", "-e", CodeTuiClipboard.ask]));
+    const bytes = await CodeTuiClipboard.#bytes(["osascript", "-e", CodeTuiClipboard.ask]);
+    return CodeTuiClipboard.fromAppleScript(bytes ? new TextDecoder().decode(bytes) : undefined);
   }
 
   static readonly ask = "the clipboard as «class PNGf»";
@@ -89,10 +90,5 @@ export class CodeTuiClipboard {
     } catch {
       return undefined;
     }
-  }
-
-  static async #text(command: string[]) {
-    const bytes = await CodeTuiClipboard.#bytes(command);
-    return bytes ? new TextDecoder().decode(bytes) : undefined;
   }
 }
