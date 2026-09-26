@@ -27,15 +27,14 @@ export class BuilderRpc {
   readonly #logger = new Logger("BuilderRpc");
   readonly #pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   readonly #offMessage: () => void;
-  readonly #proc = process;
   readonly #send: (msg: BuilderReq | BuilderCsrReq) => void;
   #nextId = 1;
   #disposed = false;
 
   constructor(handlers: BuilderRpcEventHandlers = {}) {
-    if (!this.#proc.send)
+    if (!process.send)
       throw new Error("[builder] process.send unavailable — backend must be spawned by the CLI with ipc enabled");
-    this.#send = this.#proc.send.bind(this.#proc);
+    this.#send = process.send.bind(process);
     this.#offMessage = this.#listen((msg) => {
       if (msg.type === "build-route-res" || msg.type === "build-csr-res") {
         const res = msg as BuilderRes | BuilderCsrRes;
@@ -63,8 +62,6 @@ export class BuilderRpc {
         case "build-status":
           handlers.onBuildStatus?.(ev.data);
           return;
-        default:
-          return;
       }
     });
   }
@@ -78,9 +75,7 @@ export class BuilderRpc {
       generation,
     }: { seeds: string[]; graphSeeds?: string[]; knownEntries: Set<string>; generation?: number },
   ): Promise<BuildRouteClientResult> {
-    if (this.#disposed) throw new Error("[builder] rpc is disposed");
-    const id = this.#nextId++;
-    const payload = await this.#request<BuildRouteResultPayload>(id, `build-route ${routeId}`, () =>
+    const payload = await this.#request<BuildRouteResultPayload>(`build-route ${routeId}`, (id) =>
       this.#send({ type: "build-route", id, routeId, seeds, graphSeeds, knownEntries: [...knownEntries], generation }),
     );
     return {
@@ -95,9 +90,7 @@ export class BuilderRpc {
 
   /** Arms dev CSR, which the builder skips by default (a full browser build per save), and keeps it in sync after. */
   async buildCsr(reason: string): Promise<void> {
-    if (this.#disposed) throw new Error("[builder] rpc is disposed");
-    const id = this.#nextId++;
-    await this.#request<void>(id, `build-csr (${reason})`, () => this.#send({ type: "build-csr", id, reason }));
+    await this.#request<void>(`build-csr (${reason})`, (id) => this.#send({ type: "build-csr", id, reason }));
   }
 
   // Generous on purpose: a cold CSR build of every page takes tens of seconds; the point is only to be finite.
@@ -108,7 +101,9 @@ export class BuilderRpc {
   }
 
   // Must time out: a builder recycled mid-request never answers, and the dev host only reports failed sends.
-  async #request<T>(id: number, label: string, send: () => void): Promise<T> {
+  async #request<T>(label: string, send: (id: number) => void): Promise<T> {
+    if (this.#disposed) throw new Error("[builder] rpc is disposed");
+    const id = this.#nextId++;
     const timeoutMs = BuilderRpc.#timeoutMs();
     return await new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -131,7 +126,7 @@ export class BuilderRpc {
           reject(error);
         },
       });
-      send();
+      send(id);
     });
   }
 
@@ -148,10 +143,10 @@ export class BuilderRpc {
       if (!msg || typeof msg !== "object") return;
       listener(msg as BuilderMessage);
     };
-    this.#proc.on("message", handler);
+    process.on("message", handler);
     return () => {
-      if (this.#proc.off) this.#proc.off("message", handler);
-      else if (this.#proc.removeListener) this.#proc.removeListener("message", handler);
+      if (process.off) process.off("message", handler);
+      else if (process.removeListener) process.removeListener("message", handler);
     };
   }
 }

@@ -83,16 +83,6 @@ export function resolveAutoRouteCacheTtl(input: {
   return normalizeRouteCacheTtl(input.ttl, input.defaultTtl ?? DEFAULT_ROUTE_CACHE_TTL_SECONDS);
 }
 
-export function combineMinRevalidate(...values: Array<number | false | null | undefined>): number | false | undefined {
-  let out: number | undefined;
-  for (const value of values) {
-    if (value === undefined || value === null) continue;
-    if (value === false) return false;
-    out = out === undefined ? value : Math.min(out, value);
-  }
-  return out;
-}
-
 export function getClientFacingOrigin(request: Request, url = new URL(request.url)): string {
   return originFromRequest(request.headers, url);
 }
@@ -165,10 +155,6 @@ export function resolvePublicRouteCacheEntryDecision(input: PublicRouteCacheEntr
   return { entry: createRouteCacheEntry({ request: input.request, url: input.url, theme: input.theme, ttl }) };
 }
 
-export function resolvePublicRouteCacheEntry(input: PublicRouteCacheEntryInput): RouteCacheEntry | null {
-  return resolvePublicRouteCacheEntryDecision(input).entry;
-}
-
 export function resolveRouteCacheStoreTtl(baseTtl: number, state: RouteCacheRenderState): number | null {
   if (!state.cacheable || state.revalidate === false) return null;
   if (typeof state.revalidate !== "number") return baseTtl;
@@ -185,7 +171,7 @@ export function shouldStoreRouteCache(input: {
   const dynamicUsage = input.dynamicUsage ? { ...input.dynamicUsage } : undefined;
   const routeId = input.policy?.routeId;
   const tags = input.policy ? [...input.policy.tags] : undefined;
-  const revalidate = combineMinRevalidate(input.policy?.revalidate);
+  const revalidate = input.policy?.revalidate;
   if (input.renderControlType) {
     const reason =
       input.renderControlType === "redirect" && input.lateRedirect
@@ -333,8 +319,7 @@ export class LruTtlCache<T> {
   }
 
   static parseByteCeiling(value: string | undefined | null, fallback = 0): number {
-    const parsed = Number.parseInt(value ?? "", 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    return parsePositiveInt(value) ?? fallback;
   }
 
   #remove(key: string): boolean {

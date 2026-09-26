@@ -36,12 +36,7 @@ export class RouteClientCache {
   readonly #logger = new Logger("RouteClientCache");
   readonly #built = new Map<string, BuildRouteClientResult>();
   readonly #building = new Map<string, PendingBuild>();
-  merged: MergedManifest = {
-    generation: 0,
-    clientManifest: {},
-    ssrManifest: { moduleLoading: null, moduleMap: {} },
-    knownEntries: new Set<string>(),
-  };
+  merged: MergedManifest = this.#getEmptyMerged(0);
   readonly #buildRoute: RouteBuildFn;
   readonly #onMerge?: OnMergeFn;
   #revision = 0;

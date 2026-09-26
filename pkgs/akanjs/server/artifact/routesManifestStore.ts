@@ -38,7 +38,7 @@ export class RoutesManifestStore {
   static normalize(manifest: SerializedRoutesManifest, artifactDir: string): RoutesManifest {
     return {
       ...manifest,
-      clientManifest: RoutesManifestStore.#normalizeClientManifest(manifest.clientManifest),
+      clientManifest: { ...manifest.clientManifest },
       ssrManifest: RoutesManifestStore.#normalizeSsrManifest(manifest.ssrManifest, artifactDir),
       knownEntries: (manifest.knownEntries ?? []).map((entry) =>
         RoutesManifestStore.#normalizeStoredPath(entry, artifactDir),
@@ -52,14 +52,6 @@ export class RoutesManifestStore {
       serialized[RoutesManifestStore.#serializeArtifactPath(key, artifactDir)] = row;
     }
     return serialized;
-  }
-
-  static #normalizeClientManifest(clientManifest: ClientManifest): ClientManifest {
-    const normalized: ClientManifest = {};
-    for (const [key, row] of Object.entries(clientManifest)) {
-      normalized[key] = row;
-    }
-    return normalized;
   }
 
   static #serializeSsrManifest(ssrManifest: SsrManifest, artifactDir: string): SsrManifest {

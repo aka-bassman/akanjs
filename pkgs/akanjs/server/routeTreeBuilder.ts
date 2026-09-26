@@ -152,7 +152,6 @@ export class RouteTreeBuilder {
       if (!children) throw new Error("No children");
       return children;
     }, this.#routeMap);
-    if (!targetRouteMap) return;
 
     const targetPath = pathSegments[pathSegments.length - 1];
     if (!targetPath) return;
