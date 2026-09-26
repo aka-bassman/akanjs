@@ -15,7 +15,6 @@ import {
   serverResolverTestServiceModel,
 } from "../resolver/resolver.contract.fixture";
 
-/** Boots a real `DiLifecycle` over the resolver contract fixture so the devtools serializers see live wiring. */
 export class DevtoolsFixture {
   static async boot(serverMode: "federation" | "batch" | "all" = "all"): Promise<DevtoolsFixture> {
     process.env.AKAN_PUBLIC_APP_NAME = "devtools";
@@ -96,5 +95,4 @@ export class DevtoolsFixture {
   }
 }
 
-/** The refName every fixture model, service, and signal is registered under. */
 export const fixtureRefName = "serverResolverTestItem";

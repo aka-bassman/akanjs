@@ -73,7 +73,6 @@ class FakeSqliteDatabase extends adapt("fakeSqliteDatabase") {
 
 class FakeSolidCache extends adapt("fakeSolidCache") {}
 
-/** The chainable read the model facade exposes, as much of it as these assertions drive. */
 type FindChain<Result> = Promise<Result> & {
   sort: (sort: unknown) => FindChain<Result>;
   skip: (skip: number) => FindChain<Result>;
@@ -81,7 +80,6 @@ type FindChain<Result> = Promise<Result> & {
   select: (projection?: unknown) => FindChain<Result>;
 };
 
-// The real store hydrates onto a prototype carrying `set`/`save`, which is the path a write-through read takes.
 const makeFakeDoc = (calls: { method: string; args: unknown[] }[], id: string) => ({
   id,
   category: "news",
@@ -300,12 +298,8 @@ describe("DatabaseResolver declaration contracts", () => {
       queries: [{}, { kind: "any", queries: [{ ownerId: "owner-1", category: "news" }] }],
     });
 
-    // `find`/`findOne` are the chainable half of the facade — the one thing a generated filter method cannot
-    // give you, since a filter returns an executed list. Each link returns a fresh chain, so nothing is
-    // executed until the chain is awaited, and awaiting it twice runs it twice.
     const callsBeforeChain = instance.__store.calls.length;
     const chain = instance.ServerResolverTestItem.find({ category: "news" });
-    // Building the chain touches nothing; the preceding loader calls are the last thing the store saw.
     expect(instance.__store.calls.length).toBe(callsBeforeChain);
     await chain.sort({ title: 1 }).skip(2).limit(3).select({ title: true });
     expect(instance.__store.calls.at(-1)).toEqual({
@@ -313,7 +307,6 @@ describe("DatabaseResolver declaration contracts", () => {
       args: [{ category: "news" }, { sort: { title: 1 }, skip: 2, limit: 3, select: { title: true } }],
     });
 
-    // The links do not mutate the chain they came from: this awaits the original, which carries no options.
     await chain;
     expect(instance.__store.calls.at(-1)).toEqual({ method: "find", args: [{ category: "news" }, {}] });
 
@@ -342,8 +335,6 @@ describe("DatabaseResolver declaration contracts", () => {
     Object.assign(instance, { __database: new FakeSqliteDatabase(), __cache: new FakeSolidCache() });
     await instance.onInit();
 
-    // A `field.secret(...)` value only arrives when the read names it, and `findById` is the one read with no
-    // chain to name it on — dropping the argument turned a secret into an empty value with no error.
     await instance.ServerResolverTestItem.findById("doc-1", { title: true });
     expect(instance.__store.calls.at(-1)).toEqual({
       method: "findOne",
@@ -368,7 +359,6 @@ describe("DatabaseResolver declaration contracts", () => {
       args: [{ category: "news" }, { select: { title: true } }],
     });
 
-    // The chain link still wins over the argument, so `.select()` keeps overriding what the call opened with.
     await instance.ServerResolverTestItem.findOne({ category: "news" }, { title: true }).select({ tags: true });
     expect(instance.__store.calls.at(-1)).toEqual({
       method: "findOne",
@@ -394,7 +384,6 @@ describe("DatabaseResolver declaration contracts", () => {
     Object.assign(instance, { __database: new FakeSqliteDatabase(), __cache: new FakeSolidCache() });
     await instance.onInit();
 
-    // The write goes through the document, so the save hooks run — that is the whole difference from `updateById`.
     await instance.ServerResolverTestItem.pickAndWrite("doc-1", { title: "Beta" });
     expect(instance.__store.calls.slice(-2)).toEqual([
       { method: "findOne", args: [{ id: "doc-1" }, { select: undefined }] },
@@ -426,8 +415,6 @@ describe("DatabaseResolver declaration contracts", () => {
     unlistenPre();
     expect(documentSchema.preHooks.get("update")?.length).toBe(preBefore);
 
-    // The schema holds a wrapper around the listener, so an unsubscribe that looked the listener up by identity
-    // would find nothing and silently leave the hook in place.
     const postBefore = documentSchema.postHooks.get("update")?.length ?? 0;
     const unlistenPost = instance.ServerResolverTestItem.listenPost("update", () => undefined);
     expect(documentSchema.postHooks.get("update")?.length).toBe(postBefore + 1);
@@ -451,8 +438,7 @@ describe("DatabaseResolver declaration contracts", () => {
     const queryOf = (call?: { args: unknown[] }) => call?.args[0];
     const optionOf = (call?: { args: unknown[] }) => call?.args[1];
 
-    // An option the caller named lands as an option even when no key of it is a number or a string. Read as a
-    // filter arg instead it would fill `includeRemoved`, and every soft-removed row would join the result.
+    // Misread as a filter arg, this option would fill `includeRemoved` and let soft-removed rows join the result.
     await instance.listInCategory("news", { sample: 2 });
     expect(queryOf(instance.__store.calls.at(-1))).toEqual({
       kind: "all",
@@ -472,7 +458,6 @@ describe("DatabaseResolver declaration contracts", () => {
       queries: [{ category: "news" }, notRemoved],
     });
 
-    // A filter arg that is itself an object is still a filter arg: an array, a date, and a scalar all stay put.
     await instance.listInCategory("news", true);
     expect(queryOf(instance.__store.calls.at(-1))).toEqual({ kind: "all", queries: [{ category: "news" }, {}] });
 
@@ -511,7 +496,6 @@ describe("DatabaseResolver declaration contracts", () => {
       ({
         full: { cascade: { removeRef: new Map(), removeWith: new Map([[path.key as string, path]]) } },
       }) as unknown as typeof serverResolverTestConstant;
-    // Without the index the owner's removal scans the whole child table: every non-base field is inside `_doc`.
     const single = DatabaseResolver.resolveDatabase(
       constantWith({ key: "agentSession", modelRef: null, refName: "agentSession", typeKey: null, typeValues: [] }),
       serverResolverTestDatabase,
@@ -524,8 +508,6 @@ describe("DatabaseResolver declaration contracts", () => {
     );
     expect(polymorphic.schema.indexes).toContainEqual({ fields: { removedAt: 1, parentType: 1, parent: 1 } });
 
-    // A wildcard owner names no candidate, and the index is what keeps its sweep an empty probe rather than a
-    // scan — the whole reason `removeWithAny` is affordable at all.
     const wildcard = DatabaseResolver.resolveDatabase(
       constantWith({
         key: "parent",
@@ -630,9 +612,6 @@ describe("ServiceResolver cascade", () => {
   };
 
   test("removes each referenced document through the target's service, not its model", async () => {
-    // Through the service is the whole point: `__remove` is what runs the target's `_postRemove`, and that is
-    // where a module puts the side effect the removal has to carry — deleting the stored file, say. Reaching the
-    // model instead still empties the row, so nothing looks wrong until the storage bill arrives.
     const child = childTarget(true);
     const { service } = buildCascade(
       constantOf(parentRef, { removeRef: new Map([["cover", cascadeChildFull]]) }),
@@ -670,8 +649,6 @@ describe("ServiceResolver cascade", () => {
       new DocumentSchema(),
       ServerResolverTestService as never,
     );
-    // Cascading into a module the app never mounted is a misconfiguration. Every service is live by the time the
-    // plan is sealed, so saying so at boot beats discovering it half-way through the first removal.
     expect(() => cascade.seal(() => null as never)).toThrow('removes "cascadeChild", which this app does not mount');
   });
 
@@ -753,10 +730,7 @@ describe("ServiceResolver cascade", () => {
 
     await service.__remove("parent-1");
 
-    // The owner is unknowable at boot, so the removed model's own refName is what the sweep matches on.
     expect(child.listQueries.at(0)).toEqual({ owner: "parent-1", ownerType: parentRef });
-    // And the same declaration takes bulk away everywhere: a query-level removal of any model would be one whose
-    // wildcard children were never looked for, so this child goes one document at a time despite carrying no hook.
     expect(child.calls).toEqual([
       { method: "__remove", arg: "child-1" },
       { method: "__remove", arg: "child-2" },
@@ -868,12 +842,10 @@ describe("ServiceResolver declaration contracts", () => {
     expect(calls.at(-1)).toEqual({ method: "__removeMany", args: [query] });
     await service.removeOneInCategory("news");
     expect(calls.at(-1)).toEqual({ method: "__removeOne", args: [query] });
-    // The patch lands on `set()`, so it can never be mistaken for an omitted trailing filter arg.
     await service.updateInCategory("news").set({ title: "Beta" });
     expect(calls.at(-1)).toEqual({ method: "__updateMany", args: [query, { title: "Beta" }] });
     await service.updateOneInCategory("news").set({ title: "Beta" });
     expect(calls.at(-1)).toEqual({ method: "__updateOne", args: [query, { title: "Beta" }] });
-    // Building the chain touches nothing until `set()` runs.
     const pending = service.updateInCategory("news");
     expect(calls.at(-1)?.method).toBe("__updateOne");
     await pending.set({ title: "Gamma" });
@@ -881,8 +853,6 @@ describe("ServiceResolver declaration contracts", () => {
   });
 
   test("refuses a filter keyed after its own model", () => {
-    // Filter methods are assigned after CRUD, so this collision would silently swap the single-document
-    // remove/update for a query-level one that fires no hooks — and therefore no cascade.
     expect(() => assertFilterFitsCrud("chat", "chat", "Chat")).toThrow(
       'Filter "chat" on "chat" generates removeChat/updateChat',
     );
@@ -1106,7 +1076,6 @@ describe("SignalResolver declaration contracts", () => {
     await resolved.wsRoutes?.lifecycleRoom?.(unsubscribed, [validId], "unsubscribe");
     expect(cleaned).toEqual([`unsubscribe:${validId}`]);
 
-    // The room was already unsubscribed, so only the message handler is left to run at close.
     await SignalResolver.handleWsClose(unsubscribed, registry);
     expect(cleaned).toEqual([`unsubscribe:${validId}`, "disconnect:chat"]);
 
@@ -1222,7 +1191,6 @@ describe("SignalResolver declaration contracts", () => {
     expect(liveKeys).toEqual(["serverResolverTestItemLiveInCategory"]);
     expect(listeners).toHaveLength(3);
 
-    // With no room here yet, the write is still handed on: every other server may hold one.
     await listeners[0]({ id: validId, category: "news", createdAt: dayjs(1000), updatedAt: dayjs(1000) }, "create");
     expect(websocket.instance.calls.filter((call: { method: string }) => call.method === "publishChange")).toHaveLength(
       1,
@@ -1247,13 +1215,11 @@ describe("SignalResolver declaration contracts", () => {
     expect(published).toHaveLength(1);
     expect(published[0].roomId).toBe("serverResolverTestItemLiveInCategory-news");
     expect(published[0].data).toMatchObject({ op: "enter", id: validId });
-    // The room's event goes to this server's sockets; the write itself is what crosses to the others.
     expect(websocket.instance.calls.map((call: { method: string }) => call.method)).toEqual([
       "joinRoom",
       "publishChange",
     ]);
 
-    // A write another server made is routed into the room held here.
     published.length = 0;
     const elsewhere = { ...inRoom, id: "5f5f5f5f5f5f5f5f5f5f5f5f", title: "Beta" };
     websocket.receiveChange({ refName: "serverResolverTestItem", next: JSON.stringify(elsewhere) });
@@ -1265,12 +1231,10 @@ describe("SignalResolver declaration contracts", () => {
       },
     ]);
 
-    // Editing the row out of this slice's own filter has to arrive as a removal from the list it left.
     published.length = 0;
     await listeners[1]({ ...inRoom, category: "sports" }, "update", inRoom);
     expect(published[0].data).toMatchObject({ op: "leave", id: validId });
 
-    // And a change belonging to neither side of the room is not sent at all.
     published.length = 0;
     await listeners[1]({ ...inRoom, category: "sports", title: "B" }, "update", { ...inRoom, category: "sports" });
     expect(published).toEqual([]);
@@ -1295,8 +1259,7 @@ describe("SignalResolver declaration contracts", () => {
     ) {}
     const SliceEndpoint = SignalResolver.resolveSlice(TwoSearchLiveSlice);
     const live = SliceEndpoint[ENDPOINT_META].serverResolverTestItemLiveInCategory;
-    // Both stay nullable: a room's arguments are a positional array with explicit nulls, so an absent one is
-    // unambiguous, and dropping the flag would make it fail to deserialize on the way in.
+    // Room args are a positional array with explicit nulls: without the nullable flag an absent one fails to parse.
     expect(live.args.map((arg) => [arg.type, arg.name, arg.option?.nullable])).toEqual([
       ["room", "category", true],
       ["room", "title", true],
@@ -1304,8 +1267,6 @@ describe("SignalResolver declaration contracts", () => {
   });
 
   test("gates a live room with the slice's own guards, not the single-document read guard", async () => {
-    // A `Can<Verb><Model>` read guard looks for the model's own id and fails closed without one, which a room's
-    // arguments never carry. Taking `guards.get` here refused every subscribe on a slice that lists by a parent.
     class NeedsItemId {
       static name = "User";
       static scope = "resource" as const;
@@ -1329,7 +1290,6 @@ describe("SignalResolver declaration contracts", () => {
     const SliceEndpoint = SignalResolver.resolveSlice(GuardedLiveSlice);
     const liveInfo = SliceEndpoint[ENDPOINT_META].serverResolverTestItemLiveInCategory;
     expect(liveInfo.signalOption.guards).toEqual([Public]);
-    // The generated single-document read keeps the guard that belongs to it.
     expect(SliceEndpoint[ENDPOINT_META].serverResolverTestItem.signalOption.guards).toEqual([NeedsItemId]);
 
     const sliceEndpoint = new SliceEndpoint() as InstanceType<typeof SliceEndpoint> & Record<string, unknown>;
@@ -1400,7 +1360,6 @@ describe("SignalResolver declaration contracts", () => {
     expect(await subscribeTo(["news", null])).toMatchObject({ type: "sub", subscribe: true });
     expect(live.syncHub.roomCountOf("serverResolverTestItem")).toBe(1);
 
-    // A client that ignores the declaration is refused rather than handed the room the slice said not to open.
     await expect(subscribeTo(["news", "lovelace"])).rejects.toThrow(/paused while "text" carries a value/);
     expect(live.syncHub.roomCountOf("serverResolverTestItem")).toBe(1);
   });
@@ -1418,7 +1377,6 @@ describe("SignalResolver declaration contracts", () => {
       })) {};
 
     expect(() => SignalResolver.resolveSlice(build(["nope"]))).toThrow(/not one of its arguments/);
-    // A param is never nullable, so pausing on one would switch the room off for good.
     expect(() => SignalResolver.resolveSlice(build(["category"]))).toThrow(/always present/);
     expect(() => SignalResolver.resolveSlice(build(["text"]))).not.toThrow();
   });
@@ -1497,7 +1455,6 @@ describe("SignalResolver declaration contracts", () => {
     await endpointMeta.serverResolverTestItemInsightInCategory.execFn?.call(sliceEndpoint, "news");
     expect(calls.at(-1)).toEqual({ method: "__insight", args: [{ category: "news" }] });
 
-    // The root list compiles its `(queryKey, args)` pair through the model's own filter, and defaults to `any`.
     await endpointMeta.serverResolverTestItemList.execFn?.call(sliceEndpoint, "byOwner", [validId], 0, 20, "latest");
     expect((calls.at(-1) as { args: unknown[] }).args[0]).toEqual({ ownerId: validId });
     await endpointMeta.serverResolverTestItemList.execFn?.call(sliceEndpoint, undefined, undefined, 0, 20, "latest");
@@ -1561,7 +1518,6 @@ describe("SignalResolver declaration contracts", () => {
     });
     expect(localPublishes.at(-1)?.roomId).toBe(`roomFeed-${validId}`);
 
-    // A Binary return skips `serialize`, which would have base64'd it, and travels as the bytes themselves.
     const packet = new Uint8Array([2, 148, 1, 2, 63]);
     await serverSignal.roomStream("ch1", packet);
     expect(websocket.instance.calls.at(-1)).toEqual({ method: "publish", args: ["roomStream-ch1", packet] });
@@ -1572,8 +1528,6 @@ describe("SignalResolver declaration contracts", () => {
     expect(last).toBeInstanceOf(Uint8Array);
     expect([...(last as Uint8Array)]).toEqual([2, 148, 1, 2, 63]);
 
-    // Coalescing follows the endpoint that owns the room, so every publish path reaches the same answer
-    // without carrying it. A room no endpoint declared `Binary` for is absent, and queues.
     expect(SignalResolver.coalescesRoom("roomStream-ch1")).toBe(true);
     expect(SignalResolver.coalescesRoom("roomQueuedStream-ch1")).toBe(false);
     expect(SignalResolver.coalescesRoom("roomFeed-anything")).toBe(false);
@@ -1613,7 +1567,6 @@ describe("SignalResolver declaration contracts", () => {
     SignalResolver.resolveSchedule(ScheduleInternal, internalInstance as unknown as Internal, "federation");
 
     expect(internalInstance.schedule.calls.map((call) => call.method)).toEqual(["registerInit", "registerInterval"]);
-    // `process` defaults to enabled: placement is governed by serverMode/operationMode, not an extra opt-in flag.
     expect(internalInstance.queue.calls.map((call) => call.method)).toEqual(["registerProcessWorker"]);
     expect(internalInstance.queue.calls[0]?.args[0]).toBe("processAll");
     expect(internalInstance.schedule.calls[1]).toMatchObject({
@@ -1655,7 +1608,6 @@ describe("SignalResolver declaration contracts", () => {
     expect(execArgs).toHaveLength(1);
     const [itemId, at, passedJob] = execArgs[0] as [string, Dayjs, AkanJob];
     expect(itemId).toBe(validId);
-    // deserialized against the declared arg type, so `Date` lands as dayjs rather than the raw JSON string
     expect(dayjs.isDayjs(at)).toBe(true);
     expect(at.toISOString()).toBe("2026-07-26T00:00:00.000Z");
     expect(passedJob).toBe(job);
@@ -1683,9 +1635,7 @@ describe("SignalResolver declaration contracts", () => {
     })) {}
     const internalInstance = Object.assign(new QueuedInternal(), { schedule: makeFakeSchedule(), queue });
 
-    // the worker side: `process` needs no `enabled` flag to be registered
     SignalResolver.resolveSchedule(QueuedInternal, internalInstance as unknown as Internal, "all");
-    // the producer side: exactly what resolveServerSignal's generated method calls
     await queue.registerProcessQueue("archiveItem", [validId]);
 
     const startedAt = Date.now();
@@ -1707,7 +1657,6 @@ describe("SignalResolver declaration contracts", () => {
   });
 });
 
-// A document store reduced to the text round trip live sync needs to hand a write to another server.
 const makeTextStore = () => ({
   serialize: (doc: object) => JSON.stringify(doc),
   deserialize: (text: string) => {

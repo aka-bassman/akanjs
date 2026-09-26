@@ -33,15 +33,7 @@ export interface SignalSerializerContext {
   websocketPrefix: string;
 }
 
-/**
- * Builds the `/_akan/signal` payload from the live DI container.
- *
- * The client-side `getSerializedSignal()` is deliberately *not* used here: its map is seeded with the `base`
- * signal and only completed at build time via `applySignal`, so on a server process it under-reports the API.
- * Declared endpoints come from `FetchSerializer.serializeRegistry(di.live)` (what `/openapi.json` uses), the
- * framework-generated CRUD/slice endpoints come from the slice endpoint class the resolver synthesized, and
- * internals — absent from `SerializedSignal` entirely — are read straight off `INTERNAL_META`.
- */
+/** Built from the live DI container: on a server, `getSerializedSignal()` holds only the `base` signal. */
 export class SignalSerializer {
   static serialize({ di, serverMode, prefix, websocketPrefix }: SignalSerializerContext): SignalData {
     const serializedSignals = FetchSerializer.serializeRegistry(di.live).signal;
@@ -124,13 +116,7 @@ export class SignalSerializer {
     };
   }
 
-  // * ==================== Endpoints ==================== * //
-
-  /**
-   * `FetchSerializer` never populates `prefix`/`globalPrefix` (they are server-routing concerns), so a
-   * `{ globalPrefix: false }` endpoint is unreconstructable from the client payload alone. Read them off
-   * `ENDPOINT_META` instead of widening what ships to every client bundle.
-   */
+  // FetchSerializer omits prefix/globalPrefix (server routing); read ENDPOINT_META rather than widen client bundles.
   static #augmentAll(
     endpoints: Record<string, SerializedEndpoint>,
     endpointCls: EndpointCls,
@@ -159,7 +145,6 @@ export class SignalSerializer {
     return Object.fromEntries(Object.entries(endpoints).filter(([key]) => predicate(key)));
   }
 
-  /** The list/insight pair the resolver synthesizes per slice key — everything else on that class is CRUD. */
   static #sliceDerivedKeys(refName: string, sliceCls: SliceCls | undefined): Set<string> {
     const sliceMeta = (sliceCls?.[SLICE_META] ?? {}) as Record<string, SliceInfo>;
     return new Set(
@@ -192,8 +177,6 @@ export class SignalSerializer {
       ...(serialized.removeGuards ? { remove: serialized.removeGuards } : {}),
     };
   }
-
-  // * ==================== Routes ==================== * //
 
   static #routeRows(
     signal: string,
@@ -260,8 +243,6 @@ export class SignalSerializer {
     return `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
   }
 
-  // * ==================== Internals ==================== * //
-
   static #serializeInternals(
     internalMeta: Record<string, InternalInfo>,
     serverMode: "federation" | "batch" | "all",
@@ -276,8 +257,6 @@ export class SignalSerializer {
 
   static #serializeInternal(key: string, info: InternalInfo, serverMode: "federation" | "batch" | "all"): InternalNode {
     const option = info.signalOption;
-    // `resolveField` internals are field resolvers, never scheduled — reporting them as "disabled" would read
-    // as a misconfiguration rather than the design.
     const schedulable = info.type !== "resolveField";
     const skip = schedulable ? SignalResolver.getScheduleSkipReason(info, serverMode) : null;
     return {
@@ -307,8 +286,6 @@ export class SignalSerializer {
       return scheduleTime !== undefined ? { schedule: { everyMs: scheduleTime } } : {};
     return {};
   }
-
-  // * ==================== Args ==================== * //
 
   static #serializeArg(argInfo: ArgInfo<{ nullable?: boolean }>): SerializedArg {
     const { refName, modelType } = SignalSerializer.#resolveRefInfo(argInfo.argRef as Cls);

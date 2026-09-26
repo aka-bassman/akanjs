@@ -29,21 +29,17 @@ interface CascadePlan {
   readonly withEdges: WithEdge[];
 }
 
-/** One cascade in flight. Shared down the chain so a cycle is caught wherever it closes. */
 interface CascadeContext {
   readonly seen: Set<string>;
   readonly depth: number;
 }
 
-/** How deep one removal may cascade before the chain is treated as runaway and abandoned. */
 const maxDepth = 16;
-/** Ids taken per query while draining children one document at a time. */
 const drainSize = 200;
 
 export class CascadeRunner {
   readonly #modules = new Map<string, CascadeModule>();
   readonly #plans = new Map<string, CascadePlan>();
-  /** `removeWithAny` edges: the owner is unknowable at boot, so every model's removal has to sweep them. */
   readonly #anyEdges: WithEdge[] = [];
   readonly #bulk = new Set<string>();
   readonly #context = new AsyncLocalStorage<CascadeContext>();
@@ -54,10 +50,7 @@ export class CascadeRunner {
     this.#modules.set(constant.refName, { constant, schema, srvRef });
   }
 
-  /**
-   * Called once every service is live. A `_postRemove` and a `listenPost("remove")` registered during boot both
-   * count against bulk removal, so the strategy cannot be decided before the last service has initialized.
-   */
+  // Only once every service is live: a boot-time `_postRemove` or `listenPost("remove")` also rules out bulk removal.
   seal(getService: (refName: string) => DatabaseService) {
     this.#getService = getService;
     for (const [refName, mod] of this.#modules) {
@@ -103,8 +96,7 @@ export class CascadeRunner {
       await service.__removeMany({ id: documentQueryHelper.oneOf(ids) });
       return;
     }
-    // Through the target's own service, never its model: that is what runs its `_postRemove`, which is where a
-    // module puts the side effect that has to accompany the removal — deleting the stored object, say.
+    // Through the target's service, never its model: only that path runs the `_postRemove` side effects.
     for (const id of ids) await service.__remove(id);
   }
 
@@ -115,8 +107,7 @@ export class CascadeRunner {
       await service.__removeMany(query);
       return;
     }
-    // A removed child drops out of the query, so each pass takes the next page. A pass that removes nothing means
-    // every remaining match was already visited by this cascade, and looping again would never end.
+    // Removed rows leave the query; a pass that removes nothing has only visited rows left and would loop forever.
     for (;;) {
       const ids = await service.__listIds(query, { limit: drainSize });
       if (!ids.length) return;
@@ -133,8 +124,6 @@ export class CascadeRunner {
   #collectRefEdges(refName: string, mod: CascadeModule) {
     return [...mod.constant.full.cascade.removeRef].map(([key, modelRef]) => {
       const target = ConstantRegistry.getRefName(modelRef);
-      // Cascading into a module the app never mounted is a misconfiguration. Every service is live by now, so
-      // saying so at boot costs nothing and beats discovering it on the first removal, half-way through one.
       if (!this.#modules.has(target)) {
         throw new Error(`Cascade field "${refName}.${key}" removes "${target}", which this app does not mount`);
       }
@@ -156,8 +145,7 @@ export class CascadeRunner {
 
   #resolveOwners(childRef: string, key: string, path: CascadeWithPath) {
     if (path.typeValues.length) {
-      // A polymorphic owner list spans optional modules by design, so an unmounted candidate is a mount choice
-      // rather than a typo — the rows it would have owned simply never cascade.
+      // A polymorphic owner list spans optional modules, so an unmounted owner is a mount choice (warn), not a typo.
       const mounted = path.typeValues.filter((owner) => this.#modules.has(owner));
       for (const owner of path.typeValues) {
         if (mounted.includes(owner)) continue;
@@ -172,12 +160,11 @@ export class CascadeRunner {
     return [owner];
   }
 
-  /** Everything a bulk `removeMany` would skip. All of it absent means the two paths leave the same rows behind. */
+  // Must cover everything a bulk `removeMany` skips: with none of it present, both paths leave the same rows behind.
   #hasRemoveSideEffect(refName: string) {
     const mod = this.#modules.get(refName);
     if (!mod) return true;
-    // A wildcard child may name any model as its owner, so a query-level removal of any model is a removal whose
-    // children were never looked for. One declaration turns the whole app back to one document at a time.
+    // A wildcard child may name any model as its owner, so any query-level removal would skip its children.
     if (this.#anyEdges.length) return true;
     if (mod.schema.preHooks.get("remove")?.length || mod.schema.postHooks.get("remove")?.length) return true;
     if ((mod.srvRef as unknown as { [LIBS_REMOVE_HOOK]?: boolean })[LIBS_REMOVE_HOOK]) return true;
@@ -187,8 +174,6 @@ export class CascadeRunner {
     return !!plan?.refEdges.length || !!plan?.withEdges.length;
   }
 
-  /** Neither the strategy nor the edge list is visible from the source, and adding a `_postRemove` to a target
-   * silently flips it from one query back to one per document. A quiet cascade is the one nobody can explain. */
   #report() {
     const lines: string[] = [];
     for (const [refName, plan] of this.#plans) {
@@ -207,8 +192,6 @@ export class CascadeRunner {
     const bulk = lines.filter((line) => line.endsWith("(bulk)")).length;
     this.#logger.verbose(`${lines.length} cascade edge(s), ${bulk} in one query`);
     for (const line of lines) this.#logger.verbose(line);
-    // Loud, because it is the answer to "why does this app remove everything one document at a time", and the
-    // declaration that caused it is one word in one model nobody is looking at.
     if (!this.#anyEdges.length) return;
     const wildcards = this.#anyEdges.map((edge) => `${edge.refName}.${edge.key}`).join(", ");
     this.#logger.verbose(

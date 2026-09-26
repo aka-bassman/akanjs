@@ -47,7 +47,6 @@ describe("SignalSerializer", () => {
     ]);
     expect(Object.keys(signal.generated.crud)).toContain(`create${"ServerResolverTestItem"}`);
     expect(Object.keys(signal.generated.crud)).toContain(fixtureRefName);
-    // The root slice registers under the empty key, so it contributes the unsuffixed list/insight pair.
     expect(Object.keys(signal.generated.slice).sort()).toEqual([
       `${fixtureRefName}Insight`,
       `${fixtureRefName}InsightInCategory`,
@@ -64,7 +63,6 @@ describe("SignalSerializer", () => {
 
   test("resolves route paths the way the real route table does", () => {
     const rowOf = (key: string) => data.routes.find((route) => route.key === key);
-    // `prefix: false` + `globalPrefix: false` strips both the model prefix and `/api`.
     expect(rowOf("getTitle")).toMatchObject({
       source: "declared",
       method: "GET",

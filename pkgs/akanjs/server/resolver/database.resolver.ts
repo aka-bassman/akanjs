@@ -34,10 +34,6 @@ import {
 } from "akanjs/service";
 import { Exception, getCurrentTrace, traceDataLoaderBatch } from "akanjs/signal";
 
-/**
- * Times a store query and records it against the active request trace (no-op when
- * tracing is disabled). Used to surface "queries per request" and DB latency share.
- */
 const timedQuery = async <T>(fn: () => Promise<T>): Promise<T> => {
   const trace = getCurrentTrace();
   if (!trace) return await fn();
@@ -50,19 +46,13 @@ const timedQuery = async <T>(fn: () => Promise<T>): Promise<T> => {
 };
 
 export class DatabaseResolver {
-  /** Returns the schema alongside the adaptor: the cascade planner reads its `remove` hooks to pick a strategy. */
   static resolveDatabase(
     constant: ConstantModel,
     database: DatabaseModel,
   ): { adaptor: AdaptorCls<DatabaseInstance>; schema: DocumentSchema } {
     const [modelName, className]: [string, string] = [database.refName, capitalize(database.refName)];
-    // `sort` stays null when the caller named none, so the store can pick relevance order for a text search and
-    // its own default otherwise. Defaulting to "latest" here would make every search look explicitly sorted.
-    //
-    // A key the model does not declare is refused rather than ignored: the answer to an unknown key used to be
-    // `createdAt` descending, so a client typo — and `sortKeys` travels to the client, so typos happen — became
-    // a different order with nothing said. The cast the old line made was a lie for the same reason: the lookup
-    // returns `undefined` for a key that is not there.
+    // null (no sort named) lets the store pick relevance for a text search; defaulting to "latest" here would hide it.
+    // An unknown key is refused, not ignored: sortKeys reach the client, and a typo must not silently reorder a list.
     const resolveSort = (sortKey?: string | null): { [key: string]: 1 | -1 } | null => {
       if (!sortKey) return null;
       const sort = getFilterSortByKey(database.filter, sortKey) as { [key: string]: 1 | -1 } | undefined;
@@ -73,10 +63,8 @@ export class DatabaseResolver {
       const find = query ?? {};
       const sort = resolveSort(queryOption?.sort);
       const skip = resolvePageSkip(queryOption?.skip);
-      // `undefined` is a server caller that named no page — `list()` inside a service, where the caller is the
-      // code itself and a ceiling is the wrong answer. Every client-reachable path arrives through the slice
-      // endpoint, which has already clamped what it was handed. An explicit `null` is the opposite ask and is not
-      // the same as leaving it out: it means "page this, I have no number", and lands on the default page size.
+      // undefined: a server caller naming no page gets no ceiling (client paths were clamped by the slice endpoint).
+      // An explicit null means "page this, I have no number" and lands on the default page size.
       const limit = queryOption?.limit === undefined ? 0 : resolvePageLimit(queryOption.limit);
       const select = queryOption?.select;
       const sample = queryOption?.sample;
@@ -105,8 +93,7 @@ export class DatabaseResolver {
       indexedSortFieldKeys.add(key);
       schema.index(fields);
     }
-    // Every non-base field lives inside the `_doc` JSON column, so finding a model's children by the id they hold
-    // is a table scan until an expression index exists. A cascade runs that lookup on every parent removal.
+    // Non-base fields live in the `_doc` JSON column: without this index every cascade lookup is a table scan.
     for (const path of constant.full.cascade.removeWith.values()) {
       const fields = path.typeKey
         ? { removedAt: 1, [path.typeKey]: 1, [path.key]: 1 }
@@ -117,8 +104,6 @@ export class DatabaseResolver {
       schema.index(fields as { [key: string]: 1 | -1 });
     }
 
-    // The schema holds a wrapper, not the caller's listener, so an unsubscribe has to close over that wrapper.
-    // Shared by the model facade and the instance method so the two cannot hand back different teardowns.
     const listen = (phase: "pre" | "post") => {
       return (
         type: SaveEventType,
@@ -269,8 +254,7 @@ export class DatabaseResolver {
           pickOne: (query: QueryOf<any>, projection?: any) =>
             timedQuery(() => store.pickOne(query, { select: projection })),
           pickById,
-          // `AndWrite` writes through the document, so the save hooks run — `updateById` is the query-level write
-          // that skips them.
+          // `AndWrite` saves through the document so save hooks run; `updateById` is the hookless query-level write.
           pickAndWrite: async (id: string, rawData: any) => await (await pickById(id)).set(rawData).save(),
           pickOneAndWrite: async (query: QueryOf<any>, rawData: any) =>
             await (await timedQuery(() => store.pickOne(query))).set(rawData).save(),

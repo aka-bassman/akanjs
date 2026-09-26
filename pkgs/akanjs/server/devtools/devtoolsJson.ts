@@ -1,13 +1,7 @@
 import { dayjs } from "akanjs/base";
 import type { Unserializable } from "./types";
 
-/**
- * Coerces arbitrary registry values into something `JSON.stringify` can round-trip.
- *
- * Registries hold whatever a `.constant.ts` happened to export — Dayjs defaults, Maps, Sets, classes,
- * closures, even cyclic graphs. The devtools payloads must never throw on one of those, so anything
- * unrepresentable degrades to an `Unserializable` marker the visualiser can render as-is.
- */
+/** Never throws: what JSON cannot represent (functions, classes, cycles, …) becomes an `Unserializable` marker. */
 export class DevtoolsJson {
   static readonly #defaultMaxDepth = 6;
 
@@ -33,7 +27,6 @@ export class DevtoolsJson {
     }
   }
 
-  /** Returns `undefined` when `value` is not a leaf this method owns, so the caller keeps walking. */
   static #coercePrimitive(value: unknown): unknown {
     switch (typeof value) {
       case "string":

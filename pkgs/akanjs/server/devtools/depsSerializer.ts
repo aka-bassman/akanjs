@@ -16,13 +16,7 @@ export interface DepsSerializerContext {
 
 type InjectableCls = { [INJECT_META]?: Record<string, InjectInfo>; refName: string };
 
-/**
- * Turns the DI container into a plain node/edge graph for the `/_akan/deps` visualiser.
- *
- * Edge derivation mirrors `InjectInfo.resolveInjection` field-for-field, so the drawn graph is the one that
- * actually resolves at boot rather than a plausible reconstruction of it. Only classes and refNames are
- * emitted — never a live instance, which for `uses` routinely closes over credentials.
- */
+/** Edges mirror `InjectInfo.resolveInjection` field-for-field, so the graph is the one that resolves at boot. */
 export class DepsSerializer {
   readonly #context: DepsSerializerContext;
   readonly #nodes = new Map<string, DepNode>();
@@ -51,8 +45,6 @@ export class DepsSerializer {
       disabledModules: [...di.disabledModules.entries()].map(([refName, reason]) => ({ refName, reason })),
     };
   }
-
-  // * ==================== Nodes ==================== * //
 
   #collectNodes() {
     const { di } = this.#context;
@@ -110,8 +102,6 @@ export class DepsSerializer {
     if (!this.#nodes.has(id)) this.#nodes.set(id, { id, kind, refName, ...extra });
     return id;
   }
-
-  // * ==================== Edges ==================== * //
 
   #collectEdges() {
     const { di } = this.#context;
@@ -211,20 +201,13 @@ export class DepsSerializer {
     );
   }
 
-  // * ==================== Env ==================== * //
-
-  /**
-   * An `env` inject only knows its keys by running its factory, and factories construct SDK clients and open
-   * sockets — so scan the source for `env.KEY` / `env["KEY"]` instead of invoking it. Slightly over-inclusive,
-   * which is fine: this is a local-dev endpoint reading unminified source, and it exposes names, never values.
-   */
+  // Scans the factory source instead of invoking it (factories open sockets); over-inclusive, but names only.
   static #extractEnvKeys(fn: (options: never) => unknown): string[] {
     const source = Function.prototype.toString.call(fn);
     const matches = [...source.matchAll(/\.\s*([A-Za-z_$][\w$]*)|\[\s*["'`]([^"'`]+)["'`]\s*\]/g)];
     return [...new Set(matches.map((match) => match[1] ?? match[2]).filter((key): key is string => Boolean(key)))];
   }
 
-  /** Values only for `AKAN_PUBLIC_*`; every other key contributes its name and nothing else. */
   static #serializeEnv(env: BaseEnv): DepsData["env"] {
     const publicEnv: Record<string, string> = {};
     Object.entries(process.env).forEach(([key, value]) => {
@@ -233,8 +216,6 @@ export class DepsSerializer {
     const keys = new Set([...Object.keys(process.env), ...Object.keys(env)]);
     return { public: publicEnv, keys: [...keys].sort() };
   }
-
-  // * ==================== Helpers ==================== * //
 
   static #stageIndex(stages: string[][]): Map<string, number> {
     const index = new Map<string, number>();

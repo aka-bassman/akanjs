@@ -24,12 +24,7 @@ import type {
 
 const modelViewKeys = ["input", "object", "full", "light", "insight"] as const;
 
-/**
- * Walks `ConstantRegistry` into the `/_akan/constant` payload.
- *
- * Model references are emitted by name only, never inlined, so a cyclic schema still produces a finite
- * document. Anything the registry holds that JSON cannot express goes through {@link DevtoolsJson}.
- */
+/** Model references are emitted by name, never inlined, so a cyclic schema still yields a finite document. */
 export class ConstantSerializer {
   static serialize(): ConstantData {
     const models: Record<string, ConstantModelNode> = {};
@@ -92,7 +87,7 @@ export class ConstantSerializer {
   static #serializeField(name: string, field: ConstantField): ConstantFieldNode {
     const props = field.getProps();
     const fieldKind = props.fieldType ?? "property";
-    // Field names describe structure; seeded values on a secret field do not (see the Secrets rule in AGENTS.md).
+    // A secret field's name is structure, but its seeded default/example values are secrets: redact them.
     const redacted = fieldKind === "secret";
     const defaultKind = ConstantSerializer.#resolveDefaultKind(props.default);
     return {
@@ -125,7 +120,6 @@ export class ConstantSerializer {
     };
   }
 
-  /** `default: () => dayjs()` is idiomatic here — report the factory without ever invoking it. */
   static #resolveDefaultKind(value: unknown): ConstantFieldNode["defaultKind"] {
     if (typeof value === "function") return "function";
     if (value === null || value === undefined) return "none";

@@ -39,7 +39,6 @@ describe("ConstantSerializer", () => {
     const fields = serialize().models[refName].views.full.fields;
     expect(fields.count.defaultKind).toBe("value");
     expect(fields.count.default).toBe(0);
-    // `tags` defaults to `[]` through the array branch of ConstantField.from.
     expect(fields.tags.defaultKind).toBe("value");
   });
 
