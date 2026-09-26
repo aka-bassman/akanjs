@@ -30,7 +30,13 @@ export {
 export { Agent } from "./Agent";
 export { type ApprovalProps, DefaultApproval } from "./Agent/Approval";
 export { Chips as AgentAttachments, type ChipsProps as AgentAttachmentsProps } from "./Agent/Attach";
-export { type AgentSessionSetup, agentSessionOf } from "./Agent/agentSessionOf";
+export {
+  type AgentBuiltin,
+  type AgentSessionSetup,
+  agentSessionOf,
+  type BuiltinOption,
+  type PersistOption,
+} from "./Agent/agentSessionOf";
 export {
   type AttachLimits,
   type AttachReader,
@@ -54,8 +60,6 @@ export {
   type ReferenceChipsProps as AgentReferencesProps,
 } from "./Agent/Refer";
 export { DefaultSteps, type StepsProps } from "./Agent/Steps";
-export type { PersistOption } from "./Agent/sessionHistory";
-export type { AgentBuiltin, BuiltinOption } from "./Agent/sessionView";
 export { DefaultToolCard, type ToolCardProps } from "./Agent/ToolCard";
 export { tokenCount } from "./Agent/tokenCount";
 export type { QueuedMessage } from "./Agent/useChatQueue";

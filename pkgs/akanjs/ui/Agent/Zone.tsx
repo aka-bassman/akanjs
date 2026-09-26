@@ -13,10 +13,8 @@ import {
   type SessionHistory,
   useScopePath,
 } from "use-agentic";
-import { agentSessionOf } from "./agentSessionOf";
+import { agentSessionOf, type BuiltinOption, type PersistOption } from "./agentSessionOf";
 import { Guide } from "./Guide";
-import type { PersistOption } from "./sessionHistory";
-import type { BuiltinOption } from "./sessionView";
 
 export interface ZoneProps {
   className?: string;

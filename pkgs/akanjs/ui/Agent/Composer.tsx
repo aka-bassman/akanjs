@@ -2,12 +2,12 @@
 import { cn, usePage } from "akanjs/client";
 import { lazy } from "akanjs/webkit";
 import { type KeyboardEvent, type RefObject, useEffect } from "react";
+import { AiOutlineAudio, AiOutlineAudioMuted } from "react-icons/ai";
 import type { AgentSession, MessageAttachment, MessageReference } from "use-agentic";
 import { Button } from "../Button";
 import { inputRecipe } from "../recipe";
 import { createOverridable, useUiRecipe } from "../UiOverride";
 import { Attach, Chips } from "./Attach";
-import { Mic } from "./Mic";
 import { ReferenceChips } from "./Refer";
 
 /** Every offset is into the draft string, tokens included. */
@@ -173,3 +173,27 @@ export const DefaultComposer = ({
 };
 
 export const Composer = createOverridable("AgentComposer", DefaultComposer);
+
+interface MicProps {
+  className?: string;
+  listening: boolean;
+  label: string;
+  onToggle: () => void;
+}
+
+const Mic = ({ className, listening, label, onToggle }: MicProps) => (
+  <button
+    aria-label={label}
+    aria-pressed={listening}
+    className={cn(
+      "shrink-0 hover:text-foreground",
+      listening ? "animate-pulse text-primary" : "text-foreground/50",
+      className,
+    )}
+    onClick={onToggle}
+    title={label}
+    type="button"
+  >
+    {listening ? <AiOutlineAudioMuted /> : <AiOutlineAudio />}
+  </button>
+);

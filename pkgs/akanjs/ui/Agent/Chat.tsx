@@ -24,7 +24,7 @@ import {
 } from "use-agentic";
 import { createOverridable } from "../UiOverride";
 import Approval from "./Approval";
-import { agentSessionOf } from "./agentSessionOf";
+import { agentSessionOf, type BuiltinOption, type PersistOption } from "./agentSessionOf";
 import type { AttachLimits, AttachReader } from "./attachment";
 import Bubble from "./Bubble";
 import { type ChatCommand, ChatCommands } from "./ChatCommands";
@@ -34,8 +34,6 @@ import Menu from "./Menu";
 import Question from "./Question";
 import Queued from "./Queued";
 import Steps from "./Steps";
-import type { PersistOption } from "./sessionHistory";
-import type { BuiltinOption } from "./sessionView";
 import ToolCard from "./ToolCard";
 import { tokenCount } from "./tokenCount";
 import { useChatAttachments } from "./useChatAttachments";
