@@ -130,8 +130,6 @@ const getServerBasePath = (reqPathname: string, lang: string, headerBasePath: st
 
 declare global {
   var __AKAN_ROUTER__: Router | undefined;
-  var __AKAN_DEV_SYNC_NAVIGATION__: ((href: string, kind: "push" | "replace" | "back" | "pop") => void) | undefined;
-  var __AKAN_DEV_SYNC_NAVIGATION_APPLYING__: boolean | undefined;
 }
 
 export const getPathInfo = (requestUrl: string, lang: string, prefix: string) => {

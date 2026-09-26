@@ -4,6 +4,9 @@ declare global {
   var __AKAN_RSC_NAVIGATE__:
     | ((href: string, options?: { replace?: boolean; scrollToTop?: boolean }) => Promise<void>)
     | undefined;
+  var __AKAN_DEV_SYNC_NAVIGATION__: ((href: string, kind: "push" | "replace" | "back" | "pop") => void) | undefined;
+  var __AKAN_DEV_SYNC_NAVIGATION_APPLYING__: boolean | undefined;
+  var __AKAN_GET_SYNC_ROUTE_HREF__: ((href: string) => string) | undefined;
 }
 
 export const clearRscNavigationCache = () => {
