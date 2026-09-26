@@ -2,7 +2,7 @@
 import { cn, router } from "akanjs/client";
 import type { ReactNode } from "react";
 
-interface ActionProps {
+export interface ActionProps {
   className?: string;
   children?: ReactNode;
 }
@@ -19,7 +19,7 @@ export const Close = ({ className, children }: ActionProps) => (
   </div>
 );
 
-interface LangProps extends ActionProps {
+export interface LangProps extends ActionProps {
   lang: "ko" | "en" | (string & {});
 }
 export const Lang = ({ className, lang, children }: LangProps) => (
