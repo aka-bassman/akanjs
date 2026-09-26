@@ -14,13 +14,6 @@ export interface SessionToolPackOptions {
 
 const snippetChars = 240;
 
-/**
- * Lets the agent reach its own earlier conversations in this workspace.
- *
- * Every past session is already on disk as JSONL under `.akan/code/sessions/`, so this is a reader, not a
- * second store. "We decided last Tuesday to keep the adapter in `srvkit/`" is the kind of thing that exists
- * nowhere else — not in the code, not in git, not in the guide.
- */
 export class SessionToolPack {
   readonly #options: SessionToolPackOptions;
 
@@ -91,10 +84,7 @@ export class SessionToolPack {
     return codeAgentClip(session.allMessagesText, codeAgentOutputChars * 2);
   }
 
-  /**
-   * Sessions are listed for this workspace's directory only. A global list would reach another checkout's
-   * conversations, which is somebody else's project even when it is the same person's machine.
-   */
+  // This workspace's directory only: a global list would reach another checkout's conversations.
   async #list(): Promise<SessionInfo[]> {
     return await SessionManager.list(this.#options.cwd, akanCodePaths.sessionsDir(this.#options.workspaceRoot));
   }

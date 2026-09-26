@@ -3,7 +3,6 @@ import path from "node:path";
 import type { CodeAgentMcpServerRef } from "akanjs/common";
 import { akanCodePaths } from "../agent/akanCodePaths";
 
-/** Which of the two files a server is declared in — see {@link McpServerConfig}. */
 export type McpServerScope = "global" | "workspace";
 
 export interface McpDeclaredServer {
@@ -28,21 +27,8 @@ interface ServerFile {
   servers?: Record<string, ServerFileEntry>;
 }
 
-/**
- * The declared MCP servers, in the shape the editors already write, from two files.
- *
- * `~/.akan/code/mcp.json` is the person's, and `<repo>/.akan/code/mcp.json` is the checkout's. **The global
- * file is where a server normally goes**: a server is an integration with an account, the token for it
- * already lives in the home directory, and declaring it per repo means declaring and signing in again in
- * every checkout. The workspace file is for a server that is genuinely this repo's — one it starts itself, or
- * one only its team reaches — and a name declared in both resolves to the workspace's, because the more
- * specific declaration is the one that knew about the other.
- *
- * Both hold an `mcpServers` map — the block a developer already has in their Claude, Cursor or VS Code config
- * — so the file can be pasted rather than translated. `servers` is read as well because VS Code spells it
- * that way, and whichever key a file already uses is the one a write goes back into: rewriting it to our
- * preferred spelling would silently break the editor sharing the file.
- */
+// Global is the default home: a server's token already lives there, so one declaration serves every checkout.
+// VS Code spells the key `servers`; a write keeps the file's own key, or it breaks the editor sharing the file.
 export class McpServerConfig {
   static file(workspaceRoot: string, scope: McpServerScope = "workspace") {
     return scope === "global" ? akanCodePaths.globalMcpFile() : akanCodePaths.mcpFile(workspaceRoot);
@@ -71,12 +57,7 @@ export class McpServerConfig {
     return [...byName.values()];
   }
 
-  /**
-   * Declares one server, replacing an entry of the same name in the file it is written to.
-   *
-   * A url is an http server and anything else is a command with its argv, which is the whole of the guess: a
-   * transport asked for as a third argument is a thing to get wrong, and the two shapes are already distinct.
-   */
+  /** Replaces a same-name entry in the target file; a url is an http server, anything else a command and argv. */
   static add(workspaceRoot: string, name: string, target: string[], scope: McpServerScope = "global") {
     const [head, ...rest] = target;
     if (!head) throw new Error("Give the server a command to run, or a url to reach.");
@@ -88,7 +69,7 @@ export class McpServerConfig {
     return McpServerConfig.#refOf(name, entry);
   }
 
-  /** Removes it from whichever file declares it, and says which — a name can only be in one at a time. */
+  /** Removes it from the workspace file, else the global one, and returns that scope; false when neither has it. */
   static remove(workspaceRoot: string, name: string): McpServerScope | false {
     for (const { scope } of [...McpServerConfig.files(workspaceRoot)].reverse()) {
       const { file, key, map } = McpServerConfig.#parse(workspaceRoot, scope);
@@ -114,7 +95,6 @@ export class McpServerConfig {
     };
   }
 
-  /** What a server is reached at, as one line: the argv or the url. */
   static targetOf(ref: CodeAgentMcpServerRef) {
     return ref.url ?? [ref.command, ...(ref.args ?? [])].filter(Boolean).join(" ");
   }
