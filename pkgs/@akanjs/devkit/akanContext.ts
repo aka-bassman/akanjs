@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
-import { capitalize } from "akanjs/common";
+import { capitalize, isRecord } from "akanjs/common";
 import { extractBlockVersion, readDevkitVersion } from "./agentsIndex";
 import { AppExecutor, LibExecutor, type SysExecutor, type WorkspaceExecutor } from "./executors";
 import { FileSys } from "./fileSys";
@@ -332,7 +332,15 @@ const isWorkflowPlan = (value: unknown): value is WorkflowPlan =>
   "schemaVersion" in value &&
   value.schemaVersion === 1 &&
   "mode" in value &&
-  value.mode === "plan";
+  value.mode === "plan" &&
+  "inputs" in value &&
+  isRecord(value.inputs) &&
+  "predictedChanges" in value &&
+  Array.isArray(value.predictedChanges) &&
+  value.predictedChanges.every((change) => isRecord(change) && typeof change.target === "string");
+
+const isPathList = (value: unknown) =>
+  Array.isArray(value) && value.every((file) => isRecord(file) && typeof file.path === "string");
 
 const isWorkflowApplyReport = (value: unknown): value is WorkflowApplyReport =>
   typeof value === "object" &&
@@ -340,7 +348,13 @@ const isWorkflowApplyReport = (value: unknown): value is WorkflowApplyReport =>
   "schemaVersion" in value &&
   value.schemaVersion === 1 &&
   "mode" in value &&
-  (value.mode === "apply" || value.mode === "dry-run");
+  (value.mode === "apply" || value.mode === "dry-run") &&
+  "changedFiles" in value &&
+  isPathList(value.changedFiles) &&
+  "generatedFiles" in value &&
+  isPathList(value.generatedFiles) &&
+  "plan" in value &&
+  isWorkflowPlan(value.plan);
 
 const isWorkflowRunArtifact = (value: unknown): value is WorkflowRunArtifact =>
   typeof value === "object" && value !== null && "schemaVersion" in value && value.schemaVersion === 1;
@@ -354,7 +368,8 @@ const workflowPathsForArtifact = (artifact: WorkflowRunArtifact) => {
       ...workflowPathsForPlan(artifact.plan),
     ];
   }
-  if ("mode" in artifact && artifact.mode === "validate" && artifact.plan) return workflowPathsForPlan(artifact.plan);
+  if ("mode" in artifact && artifact.mode === "validate" && isWorkflowPlan(artifact.plan))
+    return workflowPathsForPlan(artifact.plan);
   return [];
 };
 
