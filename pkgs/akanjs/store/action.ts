@@ -37,6 +37,7 @@ import type {
   SlceDbSort,
   SliceCls,
 } from "akanjs/signal";
+import { expandQueryArgs, normalizeQueryArgs } from "../fetch/client/sliceQueryArgs";
 import { tagAction } from "./actionTag";
 import { databaseStateNames } from "./databaseStateNames";
 import { DraftStore } from "./draftStore";
@@ -64,17 +65,6 @@ type SliceRefreshForm<S extends SliceCls, Suffix extends keyof _SliceMap<S>> = S
 
 const UPLOAD_POLL_INTERVAL_MS = 3000;
 const UPLOAD_POLL_ATTEMPTS = 40;
-
-const isNullableSliceArg = (arg: SerializedSlice["args"][number]) => arg.nullable ?? arg.type === "search";
-
-const normalizeQueryArgs = (queryArgs: unknown[], sliceArgs: SerializedSlice["args"]) => {
-  let length = Math.min(queryArgs.length, sliceArgs.length);
-  while (length > 0 && isNullableSliceArg(sliceArgs[length - 1]) && queryArgs[length - 1] == null) length--;
-  return queryArgs.slice(0, length);
-};
-
-const expandQueryArgs = (queryArgs: unknown[], sliceArgs: SerializedSlice["args"]) =>
-  sliceArgs.map((_, idx) => queryArgs[idx]);
 
 export interface CreateOption<Full extends { id: string }> {
   path?: string;
