@@ -1,5 +1,5 @@
 "use client";
-import type { ComponentType } from "react";
+import { type ComponentType, createElement, type ReactNode, useContext, useMemo } from "react";
 import type { ClassNameValue as ClassValue } from "tailwind-merge";
 import { sharedContext } from "../../client/sharedContext";
 import type { ApprovalProps as AgentApprovalProps } from "../Agent/Approval";
@@ -115,3 +115,45 @@ export interface AkanUiRecipes {
 export type AkanUiOverrideManifest = Partial<AkanUiOverrides> & { recipes?: Partial<AkanUiRecipes> };
 
 export const UiOverrideContext = sharedContext<AkanUiOverrideManifest>("uiOverride", {});
+
+/** The active override for `name` in this route subtree, or `undefined`. */
+export const useUiOverride = <K extends keyof AkanUiOverrides>(name: K): AkanUiOverrides[K] | undefined => {
+  // Untyped read: materializing `Partial<AkanUiOverrides>[K]` over the generic slots trips TS2590.
+  const overrides = useContext(UiOverrideContext) as Record<string, unknown>;
+  return overrides[name] as AkanUiOverrides[K] | undefined;
+};
+
+/** The active recipe swap for `name` in this route subtree, or `undefined`. */
+export const useUiRecipe = <K extends keyof AkanUiRecipes>(name: K): AkanUiRecipes[K] | undefined => {
+  const { recipes } = useContext(UiOverrideContext);
+  return recipes?.[name];
+};
+
+/** Renders the nearest `_overrides.tsx` entry for `name`, else `Default`. */
+export const createOverridable = <K extends keyof AkanUiOverrides>(
+  name: K,
+  Default: AkanUiOverrides[K],
+): AkanUiOverrides[K] => {
+  // Narrowed before `??`: the deferred union `AkanUiOverrides[K]` would otherwise trip TS2590.
+  const Fallback = Default as unknown as ComponentType<Record<string, unknown>>;
+  const Overridable = (props: Record<string, unknown>): ReactNode => {
+    const Override = useUiOverride(name) as unknown as ComponentType<Record<string, unknown>> | undefined;
+    return createElement(Override ?? Fallback, props);
+  };
+  return Overridable as unknown as AkanUiOverrides[K];
+};
+
+export interface UiOverrideProviderProps {
+  value?: AkanUiOverrideManifest;
+  children?: ReactNode;
+}
+
+/** Merges `value` over the inherited overrides (closest wins; `recipes` merges per slot). */
+export const UiOverrideProvider = ({ value, children }: UiOverrideProviderProps) => {
+  const parent = useContext(UiOverrideContext);
+  const merged = useMemo(
+    () => ({ ...parent, ...value, recipes: { ...parent.recipes, ...value?.recipes } }),
+    [parent, value],
+  );
+  return <UiOverrideContext.Provider value={merged}>{children}</UiOverrideContext.Provider>;
+};

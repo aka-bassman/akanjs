@@ -3,8 +3,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 
-import type { AkanUiOverrides } from "../UiOverride/context";
-import { UiOverrideProvider } from "../UiOverride/Provider";
+import { type AkanUiOverrides, UiOverrideProvider } from "../UiOverride";
 
 let Messages: typeof import("./Messages").Messages;
 let st: typeof import("akanjs/store").st;

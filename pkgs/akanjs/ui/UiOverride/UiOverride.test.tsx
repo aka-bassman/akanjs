@@ -3,12 +3,16 @@ import { type ComponentType, createElement, type ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
 
 import type { ButtonProps } from "../Button";
-import type { AkanModalComponent, AkanUiOverrides, AkanUiRecipes } from "./context";
-import { createOverridable } from "./createOverridable";
 import { override } from "./override";
-import { UiOverrideProvider } from "./Provider";
-import { useUiOverride } from "./useUiOverride";
-import { useUiRecipe } from "./useUiRecipe";
+import {
+  type AkanModalComponent,
+  type AkanUiOverrides,
+  type AkanUiRecipes,
+  createOverridable,
+  UiOverrideProvider,
+  useUiOverride,
+  useUiRecipe,
+} from "./UiOverride";
 
 // The shipped `../Modal` transitively loads the store, which reads these at import time. Default them so this
 // test is self-contained (it never imports `../Modal` statically — see the dynamic import below).
