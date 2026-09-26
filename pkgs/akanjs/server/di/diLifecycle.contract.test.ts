@@ -2,36 +2,51 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type BackendEnv, DatabaseModes } from "akanjs/base";
+import { DatabaseModes } from "akanjs/base";
 import { adapt, type LlmAdaptor, LlmAdaptorRole, ServiceModel, SolidPubSub, serve } from "akanjs/service";
 import { endpoint } from "../../signal/endpoint";
 import { internal } from "../../signal/internal";
 import { serverSignal } from "../../signal/serverSignal";
-import { DatabaseSignal, ServiceSignal } from "../../signal/signalRegistry";
-import { AkanLib } from "../akanLib";
+import { ServiceSignal } from "../../signal/signalRegistry";
+import { AkanLib, type AkanLibProps, type ServiceModule } from "../akanLib";
 import { AkanOption } from "../akanOption";
 import { AkanResponse, HostBasePathWebProxy, LocaleWebProxy, type WebProxy } from "../proxy";
 import {
-  ServerResolverTestEndpoint,
-  ServerResolverTestInternal,
-  ServerResolverTestServerSignal,
-  ServerResolverTestSlice,
+  makeSqliteEnv,
   serverResolverTestConstant,
   serverResolverTestDatabase,
-  serverResolverTestServiceModel,
+  serverResolverTestModule,
   validId,
 } from "../resolver/resolver.contract.fixture";
 
+const loadDiLifecycle = async (appName: string) => {
+  process.env.AKAN_PUBLIC_APP_NAME = appName;
+  process.env.AKAN_PUBLIC_REPO_NAME = "akan";
+  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+  process.env.AKAN_PUBLIC_ENV = "local";
+  process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+  process.env.SERVER_MODE = "all";
+  process.env.NODE_ENV = "test";
+  return (await import("./diLifecycle")).DiLifecycle;
+};
+
+const libOf = (
+  name: string,
+  option = new AkanOption(),
+  parts: Partial<Pick<AkanLibProps, "databases" | "services">> = {},
+) => new AkanLib(name, { databases: [], services: [], scalars: [], option, ...parts });
+
+const serviceModule = (Service: Parameters<typeof ServiceModel.from>[0]): ServiceModule => {
+  const service = ServiceModel.from(Service);
+  class Endpoint extends endpoint(service, () => ({})) {}
+  class Internal extends internal(service, () => ({})) {}
+  class Signal extends serverSignal(Endpoint, Internal) {}
+  return { service, signal: new ServiceSignal(Internal, Endpoint, Signal) };
+};
+
 describe("DiLifecycle declaration-to-runtime contract", () => {
   test("prepends default web proxies before library proxies", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "serverLifecycle";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("serverLifecycle");
 
     class CustomWebProxy implements WebProxy {
       static readonly refName = "CustomWebProxy";
@@ -40,70 +55,18 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
       }
     }
 
-    const env = {} satisfies BackendEnv;
-    const lib = new AkanLib("serverLifecycleTest", {
-      databases: [],
-      services: [],
-      scalars: [],
-      option: new AkanOption().applyWebProxy(CustomWebProxy),
-    });
-
-    const lifecycle = new DiLifecycle({ env }, lib);
+    const lib = libOf("serverLifecycleTest", new AkanOption().applyWebProxy(CustomWebProxy));
+    const lifecycle = new DiLifecycle({ env: {} }, lib);
 
     expect(lifecycle.webProxies).toEqual([LocaleWebProxy, HostBasePathWebProxy, CustomWebProxy]);
   });
 
   test("assembles AkanLib declarations into registry, live services, and routes", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "serverLifecycle";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("serverLifecycle");
 
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-di-"));
-    const env = {
-      workspaceRoot: tmp,
-      database: {
-        sqlite: {
-          filePath: join(tmp, "akan.db"),
-          journalMode: "WAL",
-          busyTimeoutMs: 1000,
-          synchronous: "NORMAL",
-          foreignKeys: true,
-        },
-      },
-      solid: {
-        filePath: join(tmp, "solid.db"),
-        journalMode: "WAL",
-        busyTimeoutMs: 1000,
-        synchronous: "NORMAL",
-        cleanupIntervalMs: 60_000,
-        queuePollIntervalMs: 60_000,
-        queueLeaseMs: 30_000,
-      },
-    } satisfies BackendEnv & { workspaceRoot: string };
-    const lib = new AkanLib("serverLifecycleTest", {
-      databases: [
-        {
-          constant: serverResolverTestConstant,
-          database: serverResolverTestDatabase,
-          service: serverResolverTestServiceModel,
-          signal: new DatabaseSignal(
-            ServerResolverTestInternal,
-            ServerResolverTestEndpoint,
-            ServerResolverTestSlice,
-            ServerResolverTestServerSignal,
-          ),
-        },
-      ],
-      services: [],
-      scalars: [],
-      option: new AkanOption(),
-    });
-    const lifecycle = new DiLifecycle({ env }, lib);
+    const lib = libOf("serverLifecycleTest", new AkanOption(), { databases: [serverResolverTestModule()] });
+    const lifecycle = new DiLifecycle({ env: makeSqliteEnv(tmp) }, lib);
 
     try {
       const routes = await lifecycle.initializeAll();
@@ -158,14 +121,7 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
   });
 
   test("skips disabled service modules and services that depend on their signals", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "serverLifecycle";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("serverLifecycle");
 
     class LocalBuildService extends serve("localBuild" as const, { enabled: false }, () => ({})) {}
     const localBuildServiceModel = ServiceModel.from(LocalBuildService);
@@ -176,28 +132,17 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
     class ProjectBuildService extends serve("projectBuild" as const, ({ signal }) => ({
       localBuildSignal: signal<InstanceType<typeof LocalBuildSignal>>(),
     })) {}
-    const projectBuildServiceModel = ServiceModel.from(ProjectBuildService);
-    class ProjectBuildEndpoint extends endpoint(projectBuildServiceModel, () => ({})) {}
-    class ProjectBuildInternal extends internal(projectBuildServiceModel, () => ({})) {}
-    class ProjectBuildSignal extends serverSignal(ProjectBuildEndpoint, ProjectBuildInternal) {}
 
-    const env = {} satisfies BackendEnv;
-    const lib = new AkanLib("serverLifecycleTest", {
-      databases: [],
+    const lib = libOf("serverLifecycleTest", new AkanOption(), {
       services: [
         {
           service: localBuildServiceModel,
           signal: new ServiceSignal(LocalBuildInternal, LocalBuildEndpoint, LocalBuildSignal),
         },
-        {
-          service: projectBuildServiceModel,
-          signal: new ServiceSignal(ProjectBuildInternal, ProjectBuildEndpoint, ProjectBuildSignal),
-        },
+        serviceModule(ProjectBuildService),
       ],
-      scalars: [],
-      option: new AkanOption(),
     });
-    const lifecycle = new DiLifecycle({ env }, lib);
+    const lifecycle = new DiLifecycle({ env: {} }, lib);
 
     await expect(lifecycle.initializeAll()).resolves.toBeDefined();
     expect(lifecycle.registry.serviceCls.has("localBuild")).toBe(false);
@@ -209,62 +154,19 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
   });
 
   test("skips disabled database modules before document, service, and signal registration", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "serverLifecycle";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("serverLifecycle");
 
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-di-disabled-"));
-    const env = {
-      workspaceRoot: tmp,
-      database: {
-        sqlite: {
-          filePath: join(tmp, "akan.db"),
-          journalMode: "WAL",
-          busyTimeoutMs: 1000,
-          synchronous: "NORMAL",
-          foreignKeys: true,
-        },
-      },
-      solid: {
-        filePath: join(tmp, "solid.db"),
-        journalMode: "WAL",
-        busyTimeoutMs: 1000,
-        synchronous: "NORMAL",
-        cleanupIntervalMs: 60_000,
-        queuePollIntervalMs: 60_000,
-        queueLeaseMs: 30_000,
-      },
-    } satisfies BackendEnv & { workspaceRoot: string };
     class DisabledServerResolverTestService extends serve(serverResolverTestDatabase, { enabled: false }, () => ({})) {}
     const disabledServiceModel = ServiceModel.fromModel(
       DisabledServerResolverTestService,
       serverResolverTestConstant,
       serverResolverTestDatabase,
     );
-    const lib = new AkanLib("serverLifecycleTest", {
-      databases: [
-        {
-          constant: serverResolverTestConstant,
-          database: serverResolverTestDatabase,
-          service: disabledServiceModel,
-          signal: new DatabaseSignal(
-            ServerResolverTestInternal,
-            ServerResolverTestEndpoint,
-            ServerResolverTestSlice,
-            ServerResolverTestServerSignal,
-          ),
-        },
-      ],
-      services: [],
-      scalars: [],
-      option: new AkanOption(),
+    const lib = libOf("serverLifecycleTest", new AkanOption(), {
+      databases: [serverResolverTestModule(disabledServiceModel)],
     });
-    const lifecycle = new DiLifecycle({ env }, lib);
+    const lifecycle = new DiLifecycle({ env: makeSqliteEnv(tmp) }, lib);
 
     try {
       await expect(lifecycle.initializeAll()).resolves.toBeDefined();
@@ -284,14 +186,7 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
 
 describe("DiLifecycle adaptor overrides", () => {
   test("applyAdaptor rebinds a predefined role and the framework agent module runs over it", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "adaptorOverride";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("adaptorOverride");
 
     class FakeLlm extends adapt("fakeLlm" as const, () => ({})) implements LlmAdaptor {
       async chat() {
@@ -300,34 +195,8 @@ describe("DiLifecycle adaptor overrides", () => {
     }
 
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-di-"));
-    const env = {
-      workspaceRoot: tmp,
-      database: {
-        sqlite: {
-          filePath: join(tmp, "akan.db"),
-          journalMode: "WAL",
-          busyTimeoutMs: 1000,
-          synchronous: "NORMAL",
-          foreignKeys: true,
-        },
-      },
-      solid: {
-        filePath: join(tmp, "solid.db"),
-        journalMode: "WAL",
-        busyTimeoutMs: 1000,
-        synchronous: "NORMAL",
-        cleanupIntervalMs: 60_000,
-        queuePollIntervalMs: 60_000,
-        queueLeaseMs: 30_000,
-      },
-    } satisfies BackendEnv & { workspaceRoot: string };
-    const lib = new AkanLib("llmOverrideTest", {
-      databases: [],
-      services: [],
-      scalars: [],
-      option: new AkanOption().applyAdaptor(LlmAdaptorRole, FakeLlm),
-    });
-    const lifecycle = new DiLifecycle({ env }, lib);
+    const lib = libOf("llmOverrideTest", new AkanOption().applyAdaptor(LlmAdaptorRole, FakeLlm));
+    const lifecycle = new DiLifecycle({ env: makeSqliteEnv(tmp) }, lib);
     try {
       await lifecycle.initializeAll();
       expect(lifecycle.registry.adaptorRole.get(LlmAdaptorRole)).toBe(FakeLlm);
@@ -344,50 +213,18 @@ describe("DiLifecycle adaptor overrides", () => {
   });
 
   test("setLlm reaches whichever adaptor fills the LLM role, as the llmOption use", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "llmOption";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("llmOption");
 
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-llm-"));
-    const env = {
-      hostname: "llmOption",
-      workspaceRoot: tmp,
-      database: {
-        sqlite: {
-          filePath: join(tmp, "akan.db"),
-          journalMode: "WAL",
-          busyTimeoutMs: 1000,
-          synchronous: "NORMAL",
-          foreignKeys: true,
-        },
-      },
-      solid: {
-        filePath: join(tmp, "solid.db"),
-        journalMode: "WAL",
-        busyTimeoutMs: 1000,
-        synchronous: "NORMAL",
-        cleanupIntervalMs: 60_000,
-        queuePollIntervalMs: 60_000,
-        queueLeaseMs: 30_000,
-      },
-    } satisfies BackendEnv & { workspaceRoot: string };
-    const dependency = new AkanLib("llmLibTest", {
-      databases: [],
-      services: [],
-      scalars: [],
-      option: new AkanOption().setLlm({ model: "lib-model", host: "https://lib.example.com" }),
-    });
-    const app = new AkanLib("llmAppTest", {
-      databases: [],
-      services: [],
-      scalars: [],
-      option: new AkanOption().setLlm((options) => ({ apiKey: `key-${options.hostname}`, model: "app-model" })),
-    });
+    const env = { hostname: "llmOption", ...makeSqliteEnv(tmp) };
+    const dependency = libOf(
+      "llmLibTest",
+      new AkanOption().setLlm({ model: "lib-model", host: "https://lib.example.com" }),
+    );
+    const app = libOf(
+      "llmAppTest",
+      new AkanOption().setLlm((options) => ({ apiKey: `key-${options.hostname}`, model: "app-model" })),
+    );
     const lifecycle = new DiLifecycle({ env }, dependency, app);
     try {
       await lifecycle.initializeAll();
@@ -405,24 +242,10 @@ describe("DiLifecycle adaptor overrides", () => {
 
 describe("DiLifecycle duplicate registrations", () => {
   test("refuses two libs claiming one use key", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "duplicateUse";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("duplicateUse");
 
-    const env = {} satisfies BackendEnv;
-    const makeLib = (name: string) =>
-      new AkanLib(name, {
-        databases: [],
-        services: [],
-        scalars: [],
-        option: new AkanOption().use({ duplicateUseApi: { name } }),
-      });
-    const lifecycle = new DiLifecycle({ env }, makeLib("duplicateUseA"), makeLib("duplicateUseB"));
+    const makeLib = (name: string) => libOf(name, new AkanOption().use({ duplicateUseApi: { name } }));
+    const lifecycle = new DiLifecycle({ env: {} }, makeLib("duplicateUseA"), makeLib("duplicateUseB"));
 
     await expect(lifecycle.initializeAll()).rejects.toThrow(
       '"duplicateUseApi" is registered by lib "duplicateUseA" and by lib "duplicateUseB"',
@@ -430,52 +253,22 @@ describe("DiLifecycle duplicate registrations", () => {
   });
 
   test("refuses two adaptor classes claiming one refName", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "duplicateAdaptor";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("duplicateAdaptor");
 
     class FirstRival extends adapt("duplicateRival" as const, () => ({})) {}
     class SecondRival extends adapt("duplicateRival" as const, () => ({})) {}
-
     class DuplicateAlphaService extends serve("duplicateAlpha" as const, ({ plug }) => ({
       rival: plug(FirstRival),
     })) {}
-    const duplicateAlphaServiceModel = ServiceModel.from(DuplicateAlphaService);
-    class DuplicateAlphaEndpoint extends endpoint(duplicateAlphaServiceModel, () => ({})) {}
-    class DuplicateAlphaInternal extends internal(duplicateAlphaServiceModel, () => ({})) {}
-    class DuplicateAlphaSignal extends serverSignal(DuplicateAlphaEndpoint, DuplicateAlphaInternal) {}
-
     class DuplicateBetaService extends serve("duplicateBeta" as const, ({ plug }) => ({
       rival: plug(SecondRival),
     })) {}
-    const duplicateBetaServiceModel = ServiceModel.from(DuplicateBetaService);
-    class DuplicateBetaEndpoint extends endpoint(duplicateBetaServiceModel, () => ({})) {}
-    class DuplicateBetaInternal extends internal(duplicateBetaServiceModel, () => ({})) {}
-    class DuplicateBetaSignal extends serverSignal(DuplicateBetaEndpoint, DuplicateBetaInternal) {}
 
-    const env = {} satisfies BackendEnv;
-    const lib = new AkanLib("duplicateAdaptorTest", {
-      databases: [],
-      services: [
-        {
-          service: duplicateAlphaServiceModel,
-          signal: new ServiceSignal(DuplicateAlphaInternal, DuplicateAlphaEndpoint, DuplicateAlphaSignal),
-        },
-        {
-          service: duplicateBetaServiceModel,
-          signal: new ServiceSignal(DuplicateBetaInternal, DuplicateBetaEndpoint, DuplicateBetaSignal),
-        },
-      ],
-      scalars: [],
-      option: new AkanOption(),
+    const lib = libOf("duplicateAdaptorTest", new AkanOption(), {
+      services: [serviceModule(DuplicateAlphaService), serviceModule(DuplicateBetaService)],
     });
 
-    expect(() => new DiLifecycle({ env }, lib)).toThrow(
+    expect(() => new DiLifecycle({ env: {} }, lib)).toThrow(
       '"duplicateRival" is registered by service "duplicateAlpha" and by service "duplicateBeta"',
     );
   });
@@ -484,108 +277,38 @@ describe("DiLifecycle duplicate registrations", () => {
 describe("DiLifecycle module selection", () => {
   const buildSelectionLib = () => {
     class SelectionLeafService extends serve("selectionLeaf" as const, () => ({})) {}
-    const selectionLeafServiceModel = ServiceModel.from(SelectionLeafService);
-    class SelectionLeafEndpoint extends endpoint(selectionLeafServiceModel, () => ({})) {}
-    class SelectionLeafInternal extends internal(selectionLeafServiceModel, () => ({})) {}
-    class SelectionLeafSignal extends serverSignal(SelectionLeafEndpoint, SelectionLeafInternal) {}
-
     class SelectionRootService extends serve("selectionRoot" as const, ({ service }) => ({
       selectionLeafService: service<InstanceType<typeof SelectionLeafService>>(),
     })) {}
-    const selectionRootServiceModel = ServiceModel.from(SelectionRootService);
-    class SelectionRootEndpoint extends endpoint(selectionRootServiceModel, () => ({})) {}
-    class SelectionRootInternal extends internal(selectionRootServiceModel, () => ({})) {}
-    class SelectionRootSignal extends serverSignal(SelectionRootEndpoint, SelectionRootInternal) {}
-
     class SelectionAsideService extends serve("selectionAside" as const, () => ({})) {}
-    const selectionAsideServiceModel = ServiceModel.from(SelectionAsideService);
-    class SelectionAsideEndpoint extends endpoint(selectionAsideServiceModel, () => ({})) {}
-    class SelectionAsideInternal extends internal(selectionAsideServiceModel, () => ({})) {}
-    class SelectionAsideSignal extends serverSignal(SelectionAsideEndpoint, SelectionAsideInternal) {}
-
-    return new AkanLib("moduleSelectionTest", {
-      databases: [],
+    return libOf("moduleSelectionTest", new AkanOption(), {
       services: [
-        {
-          service: selectionLeafServiceModel,
-          signal: new ServiceSignal(SelectionLeafInternal, SelectionLeafEndpoint, SelectionLeafSignal),
-        },
-        {
-          service: selectionRootServiceModel,
-          signal: new ServiceSignal(SelectionRootInternal, SelectionRootEndpoint, SelectionRootSignal),
-        },
-        {
-          service: selectionAsideServiceModel,
-          signal: new ServiceSignal(SelectionAsideInternal, SelectionAsideEndpoint, SelectionAsideSignal),
-        },
+        serviceModule(SelectionLeafService),
+        serviceModule(SelectionRootService),
+        serviceModule(SelectionAsideService),
       ],
-      scalars: [],
-      option: new AkanOption(),
     });
   };
 
   const buildExclusionLibs = () => {
     class ExclusionExtraService extends serve("exclusionExtra" as const, () => ({})) {}
-    const exclusionExtraServiceModel = ServiceModel.from(ExclusionExtraService);
-    class ExclusionExtraEndpoint extends endpoint(exclusionExtraServiceModel, () => ({})) {}
-    class ExclusionExtraInternal extends internal(exclusionExtraServiceModel, () => ({})) {}
-    class ExclusionExtraSignal extends serverSignal(ExclusionExtraEndpoint, ExclusionExtraInternal) {}
-
     class ExclusionKeeperService extends serve("exclusionKeeper" as const, () => ({})) {}
-    const exclusionKeeperServiceModel = ServiceModel.from(ExclusionKeeperService);
-    class ExclusionKeeperEndpoint extends endpoint(exclusionKeeperServiceModel, () => ({})) {}
-    class ExclusionKeeperInternal extends internal(exclusionKeeperServiceModel, () => ({})) {}
-    class ExclusionKeeperSignal extends serverSignal(ExclusionKeeperEndpoint, ExclusionKeeperInternal) {}
-
     class ExclusionDependentService extends serve("exclusionDependent" as const, ({ service }) => ({
       exclusionExtraService: service<InstanceType<typeof ExclusionExtraService>>(),
     })) {}
-    const exclusionDependentServiceModel = ServiceModel.from(ExclusionDependentService);
-    class ExclusionDependentEndpoint extends endpoint(exclusionDependentServiceModel, () => ({})) {}
-    class ExclusionDependentInternal extends internal(exclusionDependentServiceModel, () => ({})) {}
-    class ExclusionDependentSignal extends serverSignal(ExclusionDependentEndpoint, ExclusionDependentInternal) {}
-
-    const extraLib = new AkanLib("exclusionExtraTest", {
-      databases: [],
-      services: [
-        {
-          service: exclusionExtraServiceModel,
-          signal: new ServiceSignal(ExclusionExtraInternal, ExclusionExtraEndpoint, ExclusionExtraSignal),
-        },
-      ],
-      scalars: [],
-      option: new AkanOption(),
+    const extraLib = libOf("exclusionExtraTest", new AkanOption(), {
+      services: [serviceModule(ExclusionExtraService)],
     });
-    const coreLib = new AkanLib("exclusionCoreTest", {
-      databases: [],
-      services: [
-        {
-          service: exclusionKeeperServiceModel,
-          signal: new ServiceSignal(ExclusionKeeperInternal, ExclusionKeeperEndpoint, ExclusionKeeperSignal),
-        },
-        {
-          service: exclusionDependentServiceModel,
-          signal: new ServiceSignal(ExclusionDependentInternal, ExclusionDependentEndpoint, ExclusionDependentSignal),
-        },
-      ],
-      scalars: [],
-      option: new AkanOption(),
+    const coreLib = libOf("exclusionCoreTest", new AkanOption(), {
+      services: [serviceModule(ExclusionKeeperService), serviceModule(ExclusionDependentService)],
     });
     return [extraLib, coreLib];
   };
 
   test("mounts only the named modules and what they inject", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("moduleSelection");
 
-    const env = {} satisfies BackendEnv;
-    const lifecycle = new DiLifecycle({ env, modules: ["selectionRoot"] }, buildSelectionLib());
+    const lifecycle = new DiLifecycle({ env: {}, modules: ["selectionRoot"] }, buildSelectionLib());
 
     await expect(lifecycle.initializeAll()).resolves.toBeDefined();
     expect(lifecycle.registry.serviceCls.has("selectionRoot")).toBe(true);
@@ -595,17 +318,9 @@ describe("DiLifecycle module selection", () => {
   });
 
   test("mounts every module when the option names none", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("moduleSelection");
 
-    const env = {} satisfies BackendEnv;
-    const lifecycle = new DiLifecycle({ env }, buildSelectionLib());
+    const lifecycle = new DiLifecycle({ env: {} }, buildSelectionLib());
 
     await expect(lifecycle.initializeAll()).resolves.toBeDefined();
     expect(lifecycle.registry.serviceCls.has("selectionAside")).toBe(true);
@@ -613,33 +328,17 @@ describe("DiLifecycle module selection", () => {
   });
 
   test("refuses a module name no lib registered", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("moduleSelection");
 
-    const env = {} satisfies BackendEnv;
-    expect(() => new DiLifecycle({ env, modules: ["selectionTypo"] }, buildSelectionLib())).toThrow(
+    expect(() => new DiLifecycle({ env: {}, modules: ["selectionTypo"] }, buildSelectionLib())).toThrow(
       'unknown module "selectionTypo"',
     );
   });
 
   test("drops a disabled module and everything that reaches it", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("moduleSelection");
 
-    const env = {} satisfies BackendEnv;
-    const lifecycle = new DiLifecycle({ env, disableModules: ["selectionLeaf"] }, buildSelectionLib());
+    const lifecycle = new DiLifecycle({ env: {}, disableModules: ["selectionLeaf"] }, buildSelectionLib());
 
     await expect(lifecycle.initializeAll()).resolves.toBeDefined();
     expect(lifecycle.registry.serviceCls.has("selectionLeaf")).toBe(false);
@@ -650,18 +349,10 @@ describe("DiLifecycle module selection", () => {
   });
 
   test('takes a module off even when "modules" named it', async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("moduleSelection");
 
-    const env = {} satisfies BackendEnv;
     const lifecycle = new DiLifecycle(
-      { env, modules: ["selectionRoot", "selectionAside"], disableModules: ["selectionAside"] },
+      { env: {}, modules: ["selectionRoot", "selectionAside"], disableModules: ["selectionAside"] },
       buildSelectionLib(),
     );
 
@@ -673,17 +364,9 @@ describe("DiLifecycle module selection", () => {
   });
 
   test("drops every module the disabled lib registered, and what reaches them", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("moduleSelection");
 
-    const env = {} satisfies BackendEnv;
-    const lifecycle = new DiLifecycle({ env, disableLibs: ["exclusionExtraTest"] }, ...buildExclusionLibs());
+    const lifecycle = new DiLifecycle({ env: {}, disableLibs: ["exclusionExtraTest"] }, ...buildExclusionLibs());
 
     await expect(lifecycle.initializeAll()).resolves.toBeDefined();
     expect(lifecycle.registry.serviceCls.has("exclusionExtra")).toBe(false);
@@ -696,33 +379,17 @@ describe("DiLifecycle module selection", () => {
   });
 
   test("refuses a lib name nothing mounted", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("moduleSelection");
 
-    const env = {} satisfies BackendEnv;
-    expect(() => new DiLifecycle({ env, disableLibs: ["exclusionTypo"] }, ...buildExclusionLibs())).toThrow(
+    expect(() => new DiLifecycle({ env: {}, disableLibs: ["exclusionTypo"] }, ...buildExclusionLibs())).toThrow(
       '[DI:disableLibs] unknown lib "exclusionTypo"',
     );
   });
 
   test("refuses a disabled module name no lib registered", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
-    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
-    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
-    process.env.AKAN_PUBLIC_ENV = "local";
-    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-    process.env.SERVER_MODE = "all";
-    process.env.NODE_ENV = "test";
-    const { DiLifecycle } = await import("./diLifecycle");
+    const DiLifecycle = await loadDiLifecycle("moduleSelection");
 
-    const env = {} satisfies BackendEnv;
-    expect(() => new DiLifecycle({ env, disableModules: ["selectionTypo"] }, buildSelectionLib())).toThrow(
+    expect(() => new DiLifecycle({ env: {}, disableModules: ["selectionTypo"] }, buildSelectionLib())).toThrow(
       '[DI:disableModules] unknown module "selectionTypo"',
     );
   });
@@ -744,13 +411,7 @@ describe("DiLifecycle database mode", () => {
     resetEnvCache();
     try {
       const { DiLifecycle } = await import("./diLifecycle");
-      const lib = new AkanLib("databaseModeTest", {
-        databases: [],
-        services: [],
-        scalars: [],
-        option: new AkanOption(),
-      });
-      new DiLifecycle({ env: {} }, lib);
+      new DiLifecycle({ env: {} }, libOf("databaseModeTest"));
       return getEnv().databaseMode;
     } finally {
       for (const [key, value] of Object.entries(previous)) {

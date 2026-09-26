@@ -1,4 +1,5 @@
-import { Binary, dayjs, ID, Int } from "akanjs/base";
+import { join } from "node:path";
+import { type BackendEnv, Binary, dayjs, ID, Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import {
   by,
@@ -17,7 +18,9 @@ import { internal } from "../../signal/internal";
 import { middleware } from "../../signal/middleware";
 import { serverSignal } from "../../signal/serverSignal";
 import type { SignalContext } from "../../signal/signalContext";
+import { DatabaseSignal } from "../../signal/signalRegistry";
 import { slice } from "../../signal/slice";
+import type { DatabaseModule } from "../akanLib";
 
 const ServerResolverTestNested = via((f) => ({
   label: f(String),
@@ -249,3 +252,38 @@ export class ServerResolverTestServerSignal extends serverSignal(
 ) {}
 
 export const makeEnv = () => ({});
+
+export const makeSqliteEnv = (workspaceRoot: string) =>
+  ({
+    workspaceRoot,
+    database: {
+      sqlite: {
+        filePath: join(workspaceRoot, "akan.db"),
+        journalMode: "WAL",
+        busyTimeoutMs: 1000,
+        synchronous: "NORMAL",
+        foreignKeys: true,
+      },
+    },
+    solid: {
+      filePath: join(workspaceRoot, "solid.db"),
+      journalMode: "WAL",
+      busyTimeoutMs: 1000,
+      synchronous: "NORMAL",
+      cleanupIntervalMs: 60_000,
+      queuePollIntervalMs: 60_000,
+      queueLeaseMs: 30_000,
+    },
+  }) satisfies BackendEnv & { workspaceRoot: string };
+
+export const serverResolverTestModule = (service: ServiceModel = serverResolverTestServiceModel): DatabaseModule => ({
+  constant: serverResolverTestConstant,
+  database: serverResolverTestDatabase,
+  service,
+  signal: new DatabaseSignal(
+    ServerResolverTestInternal,
+    ServerResolverTestEndpoint,
+    ServerResolverTestSlice,
+    ServerResolverTestServerSignal,
+  ),
+});

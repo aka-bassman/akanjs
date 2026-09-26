@@ -6,6 +6,7 @@ import { AkanLib } from "../akanLib";
 import { AkanOption } from "../akanOption";
 import type { DiLifecycle } from "../di/diLifecycle";
 import {
+  makeSqliteEnv,
   ServerResolverTestEndpoint,
   ServerResolverTestInternal,
   ServerResolverTestServerSignal,
@@ -27,27 +28,7 @@ export class DevtoolsFixture {
     const { DiLifecycle } = await import("../di/diLifecycle");
 
     const workspaceRoot = await mkdtemp(join(tmpdir(), "akan-devtools-"));
-    const env = {
-      workspaceRoot,
-      database: {
-        sqlite: {
-          filePath: join(workspaceRoot, "akan.db"),
-          journalMode: "WAL",
-          busyTimeoutMs: 1000,
-          synchronous: "NORMAL",
-          foreignKeys: true,
-        },
-      },
-      solid: {
-        filePath: join(workspaceRoot, "solid.db"),
-        journalMode: "WAL",
-        busyTimeoutMs: 1000,
-        synchronous: "NORMAL",
-        cleanupIntervalMs: 60_000,
-        queuePollIntervalMs: 60_000,
-        queueLeaseMs: 30_000,
-      },
-    } satisfies BackendEnv & { workspaceRoot: string };
+    const env = makeSqliteEnv(workspaceRoot);
 
     const lib = new AkanLib("devtoolsTest", {
       databases: [

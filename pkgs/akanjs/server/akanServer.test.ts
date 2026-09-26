@@ -29,7 +29,7 @@ const createEnv = (tmp: string) =>
     },
   }) satisfies BackendEnv & { workspaceRoot: string };
 
-const setAkanEnv = () => {
+const loadRuntime = async () => {
   process.env.AKAN_PUBLIC_APP_NAME = "serverGet";
   process.env.AKAN_PUBLIC_REPO_NAME = "akan";
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
@@ -39,9 +39,6 @@ const setAkanEnv = () => {
   delete process.env.AKAN_PUBLIC_OPENAPI;
   process.env.SERVER_MODE = "all";
   process.env.NODE_ENV = "test";
-};
-
-const loadRuntime = async () => {
   const [
     { SolidPubSub, WebsocketAdaptorRole },
     { AkanLib },
@@ -98,7 +95,6 @@ const loadRuntime = async () => {
 
 describe("AkanServer DI lookup", () => {
   test("gets service, server signal, and adaptor instances", async () => {
-    setAkanEnv();
     const {
       SolidPubSub,
       WebsocketAdaptorRole,
@@ -132,7 +128,6 @@ describe("AkanServer DI lookup", () => {
   });
 
   test("throws clear errors before initialization and for missing dependencies", async () => {
-    setAkanEnv();
     const { AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-get-"));
     const server = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
@@ -156,7 +151,6 @@ describe("AkanServer DI lookup", () => {
 
 describe("AkanServer OpenAPI config", () => {
   test("serves OpenAPI only when explicitly enabled", async () => {
-    setAkanEnv();
     const { AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-openapi-"));
 
@@ -176,7 +170,6 @@ describe("AkanServer OpenAPI config", () => {
 
 describe("AkanServer web config", () => {
   test("reads AKAN_SSR / AKAN_CSR and lets setWeb narrow but never widen", async () => {
-    setAkanEnv();
     const { AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-web-"));
     const make = () => new AkanServer("serverWeb", createEnv(tmp), "all", createLib());
@@ -206,7 +199,6 @@ describe("AkanServer web config", () => {
 
 describe("AkanServer route prefix", () => {
   test("takes the deployed prefix from env and normalizes what code sets", async () => {
-    setAkanEnv();
     const { AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-prefix-"));
     const make = () => new AkanServer("serverPrefix", createEnv(tmp), "all", createLib());
@@ -229,7 +221,6 @@ describe("AkanServer route prefix", () => {
   });
 
   test("refuses a prefix a basePath would shadow", async () => {
-    setAkanEnv();
     const { AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-prefix-clash-"));
 
@@ -246,7 +237,6 @@ describe("AkanServer route prefix", () => {
 
 describe("AkanServer MCP config", () => {
   test("reads every option from env and lets code override it", async () => {
-    setAkanEnv();
     const { AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-"));
     const vars = [
@@ -320,7 +310,6 @@ describe("AkanServer MCP config", () => {
   });
 
   test("lets a lib derive its MCP option from the server env, verifier included", async () => {
-    setAkanEnv();
     const { AkanServer, AkanOption, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-fn-"));
     try {
@@ -341,7 +330,6 @@ describe("AkanServer MCP config", () => {
   });
 
   test("takes the app's own settings from its option.ts, under an option passed to the constructor", async () => {
-    setAkanEnv();
     const { AkanOption, AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-option-"));
     try {
@@ -372,7 +360,6 @@ describe("AkanServer MCP config", () => {
   });
 
   test("keeps the surface off under AKAN_MCP=false whatever an option.ts configures", async () => {
-    setAkanEnv();
     const { AkanOption, AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-off-"));
     try {
@@ -403,7 +390,6 @@ describe("AkanServer MCP config", () => {
   });
 
   test("gives the mount path its leading slash and takes the public spelling of both switches", async () => {
-    setAkanEnv();
     const { AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-path-"));
     const vars = ["AKAN_MCP_PATH", "AKAN_PUBLIC_MCP", "AKAN_PUBLIC_MCP_READONLY"];
@@ -422,7 +408,6 @@ describe("AkanServer MCP config", () => {
   });
 
   test("says in the boot log what the catalogue holds", async () => {
-    setAkanEnv();
     const { AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-boot-"));
     process.env.AKAN_MCP = "true";
@@ -448,7 +433,6 @@ describe("AkanServer MCP config", () => {
 
 describe("AkanServer locale coverage", () => {
   test("names a configured locale the dictionaries never wrote", async () => {
-    setAkanEnv();
     const { AkanServer, createLib } = await loadRuntime();
     const { makeTrans, serviceDictionary } = await import("akanjs/dictionary");
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-locale-"));
@@ -477,7 +461,6 @@ describe("AkanServer locale coverage", () => {
 
 describe("AkanServer agent relay access", () => {
   test("registers the guard an app declares in its option.ts", async () => {
-    setAkanEnv();
     const { AgentRelayAccess } = await import("../signal/guards");
     const { AkanOption, AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-relay-"));
@@ -507,7 +490,6 @@ describe("AkanServer agent relay access", () => {
 
 describe("AkanServer module exclusion", () => {
   test("takes a module out of the container, from the option or from the env", async () => {
-    setAkanEnv();
     delete process.env.AKAN_DISABLE_MODULES;
     const { AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-disable-"));
@@ -534,7 +516,6 @@ describe("AkanServer module exclusion", () => {
   });
 
   test("takes out a whole lib, from the option or from the env", async () => {
-    setAkanEnv();
     delete process.env.AKAN_DISABLE_LIBS;
     const { AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-disable-lib-"));
@@ -566,7 +547,6 @@ describe("AkanServer module exclusion", () => {
 
 describe("AkanServer console process", () => {
   test("brings services up but runs no internal init, schedule or queue worker", async () => {
-    setAkanEnv();
     const { AkanServer, createLib } = await loadRuntime();
     const fixture = await import("./resolver/resolver.contract.fixture");
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-console-"));
