@@ -169,17 +169,15 @@ const claudeProjectDir = "$CLAUDE_PROJECT_DIR";
 const akanMcpCommand = (mode: AkanMcpMode, { cd }: { cd?: string } = {}) =>
   cd ? `cd "${cd}" && akan mcp --mode ${mode}` : `akan mcp --mode ${mode}`;
 
-export const createAkanCursorMcpServer = (mode: AkanMcpMode = "readonly") => ({
+const bashMcpServer = (mode: AkanMcpMode, cd: string) => ({
   type: "stdio",
   command: "bash",
-  args: ["-lc", akanMcpCommand(mode, { cd: cursorWorkspaceFolder })],
+  args: ["-lc", akanMcpCommand(mode, { cd })],
 });
 
-export const createAkanClaudeMcpServer = (mode: AkanMcpMode = "readonly") => ({
-  type: "stdio",
-  command: "bash",
-  args: ["-lc", akanMcpCommand(mode, { cd: claudeProjectDir })],
-});
+export const createAkanCursorMcpServer = (mode: AkanMcpMode = "readonly") => bashMcpServer(mode, cursorWorkspaceFolder);
+
+export const createAkanClaudeMcpServer = (mode: AkanMcpMode = "readonly") => bashMcpServer(mode, claudeProjectDir);
 
 export const createAkanMcpServer = (target: "cursor" | "claude", mode: AkanMcpMode = "readonly") =>
   target === "cursor" ? createAkanCursorMcpServer(mode) : createAkanClaudeMcpServer(mode);
@@ -320,29 +318,12 @@ const moduleShapeFiles = (module: AkanModuleContext) => {
 const constantFieldNames = (content: string) =>
   [...content.matchAll(/\b([A-Za-z_$][\w$]*)\s*:\s*field\(/g)].map((match) => match[1]).filter(Boolean);
 
-const safeReadDir = async (dirPath: string) => {
-  try {
-    return (await readdir(dirPath, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
-  } catch {
-    return [];
-  }
-};
+const safeReadDir = async (dirPath: string) =>
+  (await readdir(dirPath, { withFileTypes: true }).catch(() => [])).sort((a, b) => a.name.localeCompare(b.name));
 
-const safeReadText = async (filePath: string) => {
-  try {
-    return await FileSys.readText(filePath);
-  } catch {
-    return null;
-  }
-};
+const safeReadText = (filePath: string) => FileSys.readText(filePath).catch(() => null);
 
-const safeReadJson = async <T>(filePath: string) => {
-  try {
-    return await FileSys.readJson<T>(filePath);
-  } catch {
-    return null;
-  }
-};
+const safeReadJson = <T>(filePath: string) => FileSys.readJson<T>(filePath).catch(() => null);
 
 const isWorkflowPlan = (value: unknown): value is WorkflowPlan =>
   typeof value === "object" &&
@@ -666,6 +647,10 @@ export class AkanContextAnalyzer {
         true,
       ),
     ];
+    const report = (diagnostic: AkanDiagnostic, action: RepairAction) => {
+      diagnostics.push({ ...diagnostic, repairActions: [action] });
+      repairActions.push(action);
+    };
 
     for (const sys of [...context.apps, ...context.libs]) {
       const sysPath = path.join(workspace.workspaceRoot, sys.path);
@@ -674,73 +659,60 @@ export class AkanContextAnalyzer {
         const allowed = entry.isDirectory()
           ? rootAllowedDirs[sys.type].has(entry.name)
           : rootAllowedFiles[sys.type].has(entry.name);
-        if (!allowed) {
-          const action = repairAction(
-            "module-shape",
-            `akan repair module-shape --app ${sys.name}`,
-            `Review ${sys.type} root shape and remove or move the unknown entry.`,
-            false,
+        if (!allowed)
+          report(
+            {
+              severity: "error",
+              code: `${sys.type}-root-unknown-entry`,
+              path: `${sys.path}/${entry.name}`,
+              message: `Unexpected ${entry.isDirectory() ? "folder" : "file"} in ${sys.type} root: ${sys.path}/${entry.name}`,
+            },
+            repairAction(
+              "module-shape",
+              `akan repair module-shape --app ${sys.name}`,
+              `Review ${sys.type} root shape and remove or move the unknown entry.`,
+              false,
+            ),
           );
-          diagnostics.push({
-            severity: "error",
-            code: `${sys.type}-root-unknown-entry`,
-            path: `${sys.path}/${entry.name}`,
-            message: `Unexpected ${entry.isDirectory() ? "folder" : "file"} in ${sys.type} root: ${sys.path}/${entry.name}`,
-            repairActions: [action],
-          });
-          repairActions.push(action);
-        }
       }
     }
 
     const agentDrift = await AkanContextAnalyzer.#agentGuideDrift(workspace);
-    if (agentDrift) {
-      const action = repairAction("generated", "akan agent install agents-md", agentDrift.hint, true);
-      diagnostics.push({
-        severity: "warning",
-        code: agentDrift.code,
-        path: "AGENTS.md",
-        message: agentDrift.message,
-        repairActions: [action],
-      });
-      repairActions.push(action);
-    }
+    if (agentDrift)
+      report(
+        { severity: "warning", code: agentDrift.code, path: "AGENTS.md", message: agentDrift.message },
+        repairAction("generated", "akan agent install agents-md", agentDrift.hint, true),
+      );
 
     for (const sys of [...context.apps, ...context.libs]) {
       for (const module of sys.modules) {
-        if (!module.abstract.exists) {
-          const action = repairAction(
-            "module-shape",
-            `akan repair module-shape --app ${sys.name} --module ${module.name}`,
-            "Create the missing module abstract or inspect required source files.",
-            false,
+        const moduleShapeCommand = `akan repair module-shape --app ${sys.name} --module ${module.name}`;
+        if (!module.abstract.exists)
+          report(
+            {
+              severity: strict ? "error" : "warning",
+              code: "module-abstract-missing",
+              path: module.abstract.path,
+              message: `${capitalize(module.kind)} module ${sys.name}:${module.name} should include ${module.abstract.path}`,
+            },
+            repairAction(
+              "module-shape",
+              moduleShapeCommand,
+              "Create the missing module abstract or inspect required source files.",
+              false,
+            ),
           );
-          diagnostics.push({
-            severity: strict ? "error" : "warning",
-            code: "module-abstract-missing",
-            path: module.abstract.path,
-            message: `${capitalize(module.kind)} module ${sys.name}:${module.name} should include ${module.abstract.path}`,
-            repairActions: [action],
-          });
-          repairActions.push(action);
-        }
         const missingFiles = moduleShapeFiles(module).filter((filename) => !module.files.includes(filename));
-        if (missingFiles.length) {
-          const action = repairAction(
-            "module-shape",
-            `akan repair module-shape --app ${sys.name} --module ${module.name}`,
-            "Review missing required module source files.",
-            false,
+        if (missingFiles.length)
+          report(
+            {
+              severity: "error",
+              code: "module-shape-invalid",
+              path: module.path,
+              message: `${capitalize(module.kind)} module ${sys.name}:${module.name} is missing required files: ${missingFiles.join(", ")}`,
+            },
+            repairAction("module-shape", moduleShapeCommand, "Review missing required module source files.", false),
           );
-          diagnostics.push({
-            severity: "error",
-            code: "module-shape-invalid",
-            path: module.path,
-            message: `${capitalize(module.kind)} module ${sys.name}:${module.name} is missing required files: ${missingFiles.join(", ")}`,
-            repairActions: [action],
-          });
-          repairActions.push(action);
-        }
         if (module.kind !== "service" && module.files.includes(`${module.name}.dictionary.ts`)) {
           const constantPath = path.join(workspace.workspaceRoot, module.path, `${module.name}.constant.ts`);
           const dictionaryPath = path.join(workspace.workspaceRoot, module.path, `${module.name}.dictionary.ts`);
@@ -751,20 +723,20 @@ export class AkanContextAnalyzer {
           if (constantContent && dictionaryContent) {
             for (const fieldName of constantFieldNames(constantContent)) {
               if (new RegExp(`\\b${fieldName}\\s*:`).test(dictionaryContent)) continue;
-              const action = repairAction(
-                "dictionary",
-                `akan repair dictionary --app ${sys.name} --module ${module.name}`,
-                "Add missing dictionary labels for source constant fields.",
-                false,
+              report(
+                {
+                  severity: "warning",
+                  code: "dictionary-label-missing",
+                  path: `${module.path}/${module.name}.dictionary.ts`,
+                  message: `Dictionary labels for ${sys.name}:${module.name}.${fieldName} were not found.`,
+                },
+                repairAction(
+                  "dictionary",
+                  `akan repair dictionary --app ${sys.name} --module ${module.name}`,
+                  "Add missing dictionary labels for source constant fields.",
+                  false,
+                ),
               );
-              diagnostics.push({
-                severity: "warning",
-                code: "dictionary-label-missing",
-                path: `${module.path}/${module.name}.dictionary.ts`,
-                message: `Dictionary labels for ${sys.name}:${module.name}.${fieldName} were not found.`,
-                repairActions: [action],
-              });
-              repairActions.push(action);
             }
           }
         }
@@ -835,24 +807,19 @@ export class AkanContextAnalyzer {
     };
     const pushIndexDiagnostic = (indexPath: string, missing: string[], stale: string[], repairCommand: string) => {
       if (missing.length === 0 && stale.length === 0) return;
-      const action = repairAction(
-        "generated",
-        repairCommand,
-        "Regenerate the recipe index from the scanned recipes.",
-        true,
-      );
       const parts = [
         missing.length > 0 ? `${missing.length} declared but unlisted (${missing.slice(0, 5).join(", ")})` : "",
         stale.length > 0 ? `${stale.length} listed but gone (${stale.slice(0, 5).join(", ")})` : "",
       ].filter(Boolean);
-      diagnostics.push({
-        severity: "error",
-        code: "recipe-index-stale",
-        path: indexPath,
-        message: `${indexPath} recipe index is out of date — ${parts.join("; ")}. Agents read this list as authoritative.`,
-        repairActions: [action],
-      });
-      repairActions.push(action);
+      report(
+        {
+          severity: "error",
+          code: "recipe-index-stale",
+          path: indexPath,
+          message: `${indexPath} recipe index is out of date — ${parts.join("; ")}. Agents read this list as authoritative.`,
+        },
+        repairAction("generated", repairCommand, "Regenerate the recipe index from the scanned recipes.", true),
+      );
     };
     const frameworkDeclared = declaredByImport.get("akanjs/ui") ?? new Set<string>();
     if (frameworkDeclared.size > 0) {
