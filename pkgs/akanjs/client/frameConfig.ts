@@ -54,15 +54,11 @@ export function validatePageConfig(routeKey: string, config?: PageConfig) {
   if (pageConfig.ssr !== undefined && !ssrRenderModes.has(pageConfig.ssr)) {
     throw new Error(`[route-convention] unsupported pageConfig.ssr "${pageConfig.ssr}" in ${routeKey}`);
   }
-  if (pageConfig.topInset !== undefined && !isValidInsetValue(pageConfig.topInset)) {
-    throw new Error(
-      `[route-convention] pageConfig.topInset in ${routeKey} must be a boolean or non-negative px number.`,
-    );
-  }
-  if (pageConfig.bottomInset !== undefined && !isValidInsetValue(pageConfig.bottomInset)) {
-    throw new Error(
-      `[route-convention] pageConfig.bottomInset in ${routeKey} must be a boolean or non-negative px number.`,
-    );
+  for (const key of ["topInset", "bottomInset"] as const) {
+    if (pageConfig[key] !== undefined && !isValidInsetValue(pageConfig[key]))
+      throw new Error(
+        `[route-convention] pageConfig.${key} in ${routeKey} must be a boolean or non-negative px number.`,
+      );
   }
   validateSafeAreaConfig(routeKey, pageConfig.safeArea);
 }
@@ -79,11 +75,9 @@ function validateSafeAreaConfig(routeKey: string, safeArea?: PageSafeAreaConfig)
       throw new Error(`[route-convention] unsupported pageConfig.safeArea option "${key}" in ${routeKey}`);
     }
   }
-  if (safeArea.top !== undefined && typeof safeArea.top !== "boolean") {
-    throw new Error(`[route-convention] pageConfig.safeArea.top in ${routeKey} must be a boolean.`);
-  }
-  if (safeArea.bottom !== undefined && typeof safeArea.bottom !== "boolean") {
-    throw new Error(`[route-convention] pageConfig.safeArea.bottom in ${routeKey} must be a boolean.`);
+  for (const side of ["top", "bottom"] as const) {
+    if (safeArea[side] !== undefined && typeof safeArea[side] !== "boolean")
+      throw new Error(`[route-convention] pageConfig.safeArea.${side} in ${routeKey} must be a boolean.`);
   }
   if (
     safeArea.android !== undefined &&
@@ -211,14 +205,11 @@ function resolveSafeArea({
   cssSafeArea?: SafeAreaInsets;
 }): SafeAreaInsets {
   if (safeArea === false) return { top: 0, bottom: 0 };
-  const topEnabled =
+  const enabledAt = (side: "top" | "bottom") =>
     safeArea === true ||
-    safeArea === "top" ||
-    (isRecord(safeArea) ? safeArea.top !== false : safeArea === undefined && platform !== "web");
-  const bottomEnabled =
-    safeArea === true ||
-    safeArea === "bottom" ||
-    (isRecord(safeArea) ? safeArea.bottom !== false : safeArea === undefined && platform !== "web");
+    safeArea === side ||
+    (isRecord(safeArea) ? safeArea[side] !== false : safeArea === undefined && platform !== "web");
+  const [topEnabled, bottomEnabled] = [enabledAt("top"), enabledAt("bottom")];
   if (platform === "android") {
     const androidMode = isRecord(safeArea)
       ? (safeArea.android as "auto" | "edge-to-edge" | "none" | undefined)
