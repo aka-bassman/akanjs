@@ -24,15 +24,8 @@ interface ChainStage {
 
 const chainRoots = new Set(["page", "layout", "rootLayout"]);
 
-/**
- * Static enforcement of the `page/` route conventions, split out of `executors.ts` so that importing
- * an executor does not pull `typescript` (+65MB resident) into the module graph. Both validators need
- * a real AST — modifier inspection, `export *` rejection, statement-kind walking and call-expression
- * identity — so `Bun.Transpiler.scan()`, which only reports export names, cannot replace them.
- *
- * Import it dynamically (`await import("./routeSourceValidator")`) so long-lived processes that never
- * validate a route source stay lean.
- */
+// Import dynamically: it pulls in `typescript` (+65MB resident). `Bun.Transpiler.scan()` reports only export names,
+// too little for these checks.
 export class RouteSourceValidator {
   static validateRouteSourceExports(
     source: string,
@@ -104,12 +97,7 @@ export class RouteSourceValidator {
     };
   }
 
-  /**
-   * The default export as a `page()` / `layout()` / `rootLayout()` chain, or null when the module is the legacy
-   * shape. Read off the source for the same reason `devOnly` is: the build enumerates routes without importing
-   * them, and `akan sync` should name a `[projectId]` folder whose page declares no `.param("projectId")` before
-   * the first request does.
-   */
+  // Null for the legacy shape. Read off the source because the build enumerates routes without importing them.
   static #readChain(sourceFile: ts.SourceFile, filePath: string) {
     for (const statement of sourceFile.statements) {
       if (!ts.isExportAssignment(statement) || statement.isExportEquals) continue;
@@ -173,12 +161,8 @@ export class RouteSourceValidator {
       );
   }
 
-  /**
-   * `devOnly` decides whether the route exists in the production build at all, so it is read from the
-   * source rather than from an evaluated module — the build never imports route files to enumerate them.
-   * That is why only a literal is accepted: anything the parser cannot settle would otherwise ship a
-   * route the author believed was excluded.
-   */
+  // Only a literal is accepted: the build reads it without importing the route, and a value the parser cannot settle
+  // would ship a route its author believed excluded.
   static #readDevOnly(sourceFile: ts.SourceFile, filePath: string): boolean {
     for (const statement of sourceFile.statements) {
       if (!ts.isVariableStatement(statement)) continue;
@@ -222,13 +206,7 @@ export class RouteSourceValidator {
     return current;
   }
 
-  /**
-   * Statically enforces that a `_overrides.tsx` route file is a logic-free activation manifest: a plain module
-   * (no `"use client"` — the framework generates the client wrapper) that only imports components and binds them
-   * to slots through a single `export default override({ Modal: BrandModal })`. It must not declare components
-   * inline or run logic — that keeps the override contract a thin binding layer rather than a second place to
-   * author UI. Slot names and value types are validated at compile time by `override`.
-   */
+  // A logic-free manifest: imports plus one `export default override({ ... })`; `override` types the slots.
   static validateOverridesSourceExports(source: string, filePath: string) {
     const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const fail = (message: string): never => {
@@ -236,9 +214,8 @@ export class RouteSourceValidator {
     };
     let defaultOverride: ts.ExportAssignment | null = null;
     for (const statement of sourceFile.statements) {
-      // A "use client" directive is unnecessary (the framework wraps the manifest) but harmless if present.
+      //? A "use client" directive is unnecessary (the framework wraps the manifest) but harmless.
       if (ts.isExpressionStatement(statement) && ts.isStringLiteral(statement.expression)) continue;
-      // The manifest imports the app components it binds; imports and type-only decls carry no runtime logic.
       if (ts.isImportDeclaration(statement)) continue;
       if (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)) continue;
       if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
