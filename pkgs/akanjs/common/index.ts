@@ -68,7 +68,6 @@ export {
   codeAgentWireVersion,
   isCodeAgentReply,
 } from "./codeAgentWire";
-export { deepObjectify } from "./deepObjectify";
 export { EventStream, type EventStreamOptions } from "./eventStream";
 export {
   type FileUploadCapability,
@@ -125,7 +124,7 @@ export {
   mcpHintsOf,
   mcpRefusalOf,
 } from "./mcpExposure";
-export { objectify, plainFieldsOf } from "./objectify";
+export { deepObjectify, objectify, plainFieldsOf } from "./objectify";
 export { pathGet, pathSet, toPathSegments } from "./objectPath";
 export { pathGetLoose } from "./pathGetLoose";
 export { formatPhone, isPhoneNumber } from "./phone";
