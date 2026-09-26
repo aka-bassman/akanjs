@@ -832,30 +832,18 @@ export class RscRenderer {
       collectChunks?: boolean;
       status?: number;
       trace?: RscTraceMetadata;
-      onComplete?: (result: {
-        chunks: Uint8Array[];
-        bytes: number;
-        chunksCount: number;
-        control: RenderControl | null;
-        lateControlSent: boolean;
-      }) => Promise<RouteCacheRenderState> | RouteCacheRenderState;
+      onComplete?: (
+        result: Omit<FlightRenderResult, "cancelled">,
+      ) => Promise<RouteCacheRenderState> | RouteCacheRenderState;
     } = {},
   ): Promise<FlightRenderResult> {
     const controlRef: { current: RenderControl | null } = { current: null };
     const stream = await renderToReadableStream(element, clientManifest, {
       onError: (error) => {
         if (isAkanRedirectError(error)) {
-          controlRef.current = {
-            type: "redirect",
-            location: error.location,
-            method: error.method,
-            status: error.status,
-          };
-          return encodeAkanRedirectDigest({
-            location: error.location,
-            method: error.method,
-            status: error.status,
-          });
+          const { location, method, status } = error;
+          controlRef.current = { type: "redirect", location, method, status };
+          return encodeAkanRedirectDigest({ location, method, status });
         }
         if (isAkanNotFoundError(error)) {
           controlRef.current = { type: "not-found" };

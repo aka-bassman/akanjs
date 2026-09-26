@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
 import { createFromNodeStream } from "react-server-dom-webpack/client.node";
 import { parsePositiveInt } from "./cachePolicy";
+import { concatBytes } from "./rscHttp";
 import type { SsrChunkRegistryStats, SsrFromRscInput, SsrLateRedirect } from "./ssrTypes";
 
 const DEFAULT_SSR_CHUNK_REGISTRY_MAX_ENTRIES = 1024;
@@ -130,13 +131,6 @@ function sanitizeFlightRows(
   const redirectErrorRowRe = /^([0-9a-z]+):E(\{[^\n]*"digest":"AKAN_REDIRECT(?:;[^"]*)?"[^\n]*\})(\n?)$/;
   const debugInfoRowRe = /^[0-9a-z]+:D/;
   let buffered: Uint8Array<ArrayBuffer> = new Uint8Array(0);
-
-  const concatBytes = (left: Uint8Array, right: Uint8Array): Uint8Array<ArrayBuffer> => {
-    const combined = new Uint8Array(left.byteLength + right.byteLength);
-    combined.set(left, 0);
-    combined.set(right, left.byteLength);
-    return combined;
-  };
 
   const sanitizeRow = (row: Uint8Array): Uint8Array => {
     let text: string;
