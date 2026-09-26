@@ -1,4 +1,4 @@
-import { isMcpDescribableArg, mcpHintsOf, mcpRefusalOf } from "akanjs/common";
+import { isMcpDescribableArg, lowerlize, mcpHintsOf, mcpRefusalOf } from "akanjs/common";
 import { FetchClient } from "akanjs/fetch";
 import { type AgentCandidate, AgentCatalogue, type AgentRefusal, type AgentUndescribed } from "../agent";
 import { type JsonSchema, JsonSchemaBuilder } from "../schema";
@@ -118,27 +118,20 @@ export class McpDocument {
     for (const candidate of AgentCatalogue.candidates(serializedSignal, {
       excludeSignals: this.#options.excludeSignals,
     })) {
-      const item: McpExposedEndpoint = {
-        refName: candidate.refName,
-        key: candidate.key,
-        endpoint: candidate.endpoint,
-      };
-      const reason = mcpRefusalOf(item.endpoint, {
-        refName: item.refName,
-        key: item.key,
-        readOnly: this.#options.readOnly,
-      });
+      const { refName, key, endpoint } = candidate;
+      const item: McpExposedEndpoint = { refName, key, endpoint };
+      const reason = mcpRefusalOf(endpoint, { refName, key, readOnly: this.#options.readOnly });
       if (reason) {
-        this.#catalogue.refuse(item.key, reason);
+        this.#catalogue.refuse(key, reason);
         continue;
       }
-      if (!this.#catalogue.claim(item.key)) continue;
+      if (!this.#catalogue.claim(key)) continue;
       // A custom endpoint gets no template: `parse` would route the model's `akan://x/{xId}` to the model's own read.
       const uriTemplate = McpDocument.#addressable(candidate)
-        ? McpDocument.#uriTemplate(item.refName, item.key, item.endpoint)
+        ? McpDocument.#uriTemplate(refName, key, endpoint)
         : undefined;
-      this.#byToolName.set(item.key, item);
-      if (uriTemplate) this.#templates.set(item.key, uriTemplate);
+      this.#byToolName.set(key, item);
+      if (uriTemplate) this.#templates.set(key, uriTemplate);
       tools.push(item);
     }
     return tools;
@@ -244,6 +237,6 @@ export class McpDocument {
     const argNames = endpoint.args
       .filter((arg) => (arg.type === "param" || arg.type === "search") && isMcpDescribableArg(arg))
       .map((arg) => arg.name);
-    return McpUriTemplate.list(refName, suffix ? `${suffix.charAt(0).toLowerCase()}${suffix.slice(1)}` : "", argNames);
+    return McpUriTemplate.list(refName, lowerlize(suffix), argNames);
   }
 }
