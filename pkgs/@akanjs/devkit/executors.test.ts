@@ -79,6 +79,31 @@ describe("Executor filesystem helpers", () => {
     expect(entries.dirs).toContain("nested");
   });
 
+  test("a refreshed tsconfig re-reads the config it extends", async () => {
+    const root = await makeTempRoot();
+    const appDir = path.join(root, "apps/demo");
+    await writeJson(path.join(root, "tsconfig.json"), {
+      compilerOptions: { target: "es2022", paths: { "@libs/*": ["libs/*"] } },
+    });
+    await writeJson(path.join(appDir, "tsconfig.json"), {
+      extends: "../../tsconfig.json",
+      compilerOptions: { target: "esnext" },
+      references: [{ path: "../shared" }],
+    });
+    const exec = new Executor("fixture", appDir);
+    expect(await exec.getTsConfig()).toEqual({
+      extends: "../../tsconfig.json",
+      compilerOptions: { target: "esnext", paths: { "@libs/*": ["libs/*"] } },
+      references: [{ path: "../shared" }],
+    });
+
+    await writeJson(path.join(root, "tsconfig.json"), { compilerOptions: { target: "es2020" } });
+    await writeJson(path.join(appDir, "tsconfig.json"), { extends: "../../tsconfig.json", compilerOptions: {} });
+    const refreshed = { extends: "../../tsconfig.json", compilerOptions: { target: "es2020" } };
+    expect(await exec.getTsConfig("tsconfig.json", { refresh: true })).toEqual(refreshed);
+    expect(await new Executor("fixture", appDir).getTsConfig()).toEqual(refreshed);
+  });
+
   test("applies CLI template files with dictionary replacement and overwrite control", async () => {
     const root = await makeTempRoot();
     const exec = new Executor("fixture", root);

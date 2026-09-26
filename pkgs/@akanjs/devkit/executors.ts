@@ -368,7 +368,7 @@ export class Executor {
     if (this.#tsconfig && !refresh) return this.#tsconfig;
     let tsconfig = (await this.readJson(pathname)) as TsConfigJson;
     if (tsconfig.extends) {
-      const base = await this.getTsConfig(tsconfig.extends);
+      const base = await this.getTsConfig(tsconfig.extends, { refresh });
       tsconfig = { ...base, ...tsconfig, compilerOptions: { ...base.compilerOptions, ...tsconfig.compilerOptions } };
     }
     this.#tsconfig = tsconfig;
