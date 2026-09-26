@@ -7,7 +7,7 @@ import { getApiPrefix, getWsPrefix, normalizeRoutePrefix, resetEnvCache } from "
 import { isTraceEnabled } from "../signal/trace";
 import { makeAkanChildProxyHeaders } from "./akanAppHeaders";
 import type { BuilderCsrReq, BuilderCsrRes, BuilderMessage, BuilderReq, BuilderRes } from "./artifact";
-import { compressResponse, resolveEncodedSidecar } from "./contentEncoding";
+import { compressResponse, encodedFileResponse } from "./contentEncoding";
 import { isPortInUseError } from "./lifecycle/portInUse";
 import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { ChildOutputReader } from "./logging/childOutputReader";
@@ -974,16 +974,7 @@ export class AkanApp {
   ): Promise<Response> {
     const headers = new Headers({ "Content-Type": options.contentType });
     if (options.cacheControl) headers.set("Cache-Control", options.cacheControl);
-
-    const sidecar = await resolveEncodedSidecar(req, filePath, options.contentType);
-    if (sidecar) {
-      headers.set("Content-Encoding", sidecar.encoding);
-      headers.set("Content-Length", String(sidecar.bytes.byteLength));
-      headers.set("Vary", "Accept-Encoding");
-      return new Response(sidecar.bytes, { headers });
-    }
-
-    return new Response(Bun.file(filePath).stream(), { headers });
+    return await encodedFileResponse(req, filePath, options.contentType, headers);
   }
 
   #pickFederationChild() {

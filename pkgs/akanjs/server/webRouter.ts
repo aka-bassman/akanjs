@@ -34,7 +34,7 @@ import {
   shouldInvalidateRouteCacheEntry,
   shouldStoreRouteCache,
 } from "./cachePolicy";
-import { resolveEncodedSidecar } from "./contentEncoding";
+import { encodedFileResponse } from "./contentEncoding";
 import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import { DevHmrController } from "./hmr/devHmrController";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
@@ -1090,15 +1090,7 @@ export class WebRouter {
     headers.set("Last-Modified", new Date(lastModifiedMs).toUTCString());
     if (WebRouter.#isNotModified(req, etag, lastModifiedMs)) return new Response(null, { status: 304, headers });
 
-    const sidecar = await resolveEncodedSidecar(req, filePath, options.contentType);
-    if (sidecar) {
-      headers.set("Content-Encoding", sidecar.encoding);
-      headers.set("Content-Length", String(sidecar.bytes.byteLength));
-      headers.set("Vary", "Accept-Encoding");
-      return new Response(sidecar.bytes, { headers });
-    }
-
-    return new Response(file.stream(), { headers });
+    return await encodedFileResponse(req, filePath, options.contentType, headers);
   }
 
   static #deepLinkAssociationResponse(

@@ -85,3 +85,18 @@ export const resolveEncodedSidecar = async (
   }
   return null;
 };
+
+// A precompressed `.br`/`.gz` sibling when the client takes one, else the file itself.
+export const encodedFileResponse = async (
+  req: Request,
+  filePath: string,
+  contentType: string,
+  headers: Headers,
+): Promise<Response> => {
+  const sidecar = await resolveEncodedSidecar(req, filePath, contentType);
+  if (!sidecar) return new Response(Bun.file(filePath).stream(), { headers });
+  headers.set("Content-Encoding", sidecar.encoding);
+  headers.set("Content-Length", String(sidecar.bytes.byteLength));
+  headers.set("Vary", "Accept-Encoding");
+  return new Response(sidecar.bytes, { headers });
+};
