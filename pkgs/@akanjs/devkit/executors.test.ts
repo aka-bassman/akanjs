@@ -4,7 +4,7 @@ import path from "node:path";
 import { AkanAppConfig } from "./akanConfig";
 import { AppExecutor, CommandExecutionError, Executor, PkgExecutor, WorkspaceExecutor } from "./executors";
 import { AppInfo } from "./scanInfo";
-import { isolateEnv, tempDirs, writeJson } from "./testHelpers";
+import { isolateEnv, tempDirs, writeJson, writeText } from "./testHelpers";
 import type { PackageJson } from "./types";
 
 isolateEnv();
@@ -920,5 +920,39 @@ describe("scan info construction", () => {
     expect(info.file.constant.databases.has("post")).toBe(true);
     expect(info.file.dictionary.services.has("auth")).toBe(true);
     expect(info.file.document.scalars.has("money")).toBe(true);
+  });
+});
+
+describe("SysExecutor module listing", () => {
+  test("lists only the module folders that hold the module's own file", async () => {
+    const root = await makeTempRoot();
+    const lib = path.join(root, "apps/modlist/lib");
+    for (const file of [
+      "cnst.ts",
+      "post/post.constant.ts",
+      "post/Post.View.tsx",
+      "post/Post.Unit.tsx",
+      "draft/draft.document.ts",
+      "_auth/auth.service.ts",
+      "_notes/notes.md",
+      "__scalar/money/money.constant.ts",
+      "__scalar/stale/stale.dictionary.ts",
+    ])
+      await writeText(path.join(lib, file), "export {};\n");
+
+    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+    const app = AppExecutor.from(workspace, "modlist");
+    expect(await app.getDatabaseModules()).toEqual(["post"]);
+    expect(await app.getServiceModules()).toEqual(["_auth"]);
+    expect(await app.getScalarModules()).toEqual(["money"]);
+    expect(await app.getViewComponents()).toEqual(["post"]);
+    expect(await app.getUnitComponents()).toEqual(["post"]);
+    expect(await app.getTemplateComponents()).toEqual([]);
+    expect((await app.getViewsSourceCode()).map(({ filePath }) => filePath)).toEqual([
+      "apps/modlist/lib/post/Post.View.tsx",
+    ]);
+    expect((await app.getScalarConstantFiles()).map(({ filePath }) => filePath)).toEqual([
+      "apps/modlist/lib/__scalar/money/money.constant.ts",
+    ]);
   });
 });
