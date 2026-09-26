@@ -41,53 +41,30 @@ type AkanImageProps = NativeImageProps & {
   unoptimized?: boolean;
 };
 
-export const Image = ({
-  src,
-  file,
-  className,
-  abstractData,
-  alt,
-  quality,
-  priority,
-  preload,
-  unoptimized,
-  ...props
-}: AkanImageProps &
-  (
-    | {
-        src?: string;
-        file?: ProtoLightFile;
-        abstractData?: string | null;
-        alt?: string;
-      }
-    | {
-        src?: undefined;
-        abstractData?: string | null;
-        file: { url: string; imageSize: [number, number]; abstractData?: string | null } | null;
-        alt?: string;
-      }
-  )) => {
+export const Image = (
+  imageProps: AkanImageProps &
+    (
+      | {
+          src?: string;
+          file?: ProtoLightFile;
+          abstractData?: string | null;
+          alt?: string;
+        }
+      | {
+          src?: undefined;
+          abstractData?: string | null;
+          file: { url: string; imageSize: [number, number]; abstractData?: string | null } | null;
+          alt?: string;
+        }
+    ),
+) => {
+  if (getEnv().renderMode === "csr") return <CsrImage {...imageProps} />;
+  const { src, file, className, abstractData, alt, quality, priority, preload, unoptimized, ...props } = imageProps;
   const url = src || file?.url || null;
   const [width, height] = [props.width ?? file?.imageSize[0], props.height ?? file?.imageSize[1]];
 
   const blurDataURL = abstractData ?? file?.abstractData;
   const isPriority = Boolean(priority || preload);
-
-  if (getEnv().renderMode === "csr")
-    return (
-      <CsrImage
-        src={src}
-        alt={alt}
-        file={file}
-        abstractData={abstractData}
-        className={className}
-        priority={priority}
-        preload={preload}
-        quality={quality}
-        unoptimized={unoptimized}
-        {...props}
-      />
-    );
 
   const optimized = url
     ? getOptimizedImageAttrs({ src: url, width, sizes: props.sizes, quality, unoptimized })
