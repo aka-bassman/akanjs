@@ -58,7 +58,7 @@ export class ApiRouter {
   }: ApiRouteInputs): NonNullHttpRoutes {
     const endpointEntries = Object.entries(routes ?? {}).map(
       ([p, handler]) =>
-        [ApiRouter.#applyGlobalPrefix(prefix, p, routeOptions?.[p]), ApiRouter.#compressRoute(handler)] as const,
+        [ApiRouter.applyGlobalPrefix(prefix, p, routeOptions?.[p]), ApiRouter.#compressRoute(handler)] as const,
     );
     const builtinEntries = Object.entries(builtinRoutes ?? {}).map(
       ([path, handler]) => [path, ApiRouter.#compressRoute(handler)] as const,
@@ -158,12 +158,12 @@ export class ApiRouter {
     };
   }
 
-  static #applyGlobalPrefix(prefix: string, path: string, options?: SignalRouteOptions): string {
+  static applyGlobalPrefix(prefix: string, path: string, options?: SignalRouteOptions): string {
     if (options?.globalPrefix === false) return ApiRouter.#normalizeRoutePath(path);
-    return ApiRouter.#joinRoutePath(prefix, path);
+    return ApiRouter.joinRoutePath(prefix, path);
   }
 
-  static #joinRoutePath(prefix: string, path: string): string {
+  static joinRoutePath(prefix: string, path: string): string {
     const normalizedPrefix = ApiRouter.#normalizeRoutePath(prefix).replace(/\/$/, "");
     const normalizedPath = ApiRouter.#normalizeRoutePath(path);
     if (normalizedPrefix === "/") return normalizedPath;

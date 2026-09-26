@@ -102,24 +102,16 @@ export class DepsSerializer {
 
   #collectEdges() {
     const { di } = this.#context;
-    di.registry.serviceCls.forEach((cls, refName) => {
-      this.#edgesFrom(this.#node("service", refName), cls as InjectableCls);
-    });
-    di.registry.adaptorCls.forEach((cls, refName) => {
-      this.#edgesFrom(this.#node("adaptor", refName), cls as InjectableCls);
-    });
-    di.registry.serverSignalCls.forEach((cls, refName) => {
-      this.#edgesFrom(this.#node("serverSignal", refName), cls as unknown as InjectableCls);
-    });
-    di.registry.internalCls.forEach((cls, refName) => {
-      this.#edgesFrom(this.#node("internal", refName), cls as unknown as InjectableCls);
-    });
-    di.registry.endpointCls.forEach((cls, refName) => {
-      this.#edgesFrom(this.#node("endpoint", refName), cls as unknown as InjectableCls);
-    });
-    di.live.sliceCls.forEach((cls, refName) => {
-      this.#edgesFrom(this.#node("slice", refName), cls as unknown as InjectableCls);
-    });
+    const sources: [DepNodeKind, Map<string, unknown>][] = [
+      ["service", di.registry.serviceCls],
+      ["adaptor", di.registry.adaptorCls],
+      ["serverSignal", di.registry.serverSignalCls],
+      ["internal", di.registry.internalCls],
+      ["endpoint", di.registry.endpointCls],
+      ["slice", di.live.sliceCls],
+    ];
+    for (const [kind, classes] of sources)
+      for (const [refName, cls] of classes) this.#edgesFrom(this.#node(kind, refName), cls as InjectableCls);
   }
 
   #edgesFrom(from: string, cls: InjectableCls) {

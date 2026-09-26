@@ -24,6 +24,7 @@ import { FetchSerializer } from "../../signal/serializer";
 import type { DatabaseModule, ServiceModule } from "../akanLib";
 import type { DiLifecycle } from "../di/diLifecycle";
 import { SignalResolver } from "../resolver";
+import { ApiRouter } from "../routing/apiRouter";
 import type { EndpointNode, InternalNode, RouteRow, SignalData, SignalNode, SliceNode } from "./types";
 
 export interface SignalSerializerContext {
@@ -202,7 +203,7 @@ export class SignalSerializer {
           method: node.type === "mutation" ? (info.signalOption.method ?? "POST") : transport === "http" ? "GET" : null,
           path:
             transport === "ws"
-              ? SignalSerializer.#joinPath(prefix, websocketPrefix)
+              ? ApiRouter.joinRoutePath(prefix, websocketPrefix)
               : SignalSerializer.#httpPath(key, info, defaultPrefix, prefix),
           guards: node.guards ?? [],
           ...(node.cache !== undefined ? { cache: node.cache } : {}),
@@ -213,34 +214,9 @@ export class SignalSerializer {
     });
   }
 
-  /** Mirrors `SignalResolver.resolveEndpoint` + `ApiRouter.applyGlobalPrefix` so paths match the real route table. */
   static #httpPath(key: string, info: EndpointInfo, defaultPrefix: string | undefined, apiPrefix: string): string {
-    const servicePrefix = SignalSerializer.#resolveServicePrefix(info.signalOption.prefix, defaultPrefix);
-    const localPath = `${servicePrefix}${info.getPath(key)}`;
-    if (info.signalOption.globalPrefix === false) return SignalSerializer.#normalizePath(localPath);
-    return SignalSerializer.#joinPath(apiPrefix, localPath);
-  }
-
-  static #resolveServicePrefix(prefix: false | string | undefined, defaultPrefix?: string): string {
-    if (prefix === false || prefix === "") return "";
-    const resolved = prefix ?? defaultPrefix;
-    if (!resolved) return "";
-    const trimmed = resolved.trim().replace(/^\/+|\/+$/g, "");
-    return trimmed ? `/${trimmed}` : "";
-  }
-
-  static #joinPath(prefix: string, path: string): string {
-    const normalizedPrefix = SignalSerializer.#normalizePath(prefix).replace(/\/$/, "");
-    const normalizedPath = SignalSerializer.#normalizePath(path);
-    if (normalizedPrefix === "/") return normalizedPath;
-    if (normalizedPath === "/") return normalizedPrefix;
-    return `${normalizedPrefix}${normalizedPath}`;
-  }
-
-  static #normalizePath(path: string): string {
-    const trimmed = path.trim();
-    if (!trimmed || trimmed === "/") return "/";
-    return `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
+    const servicePrefix = SignalResolver.resolveServicePrefix(info.signalOption.prefix, defaultPrefix);
+    return ApiRouter.applyGlobalPrefix(apiPrefix, `${servicePrefix}${info.getPath(key)}`, info.signalOption);
   }
 
   static #serializeInternals(

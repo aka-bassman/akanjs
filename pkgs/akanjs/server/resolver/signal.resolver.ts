@@ -599,7 +599,7 @@ export class SignalResolver {
     const wsRoutes: WebsocketRoutes = {};
     const defaultPrefix = endpointCls.srv.cnst?.refName;
     Object.entries(endpointMeta).forEach(([key, endpointInfo]) => {
-      const servicePrefix = SignalResolver.#resolveServicePrefix(endpointInfo.signalOption.prefix, defaultPrefix);
+      const servicePrefix = SignalResolver.resolveServicePrefix(endpointInfo.signalOption.prefix, defaultPrefix);
       const path = `${servicePrefix}${endpointInfo.getPath(key)}`;
       if (endpointInfo.signalOption.globalPrefix !== undefined) {
         routeOptions[path] = { globalPrefix: endpointInfo.signalOption.globalPrefix };
@@ -732,7 +732,7 @@ export class SignalResolver {
     return { routes, wsRoutes, routeOptions };
   }
 
-  static #resolveServicePrefix(prefix: false | string | undefined, defaultPrefix?: string): string {
+  static resolveServicePrefix(prefix: false | string | undefined, defaultPrefix?: string): string {
     if (prefix === false || prefix === "") return "";
     const resolved = prefix ?? defaultPrefix;
     if (!resolved) return "";

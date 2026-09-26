@@ -13,7 +13,6 @@ import {
   type DocumentUpdateInput,
   documentQueryHelper,
   type FindQueryOption,
-  getFilterInfoByKey,
   getFilterMeta,
   getFilterSortByKey,
   getLoaderInfos,
@@ -46,6 +45,71 @@ const timedQuery = async <T>(fn: () => Promise<T>): Promise<T> => {
 };
 
 export class DatabaseResolver {
+  // The model adaptor and its database service expose the same filter methods over the same `__` primitives.
+  static applyFilterMethods(prototype: object, database: DatabaseModel, className: string) {
+    Object.entries(getFilterMeta(database.filter).query).forEach(([queryKey, filterInfo]) => {
+      const queryFn = filterInfo.queryFn;
+      if (!queryFn) throw new Error(`No query function for key: ${queryKey}`);
+      assertFilterFitsCrud(database.refName, queryKey, className);
+      const queryOf = (args: any) => queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
+      const dataOf = (args: any) => {
+        const { queryArgs, queryOption } = splitFilterArgs(filterInfo, args);
+        return { query: queryFn(...queryArgs, documentQueryHelper), queryOption };
+      };
+      const key = capitalize(queryKey);
+      Object.assign(prototype, {
+        [`list${key}`]: async function (this: DatabaseInstance, ...args: any) {
+          const { query, queryOption } = dataOf(args);
+          return this.__list(query, queryOption);
+        },
+        [`listIds${key}`]: async function (this: DatabaseInstance, ...args: any) {
+          const { query, queryOption } = dataOf(args);
+          return this.__listIds(query, queryOption);
+        },
+        [`find${key}`]: async function (this: DatabaseInstance, ...args: any) {
+          const { query, queryOption } = dataOf(args);
+          return this.__find(query, queryOption);
+        },
+        [`findId${key}`]: async function (this: DatabaseInstance, ...args: any) {
+          const { query, queryOption } = dataOf(args);
+          return this.__findId(query, queryOption);
+        },
+        [`pick${key}`]: async function (this: DatabaseInstance, ...args: any) {
+          const { query, queryOption } = dataOf(args);
+          return this.__pick(query, queryOption);
+        },
+        [`pickId${key}`]: async function (this: DatabaseInstance, ...args: any) {
+          const { query, queryOption } = dataOf(args);
+          return this.__pickId(query, queryOption);
+        },
+        [`exists${key}`]: async function (this: DatabaseInstance, ...args: any) {
+          return this.__exists(queryOf(args));
+        },
+        [`count${key}`]: async function (this: DatabaseInstance, ...args: any) {
+          return this.__count(queryOf(args));
+        },
+        [`insight${key}`]: async function (this: DatabaseInstance, ...args: any) {
+          return this.__insight(queryOf(args));
+        },
+        [`query${key}`]: (...args: any) => queryOf(args),
+        [`remove${key}`]: async function (this: DatabaseInstance, ...args: any) {
+          return this.__removeMany(queryOf(args));
+        },
+        [`removeOne${key}`]: async function (this: DatabaseInstance, ...args: any) {
+          return this.__removeOne(queryOf(args));
+        },
+        [`update${key}`]: function (this: DatabaseInstance, ...args: any): UpdateChain {
+          const query = queryOf(args);
+          return { set: (update) => this.__updateMany(query, update) };
+        },
+        [`updateOne${key}`]: function (this: DatabaseInstance, ...args: any): UpdateChain {
+          const query = queryOf(args);
+          return { set: (update) => this.__updateOne(query, update) };
+        },
+      });
+    });
+  }
+
   static resolveDatabase(
     constant: ConstantModel,
     database: DatabaseModel,
@@ -385,76 +449,7 @@ export class DatabaseResolver {
       }
     }
 
-    const getQueryDataFromKey = (queryKey: string, args: any): { query: any; queryOption: any } => {
-      const filterInfo = getFilterInfoByKey(database.filter, queryKey);
-      const queryFn = filterInfo.queryFn;
-      if (!queryFn) throw new Error(`No query function for key: ${queryKey}`);
-      const { queryArgs, queryOption } = splitFilterArgs(filterInfo, args);
-      return { query: queryFn(...queryArgs, documentQueryHelper), queryOption };
-    };
-    Object.entries(filterMeta.query).forEach(([queryKey, filterInfo]) => {
-      const queryFn = filterInfo.queryFn;
-      if (!queryFn) throw new Error(`No query function for key: ${queryKey}`);
-      assertFilterFitsCrud(modelName, queryKey, className);
-      Object.assign(DatabaseModelInstance.prototype, {
-        [`list${capitalize(queryKey)}`]: async function (...args: any) {
-          const { query, queryOption } = getQueryDataFromKey(queryKey, args);
-          return (this as unknown as DatabaseInstance).__list(query, queryOption);
-        },
-        [`listIds${capitalize(queryKey)}`]: async function (...args: any) {
-          const { query, queryOption } = getQueryDataFromKey(queryKey, args);
-          return (this as unknown as DatabaseInstance).__listIds(query, queryOption);
-        },
-        [`find${capitalize(queryKey)}`]: async function (...args: any) {
-          const { query, queryOption } = getQueryDataFromKey(queryKey, args);
-          return (this as unknown as DatabaseInstance).__find(query, queryOption);
-        },
-        [`findId${capitalize(queryKey)}`]: async function (...args: any) {
-          const { query, queryOption } = getQueryDataFromKey(queryKey, args);
-          return (this as unknown as DatabaseInstance).__findId(query, queryOption);
-        },
-        [`pick${capitalize(queryKey)}`]: async function (...args: any) {
-          const { query, queryOption } = getQueryDataFromKey(queryKey, args);
-          return (this as unknown as DatabaseInstance).__pick(query, queryOption);
-        },
-        [`pickId${capitalize(queryKey)}`]: async function (...args: any) {
-          const { query, queryOption } = getQueryDataFromKey(queryKey, args);
-          return (this as unknown as DatabaseInstance).__pickId(query, queryOption);
-        },
-        [`exists${capitalize(queryKey)}`]: async function (...args: any) {
-          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
-          return (this as unknown as DatabaseInstance).__exists(query);
-        },
-        [`count${capitalize(queryKey)}`]: async function (...args: any) {
-          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
-          return (this as unknown as DatabaseInstance).__count(query);
-        },
-        [`insight${capitalize(queryKey)}`]: async function (...args: any) {
-          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
-          return (this as unknown as DatabaseInstance).__insight(query);
-        },
-        [`query${capitalize(queryKey)}`]: (...args: any) =>
-          queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper),
-        [`remove${capitalize(queryKey)}`]: async function (...args: any) {
-          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
-          return (this as unknown as DatabaseInstance).__removeMany(query);
-        },
-        [`removeOne${capitalize(queryKey)}`]: async function (...args: any) {
-          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
-          return (this as unknown as DatabaseInstance).__removeOne(query);
-        },
-        [`update${capitalize(queryKey)}`]: function (...args: any): UpdateChain {
-          const instance = this as unknown as DatabaseInstance;
-          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
-          return { set: (update) => instance.__updateMany(query, update) };
-        },
-        [`updateOne${capitalize(queryKey)}`]: function (...args: any): UpdateChain {
-          const instance = this as unknown as DatabaseInstance;
-          const query = queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
-          return { set: (update) => instance.__updateOne(query, update) };
-        },
-      });
-    });
+    DatabaseResolver.applyFilterMethods(DatabaseModelInstance.prototype, database, className);
     applyMixins(DatabaseModelInstance, [database.model]);
     return {
       adaptor: DatabaseModelInstance as unknown as AdaptorCls<DatabaseInstance<any, any, any, any, any, any>>,
