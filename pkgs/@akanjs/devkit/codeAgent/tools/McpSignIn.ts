@@ -9,25 +9,8 @@ export interface McpSignInOptions {
   onNotice?: (message: string) => void;
 }
 
-/**
- * Signing one MCP server in, and keeping it signed in.
- *
- * The two halves are deliberately apart. {@link token} runs at connect and is allowed to do anything that
- * needs no person — read a stored token, refresh an expired one — while {@link run} opens a browser and is
- * only ever called by a host that has somebody in front of it.
- *
- * Connecting must never block on a sign-in. `McpToolPack.connect` happens inside `CodeAgent.create`, before
- * the first frame is drawn, so a browser round trip there would hold the whole session on a screen that does
- * not exist yet. A server that needs a credential and has none is reported, not waited for.
- */
 export class McpSignIn {
-  /**
-   * The bearer token to connect with, or undefined when there is none to be had without asking.
-   *
-   * A refresh that fails is not an error here: the stored grant was revoked or expired past refreshing, and
-   * the answer is the same as having no token at all — the server will say so, and the host will offer a
-   * sign-in. Throwing would cost the session every other server's tools.
-   */
+  /** The token to connect with, or undefined when none is had without asking; a failed refresh is not a throw. */
   static async token(ref: CodeAgentMcpServerRef, onNotice?: (message: string) => void) {
     const stored = McpTokenStore.read(ref.name);
     if (!stored) return undefined;
@@ -41,14 +24,8 @@ export class McpSignIn {
         resource: stored.resource,
       };
       const tokens = await McpOAuth.refresh(server, stored);
-      McpTokenStore.write(ref.name, {
-        ...stored,
-        accessToken: tokens.accessToken,
-        // A server that rotates refresh tokens invalidates the old one, so keeping it would sign us out.
-        ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
-        ...(tokens.expiresAt ? { expiresAt: tokens.expiresAt } : {}),
-        ...(tokens.scope ? { scope: tokens.scope } : {}),
-      });
+      // A server that rotates refresh tokens invalidates the old one, so keeping it would sign us out.
+      McpTokenStore.write(ref.name, { ...stored, ...tokens });
       return tokens.accessToken;
     } catch (error) {
       onNotice?.(`MCP server "${ref.name}" needs signing in again — ${String(error)}`);
@@ -56,12 +33,7 @@ export class McpSignIn {
     }
   }
 
-  /**
-   * The whole interactive flow: discover, register if needed, open a browser, store the token.
-   *
-   * The client registration is reused across sign-ins when the server it was made against has not moved, so a
-   * second sign-in to the same provider creates no second client entry in whatever account page lists them.
-   */
+  /** Interactive: discover, register unless the stored client is reusable, open a browser, store the token. */
   static async run(ref: CodeAgentMcpServerRef, options: McpSignInOptions): Promise<McpStoredAuth> {
     if (!ref.url) throw new Error(`"${ref.name}" is a stdio server: give it its credential through "env".`);
     const challenge = await McpSignIn.challenge(ref);
@@ -90,10 +62,7 @@ export class McpSignIn {
         clientId: client.clientId,
         ...(client.clientSecret ? { clientSecret: client.clientSecret } : {}),
         redirectUri,
-        accessToken: tokens.accessToken,
-        ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
-        ...(tokens.expiresAt ? { expiresAt: tokens.expiresAt } : {}),
-        ...(tokens.scope ? { scope: tokens.scope } : {}),
+        ...tokens,
       };
       McpTokenStore.write(ref.name, auth);
       return auth;
@@ -102,13 +71,7 @@ export class McpSignIn {
     }
   }
 
-  /**
-   * What the server answers an unauthenticated `initialize` with, or null when it wants no credential.
-   *
-   * Asked before discovery because the challenge names the resource metadata, and a server serving it under a
-   * path publishes a url no client can derive. A server that answers anything but `401` is one that does not
-   * need signing in, which is worth saying rather than running a flow against.
-   */
+  /** The `WWW-Authenticate` of an unauthenticated `initialize`, or null when the server answers anything but 401. */
   static async challenge(ref: CodeAgentMcpServerRef) {
     if (!ref.url) return null;
     try {

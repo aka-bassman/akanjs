@@ -18,12 +18,7 @@ export interface FontPruneResult {
   freedBytes: number;
 }
 
-/**
- * Drops the font sources in a build's `public/` that no built surface reads. A font with `optimize` on is
- * served from `/_akan/fonts` after subsetting, so its source is a build input — the image ships it and the
- * runtime never opens it. Only `dist` is touched: an app's and a lib's own `public/` keep every file, because
- * one lib's fonts are picked over differently by every app that mounts it and by other repos.
- */
+/** Deletes the fonts in the build's `dist/…/public` that nothing reads; source `public/` trees are never touched. */
 export class FontPruner {
   #app: App;
   #keepGlobs: string[];
@@ -92,15 +87,8 @@ export class FontPruner {
     return candidates;
   }
 
-  /**
-   * Matched by basename rather than by URL, so a reference survives every spelling a referrer may use — an
-   * absolute or relative `url()`, and the percent-encoded form a font whose filename carries a space needs.
-   *
-   * The build's own bundles are read on weaker terms than `public/` and the compiled CSS: every route file's
-   * `fonts` declaration is inlined into the pages bundle, the client chunks and the CSR shell, so a declared
-   * source is in all three whether or not anything loads it. A hit there is therefore ignored for a font the
-   * optimizer already subset — that string is the declaration, not a fetch.
-   */
+  // Basename match (plain and percent-encoded) covers every url() spelling. The bundles inline each route's `fonts`
+  // declaration, so a bundle hit counts only for a font the optimizer did not subset.
   async #findReferrers(
     candidates: { rel: string; basename: string }[],
     optimizedSrcs: Set<string>,
@@ -155,11 +143,8 @@ export class FontPruner {
     for (const dir of dirs) await rmdir(path.join(this.#publicRoot, dir)).catch(() => undefined);
   }
 
-  /**
-   * The referrer roll-up is `info`, not `verbose`: a generated file that lists every asset in `public/` — a
-   * service-worker precache manifest is the usual one — is a real reference and keeps every font it names, so
-   * without this line a build that pruned nothing looks the same as a build with nothing to prune.
-   */
+  // The roll-up is `info`: a precache manifest listing all of public/ keeps every font, which otherwise looks like
+  // a build with nothing to prune.
   #report(result: FontPruneResult) {
     if (!result.removed.length && !result.kept.length) return;
     for (const { file, bytes } of result.removed)

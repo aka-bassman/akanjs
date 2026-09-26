@@ -1,9 +1,6 @@
 import path from "node:path";
-// Module paths, never a barrel. The `@akanjs/devkit` root re-exports all 41 modules, which would drag
-// @trapezedev/project, ssh2, ink and the cloud stack in; and `frontendBuild`'s own
-// barrel reaches `cssCompiler`/`ssrBaseArtifactBuilder`, which pull tailwindcss + @tailwindcss/node
-// (~40MB) into a process that then holds them for the whole dev session. Phase 2 moved css compilation
-// into the batch worker, so this process has no use for them — `entryModuleGraph.test.ts` keeps it that way.
+// Module paths, never a barrel: the devkit and `frontendBuild` barrels would hold tailwindcss (~40MB), ssh2, ink
+// and the cloud stack for the whole dev session (`entryModuleGraph.test.ts` enforces it).
 import { CodegenLock } from "@akanjs/devkit/codegenLock";
 import type { App } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, type PageRoot, WorkspaceExecutor } from "@akanjs/devkit/executors";
@@ -41,6 +38,7 @@ interface IncrementalBuilderOptions {
 }
 
 type IncrementalBuilderBootDeps = Pick<IncrementalBuilderOptions, "artifact" | "optimizedFonts" | "discovery">;
+type BatchWork = Pick<BuildBatchRequest, "generation" | "needs" | "changedFiles">;
 
 class IncrementalBuilder {
   #logger = new Logger("IncrementalBuilder");
@@ -84,10 +82,7 @@ class IncrementalBuilder {
     return `${this.#app.cwdPath}/.akan/artifact`;
   }
 
-  /**
-   * Build a route and answer it. The reply is part of the work item on purpose: `shutdown` drains the
-   * work queue before exiting, so folding the flush in here is what makes "drained" mean "answered".
-   */
+  // The reply is part of the work item on purpose: `shutdown` drains the queue, so "drained" must mean "answered".
   async handleBuildRoute(msg: BuilderReq): Promise<void> {
     await this.#enqueueWork(`build-route:${msg.routeId}`, async () =>
       BuilderChannel.send(await this.#handleBuildRoute(msg)),
@@ -160,16 +155,11 @@ class IncrementalBuilder {
     }
   }
 
-  /** No queued work and no debounced css rebuild, so nothing is lost if the process exits now. */
   get #idle(): boolean {
     return this.#inFlight === 0 && this.#cssRebuildTimer === null;
   }
 
-  /**
-   * Reported only when the builder is idle. The host's only lever against the bundler arenas
-   * `Bun.build` retains is to recycle this process, and a recycle decided while work is queued would
-   * either truncate that work or race the shutdown drain — so a busy builder simply says nothing.
-   */
+  // Idle only: the host recycles on these metrics, and a recycle decided mid-work would truncate it or race the drain.
   #reportMetrics(): void {
     if (!this.#idle || this.#shuttingDown) return;
     BuilderChannel.emit({
@@ -178,34 +168,24 @@ class IncrementalBuilder {
     });
   }
 
-  /**
-   * Finish queued work, then exit so the OS reclaims the bundler arenas. The host restarts a
-   * replacement; build requests that arrive during the drain are refused with the same retry error
-   * the backend already handles for any other builder restart.
-   */
+  // Exits so the OS reclaims the bundler arenas; the host spawns the replacement.
   async shutdown(reason: string): Promise<void> {
     if (this.#shuttingDown) return;
     this.#shuttingDown = true;
     const started = Date.now();
     this.#logger.debug(`shutdown requested (${reason}); draining ${this.#inFlight} work item(s)`);
-    // Stopped before the drain, or a save landing mid-drain would enqueue a batch behind the queue tail
-    // this method already awaited — and `process.exit(0)` would cut that batch off partway through
-    // writing its artifacts. The replacement rebuilds every artifact from its boot build anyway, so the
-    // batch is not lost; a half-written one would be.
+    // Before the drain: a save landing mid-drain would queue behind the awaited tail and `process.exit` would cut
+    // its artifacts off half-written; the replacement's boot build redoes that work anyway.
     this.#watcher?.stop();
     if (this.#cssRebuildTimer) {
-      // Only reachable if a css batch landed between the idle report and this request: the fresh
-      // boot build recompiles css from scratch anyway, so dropping the debounce loses nothing.
+      // Only if css landed after the idle report; the replacement's boot build recompiles css, so nothing is lost.
       clearTimeout(this.#cssRebuildTimer);
       this.#cssRebuildTimer = null;
       this.#pendingCssRebuild = null;
     }
     await this.#workQueue.catch(() => undefined);
     await this.#cssRebuildQueue.catch(() => undefined);
-    // Drained queues do not mean the host has the results. The events those work items produced are the
-    // largest messages this process sends, and `process.exit` discards an ipc write that has not
-    // flushed — a `css-updated` relayed milliseconds before this line would be dropped with no error
-    // anywhere, leaving the backend serving the previous bundle. See `BuilderChannel`.
+    // Drained queues are not delivered results: `process.exit` drops unflushed ipc writes (a relayed `css-updated`).
     const flushed = await BuilderChannel.drain();
     this.#logger.debug(
       `drained in ${Date.now() - started}ms${flushed ? ` after flushing ${flushed} ipc write(s)` : ""}; exiting for recycle`,
@@ -216,8 +196,7 @@ class IncrementalBuilder {
   get shuttingDown(): boolean {
     return this.#shuttingDown;
   }
-  //* Watch events name the file's real path, so synced lib pages are matched by `realDir` while their
-  //* page key still carries the app-relative `(libs)/(<lib>)` prefix.
+  //* Watch events carry real paths: synced lib pages match by `realDir`, their keys keep the `(libs)/(<lib>)` prefix.
   static #matchPageRoot(roots: PageRoot[], abs: string): PageRoot | null {
     for (const root of roots) {
       const absRoot = path.resolve(root.realDir);
@@ -245,7 +224,6 @@ class IncrementalBuilder {
     }
     return false;
   }
-  /** Debounced css-only rebuild; the compile itself runs in a disposable worker like every other build. */
   scheduleCssRebuild({ generation, changedFiles }: { generation?: number; changedFiles?: string[] }) {
     this.#pendingCssRebuild = { generation, changedFiles };
     if (this.#cssRebuildTimer) clearTimeout(this.#cssRebuildTimer);
@@ -280,13 +258,12 @@ class IncrementalBuilder {
     }, 150);
   }
   async installWatcher() {
-    const artifactDir = this.#artifactDir;
     const roots = await new WatchRootResolver(this.#app).resolve();
     const watcher = new HmrWatcher({
       roots,
       logger: this.#logger,
       onBatch: async (batch: ChangeBatch) => {
-        await this.#enqueueWork("hmr-batch", async () => this.#handleWatchBatch(artifactDir, batch));
+        await this.#enqueueWork("hmr-batch", async () => this.#handleWatchBatch(batch));
       },
     });
     await watcher.start();
@@ -294,13 +271,11 @@ class IncrementalBuilder {
     this.#logger.verbose(`watching ${roots.length} roots`);
   }
 
-  async #handleWatchBatch(artifactDir: string, batch: ChangeBatch) {
+  async #handleWatchBatch(batch: ChangeBatch) {
     const rawKinds = new Set(batch.kinds);
     if (rawKinds.size === 0) return;
     const generation = ++this.#generation;
-    //* Insert framework imports that are used but omitted (e.g. `Int` in *.constant.ts, `fetch` in
-    //* *.store.ts) before regenerating barrels. Edits land on files already in this batch, so they
-    //* rebuild in this same generation; the write is idempotent so it does not re-trigger the watcher.
+    //* Auto-import edits touch only this batch's files, so they rebuild in this same generation.
     const [autoImport, indexSync] = await CodegenLock.run(
       this.#app.workspace.workspaceRoot,
       `hmr-batch:${this.#app.name}`,
@@ -312,9 +287,7 @@ class IncrementalBuilder {
     for (const error of autoImport.errors) this.#logger.error(error);
     if (autoImport.changedFiles.length > 0)
       this.#logger.verbose(`[auto-import] inserted imports into ${autoImport.changedFiles.length} file(s)`);
-    //* Both passes above write source files, and this generation's build consumes what they wrote. Hand
-    //* them to the watcher so its verification scan does not read them back as a user edit and spend a
-    //* second generation rebuilding identical content.
+    //* Absorbed so the watcher's verification scan does not replay these writes as a user edit next generation.
     await this.#watcher?.absorb([...autoImport.changedFiles, ...indexSync.changedFiles]);
     const { files, kinds, expandedBatch, devPlan, event, hasSyncErrors } = prepareDevWatchBatch({
       generation,
@@ -343,8 +316,7 @@ class IncrementalBuilder {
     }
     if (indexSync.changedFiles.length > 0) this.#sendBuildStatus("barrel", { generation, ok: true, files });
 
-    // Server-only generations (e.g. a .service.ts or srvkit edit) must not rebuild or refresh the
-    // client: a fresh pages buildId would broadcast rsc-refresh to browsers for no visible change.
+    // Server-only generations skip the client: a fresh pages buildId would rsc-refresh browsers for no visible change.
     const rebuildClient = devPlan.actions.includes("rebuild-client");
     if (kinds.includes("code") && !rebuildClient) {
       this.#logger.verbose(`client rebuild skipped; devPlan actions=${devPlan.actions.join(",") || "(none)"}`);
@@ -361,56 +333,36 @@ class IncrementalBuilder {
 
     const needs: BuildBatchNeed[] = [];
     if (kinds.includes("code") && rebuildClient) {
-      if (this.#shouldRebuildCsr()) needs.push("csr");
+      if (this.#csrActive) needs.push("csr");
       else
         this.#logger.verbose(
           `csr-rebundle skipped; request /__csr or ?csr=true (or set AKAN_DEV_CSR_REBUILD=1) to enable per-save CSR rebuilds`,
         );
       needs.push("pages");
-      // Server-only code edits cannot introduce class names the CSS scanner would pick up; only a
-      // client rebuild or a direct stylesheet edit can change the compiled CSS. Folded into this
-      // generation's batch rather than debounced separately: the work queue already serializes
-      // generations, so by the time a second batch runs the 150ms debounce would have fired anyway,
-      // and a second worker spawn per save costs more than the coalescing ever saved.
+      // In this batch rather than debounced: the queue already serializes generations, and a second worker per save
+      // costs more than coalescing would save.
       needs.push("css");
     }
 
     BuilderChannel.emit(event);
 
     if (needs.length > 0) await this.#runBatch({ generation, needs, changedFiles: files });
-    // A css-only batch keeps its debounce: those arrive in bursts while a stylesheet is edited, and
-    // without a pages build in front of them there is nothing else to space them out.
+    // Css-only batches keep the debounce: they arrive in bursts while a stylesheet is edited.
     else if (kinds.includes("css")) {
       this.scheduleCssRebuild({ generation, changedFiles: files });
       this.#logger.verbose(`css-rebuild scheduled generation=${generation}`);
     }
   }
 
-  /**
-   * Run one generation of build work in a process that exits afterwards. The worker streams the
-   * messages the backend and the HMR overlay consume, which this relays untouched, so the sequence a
-   * browser observes is the same one the in-process build produced.
-   */
-  async #runBatch({
-    generation,
-    needs,
-    changedFiles,
-  }: {
-    generation: number;
-    needs: BuildBatchNeed[];
-    changedFiles: string[];
-  }): Promise<BuildBatchResult> {
+  async #runBatch(work: BatchWork): Promise<BuildBatchResult> {
+    const { generation, needs, changedFiles } = work;
     const started = Date.now();
-    const result = await this.#batchRunner.run(await this.#batchRequest({ generation, needs, changedFiles }), (msg) =>
-      BuilderChannel.emit(msg),
-    );
+    const result = await this.#batchRunner.run(await this.#batchRequest(work), (msg) => BuilderChannel.emit(msg));
     if (result.optimizedFonts) this.#optimizedFonts = result.optimizedFonts;
     if (result.cssAssets) this.#artifact = { ...this.#artifact, cssAssets: result.cssAssets };
-    // A worker that died before reporting streamed no build-status of its own, so report one per need
-    // it was given: the generation must go red rather than look like it silently succeeded.
+    // A crashed worker streamed no build-status, so each need goes red here instead of looking silently successful.
     if (result.crashed) {
-      // `base` is excluded because it is not a `BuildPhase`: a boot build has no phase board to fail, and
-      // it never travels through here — `#buildBootDeps` runs it and throws into the degraded-boot path.
+      // `base` is not a `BuildPhase` and never comes through here: `#buildBootDeps` throws into the degraded boot.
       for (const need of needs)
         if (need !== "base")
           this.#sendBuildStatus(need, { generation, ok: false, files: changedFiles, message: result.errors[need] });
@@ -419,15 +371,7 @@ class IncrementalBuilder {
     return result;
   }
 
-  async #batchRequest({
-    generation,
-    needs,
-    changedFiles,
-  }: {
-    generation: number;
-    needs: BuildBatchNeed[];
-    changedFiles: string[];
-  }): Promise<BuildBatchRequest> {
+  async #batchRequest({ generation, needs, changedFiles }: BatchWork): Promise<BuildBatchRequest> {
     return {
       appName: this.#app.name,
       workspaceRoot: this.#app.workspace.workspaceRoot,
@@ -448,10 +392,7 @@ class IncrementalBuilder {
     this.#logger.verbose(`ready (watch=${this.#watch})`);
   }
 
-  /**
-   * After a degraded boot recovers, the backend is still serving the last-good bundle; push a
-   * fresh pages/css state so connected browsers pick up the fixed code without another edit.
-   */
+  // The backend still serves the last-good bundle after a degraded boot; push fresh pages/css without another edit.
   async announceRecoveredState(changedFiles: string[]): Promise<void> {
     const generation = ++this.#generation;
     await this.#enqueueWork("boot-recovered", async () => {
@@ -459,21 +400,12 @@ class IncrementalBuilder {
     });
   }
 
-  /**
-   * Re-announce the state this builder just booted with, after the host recycled the previous one.
-   *
-   * The backend reads `base-artifact.json` once at boot and never re-reads it, so a pages or css hash
-   * that moved while the builder was being replaced would otherwise leave it pointing at the previous
-   * artifact until the next save. Announced from the boot artifact rather than by rebuilding: the
-   * bundles are already on disk, and spending another ~200MB of bundler arena in a process that was
-   * just recycled to reclaim memory would defeat the purpose. The host suppresses the announcement
-   * when the hashes match, which is the common case, so a clean recycle never reloads a browser.
-   */
+  // The backend reads base-artifact.json once, at its boot. Re-announced from disk rather than rebuilt (this process
+  // was recycled to free bundler memory); the host drops it when hashes match, so a clean recycle reloads nothing.
   async announceBootState(): Promise<void> {
     const generation = ++this.#generation;
     const reason = "builder-recycle" as const;
-    // Awaited rather than emitted: this runs during a recycle, so the host may ask this builder to shut
-    // down at any moment, and "announced boot state" must mean the announcement left the process.
+    // Awaited, not emitted: the host may shut this builder down any moment, so "announced" must mean flushed.
     await BuilderChannel.send({
       type: "pages-updated",
       data: {
@@ -500,16 +432,11 @@ class IncrementalBuilder {
     this.#logger.verbose(`announced boot state after recycle generation=${generation}`);
   }
 
-  /**
-   * Build the dev CSR artifact because a request asked for it, and keep it in sync from now on. The
-   * dev server only serves CSR through the opt-in `/__csr` and `?csr=true` routes — mobile local dev
-   * points a device WebView at the latter — so nothing needs the artifact until one of them is hit.
-   */
+  // On demand: dev serves CSR only via the opt-in `/__csr` and `?csr=true` routes; once built, it rebuilds every save.
   async handleBuildCsr(msg: BuilderCsrReq): Promise<void> {
     await this.#enqueueWork("build-csr", async (): Promise<void> => {
       const started = Date.now();
-      // Messages are not relayed: an on-demand CSR build is a request/response, and the phase board
-      // never carried a csr status for it before. The error travels in the response below.
+      // Not relayed: an on-demand CSR build is request/response, and its error travels in the response.
       const result = await this.#batchRunner.run(
         await this.#batchRequest({ generation: this.#generation, needs: ["csr"], changedFiles: [] }),
       );
@@ -525,26 +452,11 @@ class IncrementalBuilder {
     });
   }
 
-  #shouldRebuildCsr() {
-    return this.#csrActive;
-  }
-
   static #csrArmedByEnv() {
     return process.env.AKAN_DEV_CSR_REBUILD === "1";
   }
 
-  /**
-   * Build the boot artifact in a process that exits afterwards, and keep only the serializable result.
-   *
-   * This runs in a worker for the same reason every other build does, and it was the largest single
-   * holdout: measured on `apps/akan`, `SsrBaseArtifactBuilder.build()` retains **+1143 MB** that
-   * `Bun.gc(true)` cannot touch, which is 65 % of the builder's post-boot RSS. Nothing was lost by
-   * moving it — the builder only ever kept `artifact` and `optimizedFonts`, both plain data, and the
-   * artifact is written to `base-artifact.json` regardless.
-   *
-   * `GraphClientEntryDiscovery.create` stays here because route builds need it live, and it costs
-   * nothing to keep: measured at **0 ms and 0 MB**, because it builds its graph lazily on first use.
-   */
+  // Discovery stays in-process because route builds need it live; it is free at boot, building its graph lazily.
   static async #buildBootDeps(app: App, runner: BuildBatchRunner): Promise<IncrementalBuilderBootDeps> {
     const result = await runner.run({
       appName: app.name,
@@ -553,15 +465,12 @@ class IncrementalBuilder {
       generation: 0,
       needs: ["base"],
       changedFiles: [],
-      // Discovered by the worker: at boot the watcher has no validated keys to seed, and the boot build
-      // globs them itself anyway.
       pageKeys: null,
       optimizedFonts: null,
       cssAssets: null,
       artifactDir: path.resolve(`${app.cwdPath}/.akan/artifact`),
     });
-    // A failed boot build has to throw, not degrade quietly: `main` catches this to enter the degraded
-    // watch mode that keeps the dev server alive until the error is fixed.
+    // Throws rather than degrading quietly: `main` catches it to enter degraded watch mode.
     if (result.errors.base) throw new Error(result.errors.base);
     if (!result.artifact || !result.optimizedFonts)
       throw new Error("boot build reported success without an artifact; the build worker likely died");
@@ -569,13 +478,7 @@ class IncrementalBuilder {
     return { artifact: result.artifact, optimizedFonts: result.optimizedFonts, discovery };
   }
 
-  /**
-   * A session that already armed dev CSR keeps it armed across builder restarts through the env flag,
-   * so the artifact has to be rebuilt for the replacement. Queued after `builder-ready` and run in a
-   * disposable worker rather than inline: a full minified browser-target build of every page costs
-   * ~350MB of bundler arena that an inline build would never give back, and nothing serves CSR until a
-   * `/__csr` or `?csr=true` request arrives anyway.
-   */
+  // The env flag carries an armed CSR session across builder restarts, so the replacement rebuilds it after ready.
   async rearmCsrFromEnv(): Promise<void> {
     if (!IncrementalBuilder.#csrArmedByEnv()) return;
     this.#csrActive = true;
@@ -588,12 +491,8 @@ class IncrementalBuilder {
     });
   }
 
-  /**
-   * A compile error in the boot build must not kill the builder: the builder is the dev server's
-   * file watcher, so exiting here leaves nothing to notice the fix. Report the failure, emit
-   * builder-ready so the host keeps the backend serving the last-good artifact, then retry the
-   * boot build on every file change until it succeeds.
-   */
+  // A boot compile error must not kill the builder, the dev server's only file watcher: report it, emit builder-ready
+  // so the backend keeps the last-good artifact, and retry the boot build on every change.
   static #recoverBoot(
     app: App,
     bootError: unknown,
@@ -649,8 +548,7 @@ class IncrementalBuilder {
     const app = AppExecutor.from(workspace, appName);
     const watch = process.env.AKAN_WATCH !== "0";
     let builder: IncrementalBuilder | null = null;
-    // Registered before the boot build so backend requests get an error response (instead of hanging
-    // the backend) while the builder is still booting or recovering from a failed build.
+    // Registered before the boot build so a request during boot or recovery gets an error instead of hanging.
     const bootingError = "builder is recovering from a failed boot build; retry after the build error is fixed";
     const recyclingError = "builder is recycling to release bundler memory; retry after it restarts";
     process.on("message", (msg: BuilderMessage) => {
@@ -663,34 +561,21 @@ class IncrementalBuilder {
         void builder.shutdown(msg.reason);
         return;
       }
-      if (msg.type === "build-route") {
+      if (msg.type !== "build-route" && msg.type !== "build-csr") return;
+      if (!builder || builder.shuttingDown) {
         const error = builder?.shuttingDown ? recyclingError : bootingError;
-        if (!builder || builder.shuttingDown) {
-          BuilderChannel.emit({ type: "build-route-res", id: msg.id, ok: false, error });
-          return;
-        }
-        void builder.handleBuildRoute(msg);
+        BuilderChannel.emit({ type: `${msg.type}-res`, id: msg.id, ok: false, error });
         return;
       }
-      if (msg.type === "build-csr") {
-        const error = builder?.shuttingDown ? recyclingError : bootingError;
-        if (!builder || builder.shuttingDown) {
-          BuilderChannel.emit({ type: "build-csr-res", id: msg.id, ok: false, error });
-          return;
-        }
-        void builder.handleBuildCsr(msg);
-      }
+      if (msg.type === "build-route") void builder.handleBuildRoute(msg);
+      else void builder.handleBuildCsr(msg);
     });
-    // The IPC channel closes when the dev host dies (including SIGKILL); exit instead of running
-    // as an orphaned watcher that keeps rebuilding for nobody. Nothing is drained here on purpose —
-    // there is no longer anyone on the other end to flush to.
+    // Closes when the host dies (even by SIGKILL): nothing left to drain, and an orphan would rebuild for nobody.
     process.on("disconnect", () => {
       logger.warn("host IPC channel closed; exiting builder");
       process.exit(0);
     });
     let recoveredFiles: string[] | null = null;
-    // Owned by `main` rather than the instance: the boot build has to run before an instance exists, and
-    // a degraded boot re-runs it once per file change until it succeeds.
     const bootRunner = new BuildBatchRunner({ workspaceRoot, cwd: app.cwdPath });
     try {
       builder = new IncrementalBuilder({ app, watch, ...(await IncrementalBuilder.#buildBootDeps(app, bootRunner)) });

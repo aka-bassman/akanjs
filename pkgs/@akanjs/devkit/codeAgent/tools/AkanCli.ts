@@ -9,13 +9,7 @@ export interface AkanCliResult {
   output: string;
 }
 
-/**
- * Runs `akan` as a child process and captures what it printed.
- *
- * The runners behind these commands write straight to an inherited stdio and return nothing, so there is no
- * in-process call that yields text to hand back to a model. A subprocess also isolates a crash in a build or a
- * typechecker from the agent's own turn.
- */
+// A subprocess: the akan runners print to inherited stdio and return nothing; it also isolates their crashes.
 export class AkanCli {
   readonly #cwd: string;
   readonly #entry: string;
@@ -39,19 +33,13 @@ export class AkanCli {
       proc.exited,
     ]);
     clearTimeout(timer);
-    // `NO_COLOR` reaches akan's own output but not every tool it shells out to — tsgo colours regardless, and
-    // escape sequences in a tool result are tokens the model pays for and cannot read.
+    // tsgo colours regardless of NO_COLOR, and escape sequences are tokens the model pays for and cannot read.
     const output = stripAnsi(`${stdout}${stderr}`).trim();
     return { command: `akan ${args.join(" ")}`, ok: exitCode === 0, exitCode, output };
   }
 
-  /**
-   * Bundling rewrites `import.meta.dir` to the output directory, where devkit is inlined into the CLI and the
-   * entry is `index.js` beside this module; from source the entry belongs to the neighbouring package and is
-   * still TypeScript. `Bun.main` is the last resort and is only right when the CLI is the process — an SDK
-   * embedder's main is its own. The path is written out rather than resolved through the package name because
-   * devkit does not depend on the CLI, and must not start.
-   */
+  // Bundled, import.meta.dir is the CLI's output dir with index.js beside it; Bun.main fits only when the CLI is the
+  // process. The path is written out because devkit does not depend on the CLI, and must not start.
   static #resolveEntry() {
     const candidates = [
       path.join(import.meta.dir, "index.js"),

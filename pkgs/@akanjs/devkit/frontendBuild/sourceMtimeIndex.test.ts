@@ -19,17 +19,16 @@ const seed = async (root: string, rel: string, content = "export const x = 1;\n"
   return abs;
 };
 
-/**
- * mtime comparison needs the write to land on a different timestamp than the baseline. APFS records
- * nanoseconds so same-millisecond writes normally still differ, but size is compared too and a
- * same-length rewrite inside one tick would tie both — so tests vary content length rather than sleep.
- */
+const primed = async (indexRoots: string[], dirSettleMs?: number) => {
+  const index = new SourceMtimeIndex({ roots: indexRoots, dirSettleMs });
+  await index.prime();
+  return index;
+};
+
+// Varies content length rather than sleeping: a same-length rewrite inside one mtime tick would tie both mtime and size.
 const rewrite = (abs: string, marker: string) => writeFile(abs, `export const x = ${marker};\n`);
 
-/**
- * `rm` cannot traverse a directory a test left unreadable, and a throw here fails the *next* test rather
- * than the one that caused it — so permissions are restored on the way down before giving up.
- */
+// `rm` cannot traverse a directory a test left unreadable, and a throw here fails the next test, so restore permissions.
 const forceRemove = async (target: string): Promise<void> => {
   await rm(target, { recursive: true, force: true }).catch(async () => {
     await chmod(target, 0o755).catch(() => undefined);
@@ -47,8 +46,7 @@ describe("SourceMtimeIndex", () => {
   test("reports nothing on a quiet tree", async () => {
     const root = await makeRoot();
     await seed(root, "lib/a.ts");
-    const index = new SourceMtimeIndex({ roots: [root] });
-    await index.prime();
+    const index = await primed([root]);
 
     expect(index.trackedFileCount).toBe(1);
     expect(await index.collectChanges()).toEqual([]);
@@ -58,10 +56,8 @@ describe("SourceMtimeIndex", () => {
   test("reports every file of a save-all, which is what fs.watch loses", async () => {
     const root = await makeRoot();
     const files = await Promise.all([0, 1, 2, 3, 4].map((i) => seed(root, `lib/File${i}.ts`)));
-    const index = new SourceMtimeIndex({ roots: [root] });
-    await index.prime();
+    const index = await primed([root]);
 
-    // No gaps: exactly the burst Bun collapses to a single reported path.
     for (const [i, abs] of files.entries()) await rewrite(abs, `${i}00`);
 
     expect((await index.collectChanges()).sort()).toEqual([...files].sort());
@@ -70,8 +66,7 @@ describe("SourceMtimeIndex", () => {
   test("reports a change once, then stops reporting it", async () => {
     const root = await makeRoot();
     const abs = await seed(root, "lib/a.ts");
-    const index = new SourceMtimeIndex({ roots: [root] });
-    await index.prime();
+    const index = await primed([root]);
 
     await rewrite(abs, "222");
     expect(await index.collectChanges()).toEqual([abs]);
@@ -81,8 +76,7 @@ describe("SourceMtimeIndex", () => {
   test("reports a created file, found through its directory's mtime", async () => {
     const root = await makeRoot();
     await seed(root, "lib/a.ts");
-    const index = new SourceMtimeIndex({ roots: [root] });
-    await index.prime();
+    const index = await primed([root]);
 
     const created = await seed(root, "lib/b.ts");
     expect(await index.collectChanges()).toEqual([created]);
@@ -92,34 +86,23 @@ describe("SourceMtimeIndex", () => {
   test("reports a created directory's files", async () => {
     const root = await makeRoot();
     await seed(root, "lib/a.ts");
-    const index = new SourceMtimeIndex({ roots: [root] });
-    await index.prime();
+    const index = await primed([root]);
 
     const created = await seed(root, "lib/user/user.constant.ts");
     expect(await index.collectChanges()).toEqual([created]);
     expect(await index.collectChanges()).toEqual([]);
   });
 
-  /**
-   * Linux stamps directory mtimes from a coarse clock, so a mutation landing in the same tick as the
-   * value the index recorded leaves that value byte-identical: measured under Docker, 319 of 400
-   * back-to-back `mkdir`s never moved the parent's mtime on overlayfs and 324 of 400 on ext4, while APFS
-   * missed none. `utimes` reproduces that here rather than leaving it to the host's clock resolution —
-   * otherwise this passes on macOS for the wrong reason and is flaky on the Linux fleet.
-   *
-   * `dirSettleMs` is pinned wide so the assertion is about the mechanism, not about how many milliseconds
-   * the lines above happened to take.
-   */
+  // `utimes` pins the parent's mtime to reproduce Linux's coarse directory clock on any host; `dirSettleMs` is
+  // pinned wide so the assertion does not depend on how long the lines above took.
   test("finds a created directory even when the clock never moves the parent's mtime", async () => {
     const root = await makeRoot();
     await seed(root, "lib/a.ts");
     const dir = path.join(root, "lib");
-    // Pinned before priming too: `utimes` keeps whole milliseconds but drops APFS's sub-millisecond part,
-    // so stamping both sides is what makes "the mtime did not move" exact rather than 0.5ms apart.
+    // Stamped before priming too: `utimes` drops APFS's sub-millisecond part, so both sides must be whole ms.
     const frozen = new Date();
     await utimes(dir, frozen, frozen);
-    const index = new SourceMtimeIndex({ roots: [root], dirSettleMs: 60_000 });
-    await index.prime();
+    const index = await primed([root], 60_000);
 
     const created = await seed(root, "lib/user/user.constant.ts");
     await utimes(dir, frozen, frozen);
@@ -132,12 +115,9 @@ describe("SourceMtimeIndex", () => {
   test("stops re-reading a directory once its mtime is old enough to trust", async () => {
     const root = await makeRoot();
     await seed(root, "lib/a.ts");
-    const index = new SourceMtimeIndex({ roots: [root], dirSettleMs: 60_000 });
-    await index.prime();
+    const index = await primed([root], 60_000);
     expect(index.hasUnsettledDirs).toBe(true);
 
-    // The retry compensates for a timestamp that is too fresh to trust; it must not become a standing
-    // full walk once the tree settles.
     const settled = new Date(Date.now() - 120_000);
     for (const dir of [root, path.join(root, "lib")]) await utimes(dir, settled, settled);
 
@@ -149,8 +129,7 @@ describe("SourceMtimeIndex", () => {
     const root = await makeRoot();
     const kept = await seed(root, "lib/a.ts");
     const removed = await seed(root, "lib/gone/b.ts");
-    const index = new SourceMtimeIndex({ roots: [root] });
-    await index.prime();
+    const index = await primed([root]);
 
     await rm(path.join(root, "lib/gone"), { recursive: true, force: true });
     expect(await index.collectChanges()).toEqual([removed]);
@@ -161,8 +140,7 @@ describe("SourceMtimeIndex", () => {
   test("ignores build output and node_modules", async () => {
     const root = await makeRoot();
     await seed(root, "lib/a.ts");
-    const index = new SourceMtimeIndex({ roots: [root] });
-    await index.prime();
+    const index = await primed([root]);
     expect(index.trackedFileCount).toBe(1);
 
     await seed(root, ".akan/artifact/server/pages-1.js");
@@ -174,8 +152,7 @@ describe("SourceMtimeIndex", () => {
   test("ignores files no classifier kind applies to", async () => {
     const root = await makeRoot();
     await seed(root, "lib/a.ts");
-    const index = new SourceMtimeIndex({ roots: [root] });
-    await index.prime();
+    const index = await primed([root]);
 
     await seed(root, "public/logo.svg", "<svg/>");
     expect(await index.collectChanges()).toEqual([]);
@@ -184,8 +161,7 @@ describe("SourceMtimeIndex", () => {
   test("absorb adopts a write instead of reporting it", async () => {
     const root = await makeRoot();
     const abs = await seed(root, "lib/index.ts");
-    const index = new SourceMtimeIndex({ roots: [root] });
-    await index.prime();
+    const index = await primed([root]);
 
     await rewrite(abs, "333");
     await index.absorb([abs]);
@@ -195,8 +171,7 @@ describe("SourceMtimeIndex", () => {
   test("absorb of an unknown path does not start tracking a change", async () => {
     const root = await makeRoot();
     await seed(root, "lib/a.ts");
-    const index = new SourceMtimeIndex({ roots: [root] });
-    await index.prime();
+    const index = await primed([root]);
 
     const created = await seed(root, "lib/generated.ts");
     await index.absorb([created]);
@@ -206,10 +181,8 @@ describe("SourceMtimeIndex", () => {
   test("counts a file once when a root is nested inside another root", async () => {
     const root = await makeRoot();
     await seed(root, "page/_index.tsx");
-    const nested = new SourceMtimeIndex({ roots: [root, path.join(root, "page")] });
-    await nested.prime();
-    const flat = new SourceMtimeIndex({ roots: [root] });
-    await flat.prime();
+    const nested = await primed([root, path.join(root, "page")]);
+    const flat = await primed([root]);
 
     expect(nested.trackedFileCount).toBe(flat.trackedFileCount);
   });
@@ -217,11 +190,8 @@ describe("SourceMtimeIndex", () => {
   test("concurrent scans do not invent a change", async () => {
     const root = await makeRoot();
     await Promise.all([0, 1, 2, 3, 4].map((i) => seed(root, `lib/File${i}.ts`)));
-    const index = new SourceMtimeIndex({ roots: [root] });
-    await index.prime();
+    const index = await primed([root]);
 
-    // Overlapping scans used to corrupt each other's view of the baseline: one pruned an entry the other
-    // had already snapshotted, and the path came back as a change nothing had written.
     const rounds = await Promise.all([1, 2, 3, 4].map(() => index.collectChanges()));
     expect(rounds.flat()).toEqual([]);
   });
@@ -229,8 +199,7 @@ describe("SourceMtimeIndex", () => {
   test("concurrent scans report a real change exactly once between them", async () => {
     const root = await makeRoot();
     const abs = await seed(root, "lib/a.ts");
-    const index = new SourceMtimeIndex({ roots: [root] });
-    await index.prime();
+    const index = await primed([root]);
 
     await rewrite(abs, "444");
     const rounds = await Promise.all([1, 2, 3].map(() => index.collectChanges()));
@@ -247,11 +216,7 @@ describe("SourceMtimeIndex", () => {
   });
 
   describe("a directory it cannot read", () => {
-    /**
-     * `chmod 000` does not stop root, so these would assert the opposite of what they mean when the suite
-     * runs as root (CI containers commonly do). On Windows it only sets the read-only attribute, which leaves
-     * a directory listable.
-     */
+    // `chmod 000` does not stop root (CI containers often run as root), and on Windows it leaves a directory listable.
     const cannotLock = process.getuid?.() === 0 || process.platform === "win32";
 
     test.skipIf(cannotLock)("is reported as a gap instead of silently skipped", async () => {
@@ -260,11 +225,8 @@ describe("SourceMtimeIndex", () => {
       const hidden = await seed(root, "locked/b.ts");
       await chmod(path.dirname(hidden), 0o000);
 
-      const index = new SourceMtimeIndex({ roots: [root] });
-      await index.prime();
+      const index = await primed([root]);
 
-      // Priming still succeeds — it just cannot see everything, and that is the part that must be said out
-      // loud rather than inferred from a file count nobody is checking.
       expect(index.primed).toBe(true);
       expect(index.trackedFileCount).toBe(1);
       expect(index.coverageGaps).toEqual([{ path: path.dirname(hidden), code: "EACCES" }]);
@@ -275,13 +237,10 @@ describe("SourceMtimeIndex", () => {
       const hidden = await seed(root, "locked/b.ts");
       const locked = path.dirname(hidden);
       await chmod(locked, 0o000);
-      const index = new SourceMtimeIndex({ roots: [root] });
-      await index.prime();
+      const index = await primed([root]);
 
       await chmod(locked, 0o755);
 
-      // Before the fix this stayed empty forever: the directory had been forgotten, so nothing re-stat'd
-      // it, and its parent's mtime never moves when a child merely becomes readable again.
       expect(await index.collectChanges()).toEqual([hidden]);
       expect(index.coverageGaps).toEqual([]);
       await rewrite(hidden, "999");
@@ -292,19 +251,14 @@ describe("SourceMtimeIndex", () => {
       const root = await makeRoot();
       const abs = await seed(root, "locked/b.ts");
       const locked = path.dirname(abs);
-      const index = new SourceMtimeIndex({ roots: [root] });
-      await index.prime();
+      const index = await primed([root]);
       expect(index.trackedFileCount).toBe(1);
 
       await chmod(locked, 0o000);
 
-      // A phantom deletion would rebuild for nothing and, worse, drop the file so a later real edit to it
-      // goes unreported.
       expect(await index.collectChanges()).toEqual([]);
       expect(index.trackedFileCount).toBe(1);
-      // The locked directory joins the list too whenever this scan happened to re-read it — which depends
-      // on how fresh its mtime still was (see `dirSettleMs`) — so assert what the gap is about rather than
-      // how many entries happen to describe it.
+      // Whether the locked directory itself is listed depends on its mtime freshness, so assert membership, not count.
       expect(index.coverageGaps.map((gap) => gap.path)).toContain(abs);
       expect(index.coverageGaps.every((gap) => gap.code === "EACCES")).toBe(true);
 
@@ -317,8 +271,7 @@ describe("SourceMtimeIndex", () => {
     test("is still forgotten when it is genuinely deleted, with no gap left behind", async () => {
       const root = await makeRoot();
       const abs = await seed(root, "lib/a.ts");
-      const index = new SourceMtimeIndex({ roots: [root] });
-      await index.prime();
+      const index = await primed([root]);
 
       await rm(path.dirname(abs), { recursive: true, force: true });
 

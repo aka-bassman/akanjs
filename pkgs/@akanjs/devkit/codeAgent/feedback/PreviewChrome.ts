@@ -2,13 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-/**
- * Which `Bun.WebView` backend the preview probe runs on, and what an image needs to carry one.
- *
- * `webkit` is the macOS system framework — zero install, and it throws on every other platform — so anywhere
- * else the probe drives Chrome. The generated akan image installs `ca-certificates` and `tzdata` and nothing
- * else, which is why the install steps are named here instead of being reinvented per image.
- */
+// Bun.WebView's `webkit` backend is the macOS system framework and throws on every other platform.
 export class PreviewChrome {
   /** Read by `Bun.WebView` itself; listed so the availability check agrees with what the launcher will do. */
   static readonly pathEnvKey = "BUN_CHROME_PATH";
@@ -27,12 +21,7 @@ export class PreviewChrome {
     "chrome",
   ];
 
-  /**
-   * macOS keeps browsers in app bundles, off PATH, and Bun looks inside these before reporting none.
-   *
-   * The list has to match Bun's or the two disagree in the expensive direction: refusing to probe on a machine
-   * whose browser the launcher would have found.
-   */
+  /** Must match the macOS app bundles Bun searches, or the probe refuses a browser the launcher would find. */
   static readonly appBundles = [
     "Google Chrome.app/Contents/MacOS/Google Chrome",
     "Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
@@ -67,29 +56,16 @@ export class PreviewChrome {
     return PreviewChrome.backend === "webkit" ? process.platform === "darwin" : !!PreviewChrome.executable();
   }
 
-  /**
-   * The `backend` value to construct a view with.
-   *
-   * Two flags are added on the Chrome path, and Bun adds neither:
-   * - Chromium refuses to run as uid 0 unless its sandbox is off, and uid 0 is the ordinary uid in a container.
-   * - Docker gives a container 64MB of `/dev/shm` by default, below what Chromium's renderer allocates, and the
-   *   crash it produces looks like a page that never loads rather than a resource limit.
-   */
   static backendOption() {
     if (PreviewChrome.backend === "webkit") return "webkit";
+    // Docker's default 64MB /dev/shm is below what Chromium's renderer allocates; the crash looks like a hung load.
     const argv = ["--disable-dev-shm-usage"];
+    // Chromium refuses uid 0 with its sandbox on, and uid 0 is the ordinary uid in a container.
     if (process.getuid?.() === 0) argv.push("--no-sandbox");
     return { type: "chrome" as const, argv };
   }
 
-  /**
-   * `RUN` bodies for an image whose agent has to look at the page it just changed — an akan app's
-   * `docker.preRuns`, or a coding-agent pod.
-   *
-   * The font packages are not decoration: a container with no fonts renders every glyph as a box, so a
-   * screenshot says nothing and the "text is the same colour as its background" probe reads a blank page.
-   * `fonts-noto-cjk` is what keeps a Korean UI legible.
-   */
+  /** The generated image has no browser or fonts; a fontless container renders every glyph as a box. */
   static readonly dockerRuns = [
     "apt-get update && apt-get install -y --no-install-recommends chromium fonts-liberation fonts-noto-color-emoji fonts-noto-cjk && rm -rf /var/lib/apt/lists/*",
   ];

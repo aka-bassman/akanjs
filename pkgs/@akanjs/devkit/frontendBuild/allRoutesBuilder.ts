@@ -14,11 +14,6 @@ export interface BuildAllRoutesResult {
   seedIndex: RouteSeedIndex;
 }
 
-/**
- * Walk every route in `pages` and produce its client bundle up-front.
- * Intended to run under `akan build` (production) so the serve path
- * never needs to compile.
- */
 export class AllRoutesBuilder {
   #app: App;
   #artifact: BaseBuildArtifact;
@@ -47,23 +42,16 @@ export class AllRoutesBuilder {
     this.#app.verbose(`[build-all] discovered ${seedIndex.entries.length} routes`);
     this.#discovery = await GraphClientEntryDiscovery.create(this.#app);
 
-    // Discovery first, bundling second. Chunk splitting only dedupes within one `Bun.build`, so a
-    // dependency shared by entries from different routes was emitted once per route that reached it.
-    // Discovery is cached and does no bundling, so collecting every entry up front costs almost nothing.
-    const allEntries: string[] = [];
-    const seen = new Set<string>();
+    // Every route's entries go into one Bun.build: chunk splitting only dedupes within a single build.
+    const allEntries = new Set<string>();
     for (const entry of seedIndex.entries) {
       const seeds = Array.from(new Set([...seedIndex.globalLayoutFiles, ...entry.seeds]));
-      for (const discovered of await this.#discovery.discover(seeds)) {
-        if (seen.has(discovered)) continue;
-        seen.add(discovered);
-        allEntries.push(discovered);
-      }
+      for (const discovered of await this.#discovery.discover(seeds)) allEntries.add(discovered);
       this.#routeIds.push(entry.routeId);
     }
-    this.#app.verbose(`[build-all] ${allEntries.length} client entries across ${this.#routeIds.length} routes`);
+    this.#app.verbose(`[build-all] ${allEntries.size} client entries across ${this.#routeIds.length} routes`);
 
-    const delta = await this.#buildEntries(allEntries);
+    const delta = await this.#buildEntries([...allEntries]);
     this.#mergeDelta(delta);
     this.#merged.knownEntries = Array.from(this.#knownSet);
 
@@ -113,10 +101,8 @@ export class AllRoutesBuilder {
   }
 
   #mergeDelta(delta: BuildRouteClientResult): void {
-    for (const [key, row] of Object.entries(delta.manifestDelta)) this.#merged.clientManifest[key] = row;
-    for (const [url, byName] of Object.entries(delta.ssrManifestDelta.moduleMap)) {
-      this.#merged.ssrManifest.moduleMap[url] = byName;
-    }
+    Object.assign(this.#merged.clientManifest, delta.manifestDelta);
+    Object.assign(this.#merged.ssrManifest.moduleMap, delta.ssrManifestDelta.moduleMap);
     for (const abs of delta.newEntries) this.#knownSet.add(abs);
   }
 }

@@ -8,17 +8,7 @@ export interface AskToolPackOptions {
   ask: (question: Omit<CodeAgentQuestion, "questionId">) => Promise<string | undefined>;
 }
 
-/**
- * The `ask_user` tool: put a decision back to the person instead of guessing at it.
- *
- * It exists only where somebody is watching. A pod and a sub-agent both set `ui.canPrompt` false, and on those
- * the tool is never constructed — a model that cannot see it does not spend a turn calling something that can
- * only answer "nobody is here", and it costs no prompt tokens either.
- *
- * **Questions are asked one at a time even when several are sent.** The host draws one question block at the
- * bottom of the screen, and an answer is frequently what decides whether the next question is still the right
- * one to ask; a batch drawn at once would also have nowhere to put the second prompt.
- */
+// One question at a time even when several are sent: the host draws one block, and an answer can change the next.
 export class AskToolPack {
   static readonly toolName = "ask_user";
   /** Four is what fits on a screen without the transcript disappearing behind the questions. */
@@ -96,12 +86,10 @@ export class AskToolPack {
             kind: options.length ? "select" : "text",
             ...(options.length ? { options } : {}),
             ...(entry.multiSelect ? { multiSelect: true } : {}),
-            // On by default: a list the model wrote is a guess at what the choices are, and the person is the
-            // one who knows when none of them is the answer.
+            // On by default: the model's options are a guess, and only the person knows when none of them fits.
             freeText: entry.freeText ?? true,
           });
-          // Said as a skip rather than left blank: an unanswered question read as an empty answer is how a
-          // model concludes the user wanted nothing, which is the one reading they did not choose.
+          // Spelled out as a skip: a blank answer reads to a model as "the user wanted nothing".
           answers.push(`${entry.question}\n→ ${answer ?? "(skipped — decide this yourself and say what you chose)"}`);
         }
         return { content: [{ type: "text", text: answers.join("\n\n") }], details: undefined };

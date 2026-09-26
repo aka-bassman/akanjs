@@ -17,37 +17,21 @@ export interface McpToolPackOptions {
   onNotice?: (message: string) => void;
 }
 
-/**
- * Connects the workspace's MCP servers and publishes their tools.
- *
- * Servers are declared in `.akan/code/mcp.json` in the shape the editors already use (`mcpServers`), so a
- * developer can paste the block they already have rather than learn a second format.
- *
- * Tool names are prefixed with the server. Two servers offering `search` is the normal case, not the edge one,
- * and a collision that silently shadows one of them is invisible from the model's side.
- */
+// Tool names carry the server prefix: two servers offering `search` is the normal case, and a shadow is invisible.
 export class McpToolPack {
   readonly #clients: { client: McpClient; tools: McpToolInfo[] }[] = [];
   readonly #status: CodeAgentMcpStatus[] = [];
 
-  /** Only {@link connect} may build one: a pack whose servers were never reached publishes broken tools. */
   private constructor() {}
 
-  /**
-   * Connects every declared server before the session exists, because the session's tool allowlist has to name
-   * these tools and their names are only knowable from a live `tools/list`.
-   *
-   * A pack comes back whenever anything was declared, including when every server failed: what went wrong is
-   * the answer `/mcp` exists to give, and a pack that dissolves on failure has nowhere to keep it.
-   */
+  /** Undefined only when nothing is declared; a pack whose every server failed still comes back to say why. */
   static async connect(options: McpToolPackOptions) {
     const refs = McpToolPack.#refs(options);
     if (!refs.length) return undefined;
     const pack = new McpToolPack();
     for (const ref of refs) {
       const base = { name: ref.name, transport: ref.transport, target: McpServerConfig.targetOf(ref) };
-      // Stored or refreshed, never asked for: connecting runs inside `CodeAgent.create`, and a browser round
-      // trip there would hold the session on a screen that has not been drawn yet — see {@link McpSignIn}.
+      // Never an interactive sign-in: connect runs inside `CodeAgent.create`, before any screen is drawn.
       const token = ref.transport === "http" ? await McpSignIn.token(ref, options.onNotice) : undefined;
       try {
         const client = await new McpClient(ref, token).connect();
@@ -78,7 +62,6 @@ export class McpToolPack {
     );
   }
 
-  /** What each declared server turned out to be, for a host that offers to show it. */
   get status(): CodeAgentMcpStatus[] {
     return this.#status;
   }

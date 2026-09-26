@@ -2,23 +2,15 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
-/**
- * Loads provider keys from the workspace's `.env` into the session, without persisting them anywhere.
- *
- * Bun auto-loads `.env` from the **current directory**, so `akan code` run from a subdirectory — or embedded in
- * a process started elsewhere — sees none of the workspace's keys and fails with "No API key found" for a key
- * that is plainly there. They are applied as runtime overrides rather than stored credentials: the key belongs
- * to the repo's env file, and copying it into `~/.akan/code/auth.json` would give it a second lifetime nobody
- * asked for.
- */
+// Bun auto-loads .env from the current directory only, so a run from a subdirectory sees none of the workspace's keys.
+// Applied as runtime overrides, never stored: copying a key into ~/.akan/code/auth.json gives it a second lifetime.
 export class AkanEnvKeys {
   static async apply(runtime: ModelRuntime, workspaceRoot: string) {
     const applied: string[] = [];
     for (const [name, value] of AkanEnvKeys.#entries(workspaceRoot)) {
       const provider = AkanEnvKeys.#providerOf(name);
       if (!provider || !value) continue;
-      // Serially, not through `Promise.all`: the runtime queues credential operations against the same file,
-      // and a key written while another is mid-write is the one that goes missing.
+      // Serially: the runtime's credential writes share one file, and a key written mid-write goes missing.
       await runtime.setRuntimeApiKey(provider, value);
       applied.push(provider);
     }

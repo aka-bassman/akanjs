@@ -34,7 +34,6 @@ describe("CodeSessionFork", () => {
     const copied = records(forked.file);
     expect(copied.find((record) => record.type === "session")?.id).toBe(forked.id);
     expect(copied.filter((record) => record.type === "message").length).toBe(1);
-    // Two live agents sharing one id would share one inbox, one presence entry and one resume target.
     expect(CodeSessionIndex.fileOf(dir, forked.id)).toBe(forked.file);
     expect(CodeSessionIndex.fileOf(dir, id)).toBe(file);
   });
@@ -49,7 +48,6 @@ describe("CodeSessionFork", () => {
   test("the copy says it is one, and takes a name when given one", () => {
     const { dir, id } = seed();
     expect(records(CodeSessionFork.fork(dir, id).file).at(-1)?.name).toBe("read-the-guard-fork");
-    // A name somebody typed is kept as typed, the way `/name` keeps one; only a derived name is kebabed.
     expect(records(CodeSessionFork.fork(dir, id, "try the other guard").file).at(-1)?.name).toBe("try the other guard");
   });
 

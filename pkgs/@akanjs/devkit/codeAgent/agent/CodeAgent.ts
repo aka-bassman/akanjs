@@ -43,10 +43,7 @@ import { CodeMailbox } from "./CodeMailbox";
 import { CodeSessionFork } from "./CodeSessionFork";
 import { CodeSessionIndex } from "./CodeSessionIndex";
 
-/**
- * What the engine calls a run mode. It is not re-exported from the package entry, so the literal set is
- * restated here; it is the whole type, and a mismatch is a type error at the one call site that uses it.
- */
+// The engine's run-mode type is not re-exported from its package entry, so the literal set is restated.
 export type CodeAgentHostMode = "tui" | "rpc" | "json" | "print";
 
 export interface CodeAgentOptions {
@@ -56,23 +53,16 @@ export interface CodeAgentOptions {
   model?: CodeAgentModelRef;
   /** Apps whose dev server and preview the turn-end feedback loop watches. */
   apps?: string[];
-  /** Extra capability packs, layered on top of the profile gate and the akan pack. */
   extensions?: InlineExtension[];
   customTools?: ToolDefinition[];
   /** `print` for a one-shot stream, `rpc` when a host drives this process over stdio. */
   mode?: CodeAgentHostMode;
-  /** How many `task` tools deep this agent already is. A sub-agent is created one level down. */
+  /** How many `task` tools deep this agent already is. */
   depth?: number;
   /** Id of a stored session to continue instead of opening a new one. */
   resume?: string;
 }
 
-/**
- * The code agent core: one engine session, gated by a profile, emitting the akan wire.
- *
- * Nothing here knows what a host is. A host receives events, sends commands and injects a profile — which is
- * what lets one core serve a terminal, an RPC child and a browser without three copies of the loop.
- */
 export class CodeAgent {
   readonly #profile: CodeAgentProfile;
   readonly #gate: CodeAgentGate;
@@ -88,12 +78,7 @@ export class CodeAgent {
   #mailbox: CodeMailbox | undefined;
   #mcp: CodeAgentMcpStatus[] = [];
   #workspaceRoot = "";
-  /**
-   * The frames of the turn in flight, so a host that reconnects mid-turn can be handed what it missed.
-   *
-   * Bounded and cleared at `idle`: the completed messages of an earlier turn are in the transcript, and the
-   * only thing that exists nowhere else is the bubble still being written.
-   */
+  // Cleared at `idle`: an earlier turn is in the transcript; only the turn in flight exists nowhere else.
   readonly #replay: CodeAgentEvent[] = [];
   #replayFrom = 0;
   #lastContextTokens: number | undefined;
@@ -168,7 +153,6 @@ export class CodeAgent {
     return this.#profile;
   }
 
-  /** Whether the model can be handed a picture at all, which decides whether offering to attach one is honest. */
   get canSeeImages() {
     const model = this.#session?.model;
     return model ? akanCodeModelSupportsImages(model) : false;
@@ -184,12 +168,7 @@ export class CodeAgent {
     return this.#workspaceRoot;
   }
 
-  /**
-   * The MCP servers this session was built against, and what each one published.
-   *
-   * Read from the assembly rather than from the live session: the tool allowlist is fixed when the session is
-   * created, so a server declared afterwards is not one this agent can reach however the file now reads.
-   */
+  /** As assembled at creation: the tool allowlist is fixed then, so a server declared later is unreachable. */
   mcpServers(): CodeAgentMcpStatus[] {
     return this.#mcp;
   }
@@ -199,12 +178,7 @@ export class CodeAgent {
     return this.#mailbox?.peers() ?? [];
   }
 
-  /**
-   * Hands a message to another session, which receives it as a prompt of its own.
-   *
-   * It is a prompt rather than a note on its screen because the point of reaching another session is to set
-   * it working — and it goes in as a follow-up, so a peer in the middle of a turn finishes that turn first.
-   */
+  /** The peer receives the text as a prompt of its own, queued as a follow-up when it is mid-turn. */
   send(target: string, text: string) {
     const mailbox = this.#mailbox;
     if (!mailbox) throw new Error("This profile keeps no shared mailbox, so it has no peers.");
@@ -235,7 +209,6 @@ export class CodeAgent {
     return this.#session?.isStreaming ?? false;
   }
 
-  /** Total tokens this session has spent, which is what a sub-agent budget is drawn down against. */
   get tokensUsed() {
     return this.#session?.getSessionStats().tokens.total ?? 0;
   }
@@ -250,19 +223,14 @@ export class CodeAgent {
       model: model ? { provider: model.provider, id: model.id, name: model.name } : undefined,
       tools: session.getActiveToolNames(),
       contextTokens: model?.contextWindow,
-      // A model that does no reasoning has no level to report, and `off` is a level — one of them is a
-      // capability and the other is a setting, so they cannot share a spelling.
+      // Not `off`: that is a setting of a reasoning model, not the absence of reasoning.
       effort: session.supportsThinking() ? session.thinkingLevel : undefined,
       name: session.sessionName,
       interaction: this.#profile.interaction,
     };
   }
 
-  /**
-   * Emits the opening `session` frame through the same counter as everything else.
-   *
-   * A frame minted outside it would carry `seq: 0`, which every client drops — their watermark starts there.
-   */
+  /** A `session` frame minted outside this counter would carry `seq: 0`, which every client drops. */
   announce() {
     this.#emit({ type: "session", info: this.info });
     this.#restore();
@@ -272,16 +240,7 @@ export class CodeAgent {
     for (const request of approvals) this.#emit({ type: "approval", request });
   }
 
-  /**
-   * Replays a resumed session's conversation onto the wire.
-   *
-   * The model gets its context back from the session file; a host gets nothing, because the wire only carries
-   * what happens live. Without this a resumed session is a blank screen in front of an agent that remembers
-   * everything — which reads as a resume that failed.
-   *
-   * Prose only: the tool traffic of a past turn is in the file, but replaying it would redraw calls nobody is
-   * waiting on, against a working tree that has moved since.
-   */
+  // Prose only: a past turn's tool calls would redraw rows nobody waits on, against a tree that has moved since.
   #restore() {
     const session = this.#session;
     if (!session) return;
@@ -311,12 +270,7 @@ export class CodeAgent {
   /** One turn's worth of frames is kept for reconnection; a client further behind reloads the transcript. */
   static readonly replayLimit = 2_000;
 
-  /**
-   * Current state, and the frames after `sinceSeq` when a reconnecting host asks for them.
-   *
-   * `replayFrom` says how far back the buffer reaches. A client behind it cannot be caught up frame by frame
-   * and has to reload — saying so is better than silently handing it a gap.
-   */
+  /** `frames` only when `sinceSeq` is given; a client behind `replayFrom` has to reload the transcript. */
   async state({ sinceSeq }: { sinceSeq?: number } = {}): Promise<CodeAgentState> {
     const base = { info: this.info, streaming: this.isStreaming, replayFrom: this.#replayFrom };
     if (sinceSeq === undefined) return base;
@@ -325,8 +279,7 @@ export class CodeAgent {
 
   async prompt(message: string, images?: CodeAgentImage[]) {
     const session = this.#require();
-    // Named from the first thing asked of it, not from the answer: the name is derived, so waiting for the
-    // turn to end would only mean the session is nameless for exactly as long as it is interesting to watch.
+    // From the first prompt, not the answer, so the session is not nameless while it is worth watching.
     if (!session.sessionName && message.trim()) this.setName(codeAgentSessionName(message));
     const attachments = await CodeAgent.#attachments(images);
     const options = attachments.length ? { images: attachments } : {};
@@ -335,17 +288,13 @@ export class CodeAgent {
   }
 
   async abort() {
-    // The engine finalizes an interrupted message as an ordinary stop, so the only party that knows this was
-    // an abort is the one that asked for it.
+    // The engine finalizes an interrupted message as an ordinary stop, so the abort is noted here.
     this.#mapper.noteOutcome("aborted");
     this.#asks.clear();
     await this.#require().abort();
   }
 
-  /**
-   * Answering is not prompting. Routing an answer through `prompt` would open a turn while the question slot is
-   * still filled, leaving a card on screen that still looks clickable — the library does not stop that.
-   */
+  // Not via `prompt`: that opens a turn with the question slot still filled, which the engine does not stop.
   async answer(questionId: string, answer: CodeAgentAnswer) {
     const question = this.#asks.questionOf(questionId);
     const rendered = question ? codeAgentRenderAnswer(question, answer) : (answer.text ?? "");
@@ -358,8 +307,7 @@ export class CodeAgent {
     if (!suspended) return false;
     const suspendedRendered = codeAgentRenderAnswer(suspended, answer);
     this.#emit({ type: "question_resolved", questionId, answer, rendered: suspendedRendered });
-    // The answer has to reach the model as prose: compaction and the next turn read message content only, so
-    // an answer that exists solely as structure is one the agent will not remember being given.
+    // As prose: compaction and the next turn read message content only, so a structured-only answer is lost.
     await this.prompt(`The user answered: ${suspendedRendered}\nContinue the task.`);
     return true;
   }
@@ -389,12 +337,7 @@ export class CodeAgent {
     this.#emit({ type: "session", info: this.info });
   }
 
-  /**
-   * Copies this session under a new id, so the conversation can be continued two ways.
-   *
-   * The copy is taken off disk rather than out of memory: the file is what a resume replays, so forking it is
-   * the only version of "the same conversation" that both agents will actually agree on.
-   */
+  /** Copies the session file, not memory, under a new id: the file is what a resume replays. */
   fork(name?: string) {
     if (!this.#sessionDir) throw new Error("This profile keeps no sessions on disk, so there is nothing to fork");
     return CodeSessionFork.fork(this.#sessionDir, this.sessionId, name);
@@ -415,13 +358,7 @@ export class CodeAgent {
     this.#emit({ type: "session", info: this.info });
   }
 
-  /**
-   * The model catalogue, as the two questions a person actually asks of it.
-   *
-   * Built from the registry rather than `getAvailable()` so it needs no await and can answer about a provider
-   * nobody has a key for: "what else could I run" is most of why the list is opened, and a list of only what
-   * is already reachable cannot answer it.
-   */
+  /** Every registered provider, keyed or not — `getAvailable()` would list only what is already reachable. */
   catalogue(): CodeAgentProviderInfo[] {
     const runtime = this.#session?.modelRuntime;
     if (!runtime) return [];
@@ -468,7 +405,8 @@ export class CodeAgent {
     this.#session = session;
     session.subscribe((event) => {
       for (const body of this.#mapper.map(event)) this.#emit(body);
-      this.#emitContextUsage(event.type);
+      // Per turn, not per delta: the count only moves when a provider response lands.
+      if (event.type === "agent_end" || event.type === "compaction_end") this.#emitContextNow();
     });
     await session.bindExtensions({
       mode,
@@ -494,29 +432,10 @@ export class CodeAgent {
     );
   }
 
-  /**
-   * Reports how full the window is, once per turn and after a compaction.
-   *
-   * Per turn rather than per delta: the number moves only when a provider response lands, and a frame per
-   * token delta would be thousands of frames saying the same thing. `tokens` is null right after a compaction
-   * and before the next response — that is "unknown", not zero, so nothing is emitted for it.
-   */
-  #emitContextUsage(eventType: string) {
-    if (eventType !== "agent_end" && eventType !== "compaction_end") return;
-    this.#emitContextNow();
-  }
-
-  /**
-   * The same frame, on demand, for the one moment the window is already full and no turn has run.
-   *
-   * A resumed session restores a conversation the model is carrying and the host has never seen, so without
-   * this the status line offers the declared window and no share of it until the next turn ends — a session
-   * reopened at 80% looks identical to one reopened empty.
-   */
+  // Also on resume, or a session reopened at 80% shows no usage until its next turn ends.
   #emitContextNow() {
     const usage = this.#session?.getContextUsage();
-    // `== null`, not `=== null`: the field is typed `number | null`, and a strict null check sails straight
-    // past an `undefined` the way the mirror of this bug does — which would emit `used: undefined`.
+    // `== null` on purpose: typed `number | null`, but `undefined` must not emit `used: undefined`.
     if (usage?.tokens == null) return;
     if (usage.tokens === this.#lastContextTokens) return;
     this.#lastContextTokens = usage.tokens;
@@ -589,13 +508,7 @@ export class CodeAgent {
     return await this.#asks.openApproval(approvalId);
   }
 
-  /**
-   * Puts one question on the wire and waits for its answer, rendered as the labels a person chose.
-   *
-   * The single way anything asks: the engine's own UI port and the `ask_user` tool both land here, so the
-   * suspend path, the profile's refusal to prompt at all, and the id the host answers against cannot disagree
-   * between them. An empty answer is a skip, which is a real answer and not a failure.
-   */
+  /** The rendered answer; `undefined` when skipped, suspended, or nobody can be prompted. */
   async ask(spec: Omit<CodeAgentQuestion, "questionId">) {
     const question: CodeAgentQuestion = { questionId: this.#asks.nextId("q"), ...spec };
     if (!this.#profile.ui.canPrompt) {

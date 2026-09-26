@@ -3,11 +3,7 @@ import path from "node:path";
 import ts from "typescript";
 import { FileSys } from "../fileSys";
 
-//* Auto-import daemon: a source-editing sibling of DevGeneratedIndexSync. When a domain file changes,
-//* framework symbols that are used but not imported (e.g. `Int` in a *.constant.ts, `fetch` in a *.store.ts)
-//* are inserted automatically. Detection is a closed-registry scan: we only look for a fixed, framework-owned
-//* set of identifiers per file role, so no type information is required. Writes only happen on a real diff,
-//* which keeps the watcher from looping on its own edits.
+//* Closed-registry scan (no type information); writes only on a real diff, or the watcher loops on its own edits.
 
 export interface AutoImportSyncResult {
   changedFiles: string[];
@@ -39,13 +35,9 @@ interface FileContext {
 interface ImportTarget {
   specifier: string;
   kind: ImportKind;
-  //* When true, emitted as a type-only import (`import type { X }`, or inline `type X` when mixed with
-  //* value names from the same specifier). Only meaningful for `kind: "named"`.
   typeOnly?: boolean;
 }
 
-//* A registry rule: the identifiers `names` should be imported from `specifier` with the given `kind`.
-//* `specifier` may depend on the file's package (e.g. the client entrypoint).
 interface ImportRule {
   names: string[];
   specifier: string | ((ctx: FileContext) => string);
@@ -55,23 +47,19 @@ interface ImportRule {
 
 const TEST_FILE_RE = /\.(test|spec)\.(ts|tsx)$/;
 
-//* Shared rules reused across roles. Domain (`lib/<model>/`) files sit at a fixed depth, so the
-//* relative barrels `../cnst`, `../db`, `../srv`, `../dict` are always correct for them.
+//* Domain files sit at a fixed depth (`lib/<model>/`), so the relative barrels below are always correct for them.
 const AKAN_BASE: ImportRule = {
   names: ["Int", "Float", "ID", "Any", "Upload", "enumOf", "dayjs"],
   specifier: "akanjs/base",
   kind: "named",
 };
-//* Type-only exports of akanjs/base — emitted as `type` imports (e.g. `import { type Dayjs, dayjs }`).
 const AKAN_BASE_TYPES: ImportRule = { names: ["Dayjs"], specifier: "akanjs/base", kind: "named", typeOnly: true };
 const CNST_NS: ImportRule = { names: ["cnst"], specifier: "../cnst", kind: "namespace" };
 const DB_NS: ImportRule = { names: ["db"], specifier: "../db", kind: "namespace" };
 const SRV_NS: ImportRule = { names: ["srv"], specifier: "../srv", kind: "namespace" };
 const ERR_DICT: ImportRule = { names: ["Err"], specifier: "../dict", kind: "named" };
 
-//* The closed registry, keyed by file role. Derived from an import-frequency scan across apps/libs;
-//* only high-confidence, framework-owned identifiers are listed (domain model/scalar refs are resolved
-//* separately). Order matters only when the same name could appear twice — keep names unique per role.
+//* Keep names unique per role: targetFor takes the first rule that lists a name.
 const RULES: Record<FileRole, ImportRule[]> = {
   constant: [AKAN_BASE, AKAN_BASE_TYPES, { names: ["via"], specifier: "akanjs/constant", kind: "named" }],
   document: [
@@ -143,8 +131,6 @@ const RULES: Record<FileRole, ImportRule[]> = {
   ],
 };
 
-//* Domain imports resolve open-ended model/scalar class refs against a per-package index, rather than
-//* a fixed registry. Only these roles opt in, and each may pull from the listed sibling file kinds.
 type DomainKind = "constant" | "document" | "signal";
 type DomainIndex = Map<string, { file: string; kind: DomainKind }[]>;
 const PASCAL_CASE_RE = /^[A-Z][A-Za-z0-9]*$/;
@@ -153,21 +139,17 @@ const DOMAIN_ROLE_KINDS: Partial<Record<FileRole, DomainKind[]>> = {
   dictionary: ["constant", "document", "signal"],
   common: ["constant"],
 };
-//* lib barrel imports (srvkit/common): identifier -> generated `lib/<barrel>.ts` file + import shape.
-//* Their specifier depth is per-file (see `#libBarrelResolver`), so they can't live in the RULES table.
+//* srvkit/common import the lib barrels from a per-file depth, so they cannot live in the RULES table.
 const LIB_BARRELS: Record<string, { barrel: string; kind: ImportKind }> = {
   Err: { barrel: "dict", kind: "named" },
   db: { barrel: "db", kind: "namespace" },
   cnst: { barrel: "cnst", kind: "namespace" },
   srv: { barrel: "srv", kind: "namespace" },
 };
-//* Registry names that are also runtime globals. An unbound `fetch(url)` is the platform's fetch, and importing Akan's
-//* over it silently rebinds the call, so such a name is claimed only when every reference has the Akan member shape
-//* (`fetch.viewX()`); one bare use leaves the file alone.
+//* Importing Akan's `fetch` over the platform global silently rebinds `fetch(url)`, so such a name is claimed
+//* only when every reference is member-shaped (`fetch.viewX()`).
 const GLOBAL_NAMES = new Set(["fetch"]);
-//* ECMAScript/TS structural globals never resolved as domain symbols, so that a package model named
-//* e.g. `Map` cannot shadow the JS `Map` used in `new Map()`. Domain-y globals like `File` are allowed
-//* on purpose (they are real models here).
+//* Structural globals a package model must not shadow (`new Map()`); `File` is left out on purpose — it is a real model.
 const DOMAIN_DENYLIST = new Set([
   "Map",
   "Set",
@@ -208,7 +190,6 @@ const DOMAIN_DENYLIST = new Set([
 
 export class AutoImportSync {
   readonly #workspaceRoot: string;
-  //* Per-package domain index (symbol -> source file), invalidated when a package's model file changes.
   readonly #domainCache = new Map<string, DomainIndex>();
 
   constructor({ workspaceRoot }: AutoImportSyncOptions) {
@@ -220,8 +201,6 @@ export class AutoImportSync {
     const errors: string[] = [];
     const seen = new Set<string>();
 
-    // Drop cached domain indexes for any package whose model files changed in this batch, so a newly
-    // added/renamed model is visible to references resolved later in the same batch.
     for (const file of files) {
       const pkgRoot = this.#domainPkgRootOf(file);
       if (pkgRoot) this.#domainCache.delete(pkgRoot);
@@ -244,8 +223,6 @@ export class AutoImportSync {
     return { changedFiles, errors };
   }
 
-  //* Resolve the role + package location for a file, or null when the file is out of scope
-  //* (outside apps/libs, a generated/declaration/test file, or a facet+extension we do not handle).
   #contextFor(abs: string): FileContext | null {
     const rel = path.relative(this.#workspaceRoot, abs);
     if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
@@ -255,9 +232,7 @@ export class AutoImportSync {
     const parts = rel.split(path.sep).filter(Boolean);
     const [scope, project, facet] = parts;
     if ((scope !== "apps" && scope !== "libs") || !project || !facet) return null;
-    //* `lib/__lib/` holds the generated per-lib re-export stubs — gitignored, and rewritten by every
-    //* `akan sync`, which is also what makes the watcher report them. An edit there is churn at best and
-    //* silently discarded at worst. `lib/__scalar/` is real source and stays in scope.
+    //* `lib/__lib/` is rewritten by every `akan sync`, so an edit there is discarded; `lib/__scalar/` is real source.
     if (facet === "lib" && parts[3] === "__lib") return null;
     const role = roleFor(facet, base);
     if (!role) return null;
@@ -276,10 +251,6 @@ export class AutoImportSync {
     return true;
   }
 
-  //* Build the dynamic resolver for identifiers the static registry does not cover, or undefined when
-  //* the role has none. `srvkit`/`common` resolve the package's generated lib barrels (variable depth);
-  //* the domain roles resolve open-ended model/scalar refs against the per-package index. `common`
-  //* uses both — barrels first, then domain (the two symbol sets are disjoint).
   async #extraResolverFor(abs: string, ctx: FileContext) {
     const resolvers: ((symbol: string) => ImportTarget | null)[] = [];
     if (ctx.role === "srvkit" || ctx.role === "common") resolvers.push(await this.#libBarrelResolver(abs, ctx));
@@ -295,22 +266,17 @@ export class AutoImportSync {
     };
   }
 
-  //* Resolve an unbound PascalCase identifier to a relative import of the package model/scalar that
-  //* exports it (only when exactly one package file of an allowed kind exports that name).
   async #domainResolver(abs: string, ctx: FileContext, kinds: DomainKind[]) {
     const index = await this.#domainIndex(path.join(this.#workspaceRoot, ctx.scope, ctx.project));
     const fileDir = path.dirname(abs);
     return (symbol: string): ImportTarget | null => {
       if (!PASCAL_CASE_RE.test(symbol) || DOMAIN_DENYLIST.has(symbol)) return null;
       const entries = (index.get(symbol) ?? []).filter((entry) => kinds.includes(entry.kind));
-      if (entries.length !== 1) return null; // unknown or ambiguous → leave it alone
+      if (entries.length !== 1) return null;
       return { specifier: relativeSpecifier(fileDir, entries[0].file), kind: "named" };
     };
   }
 
-  //* srvkit/common files import the package's generated lib barrels from a variable depth
-  //* (`../lib/dict`, `../../lib/dict`, …). Resolve each barrel name to a path relative to this file,
-  //* but only for barrels that actually exist (so an absent `lib/srv.ts` never yields a broken import).
   async #libBarrelResolver(abs: string, ctx: FileContext) {
     const fileDir = path.dirname(abs);
     const libDir = path.join(this.#workspaceRoot, ctx.scope, ctx.project, "lib");
@@ -330,7 +296,6 @@ export class AutoImportSync {
     return index;
   }
 
-  //* The apps/libs package root for a model file (`*.constant/document/signal.ts` under `lib/`), else null.
   #domainPkgRootOf(file: string): string | null {
     const rel = path.relative(this.#workspaceRoot, path.resolve(file));
     if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
@@ -341,9 +306,6 @@ export class AutoImportSync {
   }
 }
 
-//* Which facet+extension combinations get auto-imports, and the role that drives their registry.
-//* `client` covers every file that pulls domain symbols from the package client entrypoint:
-//* lib UI (.tsx), the `ui`/`page` facets (.tsx), and the `webkit` facet (.ts/.tsx).
 const roleFor = (facet: string, base: string): FileRole | null => {
   if (facet === "lib") {
     if (base.endsWith(".constant.ts")) return "constant";
@@ -371,8 +333,7 @@ const targetFor = (symbol: string, ctx: FileContext): ImportTarget | null => {
   return null;
 };
 
-//* Returns the rewritten source, or null when nothing needs to change. `resolveExtra` (when supplied)
-//* handles identifiers not matched by the framework registry — domain model refs and srvkit barrels.
+/** The rewritten source, or null when nothing changes. */
 export const transformSource = (
   source: string,
   fileName: string,
@@ -384,8 +345,6 @@ export const transformSource = (
   const used = collectUsedReferences(sf);
   const bareGlobals = collectBareGlobalReferences(sf);
 
-  // Group the needed symbols by their import target: framework registry first, then dynamic resolver.
-  // Named groups map each name to whether it is type-only, so we can emit `import type`/inline `type`.
   const namedBySpecifier = new Map<string, Map<string, boolean>>();
   const namespaceImports: { name: string; specifier: string }[] = [];
   for (const name of used) {
@@ -423,8 +382,7 @@ export const transformSource = (
   for (const ns of namespaceImports) newStatements.push(`import * as ${ns.name} from "${ns.specifier}";`);
 
   if (newStatements.length > 0) {
-    // If the anchor import is itself being merged, fold the new lines into that edit to avoid a
-    // zero-width insertion sharing a boundary with the merge replacement.
+    // A zero-width insertion at the anchor's boundary would collide with the anchor's own merge edit.
     const anchorEdit = anchor ? edits.find((edit) => edit.start === anchor.getStart(sf)) : undefined;
     if (anchorEdit) anchorEdit.text = `${anchorEdit.text}\n${newStatements.join("\n")}`;
     else if (anchor)
@@ -443,8 +401,7 @@ export const transformSource = (
   return out === source ? null : out;
 };
 
-//* Every name introduced into scope: import bindings plus local declarations. Over-collecting only
-//* suppresses an insertion (safe); under-collecting would risk a duplicate import (unsafe).
+//* Over-collecting only suppresses an insertion; under-collecting would add a duplicate import.
 const collectBoundNames = (sf: ts.SourceFile): Set<string> => {
   const names = new Set<string>();
   const visit = (node: ts.Node) => {
@@ -496,8 +453,6 @@ const collectBareGlobalReferences = (sf: ts.SourceFile): Set<string> => {
   return bare;
 };
 
-//* True when the identifier reads a binding, as opposed to being a member name, property key, or
-//* declaration name. e.g. in `cnst.Coordinate`, `cnst` is a reference but `Coordinate` is not.
 const isReferencePosition = (node: ts.Identifier): boolean => {
   const parent = node.parent;
   if (!parent) return true;
@@ -512,7 +467,7 @@ const isReferencePosition = (node: ts.Identifier): boolean => {
 
 interface ExistingNamedImport {
   decl: ts.ImportDeclaration;
-  names: Map<string, boolean>; // name -> type-only (whole-clause `import type` or inline `type`)
+  names: Map<string, boolean>;
 }
 
 const collectExistingNamedImports = (importDecls: ts.ImportDeclaration[]): Map<string, ExistingNamedImport> => {
@@ -523,7 +478,7 @@ const collectExistingNamedImports = (importDecls: ts.ImportDeclaration[]): Map<s
     if (!clause || !bindings || !ts.isNamedImports(bindings)) continue;
     if (!ts.isStringLiteral(decl.moduleSpecifier)) continue;
     const specifier = decl.moduleSpecifier.text;
-    if (map.has(specifier)) continue; // first same-specifier named import wins as the merge site
+    if (map.has(specifier)) continue;
     const names = new Map<string, boolean>();
     for (const el of bindings.elements) names.set(el.name.text, clause.isTypeOnly || el.isTypeOnly);
     map.set(specifier, { decl, names });
@@ -531,8 +486,6 @@ const collectExistingNamedImports = (importDecls: ts.ImportDeclaration[]): Map<s
   return map;
 };
 
-//* Render a named import, hoisting to `import type { … }` when every name is type-only and otherwise
-//* prefixing each type-only name with inline `type`. Names sorted case-insensitively (Biome order).
 const formatNamedImport = (specifier: string, names: Map<string, boolean>): string => {
   const entries = [...names.entries()].sort((a, b) => compareNames(a[0], b[0]));
   if (entries.every(([, isType]) => isType))
@@ -552,8 +505,7 @@ const directivePrologueEnd = (sf: ts.SourceFile): number => {
 
 const scriptKindFor = (fileName: string) => (fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
 
-//* Case-insensitive primary order with a case-sensitive tie-break (uppercase first), matching Biome's
-//* import specifier sort — so e.g. `Dayjs` precedes `dayjs`.
+// Matches Biome's import-specifier sort: case-insensitive, uppercase first on a tie (`Dayjs` before `dayjs`).
 const compareNames = (a: string, b: string): number => {
   const [la, lb] = [a.toLowerCase(), b.toLowerCase()];
   if (la !== lb) return la < lb ? -1 : 1;
@@ -567,8 +519,6 @@ const fileExists = async (file: string) =>
     .then((s) => s.isFile())
     .catch(() => false);
 
-// ---- Domain index ---------------------------------------------------------------------------------
-
 const domainKindOf = (base: string): DomainKind | null => {
   if (base.endsWith(".constant.ts")) return "constant";
   if (base.endsWith(".document.ts")) return "document";
@@ -576,7 +526,6 @@ const domainKindOf = (base: string): DomainKind | null => {
   return null;
 };
 
-//* Scan a package `lib/` for model files and index their exported PascalCase declarations.
 const buildDomainIndex = async (libDir: string): Promise<DomainIndex> => {
   const index: DomainIndex = new Map();
   for (const file of await collectDomainFiles(libDir)) {
@@ -622,7 +571,6 @@ const exportedPascalNames = (source: string, fileName: string): string[] => {
   return names.filter((name) => PASCAL_CASE_RE.test(name));
 };
 
-//* Relative module specifier from a file's directory to a target file, extension stripped, `./`-anchored.
 const relativeSpecifier = (fromDir: string, toFile: string): string => {
   const rel = path
     .relative(fromDir, toFile)

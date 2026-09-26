@@ -1,19 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
-import { DevChangePlanner } from "../frontendBuild";
+import { DevChangePlanner, type GeneratedIndexSyncResult } from "../frontendBuild";
 import { prepareDevWatchBatch } from "./devWatchBatch";
+
+const prepare = (root: string, generation: number, file: string, indexSync: GeneratedIndexSyncResult) =>
+  prepareDevWatchBatch({
+    generation,
+    batch: { files: [file], kinds: new Set(["code"]) },
+    indexSync,
+    changePlanner: new DevChangePlanner({ workspaceRoot: root }),
+  });
 
 describe("prepareDevWatchBatch", () => {
   test("includes generated indexes in the same invalidate generation", () => {
     const root = path.resolve("/repo");
     const changedFile = path.join(root, "libs/shared/common/foo.ts");
     const generatedIndex = path.join(root, "libs/shared/common/index.ts");
-    const prepared = prepareDevWatchBatch({
-      generation: 12,
-      batch: { files: [changedFile], kinds: new Set(["code"]) },
-      indexSync: { changedFiles: [generatedIndex], errors: [] },
-      changePlanner: new DevChangePlanner({ workspaceRoot: root }),
-    });
+    const prepared = prepare(root, 12, changedFile, { changedFiles: [generatedIndex], errors: [] });
 
     expect(prepared.hasSyncErrors).toBe(false);
     expect(prepared.files).toEqual([changedFile, generatedIndex]);
@@ -29,12 +32,7 @@ describe("prepareDevWatchBatch", () => {
       const root = path.resolve("/repo");
       const changedFile = path.join(root, "libs/shared", facet, "tmpExample.ts");
       const generatedIndex = path.join(root, "libs/shared", facet, "index.ts");
-      const prepared = prepareDevWatchBatch({
-        generation: 20,
-        batch: { files: [changedFile], kinds: new Set(["code"]) },
-        indexSync: { changedFiles: [generatedIndex], errors: [] },
-        changePlanner: new DevChangePlanner({ workspaceRoot: root }),
-      });
+      const prepared = prepare(root, 20, changedFile, { changedFiles: [generatedIndex], errors: [] });
 
       expect(new Set(prepared.files)).toEqual(new Set([changedFile, generatedIndex]));
       expect(prepared.event.devPlan?.generatedFiles).toEqual([generatedIndex]);
@@ -45,11 +43,9 @@ describe("prepareDevWatchBatch", () => {
 
   test("marks failed generated index sync as an error generation", () => {
     const root = "/repo";
-    const prepared = prepareDevWatchBatch({
-      generation: 13,
-      batch: { files: [`${root}/libs/shared/common/foo.ts`], kinds: new Set(["code"]) },
-      indexSync: { changedFiles: [], errors: ["sync failed"] },
-      changePlanner: new DevChangePlanner({ workspaceRoot: root }),
+    const prepared = prepare(root, 13, `${root}/libs/shared/common/foo.ts`, {
+      changedFiles: [],
+      errors: ["sync failed"],
     });
 
     expect(prepared.hasSyncErrors).toBe(true);

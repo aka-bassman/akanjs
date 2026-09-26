@@ -15,14 +15,7 @@ export interface DevLogFeedbackOptions {
 const errorPattern = /\bERROR\b|\bFATAL\b|\[stderr\]|error:|Error:|✖|Unhandled|Cannot find|is not a function/;
 const noisePattern = /DEBUG|\bWARN\b|MCP catalogue|rate limit/;
 
-/**
- * Feeds back what the dev server said after a turn edited code.
- *
- * `akan start` writes `local/apps/<app>/runtime/dev.log` with no ANSI, nothing truncated, and every process of
- * the app in arrival order including the dev host's own build output — which reaches no other file. That is the
- * one thing a coding agent working on an akan app has and a general one does not: lint and typecheck can both
- * pass on code that dies the moment it runs.
- */
+// dev.log is the only file carrying the dev host's own build output; lint and typecheck pass on code that dies at run.
 export class DevLogFeedback implements TurnFeedbackSource {
   readonly key = "dev-server";
   readonly #options: Required<DevLogFeedbackOptions>;
@@ -41,9 +34,7 @@ export class DevLogFeedback implements TurnFeedbackSource {
   async observe() {
     const running = this.#options.apps.filter((app) => existsSync(this.#pathOf(app)));
     if (!running.length) return undefined;
-    // A turn that wrote nothing cannot have broken the running app. Without this, one line from a dev server
-    // somebody else is driving reopens a turn that only read a file — and a reopened turn looks, from the
-    // transcript, exactly like an agent that will not stop.
+    // A turn that wrote nothing cannot have broken the app; without this gate another person's dev server reopens it.
     if (!(await AkanEditScope.since(this.#options.cwd, this.#baseline)).paths.length) return undefined;
     await Bun.sleep(this.#options.graceMs);
     const reports: string[] = [];
@@ -77,12 +68,7 @@ export class DevLogFeedback implements TurnFeedbackSource {
     return path.join(this.#options.workspaceRoot, "local", "apps", app, "runtime", "dev.log");
   }
 
-  /**
-   * The dev server's own URL, read back from the line `akan start` prints when the app comes up.
-   *
-   * The port is allocated, not predicted — a second checkout or a stale listener shifts it — so the log is the
-   * only place that knows which one this session actually got.
-   */
+  /** The port is allocated, not predicted, so the log's `ready` line is the only record of this session's URL. */
   static async previewUrl(workspaceRoot: string, app: string) {
     const file = path.join(workspaceRoot, "local", "apps", app, "runtime", "dev.log");
     if (!existsSync(file)) return undefined;
@@ -90,7 +76,6 @@ export class DevLogFeedback implements TurnFeedbackSource {
     return matches.at(-1)?.[1];
   }
 
-  /** A dev server that is not running has no log, which is not an error — the source simply reports nothing. */
   static #sizeOf(file: string) {
     return existsSync(file) ? statSync(file).size : 0;
   }

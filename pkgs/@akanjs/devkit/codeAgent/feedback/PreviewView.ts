@@ -18,22 +18,13 @@ interface WebViewLike {
   readonly title: string;
 }
 
-/**
- * Opens a page headlessly and reports what is wrong with it.
- *
- * `Bun.WebView` rather than a downloaded browser: on macOS the `webkit` backend is the system framework, so
- * there is no Chromium to fetch and no executable path to track, and everywhere else it drives whatever Chrome
- * the image carries. It is marked experimental, which is why the whole surface is behind this adapter — a Bun
- * minor that changes it should break one file.
- *
- * Which backend, and what an image needs for it, is {@link PreviewChrome}.
- */
+// Bun.WebView rather than a downloaded browser: on macOS its webkit backend needs no Chromium at all.
+// It is experimental, so its whole surface stays behind this adapter; a Bun minor that changes it breaks one file.
 export class PreviewView {
   static get available() {
     return typeof (Bun as unknown as { WebView?: unknown }).WebView === "function" && PreviewChrome.available;
   }
 
-  /** Why `available` is false, for a host that should say so rather than skip the check in silence. */
   static unavailableReason() {
     if (typeof (Bun as unknown as { WebView?: unknown }).WebView !== "function")
       return "This Bun build has no WebView, so the page preview is off.";
@@ -76,10 +67,7 @@ export class PreviewView {
   }
 }
 
-/**
- * `evaluate` takes an expression, not a statement list — `const x = 1; x` is a `SyntaxError` — so each probe is
- * wrapped in an IIFE. Only one may be in flight per view.
- */
+// evaluate() takes one expression (a statement list is a SyntaxError), hence the IIFEs; one call in flight per view.
 const pageErrorsExpression = `(() => {
   const found = [];
   const root = document.getElementById("__next") || document.body;

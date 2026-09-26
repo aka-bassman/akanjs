@@ -11,13 +11,7 @@ export interface AkanToolPackOptions {
   mode: "readonly" | "plan" | "apply";
 }
 
-/**
- * Publishes the workspace's own agent tools — context inspection, workflows, repair, validation — to the model.
- *
- * These already exist as the akan MCP catalogue, dispatched in-process by `ContextRunner.callMcpTool`. Wrapping
- * that dispatcher is the whole implementation: a second copy of "what does add-field do" would drift from the
- * one the editors already talk to.
- */
+// Wraps the akan MCP catalogue's in-process dispatcher (ContextRunner.callMcpTool); a second copy would drift from it.
 export class AkanToolPack {
   readonly #options: AkanToolPackOptions;
 
@@ -29,18 +23,8 @@ export class AkanToolPack {
     return { name: "akan-tools", factory: async (pi) => await this.#register(pi) };
   }
 
-  /**
-   * The names this pack will register.
-   *
-   * A `tools` allowlist on the session is an allowlist over *every* tool, extension ones included — pass only
-   * the built-ins and the model is told the akan tools do not exist, which is exactly what it then reports.
-   */
-  /**
-   * The CLI's own MCP catalogue is what these tools are, so this pack is the one place devkit reaches back
-   * into the executable package. `ContextRunner` composes the repair and workflow runners and cannot move
-   * here; the path is written out because devkit does not depend on the CLI and must not start. Both packages
-   * are bundled into one at publish, so the specifier resolves at build time either way.
-   */
+  // The session allowlist covers extension tools too; a name missing here tells the model the tool does not exist.
+  // devkit must not depend on the CLI, so ContextRunner is reached by relative path; publishing bundles both.
   async names() {
     const { ContextRunner } = await import("../../../cli/context/context.runner");
     return [
@@ -61,15 +45,15 @@ export class AkanToolPack {
         name: tool.name,
         label: tool.name,
         description,
-        // Without a snippet a custom tool is left out of the system prompt's tool list entirely, and a model
-        // whose built-ins are narrowed then reads "Available tools: (none)" and stops trusting the list.
+        // Without a snippet the engine leaves a custom tool out of the system prompt's tool list entirely.
         promptSnippet: `${tool.name}: ${description.split(".")[0] ?? description}`,
         parameters: Type.Unsafe<Record<string, unknown>>(tool.inputSchema),
         execute: async (_id, params) => {
           const result = await runner.callMcpTool(this.#options.workspace, tool.name, params ?? {}, {
             mode: this.#options.mode,
           });
-          return { content: [{ type: "text", text: AkanToolPack.#render(result) }], details: undefined };
+          const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+          return { content: [{ type: "text", text }], details: undefined };
         },
       });
     }
@@ -97,7 +81,6 @@ export class AkanToolPack {
     });
   }
 
-  /** The guideline list is a directory read, so a model cannot name one without being handed the enum. */
   static async #guidelineNames() {
     try {
       const { Prompter } = await import("../../prompter");
@@ -105,10 +88,5 @@ export class AkanToolPack {
     } catch {
       return [];
     }
-  }
-
-  static #render(result: unknown) {
-    if (typeof result === "string") return result;
-    return JSON.stringify(result, null, 2);
   }
 }

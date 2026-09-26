@@ -1,13 +1,5 @@
-/**
- * The akan coding agent: the engine wrapper, the tools it is given, and the feedback that reopens a turn.
- *
- * Importing this barrel loads the engine, which costs ~122MiB resident. A host that only needs the cheap
- * pieces — the model reference, the stream printer, the sub-agent kinds — reaches for the owning module
- * instead (`@akanjs/devkit/codeAgent/agent/akanCodeModel`), the same way `@akanjs/devkit` itself asks to be
- * used. `agent/consoleToStderr` is deliberately absent: it is a side-effect module that takes over
- * `globalThis.console`, and it has to be the first import of an RPC entry rather than a re-export of this one.
- */
-
+// Importing this barrel loads the engine (~122MiB resident); a host needing cheap pieces imports the owning module.
+// agent/consoleToStderr is deliberately absent: it takes over globalThis.console, so an RPC entry imports it first.
 export * from "./agent/AkanCodeServices";
 export * from "./agent/akanCodeModel";
 export * from "./agent/akanCodePaths";

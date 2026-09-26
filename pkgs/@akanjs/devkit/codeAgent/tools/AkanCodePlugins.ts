@@ -34,12 +34,6 @@ export interface AkanCodePluginsOptions {
   onAsk?: (question: Omit<CodeAgentQuestion, "questionId">) => Promise<string | undefined>;
 }
 
-/**
- * Assembles the akan capability pack for one profile.
- *
- * Gating happens here rather than at run time: a capability the profile excludes is never constructed, so the
- * model cannot call it and it costs nothing in the system prompt either.
- */
 export interface AkanCodePluginsResult {
   extensions: InlineExtension[];
   /** Names the session's tool allowlist has to carry, or the model is told these tools do not exist. */
@@ -50,6 +44,7 @@ export interface AkanCodePluginsResult {
   dispose: () => void;
 }
 
+// Gated at assembly, not at call time: a capability the profile excludes is never built and costs no prompt tokens.
 export class AkanCodePlugins {
   static async build(options: AkanCodePluginsOptions): Promise<AkanCodePluginsResult> {
     const mcp = await McpToolPack.connect({
@@ -60,34 +55,28 @@ export class AkanCodePlugins {
     const dispose = () => mcp?.close();
     const mcpStatus = mcp?.status ?? [];
     const web = new WebToolPack({ profile: options.profile });
-    const webExtension = web.extension();
     const sessions = new SessionToolPack({
       workspaceRoot: options.workspace.workspaceRoot,
       cwd: options.cwd,
       profile: options.profile,
       currentSessionId: options.currentSessionId,
     });
-    const sessionExtension = sessions.extension();
     const mail = new MailToolPack({ profile: options.profile, mailbox: options.mailbox });
-    const mailExtension = mail.extension();
     const onAsk = options.onAsk;
     const ask = onAsk ? new AskToolPack({ profile: options.profile, ask: onAsk }) : undefined;
-    const askExtension = ask?.extension();
-    if (!options.profile.tools.akan)
-      return {
-        extensions: [mcp?.extension(), webExtension, sessionExtension, mailExtension, askExtension].filter(
-          (entry) => !!entry,
-        ),
-        toolNames: [
-          ...(mcp?.toolNames ?? []),
-          ...web.names(),
-          ...sessions.names(),
-          ...mail.names(),
-          ...(ask?.names() ?? []),
-        ],
-        mcp: mcpStatus,
-        dispose,
-      };
+    const shared = {
+      extensions: [mcp?.extension(), web.extension(), sessions.extension(), mail.extension(), ask?.extension()].filter(
+        (entry) => !!entry,
+      ),
+      toolNames: [
+        ...(mcp?.toolNames ?? []),
+        ...web.names(),
+        ...sessions.names(),
+        ...mail.names(),
+        ...(ask?.names() ?? []),
+      ],
+    };
+    if (!options.profile.tools.akan) return { ...shared, mcp: mcpStatus, dispose };
     const readOnly = !options.profile.tools.builtin.includes("write");
     const pack = new AkanToolPack({
       workspace: options.workspace,
@@ -112,22 +101,9 @@ export class AkanCodePlugins {
           ...(options.onNotice ? { onNotice: options.onNotice } : {}),
         }).extension(),
       );
-    if (mcp) extensions.push(mcp.extension());
-    if (webExtension) extensions.push(webExtension);
-    if (sessionExtension) extensions.push(sessionExtension);
-    if (mailExtension) extensions.push(mailExtension);
-    if (askExtension) extensions.push(askExtension);
     return {
-      extensions,
-      toolNames: [
-        ...(await pack.names()),
-        ...(subagent ? [SubagentPool.toolName] : []),
-        ...(mcp?.toolNames ?? []),
-        ...web.names(),
-        ...sessions.names(),
-        ...mail.names(),
-        ...(ask?.names() ?? []),
-      ],
+      extensions: [...extensions, ...shared.extensions],
+      toolNames: [...(await pack.names()), ...(subagent ? [SubagentPool.toolName] : []), ...shared.toolNames],
       mcp: mcpStatus,
       dispose,
     };
@@ -140,8 +116,7 @@ export class AkanCodePlugins {
     ];
     const previewUrl = await AkanCodePlugins.#previewUrl(options);
     if (!previewUrl) return sources;
-    // A dev server is up and the agent still cannot look at the page. Said once, at assembly, because the
-    // alternative is a UI turn that quietly skips its only visual check and reads as a clean run.
+    // Said once here, or a UI turn silently skips its only visual check and reads as a clean run.
     const reason = PreviewView.unavailableReason();
     if (reason) options.onNotice?.(reason);
     else sources.push(new PreviewFeedback({ cwd: options.cwd, previewUrl, canSeeImages: options.canSeeImages }));

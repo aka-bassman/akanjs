@@ -43,9 +43,6 @@ describe("createTsconfigPackageResolver — exact tsconfig mapping", () => {
   });
 
   test("collapses a facet specifier to its parent package", async () => {
-    // `@libs/util/server` maps to the sibling file `libs/util/server.ts`, not to a package directory, so a
-    // leaf rewritten under the raw specifier would become `@libs/util/server/lib/sig` — a path that does
-    // not exist. The parent specifier is what the `@libs/*` wildcard can actually resolve.
     const root = await makeTempRoot();
     const entryFile = await write(root, "libs/util/server.ts");
     const resolve = await resolverFor(root, { "@libs/util/server": ["./libs/util/server.ts"] });
@@ -134,8 +131,6 @@ describe("createTsconfigPackageResolver — wildcard tsconfig mapping", () => {
   });
 
   test("stops at the matched prefix instead of falling through to a shorter one", async () => {
-    // Falling through would resolve `@libs/util/ui` against `./libs/*`, silently loading an unrelated
-    // directory that happens to sit at the same subpath under a different root.
     const root = await makeTempRoot();
     await write(root, "libs/util/ui/index.ts");
     const resolve = await resolverFor(root, {
@@ -183,9 +178,7 @@ describe("createTsconfigPackageResolver — node_modules fallback", () => {
   });
 
   test("resolves a scoped package subpath", async () => {
-    // A scoped name is two path segments, so the package boundary cannot be found by splitting on the
-    // first slash. Kept vendor-neutral on purpose: `packageExports.test.ts` reads every
-    // `"@akanjs/devkit/<x>"` literal under this package as a subpath the monorepo imports.
+    // Vendor-neutral on purpose: `packageExports.test.ts` reads every `"@akanjs/devkit/<x>"` literal here as an import.
     const root = await makeTempRoot();
     await writePackageJson(root, "@vendor/kit", { exports: { "./lint": "./lint/index.ts" } });
     const entryFile = await write(root, "node_modules/@vendor/kit/lint/index.ts");
@@ -195,8 +188,7 @@ describe("createTsconfigPackageResolver — node_modules fallback", () => {
   });
 
   test("falls back to module/main when exports resolution declines the specifier", async () => {
-    // `main: "index.js"` has no leading `./`, which the exports resolver rejects — the last fallback
-    // resolves it against the package directory, and it is the one path that does not preserve the file.
+    // `main` without a leading `./` is declined by the exports resolver, so only the last fallback resolves it.
     const root = await makeTempRoot();
     await writePackageJson(root, "plainpkg", { main: "index.js" });
     const entryFile = await write(root, "node_modules/plainpkg/index.js");

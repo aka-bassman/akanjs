@@ -1,18 +1,4 @@
-/**
- * WCAG contrast checking over the semantic token pairs. No dependencies, pure functions, and no akanjs
- * runtime import — it has to run inside the lint path.
- *
- * The `--x` / `--x-foreground` pairing is what makes the check possible at all: it says which two values
- * are going to end up on top of each other. That is the guard against a generated palette shipping a site
- * nobody can read.
- *
- * Thresholds (WCAG 2.1):
- *   - body and primary surfaces (background, primary, secondary, accent, neutral, card, popover): 4.5:1,
- *     the AA floor for normal text
- *   - status and secondary pairs (info, success, warning, destructive, open, muted): 3:1, the AA floor for
- *     UI components and large text
- * The shipped light/dark palette in styles.css clears all of them.
- */
+// No akanjs runtime import: this runs inside the lint path.
 
 export interface ThemeContrastViolation {
   scope: string;
@@ -30,6 +16,7 @@ interface PairDef {
   threshold: number;
 }
 
+// WCAG 2.1 AA: 4.5:1 is the floor for normal text, 3:1 for UI components and large text.
 const PAIRS: PairDef[] = [
   { base: "background", fg: "foreground", threshold: 4.5 },
   { base: "primary", fg: "primary-foreground", threshold: 4.5 },
@@ -46,13 +33,11 @@ const PAIRS: PairDef[] = [
   { base: "open", fg: "open-foreground", threshold: 3 },
 ];
 
-// Only these scopes are paired up; tokens scoped to something else (`.campaign-x`, …) are left alone.
 const THEME_SCOPES = new Set([":root", '[data-theme="dark"]', '[data-theme="light"]']);
 
 export type ThemeTokensByScope = Record<string, Record<string, string>>;
 
 export class ThemeValidator {
-  /** Extracts tokens from the css text and checks every scope it recognizes. */
   validate(css: string): ThemeContrastViolation[] {
     const tokensByScope = ThemeValidator.parseThemeTokens(css);
     const violations: ThemeContrastViolation[] = [];
@@ -71,7 +56,7 @@ export class ThemeValidator {
       if (!bg || !front) continue;
       const bgRgb = ThemeValidator.parseHex(bg);
       const fgRgb = ThemeValidator.parseHex(front);
-      if (!bgRgb || !fgRgb) continue; // a var() or non-hex value has no ratio to compute
+      if (!bgRgb || !fgRgb) continue;
       const ratio = ThemeValidator.contrastRatio(bgRgb, fgRgb);
       if (ratio >= threshold) continue;
       violations.push({
@@ -87,15 +72,9 @@ export class ThemeValidator {
     return violations;
   }
 
-  /**
-   * Reads `--token: value` out of `:root` / `[data-theme="…"]` blocks. A grouped selector
-   * (`:root, [data-theme="dark"] { … }`) distributes the same tokens to each selector, and a scope that
-   * appears twice keeps the later value — so passing framework css first and the app's second reflects the
-   * app's overrides.
-   */
+  /** A scope declared twice keeps the later value, so pass the framework css before the app's. */
   static parseThemeTokens(css: string): ThemeTokensByScope {
     const result: ThemeTokensByScope = {};
-    // Flat rule blocks only; an at-rule (@theme, @keyframes) carries `@` in the selector and is skipped.
     const blockRe = /(?:^|})\s*([^{}@]+?)\s*\{([^{}]*)\}/g;
     for (const block of css.matchAll(blockRe)) {
       const selectors = block[1].split(",").map((s) => s.trim());
@@ -114,7 +93,6 @@ export class ThemeValidator {
   }
 
   static #normalizeScope(selector: string): string {
-    // Quote normalization: [data-theme=dark] / [data-theme='dark'] -> [data-theme="dark"]
     return selector.replace(/\[data-theme=['"]?([\w-]+)['"]?\]/g, '[data-theme="$1"]').trim();
   }
 

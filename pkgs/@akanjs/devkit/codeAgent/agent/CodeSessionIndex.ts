@@ -12,15 +12,8 @@ export interface CodeSessionEntry {
   turns: number;
 }
 
-/**
- * The sessions on disk, read as files rather than through the engine.
- *
- * The engine's session manager addresses one session at a time — it can open a file and append to it, and has
- * nothing that enumerates the directory. The format is self-describing JSONL, so the listing is a read of
- * lines we already own the shape of, and it costs no engine instance to produce.
- */
+// Read as files: the engine's session manager has nothing that enumerates the directory.
 export class CodeSessionIndex {
-  /** Past this, a file is a session long enough that its opening lines are far from the interesting part. */
   static readonly readLimit = 512 * 1024;
 
   static list(dir: string, limit = 30): CodeSessionEntry[] {
@@ -89,7 +82,6 @@ export class CodeSessionIndex {
     }
   }
 
-  /** One line, always: the opening ask is a label in a list, and a pasted stack trace is not a label. */
   static #text(content: unknown) {
     const text =
       typeof content === "string"

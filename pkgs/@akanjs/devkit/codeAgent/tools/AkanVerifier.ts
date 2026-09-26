@@ -7,14 +7,6 @@ export interface AkanVerifyReport {
   scope: AkanEditScopeResult;
 }
 
-/**
- * Runs the workspace's own validation chain over whatever a turn changed.
- *
- * The order is the one the guide names and it is not interchangeable: `sync` first because a stale generated
- * barrel makes `typecheck` report a missing symbol whose real cause is a file that was added, which sends the
- * model editing the wrong place. `lint` before `typecheck` because it rewrites formatting and import order,
- * and a typecheck run against the pre-format text reports positions that no longer exist.
- */
 export class AkanVerifier {
   readonly #cli: AkanCli;
 
@@ -25,6 +17,7 @@ export class AkanVerifier {
   async verify(scope: AkanEditScopeResult): Promise<AkanVerifyReport> {
     const steps: AkanCliResult[] = [];
     const targets = [...scope.apps, ...scope.libs];
+    // Order matters: a stale barrel reads to typecheck as a missing symbol, and lint moves the positions it reports.
     if (scope.needsSync) for (const target of targets) steps.push(await this.#cli.run(["sync", target]));
     for (const target of targets) steps.push(await this.#cli.run(["lint", target]));
     for (const app of scope.apps) steps.push(await this.#cli.run(["typecheck", app]));

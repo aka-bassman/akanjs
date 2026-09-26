@@ -5,18 +5,14 @@ import { resolveSsrPageEntriesForApp } from "../artifact/implicitRootLayout";
 import type { App } from "../commandDecorators";
 import { createBarrelImportsPlugin } from "../transforms/barrelImportsPlugin";
 import { createExternalizeFrameworkPlugin } from "../transforms/externalizeFrameworkPlugin";
+import { loaderFor } from "../transforms/moduleSyntax";
 import { transformUseClient } from "../transforms/rscUseClientTransform";
 import { createUseClientBundlePlugin } from "../transforms/useClientBundlePlugin";
 import { PagesEntrySourceGenerator } from "./pagesEntrySourceGenerator";
 
 export interface BuildPagesBundleResult {
-  /** Absolute path to the emitted `pages-[hash].js`. */
   bundlePath: string;
-  /**
-   * Monotonic build identifier. Bun.build emits a fresh filename whenever
-   * any input changes, but importers still benefit from a `?v=<buildId>`
-   * query-string cache bust — `buildId` is that value.
-   */
+  /** Cache-bust value for `import(bundlePath?v=<buildId>)`. */
   buildId: number;
   splitting: boolean;
   entryBytes: number;
@@ -27,10 +23,6 @@ export interface BuildPagesBundleResult {
 
 const VIRTUAL_PAGES_ENTRY = "akan-pages-entry";
 
-/**
- * Build the server-side pages bundle. The RSC worker loads the result with
- * `await import(bundlePath?v=buildId)`.
- */
 export class PagesBundleBuilder {
   #app: App;
   #command: "build" | "start";
@@ -175,11 +167,4 @@ export class PagesBundleBuilder {
         "const fetchProto = FetchClient.build<typeof signal>(cnst, serverFetch.serializedSignal, { Err: pageProto.Err, base: serverFetch });",
       );
   }
-}
-
-function loaderFor(absPath: string): "ts" | "tsx" | "js" | "jsx" {
-  if (absPath.endsWith(".tsx")) return "tsx";
-  if (absPath.endsWith(".jsx")) return "jsx";
-  if (absPath.endsWith(".ts")) return "ts";
-  return "js";
 }

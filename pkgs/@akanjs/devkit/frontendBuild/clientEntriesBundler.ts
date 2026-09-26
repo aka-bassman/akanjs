@@ -13,11 +13,6 @@ import {
   type OpaqueEntryAliases,
 } from "./clientBuildTypes";
 
-/**
- * Low-level primitive shared by the eager base build and the lazy per-route
- * builds. Takes a flat entrypoints list, runs `Bun.build`, and extracts a
- * `ClientManifest` / `SsrManifest` covering only those entries.
- */
 export class ClientEntriesBundler {
   #app: BundleClientEntriesInternalOptions["app"];
   #entries: string[];
@@ -29,7 +24,6 @@ export class ClientEntriesBundler {
   #target: ClientBundleTarget;
   #outputSubdir: string;
   #reactFastRefresh: boolean;
-  #artifactDir: string;
   #outdir: string;
   #servePrefix: string;
   #manifest: ClientManifest = {};
@@ -52,8 +46,8 @@ export class ClientEntriesBundler {
     this.#target = options.target ?? "browser";
     this.#outputSubdir = options.outputSubdir ?? "client";
     this.#reactFastRefresh = options.reactFastRefresh ?? false;
-    this.#artifactDir = `${this.#command === "build" ? this.#app.dist.cwdPath : this.#app.cwdPath}/.akan/artifact`;
-    this.#outdir = `${this.#artifactDir}/${this.#outputSubdir}`;
+    const artifactDir = `${this.#command === "build" ? this.#app.dist.cwdPath : this.#app.cwdPath}/.akan/artifact`;
+    this.#outdir = `${artifactDir}/${this.#outputSubdir}`;
     this.#servePrefix = `/_akan/${this.#outputSubdir}`;
   }
 
@@ -153,10 +147,7 @@ export class ClientEntriesBundler {
     return "js";
   }
 
-  /**
-   * Build a BunPlugin that marks a fixed set of bare specifiers as external via `onResolve`,
-   * as opposed to `Bun.build({ external })`, so macro-time imports still resolve normally.
-   */
+  // `onResolve` rather than `Bun.build({ external })`, so macro-time imports still resolve normally.
   #createExternalSpecifiersPlugin(): BunPlugin {
     const set = new Set(this.#external);
     const subpathSet = new Set(this.#externalSubpaths);
@@ -182,11 +173,8 @@ export class ClientEntriesBundler {
     exactExternals: Set<string>,
     subpathExternals: Set<string>,
   ): boolean {
-    if (exactExternals.has(specifier)) return true;
-    if (subpathExternals.has(specifier)) return true;
-    for (const external of subpathExternals) {
-      if (specifier.startsWith(`${external}/`)) return true;
-    }
+    if (exactExternals.has(specifier) || subpathExternals.has(specifier)) return true;
+    for (const external of subpathExternals) if (specifier.startsWith(`${external}/`)) return true;
     return false;
   }
 

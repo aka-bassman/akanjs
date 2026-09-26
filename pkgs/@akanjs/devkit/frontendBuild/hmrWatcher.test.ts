@@ -5,12 +5,7 @@ import path from "node:path";
 import type { Logger } from "akanjs/common";
 import { type ChangeBatch, HmrWatcher } from "./hmrWatcher";
 
-/**
- * These run against the real Bun watcher rather than a fake, because the behaviour under test only
- * exists there: Bun 1.3.14's recursive `fs.watch` reports about one path per ~200ms coalescing window and
- * discards the rest (`local/optimize-resource/06-watcher-dropped-event.md`). A fake that delivered every
- * event would pass no matter what the watcher did with them.
- */
+// The real Bun watcher, not a fake: the dropped-event behaviour under test only exists there.
 const STREAM_WARMUP_MS = 600;
 const SETTLE_MS = 1_500;
 const TEST_TIMEOUT_MS = 15_000;
@@ -18,7 +13,6 @@ const TEST_TIMEOUT_MS = 15_000;
 const started: HmrWatcher[] = [];
 const roots: string[] = [];
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-/** Every level `HmrWatcher` can reach, so adding a log line cannot fail a test for the wrong reason. */
 const silentLogger = {
   trace: () => undefined,
   verbose: () => undefined,
@@ -69,15 +63,12 @@ describe("HmrWatcher", () => {
       const files = await Promise.all([0, 1, 2, 3, 4].map((i) => seed(root, `lib/File${i}.ts`)));
       const { batches, seen, watcher } = await watch(root);
 
-      // No gaps between writes, so they share one coalescing window and Bun names at most one of them.
       for (const [i, abs] of files.entries()) await writeFile(abs, `export const x = ${i}00;\n`);
       await sleep(SETTLE_MS);
 
       expect(batches.length).toBeGreaterThan(0);
       for (const abs of files) expect([...seen()]).toContain(abs);
-      // Not asserted as non-zero: the point is that the outcome above holds whether or not Bun drops
-      // events, so this suite keeps passing if the upstream defect is ever fixed. The counter is the
-      // signal for when the compensation can be removed.
+      // Not `> 0`: the suite must keep passing if Bun ever stops dropping events.
       expect(watcher.unreportedChanges).toBeGreaterThanOrEqual(0);
     },
     TEST_TIMEOUT_MS,
@@ -90,8 +81,6 @@ describe("HmrWatcher", () => {
       const source = await seed(root, "lib/a.ts");
       const { seen, batches } = await watch(root);
 
-      // What every build ends with: a burst under `.akan/`, which the classifier ignores. Before this
-      // was handled, the burst was the one path Bun reported and the save right after it was invisible.
       const artifactDir = path.join(root, ".akan", "artifact", "server");
       await mkdir(artifactDir, { recursive: true });
       for (let i = 0; i < 60; i++) await writeFile(path.join(artifactDir, `chunk-${i}.js`), "x".repeat(8192));
@@ -100,8 +89,6 @@ describe("HmrWatcher", () => {
       await sleep(SETTLE_MS);
 
       expect([...seen()]).toContain(source);
-      // Exactly one batch for one save. Bun does deliver a real event for some paths the scan has already
-      // emitted, and counting both produced a second generation and a second build for no change.
       expect(batches.filter((batch) => batch.files.includes(source))).toHaveLength(1);
     },
     TEST_TIMEOUT_MS,
@@ -119,7 +106,6 @@ describe("HmrWatcher", () => {
       for (let i = 0; i < 20; i++) await writeFile(path.join(artifactDir, `chunk-${i}.js`), "x".repeat(4096));
       await sleep(SETTLE_MS);
 
-      // The verification scan is triggered by ignored paths, so it must not invent work from them either.
       expect(batches).toEqual([]);
     },
     TEST_TIMEOUT_MS,
@@ -176,12 +162,9 @@ describe("HmrWatcher", () => {
       });
       started.push(watcher);
       await watcher.start();
-      // Restored before asserting, not after: a failed assertion would otherwise leave a directory `rm`
-      // cannot traverse, and the leak would fail the *next* test instead of this one.
+      // Restored before asserting: a failed assertion would leave a directory `rm` cannot traverse.
       await chmod(path.dirname(hidden), 0o755);
 
-      // At startup rather than at the first save, because an unreadable root means edits under it never
-      // rebuild — waiting for a save to reveal that means waiting for the save that silently does nothing.
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toContain("will not rebuild");
       expect(warnings[0]).toContain("EACCES");

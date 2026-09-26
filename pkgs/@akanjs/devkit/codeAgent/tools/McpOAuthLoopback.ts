@@ -1,12 +1,5 @@
 import { McpOAuth } from "./McpOAuth";
 
-/**
- * The loopback address the authorization server redirects back to.
- *
- * A native client has no url of its own, so the redirect goes to a server this process runs for the length of
- * one sign-in. It binds `127.0.0.1` rather than `0.0.0.0`: the code in that redirect is a credential, and a
- * port open to the network is a port anything on the network can race the browser to.
- */
 export class McpOAuthLoopback {
   readonly #server: ReturnType<typeof Bun.serve>;
   readonly #port: number;
@@ -20,18 +13,13 @@ export class McpOAuthLoopback {
     });
     this.#server = Bun.serve({
       port,
+      // Never 0.0.0.0: the redirect carries a credential that anything on the network could race the browser for.
       hostname: "127.0.0.1",
       fetch: (request) => this.#handle(request),
     });
   }
 
-  /**
-   * Binds the port a client was registered against, or the first free one from the list.
-   *
-   * A registration names its `redirect_uri` exactly, so a second sign-in that landed on a different port would
-   * be refused by the server — which is why the port that worked is stored with the client rather than chosen
-   * afresh. When it cannot be had, the caller registers again against whatever this did bind.
-   */
+  /** The registered port first, else the first free one; a caller that lost its port registers again. */
   static bind(preferred?: number) {
     const ports = preferred ? [preferred, ...McpOAuth.ports.filter((port) => port !== preferred)] : McpOAuth.ports;
     const failures: string[] = [];
@@ -66,7 +54,6 @@ export class McpOAuthLoopback {
     if (url.pathname !== McpOAuth.callbackPath) return new Response("Not found", { status: 404 });
     this.#resolve?.(url.searchParams);
     const failed = url.searchParams.get("error");
-    // The page is the only thing the person sees at the end of the flow, so it says which window to go back to.
     return new Response(
       `<!doctype html><meta charset="utf-8"><title>akan code</title><body style="font:16px system-ui;padding:3rem">
 <h1>${failed ? "Sign-in failed" : "Signed in"}</h1>

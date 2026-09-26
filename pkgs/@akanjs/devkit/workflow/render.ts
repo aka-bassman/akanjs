@@ -1,6 +1,9 @@
 import type {
+  PrimitiveFormat,
+  PrimitiveWriteReport,
   RepairReport,
   WorkflowApplyReport,
+  WorkflowDiagnostic,
   WorkflowFormat,
   WorkflowPlan,
   WorkflowRunArtifact,
@@ -8,6 +11,23 @@ import type {
   WorkflowValidationRunReport,
 } from "./types";
 import { jsonText } from "./utils";
+
+const listOr = <T>(items: readonly T[] | undefined, render: (item: T) => string, empty = "- none") =>
+  items?.length ? items.map(render) : [empty];
+
+const renderDiagnostic = (diagnostic: WorkflowDiagnostic) =>
+  `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`;
+
+const renderCommand = (entry: { command: string; reason: string }) => `- \`${entry.command}\`: ${entry.reason}`;
+
+const renderFile = (file: { action: string; path: string; reason: string }) =>
+  `- \`${file.action}\` ${file.path}: ${file.reason}`;
+
+const renderRecommendation = (recommendation: WorkflowApplyReport["recommendations"][number]) => {
+  const target = recommendation.target ? ` ${recommendation.target}` : "";
+  const action = recommendation.action ? ` Action: ${recommendation.action}` : "";
+  return `- [${recommendation.kind}]${target} ${recommendation.message}${action}`;
+};
 
 export const renderWorkflowList = (specs: readonly WorkflowSpec[]) =>
   [
@@ -41,7 +61,7 @@ export const renderWorkflowExplain = (spec: WorkflowSpec) =>
     ...spec.steps.map((step, index) => `${index + 1}. \`${step.id}\` (${step.tool}): ${step.description}`),
     "",
     "## Validation",
-    ...spec.validation.map((validation) => `- \`${validation.command}\`: ${validation.reason}`),
+    ...spec.validation.map(renderCommand),
     "",
   ].join("\n");
 
@@ -71,42 +91,15 @@ export const renderWorkflowPlan = (plan: WorkflowPlan) =>
     }),
     "",
     "## Validation",
-    ...plan.validation.map((validation) => `- \`${validation.command}\`: ${validation.reason}`),
+    ...plan.validation.map(renderCommand),
     "",
     "## Diagnostics",
-    ...(plan.diagnostics.length
-      ? plan.diagnostics.map((diagnostic) => `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`)
-      : ["- none"]),
+    ...listOr(plan.diagnostics, renderDiagnostic),
     "",
     "## Recommendations",
-    ...(plan.recommendations.length
-      ? plan.recommendations.map((recommendation) => `- [${recommendation.kind}] ${recommendation.message}`)
-      : ["- none"]),
+    ...listOr(plan.recommendations, (recommendation) => `- [${recommendation.kind}] ${recommendation.message}`),
     "",
   ].join("\n");
-
-const renderRecommendation = (recommendation: WorkflowApplyReport["recommendations"][number]) => {
-  const target = recommendation.target ? ` ${recommendation.target}` : "";
-  const action = recommendation.action ? ` Action: ${recommendation.action}` : "";
-  return `- [${recommendation.kind}]${target} ${recommendation.message}${action}`;
-};
-
-const renderDiagnostic = (diagnostic: WorkflowApplyReport["diagnostics"][number]) =>
-  `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`;
-
-const renderNextAction = (action: WorkflowApplyReport["nextActions"][number]) =>
-  `- \`${action.command}\`: ${action.reason}`;
-
-const applySourceStatus = (report: WorkflowApplyReport) =>
-  report.diagnostics.some(
-    (diagnostic) =>
-      diagnostic.severity === "error" &&
-      (diagnostic.failureScope === "source-change" ||
-        !diagnostic.failureScope ||
-        diagnostic.failureScope === "unknown"),
-  )
-    ? "failed"
-    : "passed";
 
 export const renderWorkflowApplyReport = (report: WorkflowApplyReport) => {
   const applySummary = {
@@ -140,7 +133,7 @@ export const renderWorkflowApplyReport = (report: WorkflowApplyReport) => {
     "",
     `- Mode: ${report.mode}`,
     `- Status: ${report.status}`,
-    `- Source-change status: ${applySourceStatus(report)}`,
+    `- Source-change status: ${sourceBlockers.length ? "failed" : "passed"}`,
     `- Workspace status: ${validationBlockers.length ? "blocked" : "not blocked during apply"}`,
     `- Source files changed: ${applySummary.sourceFilesChanged.length}`,
     `- Generated files queued for sync: ${applySummary.generatedFilesSynced.length}`,
@@ -155,24 +148,16 @@ export const renderWorkflowApplyReport = (report: WorkflowApplyReport) => {
     ...(sourceBlockers.length ? sourceBlockers : ["- none"]),
     "",
     "## Automatically Modified",
-    ...(applySummary.sourceFilesChanged.length
-      ? applySummary.sourceFilesChanged.map((file) => `- \`${file.action}\` ${file.path}: ${file.reason}`)
-      : ["- none"]),
+    ...listOr(applySummary.sourceFilesChanged, renderFile),
     "",
     "## Generated Sync",
-    ...(applySummary.generatedFilesSynced.length
-      ? applySummary.generatedFilesSynced.map((file) => `- \`${file.action}\` ${file.path}: ${file.reason}`)
-      : ["- none"]),
+    ...listOr(applySummary.generatedFilesSynced, renderFile),
     "",
     "## Applied Commands",
-    ...(report.appliedCommands.length
-      ? report.appliedCommands.map((command) => `- \`${command.command}\`: ${command.reason}`)
-      : ["- none"]),
+    ...listOr(report.appliedCommands, renderCommand),
     "",
     "## Recommended Validation Commands",
-    ...(report.recommendedValidationCommands.length
-      ? report.recommendedValidationCommands.map((command) => `- \`${command.command}\`: ${command.reason}`)
-      : ["- none"]),
+    ...listOr(report.recommendedValidationCommands, renderCommand),
     "",
     "## User Review Required",
     ...(manualReviewItems.length ? manualReviewItems : ["- none"]),
@@ -185,13 +170,13 @@ export const renderWorkflowApplyReport = (report: WorkflowApplyReport) => {
         : ["- none"]),
     "",
     "## Diagnostics",
-    ...(report.diagnostics.length ? report.diagnostics.map(renderDiagnostic) : ["- none"]),
+    ...listOr(report.diagnostics, renderDiagnostic),
     "",
     "## Recommendations",
-    ...(report.recommendations.length ? report.recommendations.slice(0, 3).map(renderRecommendation) : ["- none"]),
+    ...listOr(report.recommendations.slice(0, 3), renderRecommendation),
     "",
     "## Next Actions",
-    ...(report.nextActions.length ? report.nextActions.slice(0, 3).map(renderNextAction) : ["- none"]),
+    ...listOr(report.nextActions.slice(0, 3), renderCommand),
     "",
   ].join("\n");
 };
@@ -229,21 +214,16 @@ export const renderWorkflowValidationRunReport = (report: WorkflowValidationRunR
     `- Environment: ${report.summary.environment}`,
     "",
     "## Source Change Diagnostics",
-    ...(report.workflowDiagnostics?.length
-      ? report.workflowDiagnostics.map(
-          (diagnostic) => `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`,
-        )
-      : ["- none"]),
+    ...listOr(report.workflowDiagnostics, renderDiagnostic),
     "",
     "## Existing Workspace Blockers",
     `- Status: ${baselineSummary.status}`,
     `- Errors: ${baselineSummary.totalErrors}`,
     `- Warnings: ${baselineSummary.totalWarnings}`,
-    ...(baselineSummary.byCode.length
-      ? baselineSummary.byCode.map(
-          (item) => `- [${item.severity}] ${item.code} (${item.count}x): ${item.sampleMessage}`,
-        )
-      : ["- none"]),
+    ...listOr(
+      baselineSummary.byCode,
+      (item) => `- [${item.severity}] ${item.code} (${item.count}x): ${item.sampleMessage}`,
+    ),
     ...(baselineSummary.detailsIncluded
       ? []
       : [
@@ -251,46 +231,30 @@ export const renderWorkflowValidationRunReport = (report: WorkflowValidationRunR
         ]),
     "",
     "## Existing Workspace Blocker Details",
-    ...(report.baselineDiagnostics?.length
-      ? report.baselineDiagnostics.map(
-          (diagnostic) => `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`,
-        )
-      : baselineSummary.detailsIncluded
-        ? ["- none"]
-        : ["- omitted"]),
+    ...listOr(report.baselineDiagnostics, renderDiagnostic, baselineSummary.detailsIncluded ? "- none" : "- omitted"),
     "",
     "## Known Blockers",
-    ...(report.knownBlockers.length
-      ? report.knownBlockers.map((blocker) => {
-          const command = blocker.command ? ` \`${blocker.command}\`` : "";
-          const count = blocker.count > 1 ? ` (${blocker.count}x)` : "";
-          const known = blocker.known ? " known" : "";
-          return `- [${blocker.failureScope}${known}]${command}${count}: ${blocker.message}`;
-        })
-      : ["- none"]),
+    ...listOr(report.knownBlockers, (blocker) => {
+      const command = blocker.command ? ` \`${blocker.command}\`` : "";
+      const count = blocker.count > 1 ? ` (${blocker.count}x)` : "";
+      const known = blocker.known ? " known" : "";
+      return `- [${blocker.failureScope}${known}]${command}${count}: ${blocker.message}`;
+    }),
     "",
     "## Commands",
-    ...(report.commands.length
-      ? report.commands.map((command) => {
-          const scope = command.failureScope ? ` (${command.failureScope})` : "";
-          return `- [${command.status}] \`${command.command}\`${scope}: ${command.reason}`;
-        })
-      : ["- none"]),
+    ...listOr(report.commands, (command) => {
+      const scope = command.failureScope ? ` (${command.failureScope})` : "";
+      return `- [${command.status}] \`${command.command}\`${scope}: ${command.reason}`;
+    }),
     "",
     "## Diagnostics",
-    ...(report.diagnostics.length
-      ? report.diagnostics.map((diagnostic) => `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`)
-      : ["- none"]),
+    ...listOr(report.diagnostics, renderDiagnostic),
     "",
     "## Repair Actions",
-    ...(report.repairActions.length
-      ? report.repairActions.map((action) => `- \`${action.command}\`: ${action.reason}`)
-      : ["- none"]),
+    ...listOr(report.repairActions, renderCommand),
     "",
     "## Next Actions",
-    ...(report.nextActions.length
-      ? report.nextActions.map((action) => `- \`${action.command}\`: ${action.reason}`)
-      : ["- none"]),
+    ...listOr(report.nextActions, renderCommand),
     "",
   ].join("\n");
 };
@@ -306,19 +270,13 @@ export const renderRepairReportMarkdown = (report: RepairReport) =>
     `- Target: ${report.target ?? "none"}`,
     "",
     "## Commands",
-    ...(report.commands.length
-      ? report.commands.map((command) => `- [${command.status}] \`${command.command}\`: ${command.reason}`)
-      : ["- none"]),
+    ...listOr(report.commands, (command) => `- [${command.status}] \`${command.command}\`: ${command.reason}`),
     "",
     "## Diagnostics",
-    ...(report.diagnostics.length
-      ? report.diagnostics.map((diagnostic) => `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`)
-      : ["- none"]),
+    ...listOr(report.diagnostics, renderDiagnostic),
     "",
     "## Next Actions",
-    ...(report.nextActions.length
-      ? report.nextActions.map((action) => `- \`${action.command}\`: ${action.reason}`)
-      : ["- none"]),
+    ...listOr(report.nextActions, renderCommand),
     "",
   ].join("\n");
 
@@ -333,3 +291,29 @@ export const renderWorkflowRunArtifact = (artifact: WorkflowRunArtifact, format:
   }
   return jsonText(artifact);
 };
+
+export const renderPrimitiveWriteReport = (report: PrimitiveWriteReport) =>
+  [
+    `# Primitive Write: ${report.command}`,
+    "",
+    `- Status: ${report.status}`,
+    "",
+    "## Changed Files",
+    ...listOr(report.changedFiles, renderFile),
+    "",
+    "## Generated Files",
+    ...listOr(report.generatedFiles, renderFile),
+    "",
+    "## Validation Commands",
+    ...listOr(report.validationCommands, renderCommand),
+    "",
+    "## Diagnostics",
+    ...listOr(report.diagnostics, renderDiagnostic),
+    "",
+    "## Next Actions",
+    ...listOr(report.nextActions, renderCommand),
+    "",
+  ].join("\n");
+
+export const renderPrimitiveReport = (report: PrimitiveWriteReport, format: PrimitiveFormat = "markdown") =>
+  format === "json" ? jsonText(report) : renderPrimitiveWriteReport(report);

@@ -206,31 +206,24 @@ const createAddFieldRecommendations = (inputs: Record<string, WorkflowInputValue
           },
         ]
       : []),
-    ...(!includeInLight
-      ? [
-          {
-            code: "add-field-light-projection-choice",
-            kind: "manual-action" as const,
-            target: paths.constant,
-            action: `Pass includeInLight=true when users should see ${field} in list/card data. Without it, the field can exist on ${capitalize(
-              module,
-            )}Input but stay absent from Light${capitalize(module)} projections.`,
-            confidence: "medium" as const,
-            message: `${module}.${field} is not selected for list/card projection data.`,
-          },
-        ]
-      : []),
-    ...(includeInLight
-      ? [
-          {
-            code: "add-field-light-projection",
-            kind: "placement" as const,
-            target: paths.constant,
-            confidence: "high" as const,
-            message: `Add ${field} to Light${capitalize(module)} projection fields.`,
-          },
-        ]
-      : []),
+    includeInLight
+      ? {
+          code: "add-field-light-projection",
+          kind: "placement",
+          target: paths.constant,
+          confidence: "high",
+          message: `Add ${field} to Light${capitalize(module)} projection fields.`,
+        }
+      : {
+          code: "add-field-light-projection-choice",
+          kind: "manual-action",
+          target: paths.constant,
+          action: `Pass includeInLight=true when users should see ${field} in list/card data. Without it, the field can exist on ${capitalize(
+            module,
+          )}Input but stay absent from Light${capitalize(module)} projections.`,
+          confidence: "medium",
+          message: `${module}.${field} is not selected for list/card projection data.`,
+        },
     ...(surfaces && !templateRequested
       ? [
           {

@@ -7,8 +7,7 @@ type TypeScript = typeof ts;
 export class AsyncDefaultExportDetector {
   static #typescriptLoad: Promise<TypeScript> | undefined;
 
-  // `typescript` costs ~70 MB resident and this detector is reached from the cli entry through the root
-  // layout generator, so the compiler loads on first use rather than at import (`entryModuleGraph.test.ts`).
+  // Lazy: `typescript` is ~70 MB resident and the cli entry reaches this file (`entryModuleGraph.test.ts`).
   static #loadTypescript(): Promise<TypeScript> {
     AsyncDefaultExportDetector.#typescriptLoad ??= import("typescript").then(
       (mod) => (mod.default ?? mod) as TypeScript,
@@ -25,7 +24,7 @@ export class AsyncDefaultExportDetector {
         source,
         typescript.ScriptTarget.Latest,
         true,
-        AsyncDefaultExportDetector.#scriptKind(typescript, moduleAbsPath),
+        /\.[tj]sx$/.test(moduleAbsPath) ? typescript.ScriptKind.TSX : typescript.ScriptKind.TS,
       );
       return new AsyncDefaultExportDetector(typescript).detectInSourceFile(sourceFile);
     } catch {
@@ -72,8 +71,7 @@ export class AsyncDefaultExportDetector {
       }
 
       if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
-        const exportClause = statement.exportClause;
-        for (const specifier of exportClause.elements) {
+        for (const specifier of statement.exportClause.elements) {
           if (specifier.name.text !== "default") continue;
           defaultIdentifier = specifier.propertyName?.text ?? specifier.name.text;
         }
@@ -95,11 +93,5 @@ export class AsyncDefaultExportDetector {
         (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
         this.#hasModifier(node, ts.SyntaxKind.AsyncKeyword),
     );
-  }
-
-  static #scriptKind(typescript: TypeScript, moduleAbsPath: string): ts.ScriptKind {
-    return moduleAbsPath.endsWith(".tsx") || moduleAbsPath.endsWith(".jsx")
-      ? typescript.ScriptKind.TSX
-      : typescript.ScriptKind.TS;
   }
 }

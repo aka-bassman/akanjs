@@ -26,20 +26,8 @@ export interface TurnFeedbackOptions {
   onNotice?: (message: string) => void;
 }
 
-/**
- * Closes the loop between what a turn did and what the agent knows about it.
- *
- * The agent cannot see that the dev server died, that a generated barrel went stale, or that the page it built
- * renders blank — so it finishes, satisfied, on a broken tree. Each source watermarks at the start of a run and
- * reports at the end; a report is delivered as a follow-up message, which opens a new turn.
- *
- * **It is a follow-up, not a veto.** `agent_end` has no result type — of the engine's hooks only
- * `before_agent_start`, `message_end`, `tool_call`, `tool_result`, `input`, `user_bash`, the `session_before_*`
- * pair, `context` and `resources_discover` can change an outcome — so there is no way to refuse to end a turn.
- *
- * **The budget goes in before the feature.** A source that reports the same unfixable error every turn would
- * otherwise loop until the context window or the wallet runs out, and the loop looks like progress from outside.
- */
+// The engine's `agent_end` hook cannot veto the end of a turn, so a finding is a follow-up that opens a new one.
+// The budget is load-bearing: without it one unfixable error reopens turns until the context or the wallet runs out.
 export class TurnFeedback {
   readonly #sources: TurnFeedbackSource[];
   readonly #options: TurnFeedbackOptions;
@@ -65,7 +53,6 @@ export class TurnFeedback {
     };
   }
 
-  /** Exposed so a host can drive the same machine without an engine session behind it. */
   async collect() {
     const texts: string[] = [];
     const images: TurnFeedbackImage[] = [];
@@ -90,8 +77,6 @@ export class TurnFeedback {
       }
     }
     if (!texts.length) return undefined;
-    // Said out loud, because the turn that follows is one nobody asked for: the transcript shows more tool
-    // calls after the answer and carries nothing that names who sent the agent back to work.
     this.#options.onNotice?.(`${reopened.join(" · ")} reopened the turn — esc stops it`);
     const text = [
       "The previous turn left problems you cannot see from the transcript. Fix them, then stop.",

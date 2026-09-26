@@ -9,22 +9,13 @@ import { McpSignIn } from "./McpSignIn";
 import { McpTokenStore } from "./McpTokenStore";
 import { McpToolPack } from "./McpToolPack";
 
-/**
- * One process playing the whole other side: an MCP resource server, its RFC 9728 metadata, the authorization
- * server named by it, dynamic client registration, and the token endpoint.
- *
- * Built as a real server rather than as stubbed fetches because what is being tested is a wire contract — the
- * challenge header, the well-known paths, the PKCE round trip — and a stub can only ever assert the shape this
- * code already believes in.
- */
+// A real server, not stubbed fetches: the wire contract (challenge header, well-known paths, PKCE) is under test.
 class FakeProvider {
   readonly server: ReturnType<typeof Bun.serve>;
   readonly issued: string[] = [];
   readonly registrations: { redirect_uris?: string[] }[] = [];
-  /** code -> the challenge it was issued against, which the token endpoint checks the verifier against. */
   readonly #codes = new Map<string, { challenge: string; resource: string | null }>();
   #next = 0;
-  /** Set to refuse S256, which a client must treat as "do not send a code" rather than downgrade. */
   methods: string[] = ["S256"];
   registerable = true;
   refreshable = true;
@@ -97,7 +88,6 @@ class FakeProvider {
     return Response.json({ client_id: `client-${this.#next}`, redirect_uris: body.redirect_uris });
   }
 
-  /** Stands in for the consent screen: it redirects straight back, which is what a browser would end up doing. */
   #authorize(url: URL) {
     const redirect = url.searchParams.get("redirect_uri") ?? "";
     const challenge = url.searchParams.get("code_challenge") ?? "";
@@ -140,16 +130,9 @@ const refOf = (patch: Partial<CodeAgentMcpServerRef> = {}): CodeAgentMcpServerRe
   ...patch,
 });
 
-/** A browser, reduced to what the flow needs of one: visit the url and follow where it points. */
 const browser = (url: string) => void fetch(url).catch(() => undefined);
 
-/**
- * The credential directory is moved off the real home for the whole file.
- *
- * Through `AKAN_CODE_HOME` rather than `HOME`: Bun resolves `os.homedir()` once and caches it, so `HOME`
- * written after anything in the import graph has read it changes nothing — and a test that quietly fell back
- * would write its tokens into the developer's own `~/.akan/code`.
- */
+// AKAN_CODE_HOME, not HOME: Bun caches os.homedir(), so a late HOME write would land tokens in the real ~/.akan/code.
 beforeAll(() => {
   realHome = process.env.AKAN_CODE_HOME;
   home = mkdtempSync(path.join(tmpdir(), "akan-mcpauth-"));
@@ -206,7 +189,6 @@ describe("MCP OAuth discovery", () => {
     });
   });
 
-  /** OAuth 2.1 drops `plain`; a downgrade here is one a network attacker would pick on the client's behalf. */
   test("a server that will not do S256 is refused rather than downgraded", async () => {
     provider.methods = ["plain"];
     await expect(McpOAuth.discover(provider.mcpUrl)).rejects.toThrow(/S256/);
@@ -228,7 +210,6 @@ describe("MCP sign-in", () => {
     expect(auth.accessToken).toBe("access-1");
     expect(auth.issuer).toBe(provider.origin);
     expect(auth.resource).toBe(provider.mcpUrl);
-    // The client was registered on demand, against the loopback the flow actually bound.
     expect(provider.registrations).toHaveLength(1);
     expect(provider.registrations[0]?.redirect_uris?.[0]).toBe(auth.redirectUri);
     expect(McpTokenStore.read("fake")?.accessToken).toBe("access-1");
@@ -264,7 +245,6 @@ describe("MCP sign-in", () => {
     const auth = await McpSignIn.run(refOf(), { open: browser });
     McpTokenStore.write("fake", { ...auth, expiresAt: Date.now() - 1 });
     expect(await McpSignIn.token(refOf())).toBe("access-refreshed-2");
-    // The rotated refresh token replaced the spent one, or the next refresh would be refused.
     expect(McpTokenStore.read("fake")?.refreshToken).toBe("refresh-2");
   });
 

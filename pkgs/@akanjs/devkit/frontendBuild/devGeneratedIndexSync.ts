@@ -1,12 +1,11 @@
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import { capitalize } from "akanjs/common";
 import { FileSys } from "../fileSys";
 
 const BARREL_FACETS = new Set(["common", "srvkit", "ui", "webkit", "plugin"]);
 const FACET_SOURCE_FILE_RE = /\.(ts|tsx)$/;
 const FACET_EXCLUDED_FILE_RE = /(^index\.tsx?$|\.d\.ts$|\.(test|spec)\.(ts|tsx)$|\.css$|\.scss$|\.sass$)/;
-// `ui` exports PascalCase names only; `common`/`srvkit`/`webkit` export camelCase names only. Names with
-// dots, underscores, or hyphens (e.g. `foo.helper`, `Globe_Dynamic`, `kebab-case`) match neither and are skipped.
 const FACET_PASCAL_CASE_RE = /^[A-Z][A-Za-z0-9]*$/;
 const FACET_CAMEL_CASE_RE = /^[a-z][A-Za-z0-9]*$/;
 const MODULE_UI_TYPES = ["Template", "Unit", "Util", "View", "Zone"] as const;
@@ -158,7 +157,5 @@ const exists = async (file: string) =>
   stat(file)
     .then(() => true)
     .catch(() => false);
-
-const capitalize = (value: string) => `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 
 const formatError = (err: unknown) => (err instanceof Error ? err.message : String(err));

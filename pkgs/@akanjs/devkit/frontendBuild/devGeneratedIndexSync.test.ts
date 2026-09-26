@@ -38,13 +38,13 @@ describe("DevGeneratedIndexSync facet barrels", () => {
       files: [
         "aes.ts",
         "cloudflareApi.ts",
-        "cloudflareApi.helper.ts", // dotted → skipped
-        "pushNotificationServer.type.ts", // dotted → skipped
-        "PushNotificationServer.ts", // PascalCase in camel facet → skipped
-        "my_snake.ts", // snake_case → skipped
-        "kebab-case.ts", // kebab-case → skipped
+        "cloudflareApi.helper.ts",
+        "pushNotificationServer.type.ts",
+        "PushNotificationServer.ts",
+        "my_snake.ts",
+        "kebab-case.ts",
       ],
-      dirs: ["storageApi", "BadDir"], // PascalCase dir → skipped
+      dirs: ["storageApi", "BadDir"],
       trigger: "aes.ts",
     });
     expect(content).toBe(`export * from "./aes";\nexport * from "./cloudflareApi";\nexport * from "./storageApi";\n`);
@@ -52,13 +52,8 @@ describe("DevGeneratedIndexSync facet barrels", () => {
 
   test("ui facet exports only clean PascalCase names", async () => {
     const content = await barrelFor(await makeTempRoot(), "ui", {
-      files: [
-        "Globe.tsx",
-        "AkanLogo.tsx",
-        "Globe_Dynamic.tsx", // underscore → skipped
-        "lowerStart.tsx", // camelCase in ui facet → skipped
-      ],
-      dirs: ["Code", "badDir"], // camelCase dir → skipped
+      files: ["Globe.tsx", "AkanLogo.tsx", "Globe_Dynamic.tsx", "lowerStart.tsx"],
+      dirs: ["Code", "badDir"],
       trigger: "Globe.tsx",
     });
     expect(content).toBe(`export * from "./AkanLogo";\nexport * from "./Code";\nexport * from "./Globe";\n`);

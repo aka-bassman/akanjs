@@ -7,14 +7,7 @@ interface SuspendedState {
   approvals: CodeAgentApprovalRequest[];
 }
 
-/**
- * What a suspending profile is waiting on after its turn ended — the question it asked and the approvals it
- * parked. The turn is gone, so nothing in memory holds them; this does, and on a file-backed session it writes
- * them beside the session so a worker that restarts and resumes still knows what it asked.
- *
- * Taking an ask removes it, which is what makes an answer idempotent: a second tab or a retried frame finds
- * nothing to take and is refused instead of opening a second turn.
- */
+// Taking an ask removes it, which makes an answer idempotent: a second tab or a retried frame finds nothing.
 export class CodeAgentSuspended {
   readonly #file: string | null;
   #state: SuspendedState;

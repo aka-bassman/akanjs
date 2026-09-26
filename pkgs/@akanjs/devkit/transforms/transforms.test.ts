@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { BarrelAnalyzer } from "./barrelAnalyzer";
+import { BarrelAnalyzer, type BarrelExportTarget } from "./barrelAnalyzer";
 import { rewriteBarrelImports } from "./barrelImportsPlugin";
 import { toClientReferencePath, transformUseClient } from "./rscUseClientTransform";
 
@@ -22,6 +22,9 @@ const write = async (filePath: string, content: string) => {
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
+
+const fakeAnalyzer = (entries: [string, BarrelExportTarget][]) =>
+  ({ analyze: async () => new Map(entries) }) as unknown as BarrelAnalyzer;
 
 describe("transformUseClient", () => {
   test("returns null for non-client modules and generated root layouts", () => {
@@ -98,13 +101,10 @@ describe("BarrelAnalyzer and rewriteBarrelImports", () => {
   });
 
   test("rewrites flattenable named imports and preserves default, type, and unknown imports", async () => {
-    const analyzer = {
-      analyze: async () =>
-        new Map([
-          ["A", { subpath: "@scope/pkg/leaf", originalName: "A" }],
-          ["Bee", { subpath: "@scope/pkg/leaf", originalName: "B" }],
-        ]),
-    } as unknown as BarrelAnalyzer;
+    const analyzer = fakeAnalyzer([
+      ["A", { subpath: "@scope/pkg/leaf", originalName: "A" }],
+      ["Bee", { subpath: "@scope/pkg/leaf", originalName: "B" }],
+    ]);
 
     const rewritten = await rewriteBarrelImports(
       'import DefaultExport, { A, Bee as LocalBee, type Shape, Missing } from "@scope/pkg";\nconsole.log(A);',
@@ -126,9 +126,7 @@ describe("BarrelAnalyzer and rewriteBarrelImports", () => {
   });
 
   test("preserves generated client barrel side effects when flattening app client imports", async () => {
-    const analyzer = {
-      analyze: async () => new Map([["st", { subpath: "@apps/demo/lib/st", originalName: "st" }]]),
-    } as unknown as BarrelAnalyzer;
+    const analyzer = fakeAnalyzer([["st", { subpath: "@apps/demo/lib/st", originalName: "st" }]]);
 
     const rewritten = await rewriteBarrelImports(
       'import { st } from "@apps/demo/client";\nvoid st;\n',
@@ -142,9 +140,7 @@ describe("BarrelAnalyzer and rewriteBarrelImports", () => {
   });
 
   test("does not rewrite import-looking code inside template literals", async () => {
-    const analyzer = {
-      analyze: async () => new Map([["AkanApp", { subpath: "akanjs/server/akanApp", originalName: "AkanApp" }]]),
-    } as unknown as BarrelAnalyzer;
+    const analyzer = fakeAnalyzer([["AkanApp", { subpath: "akanjs/server/akanApp", originalName: "AkanApp" }]]);
 
     const source = [
       'import { Code } from "@apps/docs/ui";',
@@ -164,13 +160,10 @@ describe("BarrelAnalyzer and rewriteBarrelImports", () => {
   });
 
   test("rewrites akanjs/server value imports to leaf subpaths", async () => {
-    const analyzer = {
-      analyze: async () =>
-        new Map([
-          ["AkanOption", { subpath: "akanjs/server/akanOption", originalName: "AkanOption" }],
-          ["Try", { subpath: "akanjs/server/decorators", originalName: "Try" }],
-        ]),
-    } as unknown as BarrelAnalyzer;
+    const analyzer = fakeAnalyzer([
+      ["AkanOption", { subpath: "akanjs/server/akanOption", originalName: "AkanOption" }],
+      ["Try", { subpath: "akanjs/server/decorators", originalName: "Try" }],
+    ]);
 
     const rewritten = await rewriteBarrelImports(
       'import { AkanOption, Try } from "akanjs/server";\nexport const option = new AkanOption();\n',
@@ -188,10 +181,9 @@ describe("BarrelAnalyzer and rewriteBarrelImports", () => {
   });
 
   test("rewrites single-package Akan facet barrels to leaf subpaths", async () => {
-    const analyzer = {
-      analyze: async () =>
-        new Map([["BottomInset", { subpath: "akanjs/ui/Layout/BottomInset", originalName: "BottomInset" }]]),
-    } as unknown as BarrelAnalyzer;
+    const analyzer = fakeAnalyzer([
+      ["BottomInset", { subpath: "akanjs/ui/Layout/BottomInset", originalName: "BottomInset" }],
+    ]);
 
     const rewritten = await rewriteBarrelImports('import { BottomInset } from "akanjs/ui";\n', ["akanjs/ui"], analyzer);
 

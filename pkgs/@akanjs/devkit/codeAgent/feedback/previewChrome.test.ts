@@ -67,7 +67,7 @@ describe("PreviewChrome", () => {
     const step = PreviewChrome.dockerRuns.join(" ");
     expect(step).toContain("chromium");
     expect(step).toContain("fonts-noto-cjk");
-    // Leaving the apt lists behind adds ~40MB to every layer of every image that takes this step.
+    // Leftover apt lists bloat every image layer that takes this step.
     expect(step).toContain("rm -rf /var/lib/apt/lists/*");
   });
 });
