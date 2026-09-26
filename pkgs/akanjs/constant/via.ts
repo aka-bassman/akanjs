@@ -419,7 +419,7 @@ export type ConstantCls<
   >;
 
 declare global {
-  // dummy type matching for Date, String, Boolean, Map constructors
+  // Lets `Date`, `String`, `Boolean` and `Map` type-check where a constant model class is expected.
   interface DateConstructor extends DatabaseConstantStatics<unknown> {}
   interface StringConstructor extends DatabaseConstantStatics<unknown> {}
   interface BooleanConstructor extends DatabaseConstantStatics<unknown> {}
@@ -427,8 +427,7 @@ declare global {
 }
 
 const applyConstantStatics = <Model>(model: ConstantCls<Model>, fieldMap: FieldObject): ConstantCls<Model> => {
-  // Built on first call, not at class declaration: a `default: () => getEnv()...` thunk needs runtime env, and
-  // `akan build` only imports the module, where that env is not injected yet.
+  // Lazy: a `default: () => getEnv()...` thunk needs the runtime env, which `akan build` has not injected.
   let defaultValue: DefaultOf<Model> | undefined;
   Object.assign(model, {
     purify: makePurify(model),
@@ -450,16 +449,13 @@ const applyConstantStatics = <Model>(model: ConstantCls<Model>, fieldMap: FieldO
   });
   model.text.collect(fieldMap);
   model.cascade.collect(fieldMap);
-  // Over the whole `FIELD_META`, not `fieldMap`: `fullModelOf` extends a lib model's map in place, and a plan or
-  // accessor built from the earlier map would miss the fields the app added.
+  // All of `FIELD_META`, not `fieldMap`: `fullModelOf` extends a lib model's map in place with the app's fields.
   for (const [key, field] of Object.entries(model[FIELD_META]))
     if (isDateSlotField(field.getProps())) Object.defineProperty(model.prototype, key, dateAccessorOf(key));
   HydrationPlan.reset(model);
   return model as unknown as ConstantCls<Model>;
 };
 
-// light via
-/** Builds Akan constant models such as scalar, input, object, light, full, and insight classes. */
 export function via<
   Obj extends BaseObject,
   ObjFieldObj extends FieldObject,
@@ -479,7 +475,6 @@ export function via<
   ...lightModelRefs: LightModels
 ): ConstantCls<_Schema, _FieldObj, _Schema, _FieldObj, "light">;
 
-// base input or scalar via
 export function via<
   BuildField extends (builder: FieldBuilder) => FieldInfoObject,
   _DirectSchema extends object = BuiltSchema<BuildField>,
@@ -488,7 +483,6 @@ export function via<
   buildField: BuildField,
 ): ConstantCls<_DirectSchema, _DirectFieldObj, _DirectSchema, _DirectFieldObj, "input" | "scalar">;
 
-// input via
 export function via<
   BuildField extends (builder: FieldBuilder) => FieldInfoObject,
   FirstInput extends Cls,
@@ -504,7 +498,6 @@ export function via<
   ...extendInputRefs: Inputs
 ): ConstantCls<_Schema, _FieldObj, _Schema, _FieldObj, "input">;
 
-// insight via
 export function via<
   Full extends BaseObject,
   BuildField extends (builder: FieldBuilder) => FieldInfoObject,
@@ -519,7 +512,6 @@ export function via<
   ...extendInsightRefs: Insights
 ): ConstantCls<_Schema, _FieldObj, _Schema, _FieldObj, "insight">;
 
-// object via
 export function via<
   Input,
   InputFieldObj extends FieldObject,
@@ -535,7 +527,6 @@ export function via<
   ...extendObjectRefs: ObjectModels
 ): ConstantCls<_Schema, _FieldObj, _Schema, _FieldObj, "object">;
 
-// full via
 export function via<
   Obj,
   ObjFieldObj extends FieldObject,
@@ -560,7 +551,6 @@ export function via(
   thirdRefOrResolveField?: Cls | ((resolve: FieldResolver) => FieldInfoObject),
   ...extendRefs: Cls[]
 ): any {
-  // input via
   if (
     !firstRefOrBuildField.prototype ||
     !(firstRefOrBuildField as Cls<unknown, { modelType?: ConstantType }>).modelType
@@ -575,7 +565,6 @@ export function via(
     if (!secondRefOrFieldsOrBuildField) return makeBaseScalar(fieldMap);
     else return extendModelInputs(fieldMap, ...extendInputRefs);
   }
-  // light via
   if (Array.isArray(secondRefOrFieldsOrBuildField)) {
     const resolveField = thirdRefOrResolveField as (resolve: FieldResolver) => FieldInfoObject;
     const fieldMap = resolveField(resolve);
@@ -587,14 +576,12 @@ export function via(
     );
   }
 
-  // insight or object via
   if (
     !(secondRefOrFieldsOrBuildField as Cls).prototype ||
     !(secondRefOrFieldsOrBuildField as Cls<unknown, { modelType?: ConstantType }>).modelType
   ) {
     const buildField = secondRefOrFieldsOrBuildField as (builder: FieldBuilder) => FieldInfoObject;
     const fieldMap = buildField(field);
-    // object via
     if (ConstantRegistry.isScalar(firstRefOrBuildField as Cls<unknown, { modelType: ConstantType }>)) {
       if (!thirdRefOrResolveField) return objectModelOf(firstRefOrBuildField as ConstantCls, fieldMap);
       else
@@ -605,7 +592,6 @@ export function via(
           ...(extendRefs as ConstantCls[]),
         );
     }
-    // insight via
     if (ConstantRegistry.isFull(firstRefOrBuildField as Cls<unknown, { modelType: ConstantType }>)) {
       const extendInsightRefs = [
         ...(thirdRefOrResolveField ? [thirdRefOrResolveField as Cls] : []),

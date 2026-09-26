@@ -49,8 +49,7 @@ export type PurifiedModel<T> = unknown extends T
       : T extends Map<infer K, infer V>
         ? Map<K, PurifiedModel<V>>
         : PurifiedWithObjectToId<T>;
-// An `[Upload]` body purifies to `File[]`, but the browser only ever hands you a `FileList`
-// (`input.files`, `dataTransfer.files`). `HttpClient.makeBody` spreads both, so declare both.
+// An `[Upload]` body purifies to `File[]`, but the browser hands a `FileList`; `HttpClient.makeBody` spreads both.
 export type UploadableClientArg<T> = [T] extends [File[]] ? File[] | FileList : T;
 
 export type PurifyFunc<Input, _DefaultInput = DefaultOf<Input>, _PurifiedInput = PurifiedModel<Input>> = (
@@ -74,7 +73,6 @@ const getPurifyFn = (modelRef: Cls): ((value: unknown) => unknown) => {
 };
 
 const purify = (field: FieldProps, key: string, value: unknown, self: Record<string, unknown>): unknown => {
-  // 1. Check Data Validity
   if (
     field.nullable &&
     (value === null ||
@@ -112,8 +110,6 @@ const purify = (field: FieldProps, key: string, value: unknown, self: Record<str
     throw new Error(`Invalid Value (Failed to pass validation) / ${value} in ${key}`);
   if (!field.nullable && !value && value !== 0 && value !== false && (field.modelRef as Cls) !== Any)
     throw new Error(`Invalid Value (Nullable) in ${key} for value ${value}`);
-
-  // 2. Convert Value
   const purifyFn = getPurifyFn(field.modelRef);
   return purifyFn(value);
 };

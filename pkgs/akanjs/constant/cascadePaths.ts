@@ -3,11 +3,8 @@ import type { ConstantField, FieldObject } from "./fieldInfo";
 import type { ConstantModelRef } from "./via";
 
 /**
- * Which end of a relation goes away with the other. `removeRef` removes what the field points at when this
- * document is removed; `removeWith` removes this document when what the field points at is removed. The two
- * read identically on a relation field, so the value has to name the direction — a mistake here is a data loss.
- * `removeWithAny` is `removeWith` over an owner that is unknowable at build time, and it names the whole
- * decision in one value so the widening cannot be declared apart from the direction it widens.
+ * `removeRef`: removing this document removes what the field points at. `removeWith`: removing what the field points
+ * at removes this document. `removeWithAny`: `removeWith` over an owner unknowable at build time.
  */
 export const cascadeActions = ["removeRef", "removeWith", "removeWithAny"] as const;
 export type CascadeAction = (typeof cascadeActions)[number];
@@ -46,8 +43,7 @@ export class CascadePaths {
   }
 
   #assertKnownAction(key: string, action: CascadeAction) {
-    // A macro import and a bundled build both reach the collector without a typecheck, so the union alone is not
-    // enough: an unknown action would otherwise be dropped and the field would look wired up.
+    // A macro import or a bundled build skips the typecheck, and a dropped unknown action would look wired up.
     if (!cascadeActions.includes(action)) {
       throw new Error(`Cascade field "${key}" declares cascade: "${action}", which is not one of ${cascadeActions}`);
     }
@@ -63,8 +59,7 @@ export class CascadePaths {
   }
 
   #readOwnerPath(key: string, field: ConstantField, fieldMap: FieldObject): CascadeWithPath {
-    // Several owners would make the removal ambiguous: whether losing one of them is enough is a per-model rule
-    // the framework cannot guess, so it is left to the module's own `_postRemove`.
+    // Several owners make the removal ambiguous, a per-model rule left to the module's own `_postRemove`.
     if (field.arrDepth > 0) throw new Error(`Cascade field "${key}" is an array and names more than one owner`);
     if (field.isMap) throw new Error(`Cascade field "${key}" is a Map and names no owner`);
     const anyOwner = field.cascade === "removeWithAny";
@@ -96,8 +91,7 @@ export class CascadePaths {
     const typeField = fieldMap[typeKey];
     if (!typeField) throw new Error(`Cascade field "${key}" declares refPath: "${typeKey}", which is not a field`);
     if (anyOwner) return this.#readAnyOwner(key, typeKey, typeField);
-    // A free-form owner type is unknowable at build time, so every model's removal would have to sweep this table
-    // on the chance it is the owner. An enum names the candidates, and the reverse index then reaches only them.
+    // A free-form owner type would make every model's removal sweep this table; an enum names the candidates.
     if (!typeField.enum) {
       throw new Error(
         `Cascade field "${key}" declares refPath: "${typeKey}", which must be an enumOf(...) naming the owner ` +
@@ -116,8 +110,7 @@ export class CascadePaths {
           `already names its owners; use cascade: "removeWith"`,
       );
     }
-    // The sweep matches the removed model's refName against this column, so a column that cannot hold one finds
-    // nothing — and a cascade that finds nothing is indistinguishable from one that was never declared.
+    // The sweep matches the removed refName against this column, so a non-String one would silently find nothing.
     if (this.#primitiveNameOf(typeField) !== "String") {
       throw new Error(
         `Cascade field "${key}" declares cascade: "removeWithAny", so refPath: "${typeKey}" must be a String ` +

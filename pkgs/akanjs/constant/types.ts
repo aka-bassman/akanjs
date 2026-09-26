@@ -110,12 +110,8 @@ export interface ProtoPatch {
 
 export const DEFAULT_PAGE_SIZE = 20;
 /**
- * The most rows one list request may take, whatever it asks for.
- *
- * A page size arrives from the client, so without a ceiling anyone who may read one page may read the whole
- * table in a single request — and `LIMIT 0` or `LIMIT -1` reaches SQLite as "no limit at all", so the two ways
- * of asking for nothing were the two ways of asking for everything. `resolvePageLimit` is the one place that
- * decides; a caller wanting more pages asks for more pages.
+ * The most rows one list request may take: the page size is client input, so without a ceiling one request could
+ * read the whole table, and `LIMIT 0`/`-1` reaches SQLite as no limit at all.
  */
 export const MAX_PAGE_SIZE = 500;
 

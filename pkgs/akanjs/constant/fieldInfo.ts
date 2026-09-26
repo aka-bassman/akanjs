@@ -107,12 +107,7 @@ export interface ConstantFieldProps<
   validate?: (value: FieldValue, model: any) => boolean;
   text?: TextFieldRole;
   cascade?: CascadeAction;
-  /**
-   * Renders on the page, never reaches an agent. Stripped wherever a value is masked for an AI caller — the
-   * in-page agent's reads and every MCP result — and left untouched everywhere else, so a `File`'s blur
-   * placeholder still ships to `<Image>`. Unlike `hidden`/`secret` this is about cost, not secrecy: a field
-   * nothing can answer a question with is pure spend on every turn it rides.
-   */
+  /** Stripped from every AI-facing read (in-page agent, MCP) and untouched everywhere else: cost, not secrecy. */
   visual?: boolean;
   meta?: Metadata;
 }
@@ -280,7 +275,6 @@ export type FieldInfoObjectToFieldObject<Obj extends FieldInfoObject> = {
   [K in keyof Obj]: ConstantFieldFromInfo<Obj[K]>;
 };
 
-/** Runtime metadata for a single Akan constant field. */
 export class ConstantField<
   FieldType extends ConstantFieldKind = ConstantFieldKind,
   Value extends ConstantFieldTypeInput | null = any,
@@ -462,10 +456,7 @@ export class ConstantField<
   get isMap() {
     return (this.modelRef as Cls) === Map;
   }
-  // Built once and shared: a field's props are a pure function of the field, and the read paths ask for them per
-  // field per row (`decodeDocumentPayload`, `crystalize`, `purify`), which made this the single largest source of
-  // garbage on a list query. Frozen so the sharing stays true — no caller mutates the result today, and one that
-  // starts to has to say so by cloning. Built lazily rather than in the constructor because `isScalar` reads
+  // Shared by every read path per row, so frozen: a caller that must mutate clones. Lazy because `isScalar` reads
   // `modelRef.modelType`, which `via()` assigns while the model classes are still being wired up.
   #props: FieldProps | null = null;
   getProps(): FieldProps {
@@ -510,20 +501,11 @@ export interface FieldObject {
   [key: string]: ConstantField;
 }
 
-/**
- * `text` names a column in the plaintext search mirror, so a masked field carrying one would publish what it
- * masks through search — the class build refuses it (`TextFieldPaths`). Removing the key from the option type
- * moves that refusal to the call site, where the fix is obvious. Distributive because `FieldOption` is a union:
- * a plain `Omit` over it would collapse to the keys the members share.
- */
+// A masked field with a `text` role would publish itself through the plaintext search mirror. Distributive because
+// `FieldOption` is a union, which a plain `Omit` would collapse to the keys the members share.
 type WithoutTextRole<Option> = Option extends unknown ? Omit<Option, "text"> : never;
 
-/**
- * A wildcard owner is read off the row at removal time, so `removeWithAny` without a `refPath` names nothing to
- * read it from — and the price of that action (no cascade in the app removes in one query) is one nobody should
- * pay for a declaration that cascades nothing. Pairing the two in the option type refuses it at the call site;
- * `CascadePaths` keeps the same refusal for the macro and bundled paths that reach it without a typecheck.
- */
+// `removeWithAny` reads its owner off the row through `refPath`, so the option type refuses one without the other.
 type CascadeOption =
   | { cascade?: "removeRef" | "removeWith"; refPath?: string }
   | { cascade: "removeWithAny"; refPath: string };
@@ -557,7 +539,6 @@ export type PlainTypeToFieldType<PlainType> = PlainType extends [infer First, ..
       ? StringConstructor
       : typeof Any;
 
-/** Builds a stored property field with optional validation, default, ref, text, and metadata options. */
 export const field = <
   ExplicitType,
   Value extends ConstantFieldTypeInput = PlainTypeToFieldType<ExplicitType>,
@@ -571,13 +552,7 @@ export const field = <
     fieldType: "property",
   });
 
-/**
- * A stored property the page renders and an agent never sees — `field(value, { visual: true })`, spelled short
- * because the reason to reach for it is always the same one. A blur placeholder, a rendered HTML body, a
- * serialized geometry: real data the screen needs, and hundreds of tokens per record that no question is answered
- * from. It stays a plain `property` everywhere else, so persistence, search, forms and the page response are
- * untouched.
- */
+/** `field(value, { visual: true })`: a stored property the page renders and an agent never sees. */
 field.visual = <
   ExplicitType,
   Value extends ConstantFieldTypeInput = PlainTypeToFieldType<ExplicitType>,
@@ -618,7 +593,7 @@ field.secret = <
     select: false,
     nullable: true,
   });
-/** Builds a resolved field that is derived rather than treated as a stored property. */
+/** A derived field, never stored. */
 export const resolve = <
   ExplicitType,
   Value extends ConstantFieldTypeInput = PlainTypeToFieldType<ExplicitType>,

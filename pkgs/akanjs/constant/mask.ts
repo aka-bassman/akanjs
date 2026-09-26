@@ -1,16 +1,11 @@
 import { type Cls, FIELD_META, getNonArrayModel, type PrimitiveAgentFace, PrimitiveRegistry } from "akanjs/base";
 
-/**
- * A model as masking reads it — the constructor, for the field metadata it carries at runtime.
- *
- * Structural rather than `ConstantModelRef` so that anything holding the class can name it, and read through
- * `FIELD_META` the way `resolveReturn` reads it.
- */
+/** Structural rather than `ConstantModelRef`, so anything holding the class can name it; read through `FIELD_META`. */
 export interface MaskModel {
   name: string;
 }
 
-/** The part of a field's metadata masking turns on. Mirrors what `resolveReturn` branches over. */
+// Mirrors what `resolveReturn` branches over.
 interface MaskField {
   fieldType?: string;
   isClass?: boolean;
@@ -26,12 +21,7 @@ export const maskFieldsOf = (model: MaskModel): Record<string, MaskField> | null
   return fields && typeof fields === "object" ? (fields as Record<string, MaskField>) : null;
 };
 
-/**
- * The `hidden` and `secret` field names of `model` that `value` still carries populated.
- *
- * `visual` is deliberately not among them. A refusal here means a value must not be published at all, and a blur
- * placeholder is not a secret — it is merely not worth its tokens, which masking answers by dropping it.
- */
+/** The `hidden`/`secret` fields `value` still carries; `visual` is cost, not secrecy, so it never counts as a leak. */
 export const leakingFieldsOf = (model: MaskModel, value: Record<string, unknown>): string[] => {
   const fields = maskFieldsOf(model);
   if (!fields) return [];
@@ -41,20 +31,8 @@ export const leakingFieldsOf = (model: MaskModel, value: Record<string, unknown>
 };
 
 /**
- * Strips what a model marks `hidden`, `secret`, or `visual`, by the model the caller names rather than by the one
- * the value happens to still carry. The first two are secrecy and the third is cost, but the answer is the same
- * one — leave the field out — and this is the only place every AI-facing read already passes through. For the same
- * reason it is where a primitive declaring an agent face is read into that face (`agentRead`).
- *
- * That distinction is the whole point. A check that reads the class off the value can only mask what arrives as an
- * instance, so a `{ ...doc }` spread, a `toJSON()`, an `immerify()`, or a round-trip through `JSON.stringify` reaches
- * its destination with the metadata already gone and nothing can be done about it. A named model is metadata the
- * value cannot lose, so a hydrated document and a plain object copied out of one mask identically.
- *
- * This is the field half of `resolveReturn` and deliberately not the whole of it. That one also loads every relation
- * it walks past, which is right for a query's return value and wrong here, where the value is already in hand.
- *
- * Returns `unknown` rather than the argument's type, because what comes back is missing fields that type promises.
+ * Drops `hidden`, `secret` and `visual` fields for every AI-facing read, by the model named rather than the value's
+ * class, so a spread or JSON copy masks the same; unlike `resolveReturn` it loads no relation.
  */
 export const mask = (model: MaskModel, value: unknown): unknown => {
   if (value === null || value === undefined || typeof value !== "object") return value;
@@ -70,10 +48,7 @@ export const mask = (model: MaskModel, value: unknown): unknown => {
   return masked;
 };
 
-/**
- * What an agent reads of a primitive value: the primitive's `agent.read` when it declares an agent face, the value
- * untouched otherwise. The read is applied through `arrDepth` levels of array, the way a field declares them.
- */
+/** The primitive's `agent.read` through `arrDepth` array levels when it declares an agent face; the value otherwise. */
 export const agentRead = (modelRef: unknown, value: unknown, arrDepth = 0): unknown => {
   const face = PrimitiveRegistry.agentOf(modelRef);
   return face ? readThrough(face, value, arrDepth) : value;
@@ -91,8 +66,7 @@ const maskField = (field: MaskField, value: unknown): unknown => {
   return agentRead(field.modelRef, value, field.arrDepth ?? 0);
 };
 
-// A hydrated value holds a `Map` and a wire copy a plain object; either leaves as a plain object, which is also the
-// only form of the two that survives `JSON.stringify`.
+// A hydrated `Map` or a wire object both leave as a plain object, the only form that survives `JSON.stringify`.
 const maskMapValues = (of: unknown, value: unknown): unknown => {
   const [valueRef, arrDepth] = getNonArrayModel(of as Cls);
   if (!PrimitiveRegistry.agentOf(valueRef) || value === null || typeof value !== "object") return value;
@@ -101,16 +75,8 @@ const maskMapValues = (of: unknown, value: unknown): unknown => {
 };
 
 /**
- * Drops what a model marks `hidden` or `secret`, and nothing else.
- *
- * The sibling of `mask()` for the one caller that is not an AI read: a saved form draft. Two differences matter.
- * It keeps `visual` — a rendered body is exactly the field a user spent twenty minutes on, and dropping it from a
- * draft loses the work the draft exists to protect. And it is subtractive rather than reconstructive: `mask()`
- * builds its result from the field metadata, so a key the metadata does not name — `id`, which is what decides
- * whether a form creates or updates — would not survive the round trip.
- *
- * `for...in` rather than `Object.keys`, because a model instance keeps its Date fields as enumerable prototype
- * accessors.
+ * Drops only `hidden`/`secret`, for a saved form draft: `visual` is the user's work and a key the metadata does not
+ * name (`id`) must survive. `for...in` because Date fields are enumerable prototype accessors.
  */
 export const stripSecrets = (model: MaskModel, value: unknown): unknown => {
   if (value === null || value === undefined || typeof value !== "object") return value;

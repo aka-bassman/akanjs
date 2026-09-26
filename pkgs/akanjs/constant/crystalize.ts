@@ -13,16 +13,8 @@ import { ConstantRegistry } from "./constantRegistry";
 export type CrystalizeFunc<Model> = (self: GetStateObject<Model>, isChild?: boolean) => Model;
 export type Converter = (value: unknown) => unknown;
 
-/**
- * The relation instances one hydration pass has already built, by model class and then document id.
- *
- * A listing hands the same relation to every row that references it — twenty users wearing one avatar — and
- * each row would otherwise build its own copy of it, re-parsing every `Date` on the way. Sharing is safe
- * because a constant model is `[immerable]`: a store write copies before it mutates.
- *
- * Module-scoped rather than passed down, because `crystalize` is reached through a model's own constructor,
- * which has nowhere to carry it. A pass is wholly synchronous, so no other one can observe this mid-flight.
- */
+// Relation instances built in the current pass, by class then id. Sharing is safe because a constant model is
+// `[immerable]`; module-scoped because a model constructor cannot carry it, and a pass is wholly synchronous.
 let sharedInstances: Map<Cls, Map<string, object>> | null = null;
 
 /** Runs one hydration pass, sharing a relation instance across every value in it that names the same id. */
@@ -45,13 +37,11 @@ const relationIdOf = (value: object): string | null => {
 
 const modelConverterOf = (props: FieldProps): Converter => {
   const modelRef = props.modelRef as unknown as ModelCls;
-  // Already one of these — a shared relation coming back around, or a model handed straight to `set()`. Copying
-  // it would only produce a value equal to the one in hand.
+  // Already an instance (a shared relation, or a model handed to `set()`): a copy would only equal it.
   if (props.isScalar) return (value) => (value instanceof modelRef ? value : new modelRef(value as object));
   return (value) => {
     if (value instanceof modelRef) return value;
-    // Only a relation has a document identity to share on; an embedded scalar's `id`, where it has one, names
-    // whatever the scalar wanted it to.
+    // Only a relation's `id` is a document identity; an embedded scalar's `id` names whatever the scalar wanted.
     const id = relationIdOf(value as object);
     if (!sharedInstances || !id) return new modelRef(value as object);
     const byId = sharedInstances.get(modelRef as unknown as Cls) ?? new Map<string, object>();
@@ -87,7 +77,7 @@ const mapConverterOf = (props: FieldProps): Converter => {
 const singleConverterOf = (props: FieldProps): Converter => {
   if (props.isMap) return mapConverterOf(props);
   if (props.isClass) return modelConverterOf(props);
-  // A date inside an array or a map has no slot to be lazy in, so it is a dayjs from the start as before.
+  // A date inside an array or a map has no slot to be lazy in, so it is a dayjs from the start.
   if ((props.modelRef as unknown) === Date) return (value) => dayjs(value as Date);
   if (PrimitiveRegistry.has(props.modelRef as Cls))
     return (value) => (props.modelRef as unknown as typeof PrimitiveScalar)._parse(value as never);

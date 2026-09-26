@@ -18,7 +18,6 @@ import {
 } from ".";
 import type { ConstantType, DefaultOf, DocumentModel, QueryOf } from "./types";
 
-/** Runtime registry for Akan constant model metadata, refs, enums, and generated model contracts. */
 export class ConstantRegistry {
   static database = new Map<string, ConstantModel>();
   static scalar = new Map<string, ScalarConstantModel>();

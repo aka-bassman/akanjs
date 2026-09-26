@@ -18,8 +18,7 @@ export class TextFieldPaths extends TextFieldPathSet {
         this.#assertIndexable(key, field.text, field);
         this[field.text].add(key);
       }
-      // Scalar children are embedded in `_doc`, so their paths stay addressable. A relation stores only an id, so
-      // recursing into one yields paths that never exist in the stored document.
+      // A scalar child is embedded in `_doc`, so its paths stay addressable; a relation stores only an id.
       if (field.isClass && field.isScalar) this.#mergeChild(key, field);
     }
     return this;
@@ -35,13 +34,8 @@ export class TextFieldPaths extends TextFieldPathSet {
     }
   }
 
-  // A child path reaches the mirror through its parent, so an unreadable or unaddressable parent has to fail the
-  // class build the same way the leaf itself would. Checking only the leaf leaves the secret's own subtree open:
-  // `_doc` stores a secret in plaintext, so every text field under it would be published through search.
+  // `_doc` stores a secret in plaintext, so a text field under a masked parent would publish it through search.
   #assertReachable(path: string, parent: ConstantField) {
-    // The masked cases name the way out, because the fix is a choice between two intents rather than a repair:
-    // the role goes, or the masking does. Only the reachable-parent cases can be reached from here — the leaf's
-    // own masking is a compile error at the call site, `field.hidden`/`field.secret`/`resolve` taking no `text`.
     const fix = `Drop the text role on "${path}", or leave the parent unmasked.`;
     if (parent.fieldType === "secret") throw new Error(`Text field "${path}" is under a secret field. ${fix}`);
     if (parent.fieldType === "hidden") throw new Error(`Text field "${path}" is under a hidden field. ${fix}`);
@@ -50,9 +44,7 @@ export class TextFieldPaths extends TextFieldPathSet {
   }
 
   #assertIndexable(key: string, role: TextFieldRole, field: ConstantField) {
-    // A secret field reaching the mirror would surface it in every search result, so fail the class build instead.
-    // The option type already refuses this at the call site; this stays as the backstop for an option object the
-    // excess-property check cannot see through, and says which way out to take rather than only what is wrong.
+    // Backstop for the option type's refusal, for an option object the excess-property check cannot see through.
     const masked = `The search mirror stores plaintext. Drop the text role on "${key}", or make the field plain.`;
     if (field.fieldType === "secret")
       throw new Error(`Text field "${key}" is secret and must not be indexed. ${masked}`);
