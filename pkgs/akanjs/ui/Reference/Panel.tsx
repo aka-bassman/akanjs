@@ -1,9 +1,10 @@
 import { cn } from "akanjs/client";
 import type { ReactNode, RefObject } from "react";
 import { AiOutlineCopy } from "react-icons/ai";
+import { BiChevronDown } from "react-icons/bi";
 import { buttonRecipe } from "../Button";
 import { Copy } from "../Copy";
-import { docBorder, docDash, docUi } from "./style";
+import { docBorder, docDash, docUi } from "./docUi";
 
 interface PanelProps {
   className?: string;
@@ -89,4 +90,88 @@ export const Code = ({ className, label, code, tone, meta, placeholder = "—", 
       {code || <span className={docDash}>{placeholder}</span>}
     </pre>
   </Panel>
+);
+
+interface CollapseProps {
+  className?: string;
+  contentClassName?: string;
+  summary: ReactNode;
+  children: ReactNode;
+  open?: boolean;
+}
+
+// Native `<details>`, not a stateful collapse: opening and closing ships no client JS.
+export const Collapse = ({ summary, children, open, className, contentClassName }: CollapseProps) => (
+  <details
+    className={cn(docUi.card, "group overflow-hidden transition-colors hover:border-foreground/20", className)}
+    open={open}
+  >
+    <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/40 [&::-webkit-details-marker]:hidden">
+      <div className="min-w-0 flex-1">{summary}</div>
+      <BiChevronDown className="mt-1 shrink-0 text-foreground/30 transition-transform group-open:rotate-180" />
+    </summary>
+    <div className={cn("flex w-full flex-col gap-4 border-border/70 border-t p-4", contentClassName)}>{children}</div>
+  </details>
+);
+
+interface SummaryCardProps {
+  className?: string;
+  label: string;
+  value: number | string;
+}
+
+export const SummaryCard = ({ className, label, value }: SummaryCardProps) => (
+  <div className={cn(docUi.card, "px-4 py-3", className)}>
+    <div className={docUi.sectionLabel}>{label}</div>
+    <div className="font-bold text-2xl">{value}</div>
+  </div>
+);
+
+interface SummaryGridProps {
+  className?: string;
+  children: ReactNode;
+}
+
+export const SummaryGrid = ({ className, children }: SummaryGridProps) => (
+  <div className={cn("grid grid-cols-2 gap-2 md:grid-cols-4", className)}>{children}</div>
+);
+
+interface ToolbarProps {
+  className?: string;
+  children: ReactNode;
+}
+
+export const Toolbar = ({ className, children }: ToolbarProps) => (
+  <div className={cn(docUi.card, "flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3", className)}>{children}</div>
+);
+
+interface ToolbarFieldProps {
+  className?: string;
+  label: string;
+  children: ReactNode;
+}
+
+export const ToolbarField = ({ className, label, children }: ToolbarFieldProps) => (
+  <div className={cn("flex min-w-0 items-center gap-2", className)}>
+    <span className={docUi.sectionLabel}>{label}</span>
+    {children}
+  </div>
+);
+
+interface SectionProps {
+  className?: string;
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}
+
+export const Section = ({ className, title, action, children }: SectionProps) => (
+  <section className={cn("flex flex-col gap-3", className)}>
+    <div className="flex items-center gap-3">
+      <h2 className={docUi.sectionTitle}>{title}</h2>
+      <div className="h-px flex-1 bg-border" />
+      {action}
+    </div>
+    {children}
+  </section>
 );
