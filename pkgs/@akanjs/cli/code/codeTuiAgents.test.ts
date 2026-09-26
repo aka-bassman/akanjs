@@ -26,11 +26,9 @@ describe("sub-agent rail", () => {
       "  ◯ explore  Counting untranslated desc strings in store.tsx               12m 30s · ↓ 301.3k tokens",
       "  ◯ code     Counting untranslated desc strings in store.tsx               12m 30s · ↓ 301.3k tokens",
     ]);
-    // The meta is pushed to the right edge, which is what makes two children's numbers line up under each other.
     for (const row of rows.slice(1)) expect(CodeTuiLines.width(CodeTuiLines.text(row))).toBe(100);
   });
 
-  /** Ink draws a row past the frame over the one below it, and the height arithmetic counts these as one each. */
   test("a row is exactly one line wide, in columns, whatever the description is", () => {
     for (const width of [40, 61, 80, 120]) {
       const rows = CodeTuiAgents.rows(

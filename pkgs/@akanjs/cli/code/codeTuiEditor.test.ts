@@ -25,7 +25,6 @@ describe("CodeTuiEditor", () => {
     expect(editor.text).toBe("fix this:\n  at foo\n  at bar");
   });
 
-  /** A Hangul syllable is one index and two columns; treating the two as the same splits it. */
   test("backspace removes one Korean character, not one code unit", () => {
     const editor = editorOf("안녕하세요");
     editor.backspace();
@@ -94,10 +93,6 @@ describe("CodeTuiEditor", () => {
   test("an empty buffer still lays out one row, so the caret has somewhere to sit", () => {
     expect(new CodeTuiEditor().layout(40)).toEqual({ rows: [{ text: "", at: 0 }], row: 0, col: 0 });
   });
-  /**
-   * Shift+enter is not a key a plain terminal reports, so the usual binding sends the shell's line
-   * continuation — a backslash and then the return — and the backslash is not something anybody typed.
-   */
   test("the continuation backslash a terminal sends with shift+enter does not land in the prompt", () => {
     const editor = new CodeTuiEditor();
     editor.insert("first\\");
@@ -119,7 +114,6 @@ describe("CodeTuiEditor", () => {
     expect(editor.text).toBe("\n");
   });
 
-  /** A paste is not a keypress: a backslash inside pasted code is part of what was copied. */
   test("a pasted backslash before a newline is kept", () => {
     const editor = new CodeTuiEditor();
     editor.insert("const re = /\\\n/;");

@@ -6,7 +6,6 @@ import type { DevLogLine } from "../application/devLogBuffer";
 import { HOST_SOURCE } from "../application/devLogBuffer";
 import { type DevTuiActions, DevTuiApp, type DevTuiRailRow, type DevTuiSnapshot } from "./DevTuiApp";
 
-/** Ink writes frames here and reads its size from `columns`/`rows`; nothing else of a tty is used. */
 class FakeStdout extends EventEmitter {
   columns = 100;
   rows = 14;
@@ -153,7 +152,6 @@ describe("DevTuiApp", () => {
     expect(frame).toContain("8283");
     expect(frame).toContain(HOST_SOURCE);
     expect(frame).toContain("#0 all");
-    // The digit that jumps to each app is shown next to it; replica rows carry none.
     expect(frame).toMatch(/● 1 akan 8282/);
     expect(frame).toMatch(/◐ 2 minimal 8283/);
     expect(frame).not.toMatch(/\d #0 all/);
@@ -162,7 +160,6 @@ describe("DevTuiApp", () => {
   test("a digit jumps to the nth app, not the nth rail row", async () => {
     const harness = mount();
     await nextFrame();
-    // Rail row 2 is akan's `host`, but `2` must reach the second *app*.
     await harness.press("2");
     await harness.press("1");
     expect(harness.calls).toEqual(["selectApp:1", "selectApp:0"]);
@@ -193,7 +190,6 @@ describe("DevTuiApp", () => {
   });
 
   test("the line prefix follows the scope: app when merged, source inside an app, none inside one", async () => {
-    // Merged across apps: two apps both have a `host` stream, so the app name is what separates them.
     const merged = mount({
       prefix: "app",
       lines: [lineOf(1, "akan", "one"), lineOf(2, "minimal", "two")],
@@ -299,7 +295,6 @@ describe("DevTuiApp", () => {
     const harness = mount({ editingGrep: true, grep: "pay" });
     await nextFrame();
     expect(harness.stdout.lastFrame).toContain("grep pay");
-    // `q` would quit outside the filter; here it has to be text.
     await harness.press("q");
     expect(harness.calls).toEqual(["setGrep:payq"]);
   });
