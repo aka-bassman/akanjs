@@ -1,3 +1,4 @@
+import { lowerlize } from "akanjs/common";
 import ts from "typescript";
 import type { Sys } from "../commandDecorators";
 import { generatedFilePathsForTarget } from "./artifacts";
@@ -120,7 +121,7 @@ export const titleize = (value: string) =>
     .replace(/[-_]+/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-export const lowerlize = (value: string) => `${value.slice(0, 1).toLowerCase()}${value.slice(1)}`;
+export { lowerlize };
 
 const koLabels: Record<string, string> = {
   amount: "금액",
