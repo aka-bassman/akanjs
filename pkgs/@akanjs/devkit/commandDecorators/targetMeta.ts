@@ -1,5 +1,5 @@
 import type { ArgMeta, InternalArgMeta } from "./argMeta";
-import type { DependencyCls } from "./types";
+import type { Cls, DependencyCls } from "./dependencyBuilder";
 
 export const COMMAND_META: unique symbol = Symbol("akan.command.meta");
 
@@ -45,3 +45,9 @@ export interface TargetOption {
   runsOnWorkspaceRoot?: boolean;
   stdio?: boolean;
 }
+
+export const Commands = () => {
+  return (target: Cls) => {
+    // not implemented yet
+  };
+};

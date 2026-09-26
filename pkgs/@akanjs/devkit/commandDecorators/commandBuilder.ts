@@ -14,9 +14,14 @@ import type {
   Sys,
 } from "./argMeta";
 import { normalizePrimitiveArgType } from "./argMeta";
-import { assertUniqueDependencies, type DependencyInstanceMap, injectDependencies } from "./dependencyBuilder";
+import {
+  assertUniqueDependencies,
+  type DependencyCls,
+  type DependencyInstanceMap,
+  type DependencyKey,
+  injectDependencies,
+} from "./dependencyBuilder";
 import { COMMAND_META, type CommandCls, type TargetMeta, type TargetOption } from "./targetMeta";
-import type { DependencyCls, DependencyKey } from "./types";
 
 type PrimitiveValue<T extends PrimitiveArgType> = T extends StringConstructor
   ? string
