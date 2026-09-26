@@ -367,8 +367,7 @@ describe("SearchIndex reconcile", () => {
   });
 
   test("widens a mirror created before a column existed, and re-reads every ref", async () => {
-    // A database from a release whose mirror had no `thumb`. Recreating only the fts table would leave `rebuild`
-    // reading a column `search_doc` does not have, which fails the boot outright.
+    // A mirror from a release without `thumb`: `rebuild` would read the missing column and fail the boot.
     db.run(
       `CREATE TABLE "search_doc" ("fid" INTEGER PRIMARY KEY AUTOINCREMENT, "ref" TEXT NOT NULL,
         "refId" TEXT NOT NULL, "title" TEXT NOT NULL DEFAULT '', "desc" TEXT NOT NULL DEFAULT '',
@@ -433,8 +432,7 @@ describe("SearchIndex reconcile", () => {
     let stole = false;
     client.execute = async (sql: string, params?: unknown[] | Record<string, unknown>) => {
       const result = await execute(sql, params);
-      // Only the backfill statement — the trigger DDL embeds the same INSERT, and matching that would steal the
-      // claim before it is even taken, which is a different case entirely.
+      // Only the backfill statement: the trigger DDL embeds the same INSERT and would steal the claim too early.
       if (!stole && sql.includes(`FROM "${TABLE}" AS NEW`)) {
         stole = true;
         await owner.setMeta(`search:lock:${TABLE}`, stolen);
@@ -464,8 +462,7 @@ describe("SearchIndex reconcile", () => {
     await second.ensureRef(searchTestConstant as never, searchTestDatabase as never);
     client.execute = execute;
 
-    // A write landing between the drop and the create misses the mirror, and a matching hash means no reconcile
-    // ever comes back for it.
+    // A write between drop and create would miss the mirror, and a matching hash never reconciles it.
     expect(drops.filter((sql) => sql.includes(`${TABLE}_search`))).toEqual([]);
   });
 
@@ -483,8 +480,7 @@ describe("SearchIndex reconcile", () => {
     await second.ensureSchema();
     client.execute = execute;
 
-    // Worse than the model triggers: a mirror row written without `search_doc_au` leaves fts5 on the old text,
-    // which stops matching, returns a ghost hit for the old value, and still passes integrity-check.
+    // Without `search_doc_au` fts5 keeps the old text: ghost hits that still pass integrity-check.
     expect(drops.filter((sql) => sql.includes("search_doc"))).toEqual([]);
   });
 
@@ -630,8 +626,7 @@ describe("search query", () => {
     ...extra,
   });
 
-  // The title hit is created in the middle so that neither insertion order nor either createdAt direction would
-  // put it first — only the bm25 score does.
+  // The title hit is created in the middle, so only the bm25 score can put it first.
   const seedRanked = async (store: SqlDocumentStore) => ({
     firstDesc: await store.create(doc("Alpha Person", { summary: "reviewed by Kenny" })),
     inTitle: await store.create(doc("Kenny Park")),
@@ -834,8 +829,7 @@ describe("SearchIndex optimize", () => {
   test("lets only one of two overlapping runs take the claim", async () => {
     const index = await build();
 
-    // The claim is one conditional upsert, so it holds without `transaction()` — which would collide with any
-    // unrelated transaction already open on this connection.
+    // One conditional upsert, so it holds without `transaction()`, which would collide with an open one.
     const results = await Promise.all([index.optimize(), index.optimize()]);
 
     expect(results.filter(Boolean)).toHaveLength(1);
@@ -877,8 +871,7 @@ describe("SearchIndex schema failure", () => {
 
     await expect(bad.ensureSchema()).rejects.toThrow("no_such_tokenizer");
 
-    // Mirror triggers left over the dropped table would raise "no such table" on every write to an indexed
-    // model — on every process using this database, not just the one that failed to boot.
+    // Triggers left over the dropped table would fail every indexed write, on every process using the database.
     expect(ftsExists()).toBe(false);
     expect(() => insert("a1", { headline: "Kenny" })).not.toThrow();
   });

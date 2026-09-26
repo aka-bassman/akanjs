@@ -109,11 +109,7 @@ describe("OpenaiLlm refusals", () => {
   });
 });
 
-/**
- * The claim is per host, not per class: the default host is OpenAI's own endpoint and takes image parts, while a
- * gateway the app pointed this at is one the class knows nothing about — and handing bytes to a model that cannot
- * decode them kills the whole turn, where text-only degrades them to a note.
- */
+// Per host, not per class: undecodable bytes kill the whole turn, where text-only degrades them to a note.
 describe("OpenaiLlm vision claim", () => {
   const acceptsOf = (llmOption: LlmOption) => Object.assign(new OpenaiLlm(), { llmOption }).accepts;
 
