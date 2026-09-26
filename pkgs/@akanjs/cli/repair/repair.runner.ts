@@ -22,20 +22,13 @@ export const spawnShell = async (workspace: Workspace, command: string) =>
 const defaultExecutor =
   (workspace: Workspace): WorkflowValidationCommandExecutor =>
   async (command) => {
+    const base = { command: command.command, reason: command.reason };
     try {
-      const stdout = await spawnShell(workspace, command.command);
-      return {
-        command: command.command,
-        reason: command.reason,
-        status: "passed",
-        exitCode: 0,
-        stdout,
-      };
+      return { ...base, status: "passed", exitCode: 0, stdout: await spawnShell(workspace, command.command) };
     } catch (error) {
       const commandError = error as { code?: number | null; stdout?: string; stderr?: string; message?: string };
       return {
-        command: command.command,
-        reason: command.reason,
+        ...base,
         status: "failed",
         exitCode: commandError.code ?? 1,
         stdout: commandError.stdout,
