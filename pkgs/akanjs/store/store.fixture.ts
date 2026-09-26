@@ -2,6 +2,14 @@ import { SLICE_META } from "akanjs/base";
 import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
 
+/** Call before importing `akanjs/client` or `akanjs/store`: both read the env while the module evaluates. */
+export const setTestEnv = (appName: string) => {
+  process.env.AKAN_PUBLIC_APP_NAME = appName;
+  process.env.AKAN_PUBLIC_REPO_NAME = appName;
+  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
+  process.env.AKAN_PUBLIC_ENV = "testing";
+};
+
 export class MemoryStorage implements Storage {
   #values = new Map<string, string>();
   get length() {

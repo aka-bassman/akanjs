@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { dayjs, Int, resetEnvCache } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { DraftStore } from "./draftStore";
-import { MemoryStorage } from "./store.fixture";
+import { MemoryStorage, setTestEnv } from "./store.fixture";
 
 const DraftTestFileInput = via((f) => ({
   filename: f(String),
@@ -54,10 +54,7 @@ const setCookie = (jwt: string | null) => {
 };
 
 beforeEach(() => {
-  process.env.AKAN_PUBLIC_APP_NAME = "drafttest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "drafttest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("drafttest");
   resetEnvCache();
   storage = new MemoryStorage();
   Object.defineProperty(globalThis, "window", {

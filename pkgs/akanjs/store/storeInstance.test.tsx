@@ -1,29 +1,19 @@
 import "../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { mount } from "./mount.fixture";
+import { setTestEnv } from "./store.fixture";
 
 let instance: import("./storeInstance").StoreInstance;
 
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "livetest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "livetest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("livetest");
   const { store } = await import("./store");
   const { StoreInstance } = await import("./storeInstance");
   const { StoreRegistry } = await import("./storeRegistry");
   class LiveStore extends store("liveNote" as const, () => ({ alpha: 1, beta: "b", gamma: false })) {}
   instance = new StoreInstance(StoreRegistry.merge("liveRoot", LiveStore));
 });
-
-const mount = (node: React.ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
-  return () => act(() => root.unmount());
-};
 
 describe("StoreInstance liveness", () => {
   test("st.use counts a key while mounted and releases it on unmount", () => {

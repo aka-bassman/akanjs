@@ -2,7 +2,6 @@ import "../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import type { Dayjs } from "akanjs/base";
 import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
 import { mount, setTestEnv } from "./testHelpers.fixture";
 
@@ -180,15 +179,10 @@ describe("Field.TextList over DraggableList", () => {
     const warned: string[] = [];
     const original = console.warn;
     console.warn = (message: string) => void warned.push(message);
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    act(() =>
-      root.render(
-        <AgentProvider surface={surface}>
-          <Field.TextList value={["a", "b", "c"]} onChange={setAliases} />
-        </AgentProvider>,
-      ),
+    const { unmount } = mount(
+      <AgentProvider surface={surface}>
+        <Field.TextList value={["a", "b", "c"]} onChange={setAliases} />
+      </AgentProvider>,
     );
     console.warn = original;
 
@@ -199,28 +193,22 @@ describe("Field.TextList over DraggableList", () => {
     ]);
     await surface.call("moveAliasesOnFieldListItem", { from: 0, to: 2 });
     expect(listWrites).toEqual([["b", "c", "a"]]);
-    act(() => root.unmount());
-    container.remove();
+    unmount();
     expect(surface.snapshot().tools).toHaveLength(0);
   });
   test("a DraggableList used directly publishes the field it was handed — the ReqDefDoc shape", async () => {
     const surface = new AgenticSurface();
     listWrites.length = 0;
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    act(() =>
-      root.render(
-        <AgentProvider surface={surface}>
-          <DraggableList onChange={setAliases} onRemove={() => undefined}>
-            {["a", "b", "c"].map((alias) => (
-              <DraggableList.Item key={alias} value={alias}>
-                {alias}
-              </DraggableList.Item>
-            ))}
-          </DraggableList>
-        </AgentProvider>,
-      ),
+    const { container, unmount } = mount(
+      <AgentProvider surface={surface}>
+        <DraggableList onChange={setAliases} onRemove={() => undefined}>
+          {["a", "b", "c"].map((alias) => (
+            <DraggableList.Item key={alias} value={alias}>
+              {alias}
+            </DraggableList.Item>
+          ))}
+        </DraggableList>
+      </AgentProvider>,
     );
 
     expect(surface.snapshot().tools.map((tool) => tool.name)).toEqual([
@@ -232,26 +220,19 @@ describe("Field.TextList over DraggableList", () => {
     );
     await surface.call("moveAliasesOnFieldListItem", { from: 1, to: 0 });
     expect(listWrites).toEqual([["b", "a", "c"]]);
-    act(() => root.unmount());
-    container.remove();
+    unmount();
   });
 });
 
 describe("Field.ToggleSelect", () => {
   const renderCells = (node: ReactNode) => {
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    act(() => root.render(node));
+    const { container, unmount } = mount(node);
     return {
       click: (label: string) => {
         const cell = [...container.querySelectorAll("button")].find((el) => el.textContent === label);
         act(() => cell?.click());
       },
-      unmount: () => {
-        act(() => root.unmount());
-        container.remove();
-      },
+      unmount,
     };
   };
 

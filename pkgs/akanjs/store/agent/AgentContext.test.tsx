@@ -7,7 +7,7 @@ import type { SerializedSignal } from "akanjs/signal";
 import { AgenticSurface } from "use-agentic";
 import { mount } from "../mount.fixture";
 import { store } from "../store";
-import { stubSignal } from "../store.fixture";
+import { setTestEnv, stubSignal } from "../store.fixture";
 import { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
 import { AgentBridge } from "./AgentBridge";
@@ -40,10 +40,7 @@ let context: AgentContext;
 let surface: AgenticSurface;
 
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "ctxtest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "ctxtest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("ctxtest");
   Translator.setActiveLocale("en");
   // Imported after the env is seeded — `baseSt` reads it at module evaluation.
   const { BaseStore } = await import("../baseSt");

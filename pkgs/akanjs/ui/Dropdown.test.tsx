@@ -1,9 +1,8 @@
 import "../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { setTestEnv } from "./testHelpers.fixture";
+import { mount as mountNode, setTestEnv } from "./testHelpers.fixture";
 
 let DefaultDropdown: typeof import("./Dropdown").DefaultDropdown;
 
@@ -13,27 +12,16 @@ beforeAll(async () => {
 });
 
 const mount = (content: ReactNode, options: { namespace?: string; surface?: AgenticSurface } = {}) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
   const dropdown = <DefaultDropdown value="More" content={content} namespace={options.namespace} />;
-  act(() =>
-    root.render(options.surface ? <AgentProvider surface={options.surface}>{dropdown}</AgentProvider> : dropdown),
+  const { container, unmount } = mountNode(
+    options.surface ? <AgentProvider surface={options.surface}>{dropdown}</AgentProvider> : dropdown,
   );
   const trigger = container.querySelector("button");
   if (!trigger) throw new Error("dropdown trigger did not render");
   // The last one in the body: a portalled menu a failing test left behind would otherwise be read as this one.
   const menu = [...document.querySelectorAll("ul")].at(-1);
   if (!menu) throw new Error("dropdown menu did not render");
-  return {
-    container,
-    trigger,
-    menu,
-    unmount: () => {
-      act(() => root.unmount());
-      container.remove();
-    },
-  };
+  return { container, trigger, menu, unmount };
 };
 
 const render = (content: ReactNode) => {
@@ -114,20 +102,15 @@ describe("Dropdown", () => {
   });
 
   test("a custom trigger keeps the menu's aria state on the caller's own control", () => {
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    act(() =>
-      root.render(
-        <DefaultDropdown
-          trigger={
-            <button className="w-full" type="button">
-              More
-            </button>
-          }
-          content={<li>Edit</li>}
-        />,
-      ),
+    const { container, unmount } = mountNode(
+      <DefaultDropdown
+        trigger={
+          <button className="w-full" type="button">
+            More
+          </button>
+        }
+        content={<li>Edit</li>}
+      />,
     );
     const trigger = container.querySelector("button");
     // Cloned, not wrapped: a screen reader activates this button, so the disclosure state belongs on it.
@@ -136,8 +119,7 @@ describe("Dropdown", () => {
     expect(trigger?.className).toBe("w-full");
     act(() => trigger?.click());
     expect(trigger?.getAttribute("aria-expanded")).toBe("true");
-    act(() => root.unmount());
-    container.remove();
+    unmount();
   });
 
   test("without a namespace it publishes nothing and the trigger still toggles", () => {

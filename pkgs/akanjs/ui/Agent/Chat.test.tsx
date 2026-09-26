@@ -1,9 +1,8 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
 import type { AgentRunner, AgentSession, ChatMessage, MessageAttachment, ToolCallRequest } from "use-agentic";
-import { l, setTestEnv } from "../testHelpers.fixture";
+import { l, mount as mountNode, setTestEnv } from "../testHelpers.fixture";
 import type { ChatProps } from "./Chat";
 
 let lib: typeof import("use-agentic");
@@ -28,18 +27,8 @@ beforeAll(async () => {
 
 // The chat portals to the body, so the query scope is the body.
 const mount = (node: ReactNode) => {
-  const host = document.createElement("div");
-  document.body.appendChild(host);
-  const root = createRoot(host);
-  act(() => root.render(node));
-  return {
-    container: document.body,
-    host,
-    unmount: () => {
-      act(() => root.unmount());
-      host.remove();
-    },
-  };
+  const { container: host, unmount } = mountNode(node);
+  return { container: document.body, host, unmount };
 };
 
 const mountChat = (session: AgentSession, props: ChatProps = { defaultOpen: true }) =>

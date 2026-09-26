@@ -5,7 +5,7 @@ import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
 import { DraftStore } from "./draftStore";
 import { store } from "./store";
-import { MemoryStorage } from "./store.fixture";
+import { MemoryStorage, setTestEnv } from "./store.fixture";
 import { StoreInstance } from "./storeInstance";
 import { StoreRegistry } from "./storeRegistry";
 
@@ -83,10 +83,7 @@ const settle = async () => {
 };
 
 beforeEach(() => {
-  process.env.AKAN_PUBLIC_APP_NAME = "drafttest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "drafttest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("drafttest");
   resetEnvCache();
   serverUpdatedAt = new Date("2026-01-01T00:00:00.000Z");
   serverTitle = "from server";

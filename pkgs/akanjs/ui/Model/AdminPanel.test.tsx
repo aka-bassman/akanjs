@@ -1,9 +1,8 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
-import { act, type ReactNode, Suspense } from "react";
-import { createRoot } from "react-dom/client";
+import { act, type ReactNode } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { itemFixtureOf, l, rootSliceArgs, setTestEnv, waitFor } from "../testHelpers.fixture";
+import { itemFixtureOf, l, mountSuspense, rootSliceArgs, setTestEnv, waitFor } from "../testHelpers.fixture";
 
 let AdminPanel: typeof import("./AdminPanel").default;
 let makeStore: (state?: Record<string, unknown>) => void;
@@ -66,14 +65,9 @@ beforeAll(async () => {
 
 /** The Data barrel is a React.lazy over a real dynamic import, so the first paint is the suspense fallback. */
 const mount = async (node: ReactNode, ready: () => boolean) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => {
-    root.render(<Suspense>{node}</Suspense>);
-  });
+  const mounted = await mountSuspense(node);
   await waitFor(ready);
-  return { container, unmount: () => act(() => root.unmount()) };
+  return mounted;
 };
 
 /** A tile's label span sits directly under whatever element the tile is — a button when it carries a filter. */

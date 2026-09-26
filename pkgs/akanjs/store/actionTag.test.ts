@@ -4,7 +4,7 @@ import { ConstantRegistry, via } from "akanjs/constant";
 import type { SerializedSignal } from "akanjs/signal";
 import { actionTagOf } from "./actionTag";
 import { store } from "./store";
-import { stubSignal } from "./store.fixture";
+import { setTestEnv, stubSignal } from "./store.fixture";
 import { StoreInstance } from "./storeInstance";
 import { StoreRegistry } from "./storeRegistry";
 
@@ -26,10 +26,7 @@ const serializedSignal: SerializedSignal = { prefix: "tagPost", cruGuards: ["Sig
 let instance: StoreInstance;
 
 beforeAll(() => {
-  process.env.AKAN_PUBLIC_APP_NAME = "tagtest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "tagtest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("tagtest");
   class PostStore extends store(stubSignal("tagPost", tagConstant, serializedSignal), () => ({ mood: "calm" })) {
     async publish() {
       await Promise.resolve();
