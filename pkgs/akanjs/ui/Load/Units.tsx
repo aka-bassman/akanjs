@@ -247,16 +247,7 @@ function Render<RefName extends string, Light extends { id: string }>({
 }
 
 export default function Units<RefName extends string, Light extends { id: string }>({
-  containerRef,
-  className,
-  init,
   noDiv,
-  from,
-  to,
-  loading,
-  empty,
-  renderItem,
-  renderList,
   renderEmpty = noDiv
     ? () => null
     : () => (
@@ -264,51 +255,27 @@ export default function Units<RefName extends string, Light extends { id: string
           <Empty />
         </div>
       ),
-  filter = () => true,
-  sort = (a, b) => 1,
-  reverse,
-  style,
   pagination = true,
-  staleTime,
+  ...props
 }: UnitsProps<RefName, Light>) {
-  const props: UnitsProps<RefName, Light> = {
-    containerRef,
-    className,
-    style,
-    init,
-    noDiv,
-    from,
-    to,
-    loading,
-    empty,
-    renderItem,
-    renderList,
-    renderEmpty,
-    filter,
-    sort,
-    reverse,
-    pagination,
-    staleTime,
-  };
-
   return (
     <Stream
-      of={init}
+      of={props.init}
       fallback={
-        loading === undefined ? (
+        props.loading === undefined ? (
           <div className="flex size-full items-center justify-center">
             <Loading.Skeleton active />
           </div>
         ) : (
-          loading
+          props.loading
         )
       }
     >
       {(serverInit) =>
         serverInit ? (
-          <Render {...props} init={serverInit} />
-        ) : empty !== undefined ? (
-          empty
+          <Render {...props} noDiv={noDiv} renderEmpty={renderEmpty} pagination={pagination} init={serverInit} />
+        ) : props.empty !== undefined ? (
+          props.empty
         ) : renderEmpty ? (
           renderEmpty()
         ) : (
