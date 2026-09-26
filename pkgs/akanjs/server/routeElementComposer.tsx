@@ -100,10 +100,8 @@ export class RouteElementComposer {
     });
   }
 
-  // The suffix (patch) compose path never runs `resolveHead`, which is what
-  // otherwise populates `routeRender.Loading` as a side effect. Load the modules
-  // for the patched render stack explicitly so `#composeLoadingFallback` has a
-  // real fallback to emit for client navigation.
+  // The patch path never runs `resolveHead`, whose side effect fills `routeRender.Loading`; without this the
+  // client-navigation fallback is empty.
   static async resolveSuffixLoadings(pathRoute: PathRoute, patchStartIndex: number): Promise<void> {
     const renders = RouteElementComposer.#getRenderStack(pathRoute).slice(Math.max(patchStartIndex, 0));
     // A failed Loading load must degrade to an empty fallback, never abort the navigation.

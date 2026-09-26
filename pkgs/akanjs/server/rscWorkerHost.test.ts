@@ -96,8 +96,6 @@ function createHostRenderHarness(options: { maxPendingChunks?: number; signal?: 
 }
 
 describe("RscWorker process metric projection", () => {
-  // Every field `ProcessMetricsCollector.collect` samples from the live process. None may survive
-  // the projection under its own name, or it overwrites the replica's when `AkanServer` merges.
   const processLevelKeys = [
     "role",
     "pid",
@@ -147,8 +145,6 @@ describe("RscWorker process metric projection", () => {
 
   test("leaves the replica's own process sample intact through the merge AkanServer performs", () => {
     const projected = projectRscWorkerProcessMetrics({ role: "rsc-worker", pid: 4242, rssBytes: 999 });
-    // Mirrors `collect({ role, ...webRouter.getMetrics() })` — `extra` is spread last, so anything
-    // the worker leaks here wins over the replica's live sample.
     const replicaReport: AkanMetricsReport = { pid: 1, rssBytes: 100, role: "federation", ...projected };
     expect(replicaReport.pid).toBe(1);
     expect(replicaReport.rssBytes).toBe(100);

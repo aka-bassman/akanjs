@@ -28,8 +28,6 @@ async function drain(stream: ReadableStream<Uint8Array>): Promise<string> {
   return html + decoder.decode();
 }
 
-// A page whose `render` stays pending until `gate` resolves, with a `Loading`
-// export wired the way `RouteTreeBuilder` wires it onto the RouteRender.
 function suspendingPageRender(gate: Promise<void>): RouteRender {
   return {
     render: (async () => {
@@ -57,9 +55,6 @@ describe("RouteElementComposer streaming", () => {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let html = "";
-    // The shell (with the Loading fallback) must flush while `render` is still
-    // pending. If the runtime instead buffered until completion, the read below
-    // would only resolve after we release the gate — never within the timeout.
     while (!html.includes("PAGE_LOADING")) {
       const next = await Promise.race([reader.read(), sleep(1000).then(() => null)]);
       if (!next) throw new Error("shell was not flushed before the page resolved");
@@ -99,8 +94,6 @@ describe("RouteElementComposer streaming", () => {
       allReadySettled = true;
     });
 
-    // `stream.allReady` is exactly what `pageConfig.ssr: "block"` awaits. It must
-    // not settle while the page render is still pending.
     await sleep(50);
     expect(allReadySettled).toBe(false);
 
@@ -180,7 +173,6 @@ describe("RouteElementComposer.resolveSuffixLoadings", () => {
       renderPage: pageRender,
     } as unknown as PathRoute;
 
-    // The suffix path never runs resolveHead, so Loading starts unset.
     expect(pageRender.Loading).toBeUndefined();
     await RouteElementComposer.resolveSuffixLoadings(pathRoute, 0);
     expect(pageRender.Loading).toBeDefined();

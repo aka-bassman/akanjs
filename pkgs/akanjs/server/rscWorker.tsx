@@ -101,7 +101,6 @@ interface ReloadMsg {
   clientManifest: ClientManifest;
   cssAssets?: Record<string, { cssUrl: string; cssRelPath: string }>;
   buildId: number;
-  /** Optional new bundle path — when the builder rebundled user code. */
   pagesBundlePath?: string;
 }
 interface UpdateCssAssetsMsg {
@@ -229,9 +228,7 @@ export class RscRenderer {
     pagesBundleBuildId: 0,
   };
   readonly #routeStats = new Map<string, RouteRenderStats>();
-  // Both caches hold whole Flight payloads, which have no natural size limit — unlike the html
-  // cache, which has had a per-body cap from the start. Without these ceilings a handful of heavy
-  // routes can fill 100 entries with arbitrarily many MB each.
+  // Flight payloads have no natural size cap; without byte ceilings a few heavy routes fill every entry with MBs.
   #resultCache = new LruTtlCache<CachedRscResult>(
     parsePositiveInt(process.env.AKAN_RSC_RESULT_CACHE_MAX_ENTRIES) ?? 100,
     RscRenderer.#resultCacheOptions(),
@@ -261,8 +258,7 @@ export class RscRenderer {
     if (Logger.isNdjson) Logger.consoleOutput = false;
     this.#logForwarder = new LogForwarder((message) => this.#send(message));
     process.on("message", (msg: InMsg) => this.#handleMessage(msg));
-    // The IPC channel closes when the parent replica dies (including SIGKILL); exit instead of
-    // lingering as an orphaned renderer.
+    // Fires when the parent replica dies, SIGKILL included; exit rather than linger as an orphaned renderer.
     process.on("disconnect", () => {
       this.#logger.warn("parent IPC channel closed; exiting rsc worker");
       process.exit(0);
@@ -314,7 +310,6 @@ export class RscRenderer {
     }
   }
 
-  /** A request whose answer is one JSON value: it rides a single reply rather than the render stream. */
   async #answer(requestId: string, type: string, fn: () => Promise<unknown>): Promise<void> {
     try {
       this.#send({ type, requestId, result: await fn() });
@@ -328,8 +323,7 @@ export class RscRenderer {
     const reader = this.#activeRenderReaders.get(requestId);
     if (!reader) return;
     void reader.cancel().catch(() => {
-      // Cancellation is best-effort; the render loop also checks
-      // `#cancelledRenderRequests` before sending more chunks.
+      // Best-effort: the render loop also checks `#cancelledRenderRequests` before sending more chunks.
     });
   }
 
@@ -883,8 +877,6 @@ export class RscRenderer {
       rscLoadedRouteModuleKeys: routeStats.loadedModuleKeys,
       rscTopRoutesByRenderCount: this.#topRoutes((route) => route.count),
       rscTopRoutesByFlightBytes: this.#topRoutes((route) => route.flightBytes),
-      // Reported separately: the full and patch caches fill on different request shapes, so a
-      // combined number cannot tell which one is holding the bytes.
       rscResultCacheEntries: this.#resultCache.size,
       rscResultCacheBytes: this.#resultCache.byteSize,
       rscPatchResultCacheEntries: this.#patchResultCache.size,
@@ -896,12 +888,7 @@ export class RscRenderer {
     this.#send({ type: "metrics", metrics });
   }
 
-  /**
-   * An error raised after the first Flight chunk has left the worker can no longer become a status code or a
-   * system error page — `sendLateRedirect` is the only control the host can still act on, so the render
-   * control is dropped. Logging here is the only record that the request failed at all; without it a page
-   * whose boundary died mid-stream is indistinguishable from one that rendered.
-   */
+  // Past the first Flight chunk only a late redirect reaches the host, so this log is the only record of the failure.
   #reportRenderError(error: unknown, pathname?: string): void {
     const description = error instanceof Error ? (error.stack ?? error.message) : String(error);
     const scope = pathname ? ` path=${pathname}` : "";
@@ -912,7 +899,6 @@ export class RscRenderer {
     this.#logger.error(`[rsc] render failed${scope}: ${description}`);
   }
 
-  /** A client that navigated away, or a stream the host cancelled: expected, and not the replica's problem. */
   static #isExpectedRequestAbort(error: unknown): boolean {
     if (!(error instanceof Error)) return false;
     return (
@@ -989,9 +975,7 @@ export class RscRenderer {
     };
     const sendLateRedirect = () => {
       if (!options.requestId || lateControlSent || controlRef.current?.type !== "redirect") return;
-      // Once Flight bytes have left the worker, only redirects can still be
-      // represented as a browser navigation. notFound/error stay in Flight and
-      // are handled by React's error path.
+      // Once bytes have left, only a redirect can still become a navigation; notFound/error stay in React's error path.
       lateControlSent = true;
       this.#send({
         type: "late-redirect",
@@ -1265,7 +1249,6 @@ export class RscRenderer {
     this.#logRejectedStore("patch", result, this.#patchResultCache.set(cacheKey, result, ttl));
   }
 
-  /** A silently dropped store looks identical to a cache miss; say which route is too big to cache. */
   #logRejectedStore(kind: string, result: CachedRscResult, stored: boolean): void {
     if (stored) return;
     this.#logger.verbose(
@@ -1274,10 +1257,8 @@ export class RscRenderer {
   }
 
   #runWithRequest<T>(request: Request, routeId: string, fn: () => Promise<T>): Promise<T> {
-    // The flight render executes components while its stream pumps, where Bun's ALS arrives empty even though
-    // run() wraps the whole handler — so keep a request fallback pushed until the render settles, the same
-    // discipline ssrFromRscRenderer's runPump uses. The stack is global and last-push-wins, so concurrent
-    // renders can shadow each other; the real fix is pumping the flight render inside the ALS scope itself.
+    // Bun's ALS is empty while the Flight stream pumps, so a request fallback stays pushed until the render settles;
+    // the fallback stack is global and last-push-wins, so concurrent renders can shadow each other.
     const cleanup = pushRequestFallback(request);
     const run = () => Promise.resolve(fn()).finally(() => cleanup());
     const traced = () => runTraced(SignalTrace.create(routeId, "page", "page"), run);
@@ -1406,8 +1387,6 @@ export class RscRenderer {
       basePath: this.#getBasePath(url),
     });
     setRequestFrameState(pathRoute.pageState);
-    // The suffix path skips `resolveHead`, so populate `Loading` explicitly
-    // before composing or the client-navigation fallback would be empty.
     await RouteElementComposer.resolveSuffixLoadings(pathRoute, patchStartIndex);
     return RouteElementComposer.composeSuffix({
       pathRoute,
