@@ -72,30 +72,11 @@ export interface IosRunFailureClassification {
   detail: string;
 }
 
-const iosNativeBlockedEnvKeys = new Set([
-  "AR",
-  "AS",
-  "CC",
-  "CFLAGS",
-  "CONDA_BUILD_SYSROOT",
-  "CONDA_PREFIX",
-  "CPP",
-  "CPPFLAGS",
-  "CPATH",
-  "CXX",
-  "CXXFLAGS",
-  "LD",
-  "LDFLAGS",
-  "LIBRARY_PATH",
-  "MACOSX_DEPLOYMENT_TARGET",
-  "NM",
-  "OBJC",
-  "OBJCXX",
-  "PREFIX",
-  "RANLIB",
-  "SDKROOT",
-  "STRIP",
-]);
+const iosNativeBlockedEnvKeys = new Set(
+  "AR AS CC CFLAGS CONDA_BUILD_SYSROOT CONDA_PREFIX CPP CPPFLAGS CPATH CXX CXXFLAGS LD LDFLAGS LIBRARY_PATH"
+    .split(" ")
+    .concat("MACOSX_DEPLOYMENT_TARGET NM OBJC OBJCXX PREFIX RANLIB SDKROOT STRIP".split(" ")),
+);
 
 export const rootCapacitorConfigFilenames = [
   "capacitor.config.ts",
@@ -134,22 +115,7 @@ export interface LocalDevHostResolution {
 }
 
 // Almost never a LAN NIC a device can reach: bridges, tunnels, AirDrop/awdl, VM and container adapters.
-const virtualInterfacePrefixes = [
-  "bridge",
-  "utun",
-  "llw",
-  "awdl",
-  "ap",
-  "vmnet",
-  "vnic",
-  "tap",
-  "tun",
-  "docker",
-  "veth",
-  "vboxnet",
-  "gif",
-  "stf",
-];
+const virtualInterfacePrefixes = "bridge utun llw awdl ap vmnet vnic tap tun docker veth vboxnet gif stf".split(" ");
 const physicalInterfacePrefixes = ["en", "eth", "wlan", "wlp", "enp", "eno", "wlo"];
 
 const isPrivateLanIpv4 = (address: string): boolean => {
@@ -227,10 +193,8 @@ const formatSimctlRuntime = (key?: string): string | undefined => {
 };
 
 export const parseIosRuntimeMajor = (runtime?: string): number | undefined => {
-  const major = runtime?.match(/(\d+)/)?.[1];
-  if (major === undefined) return undefined;
-  const parsed = Number.parseInt(major, 10);
-  return Number.isNaN(parsed) ? undefined : parsed;
+  const major = runtime?.match(/\d+/)?.[0];
+  return major === undefined ? undefined : Number.parseInt(major, 10);
 };
 
 const iosRunTargetRank = (target: IosRunTarget): number => {
@@ -626,9 +590,7 @@ export function assertJsonSerializable(value: unknown, label = "capacitor.config
   if (seen.has(objectValue)) throw new Error(`${label} must be JSON serializable. Found circular reference.`);
   seen.add(objectValue);
   if (Array.isArray(value)) {
-    value.forEach((item, index) => {
-      assertJsonSerializable(item, `${label}[${index}]`, seen);
-    });
+    for (const [index, item] of value.entries()) assertJsonSerializable(item, `${label}[${index}]`, seen);
     return;
   }
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
@@ -795,7 +757,6 @@ export class CapacitorApp {
     await this.#prepareIos({ operation: "release", env, regenerate });
     await this.#spawnMobile("npx", ["cap", "build", "ios"], { operation: "release", env }, { stdio: "inherit" });
     this.app.verbose(`build completed iOS.`);
-    return;
   }
   async syncIos() {
     await this.#spawnMobile("npx", ["cap", "sync", "ios"], { operation: "local", env: "local" });
@@ -820,7 +781,10 @@ export class CapacitorApp {
   }
 
   async #selectIosRunTarget(deviceId?: string) {
-    const targets = sortIosRunTargets(await this.#loadIosRunTargets());
+    const targets = sortIosRunTargets([
+      ...(await this.#loadPhysicalIosDevices()),
+      ...(await this.#loadIosSimulators()),
+    ]);
     if (deviceId) {
       const needle = deviceId.toLowerCase();
       const found =
@@ -860,12 +824,6 @@ export class CapacitorApp {
     this.app.logger.warn(
       `Selected simulator runs ${target.runtime ?? "an older iOS"}. Recent SDK builds link SwiftUICore and require iOS ${SWIFTUICORE_MIN_IOS_MAJOR}+; if the app crashes at launch with a "Library not loaded: SwiftUICore" dyld error, pick an iOS ${SWIFTUICORE_MIN_IOS_MAJOR}+ simulator instead.`,
     );
-  }
-
-  async #loadIosRunTargets() {
-    const devices = await this.#loadPhysicalIosDevices();
-    const simulators = await this.#loadIosSimulators();
-    return [...devices, ...simulators];
   }
 
   async #loadPhysicalIosDevices() {
@@ -910,12 +868,11 @@ export class CapacitorApp {
       { operation, platform: "ios", iosRunTargetKind: runTarget.kind },
       mobileEnv,
     );
-    await this.#writeRootCapacitorConfig(configContent);
-    const scheme = this.#iosScheme();
+    await writeRootCapacitorConfig(this.app.cwdPath, configContent);
     const command = buildIosNativeRunCommand({
       appRoot: this.app.cwdPath,
       device: runTarget,
-      scheme,
+      scheme: isRecord(this.target.ios) && typeof this.target.ios.scheme === "string" ? this.target.ios.scheme : "App",
       configuration: operation === "release" ? "Release" : "Debug",
     });
     const xcodebuildArgs = noAllowProvisioningUpdates
@@ -927,16 +884,10 @@ export class CapacitorApp {
         env: mobileEnv,
       });
       const devicectlId = runTarget.devicectlId ?? runTarget.id;
-      await this.#spawn("xcrun", ["devicectl", "device", "install", "app", "--device", devicectlId, command.appPath], {
-        env: mobileEnv,
-      });
-      await this.#spawn(
-        "xcrun",
-        ["devicectl", "device", "process", "launch", "--device", devicectlId, this.target.appId],
-        {
-          env: mobileEnv,
-        },
-      );
+      const devicectl = (verb: string[], subject: string) =>
+        this.#spawn("xcrun", ["devicectl", "device", ...verb, "--device", devicectlId, subject], { env: mobileEnv });
+      await devicectl(["install", "app"], command.appPath);
+      await devicectl(["process", "launch"], this.target.appId);
     } catch (error) {
       throw new Error(
         formatIosRunFailureMessage({
@@ -947,12 +898,8 @@ export class CapacitorApp {
         }),
       );
     } finally {
-      await this.#clearRootCapacitorConfigs();
+      await clearRootCapacitorConfigs(this.app.cwdPath);
     }
-  }
-
-  #iosScheme() {
-    return isRecord(this.target.ios) && typeof this.target.ios.scheme === "string" ? this.target.ios.scheme : "App";
   }
 
   async #getIosDevelopmentTeam() {
@@ -977,7 +924,7 @@ export class CapacitorApp {
     await this.#disableNativeKeyboardResizeInAndroid();
     await this.project.commit();
     await this.#generateAssets({ operation, env });
-    await this.#ensureAndroidAssetsDir();
+    await mkdir(path.join(this.app.cwdPath, this.androidAssetsPath), { recursive: true });
     await this.#ensureAndroidDebugKeystore();
     await this.#spawnMobile("npx", ["cap", "sync", "android"], { operation, env });
     await this.#setDeepLinksInAndroid(this.target.deepLinks?.schemes ?? [], this.target.deepLinks?.domains ?? []);
@@ -1027,9 +974,7 @@ export class CapacitorApp {
     await this.#prepareAndroid({ operation: "release", env, regenerate });
     await this.#assertAndroidReleaseSigningConfig();
     await this.#updateAndroidBuildTypes();
-    const isWindows = process.platform === "win32";
-    const gradleCommand = isWindows ? "gradlew.bat" : "./gradlew";
-
+    const gradleCommand = process.platform === "win32" ? "gradlew.bat" : "./gradlew";
     await this.app.spawn(gradleCommand, [assembleType === "apk" ? "assembleRelease" : "bundleRelease"], {
       stdio: "inherit",
       cwd: path.join(this.app.cwdPath, this.androidRootPath),
@@ -1057,30 +1002,18 @@ export class CapacitorApp {
     });
     if (changed) await writeFile(manifestPath, manifest);
   }
-  async #ensureAndroidAssetsDir() {
-    await mkdir(path.join(this.app.cwdPath, this.androidAssetsPath), { recursive: true });
-  }
   async #ensureAndroidDebugKeystore() {
     const keystorePath = path.join(this.app.cwdPath, this.androidRootPath, "app/debug.keystore");
     if (await Bun.file(keystorePath).exists()) return;
 
+    const options =
+      "-storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000";
     await this.#spawn("keytool", [
       "-genkeypair",
       "-v",
       "-keystore",
       keystorePath,
-      "-storepass",
-      "android",
-      "-alias",
-      "androiddebugkey",
-      "-keypass",
-      "android",
-      "-keyalg",
-      "RSA",
-      "-keysize",
-      "2048",
-      "-validity",
-      "10000",
+      ...options.split(" "),
       "-dname",
       "CN=Android Debug,O=Android,C=US",
     ]);
@@ -1095,8 +1028,7 @@ export class CapacitorApp {
     await this.#prepareAndroid({ operation, env, regenerate });
     await this.#assertAndroidAdbReady();
     this.app.logger.info(`Running Android in ${operation} mode on ${env} env`);
-    const args = ["cap", "run", "android"];
-    await this.#spawnMobile("npx", args, { operation, env }, { stdio: "inherit" });
+    await this.#spawnMobile("npx", ["cap", "run", "android"], { operation, env }, { stdio: "inherit" });
   }
 
   async #assertAndroidReleaseSigningConfig() {
@@ -1212,14 +1144,12 @@ export class CapacitorApp {
   async #prepareTargetAssets() {
     if (!this.target.assets) return;
     await mkdir(this.targetAssetRoot, { recursive: true });
-    if (this.target.assets.icon)
-      await cp(path.join(this.app.cwdPath, this.target.assets.icon), path.join(this.targetAssetRoot, "icon.png"), {
-        force: true,
-      });
-    if (this.target.assets.splash)
-      await cp(path.join(this.app.cwdPath, this.target.assets.splash), path.join(this.targetAssetRoot, "splash.png"), {
-        force: true,
-      });
+    for (const [name, source] of [
+      ["icon", this.target.assets.icon],
+      ["splash", this.target.assets.splash],
+    ] as const)
+      if (source)
+        await cp(path.join(this.app.cwdPath, source), path.join(this.targetAssetRoot, `${name}.png`), { force: true });
   }
   async #prepareExternalFiles(platform: "ios" | "android") {
     const files = this.target.files?.[platform];
@@ -1302,20 +1232,11 @@ export class CapacitorApp {
       operation,
       env,
       setIosUsageDescriptions: (descriptions) => this.#setPermissionInIos(descriptions),
-      updateIosInfoPlist: async (values) => {
-        await Promise.all([
-          this.project.ios.updateInfoPlist(this.iosTargetName, "Debug", values),
-          this.project.ios.updateInfoPlist(this.iosTargetName, "Release", values),
-        ]);
-      },
+      updateIosInfoPlist: (values) => this.#updateIosInfoPlist(values),
       addIosEntitlements: (entitlements) => this.#addIosEntitlements(entitlements),
       editIosAppDelegate: (transform) => this.#editIosAppDelegate(transform),
-      addAndroidPermissions: (permissions) => {
-        this.#setPermissionsInAndroid(permissions);
-      },
-      addAndroidFeatures: (features) => {
-        this.#setFeaturesInAndroid(features);
-      },
+      addAndroidPermissions: (permissions) => this.#setPermissionsInAndroid(permissions),
+      addAndroidFeatures: (features) => this.#setFeaturesInAndroid(features),
     };
   }
   async #applyDeepLinks(platform: "ios" | "android", { operation, env }: Pick<RunConfig, "operation" | "env">) {
@@ -1395,12 +1316,6 @@ export class CapacitorApp {
     if (this.target.indexPath) params.set("akanMobileIndexPath", this.target.indexPath);
     return `http://${ip}:${port}/${pathname}?${params}`;
   }
-  async #clearRootCapacitorConfigs() {
-    await clearRootCapacitorConfigs(this.app.cwdPath);
-  }
-  async #writeRootCapacitorConfig(content: string) {
-    await writeRootCapacitorConfig(this.app.cwdPath, content);
-  }
   async #spawn(command: string, args: string[] = [], options: Parameters<AppExecutor["spawn"]>[2] = {}) {
     return await this.app.spawn(command, args, { cwd: this.app.cwdPath, ...options });
   }
@@ -1416,14 +1331,11 @@ export class CapacitorApp {
       { operation, platform: platform ?? this.#inferMobilePlatform(args), iosRunTargetKind },
       mobileEnv,
     );
-    await this.#writeRootCapacitorConfig(configContent);
+    await writeRootCapacitorConfig(this.app.cwdPath, configContent);
     try {
-      return await this.#spawn(command, args, {
-        ...spawnOptions,
-        env: mobileEnv,
-      });
+      return await this.#spawn(command, args, { ...spawnOptions, env: mobileEnv });
     } finally {
-      await this.#clearRootCapacitorConfigs();
+      await clearRootCapacitorConfigs(this.app.cwdPath);
     }
   }
   #inferMobilePlatform(args: string[]): MobilePlatform | undefined {
@@ -1465,22 +1377,20 @@ export class CapacitorApp {
     const next = transform(content);
     if (next !== content) await editor.setContent(next).save();
   }
+  async #updateIosInfoPlist(values: Record<string, unknown>) {
+    await Promise.all(
+      (["Debug", "Release"] as const).map((build) =>
+        this.project.ios.updateInfoPlist(this.iosTargetName, build, values),
+      ),
+    );
+  }
   async #setPermissionInIos(permissions: { [key: string]: string }) {
-    const updateNs = toIosInfoPlistUsageDescriptions(permissions);
-    await Promise.all([
-      this.project.ios.updateInfoPlist(this.iosTargetName, "Debug", updateNs),
-      this.project.ios.updateInfoPlist(this.iosTargetName, "Release", updateNs),
-    ]);
+    await this.#updateIosInfoPlist(toIosInfoPlistUsageDescriptions(permissions));
   }
   async #setUrlSchemesInIos(schemes: string[]) {
-    const urlTypes = schemes.map((scheme) => ({
-      CFBundleURLName: this.target.appId,
-      CFBundleURLSchemes: [scheme],
-    }));
-    await Promise.all([
-      this.project.ios.updateInfoPlist(this.iosTargetName, "Debug", { CFBundleURLTypes: urlTypes }),
-      this.project.ios.updateInfoPlist(this.iosTargetName, "Release", { CFBundleURLTypes: urlTypes }),
-    ]);
+    await this.#updateIosInfoPlist({
+      CFBundleURLTypes: schemes.map((scheme) => ({ CFBundleURLName: this.target.appId, CFBundleURLSchemes: [scheme] })),
+    });
   }
   #serializeIosEntitlements(entitlements: Record<string, string | string[]>) {
     const lines: string[] = [];
@@ -1551,73 +1461,51 @@ export class CapacitorApp {
     if (!(await Bun.file(entitlementsPath).exists())) return;
     await this.#setCodeSignEntitlementsInIos(entitlementsRelPath);
   }
-  async #setUrlSchemesInAndroid(schemes: string[]) {
+  async #setDeepLinksInAndroid(schemes: string[], domains: string[]) {
     const manifestPath = path.join(this.app.cwdPath, this.androidRootPath, "app/src/main/AndroidManifest.xml");
-    let manifest = await readFile(manifestPath, "utf8");
-    let changed = false;
+    const original = await readFile(manifestPath, "utf8");
+    const pathPrefix = resolveMobilePath(this.target, "/");
+    let manifest = original;
     for (const scheme of schemes) {
       if (manifest.includes(`android:scheme="${scheme}"`)) continue;
-      const filter = [
-        "            <intent-filter>",
-        '                <action android:name="android.intent.action.VIEW" />',
-        '                <category android:name="android.intent.category.DEFAULT" />',
-        '                <category android:name="android.intent.category.BROWSABLE" />',
-        `                <data android:scheme="${scheme}" />`,
-        "            </intent-filter>",
-      ].join("\n");
-      manifest = manifest.replace(/(\s*<\/activity>)/, `\n${filter}$1`);
-      changed = true;
+      manifest = CapacitorApp.#withIntentFilter(manifest, "<intent-filter>", `<data android:scheme="${scheme}" />`);
     }
-    if (changed) await writeFile(manifestPath, manifest);
-  }
-  async #setDeepLinksInAndroid(schemes: string[], domains: string[]) {
-    await this.#setUrlSchemesInAndroid(schemes);
-    const manifestPath = path.join(this.app.cwdPath, this.androidRootPath, "app/src/main/AndroidManifest.xml");
-    let manifest = await readFile(manifestPath, "utf8");
-    let changed = false;
-    const pathPrefix = resolveMobilePath(this.target, "/");
     for (const domain of domains) {
       if (manifest.includes(`android:host="${domain}"`) && manifest.includes('android:scheme="https"')) continue;
-      const filter = [
-        '            <intent-filter android:autoVerify="true">',
-        '                <action android:name="android.intent.action.VIEW" />',
-        '                <category android:name="android.intent.category.DEFAULT" />',
-        '                <category android:name="android.intent.category.BROWSABLE" />',
-        `                <data android:scheme="https" android:host="${domain}" android:pathPrefix="${pathPrefix}" />`,
-        "            </intent-filter>",
-      ].join("\n");
-      manifest = manifest.replace(/(\s*<\/activity>)/, `\n${filter}$1`);
-      changed = true;
+      manifest = CapacitorApp.#withIntentFilter(
+        manifest,
+        '<intent-filter android:autoVerify="true">',
+        `<data android:scheme="https" android:host="${domain}" android:pathPrefix="${pathPrefix}" />`,
+      );
     }
-    if (changed) await writeFile(manifestPath, manifest);
+    if (manifest !== original) await writeFile(manifestPath, manifest);
+  }
+  static #withIntentFilter(manifest: string, open: string, data: string) {
+    const filter = [
+      `            ${open}`,
+      '                <action android:name="android.intent.action.VIEW" />',
+      '                <category android:name="android.intent.category.DEFAULT" />',
+      '                <category android:name="android.intent.category.BROWSABLE" />',
+      `                ${data}`,
+      "            </intent-filter>",
+    ].join("\n");
+    return manifest.replace(/(\s*<\/activity>)/, `\n${filter}$1`);
   }
   #setFeaturesInAndroid(features: string[]) {
     for (const feature of features) {
-      if (this.#hasFeatureInAndroid(feature)) {
+      if (this.#androidManifestNames("uses-feature").includes(feature)) {
         this.app.logger.info(`${feature} already exists in android`);
-        return this;
+        return;
       }
       this.app.logger.info(`Adding ${feature} to android`);
       this.project.android
         .getAndroidManifest()
         .injectFragment("manifest", `<uses-feature android:name="${feature}" />`);
     }
-    return this;
   }
-  #getFeaturesInAndroid() {
-    const androidManifest = this.project.android.getAndroidManifest();
-    const element = androidManifest.getDocumentElement();
-    if (!element) throw new Error("manifest not found");
-    const usesFeature = element.getElementsByTagName("uses-feature");
-    return Array.from(usesFeature).map((feature) => feature.getAttribute("android:name"));
-  }
-  #hasFeatureInAndroid(feature: string) {
-    return this.#getFeaturesInAndroid().includes(feature);
-  }
-
   #setPermissionsInAndroid(permissions: string[]) {
     for (const permission of permissions) {
-      if (this.#hasPermissionInAndroid(permission)) {
+      if (this.#androidManifestNames("uses-permission").includes(`android.permission.${permission}`)) {
         this.app.logger.info(`${permission} already exists in android`);
         continue;
       }
@@ -1626,16 +1514,10 @@ export class CapacitorApp {
         .getAndroidManifest()
         .injectFragment("manifest", `<uses-permission android:name="android.permission.${permission}" />`);
     }
-    return this;
   }
-  #getPermissionsInAndroid() {
-    const androidManifest = this.project.android.getAndroidManifest();
-    const element = androidManifest.getDocumentElement();
+  #androidManifestNames(tagName: "uses-feature" | "uses-permission") {
+    const element = this.project.android.getAndroidManifest().getDocumentElement();
     if (!element) throw new Error("manifest not found");
-    const usesPermission = element.getElementsByTagName("uses-permission");
-    return Array.from(usesPermission).map((permission) => permission.getAttribute("android:name"));
-  }
-  #hasPermissionInAndroid(permission: string) {
-    return this.#getPermissionsInAndroid().includes(`android.permission.${permission}`);
+    return Array.from(element.getElementsByTagName(tagName)).map((node) => node.getAttribute("android:name"));
   }
 }
