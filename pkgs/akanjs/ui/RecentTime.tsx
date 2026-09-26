@@ -61,29 +61,21 @@ const formatRelativeLabel = (date: Dayjs, now: Dayjs, lang: string, relative: Re
   return new Intl.RelativeTimeFormat(lang, { numeric: relative }).format(count, unit);
 };
 
+const relativeLimits = [
+  ["second", 1000, 60],
+  ["minute", 1000 * 60, 60],
+  ["hour", 1000 * 3600, 24],
+  ["day", 1000 * 3600 * 24, 7],
+  ["week", 1000 * 3600 * 24 * 7, 4],
+  ["month", 1000 * 3600 * 24 * 30, 12],
+] as const;
+
 const isRelativeDisplay = (diffMs: number, breakUnit?: Intl.RelativeTimeFormatUnit) => {
-  const elapsed = {
-    second: Math.abs(Math.floor(diffMs / 1000)),
-    minute: Math.abs(Math.floor(diffMs / (1000 * 60))),
-    hour: Math.abs(Math.floor(diffMs / (1000 * 3600))),
-    day: Math.abs(Math.floor(diffMs / (1000 * 3600 * 24))),
-    week: Math.abs(Math.floor(diffMs / (1000 * 3600 * 24 * 7))),
-    month: Math.abs(Math.floor(diffMs / (1000 * 3600 * 24 * 30))),
-  };
-  if (breakUnit === "second") return false;
-  if (elapsed.second < 60) return true;
-  if (breakUnit === "minute") return false;
-  if (elapsed.minute < 60) return true;
-  if (breakUnit === "hour") return false;
-  if (elapsed.hour < 24) return true;
-  if (breakUnit === "day") return false;
-  if (elapsed.day < 7) return true;
-  if (breakUnit === "week") return false;
-  if (elapsed.week < 4) return true;
-  if (breakUnit === "month") return false;
-  if (elapsed.month < 12) return true;
-  if (breakUnit === "year") return false;
-  return true;
+  for (const [unit, unitMs, limit] of relativeLimits) {
+    if (breakUnit === unit) return false;
+    if (Math.abs(Math.floor(diffMs / unitMs)) < limit) return true;
+  }
+  return breakUnit !== "year";
 };
 
 export const RecentTime = ({ date, breakUnit, format = "auto", relative = "fromNow", className }: RecentTimeProps) => {
