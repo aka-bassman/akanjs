@@ -1,17 +1,5 @@
-/**
- * Wire vocabulary for the MCP revisions this server answers.
- *
- * `2026-07-28` made the protocol stateless — no `initialize`, no session id, no server-opened stream — which is
- * what makes a single `POST /mcp` route sufficient. Everything before it is the *legacy* era, still what shipping
- * clients speak (measured: Claude Code 2.1.226 negotiates `2025-11-25`), and supporting it costs almost nothing
- * here because a legacy server *may* decline to issue `Mcp-Session-Id`: without one the client sends no session
- * header and never asks to resume a stream, so both eras run over the same stateless handler.
- *
- * `2025-06-18` is listed for the same reason. The surface this server actually implements — POST-only Streamable
- * HTTP, no sessions, no server-initiated requests — is wire-identical between the two legacy revisions, and a
- * client that proposes a version the server does not list is told to disconnect. Naming only the one revision that
- * was measured turned "we tested against this" into "we refuse everything else".
- */
+// `2026-07-28` is stateless (no `initialize`, session id or server stream). A legacy server may decline to issue
+// `Mcp-Session-Id`, so both legacy revisions — wire-identical for this POST-only surface — share the same handler.
 export const MCP_MODERN_VERSION = "2026-07-28";
 export const MCP_LEGACY_VERSION = "2025-11-25";
 export const MCP_LEGACY_PRIOR_VERSION = "2025-06-18";
@@ -27,14 +15,8 @@ export const MCP_META_CLIENT_CAPABILITIES = `${MCP_META_PREFIX}clientCapabilitie
 export const MCP_META_CLIENT_INFO = `${MCP_META_PREFIX}clientInfo`;
 export const MCP_META_SERVER_INFO = `${MCP_META_PREFIX}serverInfo`;
 
-/**
- * `-32020`..`-32099` is reserved by the spec, so nothing outside this table may be minted in that band.
- * `-32002` (resource not found) is retired in the modern revision; unknown resources are `invalidParams`.
- *
- * The band also defines `-32021 missingRequiredClientCapability`, which is absent because this server requires
- * none: it never samples, elicits, or reads roots. It belongs here the day one of those appears, not before — a
- * constant nothing emits reads as a check someone forgot to write.
- */
+// `-32020`..`-32099` is reserved by the spec; `-32021` is left out because this server requires no client capability.
+// `-32002` (resource not found) is retired in the modern revision: an unknown resource is `invalidParams`.
 export const McpErrorCode = {
   parse: -32700,
   invalidRequest: -32600,
@@ -93,10 +75,7 @@ export interface McpPromptArgument {
   required?: boolean;
 }
 
-/**
- * A prompt is user-controlled — the client offers it as a slash command and the model never invokes it — so its
- * `title` and `description` are read by a person, not inferred from a schema the way a tool's are.
- */
+/** User-controlled: a client offers it as a slash command, so a person reads its `title` and `description`. */
 export interface McpPrompt {
   name: string;
   title?: string;

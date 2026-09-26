@@ -5,13 +5,7 @@ export interface McpResourceTarget {
   args: Record<string, string | string[]>;
 }
 
-/**
- * Two-way map between an `akan://` resource URI and the endpoint that answers it.
- *
- * Parsing is done by hand rather than through `URL`: `akan:` is a non-special scheme, and how a runtime
- * normalizes the authority of one (case, percent-decoding) is exactly where a camelCase refName like
- * `agentSession` would quietly stop matching its model.
- */
+// Parsed by hand, not through `URL`: a runtime may normalize a non-special scheme's authority, lowercasing `agentSession`.
 export class McpUriTemplate {
   static readonly scheme = "akan";
   /** Reserved second segment: a model id may never take one of these values, and none is a valid ObjectId. */
@@ -20,23 +14,12 @@ export class McpUriTemplate {
   static model(refName: string) {
     return `${McpUriTemplate.scheme}://${refName}/{${refName}Id}`;
   }
-  /**
-   * The model's own unfiltered list is the bare `…/list`, never `…/list/<token>`. A named slice occupies the
-   * third segment, and a slice key is an author-chosen identifier — so any token put there for the root list
-   * would be one a slice could also be called, and the two would publish the same uri with only one of them
-   * readable. `list` in the *second* segment is already reserved against a model id, so there is nothing to
-   * collide with here.
-   */
+  /** The root list is the bare `…/list`: any third-segment token could also be an author's slice key. */
   static list(refName: string, sliceKey: string, argNames: string[]) {
     const base = `${McpUriTemplate.scheme}://${refName}/list${sliceKey ? `/${sliceKey}` : ""}`;
     return argNames.length ? `${base}{?${argNames.join(",")}}` : base;
   }
 
-  /**
-   * The uri a template names for one call's arguments — the inverse of `parse`, so what a page fetched can be
-   * attached under the address an agent may read it back from. A list argument repeats its key; an absent
-   * optional one is left out.
-   */
   static expand(template: string, args: Record<string, unknown>): string {
     const queryAt = template.indexOf("{?");
     const path = (queryAt === -1 ? template : template.slice(0, queryAt)).replace(/\{([^}]+)\}/g, (_, name: string) =>
@@ -75,13 +58,8 @@ export class McpUriTemplate {
     return null;
   }
 
-  /**
-   * A percent escape the decoder rejects (`akan://banner/%`) makes the uri unreadable, which is the same answer as
-   * a uri naming nothing: `resources/read` says `Unknown resource`. Left to throw, `decodeURIComponent`'s `URIError`
-   * reached the router's catch and became "the server failed" with a stack in the log — on a method an agent may
-   * call with any string it likes, so it was a log-spam path as well as a wrong verdict. The query half needs no
-   * such guard: `URLSearchParams` reads a bad escape as literal text.
-   */
+  // A bad escape must read as an unknown resource, not a 500; the query half needs no guard, since
+  // `URLSearchParams` reads one as literal text.
   static #decode(segments: string[]) {
     try {
       return segments.map(decodeURIComponent);
@@ -90,7 +68,6 @@ export class McpUriTemplate {
     }
   }
 
-  /** Repeated keys become an array so an `arrDepth` search arg round-trips through `{?statuses}` form expansion. */
   static #searchArgs(search: URLSearchParams): Record<string, string | string[]> {
     const args: Record<string, string | string[]> = {};
     for (const key of new Set(search.keys())) {
