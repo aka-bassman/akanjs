@@ -8,7 +8,7 @@ import type { Endpoint, EndpointCls } from "../../signal/endpoint";
 import type { EndpointInfo } from "../../signal/endpointInfo";
 import { Exception } from "../../signal/exception";
 import type { GuardCls } from "../../signal/guard";
-import { McpDocument, McpErrorCode, type McpExposedEndpoint, type McpToolResult } from "../../signal/mcp";
+import { McpDocument, type McpExposedEndpoint, type McpToolResult } from "../../signal/mcp";
 import type { MiddlewareCls } from "../../signal/middleware";
 import { SignalContext } from "../../signal/signalContext";
 import { McpExecutionContext } from "./McpExecutionContext";
@@ -157,10 +157,6 @@ export class McpDispatcher {
   }
 
   // -32602 covers not-found too: this revision retired -32002 and points resource-not-found at invalid params.
-  static #codeOf(status: number | undefined) {
-    return status && status < 500 ? McpErrorCode.invalidParams : McpErrorCode.internal;
-  }
-
   // The pointer keeps `content` non-empty: a client rendering an empty `content[0].text` shows an empty answer.
   #content(structuredContent: unknown, value: unknown): McpToolResult["content"] {
     if (structuredContent !== undefined && this.#props.legacyTextBlock === false)

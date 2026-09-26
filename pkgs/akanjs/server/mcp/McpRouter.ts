@@ -262,7 +262,11 @@ export class McpRouter {
       case "resources/templates/list":
         return await this.#list(call, "resourceTemplates", document.resourceTemplates);
       case "prompts/list":
-        return await this.#list(call, "prompts", (await this.#pagePromptEntries()).map(McpRouter.#promptOf));
+        return await this.#list(
+          call,
+          "prompts",
+          ((await this.#props.pagePrompts?.list()) ?? []).map(McpRouter.#promptOf),
+        );
       case "tools/call": {
         const slot = await this.#acquire(call);
         return "refused" in slot ? slot.refused : await this.#toolsCall(call, document, slot.release);
@@ -426,10 +430,6 @@ export class McpRouter {
           `MCP page prompts could not be listed: ${error instanceof Error ? error.message : error}`,
         );
       });
-  }
-
-  async #pagePromptEntries(): Promise<PagePromptEntry[]> {
-    return (await this.#props.pagePrompts?.list()) ?? [];
   }
 
   static #promptOf({ name, description, arguments: args }: PagePromptEntry): McpPrompt {
@@ -648,11 +648,7 @@ export class McpRouter {
   // Values that are not ASCII-safe travel wrapped in a lowercase base64 sentinel: `=?base64?…?=`.
   static #decodeHeader(value: string) {
     if (!value.startsWith("=?base64?") || !value.endsWith("?=")) return value;
-    try {
-      return Buffer.from(value.slice(9, -2), "base64").toString("utf8");
-    } catch {
-      return value;
-    }
+    return Buffer.from(value.slice(9, -2), "base64").toString("utf8");
   }
 
   // The JSON-RPC body is what tells a client a 4xx came from MCP, not a proxy; tool-level failures stay at 200.
