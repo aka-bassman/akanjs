@@ -9,11 +9,7 @@ export interface HubFileSinkOptions {
   json: boolean;
 }
 
-/**
- * The rotating log file fed from the hub instead of from this process's own Logger. In an ndjson deployment a
- * child writes no text line the owner could relay, so the file is written from the records that reached the
- * hub — every process in one place, keyed the way the text-mode files were.
- */
+// In an ndjson deployment a child writes no text line to relay, so the log file is fed from the hub's records.
 export class HubFileSink {
   #subscription: { unsubscribe(): void } | null;
 

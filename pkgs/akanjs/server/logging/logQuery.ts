@@ -1,6 +1,6 @@
 import { Logger, type LogLevelInput, type LogRecord, logSeverity } from "akanjs/common";
 
-/** Fields AND together; a list inside a field is an OR. One shape serves live tail, history and the SSE query string. */
+/** Fields AND together; a list inside a field is an OR. */
 export interface LogQuery {
   minSev?: number;
   text?: string;
@@ -30,8 +30,7 @@ export class LogQueryMatcher {
 
   matches(record: LogRecord): boolean {
     const q = this.query;
-    // A raw line has no level, so it is only excluded when the caller asked for a level at all; a promoted line
-    // (flight recorder, `x-akan-debug`) was asked for below the level and passes it.
+    // A raw line (no level) fails any level filter; a promoted line (flight, `x-akan-debug`) was asked for and passes.
     if (q.minSev !== undefined && (record.level === null || (record.sev < q.minSev && !Logger.isPromoted(record))))
       return false;
     if (q.text !== undefined && !record.message.includes(q.text)) return false;
@@ -50,7 +49,7 @@ export class LogQueryMatcher {
     return true;
   }
 
-  /** `*` is the only wildcard: `mutation:*`, `*:userList`. Everything else is literal. */
+  /** `*` is the only wildcard (`mutation:*`, `*:userList`); everything else is literal. */
   static compileGlob(pattern: string): RegExp {
     const source = pattern
       .split("*")
@@ -76,10 +75,7 @@ export class LogQueryMatcher {
     return level in logSeverity ? logSeverity[level] : undefined;
   }
 
-  /**
-   * Reads a query off `URLSearchParams` or a parsed JSON object. Lists accept repeated keys and comma-separated
-   * values; `level=warn` is sugar for `minSev`; `since` accepts a duration.
-   */
+  /** Lists take repeated keys or comma-separated values; `level` is sugar for `minSev`; `since` takes a duration. */
   static parse(input: URLSearchParams | Record<string, unknown>, now = Date.now()): LogQuery {
     const list = (key: string): string[] => {
       const raw =

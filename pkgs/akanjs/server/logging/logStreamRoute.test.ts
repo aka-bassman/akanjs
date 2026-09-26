@@ -30,7 +30,6 @@ interface Frame {
 const request = (query = "", headers: { [key: string]: string } = {}) =>
   new Request(`http://app/_akan/app/logs${query}`, { headers: { authorization: "Bearer tok", ...headers } });
 
-/** Reads the body until `predicate` holds or the deadline passes, then cancels — a stream never ends on its own. */
 const readUntil = async (res: Response, predicate: (text: string) => boolean, timeoutMs = 2_000) => {
   const reader = res.body?.getReader();
   if (!reader) throw new Error("no body");

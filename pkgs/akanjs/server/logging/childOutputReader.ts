@@ -3,9 +3,7 @@ import { Logger, type LogLevel, type LogRecord, logSeverity } from "akanjs/commo
 export type ChildOutputType = "stdout" | "stderr";
 
 export interface ChildOutputReaderOptions {
-  /** A complete stdout line, newline included. */
   onLine: (line: string) => void;
-  /** A stderr block of newline-terminated lines; one stack trace arrives as one block. */
   onBlock: (lines: string[]) => void;
   blockMaxLines?: number;
   blockIdleMs?: number;
@@ -20,11 +18,7 @@ export interface ChildRecordInput {
   pid: number | null;
 }
 
-/**
- * Splits a child process's stdout and stderr into lines. stderr is block-buffered — a runtime writes a stack
- * trace in many small writes and a reader wants it whole — and a block closes on a blank line, at
- * `blockMaxLines`, after `blockIdleMs` of silence, or when the stream ends.
- */
+// stderr is block-buffered: a runtime writes one stack trace in many small writes, and a reader wants it whole.
 export class ChildOutputReader {
   static readonly defaultBlockMaxLines = 64;
   static readonly defaultBlockIdleMs = 50;
@@ -44,10 +38,7 @@ export class ChildOutputReader {
     this.#blockIdleMs = blockIdleMs ?? ChildOutputReader.defaultBlockIdleMs;
   }
 
-  /**
-   * Wraps what a child wrote past its Logger — a `console.*` call, a runtime error, a crash — as a record of the
-   * process that read it, so an ndjson stdout stays one JSON line per event even for the line that killed a child.
-   */
+  // Output a child wrote past its Logger (console.*, a crash) becomes a record, so ndjson stays one line per event.
   static toRecord({ type, text, name, role, replicaIdx, pid }: ChildRecordInput): LogRecord {
     const level: LogLevel = type === "stderr" ? "error" : "info";
     const at = Date.now();
@@ -98,7 +89,6 @@ export class ChildOutputReader {
     this.#partial[type] = buffered;
   }
 
-  /** Ends the stream's partial line and, for stderr, the block it belongs to. */
   flush(type: ChildOutputType) {
     const partial = this.#partial[type];
     this.#partial[type] = "";
