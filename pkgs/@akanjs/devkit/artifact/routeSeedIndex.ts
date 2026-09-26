@@ -36,9 +36,7 @@ export function computeRouteSeedIndex(pageEntries: PageEntry[]): RouteSeedIndex 
     const files = [path.resolve(moduleAbsPath), ...(seedAbsPaths ?? []).map((seed) => path.resolve(seed))];
     if (parsed.kind === "layout" || parsed.kind === "overrides") {
       //? Every route under an overrides prefix needs its "use client" wrapper in the client graph, as with a layout.
-      const prefix = parsed.routeSegments.join("/");
-      const prev = layoutsByPrefix.get(prefix) ?? [];
-      layoutsByPrefix.set(prefix, [...prev, ...files]);
+      layoutsByPrefix.getOrInsert(parsed.routeSegments.join("/"), []).push(...files);
     } else if (parsed.kind === "page") {
       pagesBySegments.push({
         key,
@@ -51,9 +49,7 @@ export function computeRouteSeedIndex(pageEntries: PageEntry[]): RouteSeedIndex 
   }
   assertUniqueRoutePatterns(pagesBySegments);
 
-  const rootLayouts = layoutsByPrefix.get("") ?? [];
-  const globalLayoutFiles = rootLayouts;
-
+  const globalLayoutFiles = layoutsByPrefix.get("") ?? [];
   const seedEntries: RouteSeedEntry[] = [];
   for (const { pattern, segments, files, includeOwnLayout } of pagesBySegments) {
     const layouts: string[] = [];
@@ -80,11 +76,7 @@ export function serializeRouteSeedIndexForArtifact(
   options: { production?: boolean } = {},
 ): SerializedRouteSeedIndex {
   const normalizedArtifactDir = path.resolve(artifactDir);
-  if (options.production) {
-    return {
-      entries: index.entries.map((entry) => ({ routeId: entry.routeId })),
-    };
-  }
+  if (options.production) return { entries: index.entries.map((entry) => ({ routeId: entry.routeId })) };
   return {
     entries: index.entries.map((entry) => ({
       ...entry,

@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { App } from "../commandDecorators";
 import { AsyncDefaultExportDetector } from "../transforms/asyncDefaultExportDetector";
@@ -11,14 +10,15 @@ export interface PageEntry {
 
 const LAYOUT_KEY_RE = /^\.\/(.+\/)?_layout\.(tsx|ts|jsx|js)$/;
 
-async function appHasStModule(appCwdPath: string): Promise<boolean> {
-  return Bun.file(path.join(appCwdPath, "lib", "st.ts")).exists();
-}
-
 const IMPLICIT_LAYOUT_DIR = path.join(".akan", "generated", "root-layouts");
 const IMPLICIT_DICT_DIR = path.join(".akan", "generated", "dict");
 const IMPLICIT_OVERRIDES_DIR = path.join(".akan", "generated", "overrides");
 const OVERRIDES_KEY_RE = /^\.\/(.+\/)?_overrides\.(tsx|ts|jsx|js)$/;
+
+const importSpecifier = (fromAbsPath: string, toAbsPath: string) => {
+  const rel = path.relative(path.dirname(fromAbsPath), toAbsPath).split(path.sep).join("/");
+  return rel.startsWith(".") ? rel : `./${rel}`;
+};
 
 // UiOverrideProvider is a client component, so `_overrides.tsx` mounts through a generated "use client" layout.
 async function writeGeneratedOverridesLayoutFile(opts: {
@@ -28,12 +28,10 @@ async function writeGeneratedOverridesLayoutFile(opts: {
 }): Promise<string> {
   const filename = `${opts.key.replace(/^\.\//, "").replace(/[^a-zA-Z0-9]+/g, "_")}.tsx`;
   const absPath = path.join(path.resolve(opts.appCwdPath), IMPLICIT_OVERRIDES_DIR, filename);
-  const userRel = path.relative(path.dirname(absPath), opts.userAbsPath).split(path.sep).join("/");
-  const userSpecifier = userRel.startsWith(".") ? userRel : `./${userRel}`;
   const source = `"use client";
 import { UiOverrideProvider } from "akanjs/ui";
 import { createElement, type ReactNode } from "react";
-import value from ${JSON.stringify(userSpecifier)};
+import value from ${JSON.stringify(importSpecifier(absPath, opts.userAbsPath))};
 
 export default function AkanUiOverridesLayout({ children }: { children?: ReactNode }) {
   return createElement(UiOverrideProvider, { value }, children);
@@ -66,10 +64,6 @@ function implicitRootLayoutAbsPath(appCwdPath: string, segments: string[]): stri
   return path.join(path.resolve(appCwdPath), IMPLICIT_LAYOUT_DIR, filename);
 }
 
-function implicitDictionaryMacroAbsPath(appCwdPath: string): string {
-  return path.join(path.resolve(appCwdPath), IMPLICIT_DICT_DIR, "useDict.ts");
-}
-
 export function isRootBoundarySegments(segments: string[], basePaths: Iterable<string>): boolean {
   const firstVisibleIndex = segments.findIndex((segment) => !/^\(.+\)$/.test(segment));
   if (firstVisibleIndex === -1) return segments.length <= 1;
@@ -92,10 +86,7 @@ function findRootBoundaries(pageKeys: string[], appCwdPath: string, basePaths: I
       segments,
     });
   }
-  const hasExplicitRootBoundary = [...boundaries.values()].some((boundary) => boundary.segments.length === 0);
-  if (!hasExplicitRootBoundary && boundaries.size === 0) {
-    boundaries.set("", { sourceKey: null, sourceAbsPath: null, segments: [] });
-  }
+  if (boundaries.size === 0) boundaries.set("", { sourceKey: null, sourceAbsPath: null, segments: [] });
   return [...boundaries.values()].sort((a, b) => a.segments.join("/").localeCompare(b.segments.join("/")));
 }
 
@@ -116,11 +107,6 @@ function findExplicitRootLayoutAbsPath(pageKeys: string[], appCwdPath: string): 
   return rootLayoutKey ? path.resolve(appCwdPath, "page", rootLayoutKey.replace(/^\.\//, "")) : null;
 }
 
-function routePrefixForSegments(segments: string[]): string | null {
-  const visible = segments.filter((segment) => !/^\(.+\)$/.test(segment));
-  return visible[0] ?? null;
-}
-
 async function assertEnvClientConvention(appCwdPath: string, appName: string) {
   const envPath = path.join(appCwdPath, "env", "env.client.ts");
   if (!(await Bun.file(envPath).exists())) {
@@ -131,8 +117,7 @@ async function assertEnvClientConvention(appCwdPath: string, appName: string) {
 }
 
 async function writeGeneratedDictionaryMacroFile(appCwdPath: string, appName: string): Promise<string> {
-  const absPath = implicitDictionaryMacroAbsPath(appCwdPath);
-  await mkdir(path.dirname(absPath), { recursive: true });
+  const absPath = path.join(path.resolve(appCwdPath), IMPLICIT_DICT_DIR, "useDict.ts");
   await Bun.write(
     absPath,
     `import { getAllDictionary } from "@apps/${appName}/lib/dict" with { type: "macro" };
@@ -156,25 +141,11 @@ async function writeGeneratedRootLayoutFile(opts: {
     ? await writeGeneratedDictionaryMacroFile(opts.appCwdPath, opts.appName)
     : null;
   const absPath = implicitRootLayoutAbsPath(opts.appCwdPath, opts.boundary.segments);
-  await mkdir(path.dirname(absPath), { recursive: true });
-  const dictMacroRel = dictMacroAbsPath
-    ? path.relative(path.dirname(absPath), dictMacroAbsPath).split(path.sep).join("/")
-    : null;
-  const dictMacroSpecifier = dictMacroRel ? (dictMacroRel.startsWith(".") ? dictMacroRel : `./${dictMacroRel}`) : null;
-  const sourceRel = opts.boundary.sourceAbsPath
-    ? path.relative(path.dirname(absPath), opts.boundary.sourceAbsPath).split(path.sep).join("/")
-    : null;
-  const sourceSpecifier = sourceRel ? (sourceRel.startsWith(".") ? sourceRel : `./${sourceRel}`) : null;
+  const dictMacroSpecifier = dictMacroAbsPath ? importSpecifier(absPath, dictMacroAbsPath) : null;
+  const sourceSpecifier = opts.boundary.sourceAbsPath ? importSpecifier(absPath, opts.boundary.sourceAbsPath) : null;
   const inheritedSourceAbsPath =
     opts.rootSourceAbsPath && opts.rootSourceAbsPath !== opts.boundary.sourceAbsPath ? opts.rootSourceAbsPath : null;
-  const inheritedSourceRel = inheritedSourceAbsPath
-    ? path.relative(path.dirname(absPath), inheritedSourceAbsPath).split(path.sep).join("/")
-    : null;
-  const inheritedSourceSpecifier = inheritedSourceRel
-    ? inheritedSourceRel.startsWith(".")
-      ? inheritedSourceRel
-      : `./${inheritedSourceRel}`
-    : null;
+  const inheritedSourceSpecifier = inheritedSourceAbsPath ? importSpecifier(absPath, inheritedSourceAbsPath) : null;
   const clientImport = opts.includeStInit
     ? `import { st } from "@apps/${opts.appName}/client";\nvoid st;\n`
     : `import "@apps/${opts.appName}/client";\n`;
@@ -183,7 +154,7 @@ async function writeGeneratedRootLayoutFile(opts: {
   const inheritedImport = inheritedSourceSpecifier
     ? `import * as inheritedModule from ${JSON.stringify(inheritedSourceSpecifier)};\nconst inheritedLayout = resolveRouteModule(inheritedModule as never, ${JSON.stringify(inheritedLabel)}).module as LayoutModule;\n`
     : "const inheritedLayout: LayoutModule = {};\n";
-  const prefix = routePrefixForSegments(opts.boundary.segments);
+  const prefix = opts.boundary.segments.find((segment) => !/^\(.+\)$/.test(segment)) ?? null;
   const userLabel = opts.boundary.sourceAbsPath ? path.relative(opts.appCwdPath, opts.boundary.sourceAbsPath) : "";
   const userImport = sourceSpecifier
     ? `import * as userModule from ${JSON.stringify(sourceSpecifier)};\nconst userLayout = resolveRouteModule(userModule as never, ${JSON.stringify(userLabel)}).module as LayoutModule;\nconst UserLayout = userLayout.default as (props: LayoutProps) => ReactNode | Promise<ReactNode>;\n`
@@ -206,6 +177,19 @@ async function writeGeneratedRootLayoutFile(opts: {
     : "";
   const layoutChild = isAsyncUserLayout ? "{layout}" : userLayoutElement;
   const layoutReturn = isAsyncUserLayout ? "layout" : userLayoutElement;
+  const layoutExports = `export async function generateHead(props: PageProps) {
+  if (userLayout.generateHead) return userLayout.generateHead(props);
+  if (userLayout.head !== undefined) return userLayout.head;
+  if (inheritedLayout.generateHead) return inheritedLayout.generateHead(props);
+  return inheritedLayout.head;
+}
+
+export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;
+export const Error = userLayout.Error ?? inheritedLayout.Error;
+export const pageConfig = userLayout.pageConfig ?? inheritedLayout.pageConfig;
+
+${layoutSignature}({ children, params, searchParams }: LayoutProps) {
+${layoutBinding}  return `;
   const source = opts.includeSystemProvider
     ? `import type { LayoutModule, LayoutProps, PageProps } from "akanjs/client";
 import { loadFonts, resolveRouteModule } from "akanjs/client";
@@ -220,19 +204,7 @@ if (defaultFonts.length > 1) throw new Error("[route-convention] only one defaul
 const defaultFont = defaultFonts[0];
 const defaultFontClassName = defaultFont ? (defaultFont.className ?? \`font-\${defaultFont.name}\`) : undefined;
 
-export async function generateHead(props: PageProps) {
-  if (userLayout.generateHead) return userLayout.generateHead(props);
-  if (userLayout.head !== undefined) return userLayout.head;
-  if (inheritedLayout.generateHead) return inheritedLayout.generateHead(props);
-  return inheritedLayout.head;
-}
-
-export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;
-export const Error = userLayout.Error ?? inheritedLayout.Error;
-export const pageConfig = userLayout.pageConfig ?? inheritedLayout.pageConfig;
-
-${layoutSignature}({ children, params, searchParams }: LayoutProps) {
-${layoutBinding}  return (
+${layoutExports}(
     <System.Provider
       of={GeneratedLayout as never}
       appName=${JSON.stringify(opts.appName)}
@@ -256,19 +228,7 @@ ${layoutBinding}  return (
 import { resolveRouteModule } from "akanjs/client";
 import type { ReactNode } from "react";
 ${inheritedImport}${userImport}
-export async function generateHead(props: PageProps) {
-  if (userLayout.generateHead) return userLayout.generateHead(props);
-  if (userLayout.head !== undefined) return userLayout.head;
-  if (inheritedLayout.generateHead) return inheritedLayout.generateHead(props);
-  return inheritedLayout.head;
-}
-
-export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;
-export const Error = userLayout.Error ?? inheritedLayout.Error;
-export const pageConfig = userLayout.pageConfig ?? inheritedLayout.pageConfig;
-
-${layoutSignature}({ children, params, searchParams }: LayoutProps) {
-${layoutBinding}  return ${layoutReturn};
+${layoutExports}${layoutReturn};
 }
 `;
   await Bun.write(absPath, source);
@@ -282,7 +242,7 @@ export async function resolveSsrPageEntries(opts: {
   basePaths?: Iterable<string>;
 }): Promise<PageEntry[]> {
   const absPageDir = path.resolve(opts.appCwdPath, "page");
-  const hasSt = await appHasStModule(opts.appCwdPath);
+  const hasSt = await Bun.file(path.join(opts.appCwdPath, "lib", "st.ts")).exists();
   const basePaths = opts.basePaths ?? [];
   const rootSourceAbsPath = findExplicitRootLayoutAbsPath(opts.pageKeys, opts.appCwdPath);
   const rootBoundaries = findRootBoundaries(opts.pageKeys, opts.appCwdPath, basePaths);
@@ -323,9 +283,7 @@ export async function resolveSsrPageEntries(opts: {
       seedAbsPaths: [...new Set([boundary.sourceAbsPath, rootSourceAbsPath].filter((absPath) => absPath !== null))],
     })),
   );
-  const entries = [...base, ...generated];
-  entries.sort((a, b) => a.key.localeCompare(b.key));
-  return entries;
+  return [...base, ...generated].sort((a, b) => a.key.localeCompare(b.key));
 }
 
 export async function resolveSsrPageEntriesForApp(app: App, pageKeys: string[]): Promise<PageEntry[]> {
