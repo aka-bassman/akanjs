@@ -55,24 +55,12 @@ const DefaultInput = ({
   const [firstFocus, setFirstFocus] = useState(true);
   const validateResult = validate ? validate(value) : undefined;
   const inputBase = (useUiRecipe("input") ?? inputRecipe)();
-  const status: "error" | "warning" | "success" | null =
-    !nullable && !value ? null : !value.length ? "warning" : validateResult === true ? "success" : "error";
   const invalidMessage =
     (value && !value.length) || validateResult === true || firstFocus
       ? null
       : validateResult === false
         ? l("base.invalidValueError")
         : validateResult;
-  const statusClass =
-    inputStyleType === "bordered"
-      ? status === "error"
-        ? "border-destructive"
-        : !firstFocus && status === "warning"
-          ? "border-warning"
-          : status === "success"
-            ? "border-success"
-            : ""
-      : "";
   const inputType = cn(
     inputBase,
     inputStyleType === "borderless"

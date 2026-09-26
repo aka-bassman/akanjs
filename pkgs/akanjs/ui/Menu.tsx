@@ -56,7 +56,6 @@ export const DefaultMenu = ({
   const modeClassName = mode === "horizontal" ? "flex-row " : "bg-muted";
   const menuRef = useRef<HTMLDivElement | null>(null);
   const LiRefs = useRef<HTMLLIElement[]>([]);
-  const overflowLiRef = useRef<HTMLLIElement | null>(null);
   const itemWidthsRef = useRef<number[]>([]);
   const innerWidth = st.use.innerWidth({ agent: false });
 
