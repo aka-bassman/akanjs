@@ -113,7 +113,8 @@ export class SqliteDatabase
   #queue: Promise<void> = Promise.resolve();
 
   override async onInit() {
-    await mkdir(path.dirname(this.config.filePath), { recursive: true });
+    // Resolved first: Bun on Windows fails a recursive mkdir of "." (":memory:", a bare file name) with EEXIST.
+    await mkdir(path.dirname(path.resolve(this.config.filePath)), { recursive: true });
     this.#db = new Database(this.config.filePath, { strict: true, create: true });
     this.#client = new BunSqliteClient(this.#db, () => this.#writeTurn());
     this.#db.run(`PRAGMA journal_mode = ${this.config.journalMode ?? "WAL"}`);
@@ -284,7 +285,7 @@ export class LibsqlDatabase
 
   override async onInit() {
     const url = this.config.url ?? "file:local.db";
-    if (url.startsWith("file:")) await mkdir(path.dirname(url.slice(5)), { recursive: true });
+    if (url.startsWith("file:")) await mkdir(path.dirname(path.resolve(url.slice(5))), { recursive: true });
     const { createClient } = await import("@libsql/client");
     this.#libsql = createClient({ url, authToken: this.config.authToken });
     this.#client = new LibsqlAkanClient(this.#libsql, () => this.#writeTurn());

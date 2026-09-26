@@ -5,6 +5,7 @@ export * from "./database.adaptor";
 export * from "./documentTransfer";
 export * from "./insightQuery";
 export * from "./llm.adaptor";
+export * from "./llmOverflow";
 export * from "./logging.adaptor";
 export * from "./openaiDialect";
 export * from "./openaiLlm";

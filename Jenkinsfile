@@ -173,13 +173,11 @@ pipeline {
         stage("Database Mode Conformance"){
             steps {
                 // The same suites against Redis and Postgres (infra/test/compose.yaml, oldest and newest supported
-                // versions), plus TEST_LIBS in multiple and cluster mode. Known defects are `test.failing`, so this
-                // is green while they stand; red means a regression, or a fix whose marker was not removed.
-                // Non-gating while the lib suites cannot boot in those modes ([M-0], local/database-modes).
-                catchError(buildResult: "UNSTABLE", stageResult: "FAILURE") {
-                    timeout(time: 30, unit: "MINUTES") {
-                        sh "ssh -i $SSH_KEY $BUILD_USER@$BUILD_HOST -p $BUILD_PORT \"cd $REPO_NAME/$BRANCH && BRANCH=$BRANCH TEST_LIBS=$TEST_LIBS bun run testConformance --libs\""
-                    }
+                // versions), plus TEST_LIBS in multiple and cluster mode. A lib test counts only if it passed in
+                // single mode, so what this host lacks for "Lib Suites" does not fail it; red means a mode regressed,
+                // or a fixed defect still carries its `test.failing` marker.
+                timeout(time: 30, unit: "MINUTES") {
+                    sh "ssh -i $SSH_KEY $BUILD_USER@$BUILD_HOST -p $BUILD_PORT \"cd $REPO_NAME/$BRANCH && BRANCH=$BRANCH TEST_LIBS=$TEST_LIBS bun run testConformance --libs\""
                 }
             }
         }

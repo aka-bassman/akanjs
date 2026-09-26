@@ -694,7 +694,12 @@ describe("ApplicationRunner", () => {
 
     expect(spawn).toHaveBeenCalledWith(
       "bun",
-      ["test", "--isolate", "--preload", expect.stringContaining("node_modules/akanjs/test/signalTest.preload.ts")],
+      [
+        "test",
+        "--isolate",
+        "--preload",
+        expect.stringContaining(path.join("node_modules", "akanjs", "test", "signalTest.preload.ts")),
+      ],
       {
         env: {
           ...process.env,
@@ -741,7 +746,12 @@ describe("ApplicationRunner", () => {
 
     expect(spawn).toHaveBeenCalledWith(
       "bun",
-      ["test", "--isolate", "--preload", expect.stringContaining("node_modules/akanjs/test/signalTest.preload.ts")],
+      [
+        "test",
+        "--isolate",
+        "--preload",
+        expect.stringContaining(path.join("node_modules", "akanjs", "test", "signalTest.preload.ts")),
+      ],
       {
         env: {
           ...process.env,

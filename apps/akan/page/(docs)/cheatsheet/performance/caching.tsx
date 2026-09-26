@@ -121,24 +121,68 @@ export default page().render(() => {
         ko: "값을 바로 지웁니다.",
       }),
     },
+    {
+      name: "getDel<T>(topic, key)",
+      desc: l.trans({
+        en: "Reads and removes in one step: of two callers racing for a one-time value, one gets it.",
+        ko: "읽기와 삭제를 한 번에 합니다. 한 번만 쓸 값을 두고 다투는 두 호출자 중 하나만 받습니다.",
+      }),
+    },
+    {
+      name: "setIfAbsent(topic, key, value, { expireAt }?)",
+      desc: l.trans({
+        en: "Writes only if nothing live is stored, and answers whether this call wrote.",
+        ko: "살아 있는 값이 없을 때만 쓰고, 이 호출이 썼는지를 돌려줍니다.",
+      }),
+    },
+    {
+      name: "incr(topic, key, by?, { expireAt }?)",
+      desc: l.trans({
+        en: "Adds `by` (1 by default) and answers the total; the expiry applies if this call creates it.",
+        ko: "`by`(기본 1)를 더하고 합계를 돌려줍니다. 만료는 이 호출이 값을 처음 만들 때만 걸립니다.",
+      }),
+    },
+    {
+      name: ["hset", "hget", "hdelete"],
+      desc: l.trans({
+        en: "A hash under one key: each field is written, read and removed alone, and expires on its own.",
+        ko: "key 하나 아래의 해시입니다. 필드마다 따로 쓰고 읽고 지우며, 만료도 필드마다 걸립니다.",
+      }),
+    },
+    {
+      name: ["hkeys", "hentries", "hclear"],
+      desc: l.trans({
+        en: "Lists the fields, lists them with their values, or empties the hash.",
+        ko: "필드 이름을 나열하거나, 값과 함께 나열하거나, 해시를 비웁니다.",
+      }),
+    },
+    {
+      name: ["hgetDel", "hsetIfAbsent", "hincr"],
+      desc: l.trans({
+        en: "The one-step `getDel`, `setIfAbsent` and `incr`, for a single field.",
+        ko: "필드 하나에 대한 한 번에 끝나는 `getDel`, `setIfAbsent`, `incr`입니다.",
+      }),
+    },
   ];
 
   const memoryShapes = [
     {
       name: "memory(ref)",
       desc: l.trans({
-        en: "One shared value, read and written through three async methods.",
-        ko: "async 메서드 세 개로 읽고 쓰는 공유 값 하나입니다.",
+        en: "One shared value behind async methods; `getDel`, `setIfAbsent` and `incr` each act in one step.",
+        ko: "async 메서드로 다루는 공유 값 하나입니다. `getDel`, `setIfAbsent`, `incr`는 각각 한 번에 끝납니다.",
       }),
-      example: "get() · set(value, { expireAt }?) · delete()",
+      example: `get() · set(value, { expireAt }?) · delete()
+getDel() · setIfAbsent(value) · incr(by?)`,
     },
     {
       name: "memory(Map, { of: ref })",
       desc: l.trans({
-        en: "A shared async key–value map.",
-        ko: "공유되는 async key-value map입니다.",
+        en: "A shared async key–value map. `getOrInsert` keeps the first writer's value, across replicas too.",
+        ko: "공유되는 async key-value map입니다. `getOrInsert`는 레플리카 사이에서도 먼저 쓴 값을 지킵니다.",
       }),
       example: `get(key) · set(key, value, { expireAt }?) · delete(key) · clear()
+getDel(key) · setIfAbsent(key, value) · incr(key, by?)
 getOrInsert(key, value) · getOrInsertComputed(key, fn)
 keys() · entries() · forEach(fn)`,
     },
@@ -344,16 +388,13 @@ keys() · entries() · forEach(fn)`,
             title="apps/blog/lib/article/article.document.ts"
             code={`export class ArticleModel extends into(Article, ArticleFilter, cnst.article, () => ({})) {
   async savePreviewToken(articleId: string, token: string) {
-    await this.articleCache.set("previewTokens", articleId, token, {
+    await this.articleCache.hset("previewTokens", articleId, token, true, {
       expireAt: dayjs().add(10, "minute"),
     });
   }
 
   async consumePreviewToken(articleId: string, token: string) {
-    const saved = await this.articleCache.get<string>("previewTokens", articleId);
-    if (saved !== token) return false;
-    await this.articleCache.delete("previewTokens", articleId);
-    return true;
+    return !!(await this.articleCache.hgetDel("previewTokens", articleId, token));
   }
 }`}
           />
@@ -362,14 +403,16 @@ keys() · entries() · forEach(fn)`,
               {l.trans({
                 en: (
                   <span>
-                    <strong>One topic per purpose.</strong> <code>previewTokens</code> is the topic and the article id
-                    is the key. The model name is prefixed for you, so topics never collide across models.
+                    <strong>One topic per purpose.</strong> <code>previewTokens</code> is the topic, the article id is
+                    the key, and each token is a field under it with an expiry of its own. The model name is prefixed
+                    for you, so topics never collide across models.
                   </span>
                 ),
                 ko: (
                   <span>
-                    <strong>용도마다 topic 하나.</strong> <code>previewTokens</code>가 topic이고 article id가 key입니다.
-                    model 이름이 앞에 자동으로 붙으므로, 다른 model의 topic과 겹치지 않습니다.
+                    <strong>용도마다 topic 하나.</strong> <code>previewTokens</code>가 topic, article id가 key이고, 토큰
+                    하나하나가 그 아래 필드이며 필드마다 만료가 따로 걸립니다. model 이름이 앞에 자동으로 붙으므로, 다른
+                    model의 topic과 겹치지 않습니다.
                   </span>
                 ),
               })}
@@ -378,13 +421,17 @@ keys() · entries() · forEach(fn)`,
               {l.trans({
                 en: (
                   <span>
-                    <strong>Delete on use.</strong> The token is removed as soon as it matches, so it cannot be
-                    replayed.
+                    <strong>Consume in one step.</strong> <code>hgetDel</code> reads the field and removes it at once,
+                    so of two requests racing with one token only one gets it. A wrong token names a field that does not
+                    exist and consumes nothing. A read followed by a separate delete would let both racing requests
+                    through.
                   </span>
                 ),
                 ko: (
                   <span>
-                    <strong>쓰면 바로 지웁니다.</strong> 토큰이 맞는 순간 삭제하므로 같은 토큰을 다시 쓸 수 없습니다.
+                    <strong>한 번에 꺼내 씁니다.</strong> <code>hgetDel</code>은 필드를 읽는 일과 지우는 일을 한 번에
+                    하므로, 같은 토큰으로 동시에 들어온 두 요청 중 하나만 통과합니다. 틀린 토큰은 없는 필드를 가리키므로
+                    아무것도 소비하지 않습니다. 읽은 뒤 따로 지우면 동시에 온 두 요청이 모두 통과합니다.
                   </span>
                 ),
               })}

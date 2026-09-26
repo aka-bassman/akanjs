@@ -213,10 +213,21 @@ export class ConformanceEnv {
 
   /** The local drivers always, and each remote one whose backend the suite can reach. */
   static sqlDrivers(suite: string, { remote = false }: { remote?: boolean } = {}): SqlDriverKind[] {
-    const kinds: SqlDriverKind[] = ["sqlite", "libsql"];
+    const kinds: SqlDriverKind[] = ["sqlite"];
+    if (ConformanceEnv.#hasLibsqlBinding(suite)) kinds.push("libsql");
     if (ConformanceEnv.has(suite, "postgres")) kinds.push("postgres");
     if (remote && ConformanceEnv.has(suite, "libsql")) kinds.push("libsqlRemote");
     return kinds;
+  }
+
+  static #hasLibsqlBinding(suite: string) {
+    if (process.platform !== "win32" || process.arch !== "arm64") return true;
+    const key = `${suite}:libsql-binding`;
+    if (!ConformanceEnv.#announced.has(key)) {
+      ConformanceEnv.#announced.add(key);
+      console.info(`[conformance] ${suite}: local libsql cases skipped — libsql publishes no win32-arm64 binding`);
+    }
+    return false;
   }
 
   /**

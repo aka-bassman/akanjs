@@ -2162,7 +2162,7 @@ Narrows the agent to one app, rooted at `apps/<app>`. Without it, the whole repo
 
 Picks what the agent may do: its tools, approvals and session storage. See Profiles below.
 
-`<provider>/<id>`. Default: `deepseek/deepseek-v4-flash`; without its key, the first available.
+`<provider>/<id>`. Default: `deepseek/deepseek-flash`; without its key, the first available.
 
 Prints one event per line as JSON. The full-screen session then opens only with `--interactive`.
 
@@ -3142,7 +3142,7 @@ Touches window, navigator or Capacitor, or is a React hook.
 
 Touches node:*, Bun, process.env, a secret, or a server SDK.
 
-Renders JSX and is not bound to one model; a model-bound component goes in its module.
+Renders JSX or defines a recipe, bound to no model; a model-bound component goes in its module.
 
 A build-time or CLI-time AkanPlugin, registered in akan.config.ts.
 
@@ -3229,7 +3229,7 @@ Touches window, navigator or Capacitor, or is a React hook.
 
 Touches node:*, Bun, process.env, a secret, or a server SDK.
 
-Renders JSX and is not bound to one model; a model-bound component goes in its module.
+Renders JSX or defines a recipe, bound to no model; a model-bound component goes in its module.
 
 A build-time or CLI-time AkanPlugin, registered in akan.config.ts.
 
@@ -3272,7 +3272,7 @@ sidecar
 
 A camelCase helper or type file that serves one component, like `swipeCard.util.ts`.
 
-Draws JSX, bound to no model — ui/
+Draws JSX or defines a look, bound to no model — ui/
 
 landing hero · admin header
 
@@ -3316,7 +3316,7 @@ Touches `node:*`, `Bun`, `process.env`, a secret, or a server SDK.
 
 libs/util/srvkit/cloudflareApi.ts // camelCase file, PascalCase class
 
-Renders JSX and is not bound to one model; a model-bound component goes in its module.
+Renders JSX or defines a recipe, bound to no model; a model-bound component goes in its module.
 
 ## model.abstract.md
 

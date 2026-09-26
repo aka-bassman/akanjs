@@ -581,14 +581,16 @@ export class ProductObject extends via(ProductInput, (field) => ({
               {l.trans({
                 en: (
                   <span>
-                    <strong>Raw user input is safe.</strong> Punctuation that would otherwise be search syntax is quoted
-                    for you.
+                    <strong>Raw user input is safe.</strong> Nothing in it is read as search syntax. Punctuation splits
+                    a word into pieces that must appear side by side, so <code>follow-up</code> finds “follow-up” and
+                    “follow up”.
                   </span>
                 ),
                 ko: (
                   <span>
-                    <strong>사용자 입력을 그대로 넣어도 안전합니다.</strong> 검색 문법으로 해석될 문장부호는 알아서
-                    따옴표 처리됩니다.
+                    <strong>사용자 입력을 그대로 넣어도 안전합니다.</strong> 입력의 어떤 글자도 검색 문법으로 해석되지
+                    않습니다. 문장부호는 단어를 조각으로 나누고 그 조각들이 나란히 있어야 매치되므로,{" "}
+                    <code>follow-up</code>은 “follow-up”과 “follow up”을 찾습니다.
                   </span>
                 ),
               })}

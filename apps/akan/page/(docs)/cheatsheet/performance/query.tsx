@@ -1086,16 +1086,18 @@ export class TaskModel extends into(Task, TaskFilter, cnst.task, () => ({})) {
               {l.trans({
                 en: (
                   <span>
-                    <strong>The index is built on the expression the filter compiles to.</strong>{" "}
+                    <strong>The index is built on the expression the filter compiles to.</strong> On SQLite,{" "}
                     <code>{"schema.index({ project: 1 })"}</code> indexes{" "}
-                    <code>{"json_extract(_doc, '$.project')"}</code>, which <code>{"{ project }"}</code> then uses.
+                    <code>{"json_extract(_doc, '$.project')"}</code>, which <code>{"{ project }"}</code> then uses;
+                    Postgres indexes its own form of the same expression.
                   </span>
                 ),
                 ko: (
                   <span>
-                    <strong>인덱스는 필터가 쓰는 식 그대로 만들어집니다.</strong>{" "}
+                    <strong>인덱스는 필터가 쓰는 식 그대로 만들어집니다.</strong> SQLite에서{" "}
                     <code>{"schema.index({ project: 1 })"}</code>는 <code>{"json_extract(_doc, '$.project')"}</code>에
-                    인덱스를 걸고, <code>{"{ project }"}</code> 조건이 그 인덱스를 씁니다.
+                    인덱스를 걸고, <code>{"{ project }"}</code> 조건이 그 인덱스를 씁니다. Postgres는 같은 식을 Postgres
+                    문법으로 바꾼 형태에 인덱스를 겁니다.
                   </span>
                 ),
               })}

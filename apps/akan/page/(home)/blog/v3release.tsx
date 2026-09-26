@@ -261,6 +261,49 @@ const moreChanges = [
   },
 ] as const;
 
+const versionMetrics = [
+  { metric: { en: "Requests per second", ko: "초당 요청 수" }, v2: "112K", v3: "123K", change: "+10%" },
+  { metric: { en: "Response time (p99)", ko: "응답 시간 (p99)" }, v2: "1.30 ms", v3: "1.04 ms", change: "−20%" },
+  { metric: { en: "Startup time", ko: "시작 시간" }, v2: "204 ms", v3: "102 ms", change: "−50%" },
+  { metric: { en: "Memory at rest", ko: "대기 메모리" }, v2: "84 MB", v3: "57 MB", change: "−32%" },
+  { metric: { en: "Memory under load", ko: "부하 중 메모리" }, v2: "105 MB", v3: "85 MB", change: "−19%" },
+] as const;
+
+const improvements = [
+  {
+    title: { en: "Starts twice as fast", ko: "두 배 빠른 시작" },
+    body: {
+      en: "Your app is ready to take requests in about half the time it took on v2. Deploys, restarts and scale-outs come back online sooner.",
+      ko: "앱이 요청을 받을 준비가 되기까지 v2의 절반 정도 시간이면 충분합니다. 배포, 재시작, 스케일 아웃 후 더 빨리 서비스에 복귀합니다.",
+    },
+  },
+  {
+    title: { en: "Lighter on memory", ko: "더 가벼운 메모리" },
+    body: {
+      en: "The same app now uses about a third less memory when idle, so more of it fits on the same machine.",
+      ko: "같은 앱이 대기 상태에서 메모리를 약 3분의 1 덜 사용합니다. 같은 머신에 더 많이 올릴 수 있습니다.",
+    },
+  },
+  {
+    title: { en: "Faster under load", ko: "부하에서도 더 빠르게" },
+    body: {
+      en: "Throughput went up and slow responses got faster, keeping Akan.js alongside the fastest Bun frameworks.",
+      ko: "처리량은 늘고 느린 응답은 더 빨라져, Akan.js는 가장 빠른 Bun 프레임워크들과 나란히 있습니다.",
+    },
+  },
+] as const;
+
+const frameworkComparison = [
+  { name: "raw Bun.serve", runtime: "Bun", rps: 138072, coldP50: 102.0, idleRss: 31.5, isAkan: false },
+  { name: "ElysiaJS", runtime: "Bun", rps: 137780, coldP50: 104.0, idleRss: 37.0, isAkan: false },
+  { name: "Hono", runtime: "Bun", rps: 129926, coldP50: 103.4, idleRss: 33.1, isAkan: false },
+  { name: "Akan.js v3", runtime: "Bun", rps: 123319, coldP50: 102.2, idleRss: 57.2, isAkan: true },
+  { name: "raw sqlite", runtime: "Bun", rps: 121075, coldP50: 101.9, idleRss: 35.8, isAkan: false },
+  { name: "Fastify", runtime: "Node", rps: 86682, coldP50: 103.7, idleRss: 69.3, isAkan: false },
+] as const;
+
+const maxRps = Math.max(...frameworkComparison.map((item) => item.rps));
+
 const numbers = [
   {
     value: "26MB → 8.1MB",
@@ -371,8 +414,8 @@ export default page().render(() => {
           </h1>
           <p className="mt-6 text-foreground/70 text-lg leading-8">
             {l.trans({
-              en: "v2 gave Akan one runtime. v3 gives every app a second kind of user. The guards that protect your screens now also publish them to AI agents, as MCP tools, as prompts, and as an assistant working inside the page, and the UI layer underneath has been rebuilt on native tokens and recipes. Here is what changed, in the order it matters when you build.",
-              ko: "v2가 Akan에 하나의 런타임을 줬다면, v3는 모든 앱에 두 번째 사용자를 줍니다. 화면을 지키던 가드가 이제 그 화면을 AI 에이전트에게도 공개합니다. MCP 도구로, 프롬프트로, 그리고 페이지 안에서 일하는 어시스턴트로요. 그 아래 UI 계층은 네이티브 토큰과 레시피로 새로 지었습니다. 무엇이 바뀌었는지, 개발할 때 중요한 순서대로 정리합니다.",
+              en: "v2 gave Akan one runtime. v3 gives every app a second kind of user. The guards that protect your screens now also publish them to AI agents, as MCP tools, as prompts, and as an assistant working inside the page, and the UI layer underneath has been rebuilt on native tokens and recipes — and it is faster than v2 on every number we measured. Here is what changed, in the order it matters when you build.",
+              ko: "v2가 Akan에 하나의 런타임을 줬다면, v3는 모든 앱에 두 번째 사용자를 줍니다. 화면을 지키던 가드가 이제 그 화면을 AI 에이전트에게도 공개합니다. MCP 도구로, 프롬프트로, 그리고 페이지 안에서 일하는 어시스턴트로요. 그 아래 UI 계층은 네이티브 토큰과 레시피로 새로 지었고, 측정한 모든 지표에서 v2보다 빠릅니다. 무엇이 바뀌었는지, 개발할 때 중요한 순서대로 정리합니다.",
             })}
           </p>
           <nav className="mt-8 flex flex-wrap gap-2">
@@ -388,6 +431,12 @@ export default page().render(() => {
                 {item.no} {l.trans(item.title)}
               </a>
             ))}
+            <a
+              href="#v3-performance"
+              className={badgeRecipe(undefined, "border-primary/20 bg-primary/10 text-primary hover:bg-primary/15")}
+            >
+              {l.trans({ en: "Performance", ko: "성능" })}
+            </a>
           </nav>
         </header>
 
@@ -417,6 +466,157 @@ export default page().render(() => {
           ))}
         </section>
 
+        <section id="v3-performance" className="mt-16 scroll-mt-28">
+          <p className="font-bold text-primary text-sm uppercase tracking-[0.2em]">
+            {l.trans({ en: "Faster and smaller", ko: "더 빠르고 더 작게" })}
+          </p>
+          <h2 className="mt-3 font-bold text-3xl tracking-tight">
+            {l.trans({
+              en: "Faster than v2 on every number we measured",
+              ko: "측정한 모든 지표에서 v2보다 빠릅니다",
+            })}
+          </h2>
+          <p className="mt-4 text-foreground/75 leading-7">
+            {l.trans({
+              en: "Agents, MCP and a new UI system could easily have cost speed, so we ran the same benchmark as for v2. v3 is faster, uses less memory, and starts twice as fast.",
+              ko: "에이전트, MCP, 새로운 UI 시스템을 더하면서 속도를 잃지 않았는지 확인하려고 v2 때와 같은 벤치마크를 다시 돌렸습니다. v3는 더 빠르고, 메모리를 덜 쓰고, 두 배 빨리 시작합니다.",
+            })}
+          </p>
+          <div className="mt-6 overflow-x-auto rounded-2xl border border-foreground/10 px-4">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-border border-b">
+                  <th className="py-3 pr-4 font-semibold text-foreground/45">
+                    {l.trans({ en: "Metric", ko: "지표" })}
+                  </th>
+                  <th className="px-4 py-3 text-right font-semibold text-foreground/45">v2</th>
+                  <th className="px-4 py-3 text-right font-semibold text-foreground/45">v3</th>
+                  <th className="py-3 pl-4 text-right font-semibold text-foreground/45">
+                    {l.trans({ en: "Change", ko: "변화" })}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {versionMetrics.map((row) => (
+                  <tr key={row.metric.en} className="border-muted border-b last:border-none">
+                    <td className="py-3 pr-4 text-foreground/80">{l.trans(row.metric)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-foreground/55">{row.v2}</td>
+                    <td className="px-4 py-3 text-right font-mono text-primary">{row.v3}</td>
+                    <td className="py-3 pl-4 text-right font-mono text-primary">{row.change}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-6 grid gap-3 md:grid-cols-3">
+            {improvements.map((item) => (
+              <div key={item.title.en} className="rounded-2xl bg-muted p-5">
+                <h3 className="font-semibold">{l.trans(item.title)}</h3>
+                <p className="mt-2 text-foreground/70 text-sm leading-6">{l.trans(item.body)}</p>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="mt-12 font-bold text-xl">
+            {l.trans({ en: "Side by side with other frameworks", ko: "다른 프레임워크와 나란히" })}
+          </h3>
+          <p className="mt-3 text-foreground/75 leading-7">
+            {l.trans({
+              en: "Akan.js does far more than a plain router — database, auth, server rendering and agents come built in — and it still keeps pace with the lightweight Bun frameworks.",
+              ko: "Akan.js는 단순한 라우터보다 훨씬 많은 일을 합니다. 데이터베이스, 인증, 서버 렌더링, 에이전트가 모두 내장되어 있는데도 가벼운 Bun 프레임워크들과 속도를 나란히 합니다.",
+            })}
+          </p>
+          <p className="mt-6 mb-3 font-semibold text-foreground/60 text-xs uppercase tracking-widest">
+            {l.trans({ en: "Requests per second", ko: "초당 요청 수" })}
+          </p>
+          <div className="space-y-2">
+            {frameworkComparison.map((item) => (
+              <div key={item.name}>
+                <div className="mb-1 flex flex-wrap justify-between gap-2 text-sm">
+                  <span className={item.isAkan ? "font-medium text-primary" : "font-medium"}>
+                    {item.name} ({item.runtime})
+                  </span>
+                  <span className={item.isAkan ? "font-mono text-primary/80" : "font-mono text-foreground/55"}>
+                    {item.rps.toLocaleString("en-US")} RPS
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-foreground/10">
+                  <div
+                    className={item.isAkan ? "h-full rounded-full bg-primary" : "h-full rounded-full bg-foreground/50"}
+                    style={{ width: `${Math.max(4, (item.rps / maxRps) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-8 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-border border-b">
+                  <th className="py-2 pr-4 font-semibold text-foreground/45">
+                    {l.trans({ en: "Framework", ko: "프레임워크" })}
+                  </th>
+                  <th className="px-4 py-2 text-right font-semibold text-foreground/45">
+                    {l.trans({ en: "Startup", ko: "시작 시간" })}
+                  </th>
+                  <th className="py-2 pl-4 text-right font-semibold text-foreground/45">
+                    {l.trans({ en: "Memory at rest", ko: "대기 메모리" })}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {frameworkComparison.map((item) => (
+                  <tr
+                    key={item.name}
+                    className={item.isAkan ? "border-muted border-b bg-primary/5" : "border-muted border-b"}
+                  >
+                    <td className={item.isAkan ? "py-2 pr-4 font-semibold text-primary" : "py-2 pr-4"}>
+                      {item.name}
+                      <span className="ml-1 text-foreground/35 text-xs">({item.runtime})</span>
+                    </td>
+                    <td
+                      className={`px-4 py-2 text-right font-mono ${item.isAkan ? "text-primary" : "text-foreground/70"}`}
+                    >
+                      {item.coldP50.toFixed(1)} ms
+                    </td>
+                    <td
+                      className={`py-2 pl-4 text-right font-mono ${item.isAkan ? "text-primary" : "text-foreground/70"}`}
+                    >
+                      {item.idleRss.toFixed(1)} MB
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-4 text-foreground/45 text-xs leading-5">
+            {l.trans({
+              en: "Measured on an Apple M4 Pro MacBook Pro with production builds, 50 concurrent users. Fastify runs on Node, so its number partly reflects the runtime. Raw data and the benchmark harness live in benchmarks/api-benchmark.",
+              ko: "Apple M4 Pro MacBook Pro에서 production 빌드, 동시 사용자 50명으로 측정했습니다. Fastify는 Node에서 실행되어 런타임 차이가 일부 반영됩니다. 원시 데이터와 벤치마크 하네스는 benchmarks/api-benchmark에 있습니다.",
+            })}
+          </p>
+
+          <div className="mt-12 rounded-3xl bg-muted p-6 md:p-8">
+            <h3 className="font-bold text-xl">
+              {l.trans({ en: "Smaller builds and payloads", ko: "더 작아진 빌드와 전송량" })}
+            </h3>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              {numbers.map((item) => (
+                <div key={item.value} className="rounded-2xl bg-background/70 p-5">
+                  <p className="font-black font-mono text-2xl text-primary">{item.value}</p>
+                  <p className="mt-2 text-foreground/65 text-sm leading-6">{l.trans(item.label)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <p className="mt-8 border-primary border-l-4 pl-5 text-foreground/75 leading-7">
+            {l.trans({
+              en: "v3 adds more than any release before it and is still faster than v2 on every number we measured. Upgrade and your app gets quicker, lighter and faster to start — the speed comes with the framework, not with your code.",
+              ko: "v3는 어떤 릴리즈보다 많은 기능을 더했지만, 측정한 모든 지표에서 v2보다 빠릅니다. 업그레이드하면 앱이 더 빠르고, 가볍고, 빨리 시작합니다. 그 속도는 여러분의 코드가 아니라 프레임워크에서 옵니다.",
+            })}
+          </p>
+        </section>
+
         <section className="mt-16">
           <h2 className="font-bold text-2xl">{l.trans({ en: "Also new in v3", ko: "v3의 다른 변화" })}</h2>
           <div className="mt-6 grid gap-3 md:grid-cols-2">
@@ -433,23 +633,6 @@ export default page().render(() => {
                 <h3 className="mt-1 font-bold text-lg group-hover:text-primary">{l.trans(item.title)}</h3>
                 <p className="mt-2 text-foreground/65 text-sm leading-6">{l.trans(item.desc)}</p>
               </Link>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-16 rounded-3xl bg-muted p-6 md:p-8">
-          <p className="font-bold text-primary text-sm uppercase tracking-[0.2em]">
-            {l.trans({ en: "Faster and smaller", ko: "더 빠르고 더 작게" })}
-          </p>
-          <h2 className="mt-3 font-bold text-2xl">
-            {l.trans({ en: "Measured on the way to v3", ko: "v3로 오며 잰 숫자들" })}
-          </h2>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            {numbers.map((item) => (
-              <div key={item.value} className="rounded-2xl bg-background/70 p-5">
-                <p className="font-black font-mono text-2xl text-primary">{item.value}</p>
-                <p className="mt-2 text-foreground/65 text-sm leading-6">{l.trans(item.label)}</p>
-              </div>
             ))}
           </div>
         </section>

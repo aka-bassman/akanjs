@@ -1064,8 +1064,17 @@ export class WebRouter {
     const builtWeb = resolveWebConfig(artifact.web);
     if (!builtWeb.ssr) return null;
     const cssBytesByUrl = await WebRouter.#loadCssBytesByUrl(artifact, artifactDir);
-    const rsc = new RscWorker(artifact);
-    await rsc.ready;
+    const prodMode = process.env.NODE_ENV === "production" && process.env.AKAN_COMMAND_TYPE !== "start";
+    //* Production listens before the worker has imported the pages bundle (~70ms) and renders queue until `ready`.
+    //* A bundle that cannot load exits the process rather than restart-looping behind a healthy API. Dev keeps
+    //* awaiting and retrying, since the next rebuild hands a restarting worker a fixed bundle.
+    const rsc = new RscWorker(artifact, { failBeforeReady: prodMode });
+    if (prodMode)
+      void rsc.ready.catch((error: unknown) => {
+        new Logger("WebRouter").error(`RSC worker failed to load the pages bundle: ${String(error)}`);
+        process.exit(1);
+      });
+    else await rsc.ready;
     const seedIndex = await RouteSeedIndexStore.load(artifactDir);
     return new WebRouter({
       artifact,

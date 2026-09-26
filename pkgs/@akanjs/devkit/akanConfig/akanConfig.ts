@@ -567,6 +567,9 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
         return `${lib}@${version}`;
       });
   }
+  get akanVersion() {
+    return getAkanPackageJson().version;
+  }
   getProductionPackageJson(data: Partial<PackageJson> = {}): PackageJson {
     return {
       name: this.app.name,

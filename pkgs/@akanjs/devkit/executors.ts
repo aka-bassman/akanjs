@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import {
   copyFile,
   cp as cpEntry,
+  lstat,
   mkdir,
   readdir as readDirEntries,
   realpath,
@@ -96,7 +97,9 @@ const staticTemplateFileExtensions = new Set([
   ".xml",
 ]);
 
-const formatCommandArg = (value: string) => (/^[\w@%+=:,./-]+$/.test(value) ? value : JSON.stringify(value));
+//? A backslash is a path separator on Windows but an escape in a POSIX shell, so only there does it force quoting.
+const plainCommandArgPattern = process.platform === "win32" ? /^[\w@%+=:,./\\-]+$/ : /^[\w@%+=:,./-]+$/;
+const formatCommandArg = (value: string) => (plainCommandArgPattern.test(value) ? value : JSON.stringify(value));
 
 const formatCommandForDisplay = (command: string, args: string[] = []) =>
   [command, ...args].map(formatCommandArg).join(" ");
@@ -475,8 +478,10 @@ export class Executor {
     const isDirectory = (await stat(src)).isDirectory();
     if (!(await FileSys.exists(dest)) && isDirectory) await mkdir(dest, { recursive: true });
     //* `cp -r` keeps symlinks on GNU coreutils but follows them on macOS, so anything that must land as
-    //* real files regardless of platform has to say so explicitly.
-    if (dereference) await cpEntry(src, dest, { recursive: isDirectory, dereference: true, force: true });
+    //* real files regardless of platform has to say so explicitly. Windows has no `cp -r <dir>/.` and a
+    //* symlink there needs a privilege most accounts lack, so it always lands as real files.
+    if (dereference || process.platform === "win32")
+      await cpEntry(src, dest, { recursive: isDirectory, dereference: true, force: true });
     else await $`cp -r ${src}${isDirectory ? "/." : ""} ${dest}`;
   }
   log(msg: string) {
@@ -1517,7 +1522,9 @@ export class AppExecutor extends SysExecutor {
     const owners = new Map<string, { absPath: string; fromLib: boolean }>();
     const devOnlyKeys = new Set<string>();
     const devOnlyDirs: string[] = [];
-    for (const root of await this.getPageRoots()) {
+    const pageRoots = await this.getPageRoots();
+    const libKeyPrefixes = pageRoots.map((root) => root.keyPrefix).filter(Boolean);
+    for (const root of pageRoots) {
       if (!(await FileSys.dirExists(root.dir))) continue;
       for await (const rel of glob.scan({
         cwd: root.dir,
@@ -1527,6 +1534,8 @@ export class AppExecutor extends SysExecutor {
         const segments = rel.split(path.sep);
         if (segments.some((s) => s === "node_modules")) continue;
         const posix = `${root.keyPrefix}${segments.join("/")}`;
+        //* A lib folder that is a copy rather than a link (the Windows fallback) is walked into from `page` too.
+        if (!root.keyPrefix && libKeyPrefixes.some((prefix) => posix.startsWith(prefix))) continue;
         const absPath = path.join(root.dir, ...segments);
         validatePageSourceFile(posix, { filePath: absPath });
         if (!isRouteSourceFile(posix)) continue;
@@ -1629,7 +1638,11 @@ export class AppExecutor extends SysExecutor {
       )
     ).flat();
     const wanted = parents.flatMap((parent) => libs.map((lib) => `${parent}${AppExecutor.#pageLibsDir}/(${lib})/`));
-    if (linked.sort().join(",") === wanted.sort().join(",")) return false;
+    //* A copy — the Windows fallback when a junction is refused — does not follow its lib, so only links are current.
+    const isLink = async (key: string) =>
+      (await lstat(`${this.cwdPath}/page/${key.slice(0, -1)}`).catch(() => null))?.isSymbolicLink() ?? false;
+    if (linked.sort().join(",") === wanted.sort().join(",") && (await Promise.all(linked.map(isLink))).every(Boolean))
+      return false;
     await Promise.all(
       parents.map((parent) => this.removeDir(`${this.cwdPath}/page/${parent}${AppExecutor.#pageLibsDir}`)),
     );

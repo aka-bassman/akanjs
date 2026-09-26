@@ -191,7 +191,27 @@ export class ApplicationBuildRunner {
     await Promise.all([
       this.#app.dist.writeJson("package.json", akanConfig.getProductionPackageJson()),
       this.#app.dist.writeFile(`${this.#app.dist.cwdPath}/Dockerfile`, akanConfig.dockerfile),
+      this.#app.dist.writeJson("akan.build.json", {
+        buildId: await this.#resolveBuildId(),
+        akanVersion: akanConfig.akanVersion,
+        builtAt: new Date().toISOString(),
+      }),
     ]);
+  }
+
+  //* Read back at runtime as `buildId` on the ops channel; a deployment's own AKAN_BUILD_ID still wins over it there.
+  async #resolveBuildId() {
+    const fromEnv = process.env.AKAN_BUILD_ID?.trim();
+    if (fromEnv) return fromEnv;
+    const root = this.#app.workspace.workspaceRoot;
+    const sha = Bun.spawnSync(["git", "rev-parse", "--short=12", "HEAD"], { cwd: root, stderr: "ignore" });
+    if (sha.exitCode !== 0) return null;
+    const dirty = Bun.spawnSync(["git", "status", "--porcelain", "--untracked-files=no"], {
+      cwd: root,
+      stderr: "ignore",
+    });
+    const suffix = dirty.exitCode === 0 && dirty.stdout.toString().trim() ? "-dirty" : "";
+    return `${sha.stdout.toString().trim()}${suffix}`;
   }
 
   async #buildBackend() {

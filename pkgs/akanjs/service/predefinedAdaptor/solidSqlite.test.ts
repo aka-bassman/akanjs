@@ -1,5 +1,6 @@
 import { Database, type SQLQueryBindings, type Statement } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
+import path from "node:path";
 import { dayjs, Float, ID, Int, type PromiseOrObject } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import {
@@ -350,7 +351,7 @@ describe("solid sqlite utilities", () => {
           isProduction: false,
           workspaceRoot: "/workspace",
         }),
-      ).toBe("/tmp/akan-sqlite/demo.db");
+      ).toBe(path.join("/tmp/akan-sqlite", "demo.db"));
 
       delete process.env.AKAN_SQLITE_DIR;
       expect(
@@ -360,7 +361,7 @@ describe("solid sqlite utilities", () => {
           isProduction: false,
           workspaceRoot: "/workspace",
         }),
-      ).toBe("/workspace/local/apps/demo/demo.db");
+      ).toBe(path.join("/workspace", "local", "apps", "demo", "demo.db"));
 
       expect(
         resolveDefaultSqliteFile({
@@ -370,7 +371,7 @@ describe("solid sqlite utilities", () => {
           operationMode: "local",
           workspaceRoot: "/workspace",
         }),
-      ).toBe("/workspace/local/apps/demo/demo.db");
+      ).toBe(path.join("/workspace", "local", "apps", "demo", "demo.db"));
 
       process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
       expect(
@@ -380,7 +381,7 @@ describe("solid sqlite utilities", () => {
           isProduction: true,
           workspaceRoot: "/workspace",
         }),
-      ).toBe("/workspace/local/apps/demo/demo.db");
+      ).toBe(path.join("/workspace", "local", "apps", "demo", "demo.db"));
 
       expect(
         resolveDefaultSqliteFile({
@@ -390,7 +391,7 @@ describe("solid sqlite utilities", () => {
           operationMode: "cloud",
           workspaceRoot: "/workspace",
         }),
-      ).toBe(`${process.cwd()}/sqlite/demo.db`);
+      ).toBe(path.join(process.cwd(), "sqlite", "demo.db"));
 
       process.env.AKAN_SOLID_DB_PATH = "/tmp/solid.db";
       expect(

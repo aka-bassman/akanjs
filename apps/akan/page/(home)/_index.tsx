@@ -511,12 +511,15 @@ export default page().render(() => {
               <p className="mt-1 text-foreground/60 text-sm">{item.label}</p>
             </div>
           ))}
-          <Link href="/blog/benchmark" className="group flex flex-col justify-center bg-background/90 px-6 py-5">
+          <Link
+            href="/blog/v3release#v3-performance"
+            className="group flex flex-col justify-center bg-background/90 px-6 py-5"
+          >
             <p className="flex items-center gap-2 font-bold text-foreground group-hover:text-primary">
-              {l.trans({ en: "Benchmarks", ko: "벤치마크" })} <BsArrowRight />
+              {l.trans({ en: "v3 benchmark", ko: "v3 벤치마크" })} <BsArrowRight />
             </p>
             <p className="mt-1 text-foreground/60 text-sm">
-              {l.trans({ en: "Throughput and stability, measured", ko: "처리량과 안정성 측정 결과" })}
+              {l.trans({ en: "Startup 2× faster, a third less memory", ko: "시작 2배 빠르게, 메모리 3분의 1 절감" })}
             </p>
           </Link>
         </div>

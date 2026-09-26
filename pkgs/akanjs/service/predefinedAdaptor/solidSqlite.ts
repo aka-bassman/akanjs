@@ -52,7 +52,8 @@ export const getSolidConfig = (env: SolidEnv): Required<SolidConfig> => {
 };
 
 export const openSolidDatabase = async (config: Required<SolidConfig>) => {
-  await mkdir(path.dirname(config.filePath), { recursive: true });
+  // Resolved first: Bun on Windows fails a recursive mkdir of "." (":memory:", a bare file name) with EEXIST.
+  await mkdir(path.dirname(path.resolve(config.filePath)), { recursive: true });
   let lastError: unknown;
   for (let attempt = 0; attempt < 8; attempt++) {
     try {

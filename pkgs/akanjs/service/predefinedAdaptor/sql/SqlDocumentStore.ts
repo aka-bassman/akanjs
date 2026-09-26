@@ -1,6 +1,6 @@
 import { DEFAULT_VALUE, dayjs, FIELD_META } from "akanjs/base";
 import { Logger } from "akanjs/common";
-import { type ConstantModel, getDefault } from "akanjs/constant";
+import { type ConstantModel, freshPrimitiveValue, getDefault } from "akanjs/constant";
 import {
   createDocumentId,
   type DatabaseModel,
@@ -664,7 +664,9 @@ export class SqlDocumentStore {
             typeof props.default === "function" ? (props.default as (data: unknown) => unknown)(doc) : props.default;
         } else {
           doc[field] =
-            ((props as Record<string, unknown>).modelRef as { [DEFAULT_VALUE]?: unknown })?.[DEFAULT_VALUE] ?? null;
+            freshPrimitiveValue(
+              ((props as Record<string, unknown>).modelRef as { [DEFAULT_VALUE]?: unknown })?.[DEFAULT_VALUE],
+            ) ?? null;
         }
       } else {
         doc[field] = props ? this.decodeFieldValue(value, props) : value;
@@ -826,7 +828,9 @@ export class SqlDocumentStore {
           result[key] = getDefault((props.modelRef as { [FIELD_META]: FieldMap })[FIELD_META] as never);
         } else {
           result[key] =
-            ((props as Record<string, unknown>).modelRef as { [DEFAULT_VALUE]?: unknown })?.[DEFAULT_VALUE] ?? null;
+            freshPrimitiveValue(
+              ((props as Record<string, unknown>).modelRef as { [DEFAULT_VALUE]?: unknown })?.[DEFAULT_VALUE],
+            ) ?? null;
         }
       } else {
         result[key] = this.decodeFieldValue(value, props);
