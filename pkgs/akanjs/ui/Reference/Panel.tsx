@@ -36,6 +36,23 @@ export const Panel = ({ className, bodyClassName, label, meta, tone = "muted", o
   </div>
 );
 
+interface DocTableProps {
+  className?: string;
+  head: ReactNode;
+  children: ReactNode;
+}
+
+export const DocTable = ({ className, head, children }: DocTableProps) => (
+  <div className={cn(docUi.tablePanel, className)}>
+    <table className={docUi.tableClass}>
+      <thead>
+        <tr>{head}</tr>
+      </thead>
+      <tbody>{children}</tbody>
+    </table>
+  </div>
+);
+
 interface CodeProps {
   className?: string;
   label?: string;
