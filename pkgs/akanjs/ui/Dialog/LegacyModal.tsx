@@ -26,10 +26,7 @@ export interface LegacyModalProps {
   children?: ReactNode;
   onCancel?: () => void;
 }
-/**
- * Previous modal skin, kept for screens built around its motion: spring open/close and a drag-to-dismiss
- * sheet on touch. New work composes {@link Modal}, which draws the same slots with no animation.
- */
+/** Spring-animated, drag-to-dismiss skin; {@link Modal} draws the same slots with no animation. */
 export const LegacyModal = ({ className, bodyClassName, confirmClose, children, onCancel }: LegacyModalProps) => {
   const { open, setOpen, registerDismiss, title, action } = useContext(DialogContext);
   const { l } = usePage();
@@ -39,7 +36,6 @@ export const LegacyModal = ({ className, bodyClassName, confirmClose, children, 
   const focusedElementRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const contentId = useId();
-  // Read through the portal-to-be: whichever dismissable scope rendered this modal owns it.
   const overlayLayerProps = useOverlayLayerProps();
   const [{ translate }, api] = useSpring(() => ({ translate: 1 }));
   const [portalElement, setPortalElement] = useState<HTMLElement | null>(null);
@@ -188,9 +184,7 @@ export const LegacyModal = ({ className, bodyClassName, confirmClose, children, 
         <animated.div
           ref={ref}
           style={{ translateY, opacity }}
-          // Focus moves here on open so the tab order starts inside the dialog, but this container is
-          // not a control — drawing a keyboard ring around the whole surface only reads as a glitch.
-          // Controls inside keep their own rings, which is where the focus indicator belongs.
+          // Focused on open so tabbing starts inside, but it is no control, so it draws no focus ring.
           className={cn(
             "relative flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-box border border-border bg-card text-card-foreground shadow-2xl shadow-black/25 outline-none",
             className,

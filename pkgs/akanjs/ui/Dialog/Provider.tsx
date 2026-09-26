@@ -7,13 +7,10 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { DialogContext } from "./context";
 
 export interface ProviderProps {
-  /** Additional classes for the dialog root wrapper. */
   className?: string;
-  /** Controlled open state. */
   open?: boolean;
-  /** Initial open state for uncontrolled usage. */
   defaultOpen?: boolean;
-  /** Names this dialog for the in-page agent. Without it the dialog publishes nothing — two on one screen would share a name. */
+  /** Names this dialog for the in-page agent; without it the dialog publishes nothing. */
   namespace?: string;
   children?: ReactNode;
 }
@@ -48,8 +45,7 @@ export const Provider = ({
     .tool(namespace ? `closeDialogIn${suffix}` : null)
     .desc(`Close the ${namespace ?? ""} dialog.`)
     .exec(() => {
-      // Through the surface's own dismissal so the agent and `Dialog.Close` take the exact path the X button
-      // takes. Flipping the state is the fallback for a dialog that draws no modal.
+      // The surface's own dismissal, the X button's path; flipping the state is for a dialog with no modal.
       if (dismissRef.current) dismissRef.current();
       else setOpenState(false);
     });
