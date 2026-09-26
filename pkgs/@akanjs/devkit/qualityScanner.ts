@@ -6,7 +6,7 @@ import ignore from "ignore";
 import ts from "typescript";
 import { AbstractDoc } from "./abstractDoc";
 import { FormSetterScanner } from "./formSetterScanner";
-import { formatSsrBalance, type SsrBalanceEntry, SsrScanner } from "./ssrScanner";
+import { fileWarning, formatSsrBalance, type SsrBalanceEntry, SsrScanner } from "./ssrScanner";
 import { isAllowedLibFacetRootFile, rootAllowedDirs, rootAllowedFiles } from "./workspaceLayout";
 
 type QualitySeverity = "warning";
@@ -161,17 +161,6 @@ function getRuleFix(rule: string): string | undefined {
     return "Keep only the model's allowed declarations in this file; move other logic to the matching domain file (service, document, store, etc.).";
   return RULE_FIXES[rule];
 }
-
-const fileWarning = (
-  rule: string,
-  scope: QualityScope,
-  file: string,
-  message: string,
-  line?: number,
-): QualityWarning =>
-  line === undefined
-    ? { rule, scope, severity: "warning", file, message }
-    : { rule, scope, severity: "warning", file, line, message };
 
 export class AkanQualityScanner {
   async scan(workspaceRoot: string): Promise<QualityScanResult> {
