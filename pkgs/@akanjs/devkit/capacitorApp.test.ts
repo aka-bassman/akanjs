@@ -1,6 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AkanMobileTargetConfig } from "./akanConfig";
 import {
@@ -27,14 +26,9 @@ import {
   toIosInfoPlistUsageDescriptions,
   writeRootCapacitorConfig,
 } from "./capacitorApp";
+import { tempDirs } from "./testHelpers";
 
-const tempRoots: string[] = [];
-
-const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-capacitor-app-"));
-  tempRoots.push(root);
-  return root;
-};
+const makeTempRoot = tempDirs("akan-capacitor-app-");
 
 const baseTarget: AkanMobileTargetConfig = {
   name: "default",
@@ -49,10 +43,6 @@ const baseTarget: AkanMobileTargetConfig = {
   deepLinks: { schemes: ["minimal"], domains: ["minimal.app"] },
   files: { android: { "app/google-services.json": "private/google-services.json" } },
 };
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 
 describe("materializeCapacitorConfig", () => {
   test("writes only Capacitor fields for release config", () => {

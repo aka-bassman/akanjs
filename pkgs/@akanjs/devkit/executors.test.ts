@@ -1,25 +1,14 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { lstat, mkdir, mkdtemp, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { lstat, mkdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AkanAppConfig } from "./akanConfig";
 import { AppExecutor, CommandExecutionError, Executor, PkgExecutor, WorkspaceExecutor } from "./executors";
 import { AppInfo } from "./scanInfo";
+import { isolateEnv, tempDirs, writeJson } from "./testHelpers";
 import type { PackageJson } from "./types";
 
-const originalEnv = { ...process.env };
-const tempRoots: string[] = [];
-
-const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-devkit-"));
-  tempRoots.push(root);
-  return root;
-};
-
-const writeJson = async (filePath: string, value: object) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
-};
+isolateEnv();
+const makeTempRoot = tempDirs("akan-devkit-");
 
 const PAGE_SOURCE = "export default function Page() {\n  return null;\n}\n";
 
@@ -37,15 +26,6 @@ const rootPackageJson = (extra: Partial<PackageJson> = {}): PackageJson => ({
     typescript: "6.0.0",
   },
   ...extra,
-});
-
-beforeEach(() => {
-  process.env = { ...originalEnv };
-});
-
-afterEach(async () => {
-  process.env = { ...originalEnv };
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe("Executor filesystem helpers", () => {

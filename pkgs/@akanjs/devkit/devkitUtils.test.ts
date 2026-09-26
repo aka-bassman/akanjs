@@ -1,29 +1,13 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import { ApplicationBuildReporter } from "./applicationBuildReporter";
 import { resolveSignalTestPreloadPath } from "./applicationTestPreload";
 import { TypeScriptDependencyScanner } from "./dependencyScanner";
 import { AppExecutor, WorkspaceExecutor } from "./executors";
+import { tempDirs, writeText as write } from "./testHelpers";
 import type { PackageJson, TsConfigJson } from "./types";
 
-const tempRoots: string[] = [];
-
-const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-devkit-utils-"));
-  tempRoots.push(root);
-  return root;
-};
-
-const write = async (filePath: string, content: string) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content);
-};
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
+const makeTempRoot = tempDirs("akan-devkit-utils-");
 
 describe("resolveSignalTestPreloadPath", () => {
   test("resolves the preload file from an installed akanjs package", async () => {

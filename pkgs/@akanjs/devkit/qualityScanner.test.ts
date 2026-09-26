@@ -1,29 +1,20 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import { AbstractDoc } from "./abstractDoc";
 import { AkanQualityScanner, type QualityScanResult } from "./qualityScanner";
+import { tempDirs, writeText } from "./testHelpers";
 
-const tempRoots: string[] = [];
+const makeTempRoot = tempDirs("akan-quality-scanner-");
 
 const makeWorkspace = async (files: Record<string, string>) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-quality-scanner-"));
-  tempRoots.push(root);
-  for (const [filePath, content] of Object.entries({ ".gitignore": "node_modules\n", ...files })) {
-    const absolutePath = path.join(root, filePath);
-    await mkdir(path.dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, content);
-  }
+  const root = await makeTempRoot();
+  for (const [filePath, content] of Object.entries({ ".gitignore": "node_modules\n", ...files }))
+    await writeText(path.join(root, filePath), content);
   return root;
 };
 
 const abstractOf = (lineNum: number) =>
   ["# post Abstract", ...Array.from({ length: lineNum - 1 }, (_, idx) => `- rule ${idx}`)].join("\n");
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 
 describe("AkanQualityScanner abstract rule", () => {
   test("warns on an abstract over the line limit and says how to trim it", async () => {
@@ -184,15 +175,6 @@ describe("AkanQualityScanner ssr rules", () => {
     expect(ssrBalance[2]).toMatchObject({ scope: "workspace", serverMass: 3, clientMass: 1 });
   });
 });
-
-const signalOf = (entries: string) =>
-  [
-    `import { endpoint, slice } from "akanjs/signal";`,
-    `export class PostSlice extends slice(srv.post, { guards: {}, mcp: { get: true } }, (init) => ({`,
-    entries,
-    `})) {}`,
-    "",
-  ].join("\n");
 
 describe("AkanQualityScanner layout rules", () => {
   test("flags an unknown app root file but not a facet entrypoint", async () => {

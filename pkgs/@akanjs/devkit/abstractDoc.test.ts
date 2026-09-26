@@ -1,28 +1,19 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import { AbstractDoc } from "./abstractDoc";
 import { AppExecutor, WorkspaceExecutor } from "./executors";
+import { tempDirs, writeText } from "./testHelpers";
 
-const tempRoots: string[] = [];
+const makeTempRoot = tempDirs("akan-abstract-doc-");
 
 const makeApp = async (files: Record<string, string>) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-abstract-doc-"));
-  tempRoots.push(root);
+  const root = await makeTempRoot();
   const appName = "abstractDemo";
-  for (const [filePath, content] of Object.entries(files)) {
-    const absolutePath = path.join(root, "apps", appName, filePath);
-    await mkdir(path.dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, content);
-  }
+  for (const [filePath, content] of Object.entries(files))
+    await writeText(path.join(root, "apps", appName, filePath), content);
   const workspace = WorkspaceExecutor.fromRoot({ workspaceRoot: root, repoName: "repo" });
   return AppExecutor.from(workspace, appName);
 };
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 
 describe("AbstractDoc.kindOf", () => {
   test("reads the module kind off the sys-relative path", () => {

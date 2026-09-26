@@ -1,3 +1,4 @@
+import { afterEach, beforeEach } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -78,6 +79,29 @@ export const makeCliTempWorkspace = async () => {
   );
   const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
   return { root, workspace };
+};
+
+// Registers the afterEach that removes every directory the returned factory created.
+export const tempDirs = (prefix: string) => {
+  const roots: string[] = [];
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  });
+  return async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), prefix));
+    roots.push(root);
+    return root;
+  };
+};
+
+export const isolateEnv = (env: Record<string, string> = {}) => {
+  const originalEnv = { ...process.env };
+  beforeEach(() => {
+    process.env = { ...originalEnv, ...env };
+  });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 };
 
 export const cleanupCliTempWorkspace = async (root: string) => {
