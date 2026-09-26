@@ -1,14 +1,13 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
-import { Int, SLICE_META } from "akanjs/base";
+import { Int } from "akanjs/base";
 import { Translator } from "akanjs/client/translator";
 import { ConstantRegistry, via } from "akanjs/constant";
-import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
-import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
 import { AgenticSurface } from "use-agentic";
+import { mount } from "../mount.fixture";
 import { store } from "../store";
+import { stubSignal } from "../store.fixture";
 import { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
 import { AgentBridge } from "./AgentBridge";
@@ -36,30 +35,6 @@ const serializedSignal: SerializedSignal = {
   slice: { "": { args: [] } },
 };
 
-const makeSignal = () => {
-  const handlers: Record<string, unknown> = {};
-  const fetch = new Proxy(handlers, { get: (target, key: string) => (target[key] ??= async () => null) });
-  return {
-    refName: "ctxNote",
-    _slice: { [SLICE_META]: {} },
-    cnst: noteConstant,
-    fetch,
-    serializedSignal,
-    slices: [],
-  } as unknown as ClientSignal<"ctxNote">;
-};
-
-const mount = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
-  return () => {
-    act(() => root.unmount());
-    container.remove();
-  };
-};
-
 let instance: StoreInstance;
 let context: AgentContext;
 let surface: AgenticSurface;
@@ -72,7 +47,7 @@ beforeAll(async () => {
   Translator.setActiveLocale("en");
   // Imported after the env is seeded — `baseSt` reads it at module evaluation.
   const { BaseStore } = await import("../baseSt");
-  class CtxNoteStore extends store(makeSignal(), () => ({ mode: "draft" })) {}
+  class CtxNoteStore extends store(stubSignal("ctxNote", noteConstant, serializedSignal), () => ({ mode: "draft" })) {}
   StoreRegistry.register(CtxNoteStore);
   instance = new StoreInstance(StoreRegistry.merge("ctxRoot", BaseStore, CtxNoteStore));
   const bridge = new AgentBridge(instance);

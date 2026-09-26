@@ -1,7 +1,6 @@
 import "../test/registerDom";
 import { describe, expect, test } from "bun:test";
-import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
+import { mount } from "./mount.fixture";
 import { store } from "./store";
 import { StoreInstance } from "./storeInstance";
 import { StoreRegistry } from "./storeRegistry";
@@ -9,17 +8,6 @@ import { StoreRegistry } from "./storeRegistry";
 class LiveStore extends store("liveTest" as const, () => ({ tab: "a", draft: "" })) {}
 StoreRegistry.register(LiveStore);
 const instance = new StoreInstance(StoreRegistry.merge("liveRoot", LiveStore));
-
-const mount = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
-  return () => {
-    act(() => root.unmount());
-    container.remove();
-  };
-};
 
 const TabReader = () => {
   instance.use.tab?.();

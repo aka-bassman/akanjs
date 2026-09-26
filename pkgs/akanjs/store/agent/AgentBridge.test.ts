@@ -1,10 +1,10 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { enumOf, Int, SLICE_META } from "akanjs/base";
+import { enumOf, Int } from "akanjs/base";
 import { Translator } from "akanjs/client/translator";
 import { ConstantRegistry, via } from "akanjs/constant";
-import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
 import { store } from "../store";
+import { stubSignal } from "../store.fixture";
 import { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
 import { AgentBridge } from "./AgentBridge";
@@ -40,19 +40,6 @@ const serializedSignal: SerializedSignal = {
   slice: { "": { args: [] } },
 };
 
-const makeSignal = () => {
-  const handlers: Record<string, unknown> = {};
-  const fetch = new Proxy(handlers, { get: (target, key: string) => (target[key] ??= async () => null) });
-  return {
-    refName: "bridgeNote",
-    _slice: { [SLICE_META]: {} },
-    cnst: noteConstant,
-    fetch,
-    serializedSignal,
-    slices: [],
-  } as unknown as ClientSignal<"bridgeNote">;
-};
-
 let bridge: AgentBridge;
 let instance: StoreInstance;
 
@@ -63,7 +50,10 @@ beforeAll(() => {
   process.env.AKAN_PUBLIC_ENV = "testing";
   Translator.setActiveLocale("en");
 
-  class NoteStore extends store(makeSignal(), () => ({ draft: "", tally: { runs: 0 } })) {
+  class NoteStore extends store(stubSignal("bridgeNote", noteConstant, serializedSignal), () => ({
+    draft: "",
+    tally: { runs: 0 },
+  })) {
     async submitDraft() {
       await Promise.resolve();
     }

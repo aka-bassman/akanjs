@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { dayjs, Int, resetEnvCache } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { DraftStore } from "./draftStore";
+import { MemoryStorage } from "./store.fixture";
 
 const DraftTestFileInput = via((f) => ({
   filename: f(String),
@@ -43,28 +44,6 @@ ConstantRegistry.buildModel(
   DraftTestInsight,
   { DraftTestInput, DraftTestObject, DraftTestFull, DraftTestLight, DraftTestInsight },
 );
-
-class MemoryStorage implements Storage {
-  #values = new Map<string, string>();
-  get length() {
-    return this.#values.size;
-  }
-  clear() {
-    this.#values.clear();
-  }
-  getItem(key: string) {
-    return this.#values.get(key) ?? null;
-  }
-  key(index: number) {
-    return [...this.#values.keys()][index] ?? null;
-  }
-  removeItem(key: string) {
-    this.#values.delete(key);
-  }
-  setItem(key: string, value: string) {
-    this.#values.set(key, value);
-  }
-}
 
 const jwtOf = (payload: Record<string, unknown>) => `x.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.y`;
 

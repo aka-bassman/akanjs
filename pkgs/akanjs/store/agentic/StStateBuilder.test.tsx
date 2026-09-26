@@ -2,25 +2,14 @@ import "../../test/registerDom";
 import { describe, expect, test } from "bun:test";
 import { enumOf } from "akanjs/base";
 import { via } from "akanjs/constant";
-import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
+import { act } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
+import { mount } from "../mount.fixture";
 import { StStateDraft } from "./StStateDraft";
 
 class StStateMode extends enumOf("stStateMode", ["fit", "fill"] as const) {}
 
 const StStateNote = via((f) => ({ title: f(String) }));
-
-const mount = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
-  return () => {
-    act(() => root.unmount());
-    container.remove();
-  };
-};
 
 describe("StStateDraft", () => {
   test("the type publishes the read and, with set, the setter tool's schema", async () => {

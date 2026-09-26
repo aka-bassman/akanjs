@@ -1,23 +1,12 @@
 import "../../test/registerDom";
 import { describe, expect, test } from "bun:test";
 import { dayjs, enumOf, Float, ID, Int } from "akanjs/base";
-import { act, type ReactNode, useState } from "react";
-import { createRoot } from "react-dom/client";
+import { act, useState } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
 import { actionTagOf } from "../actionTag";
+import { mount } from "../mount.fixture";
 import { StToolBuilder } from "./StToolBuilder";
 import { StToolDraft } from "./StToolDraft";
-
-const mount = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
-  return () => {
-    act(() => root.unmount());
-    container.remove();
-  };
-};
 
 class StToolMode extends enumOf("stToolMode", ["fit", "fill"] as const) {}
 class StToolLevel extends enumOf("stToolLevel", [1, 2, 3] as const) {}

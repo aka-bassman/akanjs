@@ -2,9 +2,10 @@ import "../../test/registerDom";
 import { describe, expect, test } from "bun:test";
 import { enumOf, Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
-import { act, type ReactNode } from "react";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
+import { mount } from "../mount.fixture";
 import { store } from "../store";
 import { StoreRegistry } from "../storeRegistry";
 import { FormFields } from "./formFields";
@@ -61,17 +62,6 @@ StoreRegistry.register(FieldToolStore);
 StoreRegistry.instance.addStore(StoreRegistry.merge("fieldToolRoot", FieldToolStore));
 const instance = StoreRegistry.instance;
 const dispatch = instance.do as unknown as { [key: string]: (value: unknown) => void };
-
-const mount = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
-  return () => {
-    act(() => root.unmount());
-    container.remove();
-  };
-};
 
 const control = (surface: AgenticSurface, onChange: unknown, options?: FieldToolOptions) => {
   const Control = () => {

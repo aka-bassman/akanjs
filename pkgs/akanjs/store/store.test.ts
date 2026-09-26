@@ -6,6 +6,7 @@ import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
 import type { RootStoreCls } from "./rootStore";
 import { type StoreCls, store } from "./store";
+import { MemoryStorage } from "./store.fixture";
 import { StoreInstance } from "./storeInstance";
 import { StoreRegistry } from "./storeRegistry";
 
@@ -38,28 +39,6 @@ const setupEnv = () => {
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
   process.env.AKAN_PUBLIC_ENV = "testing";
 };
-
-class MemoryStorage implements Storage {
-  #values = new Map<string, string>();
-  get length() {
-    return this.#values.size;
-  }
-  clear() {
-    this.#values.clear();
-  }
-  getItem(key: string) {
-    return this.#values.get(key) ?? null;
-  }
-  key(index: number) {
-    return [...this.#values.keys()][index] ?? null;
-  }
-  removeItem(key: string) {
-    this.#values.delete(key);
-  }
-  setItem(key: string, value: string) {
-    this.#values.set(key, value);
-  }
-}
 
 const installBrowser = (searchParams: Record<string, string | string[]> = {}) => {
   const localStorage = new MemoryStorage();

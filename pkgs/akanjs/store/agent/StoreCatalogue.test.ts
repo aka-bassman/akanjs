@@ -1,9 +1,9 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { enumOf, Int, SLICE_META } from "akanjs/base";
+import { enumOf, Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
-import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
 import { store } from "../store";
+import { stubSignal } from "../store.fixture";
 import { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
 import { StoreCatalogue } from "./StoreCatalogue";
@@ -41,21 +41,6 @@ const serializedSignal: SerializedSignal = {
   },
 };
 
-const makeSignal = () => {
-  const handlers: Record<string, unknown> = {};
-  const fetch = new Proxy(handlers, {
-    get: (target, key: string) => (target[key] ??= async () => null),
-  });
-  return {
-    refName: "catalogueTask",
-    _slice: { [SLICE_META]: {} },
-    cnst: taskConstant,
-    fetch,
-    serializedSignal,
-    slices: [],
-  } as unknown as ClientSignal<"catalogueTask">;
-};
-
 let catalogue: StoreCatalogue;
 let instance: StoreInstance;
 
@@ -66,7 +51,7 @@ beforeAll(() => {
   process.env.AKAN_PUBLIC_ENV = "testing";
 
   class TaskStore extends store(
-    makeSignal(),
+    stubSignal("catalogueTask", taskConstant, serializedSignal),
     () => ({ draft: "", openTaskIds: [] as string[] }),
     ({ computed }) => ({ draftLabel: computed(["draft"], (draft: string) => `draft:${draft}`) }),
   ) {

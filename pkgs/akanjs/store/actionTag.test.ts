@@ -1,10 +1,10 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { Int, SLICE_META } from "akanjs/base";
+import { Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
-import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
 import { actionTagOf } from "./actionTag";
 import { store } from "./store";
+import { stubSignal } from "./store.fixture";
 import { StoreInstance } from "./storeInstance";
 import { StoreRegistry } from "./storeRegistry";
 
@@ -30,17 +30,7 @@ beforeAll(() => {
   process.env.AKAN_PUBLIC_REPO_NAME = "tagtest";
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
   process.env.AKAN_PUBLIC_ENV = "testing";
-  const handlers: Record<string, unknown> = {};
-  const signal = {
-    refName: "tagPost",
-    _slice: { [SLICE_META]: {} },
-    cnst: tagConstant,
-    fetch: new Proxy(handlers, { get: (target, key: string) => (target[key] ??= async () => null) }),
-    serializedSignal,
-    slices: [],
-  } as unknown as ClientSignal<"tagPost">;
-
-  class PostStore extends store(signal, () => ({ mood: "calm" })) {
+  class PostStore extends store(stubSignal("tagPost", tagConstant, serializedSignal), () => ({ mood: "calm" })) {
     async publish() {
       await Promise.resolve();
     }
