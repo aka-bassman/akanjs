@@ -49,8 +49,7 @@ import { Linter } from "./linter";
 import { resolveRepoName } from "./repoIdentity";
 import { AppInfo, LibInfo, PkgInfo, WorkspaceInfo } from "./scanInfo";
 import { Spinner } from "./spinner";
-// Type-only: the implementation is loaded on demand in `getTypeChecker` to keep `typescript` out of
-// the resident module graph.
+// Type-only: `getTypeChecker` loads it on demand to keep `typescript` out of the resident module graph.
 import type { TypeChecker } from "./typeChecker";
 import type { FileContent, PackageJson, TsConfigJson } from "./types";
 
@@ -158,7 +157,7 @@ export const execEmoji = {
   pkg: "📦",
   dist: "💿",
   module: "⚙️",
-  default: "✈️", // for sys executor
+  default: "✈️",
 };
 
 const parseEnvFile = (envPath: string): Record<string, string> => {
@@ -259,7 +258,6 @@ export class Executor {
     const cwd = options.cwd?.toString() ?? this.cwdPath;
     const proc = spawn(command, args, {
       cwd: this.cwdPath,
-      // stdio: "inherit",
       ...options,
     });
     let stdout = "";
@@ -310,7 +308,6 @@ export class Executor {
   spawnSync(command: string, args: string[] = [], options: SpawnOptions = {}): ChildProcess {
     const proc = spawn(command, args, {
       cwd: this.cwdPath,
-      // stdio: "inherit",
       ...options,
     });
     return proc;
@@ -319,7 +316,6 @@ export class Executor {
     const cwd = options.cwd?.toString() ?? this.cwdPath;
     const proc = fork(modulePath, args, {
       cwd: this.cwdPath,
-      // stdio: ["ignore", "inherit", "inherit", "ipc"],
       ...options,
     });
     let stdout = "";
@@ -421,8 +417,7 @@ export class Executor {
     return this;
   }
   async removeDir(dirPath: string) {
-    //* XXX: `path.join(…, ".")` drops a trailing separator — `rm -rf link/` resolves through a symlink
-    //* and wipes its target, while `rm -rf link` only unlinks it.
+    //* XXX: `path.join(…, ".")` drops a trailing slash: `rm -rf link/` wipes the target, `rm -rf link` only unlinks.
     const readPath = path.join(this.getPath(dirPath), ".");
     if (await FileSys.entryExists(readPath)) await rm(readPath, { recursive: true, force: true });
     this.logger.verbose(`Remove directory ${readPath}`);
@@ -436,8 +431,7 @@ export class Executor {
     const writePath = this.getPath(filePath);
     const dir = path.dirname(writePath);
     if (!(await FileSys.dirExists(dir))) await mkdir(dir, { recursive: true });
-    //? Biome formats every tracked .json and always ends a file with a newline, so a JSON write without one
-    //? loses a byte to `akan lint` and takes it back on the next `akan sync` — a permanent one-line git diff.
+    //? Biome ends every .json with a newline; without one, `akan lint` and `akan sync` would flip-flop the file.
     let contentStr = typeof content === "string" ? content : `${JSON.stringify(content, null, 2)}\n`;
 
     if (await FileSys.fileExists(writePath)) {
@@ -477,9 +471,8 @@ export class Executor {
     if (!(await FileSys.exists(src))) return;
     const isDirectory = (await stat(src)).isDirectory();
     if (!(await FileSys.exists(dest)) && isDirectory) await mkdir(dest, { recursive: true });
-    //* `cp -r` keeps symlinks on GNU coreutils but follows them on macOS, so anything that must land as
-    //* real files regardless of platform has to say so explicitly. Windows has no `cp -r <dir>/.` and a
-    //* symlink there needs a privilege most accounts lack, so it always lands as real files.
+    //* `cp -r` keeps symlinks on GNU but follows them on macOS; Windows has no `cp -r <dir>/.` and rarely the
+    //* privilege a symlink needs, so it always copies real files.
     if (dereference || process.platform === "win32")
       await cpEntry(src, dest, { recursive: isDirectory, dereference: true, force: true });
     else await $`cp -r ${src}${isDirectory ? "/." : ""} ${dest}`;
@@ -626,7 +619,7 @@ export class Executor {
   }): Promise<FileContent[]> {
     const templateRoot = await this.#resolveTemplateRoot();
     const templatePath = `${templateRoot}${template ? `/${template}` : ""}`;
-    const prefixTemplatePath = templatePath; // templatePath.endsWith(".tsx") ? templatePath : templatePath.replace(".ts", ".js");
+    const prefixTemplatePath = templatePath;
     if ((await stat(prefixTemplatePath)).isFile()) {
       const filename = path.basename(prefixTemplatePath);
       const fileContent = await this.#applyTemplateFile(
@@ -701,14 +694,8 @@ export class Executor {
     return fileContents;
   }
 
-  /**
-   * A template emits identifiers it cannot sort. `import { fetch, Task, usePage }` is correctly ordered for
-   * a model named Task and wrong for one named Zoo, and `organizeImports` fails `biome check` — so a
-   * scaffold that is not formatted on the way out is red for most model names, whatever the template says.
-   *
-   * Best-effort: `create-akan-workspace` scaffolds before `bun install`, so there is no local Biome binary
-   * and often no config above the target yet. An unformatted file is a lint fix; a failed scaffold is not.
-   */
+  // A template cannot sort the identifiers it emits (`Task` vs `Zoo`). Best-effort: `create-akan-workspace`
+  // scaffolds before `bun install`, with no local Biome binary yet.
   async #formatAppliedTemplate(fileContents: FileContent[]) {
     const filePaths = fileContents
       .map((fileContent) => fileContent.filePath)
@@ -721,9 +708,7 @@ export class Executor {
       this.logger.verbose(`Skipped formatting scaffolded files: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  // Async so `typescript` (~65MB resident) is loaded only by the commands that actually typecheck,
-  // not by every process that imports an executor. `typeCheckAsync` below runs in a subprocess and
-  // never touches this path.
+  // Async so `typescript` (~65MB resident) loads only in the commands that typecheck.
   async getTypeChecker() {
     const { TypeChecker } = await import("./typeChecker");
     this.typeChecker ??= new TypeChecker(this);
@@ -789,10 +774,10 @@ export class Executor {
     filePath: string,
     { fix = false, dryRun = false }: { fix?: boolean; dryRun?: boolean } = {},
   ): Promise<{
-    results: unknown[]; // ESLint.LintResult[];
+    results: unknown[];
     message: string;
-    errors: unknown[]; // ESLintLinter.LintMessage[];
-    warnings: unknown[]; // ESLintLinter.LintMessage[];
+    errors: unknown[];
+    warnings: unknown[];
   }> {
     const path = this.getPath(filePath);
     const linter = this.getLinter();
@@ -951,13 +936,7 @@ export class WorkspaceExecutor extends Executor {
   async hasChanges() {
     return !!(await this.spawn("git", ["status", "--porcelain"])).trim();
   }
-  /**
-   * Workspace-relative paths git knows about, sorted. `untracked` adds files that exist but are not
-   * committed yet, still honoring `.gitignore` — which is what a freshly copied library looks like.
-   *
-   * Reading the file set from git is what keeps generated barrels, the `page/**` and `public/libs`
-   * symlinks, env values and the lockfile out of it without any caller restating that list.
-   */
+  /** Sorted workspace-relative paths; `untracked` adds uncommitted files, still honoring `.gitignore`. */
   async listGitFiles(paths: string[], { untracked = false }: { untracked?: boolean } = {}) {
     if (!paths.length) return [];
     const mode = untracked ? ["--cached", "--others", "--exclude-standard"] : ["--cached"];
@@ -975,8 +954,7 @@ export class WorkspaceExecutor extends Executor {
         dirs.map(async (dir) => {
           if (AVOID_DIRS.includes(dir)) return;
           const dirPath = path.join(dirname, dir);
-          //* A dangling symlink (e.g. a synced lib page whose source was deleted) must not fail the walk —
-          //* this runs for `getApps`, so throwing here would break every command until it is repaired.
+          //* Not `stat`: a dangling symlink would throw, and this walk backs `getApps`, i.e. every command.
           if (await FileSys.dirExists(dirPath)) {
             const hasTargetFile = await FileSys.fileExists(path.join(dirPath, targetFilename));
             if (hasTargetFile) results.push(`${prefix}${dir}`);
@@ -1142,9 +1120,7 @@ export class SysExecutor extends Executor {
         : await LibInfo.fromExecutor(this as unknown as LibExecutor, {
             refresh,
           });
-    //* `writeLib` regenerates every dependency lib's barrels, and each mounting app's `akan start`
-    //* regenerates the same ones — so this region races the other dev servers in the workspace and the
-    //* builders that watch what it writes.
+    //* Locked: `writeLib` rewrites dependency-lib barrels that other dev servers regenerate and watch too.
     if (write)
       await CodegenLock.run(this.workspace.workspaceRoot, `scan:${this.name}`, async () => {
         await Promise.all(this.#getScanTemplateTasks(scanInfo));
@@ -1161,11 +1137,7 @@ export class SysExecutor extends Executor {
     this.#scanInfo = scanInfo;
     return scanInfo;
   }
-  /**
-   * 스코프 에이전트 색인(apps|libs/<name>/AGENTS.md) 재생성 — own + 의존 lib 레시피만 싣는다(프레임워크
-   * 레시피는 루트 AGENTS.md 소관). scan(write) 경로에 물려 있어 sync/build/start 어디를 지나도 갱신되고,
-   * `akan lint` 가 같은 렌더 결과와 비교해 신선도를 강제한다. 마커 밖 내용은 사용자 소유라 보존한다.
-   */
+  /** Rewrites only the marker block of the scoped AGENTS.md; content outside the markers belongs to the user. */
   async syncAgentsIndex(scanInfo?: AppInfo | LibInfo) {
     const info = scanInfo ?? (await this.scan({ write: false }));
     const scope = { type: this.type, name: this.name };
@@ -1353,8 +1325,7 @@ interface AppExecutorOptions {
   name: string;
 }
 export class AppExecutor extends SysExecutor {
-  // `typescript` costs ~65MB resident, so keep it out of the module graph of every process that only
-  // ever imports an executor. Route validation is the sole consumer here and is already async.
+  // Lazy: the validator pulls in `typescript` (~65MB resident).
   static #routeSourceValidator: typeof import("./routeSourceValidator").RouteSourceValidator | null = null;
   static async #getRouteSourceValidator() {
     AppExecutor.#routeSourceValidator ??= (await import("./routeSourceValidator")).RouteSourceValidator;
@@ -1376,15 +1347,7 @@ export class AppExecutor extends SysExecutor {
   getEnv() {
     return WorkspaceExecutor.getBaseDevEnv().env;
   }
-  /**
-   * This app's dev port, derived from its position in the sorted `apps/` listing so several apps can run
-   * at once without colliding.
-   *
-   * `AKAN_DEV_PORT` pins it instead, because the derived value *moves*: the index shifts whenever any other
-   * app directory appears or disappears, and a dev host recomputes this on every restart. So a session that
-   * adds an app relands its dev server on a different port, and anything that reserved a port relative to
-   * the old one is left pointing at nothing.
-   */
+  /** `AKAN_DEV_PORT` pins it; the derived port moves whenever an app directory appears or disappears. */
   async getDevPort() {
     const pinned = Number(process.env.AKAN_DEV_PORT);
     if (Number.isInteger(pinned) && pinned > 0 && pinned <= 65_535) return pinned;
@@ -1410,7 +1373,6 @@ export class AppExecutor extends SysExecutor {
       ...env,
     };
   }
-  /** The database mode a command runs this app in, and the modes its build carries — the same rule the server boots by. */
   async getDatabaseModeEnv() {
     const akanConfig = await this.getConfig();
     return {
@@ -1428,33 +1390,27 @@ export class AppExecutor extends SysExecutor {
     };
     Object.assign(process.env, routeEnv);
     if (type === "build") {
-      //* `scanSync` already read the route set, and it reads it unfiltered — dev-only routes are still
-      //* generated against and typechecked. Drop the cache so the build phases re-read it without them.
+      //* `scanSync` read the route set unfiltered; drop the cache so build phases re-read it without dev-only routes.
       this.#excludeDevOnlyPages = true;
       this.#pageKeys = null;
       await this.dist.removeDir(this.dist.cwdPath);
       await Promise.all([this.dist.mkdir("private"), this.dist.mkdir("public")]);
-      //* Lib assets are symlinks in the app dir (see syncAssets). dist is the docker build context and the
-      //* release tarball root, neither of which follows a link out of itself, so materialize them here.
-      //* `public/` has exactly one reader — the web router's catch-all — so an api-only build leaves it out.
+      //* Lib assets are symlinks, which neither the docker context nor the release tarball follows out of dist.
+      //* Only the web router reads `public/`, so an api-only build leaves it out.
       await Promise.all([
         this.cp("private", `${this.dist.cwdPath}/private`, { dereference: true }),
         ...(akanConfig.web.ssr ? [this.cp("public", `${this.dist.cwdPath}/public`, { dereference: true })] : []),
       ]);
     } else {
       await this.removeDir(".akan");
-      //? `web` is a build declaration: `akan start` keeps the full dev surface because the incremental
-      //? builder is also the file watcher, so switching it off would take server-code HMR with it.
+      //? `akan start` keeps the full dev surface: the incremental builder is also the file watcher.
       if (!akanConfig.web.ssr || !akanConfig.web.csr)
         this.logger.verbose(
           `akan.config.ts disables web.${!akanConfig.web.ssr ? "ssr" : "csr"}; \`akan start\` still serves it, \`akan build\` will not`,
         );
     }
-    //? `akan start` is the dev server, and it must say so rather than inherit an answer. Bun auto-loads the
-    //? workspace `.env`, so NODE_ENV=production can reach this process without ever being exported in a shell —
-    //? and a dev server that believes it is production serves from the production route cache, whose every
-    //? route throws because a dev artifact carries no routes manifest. Written into `process.env` and not only
-    //? into the child env because the builder runs here and bakes NODE_ENV into the bundles it emits.
+    //? Bun auto-loads `.env`, so NODE_ENV=production can arrive unexported and send the dev server to the production
+    //? route cache. Set on `process.env` because the builder runs here and bakes NODE_ENV into its bundles.
     if (type === "start") process.env.NODE_ENV = "development";
     const devPort = type === "start" ? (await this.getDevPort()).toString() : undefined;
     const env = this.getCommandEnv({
@@ -1462,15 +1418,8 @@ export class AppExecutor extends SysExecutor {
       ...routeEnv,
       ...(devPort ? { PORT: devPort, AKAN_PUBLIC_CLIENT_PORT: devPort, AKAN_PUBLIC_SERVER_PORT: devPort } : {}),
     });
-    // `start` spawns subprocesses that carry `env`, but `build` runs its phases in this same process and
-    // reads `process.env` directly. Publish the resolved env here so SSR/CSR bundling (fed by getPublicEnv,
-    // which filters to AKAN_PUBLIC_*) sees AKAN_PUBLIC_APP_NAME — otherwise SSR throws
-    // "environment variable AKAN_PUBLIC_APP_NAME is required". Only AKAN_PUBLIC_* is baked into bundles, so
-    // this does not leak non-public env.
-    // The port keys are this machine's dev allocation, and `define` turns an `AKAN_PUBLIC_*` into a literal the
-    // artifact can never be run with a different value for — a baked port would outrank the `PORT` the container
-    // is started with and send every SSR self-call to a port nothing bound. The operation mode likewise: one image
-    // serves an edge site and a cloud cluster, and a shell's `local` would pin every artifact to it.
+    // `build` runs its phases in this process, so the env is published here (only AKAN_PUBLIC_* reaches bundles).
+    // Ports and the operation mode are dropped: `define` would bake them in and outrank the container's own values.
     if (type === "build") {
       const buildEnv = { ...env };
       delete buildEnv.AKAN_PUBLIC_CLIENT_PORT;
@@ -1505,14 +1454,11 @@ export class AppExecutor extends SysExecutor {
   #akanConfig: AkanAppConfig | null = null;
   override async getConfig({ refresh }: { refresh?: boolean } = {}) {
     if (this.#akanConfig && !refresh) return this.#akanConfig;
-    // A refresh means the config file may have been edited; bust the import cache so the fresh
-    // module is evaluated instead of Bun's cached instance.
     this.#akanConfig = await AkanAppConfig.from(this, { bustImportCache: refresh });
     return this.#akanConfig;
   }
 
   #pageKeys: string[] | null = null;
-  /** Set once `prepareCommand("build")` runs, so every later consumer of the route set agrees on it. */
   #excludeDevOnlyPages = false;
   async getPageKeys({ refresh }: { refresh?: boolean } = {}): Promise<string[]> {
     if (this.#pageKeys && !refresh) return this.#pageKeys;
@@ -1551,8 +1497,7 @@ export class AppExecutor extends SysExecutor {
         const fromLib = !!root.keyPrefix;
         const routeId = `${parsed.kind}:${parsed.pattern}`;
         const owner = owners.get(routeId);
-        //* App-owned routes have always been allowed to collide (two groups, one pattern); only report a
-        //* collision once a synced lib is involved, where neither side can see the other.
+        //* App-owned routes may collide (two groups, one pattern); a synced lib cannot see the other side.
         if (owner && (owner.fromLib || fromLib)) {
           throw new Error(
             `[route-convention] duplicate ${parsed.kind} route "${parsed.pattern}" in app "${this.name}":\n- ${owner.absPath}\n- ${absPath}`,
@@ -1571,8 +1516,7 @@ export class AppExecutor extends SysExecutor {
           });
           if (info.devOnly) {
             devOnlyKeys.add(key);
-            //* A layout owns its directory, so a dev-only one takes the whole subtree with it — leaving its
-            //* pages behind would ship them stripped of the chrome they were written under.
+            //* A dev-only layout takes its whole subtree, or its pages would ship without their chrome.
             if (parsed.kind === "layout") devOnlyDirs.push(key.replace(/[^/]+$/, ""));
           }
         }
@@ -1590,12 +1534,7 @@ export class AppExecutor extends SysExecutor {
     this.verbose(`[route] excluded ${dropped.length} dev-only route file(s) from the build: ${dropped.join(", ")}`);
     return pageKeys.filter((key) => !isDevOnly(key));
   }
-  /**
-   * Every directory that contributes route files, as `page`-relative key prefixes. Lib roots are the
-   * symlinks `syncPages` created, so route keys stay app-relative while `realDir` is what a file watcher
-   * reports. Enumeration never crosses a symlink (neither Bun's glob nor TypeScript's `include` does),
-   * which is why linked page folders have to be listed here instead of found by walking `page`.
-   */
+  /** Lib roots are the `syncPages` symlinks, listed because neither Bun's glob nor TS `include` crosses one. */
   async getPageRoots(): Promise<PageRoot[]> {
     const akanConfig = await this.getConfig();
     const pageDir = `${this.cwdPath}/page`;
@@ -1616,18 +1555,16 @@ export class AppExecutor extends SysExecutor {
   }
 
   static readonly #pageLibsDir = "(libs)";
-  /** Where `(libs)` may live: once at the page root, or once per basePath when the app declares subRoutes. */
   static #pageLibParents(basePaths: Iterable<string>): string[] {
     const parents = [...basePaths].map((basePath) => `${basePath}/`);
     return parents.length ? parents : [""];
   }
-  /** Returns whether the linked page set changed, which is what makes the app's route keys stale. */
+  /** Whether the linked page set changed, which makes the app's route keys stale. */
   async syncPages(libDeps: string[]): Promise<boolean> {
     const akanConfig = await this.getConfig();
     const parents = AppExecutor.#pageLibParents(akanConfig.basePaths);
     const libs = await this.#resolvePageLibs(akanConfig.syncPageLibs, libDeps);
-    //* Listed rather than taken from `getPageRoots`, which drops links whose target is gone — those are
-    //* exactly the ones a sync has to clean up.
+    //* Not `getPageRoots`: it drops links whose target is gone, exactly the ones a sync must clean up.
     const linked = (
       await Promise.all(
         parents.map(async (parent) => {
@@ -1697,8 +1634,7 @@ export class AppExecutor extends SysExecutor {
     );
   }
   static async #linkLibAsset(targetPath: string, linkPath: string) {
-    //* A relative link keeps working when the workspace is mounted at another path (containers, CI);
-    //* Windows junctions are the exception and resolve their target as an absolute path.
+    //* Relative, so it survives a remount (containers, CI); a Windows junction needs an absolute target.
     const isWindows = process.platform === "win32";
     try {
       const target = isWindows ? targetPath : path.relative(path.dirname(linkPath), targetPath);
@@ -1722,8 +1658,6 @@ export class AppExecutor extends SysExecutor {
     if (write) await this.#runPluginSyncAssets();
     return scanInfo;
   }
-  //* build-time asset generation is delegated to plugins (e.g. the push plugin writes
-  //* public/firebase-messaging-sw.js). The framework itself no longer knows about firebase.
   async #runPluginSyncAssets() {
     const plugins = await this.collectPlugins();
     if (!plugins.some((plugin) => plugin.syncAssets)) return;
@@ -1755,8 +1689,6 @@ export class AppExecutor extends SysExecutor {
       },
     };
   }
-  //* Aggregate plugins declared by this app's akan.config plus each of its lib dependencies'
-  //* akan.config. This is how a lib (e.g. libs/util) opts an app into a feature turnkey.
   async collectPlugins(): Promise<AkanPlugin[]> {
     const scanInfo = (await this.scan({ write: false })) as AppInfo;
     const libDeps = scanInfo.getLibs();
@@ -1844,7 +1776,6 @@ export class PkgExecutor extends Executor {
   async scan({ refresh }: { refresh?: boolean } = {}): Promise<PkgInfo> {
     if (this.#scanInfo && !refresh) return this.#scanInfo;
     const scanInfo = await PkgInfo.fromExecutor(this, { refresh });
-    // this.writeJson("akan.pkg.json", pkgScanResult);
     this.#scanInfo = scanInfo;
     return scanInfo;
   }
@@ -1855,9 +1786,7 @@ export class PkgExecutor extends Executor {
     };
     const rootVersion = rootDeps[dep];
     if (rootVersion) return rootVersion;
-    // A transitive dependency the workspace pins rather than imports is only ever written as an override, and
-    // that pin has to reach the published package: neither an override nor a dependency's own shrinkwrap is
-    // applied to a consumer's install, so the version has to be a dependency of what we publish.
+    // Overrides never reach a consumer's install, so a pinned transitive dep is published as a dependency.
     const overrideVersion = rootPackageJson.overrides?.[dep];
     if (typeof overrideVersion === "string") return overrideVersion;
 
