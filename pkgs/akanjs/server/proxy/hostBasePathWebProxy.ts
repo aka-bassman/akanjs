@@ -42,7 +42,9 @@ export class HostBasePathWebProxy implements WebProxy {
   }
 
   #getBasePath(request: Request): string | null {
-    const host = normalizeHost(request.headers.get("x-forwarded-host") ?? request.headers.get("host"));
+    const host = normalizeHost(
+      request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? request.headers.get("host"),
+    );
     if (!host) return null;
     const domainMap = this.#getDomainMap();
     return domainMap.get(host) ?? null;
@@ -92,8 +94,8 @@ export function normalizeHost(host: string | null): string {
 
 export function getPublicRequestUrl(request: Bun.BunRequest): URL {
   const url = new URL(request.url);
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  const proto = request.headers.get("x-forwarded-proto");
+  const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? request.headers.get("host");
+  const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
   if (host) url.host = host;
   if (host && !host.includes(":")) url.port = "";
   if (proto) url.protocol = proto.endsWith(":") ? proto : `${proto}:`;

@@ -108,4 +108,22 @@ describe("HostBasePathWebProxy", () => {
     expect((result as Response).status).toBe(308);
     expect((result as Response).headers.get("location")).toBe("http://soft-angelo.try.akanjs.com/en/home");
   });
+
+  test("routes and redirects on the first host and proto of a multi-hop forwarded chain", () => {
+    process.env.AKAN_SUB_ROUTE_HOSTS = "soft=soft-angelo.try.akanjs.com";
+    const forwarded = (url: string) =>
+      new Request(url, {
+        headers: {
+          host: "internal",
+          "x-forwarded-host": "soft-angelo.try.akanjs.com, lb.internal:8080",
+          "x-forwarded-proto": "https, http",
+        },
+      }) as unknown as Bun.BunRequest;
+
+    expect(rewriteOf(new HostBasePathWebProxy().use(forwarded("http://internal/en/home"))).pathname).toBe(
+      "/en/soft/home",
+    );
+    const redirect = new HostBasePathWebProxy().use(forwarded("http://internal/en/soft/home"));
+    expect((redirect as Response).headers.get("location")).toBe("https://soft-angelo.try.akanjs.com/en/home");
+  });
 });

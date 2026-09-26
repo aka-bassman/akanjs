@@ -294,6 +294,12 @@ describe("WebRouter sub route host resolution", () => {
     await expect(rscBasePathFor({ host: "soft.example.test", "x-base-path": "nonsense" })).resolves.toBe("soft");
     await expect(rscBasePathFor({ host: "akanjs.example.test", "x-base-path": "soft" })).resolves.toBe("soft");
   });
+
+  test("matches the first host of a multi-hop x-forwarded-host", async () => {
+    await expect(
+      rscBasePathFor({ host: "internal", "x-forwarded-host": "soft.example.test, lb.internal:8080" }),
+    ).resolves.toBe("soft");
+  });
 });
 
 describe("WebRouter local sub route index", () => {

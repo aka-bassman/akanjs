@@ -754,7 +754,7 @@ export class WebRouter {
   }
 
   static #basePathForRequestHost(req: Request, subRoutes: Record<string, string[]>): string | null {
-    const host = normalizeHost(req.headers.get("x-forwarded-host") ?? req.headers.get("host"));
+    const host = normalizeHost(req.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? req.headers.get("host"));
     if (!host) return null;
     for (const [basePath, domains] of Object.entries(subRoutes)) {
       if (domains.some((domain) => normalizeHost(domain) === host)) return basePath;
