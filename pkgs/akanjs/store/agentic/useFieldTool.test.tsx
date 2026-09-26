@@ -430,7 +430,6 @@ const source = (
   ...options,
 });
 
-/** The snapshot is name-ordered, so every entry is looked up by the name it published under. */
 const toolOf = (surface: AgenticSurface, name: string) => surface.snapshot().tools.find((tool) => tool.name === name);
 
 const fileControl = (surface: AgenticSurface, onChange: unknown, src: FileFieldSource<Picture>) => {
@@ -499,14 +498,11 @@ describe("useFileFieldTool", () => {
     instance.set({ fileToolCutForm: { refImages: [{ id: "older" }] } });
     const unmount = mount(fileControl(surface, dispatch.setRefImagesOnFileToolCut, source(pictures)));
 
-    // "older" is on the field and on screen; it is not in the tray. Refusing it as no file at all reads as the
-    // form being wrong rather than the verb, so the sentence says which set it is outside and what does cover it.
     await expect(surface.call("setRefImagesOnFileToolCut", { refImagesIds: ["older"] })).rejects.toThrow(
       "A file already on refImages may not be offered at all — it can only be removed by position, with subRefImagesOnFileToolCut.",
     );
     unmount();
 
-    // A single field has no such route, so it keeps the shorter sentence.
     const one = new AgenticSurface();
     const off = mount(fileControl(one, dispatch.setImageOnFileToolCut, source(pictures)));
     const refusal = await one
@@ -586,8 +582,6 @@ describe("useFileFieldTool", () => {
     instance.set({ fileToolCutForm: { refImages: [{ id: "f1" }, { id: "f2" }] } });
     const unmount = mount(fileControl(surface, dispatch.setRefImagesOnFileToolCut, source(pictures, { max: 2 })));
 
-    // In the description too: a limit an agent can only learn by tripping it is the one the listing tool exists
-    // to spare it, and the server's own `Err` is a round trip away.
     expect(toolOf(surface, "addRefImagesOnFileToolCut")?.description).toContain("It holds at most 2 files.");
     await expect(surface.call("addRefImagesOnFileToolCut", { refImagesIds: ["f1"] })).rejects.toThrow(
       "refImages holds at most 2 files, and that would make 3. Remove one with subRefImagesOnFileToolCut first.",

@@ -78,8 +78,7 @@ beforeAll(() => {
 
 describe("AgentBridge read", () => {
   test("strips a secret field the user typed into the form", () => {
-    // The form is the case the mask exists for: it holds what the user typed, and an in-page agent ships what it
-    // reads to a remote model. `immerify` has already dropped the class, so the model comes from the declaration.
+    // `immerify` has already dropped the form's class, so the mask's model comes from the declaration.
     const form = instance.get().bridgeNoteForm as Record<string, unknown>;
     instance.set({ bridgeNoteForm: { ...form, title: "Ship it", secretMemo: "hunter2" } });
     const read = bridge.read("bridgeNoteForm") as Record<string, unknown>;
@@ -98,7 +97,6 @@ describe("AgentBridge read", () => {
 
 describe("AgentBridge live keys", () => {
   test("reads the keys the screen subscribes, not the rest of their store", () => {
-    // Key-level, not store-level: a component reading the form says nothing about the list beside it.
     expect(bridge.readableKeys()).toEqual(["bridgeNoteForm", "draft"]);
     expect(() => bridge.read("pageOfBridgeNote")).toThrow('State key "pageOfBridgeNote" is not read by this screen');
     instance.releaseLive("draft");
@@ -113,7 +111,6 @@ describe("AgentBridge live keys", () => {
     expect(bridge.readableKeys("notes")).toEqual(["pageOfBridgeNote"]);
     expect(bridge.read("pageOfBridgeNote", "notes")).toBe(1);
     expect(() => bridge.read("pageOfBridgeNote", "other")).toThrow("not read by this screen");
-    // Zones are views, not walls: the root still sees what a zone reads.
     expect(bridge.readableKeys()).toContain("pageOfBridgeNote");
     instance.releaseLive("pageOfBridgeNote", "notes");
   });

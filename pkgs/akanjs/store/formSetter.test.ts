@@ -23,7 +23,6 @@ ConstantRegistry.buildModel("warnSheet", WarnInput, WarnObj, WarnFull, WarnLight
 
 type Actions = { [key: string]: (...args: unknown[]) => unknown };
 
-/** The dispatch context a store action really runs against: a plain object holding `set`/`get` and every action. */
 const contextOf = (extra: Actions = {}) => {
   const state: { [key: string]: { [key: string]: unknown } } = { hookSheetForm: { title: "", toBiz: null, tags: [] } };
   const actions = makeFormSetter("hookSheet", { serializedSignal: {} } as unknown as FetchProxy<unknown>);

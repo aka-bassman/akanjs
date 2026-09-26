@@ -247,7 +247,6 @@ describe("form draft lifecycle", () => {
     await settle();
     expect(draftCount()).toBe(1);
 
-    // What an autosaving form leaves behind: the record now holds the draft's values, under a newer `updatedAt`.
     serverTitle = "autosaved";
     serverUpdatedAt = new Date("2026-02-02T00:00:00.000Z");
     const second = makeInstance();
@@ -327,11 +326,7 @@ describe("form draft write scheduling", () => {
   });
 });
 
-/**
- * An app store that extends a lib store for the same model is registered alongside it, so every entry the lib
- * declared reaches `StoreRegistry.merge` twice. Drafts made that unconditional — one is generated per model — but
- * a lib store's own `persist` or `computed` key had the same collision before them.
- */
+// An app store extending a lib store for the same model sends every lib entry through `StoreRegistry.merge` twice.
 describe("a lib store extended by an app store", () => {
   test("merges when both are registered, and the model keeps one draft entry", () => {
     class LibExtStore extends store(makeSignal(), () => ({})) {}

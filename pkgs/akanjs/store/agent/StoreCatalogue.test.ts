@@ -97,15 +97,12 @@ describe("StoreCatalogue state", () => {
   });
 
   test("names the model from the declaration even when the value cannot", () => {
-    // `STATE_META` holds initial values, not types, so a key that starts null says nothing about its shape — but
-    // which model it belongs to is declared, and that is what a read of it has to be masked by.
     expect(catalogue.state.catalogueTask).toEqual({
       type: "unknown",
       refName: "catalogueTask",
       modelType: "full",
       derived: false,
     });
-    // The form is the case that matters: `immerify` copies it into a plain object, so the value has no class left.
     expect(catalogue.state.catalogueTaskForm).toEqual({
       type: "object",
       refName: "catalogueTask",

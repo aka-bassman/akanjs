@@ -58,8 +58,7 @@ describe("StStateDraft", () => {
     unmount();
   });
 
-  // `via.ts` augments the global String and Boolean constructors with model field metadata, so these two are the
-  // declarations that can silently hand back a model state object instead of the scalar.
+  // `via.ts` gives String and Boolean field metadata, so these two can pass for model declarations.
   test("a String or Boolean state hands back the scalar, and its setter takes one", async () => {
     const surface = new AgenticSurface();
     const seen: [string, boolean][] = [];

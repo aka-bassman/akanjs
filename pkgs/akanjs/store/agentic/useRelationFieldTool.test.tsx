@@ -67,7 +67,6 @@ const mount = (node: ReactNode) => {
   };
 };
 
-/** Empty until `load` runs, the way a slice list is until the dropdown opens. */
 const source = (loaded: Org[], options: { disabled?: boolean } = {}) => {
   let list = new DataList<Org>([]);
   return {
@@ -114,7 +113,6 @@ describe("useRelationFieldTool", () => {
       additionalProperties: false,
     });
 
-    // The list is empty before the load, so the refusal points at the tool that fills it rather than at an id.
     await expect(surface.call("setOrgOnRelItem", { orgId: "org-1" })).rejects.toThrow(
       "No relOrg is loaded yet. Call loadOrgOptionsOnRelItem first for the ids.",
     );

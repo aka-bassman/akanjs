@@ -46,7 +46,6 @@ describe("ScreenReader", () => {
   test("keeps a link's href inline in its sentence", () => {
     const text = readOf('<p>See <a href="/docs">the docs</a> now</p><a href="/docs">/docs</a>');
     expect(text).toContain("See the docs (/docs) now");
-    // A link whose text is its href gains nothing from repeating it.
     expect(text).not.toContain("/docs (/docs)");
   });
 
@@ -62,8 +61,7 @@ describe("ScreenReader", () => {
     expect(text).not.toContain("transcript");
   });
 
-  // Chrome answers `false` for a `display: contents` element — it has no layout box — while happy-dom answers
-  // `true`, so the browser's verdict is stubbed in to reproduce the case that dropped the whole subtree.
+  // happy-dom's checkVisibility() is true for `display: contents`, unlike Chrome's, so the verdict is stubbed.
   test("reads through a display:contents wrapper, which has no box of its own", () => {
     document.body.innerHTML = '<div id="wrap" style="display:contents"><p>wrapped body</p></div>';
     const wrap = document.getElementById("wrap") as HTMLElement;
@@ -78,7 +76,6 @@ describe("ScreenReader", () => {
     expect(text).toContain("plain body");
     expect(text).toContain("[skipped: site footer]");
     expect(text).not.toContain("terms body");
-    // Naming it is the explicit ask that reads it: the marker is what the default read leaves out, not a wall.
     const region = ScreenTarget.container("site footer");
     expect(ScreenReader.read(region)).toContain("terms body");
   });
@@ -133,7 +130,6 @@ describe("ScreenReader", () => {
        <div id="two-headings"><h2>First</h2><h2>Second</h2></div>`,
     );
     expect(text).toContain("## Images And Public Env (#images-env)");
-    // Only the heading a container leads with takes its id: the second heading is not what that name would reach.
     expect(text).toContain("## First (#two-headings)");
     expect(text).toContain("## Second");
     expect(text).not.toContain("Second (#two-headings)");
@@ -171,7 +167,6 @@ describe("ScreenReader", () => {
   });
 
   test("readFrom climbs past the title wrapper to the section that holds the heading", () => {
-    // The real docs shape: the heading sits two divs inside the slide, so the innermost match is the heading alone.
     document.body.innerHTML = `
       <div id="images-env"><div class="title"><h2>Images And Public Env</h2></div><p>public env body</p></div>
       <div id="defaults"><div class="title"><h2>Defaults</h2></div><p>defaults body</p></div>`;

@@ -20,7 +20,6 @@ const mount = (node: ReactNode) => {
 };
 
 class StToolMode extends enumOf("stToolMode", ["fit", "fill"] as const) {}
-/** The scalar comes from the values: all-integers infers `Int`, so the schema says `integer` with no help. */
 class StToolLevel extends enumOf("stToolLevel", [1, 2, 3] as const) {}
 
 describe("StToolBuilder", () => {
@@ -243,8 +242,7 @@ describe("StToolBuilder.exec", () => {
         .desc("Rewrite every beat of the plan.")
         .arg("bodies", [String])
         .opt("keys", [String], { oneOf: ["a", "b"] })
-        // The callback's own parameters are the assertion the declaration above cannot make: a wider
-        // `unknown[]` would still assign to `held.rewrite`, and neither of these lines would compile.
+        // The parameters are the assertion too: a wider `unknown[]` would still assign to `held.rewrite`.
         .exec((bodies, keys) => {
           const narrowed: ("a" | "b")[] = keys ?? [];
           seen.push([bodies.map((body) => body.trim()), narrowed.length ? narrowed : keys]);
@@ -348,7 +346,6 @@ describe("StToolBuilder.exec", () => {
       return null;
     };
 
-    // Withheld first: the condition a conditional surface is written against can start false.
     const unmountHidden = mount(
       <AgentProvider surface={surface}>
         <Row start={false} />
@@ -361,7 +358,6 @@ describe("StToolBuilder.exec", () => {
     expect(actionTagOf(held.call)?.action).toBe("removeThing");
     unmountHidden();
 
-    // And the direction that matters more: a lever the screen stopped offering must stop being pullable.
     const withdrawn = new AgenticSurface();
     const unmountShown = mount(
       <AgentProvider surface={withdrawn}>
@@ -488,8 +484,6 @@ describe("StToolBuilder.card", () => {
     unmount();
   });
 
-  // Checked as a verdict rather than inside the render: the host draws the card in its own tree, so a throw there
-  // takes the chat down instead of reaching the model as something it can correct.
   test("a missing or mistyped argument is refused before the card is ever drawn", () => {
     const surface = new AgenticSurface();
     let drawn = 0;
