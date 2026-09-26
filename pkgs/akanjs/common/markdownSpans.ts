@@ -44,7 +44,7 @@ export class MarkdownSpans {
 
   static plain(text: string): string {
     return MarkdownSpans.of(text)
-      .map((span) => (span.kind === "link" ? span.text : span.text))
+      .map((span) => span.text)
       .join("");
   }
 }

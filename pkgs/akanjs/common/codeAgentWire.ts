@@ -244,7 +244,6 @@ export const codeAgentEventLabel = (event: CodeAgentEventBody): string => {
         ? "turn end — the answer was cut off at the model's output limit"
         : `turn end (${event.stopReason})`;
     case "text_delta":
-      return event.text;
     case "thinking_delta":
       return event.text;
     case "message":

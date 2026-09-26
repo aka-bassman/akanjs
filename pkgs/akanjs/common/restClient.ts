@@ -87,12 +87,14 @@ export class RestClient {
 
   #makeBody(data: unknown): { body?: BodyInit; headers?: HeadersInit } {
     if (data === undefined) return {};
-    if (data instanceof FormData) return { body: data };
-    if (typeof data === "string") return { body: data };
-    if (data instanceof URLSearchParams) return { body: data };
-    if (data instanceof Blob) return { body: data };
-    if (data instanceof ArrayBuffer) return { body: data };
-
+    if (
+      typeof data === "string" ||
+      data instanceof FormData ||
+      data instanceof URLSearchParams ||
+      data instanceof Blob ||
+      data instanceof ArrayBuffer
+    )
+      return { body: data };
     return {
       body: JSON.stringify(data),
       headers: { "Content-Type": "application/json" },
