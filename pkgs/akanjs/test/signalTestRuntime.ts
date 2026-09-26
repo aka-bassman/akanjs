@@ -33,9 +33,8 @@ let configuredOptions: SignalTestOptions = {};
 export const hasSignalTestContext = () => currentContext !== undefined || pendingContext !== undefined;
 
 export const getSignalTestContext = <Fetch = FetchProxy>() => {
-  if (!currentContext) {
+  if (!currentContext)
     throw new Error("Signal test context is not initialized. Run through `akan test` or call setupSignalTestTarget().");
-  }
   return currentContext as SignalTestContext<Fetch>;
 };
 
@@ -64,13 +63,10 @@ export const terminateSignalTestContext = async () => {
   terminatingContext = undefined;
 };
 
-const importServerModule = async (type: "app" | "lib", name: string): Promise<SignalServerModule> => {
-  return type === "app" ? await import(`@apps/${name}/server`) : await import(`@libs/${name}/server`);
-};
+const importServerModule = async (type: "app" | "lib", name: string): Promise<SignalServerModule> =>
+  type === "app" ? await import(`@apps/${name}/server`) : await import(`@libs/${name}/server`);
 
-const importLibModule = async (name: string): Promise<SignalServerModule> => {
-  return await import(`@libs/${name}/server`);
-};
+const importLibModule = async (name: string): Promise<SignalServerModule> => await import(`@libs/${name}/server`);
 
 export const setupSignalTestTarget = async <Fetch = FetchProxy>(
   {

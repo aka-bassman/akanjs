@@ -43,16 +43,11 @@ const scalarSampleMap = new Map<PrimitiveScalar, () => any>([
   [Any, () => ({})],
 ]);
 const getPrimitiveSample = (ref: Cls, field: ConstantField) => {
-  if (field.type) {
-    return getFieldTypeExample[field.type]() as string;
-  } else if (typeof field.min === "number") {
-    return field.min;
-  } else if (typeof field.max === "number") {
-    return field.max;
-  } else {
-    const sampler = scalarSampleMap.get(ref);
-    return (sampler ? sampler() : primitiveSampleOf(ref as unknown as typeof PrimitiveScalar)) as string | null;
-  }
+  if (field.type) return getFieldTypeExample[field.type]() as string;
+  if (typeof field.min === "number") return field.min;
+  if (typeof field.max === "number") return field.max;
+  const sampler = scalarSampleMap.get(ref);
+  return (sampler ? sampler() : primitiveSampleOf(ref as unknown as typeof PrimitiveScalar)) as string | null;
 };
 
 // An unlisted primitive samples its own example, parsed as an argument would be, so a required field still purifies.
@@ -67,23 +62,19 @@ const makeSample = (field: ConstantField): any => {
     return typeof field.default === "function" ? (field.default as () => object)() : (field.default as object);
   else if (field.enum) return randomPick([...field.enum.values]);
   if (PrimitiveRegistry.has(field.modelRef)) return getPrimitiveSample(field.modelRef, field);
-  return Object.fromEntries(
-    Object.entries(field.modelRef[FIELD_META]).map(
-      ([key, fld]) => [key, fld.arrDepth ? [] : fld.isClass && !fld.isScalar ? null : makeSample(fld)] as const,
-    ),
-  );
+  return sampleFields(field.modelRef[FIELD_META]);
 };
+
+const sampleFields = (fieldMap: FieldObject) =>
+  Object.fromEntries(
+    Object.entries(fieldMap).map(([key, field]) => [
+      key,
+      field.arrDepth ? [] : field.isClass && !field.isScalar ? null : makeSample(field),
+    ]),
+  );
 
 export type SampleOf<Model> = DocumentModel<{
   [K in keyof Model as Model[K] extends BaseObject ? never : K]: NonNullable<Model[K]>;
 }>;
-export const sampleOf = <Model, FieldObj extends FieldObject>(
-  modelRef: ConstantCls<Model, FieldObj>,
-): DocumentModel<{ [K in keyof Model as Model[K] extends BaseObject ? never : K]: NonNullable<Model[K]> }> => {
-  return Object.fromEntries(
-    Object.entries(modelRef[FIELD_META]).map(([key, field]) => [
-      key,
-      field.arrDepth ? [] : field.isClass && !field.isScalar ? null : makeSample(field),
-    ]),
-  ) as any;
-};
+export const sampleOf = <Model, FieldObj extends FieldObject>(modelRef: ConstantCls<Model, FieldObj>) =>
+  sampleFields(modelRef[FIELD_META]) as SampleOf<Model>;
