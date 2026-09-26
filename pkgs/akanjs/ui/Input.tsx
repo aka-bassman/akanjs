@@ -152,6 +152,7 @@ export type TextAreaProps = Omit<
 const DefaultTextArea = ({
   className,
   nullable,
+  inputRef,
   value,
   inputClassName,
   inputWrapperClassName,
@@ -163,7 +164,6 @@ const DefaultTextArea = ({
 }: TextAreaProps) => {
   useFieldTool(onChange, { disabled: rest.disabled });
   const { l } = usePage();
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const validateResult = validate(value);
   const textareaBase = (useUiRecipe("input") ?? inputRecipe)({ kind: "area" });
   const [firstFocus, setFirstFocus] = useState(true);
