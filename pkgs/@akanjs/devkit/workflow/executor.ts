@@ -48,16 +48,13 @@ const workflowStringListInput = (value: WorkflowInputValue | undefined) =>
 const workflowStringArrayInput = (value: WorkflowInputValue | undefined) => (Array.isArray(value) ? value : null);
 const workflowBooleanInput = (value: WorkflowInputValue | undefined) => (typeof value === "boolean" ? value : null);
 
-const postApplyDiagnostic = (code: string, message: string, target: string): WorkflowDiagnostic => ({
-  severity: "error",
-  code,
-  message,
-  failureScope: "source-change",
-  context: { target },
-});
-
-const postApplyWarning = (code: string, message: string, target: string): WorkflowDiagnostic => ({
-  severity: "warning",
+const postApplyDiagnostic = (
+  code: string,
+  message: string,
+  target: string,
+  severity: WorkflowDiagnostic["severity"] = "error",
+): WorkflowDiagnostic => ({
+  severity,
   code,
   message,
   failureScope: "source-change",
@@ -114,27 +111,23 @@ const checkTypeScriptSyntax = async (workspace: Workspace, filePath: string) => 
 
 const checkChangedFile = async (workspace: Workspace, file: PrimitiveChangedFile): Promise<WorkflowStepResult> => {
   if (file.action === "remove") return { postApplyChecks: [] };
-  const diagnostics: WorkflowDiagnostic[] = [];
-  const checks: WorkflowPostApplyCheck[] = [];
-  const pathIssue = await checkPathCasing(workspace, file.path);
-  if (pathIssue) {
-    diagnostics.push(postApplyDiagnostic(pathIssue.code, pathIssue.message, file.path));
-    checks.push({ ...pathIssue, target: file.path, status: "failed" });
-    return { diagnostics, postApplyChecks: checks };
+  const issue = (await checkPathCasing(workspace, file.path)) ?? (await checkTypeScriptSyntax(workspace, file.path));
+  if (issue) {
+    return {
+      diagnostics: [postApplyDiagnostic(issue.code, issue.message, file.path)],
+      postApplyChecks: [{ ...issue, target: file.path, status: "failed" }],
+    };
   }
-  const syntaxIssue = await checkTypeScriptSyntax(workspace, file.path);
-  if (syntaxIssue) {
-    diagnostics.push(postApplyDiagnostic(syntaxIssue.code, syntaxIssue.message, file.path));
-    checks.push({ ...syntaxIssue, target: file.path, status: "failed" });
-    return { diagnostics, postApplyChecks: checks };
-  }
-  checks.push({
-    code: "workflow-post-apply-file-valid",
-    target: file.path,
-    status: "passed",
-    message: "Changed file exists with exact casing and parses as source when applicable.",
-  });
-  return { postApplyChecks: checks };
+  return {
+    postApplyChecks: [
+      {
+        code: "workflow-post-apply-file-valid",
+        target: file.path,
+        status: "passed",
+        message: "Changed file exists with exact casing and parses as source when applicable.",
+      },
+    ],
+  };
 };
 
 const checkRecommendationPath = async (
@@ -199,18 +192,6 @@ const workflowModuleContext = async (workspace: Workspace, plan: WorkflowPlan): 
   };
 };
 
-const structureCheck = (
-  code: string,
-  target: string,
-  status: WorkflowPostApplyCheck["status"],
-  message: string,
-): WorkflowPostApplyCheck => ({
-  code,
-  target,
-  status,
-  message,
-});
-
 const checkAddFieldStructure = async (workspace: Workspace, plan: WorkflowPlan): Promise<WorkflowStepResult> => {
   if (plan.workflow !== "add-field" && plan.workflow !== "add-enum-field") return {};
   const app = workflowStringInput(plan.inputs.app);
@@ -260,16 +241,14 @@ const checkAddFieldStructure = async (workspace: Workspace, plan: WorkflowPlan):
       .map((diagnostic) => diagnostic.message),
   ].filter((failure): failure is string => failure !== null);
   const constantValid = constantFailures.length === 0;
-  postApplyChecks.push(
-    structureCheck(
-      constantValid ? "workflow-post-apply-constant-shape-valid" : "workflow-post-apply-structure-invalid",
-      constantPath,
-      constantValid ? "passed" : "failed",
-      constantValid
-        ? `${inputClassName} keeps via structure, builder usage, imports, and requested field presence.`
-        : constantFailures.join(" "),
-    ),
-  );
+  postApplyChecks.push({
+    code: constantValid ? "workflow-post-apply-constant-shape-valid" : "workflow-post-apply-structure-invalid",
+    target: constantPath,
+    status: constantValid ? "passed" : "failed",
+    message: constantValid
+      ? `${inputClassName} keeps via structure, builder usage, imports, and requested field presence.`
+      : constantFailures.join(" "),
+  });
   if (!constantValid) {
     diagnostics.push(
       postApplyDiagnostic("workflow-post-apply-structure-invalid", constantFailures.join(" "), constantPath),
@@ -294,16 +273,14 @@ const checkAddFieldStructure = async (workspace: Workspace, plan: WorkflowPlan):
       .map((diagnostic) => diagnostic.message),
   ].filter((failure): failure is string => failure !== null);
   const dictionaryValid = dictionaryFailures.length === 0;
-  postApplyChecks.push(
-    structureCheck(
-      dictionaryValid ? "workflow-post-apply-dictionary-shape-valid" : "workflow-post-apply-structure-invalid",
-      dictionaryPath,
-      dictionaryValid ? "passed" : "failed",
-      dictionaryValid
-        ? `.model<${moduleClassName}> keeps the requested field inside the model object and preserves dictionary chain order.`
-        : dictionaryFailures.join(" "),
-    ),
-  );
+  postApplyChecks.push({
+    code: dictionaryValid ? "workflow-post-apply-dictionary-shape-valid" : "workflow-post-apply-structure-invalid",
+    target: dictionaryPath,
+    status: dictionaryValid ? "passed" : "failed",
+    message: dictionaryValid
+      ? `.model<${moduleClassName}> keeps the requested field inside the model object and preserves dictionary chain order.`
+      : dictionaryFailures.join(" "),
+  });
   if (!dictionaryValid) {
     diagnostics.push(
       postApplyDiagnostic("workflow-post-apply-structure-invalid", dictionaryFailures.join(" "), dictionaryPath),
@@ -313,22 +290,21 @@ const checkAddFieldStructure = async (workspace: Workspace, plan: WorkflowPlan):
   const constantOrderValid = fieldOrderValid(constantNames, fieldName);
   const dictionaryOrderValid = fieldOrderValid(dictionaryStructure.fields, fieldName);
   const orderValid = constantOrderValid && dictionaryOrderValid;
-  postApplyChecks.push(
-    structureCheck(
-      "workflow-post-apply-field-order-valid",
-      `${constantPath}, ${dictionaryPath}`,
-      orderValid ? "passed" : "failed",
-      orderValid
-        ? `Field "${fieldName}" follows the shared priority ordering policy.`
-        : `Field "${fieldName}" is present but does not match the shared priority ordering policy.`,
-    ),
-  );
+  postApplyChecks.push({
+    code: "workflow-post-apply-field-order-valid",
+    target: `${constantPath}, ${dictionaryPath}`,
+    status: orderValid ? "passed" : "failed",
+    message: orderValid
+      ? `Field "${fieldName}" follows the shared priority ordering policy.`
+      : `Field "${fieldName}" is present but does not match the shared priority ordering policy.`,
+  });
   if (!orderValid) {
     diagnostics.push(
-      postApplyWarning(
+      postApplyDiagnostic(
         "workflow-post-apply-field-order-mismatch",
         `Field "${fieldName}" is present but does not match the shared priority ordering policy.`,
         `${constantPath}, ${dictionaryPath}`,
+        "warning",
       ),
     );
   }
@@ -581,9 +557,8 @@ export class WorkflowExecutor {
     const postApplyChecks: WorkflowPostApplyCheck[] = [];
     const recommendations = [...plan.recommendations];
     const nextActions: PrimitiveNextAction[] = [];
-
-    if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
-      return createWorkflowApplyReport({
+    const report = () =>
+      createWorkflowApplyReport({
         workflow: plan.workflow,
         mode: "apply",
         changedFiles,
@@ -595,7 +570,8 @@ export class WorkflowExecutor {
         nextActions,
         plan,
       });
-    }
+
+    if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) return report();
 
     recommendedValidationCommands.push(...workflowCommandsForPlan(plan));
     nextActions.push(...workflowCommandsForPlan(plan));
@@ -646,17 +622,6 @@ export class WorkflowExecutor {
       );
     }
 
-    return createWorkflowApplyReport({
-      workflow: plan.workflow,
-      mode: "apply",
-      changedFiles,
-      generatedFiles,
-      recommendedValidationCommands,
-      diagnostics,
-      postApplyChecks,
-      recommendations,
-      nextActions,
-      plan,
-    });
+    return report();
   }
 }
