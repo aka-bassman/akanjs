@@ -40,26 +40,13 @@ interface LiveRoom {
   evaluator: DocumentQueryEvaluator;
   payload: "light" | "id";
   subscribers: number;
-  /**
-   * Top-level `<path> eq <value>` conditions this room's query requires, when it is a plain conjunction of them.
-   * A change whose document disagrees with one of these cannot belong to this room, and cannot have belonged to it
-   * before either, so the room is skipped without walking its tree at all.
-   */
+  /** The query's top-level `eq` conditions when it is a plain conjunction; a document disagreeing skips the room. */
   index: Map<string, unknown> | null;
 }
 
 /**
- * Routes a document change to the rooms it belongs to.
- *
- * A room is one live subscription's resolved query, kept from the moment the socket subscribed. When a document
- * changes, the same query is evaluated against the version before the write and the version after it, and the pair
- * of answers is the event: appearing is `enter`, disappearing is `leave`, and staying is `update`. That is why the
- * CRUD verb never reaches a subscriber — an edit that moves a row out of a filter has to arrive as a removal from
- * that list, and a create that lands in one has to arrive as an insertion, which the verb alone cannot say.
- *
- * Every read wraps the caller's query in `removedAt` being empty (`SqlDocumentStore.findForRead`), and that wrapper
- * is added by the store rather than carried in the descriptor a slice returns. It is applied here for the same
- * reason: without it a soft delete still satisfies the query and would be routed as an ordinary update.
+ * Evaluates each room's query before and after a write: appearing is `enter`, disappearing `leave`, staying `update`.
+ * `removedAt` is wrapped in here as the store does on every read, or a soft delete would route as an update.
  */
 export class LiveSyncHub {
   readonly #rooms = new Map<string, LiveRoom>();
@@ -106,7 +93,6 @@ export class LiveSyncHub {
     return room;
   }
 
-  /** Every room this process currently holds, for a recovery that has to tell all of them to resynchronize. */
   roomIds(): string[] {
     return [...this.#rooms.keys()];
   }
@@ -122,11 +108,7 @@ export class LiveSyncHub {
     if (forModel && !forModel.size) this.#roomsByModel.delete(room.refName);
   }
 
-  /**
-   * Which rooms this change belongs to and how it reads in each.
-   *
-   * `previous` is absent on a create, which is the same thing as having belonged to no room before.
-   */
+  /** `previous` is absent on a create — no room held the document before. */
   route(refName: string, next: Record<string, unknown>, previous?: Record<string, unknown>): LiveRoomTarget[] {
     const rooms = this.#roomsByModel.get(refName);
     if (!rooms?.size) return [];
@@ -149,7 +131,6 @@ export class LiveSyncHub {
     return targets;
   }
 
-  /** A cheap pre-filter: false only when the room's own equality conditions rule the document out outright. */
   static #mayMatch(room: LiveRoom, row: DocumentRowView): boolean {
     if (!room.index) return true;
     for (const [path, value] of room.index) {
@@ -159,17 +140,7 @@ export class LiveSyncHub {
     return true;
   }
 
-  /**
-   * The top-level equality conditions of a query, when it is nothing but those.
-   *
-   * Most slices are `{ org: <id> }` or `{ org: <id>, status: "open" }`, so a write on a document belonging to one
-   * organisation can skip every room belonging to another without evaluating anything. Anything less regular —
-   * a nested group, an operator, a dotted path — indexes nothing and evaluates in full.
-   *
-   * Two shapes are excluded because the stored value is not the operand even though it looks like it is: a base
-   * column, which the row holds encoded rather than as the caller wrote it, and an array field, where a bare value
-   * means membership. Indexing either would skip a room that does match.
-   */
+  //* A base column is stored encoded and an array field's bare value means membership; indexing either skips a match.
   static #indexOf(query: DocumentQuery | undefined, fields: QueryFieldMap): Map<string, unknown> | null {
     if (!query || typeof query !== "object" || "kind" in query) return null;
     const index = new Map<string, unknown>();

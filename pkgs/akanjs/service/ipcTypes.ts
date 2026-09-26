@@ -60,8 +60,7 @@ export interface AkanMetricsReport {
   rscWorkerRestartCount?: number;
   rscWorkerRecycleCount?: number;
   rscWorkerLastRecycleReason?: string;
-  // The RSC worker samples its own process the same way its host replica does. These carry that
-  // sample under a prefix so it cannot overwrite the replica's own — see `RscWorker.getMetrics`.
+  // The RSC worker's own process sample, prefixed so it cannot overwrite its host replica's.
   rscWorkerReportedAt?: number;
   rscWorkerRssBytes?: number;
   rscWorkerHeapTotalBytes?: number;
