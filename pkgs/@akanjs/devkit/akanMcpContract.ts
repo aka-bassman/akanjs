@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isRecord } from "akanjs/common";
 import { AkanContextAnalyzer, type AkanDiagnostic, type AkanModuleContext } from "./akanContext";
 import type { Workspace } from "./commandDecorators";
 import type {
@@ -106,9 +107,6 @@ const inspectAkanContextInputSchema = {
   },
   required: ["question", "draft", "review", "request"],
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const slugPart = (value: unknown) =>
   typeof value === "string"

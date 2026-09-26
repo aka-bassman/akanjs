@@ -39,6 +39,7 @@ import {
   workflowPlanApproval,
   writeWorkflowRunArtifact,
 } from "@akanjs/devkit/workflow";
+import { isRecord } from "akanjs/common";
 import { ModuleScript } from "../module/module.script";
 import { PrimitiveScript } from "../primitive/primitive.script";
 import { spawnShell } from "../repair/repair.runner";
@@ -46,9 +47,6 @@ import { ScalarScript } from "../scalar/scalar.script";
 import { workflowSpecs } from "../workflows";
 
 const resolvePath = (filePath: string) => (path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath));
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isWorkflowPlan = (value: unknown): value is WorkflowPlan => {
   if (!isRecord(value)) return false;

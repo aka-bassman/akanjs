@@ -7,7 +7,7 @@ import { MobileProject } from "@trapezedev/project";
 import type { AndroidProject } from "@trapezedev/project/dist/android/project";
 import type { IosProject } from "@trapezedev/project/dist/ios/project";
 import type { AkanNativeContext, AkanPlugin } from "akanjs";
-import { capitalize } from "akanjs/common";
+import { capitalize, isRecord } from "akanjs/common";
 import type { AkanMobileTargetConfig, MobilePermission } from "./akanConfig";
 import { type AppExecutor, CommandExecutionError } from "./executors";
 import { FileEditor } from "./fileEditor";
@@ -159,9 +159,6 @@ export const selectLocalDevHost = (
     ? { host: best.address, source: "detected", candidates }
     : { host: "127.0.0.1", source: "loopback", candidates };
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const asString = (value: unknown) => (typeof value === "string" ? value : undefined);
 
