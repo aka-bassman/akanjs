@@ -44,14 +44,13 @@ import type {
 } from "../../signal/types";
 import type { HttpRoutes, LocalPublish, SignalRoutes, WebsocketRoutes } from "../types";
 
-type HttpRouteHandler = (req: Bun.BunRequest) => Response | Promise<Response | undefined> | undefined;
 type LiveChangeListener = (doc: unknown, type: unknown, previous?: unknown) => void;
 type LiveRoute = (next: Record<string, unknown>, previous?: Record<string, unknown>) => Promise<LiveDelivery[]>;
 interface LiveDelivery {
   roomId: string;
   payload: LiveEventPayload;
 }
-type HttpMethodRoutes = Record<string, HttpRouteHandler>;
+type HttpMethodRoutes = Record<string, (req: Bun.BunRequest) => Response | Promise<Response | undefined> | undefined>;
 
 export class SignalResolver {
   static logger = new Logger("SignalResolver");
@@ -630,7 +629,8 @@ export class SignalResolver {
             SignalResolver.#canUsePrimitiveQueryFastPath(endpointInfo, middleware)
               ? {
                   GET: async (req) => {
-                    if (SignalResolver.#hasAuthCredential(req)) return await normalHttpHandler(req);
+                    if (req.headers.get("authorization") || cookieHeaderHasAuthToken(req.headers.get("cookie")))
+                      return await normalHttpHandler(req);
                     // No trace by design: this fast path exists to skip per-request work.
                     return await SignalContext.try(
                       endpoint,
@@ -762,10 +762,6 @@ export class SignalResolver {
       endpointInfo.returns.arrDepth === 0 &&
       PrimitiveRegistry.has(endpointInfo.returns.returnRef as Cls)
     );
-  }
-
-  static #hasAuthCredential(req: Request) {
-    return Boolean(req.headers.get("authorization") || cookieHeaderHasAuthToken(req.headers.get("cookie")));
   }
 
   // Rooms are authorized once at subscribe; without this re-check a signed-out socket would keep its old rooms.

@@ -89,7 +89,7 @@ export class ConstantSerializer {
     const fieldKind = props.fieldType ?? "property";
     // A secret field's name is structure, but its seeded default/example values are secrets: redact them.
     const redacted = fieldKind === "secret";
-    const defaultKind = ConstantSerializer.#resolveDefaultKind(props.default);
+    const defaultKind = typeof props.default === "function" ? "function" : props.default == null ? "none" : "value";
     return {
       name,
       fieldKind,
@@ -118,12 +118,6 @@ export class ConstantSerializer {
         : {}),
       hasValidate: typeof props.validate === "function",
     };
-  }
-
-  static #resolveDefaultKind(value: unknown): ConstantFieldNode["defaultKind"] {
-    if (typeof value === "function") return "function";
-    if (value === null || value === undefined) return "none";
-    return "value";
   }
 
   static #resolveFieldType(props: ReturnType<ConstantField["getProps"]>): FieldType {

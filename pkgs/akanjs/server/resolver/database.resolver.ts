@@ -59,25 +59,23 @@ export class DatabaseResolver {
       if (!sort) throw new Exception.BadRequest(`Unknown sort key for ${modelName}: ${sortKey}`);
       return sort;
     };
-    const getListQuery = (query?: QueryOf<any>, queryOption?: ListQueryOption) => {
-      const find = query ?? {};
-      const sort = resolveSort(queryOption?.sort);
-      const skip = resolvePageSkip(queryOption?.skip);
+    const getListQuery = (query?: QueryOf<any>, queryOption?: ListQueryOption) => ({
+      find: query ?? {},
+      sort: resolveSort(queryOption?.sort),
+      skip: resolvePageSkip(queryOption?.skip),
       // undefined: a server caller naming no page gets no ceiling (client paths were clamped by the slice endpoint).
       // An explicit null means "page this, I have no number" and lands on the default page size.
-      const limit = queryOption?.limit === undefined ? 0 : resolvePageLimit(queryOption.limit);
-      const select = queryOption?.select;
-      const sample = queryOption?.sample;
-      return { find, sort, skip, limit, select, sample };
-    };
-    const getFindQuery = (query?: QueryOf<any>, queryOption?: FindQueryOption) => {
-      const find = query ?? {};
-      const sort = resolveSort(queryOption?.sort);
-      const skip = resolvePageSkip(queryOption?.skip);
-      const select = queryOption?.select;
-      const sample = queryOption?.sample ?? false;
-      return { find, sort, skip, select, sample };
-    };
+      limit: queryOption?.limit === undefined ? 0 : resolvePageLimit(queryOption.limit),
+      select: queryOption?.select,
+      sample: queryOption?.sample,
+    });
+    const getFindQuery = (query?: QueryOf<any>, queryOption?: FindQueryOption) => ({
+      find: query ?? {},
+      sort: resolveSort(queryOption?.sort),
+      skip: resolvePageSkip(queryOption?.skip),
+      select: queryOption?.select,
+      sample: queryOption?.sample ?? false,
+    });
     const schema = new DocumentSchema();
     database.model._onSchema(schema as any);
     database.model._libsOnSchema(schema as any);

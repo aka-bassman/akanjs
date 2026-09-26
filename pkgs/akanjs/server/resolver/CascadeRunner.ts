@@ -57,9 +57,8 @@ export class CascadeRunner {
       this.#plans.set(refName, { refEdges: this.#collectRefEdges(refName, mod), withEdges: [] });
     }
     for (const [refName, mod] of this.#modules) this.#collectWithEdges(refName, mod);
-    for (const refName of this.#modules.keys()) {
-      if (this.#hasRemoveSideEffect(refName)) continue;
-      this.#bulk.add(refName);
+    for (const [refName, mod] of this.#modules) {
+      if (!this.#hasRemoveSideEffect(refName, mod)) this.#bulk.add(refName);
     }
     this.#report();
   }
@@ -161,9 +160,7 @@ export class CascadeRunner {
   }
 
   // Must cover everything a bulk `removeMany` skips: with none of it present, both paths leave the same rows behind.
-  #hasRemoveSideEffect(refName: string) {
-    const mod = this.#modules.get(refName);
-    if (!mod) return true;
+  #hasRemoveSideEffect(refName: string, mod: CascadeModule) {
     // A wildcard child may name any model as its owner, so any query-level removal would skip its children.
     if (this.#anyEdges.length) return true;
     if (mod.schema.preHooks.get("remove")?.length || mod.schema.postHooks.get("remove")?.length) return true;

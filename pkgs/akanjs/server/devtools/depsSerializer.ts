@@ -50,10 +50,7 @@ export class DepsSerializer {
     const { di } = this.#context;
     const serviceStageOf = DepsSerializer.#stageIndex(di.hierarchy.serviceStages);
     const adaptorStageOf = DepsSerializer.#stageIndex(di.hierarchy.adaptorStages);
-    const roleOf = new Map<string, string>();
-    di.registry.adaptorRole.forEach((impl, role) => {
-      roleOf.set(impl.refName, role.refName);
-    });
+    const roleOf = new Map([...di.registry.adaptorRole].map(([role, impl]) => [impl.refName, role.refName] as const));
 
     di.registry.serviceCls.forEach((cls, refName) => {
       this.#node("service", refName, {
@@ -218,13 +215,7 @@ export class DepsSerializer {
   }
 
   static #stageIndex(stages: string[][]): Map<string, number> {
-    const index = new Map<string, number>();
-    stages.forEach((stage, stageIdx) => {
-      stage.forEach((refName) => {
-        index.set(refName, stageIdx);
-      });
-    });
-    return index;
+    return new Map(stages.flatMap((stage, stageIdx) => stage.map((refName) => [refName, stageIdx] as const)));
   }
 
   static #classNameOf(value: unknown): string {
