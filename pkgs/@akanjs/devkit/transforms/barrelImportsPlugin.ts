@@ -3,6 +3,7 @@ import type { BunPlugin } from "bun";
 import ts from "typescript";
 import type { App } from "../commandDecorators";
 import { BarrelAnalyzer, type BarrelExportMap, type PackageEntry } from "./barrelAnalyzer";
+import { loaderFor, type NamedItem, parseNamedList } from "./moduleSyntax";
 
 export interface BarrelImportsPluginOptions {
   /** Absolute paths whose content is returned unchanged (e.g. node_modules). */
@@ -310,16 +311,10 @@ const findImportStatements = (source: string): ImportStatement[] => {
   return statements;
 };
 
-interface NamedImportItem {
-  imported: string;
-  local: string;
-  isType: boolean;
-}
-
 interface ParsedClause {
   defaultImport?: string;
   namespaceImport?: string;
-  named?: NamedImportItem[];
+  named?: NamedItem[];
   typeOnly: boolean;
 }
 
@@ -349,33 +344,10 @@ const parseImportClause = (clause: string): ParsedClause | null => {
     const close = rest.indexOf("}");
     if (close === -1) return null;
     const inner = rest.slice(1, close);
-    parsed.named = parseNamedImportList(inner);
+    parsed.named = parseNamedList(inner);
     return parsed;
   }
   return parsed;
-};
-
-const parseNamedImportList = (body: string): NamedImportItem[] => {
-  const out: NamedImportItem[] = [];
-  for (const raw of body.split(",")) {
-    const s = raw.trim();
-    if (!s) continue;
-    let isType = false;
-    let rest = s;
-    if (rest.startsWith("type ")) {
-      isType = true;
-      rest = rest.slice(5).trim();
-    }
-    const asMatch = /^(\w+)\s+as\s+(\w+)$/.exec(rest);
-    if (asMatch) {
-      out.push({ imported: asMatch[1] ?? "", local: asMatch[2] ?? "", isType });
-      continue;
-    }
-    if (/^\w+$/.test(rest)) {
-      out.push({ imported: rest, local: rest, isType });
-    }
-  }
-  return out;
 };
 
 const rewriteSingleStatement = (stmt: ImportStatement, map: BarrelExportMap): string | null => {
@@ -389,8 +361,8 @@ const rewriteSingleStatement = (stmt: ImportStatement, map: BarrelExportMap): st
     return null;
   }
 
-  const remaining: NamedImportItem[] = [];
-  const rewrites = new Map<string, NamedImportItem[]>();
+  const remaining: NamedItem[] = [];
+  const rewrites = new Map<string, NamedItem[]>();
   for (const item of clause.named) {
     if (item.isType) {
       remaining.push(item);
@@ -433,15 +405,8 @@ const rewriteSingleStatement = (stmt: ImportStatement, map: BarrelExportMap): st
 
 const shouldPreserveBarrelSideEffects = (specifier: string): boolean => /^@(apps|libs)\/[^/]+\/client$/.test(specifier);
 
-const serializeNamedItem = (item: NamedImportItem): string => {
+const serializeNamedItem = (item: NamedItem): string => {
   const prefix = item.isType ? "type " : "";
   if (item.imported === item.local) return `${prefix}${item.imported}`;
   return `${prefix}${item.imported} as ${item.local}`;
-};
-
-const loaderFor = (absPath: string): "ts" | "tsx" | "js" | "jsx" => {
-  if (absPath.endsWith(".tsx")) return "tsx";
-  if (absPath.endsWith(".jsx")) return "jsx";
-  if (absPath.endsWith(".ts")) return "ts";
-  return "js";
 };

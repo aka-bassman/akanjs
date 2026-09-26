@@ -1,4 +1,5 @@
 import type { BunPlugin } from "bun";
+import { loaderFor } from "./moduleSyntax";
 import { transformUseClient } from "./rscUseClientTransform";
 
 /** `workspaceRoot` makes reference keys workspace-relative; they must match the client manifest's keys. */
@@ -23,11 +24,4 @@ export function createUseClientBundlePlugin(options: { workspaceRoot?: string } 
       });
     },
   };
-}
-
-function loaderFor(absPath: string): "ts" | "tsx" | "js" | "jsx" {
-  if (absPath.endsWith(".tsx")) return "tsx";
-  if (absPath.endsWith(".jsx")) return "jsx";
-  if (absPath.endsWith(".ts")) return "ts";
-  return "js";
 }

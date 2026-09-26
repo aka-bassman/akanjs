@@ -1,5 +1,6 @@
 import path from "node:path";
 import { Logger } from "akanjs/common";
+import { parseNamedList } from "./moduleSyntax";
 
 export interface BarrelExportTarget {
   subpath: string;
@@ -175,35 +176,6 @@ export class BarrelAnalyzer {
     return defaultResolveRelative(fromFile, relSpec);
   }
 }
-
-interface NamedItem {
-  imported: string;
-  local: string;
-  isType: boolean;
-}
-
-const parseNamedList = (listBody: string): NamedItem[] => {
-  const out: NamedItem[] = [];
-  for (const raw of listBody.split(",")) {
-    const s = raw.trim();
-    if (!s) continue;
-    let rest = s;
-    let isType = false;
-    if (rest.startsWith("type ")) {
-      isType = true;
-      rest = rest.slice(5).trim();
-    }
-    const asMatch = /^(\w+)\s+as\s+(\w+)$/.exec(rest);
-    if (asMatch) {
-      out.push({ imported: asMatch[1] ?? "", local: asMatch[2] ?? "", isType });
-      continue;
-    }
-    if (/^\w+$/.test(rest)) {
-      out.push({ imported: rest, local: rest, isType });
-    }
-  }
-  return out;
-};
 
 const isRelative = (spec: string): boolean => {
   return spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..";

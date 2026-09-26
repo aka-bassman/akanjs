@@ -1,4 +1,5 @@
 import path from "node:path";
+import { loaderFor } from "./moduleSyntax";
 
 const USE_CLIENT_RE = /^\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*["']use client["']/;
 const IMPLICIT_ROOT_LAYOUT_RE =
@@ -39,11 +40,4 @@ export function transformUseClient(source: string, args: UseClientTransformArgs)
   }
 
   return lines.join("\n");
-}
-
-function loaderFor(absPath: string): "ts" | "tsx" | "js" | "jsx" {
-  if (absPath.endsWith(".tsx")) return "tsx";
-  if (absPath.endsWith(".jsx")) return "jsx";
-  if (absPath.endsWith(".ts")) return "ts";
-  return "js";
 }

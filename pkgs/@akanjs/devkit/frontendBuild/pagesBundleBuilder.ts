@@ -5,6 +5,7 @@ import { resolveSsrPageEntriesForApp } from "../artifact/implicitRootLayout";
 import type { App } from "../commandDecorators";
 import { createBarrelImportsPlugin } from "../transforms/barrelImportsPlugin";
 import { createExternalizeFrameworkPlugin } from "../transforms/externalizeFrameworkPlugin";
+import { loaderFor } from "../transforms/moduleSyntax";
 import { transformUseClient } from "../transforms/rscUseClientTransform";
 import { createUseClientBundlePlugin } from "../transforms/useClientBundlePlugin";
 import { PagesEntrySourceGenerator } from "./pagesEntrySourceGenerator";
@@ -166,11 +167,4 @@ export class PagesBundleBuilder {
         "const fetchProto = FetchClient.build<typeof signal>(cnst, serverFetch.serializedSignal, { Err: pageProto.Err, base: serverFetch });",
       );
   }
-}
-
-function loaderFor(absPath: string): "ts" | "tsx" | "js" | "jsx" {
-  if (absPath.endsWith(".tsx")) return "tsx";
-  if (absPath.endsWith(".jsx")) return "jsx";
-  if (absPath.endsWith(".ts")) return "ts";
-  return "js";
 }
