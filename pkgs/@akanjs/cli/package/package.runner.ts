@@ -57,8 +57,7 @@ export class PackageRunner extends runner("package") {
     await pkg.workspace.unsetPkgTsPaths(pkg.name);
   }
   async scanSync(pkg: Pkg) {
-    const scanResult = await pkg.scan();
-    return scanResult;
+    return await pkg.scan();
   }
   async buildPackage(pkg: Pkg) {
     await $`rm -rf ${pkg.dist.cwdPath}`;
@@ -99,12 +98,9 @@ export class PackageRunner extends runner("package") {
         .filter(([, meta]) => meta.optional)
         .map(([dep]) => dep),
     );
-    const packageRuntimeDeps = [...new Set([...npmDeps, ...forcedRuntimeDeps])].filter(
-      (dep) => !optionalPeerDeps.has(dep) && !bundledRuntimeDeps.has(dep),
-    );
-    const packageRuntimeDevDeps = [...new Set([...npmDevDeps, ...forcedRuntimeDevDeps])].filter(
-      (dep) => !optionalPeerDeps.has(dep) && !bundledRuntimeDeps.has(dep),
-    );
+    const isShipped = (dep: string) => !optionalPeerDeps.has(dep) && !bundledRuntimeDeps.has(dep);
+    const packageRuntimeDeps = [...new Set([...npmDeps, ...forcedRuntimeDeps])].filter(isShipped);
+    const packageRuntimeDevDeps = [...new Set([...npmDevDeps, ...forcedRuntimeDevDeps])].filter(isShipped);
     const rootDeps = {
       ...rootPackageJson.overrides,
       ...rootPackageJson.dependencies,
@@ -221,12 +217,9 @@ export class PackageRunner extends runner("package") {
     if (pkgJson.publishConfig?.access !== "public") {
       throw new Error(`[package] ${pkg.name} must publish with publishConfig.access=public`);
     }
-    if (!(await Bun.file(`${pkg.dist.cwdPath}/README.md`).exists())) {
-      throw new Error(`[package] README.md is missing from dist package ${pkg.name}`);
-    }
-    if (!(await Bun.file(`${pkg.dist.cwdPath}/README.ko.md`).exists())) {
-      throw new Error(`[package] README.ko.md is missing from dist package ${pkg.name}`);
-    }
+    for (const readme of ["README.md", "README.ko.md"])
+      if (!(await Bun.file(`${pkg.dist.cwdPath}/${readme}`).exists()))
+        throw new Error(`[package] ${readme} is missing from dist package ${pkg.name}`);
     const binEntries =
       typeof pkgJson.bin === "string" ? [pkgJson.bin] : Object.values((pkgJson.bin ?? {}) as Record<string, string>);
     if (binEntries.some((binPath) => binPath.endsWith(".ts"))) {
@@ -261,9 +254,7 @@ export class PackageRunner extends runner("package") {
       peerExportsMaps.set(pkg.name, await PackageExportsMap.from(pkg.dist.cwdPath));
     }
     const results = [];
-    for (const pkg of pkgs) {
-      results.push(await this.verifyDistPackage(pkg, { peerExportsMaps }));
-    }
+    for (const pkg of pkgs) results.push(await this.verifyDistPackage(pkg, { peerExportsMaps }));
     return results;
   }
 
