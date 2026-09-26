@@ -11,6 +11,8 @@ export interface ResolvedMobileTarget {
 
 export const MOBILE_ENVS = ["local", "debug", "develop", "main"] as const satisfies readonly MobileEnv[];
 
+const trimSlashes = (value: string) => value.replace(/^\/+|\/+$/g, "");
+
 export const getMobileTargets = async (app: App): Promise<ResolvedMobileTarget[]> => {
   const config = await app.getConfig();
   return Object.entries(config.mobile.targets).map(([name, target]) => ({ name, config: target }));
@@ -20,26 +22,23 @@ export const getMobileTargetChoices = async (app: App): Promise<string[]> => {
   const config = await app.getConfig();
   const targetNames = Object.keys(config.mobile.targets);
   if (targetNames.length > 0) return targetNames;
-  const basePaths = [...config.basePaths];
-  return basePaths;
+  return [...config.basePaths];
 };
 
 const resolveMobileTargetByBasePath = (
   targets: ResolvedMobileTarget[],
   basePath: string,
 ): ResolvedMobileTarget | undefined => {
-  const normalizedBasePath = basePath.replace(/^\/+|\/+$/g, "");
-  const byBasePath = targets.find((target) => target.config.basePath?.replace(/^\/+|\/+$/g, "") === normalizedBasePath);
+  const normalizedBasePath = trimSlashes(basePath);
+  const byBasePath = targets.find(
+    ({ config }) => config.basePath !== undefined && trimSlashes(config.basePath) === normalizedBasePath,
+  );
   if (byBasePath) return byBasePath;
   const [template] = targets;
   if (!template) return undefined;
   return {
     name: normalizedBasePath,
-    config: {
-      ...template.config,
-      name: normalizedBasePath,
-      basePath: normalizedBasePath,
-    },
+    config: { ...template.config, name: normalizedBasePath, basePath: normalizedBasePath },
   };
 };
 
@@ -70,18 +69,20 @@ export const resolveMobileTargets = async (
   const target = targets.find((candidate) => candidate.name === selection);
   if (target) return [target];
   const basePathTarget = resolveMobileTargetByBasePath(targets, selection);
-  if (basePathTarget && config.basePaths.has(selection.replace(/^\/+|\/+$/g, ""))) return [basePathTarget];
+  if (basePathTarget && config.basePaths.has(trimSlashes(selection))) return [basePathTarget];
   const choices = await getMobileTargetChoices(app);
   throw new Error(`Mobile target '${selection}' was not found. Available: ${choices.join(", ")}`);
 };
 
 export const resolveMobilePath = (target: AkanMobileTargetConfig, pathname: string) => {
-  const basePath = target.basePath?.replace(/^\/+|\/+$/g, "");
+  const basePath = trimSlashes(target.basePath ?? "");
   const normalizedPath = `/${pathname.replace(/^\/+/, "")}`;
   if (!basePath) return normalizedPath;
   if (normalizedPath === `/${basePath}` || normalizedPath.startsWith(`/${basePath}/`)) return normalizedPath;
   return `/${basePath}${normalizedPath === "/" ? "" : normalizedPath}`;
 };
 
-export const targetHtmlFilename = (target: AkanMobileTargetConfig) =>
-  target.basePath?.replace(/^\/+|\/+$/g, "") ? `${target.basePath.replace(/^\/+|\/+$/g, "")}.html` : "index.html";
+export const targetHtmlFilename = (target: AkanMobileTargetConfig) => {
+  const basePath = trimSlashes(target.basePath ?? "");
+  return basePath ? `${basePath}.html` : "index.html";
+};
