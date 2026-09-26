@@ -1,27 +1,11 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
 import path from "node:path";
+import { tempDirs, writeText as write } from "../testHelpers";
 import { BarrelAnalyzer, type BarrelExportTarget } from "./barrelAnalyzer";
 import { rewriteBarrelImports } from "./barrelImportsPlugin";
 import { toClientReferencePath, transformUseClient } from "./rscUseClientTransform";
 
-const tempRoots: string[] = [];
-
-const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-devkit-transform-"));
-  tempRoots.push(root);
-  return root;
-};
-
-const write = async (filePath: string, content: string) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content);
-};
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
+const makeTempRoot = tempDirs("akan-devkit-transform-");
 
 const fakeAnalyzer = (entries: [string, BarrelExportTarget][]) =>
   ({ analyze: async () => new Map(entries) }) as unknown as BarrelAnalyzer;

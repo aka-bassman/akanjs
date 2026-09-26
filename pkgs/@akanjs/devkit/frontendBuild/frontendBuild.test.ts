@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RoutesManifest } from "akanjs/server";
+import { tempDirs, writeText as write } from "../testHelpers";
 import { CsrArtifactBuilder } from "./csrArtifactBuilder";
 import { CssCompiler, declaredCustomProperties, isIgnoredNodeModuleSource } from "./cssCompiler";
 import { CssImportResolver } from "./cssImportResolver";
@@ -15,22 +15,7 @@ import { PagesEntrySourceGenerator } from "./pagesEntrySourceGenerator";
 import { RoutesManifestArtifactSerializer } from "./routesManifestArtifactSerializer";
 import { prepareCssAsset } from "./ssrBaseArtifactBuilder";
 
-const tempRoots: string[] = [];
-
-const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-devkit-frontend-"));
-  tempRoots.push(root);
-  return root;
-};
-
-const write = async (filePath: string, content: string) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content);
-};
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
+const makeTempRoot = tempDirs("akan-devkit-frontend-");
 
 describe("PagesEntrySourceGenerator", () => {
   const toSpecifier = (absPath: string) => path.resolve(absPath).split(path.sep).join("/");

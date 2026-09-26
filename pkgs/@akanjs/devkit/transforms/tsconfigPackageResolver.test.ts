@@ -1,16 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { tempDirs } from "../testHelpers";
 import { createTsconfigPackageResolver } from "./barrelImportsPlugin";
 
-const tempRoots: string[] = [];
-
-const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-devkit-resolver-"));
-  tempRoots.push(root);
-  return root;
-};
+const makeTempRoot = tempDirs("akan-devkit-resolver-");
 
 const write = async (root: string, relPath: string, content = "export const value = 1;\n") => {
   const filePath = path.join(root, relPath);
@@ -24,10 +18,6 @@ const resolverFor = async (root: string, paths: Record<string, string[]>) =>
     workspace: { workspaceRoot: root },
     getTsConfig: async () => ({ compilerOptions: { paths } }),
   } as never);
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 
 describe("createTsconfigPackageResolver — exact tsconfig mapping", () => {
   test("resolves a package barrel and keeps the specifier", async () => {

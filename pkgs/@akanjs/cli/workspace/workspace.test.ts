@@ -4,10 +4,10 @@ import { CommandContainer, getArgMetas, getTargetMetas } from "@akanjs/devkit/co
 import { AppExecutor, LibExecutor, PkgExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
 import { Linter } from "@akanjs/devkit/linter";
 import {
-  cleanupCliTempWorkspace,
   createCallRecorder,
   createFakeExecutor,
   createTempApp,
+  tempRoots,
   writeJson,
   writeText,
 } from "@akanjs/devkit/testHelpers";
@@ -15,7 +15,6 @@ import { WorkspaceCommand } from "./workspace.command";
 import { defaultMaxDiagnostics, WorkspaceRunner } from "./workspace.runner";
 import { WorkspaceScript } from "./workspace.script";
 
-const tempRoots: string[] = [];
 const originalCwd = process.cwd();
 const originalFetch = globalThis.fetch;
 
@@ -30,7 +29,7 @@ const stubNpmLatest = (latest = "1.0.0") => {
   ) as never;
 };
 
-afterEach(async () => {
+afterEach(() => {
   CommandContainer.clear();
   mock.restore();
   globalThis.fetch = originalFetch;
@@ -39,8 +38,8 @@ afterEach(async () => {
   } catch {
     // A timed-out createWorkspace can leave cwd on a deleted temp dir.
   }
-  await Promise.all(tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)));
 });
+const track = tempRoots();
 
 describe("WorkspaceCommand", () => {
   test("normalizes workspace/app names and delegates createWorkspace", async () => {
@@ -257,8 +256,7 @@ describe("WorkspaceRunner", () => {
   test("uses the provided akan version", async () => {
     const runner = new WorkspaceRunner();
     stubNpmLatest();
-    const { root } = await createTempApp("seed");
-    tempRoots.push(root);
+    const { root } = track(await createTempApp("seed"));
     process.chdir(root);
     await runner.createWorkspace("repo", "demo", {
       dirname: "generated",
@@ -320,8 +318,7 @@ describe("WorkspaceRunner", () => {
 
   test("generates agent rule files without overwriting by default", async () => {
     const runner = new WorkspaceRunner();
-    const { root, workspace } = await createTempApp("demo");
-    tempRoots.push(root);
+    const { root, workspace } = track(await createTempApp("demo"));
 
     await runner.generateAgentRules(workspace);
     const agentsGuide = await Bun.file(`${root}/AGENTS.md`).text();
@@ -350,8 +347,7 @@ describe("WorkspaceRunner", () => {
   test("writes local registry config before installing generated workspace dependencies", async () => {
     const runner = new WorkspaceRunner();
     stubNpmLatest();
-    const { root } = await createTempApp("seed");
-    tempRoots.push(root);
+    const { root } = track(await createTempApp("seed"));
     process.chdir(root);
     await runner.createWorkspace("repo", "demo", {
       dirname: "generated",
@@ -390,8 +386,7 @@ describe("WorkspaceRunner", () => {
 
   test("pins the biome config so a malformed one is reported at its own line", async () => {
     const runner = new WorkspaceRunner();
-    const { root } = await createTempApp("demo");
-    tempRoots.push(root);
+    const { root } = track(await createTempApp("demo"));
     const workspace = createFakeExecutor("workspace");
     workspace.workspaceRoot = root;
     const spawn = mock(async () => "");
@@ -411,8 +406,7 @@ describe("WorkspaceRunner", () => {
   });
 
   test("discovers apps/libs/packages through workspace executors", async () => {
-    const { root, workspace } = await createTempApp("demo");
-    tempRoots.push(root);
+    const { root, workspace } = track(await createTempApp("demo"));
     await writeJson(`${root}/libs/shared/akan.config.ts`, {});
     await writeJson(`${root}/pkgs/@sample/tool/package.json`, {
       name: "@sample/tool",
@@ -431,8 +425,7 @@ describe("WorkspaceRunner", () => {
 
 describe("Scan convention validation", () => {
   test("rejects files that do not follow the <module>.<type>.(ts|tsx) convention", async () => {
-    const { root, app } = await createTempApp("demo");
-    tempRoots.push(root);
+    const { app } = track(await createTempApp("demo"));
 
     await writeText(`${app.cwdPath}/lib/task/task.constant.ts`, "export const TaskStatus = {};\n");
     await writeText(`${app.cwdPath}/lib/task/TaskHelpComponent.tsx`, "export const TaskHelp = () => null;\n");
@@ -443,8 +436,7 @@ describe("Scan convention validation", () => {
   });
 
   test("rejects UI files with wrong module name prefix", async () => {
-    const { root, app } = await createTempApp("demo");
-    tempRoots.push(root);
+    const { app } = track(await createTempApp("demo"));
 
     await writeText(`${app.cwdPath}/lib/task/task.constant.ts`, "export const TaskStatus = {};\n");
     await writeText(`${app.cwdPath}/lib/task/WrongName.Zone.tsx`, "export const WrongZone = () => null;\n");
@@ -455,8 +447,7 @@ describe("Scan convention validation", () => {
   });
 
   test("rejects non-UI files with wrong module name prefix", async () => {
-    const { root, app } = await createTempApp("demo");
-    tempRoots.push(root);
+    const { app } = track(await createTempApp("demo"));
 
     await writeText(`${app.cwdPath}/lib/task/task.constant.ts`, "export const TaskStatus = {};\n");
     await writeText(`${app.cwdPath}/lib/task/wrongName.constant.ts`, "export const Wrong = {};\n");
@@ -467,8 +458,7 @@ describe("Scan convention validation", () => {
   });
 
   test("allows properly named files in domain folders", async () => {
-    const { root, app } = await createTempApp("demo");
-    tempRoots.push(root);
+    const { app } = track(await createTempApp("demo"));
 
     await writeText(`${app.cwdPath}/lib/task/task.constant.ts`, "export const TaskStatus = {};\n");
     await writeText(`${app.cwdPath}/lib/task/task.dictionary.ts`, "export const TaskDict = {};\n");

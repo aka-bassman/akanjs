@@ -1,16 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { tempDirs } from "../testHelpers";
 import { DevGeneratedIndexSync } from "./devGeneratedIndexSync";
 
-const tempRoots: string[] = [];
-
-const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-generated-index-"));
-  tempRoots.push(root);
-  return root;
-};
+const makeTempRoot = tempDirs("akan-generated-index-");
 
 const seedFacet = async (root: string, facet: string, { files, dirs }: { files: string[]; dirs: string[] }) => {
   const dir = path.join(root, "libs", "util", facet);
@@ -27,10 +21,6 @@ const barrelFor = async (root: string, facet: string, seed: { files: string[]; d
   expect(result.errors).toEqual([]);
   return readFile(path.join(dir, "index.ts"), "utf8");
 };
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 
 describe("DevGeneratedIndexSync facet barrels", () => {
   test("camelCase facets export only clean camelCase names", async () => {

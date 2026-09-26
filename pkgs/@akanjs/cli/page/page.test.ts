@@ -1,15 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
-import { cleanupCliTempWorkspace, createCallRecorder, createTempModule } from "@akanjs/devkit/testHelpers";
+import { createCallRecorder, createTempModule, tempRoots } from "@akanjs/devkit/testHelpers";
 import { PageRunner } from "./page.runner";
 import { PageScript } from "./page.script";
 
-const tempRoots: string[] = [];
-
-afterEach(async () => {
-  CommandContainer.clear();
-  await Promise.all(tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)));
-});
+afterEach(() => CommandContainer.clear());
+const track = tempRoots();
 
 type GetContent = (
   scanInfo: unknown,
@@ -71,8 +67,7 @@ describe("crud page scaffolds", () => {
 
 describe("PageRunner", () => {
   test("creates CRUD pages at default and custom base paths", async () => {
-    const { root, app, module } = await createTempModule("post");
-    tempRoots.push(root);
+    const { app, module } = track(await createTempModule("post"));
     const runner = new PageRunner();
 
     await runner.createCrudPage(module, { app, basePath: null, single: false });

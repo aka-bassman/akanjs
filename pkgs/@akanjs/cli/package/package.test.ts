@@ -1,23 +1,21 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
 import {
-  cleanupCliTempWorkspace,
   createCallRecorder,
   createFakeExecutor,
   createTempPackage,
+  tempRoots,
   writeJson,
   writeText,
 } from "@akanjs/devkit/testHelpers";
 import { PackageRunner } from "./package.runner";
 import { PackageScript } from "./package.script";
 
-const tempRoots: string[] = [];
-
-afterEach(async () => {
+afterEach(() => {
   CommandContainer.clear();
   mock.restore();
-  await Promise.all(tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)));
 });
+const track = tempRoots();
 
 describe("PackageScript", () => {
   test("returns package version through runner", async () => {
@@ -64,8 +62,7 @@ describe("PackageScript", () => {
 
 describe("PackageRunner", () => {
   test("builds package without build.ts by copying source and generating package metadata", async () => {
-    const { root, pkg } = await createTempPackage("@sample/tool");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
     await writeJson(`${root}/package.json`, {
       name: "repo",
       version: "1.0.0",
@@ -116,8 +113,7 @@ describe("PackageRunner", () => {
   });
 
   test("updates source package metadata before running custom build.ts", async () => {
-    const { root, pkg } = await createTempPackage("@sample/tool");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
     await writeJson(`${root}/package.json`, {
       name: "repo",
       version: "1.0.0",
@@ -156,8 +152,7 @@ describe("PackageRunner", () => {
   });
 
   test("keeps framework optional peers out of generated runtime dependencies", async () => {
-    const { root, pkg } = await createTempPackage("akanjs");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("akanjs"));
     await writeJson(`${root}/package.json`, {
       name: "repo",
       version: "1.0.0",
@@ -212,8 +207,7 @@ describe("PackageRunner", () => {
   });
 
   test("keeps an embedded workspace package out of generated dependencies", async () => {
-    const { root, pkg } = await createTempPackage("akanjs");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("akanjs"));
     await writeJson(`${root}/package.json`, {
       name: "repo",
       version: "1.0.0",
@@ -251,8 +245,7 @@ describe("PackageRunner", () => {
   });
 
   test("fails when a scanned dependency is missing from the root package.json", async () => {
-    const { root, pkg } = await createTempPackage("@sample/tool");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
     await writeText(`${root}/pkgs/@sample/tool/index.ts`, 'import "missing-package";\nexport const value = 1;\n');
     const runner = new PackageRunner();
 
@@ -262,8 +255,7 @@ describe("PackageRunner", () => {
   });
 
   test("verifies dist package metadata with npm pack dry-run", async () => {
-    const { root, pkg } = await createTempPackage("@sample/tool");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
     await writeJson(`${root}/dist/pkgs/@sample/tool/package.json`, {
       name: "@sample/tool",
       version: "1.2.3",
@@ -283,8 +275,7 @@ describe("PackageRunner", () => {
   });
 
   test("rejects dist package bins that still point at TypeScript sources", async () => {
-    const { root, pkg } = await createTempPackage("@sample/tool");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
     await writeJson(`${root}/dist/pkgs/@sample/tool/package.json`, {
       name: "@sample/tool",
       version: "1.2.3",
@@ -301,8 +292,7 @@ describe("PackageRunner", () => {
 
   // Imports its own subpaths like `@akanjs/devkit`; Bun matches `exports` exactly, so `"./*": "./*"` reaches neither.
   const writeSelfImportingDist = async (exports: Record<string, unknown>) => {
-    const { root, pkg } = await createTempPackage("@sample/tool");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
     const dist = `${root}/dist/pkgs/@sample/tool`;
     await writeJson(`${dist}/package.json`, {
       name: "@sample/tool",

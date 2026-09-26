@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { CommandContainer, getArgMetas, getTargetMetas } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor } from "@akanjs/devkit/executors";
-import { createCallRecorder, createFakeExecutor, makeCliTempWorkspace, writeText } from "@akanjs/devkit/testHelpers";
+import {
+  createCallRecorder,
+  createFakeExecutor,
+  makeCliTempWorkspace,
+  tempRoots,
+  writeText,
+} from "@akanjs/devkit/testHelpers";
 import { CloudCommand } from "./cloud.command";
 import { CloudRunner } from "./cloud.runner";
 import { CloudScript } from "./cloud.script";
@@ -14,18 +20,12 @@ const stubAppConfigs = (secretsByApp: Record<string, string[]>) =>
     (_executor, appName) => ({ getConfig: async () => ({ secrets: secretsByApp[appName] ?? [] }) }) as never,
   );
 
-const tempRoots: string[] = [];
-const makeTempRoot = async () => {
-  const { root } = await makeCliTempWorkspace();
-  tempRoots.push(root);
-  return root;
-};
-
-afterEach(async () => {
+afterEach(() => {
   CommandContainer.clear();
   mock.restore();
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
+const track = tempRoots();
+const makeTempRoot = async () => track(await makeCliTempWorkspace()).root;
 
 describe("CloudCommand", () => {
   test("selects npm or local registry target instead of accepting raw registry URLs", async () => {

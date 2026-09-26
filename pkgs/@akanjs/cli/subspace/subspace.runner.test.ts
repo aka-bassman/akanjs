@@ -1,8 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { rm } from "node:fs/promises";
+import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import { SubspaceConfig } from "@akanjs/devkit/subspaceConfig";
-import { makeCliTempWorkspace, writeText } from "@akanjs/devkit/testHelpers";
+import { isolateEnv, makeCliTempWorkspace, tempRoots, writeText } from "@akanjs/devkit/testHelpers";
 import { SubspaceRunner } from "./subspace.runner";
 
 const config = new SubspaceConfig({
@@ -35,17 +34,11 @@ const fakePrompts = (answer: string | string[]) => {
   return { prompts, calls };
 };
 
-const originalEnv = { ...process.env };
-const tempRoots: string[] = [];
-
-afterEach(async () => {
-  process.env = { ...originalEnv };
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
+isolateEnv();
+const track = tempRoots();
 
 const makeEnvUploadWorkspace = async () => {
-  const { root, workspace } = await makeCliTempWorkspace();
-  tempRoots.push(root);
+  const { root, workspace } = track(await makeCliTempWorkspace());
   process.env.AKAN_PUBLIC_REPO_NAME = "repo";
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
   process.env.AKAN_PUBLIC_ENV = "local";

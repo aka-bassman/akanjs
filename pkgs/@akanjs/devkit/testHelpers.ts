@@ -2,7 +2,10 @@ import { afterEach, beforeEach } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { AppExecutor, LibExecutor, ModuleExecutor, PkgExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
+
+// Executors are imported on first use: they load akanjs/base, which patches the String/Boolean/Date globals.
+const executors = () => import("@akanjs/devkit/executors");
+
 export interface CallRecord {
   name: string;
   args: unknown[];
@@ -77,21 +80,27 @@ export const makeCliTempWorkspace = async () => {
     path.join(root, ".env"),
     ["AKAN_PUBLIC_REPO_NAME=repo", "AKAN_PUBLIC_SERVE_DOMAIN=localhost", "AKAN_PUBLIC_ENV=local", ""].join("\n"),
   );
+  const { WorkspaceExecutor } = await executors();
   const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
   return { root, workspace };
 };
 
-// Registers the afterEach that removes every directory the returned factory created.
-export const tempDirs = (prefix: string) => {
+// Registers the afterEach that removes the root of every value the returned tracker was handed.
+export const tempRoots = (remove = (root: string) => rm(root, { recursive: true, force: true })) => {
   const roots: string[] = [];
   afterEach(async () => {
-    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+    await Promise.all(roots.splice(0).map((root) => remove(root)));
   });
-  return async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), prefix));
-    roots.push(root);
-    return root;
+  return <Temp extends { root: string }>(temp: Temp) => {
+    roots.push(temp.root);
+    return temp;
   };
+};
+
+// Registers the afterEach that removes every directory the returned factory created.
+export const tempDirs = (prefix: string, remove?: (root: string) => Promise<void>) => {
+  const track = tempRoots(remove);
+  return async () => track({ root: await mkdtemp(path.join(os.tmpdir(), prefix)) }).root;
 };
 
 export const isolateEnv = (env: Record<string, string> = {}) => {
@@ -102,10 +111,6 @@ export const isolateEnv = (env: Record<string, string> = {}) => {
   afterEach(() => {
     process.env = { ...originalEnv };
   });
-};
-
-export const cleanupCliTempWorkspace = async (root: string) => {
-  await rm(root, { recursive: true, force: true });
 };
 
 export const writeText = async (filePath: string, content: string) => {
@@ -142,7 +147,7 @@ export const createTempApp = async (appName = "demo") => {
   });
   await writeText(path.join(root, "apps", appName, "akan.config.ts"), "export default {};\n");
   await mkdir(path.join(root, "apps", appName, "lib", "__scalar"), { recursive: true });
-  const app = AppExecutor.from(workspace, appName);
+  const app = (await executors()).AppExecutor.from(workspace, appName);
   return { root, workspace, app };
 };
 
@@ -156,7 +161,7 @@ export const createTempLib = async (libName = "shared") => {
     devDependencies: {},
   });
   await writeJson(path.join(root, "tsconfig.json"), { ...tsconfigJson, references: [] });
-  const lib = LibExecutor.from(workspace, libName);
+  const lib = (await executors()).LibExecutor.from(workspace, libName);
   return { root, workspace, lib };
 };
 
@@ -178,12 +183,12 @@ export const createTempPackage = async (pkgName = "@sample/tool") => {
   });
   await writeJson(path.join(root, "pkgs", pkgName, "tsconfig.json"), tsconfigJson);
   await writeText(path.join(root, "pkgs", pkgName, "index.ts"), 'import "lodash";\nexport const value = 1;\n');
-  const pkg = PkgExecutor.from(workspace, pkgName);
+  const pkg = (await executors()).PkgExecutor.from(workspace, pkgName);
   return { root, workspace, pkg };
 };
 
 export const createTempModule = async (moduleName = "post") => {
   const { root, workspace, app } = await createTempApp("demo");
-  const module = ModuleExecutor.from(app, moduleName);
+  const module = (await executors()).ModuleExecutor.from(app, moduleName);
   return { root, workspace, app, module };
 };

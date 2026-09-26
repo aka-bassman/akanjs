@@ -1,17 +1,16 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { App } from "../commandDecorators";
+import { tempDirs } from "../testHelpers";
 import { FontOptimizer } from "./fontOptimizer";
 
 const SOURCE_FONT = path.resolve(import.meta.dir, "../../../../libs/shared/public/fonts/Assistant-Regular.woff2");
 
-const tempRoots: string[] = [];
+const tempRoot = tempDirs("akan-devkit-font-");
 
 const makeApp = async (layoutSource: string) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-devkit-font-"));
-  tempRoots.push(root);
+  const root = await tempRoot();
   const cwdPath = path.join(root, "apps/demo");
   await mkdir(path.join(cwdPath, "page"), { recursive: true });
   await mkdir(path.join(cwdPath, "public/fonts"), { recursive: true });
@@ -58,10 +57,6 @@ const chainFontEntry = (extra = "") => `{
 const chainFontList = (extra = "") => `[\n    ${chainFontEntry(extra)},\n  ]`;
 
 const optimize = (app: App) => new FontOptimizer(app, "start").optimize();
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 
 describe("FontOptimizer cache", () => {
   test("reuses subset output instead of resubsetting an unchanged font", async () => {

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Logger } from "akanjs/common";
+import { tempDirs } from "../testHelpers";
 import { type ChangeBatch, HmrWatcher } from "./hmrWatcher";
 
 // The real Bun watcher, not a fake: the dropped-event behaviour under test only exists there.
@@ -11,7 +11,6 @@ const SETTLE_MS = 1_500;
 const TEST_TIMEOUT_MS = 15_000;
 
 const started: HmrWatcher[] = [];
-const roots: string[] = [];
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const silentLogger = {
   trace: () => undefined,
@@ -22,12 +21,6 @@ const silentLogger = {
   warn: () => undefined,
   error: () => undefined,
 } as unknown as Logger;
-
-const makeRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-hmr-watcher-"));
-  roots.push(root);
-  return root;
-};
 
 const seed = async (root: string, rel: string, content = "export const x = 1;\n") => {
   const abs = path.join(root, rel);
@@ -50,10 +43,10 @@ const watch = async (root: string) => {
   return { watcher, batches, seen: () => new Set(batches.flatMap((batch) => batch.files)) };
 };
 
-afterEach(async () => {
+afterEach(() => {
   for (const watcher of started.splice(0)) watcher.stop();
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
+const makeRoot = tempDirs("akan-hmr-watcher-");
 
 describe("HmrWatcher", () => {
   test(

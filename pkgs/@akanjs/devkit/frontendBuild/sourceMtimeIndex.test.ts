@@ -1,16 +1,8 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { chmod, mkdir, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { tempDirs } from "../testHelpers";
 import { SourceMtimeIndex } from "./sourceMtimeIndex";
-
-const roots: string[] = [];
-
-const makeRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-mtime-index-"));
-  roots.push(root);
-  return root;
-};
 
 const seed = async (root: string, rel: string, content = "export const x = 1;\n") => {
   const abs = path.join(root, rel);
@@ -38,9 +30,7 @@ const forceRemove = async (target: string): Promise<void> => {
   });
 };
 
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => forceRemove(root)));
-});
+const makeRoot = tempDirs("akan-mtime-index-", forceRemove);
 
 describe("SourceMtimeIndex", () => {
   test("reports nothing on a quiet tree", async () => {

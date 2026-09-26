@@ -1,21 +1,14 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import type { AkanModuleContext } from "../akanContext";
 import type { Workspace } from "../commandDecorators";
-import { writeText } from "../testHelpers";
+import { tempDirs, writeText } from "../testHelpers";
 import { buildAkanModuleContextIndex } from "./moduleIndex";
 
-const tempRoots: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
+const tempRoot = tempDirs("akan-module-index-");
 
 const makeWorkspace = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-module-index-"));
-  tempRoots.push(root);
+  const root = await tempRoot();
   return {
     root,
     workspace: { workspaceRoot: root } as Workspace,

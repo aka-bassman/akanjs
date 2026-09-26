@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
-import { cleanupCliTempWorkspace, createTempModule, writeText } from "@akanjs/devkit/testHelpers";
+import { createTempModule, tempRoots, writeText } from "@akanjs/devkit/testHelpers";
 import {
   type WorkflowApplyReport,
   type WorkflowPlan,
@@ -14,14 +14,11 @@ import {
 import { ModuleRunner } from "../module/module.runner";
 import { WorkflowRunner } from "./workflow.runner";
 
-const tempRoots: string[] = [];
-
 const planTaskWorkflow = async (
   inputs: WorkflowPlanInputs,
   { workflow = "add-field", plan = "task-priority", scaffold = true } = {},
 ) => {
-  const { root, workspace, module } = await createTempModule("task");
-  tempRoots.push(root);
+  const { root, workspace, module } = track(await createTempModule("task"));
   if (scaffold) await new ModuleRunner().createModuleTemplate(module);
   const planPath = path.join(root, `.akan/workflows/plans/${plan}.json`);
   const runner = new WorkflowRunner();
@@ -33,10 +30,8 @@ const planTaskWorkflow = async (
   return { root, workspace, module, planPath, runner, output };
 };
 
-afterEach(async () => {
-  CommandContainer.clear();
-  await Promise.all(tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)));
-});
+afterEach(() => CommandContainer.clear());
+const track = tempRoots();
 
 describe("WorkflowRunner", () => {
   test("lists initial workflow specs", () => {
@@ -493,8 +488,7 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
   });
 
   test("runs every add-mutation and add-slice step, leaving the UI surfaces as a review", async () => {
-    const { root, workspace, module } = await createTempModule("task");
-    tempRoots.push(root);
+    const { root, workspace, module } = track(await createTempModule("task"));
     await new ModuleRunner().createModuleTemplate(module);
     const runner = new WorkflowRunner();
     const registry = WorkflowRunner.stepRegistry(workspace);

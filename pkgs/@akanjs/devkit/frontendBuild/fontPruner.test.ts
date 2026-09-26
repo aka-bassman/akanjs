@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { App } from "../commandDecorators";
+import { tempDirs } from "../testHelpers";
 import { FontPruner } from "./fontPruner";
 
-const tempRoots: string[] = [];
+const tempRoot = tempDirs("akan-devkit-font-prune-");
 
 interface Tree {
   layout?: string;
@@ -23,8 +23,7 @@ const write = async (root: string, files: Record<string, string>) => {
 };
 
 const makeApp = async ({ layout = layoutWith(), publicFiles = {}, artifactFiles = {}, csrFiles = {} }: Tree = {}) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-devkit-font-prune-"));
-  tempRoots.push(root);
+  const root = await tempRoot();
   const cwdPath = path.join(root, "apps/demo");
   const distPath = path.join(root, "dist/apps/demo");
   await mkdir(path.join(cwdPath, "page"), { recursive: true });
@@ -57,10 +56,6 @@ export default function Layout() {
 `;
 
 const exists = (distPath: string, rel: string) => Bun.file(path.join(distPath, "public", rel)).exists();
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 
 describe("FontPruner", () => {
   test("drops a subset font's source and reports the bytes freed", async () => {
