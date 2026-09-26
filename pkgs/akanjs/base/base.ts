@@ -123,8 +123,7 @@ export class DataList<Light extends { id: string }> {
   }
   get(id: string) {
     const idx = this.#idMap.get(id);
-    if (idx === undefined) return undefined;
-    return this.values[idx];
+    return idx === undefined ? undefined : this.values[idx];
   }
   at(idx: number) {
     return this.values.at(idx);
@@ -141,12 +140,10 @@ export class DataList<Light extends { id: string }> {
     return this.#idMap.has(id);
   }
   find(fn: (value: Light, idx: number) => boolean) {
-    const val = this.values.find(fn);
-    return val;
+    return this.values.find(fn);
   }
   findIndex(fn: (value: Light, idx: number) => boolean) {
-    const val = this.values.findIndex(fn);
-    return val;
+    return this.values.findIndex(fn);
   }
   some(fn: (value: Light, idx: number) => boolean) {
     return this.values.some(fn);
