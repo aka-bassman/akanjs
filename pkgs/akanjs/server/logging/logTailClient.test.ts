@@ -5,25 +5,19 @@ import path from "node:path";
 import { type LogRecord, logSeverity } from "akanjs/common";
 import { LogControlSocket } from "./logControlSocket";
 import { LogHub, type LogHubEntry } from "./logHub";
+import { makeLogRecord } from "./logRecord.fixture";
 import { LogControlUnavailableError, LogTailClient } from "./logTailClient";
 
-const record = (message: string, overrides: Partial<LogRecord> = {}): LogRecord => ({
-  at: Date.now(),
-  elapsedMs: 0,
-  level: "warn",
-  sev: logSeverity.warn,
-  name: "Svc",
-  context: "",
-  message,
-  stream: "stdout",
-  pid: 1,
-  replicaIdx: 0,
-  role: "all",
-  origin: "http",
-  traceId: "t-1",
-  endpoint: "mutation:refund",
-  ...overrides,
-});
+const record = (message: string, overrides: Partial<LogRecord> = {}) =>
+  makeLogRecord(message, {
+    at: Date.now(),
+    level: "warn",
+    sev: logSeverity.warn,
+    origin: "http",
+    traceId: "t-1",
+    endpoint: "mutation:refund",
+    ...overrides,
+  });
 
 describe("LogTailClient", () => {
   let dir: string;

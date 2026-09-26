@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AkanRouterStateV1, AkanRscPatchMetadata } from "./routeState";
+import { makePatch, makeRouterState, makeTreeOf } from "./rscNavigation.fixture";
 import {
   applyAkanSegmentCachePatch,
   commitLatestRscNavigation,
@@ -19,27 +19,16 @@ import {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 type TestCacheNode = RscNavigationCacheNode<Promise<string>>;
 
-function makeRouterState(href: string, routeId: string): AkanRouterStateV1 {
-  return {
-    version: 1,
-    buildId: 3,
-    href,
-    routeId,
-    segments: [
-      { kind: "root-layout", path: "/", key: "root:/:0" },
-      { kind: "layout", path: "/docs", key: "layout:/docs:1" },
-      { kind: "page", path: routeId, key: `page:${routeId}:2` },
-    ],
-  };
-}
-
-function makePatch(routeId = "/docs/api"): AkanRscPatchMetadata {
-  return {
-    patchStartIndex: 2,
-    patchStartSegmentKey: `page:${routeId}:2`,
-    segmentPath: ["root:/:0", "layout:/docs:1", `page:${routeId}:2`],
-  };
-}
+const recordCommit = (calls: unknown[]) => ({
+  startTransition: (callback: () => void) => {
+    calls.push("transition");
+    callback();
+  },
+  commitThenable: (value: unknown) => calls.push(["commit", value]),
+  updateHistory: () => calls.push("history"),
+  scrollToTop: true,
+  bumpScrollToTop: () => calls.push("scroll"),
+});
 
 describe("RSC navigation state helpers", () => {
   test("commits a pending thenable immediately inside the transition", () => {
@@ -52,14 +41,7 @@ describe("RSC navigation state helpers", () => {
       href: "https://example.test/next",
       thenable,
       maxEntries: 32,
-      startTransition: (callback) => {
-        calls.push("transition");
-        callback();
-      },
-      commitThenable: (value) => calls.push(["commit", value]),
-      updateHistory: () => calls.push("history"),
-      scrollToTop: true,
-      bumpScrollToTop: () => calls.push("scroll"),
+      ...recordCommit(calls),
     });
 
     expect(cache.get("https://example.test/next")).toBe(thenable);
@@ -78,14 +60,7 @@ describe("RSC navigation state helpers", () => {
       maxEntries: 32,
       navId: 1,
       getCurrentNavId: () => 2,
-      startTransition: (callback) => {
-        calls.push("transition");
-        callback();
-      },
-      commitThenable: (value) => calls.push(["commit", value]),
-      updateHistory: () => calls.push("history"),
-      scrollToTop: true,
-      bumpScrollToTop: () => calls.push("scroll"),
+      ...recordCommit(calls),
     });
 
     expect(committed).toBe(false);
@@ -105,14 +80,7 @@ describe("RSC navigation state helpers", () => {
       maxEntries: 32,
       navId: 2,
       getCurrentNavId: () => 2,
-      startTransition: (callback) => {
-        calls.push("transition");
-        callback();
-      },
-      commitThenable: (value) => calls.push(["commit", value]),
-      updateHistory: () => calls.push("history"),
-      scrollToTop: true,
-      bumpScrollToTop: () => calls.push("scroll"),
+      ...recordCommit(calls),
     });
 
     expect(committed).toBe(true);
@@ -403,13 +371,7 @@ describe("RSC navigation state helpers", () => {
   test("shadow merges a supported sibling page patch without mutating the current tree", () => {
     const currentState = makeRouterState("https://example.test/docs/intro", "/docs/intro");
     const targetState = makeRouterState("https://example.test/docs/api", "/docs/api");
-    const currentTree = createAkanSegmentCacheTree(
-      createRscNavigationCacheNode({
-        href: currentState.href,
-        thenable: Promise.resolve("intro"),
-        routerState: currentState,
-      }),
-    );
+    const currentTree = makeTreeOf(currentState, "intro");
     const patchThenable = Promise.resolve("api");
 
     const result = applyAkanSegmentCachePatch({
@@ -432,13 +394,7 @@ describe("RSC navigation state helpers", () => {
   test("shadow merges a same-route searchParams patch by replacing only the page leaf", () => {
     const currentState = makeRouterState("https://example.test/docs?page=1", "/docs");
     const targetState = makeRouterState("https://example.test/docs?page=2", "/docs");
-    const currentTree = createAkanSegmentCacheTree(
-      createRscNavigationCacheNode({
-        href: currentState.href,
-        thenable: Promise.resolve("page 1"),
-        routerState: currentState,
-      }),
-    );
+    const currentTree = makeTreeOf(currentState, "page 1");
     const patchThenable = Promise.resolve("page 2");
 
     const result = applyAkanSegmentCachePatch({
@@ -476,13 +432,7 @@ describe("RSC navigation state helpers", () => {
   test("rejects segment path mismatches", () => {
     const currentState = makeRouterState("https://example.test/docs/intro", "/docs/intro");
     const targetState = makeRouterState("https://example.test/docs/api", "/docs/api");
-    const currentTree = createAkanSegmentCacheTree(
-      createRscNavigationCacheNode({
-        href: currentState.href,
-        thenable: Promise.resolve("intro"),
-        routerState: currentState,
-      }),
-    );
+    const currentTree = makeTreeOf(currentState, "intro");
 
     expect(
       applyAkanSegmentCachePatch({
@@ -504,13 +454,7 @@ describe("RSC navigation state helpers", () => {
         { kind: "page", path: "/docs/api", key: "page:/docs/api:2" },
       ],
     };
-    const currentTree = createAkanSegmentCacheTree(
-      createRscNavigationCacheNode({
-        href: currentState.href,
-        thenable: Promise.resolve("intro"),
-        routerState: currentState,
-      }),
-    );
+    const currentTree = makeTreeOf(currentState, "intro");
 
     expect(
       applyAkanSegmentCachePatch({
@@ -525,13 +469,7 @@ describe("RSC navigation state helpers", () => {
   test("rejects patch segment paths with trailing metadata", () => {
     const currentState = makeRouterState("https://example.test/docs/intro", "/docs/intro");
     const targetState = makeRouterState("https://example.test/docs/api", "/docs/api");
-    const currentTree = createAkanSegmentCacheTree(
-      createRscNavigationCacheNode({
-        href: currentState.href,
-        thenable: Promise.resolve("intro"),
-        routerState: currentState,
-      }),
-    );
+    const currentTree = makeTreeOf(currentState, "intro");
 
     expect(
       applyAkanSegmentCachePatch({
@@ -548,13 +486,7 @@ describe("RSC navigation state helpers", () => {
 
   test("rejects stale segment patches", () => {
     const targetState = makeRouterState("https://example.test/docs/api", "/docs/api");
-    const currentTree = createAkanSegmentCacheTree(
-      createRscNavigationCacheNode({
-        href: "https://example.test/docs/intro",
-        thenable: Promise.resolve("intro"),
-        routerState: makeRouterState("https://example.test/docs/intro", "/docs/intro"),
-      }),
-    );
+    const currentTree = makeTreeOf(makeRouterState("https://example.test/docs/intro", "/docs/intro"), "intro");
 
     expect(
       applyAkanSegmentCachePatch({
@@ -579,13 +511,7 @@ describe("RSC navigation state helpers", () => {
         { kind: "page", path: "/docs/api/reference", key: "page:/docs/api/reference:3" },
       ],
     };
-    const currentTree = createAkanSegmentCacheTree(
-      createRscNavigationCacheNode({
-        href: currentState.href,
-        thenable: Promise.resolve("intro"),
-        routerState: currentState,
-      }),
-    );
+    const currentTree = makeTreeOf(currentState, "intro");
 
     expect(
       applyAkanSegmentCachePatch({
@@ -606,13 +532,7 @@ describe("RSC navigation state helpers", () => {
 
     expect(
       applyAkanSegmentCachePatch({
-        currentTree: createAkanSegmentCacheTree(
-          createRscNavigationCacheNode({
-            href: "https://example.test/docs/intro",
-            thenable: Promise.resolve("intro"),
-            routerState: makeRouterState("https://example.test/docs/intro", "/docs/intro"),
-          }),
-        ),
+        currentTree: makeTreeOf(makeRouterState("https://example.test/docs/intro", "/docs/intro"), "intro"),
         targetRouterState: targetState,
         patch: makePatch("/docs/api"),
         href: targetState.href,
@@ -624,13 +544,7 @@ describe("RSC navigation state helpers", () => {
   test("remembers patch navigation cache nodes separately from full navigation nodes", () => {
     const currentState = makeRouterState("https://example.test/docs/intro", "/docs/intro");
     const targetState = makeRouterState("https://example.test/docs/api", "/docs/api");
-    const currentTree = createAkanSegmentCacheTree(
-      createRscNavigationCacheNode({
-        href: currentState.href,
-        thenable: Promise.resolve("intro"),
-        routerState: currentState,
-      }),
-    );
+    const currentTree = makeTreeOf(currentState, "intro");
     const patchThenable = Promise.resolve("api");
     const patch = makePatch("/docs/api");
     const patchResult = applyAkanSegmentCachePatch({
@@ -690,13 +604,7 @@ describe("RSC navigation state helpers", () => {
   test("resolves cached patch navigation only when the current tree still matches", () => {
     const currentState = makeRouterState("https://example.test/docs/intro", "/docs/intro");
     const targetState = makeRouterState("https://example.test/docs/api", "/docs/api");
-    const currentTree = createAkanSegmentCacheTree(
-      createRscNavigationCacheNode({
-        href: currentState.href,
-        thenable: Promise.resolve("intro"),
-        routerState: currentState,
-      }),
-    );
+    const currentTree = makeTreeOf(currentState, "intro");
     const patchThenable = Promise.resolve("api");
     const patch = makePatch("/docs/api");
     const headSnapshot = { version: 1 as const, nodes: [{ tag: "title" as const, text: "API" }] };

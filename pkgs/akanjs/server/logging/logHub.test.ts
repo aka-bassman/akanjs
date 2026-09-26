@@ -1,24 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { Logger, type LogRecord, logSeverity } from "akanjs/common";
 import { LogHub, type LogHubEntry } from "./logHub";
+import { makeLogRecord } from "./logRecord.fixture";
 
-const record = (message: string, overrides: Partial<LogRecord> = {}): LogRecord => ({
-  at: 1_000,
-  elapsedMs: 0,
-  level: "info",
-  sev: logSeverity.info,
-  name: "Svc",
-  context: "",
-  message,
-  stream: "stdout",
-  pid: 1,
-  replicaIdx: 0,
-  role: "all",
-  origin: "http",
-  traceId: null,
-  endpoint: "query:userList",
-  ...overrides,
-});
+const record = (message: string, overrides: Partial<LogRecord> = {}) =>
+  makeLogRecord(message, { origin: "http", endpoint: "query:userList", ...overrides });
 
 describe("LogHub ring", () => {
   test("assigns a monotonic seq and keeps the newest N records", () => {
