@@ -1,6 +1,7 @@
 import { getApiPrefix } from "akanjs/base";
 import { parseAkanI18nEnv } from "akanjs/common";
 import { AkanResponse } from "./akanResponse";
+import { getPublicRequestUrl, isInternalProxyRequest } from "./hostBasePathWebProxy";
 import type { WebProxy } from "./types";
 
 function getLocale(request: Bun.BunRequest): string {
@@ -74,23 +75,9 @@ export class LocaleWebProxy implements WebProxy {
 }
 
 function getProxyTargetUrl(requestUrl: URL): URL {
-  if (requestUrl.pathname !== "/__rsc") return requestUrl;
+  if (!isInternalProxyRequest(requestUrl)) return requestUrl;
   const target = requestUrl.searchParams.get("url");
   return target ? new URL(target, requestUrl.origin) : requestUrl;
-}
-
-function getPublicRequestUrl(request: Bun.BunRequest): URL {
-  const url = new URL(request.url);
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  const proto = request.headers.get("x-forwarded-proto");
-  if (host) url.host = host;
-  if (host && !host.includes(":")) url.port = "";
-  if (proto) url.protocol = proto.endsWith(":") ? proto : `${proto}:`;
-  return url;
-}
-
-function isInternalProxyRequest(requestUrl: URL): boolean {
-  return requestUrl.pathname === "/__rsc";
 }
 
 function isWellKnownRequest(pathname: string): boolean {

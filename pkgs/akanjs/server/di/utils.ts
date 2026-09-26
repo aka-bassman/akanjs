@@ -107,10 +107,18 @@ export const runStage = async (stageLabel: string, tasks: StageTask[]): Promise<
   const failures = settled.flatMap((res, i) =>
     res.status === "rejected" ? [{ label: tasks[i]?.label ?? `#${i}`, reason: res.reason }] : [],
   );
+  throwStageFailures(stageLabel, failures, tasks.length);
+};
+
+export const throwStageFailures = (
+  stageLabel: string,
+  failures: { label: string; reason: unknown }[],
+  total: number,
+) => {
   if (failures.length === 0) return;
   const summary = failures.map((f) => `  • ${f.label}: ${reasonMessage(f.reason)}`).join("\n");
   const errors = failures.map((f) => toError(f.reason));
-  throw new AggregateError(errors, `[DI:${stageLabel}] ${failures.length}/${tasks.length} task(s) failed:\n${summary}`);
+  throw new AggregateError(errors, `[DI:${stageLabel}] ${failures.length}/${total} task(s) failed:\n${summary}`);
 };
 
 export const toError = (reason: unknown): Error => {

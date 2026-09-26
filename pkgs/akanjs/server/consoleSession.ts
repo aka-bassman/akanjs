@@ -127,7 +127,7 @@ export class AkanConsoleSession {
       return;
     }
     if (!force && !isAkanConsoleInputComplete(source)) {
-      this.#promptContinuation();
+      this.#reprompt(this.#continuation);
       return;
     }
     this.#lines = [];
@@ -211,15 +211,9 @@ export class AkanConsoleSession {
     this.#output.write(`${error instanceof Error ? error.stack || error.message : String(error)}\n`);
   }
 
-  #reprompt() {
+  #reprompt(prompt = this.#prompt) {
     if (this.#closed || !this.#interface) return;
-    this.#interface.setPrompt(this.#prompt);
-    this.#interface.prompt();
-  }
-
-  #promptContinuation() {
-    if (this.#closed || !this.#interface) return;
-    this.#interface.setPrompt(this.#continuation);
+    this.#interface.setPrompt(prompt);
     this.#interface.prompt();
   }
 

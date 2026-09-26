@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { AkanWebConfig } from "akanjs";
-import { getEnv } from "akanjs/base";
 import {
   type AkanI18nConfig,
   DEFAULT_AKAN_I18N,
@@ -40,6 +39,7 @@ import { DevHmrController } from "./hmr";
 import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { ImageOptimizer } from "./imageOptimizer";
+import { normalizeHost, resolveArtifactDir } from "./proxy/hostBasePathWebProxy";
 import { createDefaultRobotsTxt } from "./robots";
 import {
   AKAN_RSC_PATCH_HEAD_SAFE_HEADER,
@@ -253,7 +253,7 @@ interface CachedHtmlResult {
 
 export class WebRouter {
   #logger = new Logger("WebRouter");
-  #artifactDir = WebRouter.#resolveArtifactDir();
+  #artifactDir = resolveArtifactDir();
   #artifact: BaseBuildArtifact;
   #subRoutes: Record<string, string[]>;
   #rsc: RscWorker;
@@ -753,12 +753,10 @@ export class WebRouter {
   }
 
   static #basePathForRequestHost(req: Request, subRoutes: Record<string, string[]>): string | null {
-    const host = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "")
-      .toLowerCase()
-      .replace(/:\d+$/, "");
+    const host = normalizeHost(req.headers.get("x-forwarded-host") ?? req.headers.get("host"));
     if (!host) return null;
     for (const [basePath, domains] of Object.entries(subRoutes)) {
-      if (domains.some((domain) => domain.toLowerCase().replace(/:\d+$/, "") === host)) return basePath;
+      if (domains.some((domain) => normalizeHost(domain) === host)) return basePath;
     }
     return null;
   }
@@ -979,7 +977,7 @@ export class WebRouter {
 
   /** `null` when the build has no web artifact (an api-only build, or no `page/`): boot without a web surface. */
   static async create({ web, upgradeHmrWs }: SsrRoutesInputs): Promise<WebRouter | null> {
-    const artifactDir = WebRouter.#resolveArtifactDir();
+    const artifactDir = resolveArtifactDir();
     const artifactFile = Bun.file(path.join(artifactDir, "base-artifact.json"));
     if (!(await artifactFile.exists())) return null;
     const artifact = WebRouter.#normalizeArtifact((await artifactFile.json()) as BaseBuildArtifact, artifactDir);
@@ -1005,12 +1003,6 @@ export class WebRouter {
       seedIndex,
       upgradeHmrWs,
     });
-  }
-
-  static #resolveArtifactDir() {
-    const localArtifactDir = path.join(process.cwd(), ".akan", "artifact");
-    if (fs.existsSync(path.join(localArtifactDir, "base-artifact.json"))) return localArtifactDir;
-    return path.join(process.cwd(), "apps", getEnv().appName, ".akan", "artifact");
   }
 
   static #normalizeArtifact(artifact: BaseBuildArtifact, artifactDir: string): BaseBuildArtifact {
