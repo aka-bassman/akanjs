@@ -58,7 +58,7 @@ const repairAction = (kind: RepairKind, command: string, reason: string, safeToR
   safeToRun,
 });
 
-interface RepairTarget {
+export interface RepairTarget {
   workspace: Workspace;
   app?: string | null;
   module?: string | null;
