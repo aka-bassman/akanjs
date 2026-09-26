@@ -15,7 +15,6 @@ interface SegmentedProps<Key extends string> {
   onChange: (value: Key) => void;
 }
 
-/** The track and its items are also the shape of a multi-select chip group, which `Segmented` itself cannot be. */
 export const segmentTrackClass = "inline-flex w-fit flex-wrap gap-1 rounded-field bg-muted p-1";
 
 export const segmentItemClass = (active: boolean) =>

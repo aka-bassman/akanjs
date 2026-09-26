@@ -31,7 +31,6 @@ interface SectionProps {
   children: ReactNode;
 }
 
-/** Titled band with a rule running to the edge, so a long document reads as sections rather than as one list. */
 export const Section = ({ className, title, action, children }: SectionProps) => (
   <section className={cn("flex flex-col gap-3", className)}>
     <div className="flex items-center gap-3">

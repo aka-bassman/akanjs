@@ -11,7 +11,7 @@ interface CollapseProps {
   open?: boolean;
 }
 
-/** 레퍼런스 카드의 접이식 컨테이너. daisyui `collapse` 대신 네이티브 `<details>/<summary>` — 열고 닫는 데 JS 가 없다. */
+// Native `<details>`, not a stateful collapse: opening and closing ships no client JS.
 export const Collapse = ({ summary, children, open, className, contentClassName }: CollapseProps) => (
   <details
     className={cn(docUi.card, "group overflow-hidden transition-colors hover:border-foreground/20", className)}

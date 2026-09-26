@@ -11,7 +11,6 @@ interface PanelProps {
   label?: string;
   meta?: ReactNode;
   tone?: Parameters<typeof docBorder>[0];
-  /** Rendered outside the scrolling body so it can cover the whole panel. */
   overlay?: ReactNode;
   children: ReactNode;
 }
@@ -64,10 +63,7 @@ interface CodeProps {
   overlay?: ReactNode;
 }
 
-/**
- * Read-only code surface. A `<pre>` rather than a `<textarea>`: every one of these panels ignored what was typed
- * into it, so the caret and the resize grip were promising an edit that never landed anywhere.
- */
+// A `<pre>`, not a `<textarea>`: nothing reads what is typed, so a caret would promise an edit that never lands.
 export const Code = ({ className, label, code, tone, meta, placeholder = "—", bodyRef, overlay }: CodeProps) => (
   <Panel
     bodyClassName="max-h-none overflow-visible p-0"
