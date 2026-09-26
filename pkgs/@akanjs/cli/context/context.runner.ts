@@ -26,14 +26,21 @@ import {
   workspacePath,
 } from "@akanjs/devkit/akanMcpContract";
 import { isPlaceholderAppId } from "@akanjs/devkit/capacitorApp";
-import { runner, type Workspace } from "@akanjs/devkit/commandDecorators";
+import { CommandContainer, runner, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor } from "@akanjs/devkit/executors";
 import { getMobileTargets } from "@akanjs/devkit/mobile";
 import { Prompter } from "@akanjs/devkit/prompter";
-import { createWorkflowBaselineSummary, jsonText, type WorkflowDiagnostic } from "@akanjs/devkit/workflow";
+import {
+  createWorkflowBaselineSummary,
+  createWorkflowStepRegistry,
+  jsonText,
+  type WorkflowDiagnostic,
+} from "@akanjs/devkit/workflow";
+import { ModuleScript } from "../module/module.script";
+import { PrimitiveScript } from "../primitive/primitive.script";
 import { RepairRunner } from "../repair/repair.runner";
+import { ScalarScript } from "../scalar/scalar.script";
 import { WorkflowRunner } from "../workflow/workflow.runner";
-import { createCliWorkflowStepRegistry } from "./context.workflowRegistry";
 
 // Host paths fold to `<workspace>/`: they name a filesystem the model driving the agent has no business enumerating.
 const toolErrorText = (error: unknown): string => {
@@ -287,7 +294,7 @@ export class ContextRunner extends runner("context") {
           format: "json",
           dryRun: !!args.dryRun,
           workspace,
-          registry: createCliWorkflowStepRegistry(workspace),
+          registry: this.#workflowStepRegistry(workspace),
         }),
       ) as Record<string, unknown>;
       const validationTarget =
@@ -336,6 +343,19 @@ export class ContextRunner extends runner("context") {
       );
 
     throw new Error(`Unknown tool: ${name}`);
+  }
+
+  #workflowStepRegistry(workspace: Workspace) {
+    return createWorkflowStepRegistry({
+      workspace,
+      createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
+      createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
+      createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
+      addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
+      addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
+      addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
+      addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
+    });
   }
 
   async runMcp(workspace: Workspace, { mode = "readonly" }: { mode?: AkanMcpMode } = {}) {
