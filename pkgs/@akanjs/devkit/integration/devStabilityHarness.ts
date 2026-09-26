@@ -19,7 +19,6 @@ export interface DevStabilityHost {
 }
 
 export interface DevStabilityHmrProbe {
-  readonly ws: WebSocket;
   readonly reconnects: number;
   messages: unknown[];
   mark(): number;
@@ -61,47 +60,31 @@ export class DevStabilityHarness {
 
   async createFixture(): Promise<DevStabilityFixture> {
     await rm(this.appDir, { recursive: true, force: true });
-    await Promise.all([
-      mkdir(path.join(this.appDir, "page"), { recursive: true }),
-      mkdir(path.join(this.appDir, "common"), { recursive: true }),
-      mkdir(path.join(this.appDir, "srvkit"), { recursive: true }),
-      mkdir(path.join(this.appDir, "ui"), { recursive: true }),
-      mkdir(path.join(this.appDir, "webkit"), { recursive: true }),
-      mkdir(path.join(this.appDir, "lib"), { recursive: true }),
-      mkdir(path.join(this.appDir, "env"), { recursive: true }),
-      mkdir(path.join(this.appDir, "public"), { recursive: true }),
-    ]);
-    await Promise.all([
-      this.writeFile(
-        "main.ts",
-        `import { AkanApp } from "akanjs/server";
+    await Promise.all(
+      ["page", "common", "srvkit", "ui", "webkit", "lib", "env", "public"].map((dir) =>
+        mkdir(path.join(this.appDir, dir), { recursive: true }),
+      ),
+    );
+    const files: { [relativePath: string]: string } = {
+      "main.ts": `import { AkanApp } from "akanjs/server";
 
 const run = async () => {
   await new AkanApp("./server").start();
 };
 void run();
 `,
-      ),
-      this.writeFile(
-        "akan.config.ts",
-        `import type { AppConfig } from "akanjs";
+      "akan.config.ts": `import type { AppConfig } from "akanjs";
 
 const config: AppConfig = {};
 export default config;
 `,
-      ),
-      this.writeFile(
-        "package.json",
-        `{
+      "package.json": `{
   "type": "module",
   "name": "${this.appName}",
   "version": "0.0.1"
 }
 `,
-      ),
-      this.writeFile(
-        "tsconfig.json",
-        `{
+      "tsconfig.json": `{
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "allowJs": true,
@@ -113,33 +96,18 @@ export default config;
   "include": ["./**/*.ts", "./**/*.tsx"]
 }
 `,
-      ),
-      this.writeFile(
-        "env/env.client.ts",
-        `export const env = {} as const;
+      "env/env.client.ts": `export const env = {} as const;
 `,
-      ),
-      this.writeFile(
-        "env/env.server.ts",
-        `export const env = {} as const;
+      "env/env.server.ts": `export const env = {} as const;
 `,
-      ),
-      this.writeFile(
-        "env/env.server.testing.ts",
-        `export { env } from "./env.server";
+      "env/env.server.testing.ts": `export { env } from "./env.server";
 `,
-      ),
-      this.writeFile(
-        "lib/option.ts",
-        `import { AkanOption } from "akanjs/server";
+      "lib/option.ts": `import { AkanOption } from "akanjs/server";
 
 export type ModulesOptions = Record<string, never>;
 export const option = new AkanOption<ModulesOptions>();
 `,
-      ),
-      this.writeFile(
-        "server.ts",
-        `import { AkanServer, AkanLib } from "akanjs/server";
+      "server.ts": `import { AkanServer, AkanLib } from "akanjs/server";
 import { backendMarker } from "./srvkit/backendMarker";
 
 void backendMarker;
@@ -153,20 +121,14 @@ export const server = new AkanServer("${this.appName}", {
   serveDomain: "localhost",
 } as never, undefined, lib);
 `,
-      ),
-      this.writeFile(
-        "page/_layout.tsx",
-        `import "./styles.css";
+      "page/_layout.tsx": `import "./styles.css";
 import { layout } from "akanjs/client";
 
 export default layout().render(({ children }) => {
   return <>{children}</>;
 });
 `,
-      ),
-      this.writeFile(
-        "page/_index.tsx",
-        `import { page } from "akanjs/client";
+      "page/_index.tsx": `import { page } from "akanjs/client";
 import { marker } from "../common/marker";
 import { ClientMarker } from "../ui/ClientMarker";
 
@@ -180,11 +142,8 @@ export default page().render(() => {
   );
 });
 `,
-      ),
       // Route clients are built on demand and cached, so only a never-requested route reaches the builder.
-      this.writeFile(
-        "page/second/_index.tsx",
-        `import { page } from "akanjs/client";
+      "page/second/_index.tsx": `import { page } from "akanjs/client";
 import { ClientMarker } from "../../ui/ClientMarker";
 
 export default page().render(() => {
@@ -196,34 +155,19 @@ export default page().render(() => {
   );
 });
 `,
-      ),
-      this.writeFile(
-        "page/styles.css",
-        `main {
+      "page/styles.css": `main {
   color: black;
 }
 `,
-      ),
-      this.writeFile(
-        "common/marker.ts",
-        `export const marker = "initial-shared-marker";
+      "common/marker.ts": `export const marker = "initial-shared-marker";
 `,
-      ),
-      this.writeFile(
-        "srvkit/backendMarker.ts",
-        `export const backendMarker = "initial-backend-marker";
+      "srvkit/backendMarker.ts": `export const backendMarker = "initial-backend-marker";
 `,
-      ),
-      this.writeFile(
-        "lib/_fixture/fixture.service.ts",
-        `import { serve } from "akanjs/service";
+      "lib/_fixture/fixture.service.ts": `import { serve } from "akanjs/service";
 
 export class FixtureService extends serve("fixture" as const, { serverMode: "batch" }, () => ({})) {}
 `,
-      ),
-      this.writeFile(
-        "lib/_fixture/fixture.signal.ts",
-        `import { endpoint, internal } from "akanjs/signal";
+      "lib/_fixture/fixture.signal.ts": `import { endpoint, internal } from "akanjs/signal";
 
 import * as srv from "../srv";
 
@@ -231,10 +175,7 @@ export class FixtureInternal extends internal(srv.fixture, () => ({})) {}
 
 export class FixtureEndpoint extends endpoint(srv.fixture, () => ({})) {}
 `,
-      ),
-      this.writeFile(
-        "lib/_fixture/fixture.dictionary.ts",
-        `import { serviceDictionary } from "akanjs/dictionary";
+      "lib/_fixture/fixture.dictionary.ts": `import { serviceDictionary } from "akanjs/dictionary";
 
 import type { FixtureEndpoint } from "./fixture.signal";
 
@@ -245,20 +186,14 @@ export const dictionary = serviceDictionary(["en", "ko"])
     removeMe: ["Remove Me", "삭제 예정"],
   });
 `,
-      ),
-      this.writeFile(
-        "ui/ClientMarker.tsx",
-        `export function ClientMarker() {
+      "ui/ClientMarker.tsx": `export function ClientMarker() {
   return <p data-testid="client-marker">initial-client-marker</p>;
 }
 `,
-      ),
-      this.writeFile(
-        "webkit/useMarker.ts",
-        `export const useMarker = () => "initial-webkit-marker";
+      "webkit/useMarker.ts": `export const useMarker = () => "initial-webkit-marker";
 `,
-      ),
-    ]);
+    };
+    await Promise.all(Object.entries(files).map(([relativePath, contents]) => this.writeFile(relativePath, contents)));
     const port = await this.resolvePort();
     return { appName: this.appName, appDir: this.appDir, workspaceRoot: this.workspaceRoot, port };
   }
@@ -362,9 +297,9 @@ export const dictionary = serviceDictionary(["en", "ko"])
     const host: DevStabilityHost = {
       proc,
       logs,
-      markLog: () => markLog(logs),
+      markLog: () => logs.join("").length,
       waitForLog: (pattern, waitMs) =>
-        DevStabilityHarness.#timed(`waitForLog ${pattern}`, () => waitForLog(logs, pattern, waitMs)),
+        DevStabilityHarness.#timed(`waitForLog ${pattern}`, () => waitForLogSince(logs, 0, pattern, waitMs)),
       waitForLogSince: (mark, pattern, waitMs) =>
         DevStabilityHarness.#timed(`waitForLogSince ${pattern}`, () => waitForLogSince(logs, mark, pattern, waitMs)),
       stop: async () => {
@@ -432,17 +367,12 @@ export const dictionary = serviceDictionary(["en", "ko"])
       attempts = 3,
       // Generous: a dropped event never arrives late, while a needless retry can cost a whole dev-host restart.
       evidenceTimeoutMs = 20_000,
-      settleMs = 0,
-      retryDelayMs = 750,
     }: {
       evidence?: RegExp;
       attempts?: number;
       evidenceTimeoutMs?: number;
-      settleMs?: number;
-      retryDelayMs?: number;
     } = {},
   ): Promise<{ mark: number; attempts: number; evidence: RegExpMatchArray }> {
-    if (settleMs > 0) await wait(settleMs);
     for (let attempt = 1; ; attempt++) {
       const mark = host.markLog();
       await mutate(attempt);
@@ -456,7 +386,7 @@ export const dictionary = serviceDictionary(["en", "ko"])
         throw new Error(
           `Dev server never reacted to ${attempts} edit(s) of ${this.appName}: waited ${evidenceTimeoutMs}ms each for ${evidence}`,
         );
-      await wait(retryDelayMs);
+      await wait(750);
     }
   }
 
@@ -590,9 +520,6 @@ export const dictionary = serviceDictionary(["en", "ko"])
     };
     listen(socket);
     return {
-      get ws() {
-        return socket;
-      },
       get reconnects() {
         return reconnects;
       },
@@ -627,33 +554,6 @@ export const dictionary = serviceDictionary(["en", "ko"])
     } catch {
       return null;
     }
-  }
-
-  async waitForHmrMessage(
-    ws: WebSocket,
-    predicate: (message: unknown) => boolean,
-    timeoutMs = DEFAULT_TIMEOUT_MS,
-  ): Promise<unknown> {
-    return await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        ws.removeEventListener("message", onMessage);
-        reject(new Error("Timed out waiting for HMR message"));
-      }, timeoutMs);
-      const onMessage = (event: MessageEvent) => {
-        const raw = typeof event.data === "string" ? event.data : "";
-        let message: unknown;
-        try {
-          message = JSON.parse(raw);
-        } catch {
-          return;
-        }
-        if (!predicate(message)) return;
-        clearTimeout(timeout);
-        ws.removeEventListener("message", onMessage);
-        resolve(message);
-      };
-      ws.addEventListener("message", onMessage);
-    });
   }
 
   async resolvePort(): Promise<number> {
@@ -931,16 +831,6 @@ export async function waitForNoHmrMessageSince(
     await wait(50);
   }
 }
-
-export async function waitForLog(
-  logs: string[],
-  pattern: RegExp,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-): Promise<RegExpMatchArray> {
-  return await waitForLogSince(logs, 0, pattern, timeoutMs);
-}
-
-export const markLog = (logs: string[]): number => logs.join("").length;
 
 export async function waitForLogSince(
   logs: string[],
