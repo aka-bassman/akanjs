@@ -44,10 +44,7 @@ class HttpClient {
     });
     return await HttpClient.#body<T>(response, url);
   }
-  /**
-   * A route that does not exist answers the error *page*, not JSON, so parsing first reports a syntax error at
-   * `<` and buries the status that says what is actually wrong. Read the status before the body.
-   */
+  // A missing route answers an HTML error page, so the status is read before the body is parsed as JSON.
   static async #body<T>(response: Response, url: string): Promise<T> {
     const text = await response.text();
     if (!response.ok) throw new Error(`${response.status} ${response.statusText} from ${url}: ${text.slice(0, 200)}`);
@@ -59,16 +56,13 @@ class HttpClient {
   }
 }
 
-/**
- * A share the control plane just issued. `token` is the connector credential — whoever holds it can become the
- * origin behind `hostname`, so it is never written to disk or logged, only handed to the agent in memory.
- */
 export interface TunnelGrant {
   code: string;
   hostname: string;
   url: string;
-  /** The gateway to dial, as `wss://tunnel.akanjs.com`. The control plane names it; the CLI never assumes one. */
+  /** Named by the control plane (e.g. `wss://tunnel.akanjs.com`); the CLI never assumes one. */
   gatewayUrl: string;
+  /** Whoever holds it becomes the origin behind `hostname`: never written to disk or logged. */
   token: string;
   expiresAt: string | null;
 }
@@ -148,11 +142,7 @@ export class CloudApi {
     this.#api.setHeaders({ Authorization: `Bearer ${this.#accessToken.jwt}` });
     return this.#accessToken;
   }
-  /**
-   * The `/tunnel` segment is the model's refName, which every database module's endpoints carry and the service
-   * modules above — `_cloud`, which owns `uploadEnv` and `getRemoteSelf` — do not. Dropping it to match those
-   * neighbours answers 404, and the control plane returns an HTML error page that fails as a JSON parse error.
-   */
+  // `/tunnel` is the model's refName, which the `_cloud` service routes above lack; dropping it answers 404.
   async requestTunnel(input: { name: string; ttlMinutes?: number }): Promise<TunnelGrant> {
     return await this.#api.post<TunnelGrant>(`/tunnel/requestTunnel`, input);
   }
@@ -160,13 +150,8 @@ export class CloudApi {
   async tunnelListInSelf(): Promise<TunnelSummary[]> {
     return await this.#api.get<TunnelSummary[]>(`/tunnel/tunnelListInSelf`);
   }
-  /**
-   * Hands the grant back. The CLI calls this "stop", which is what the operator is doing, not what it does.
-   *
-   * Bounded because every caller is on the way out: an unreachable control plane is exactly the state a session
-   * ends in, and an unbounded `fetch` there holds the event loop open long after the work is done. Losing the
-   * release costs nothing — the share expires on its own TTL.
-   */
+  // Bounded: callers are on the way out and an unreachable control plane would hold the event loop open; a lost
+  // release costs nothing, since the share expires on its own TTL.
   async revokeTunnel(code: string): Promise<boolean> {
     return await this.#api.post<boolean>(`/tunnel/revokeTunnel`, { code }, { signal: AbortSignal.timeout(5_000) });
   }

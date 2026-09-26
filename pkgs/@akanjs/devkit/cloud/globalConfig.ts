@@ -31,12 +31,8 @@ export class GlobalConfig {
       testTargets: akanConfig.testTargets ?? defaultAkanGlobalConfig.testTargets,
     };
   }
-  /**
-   * This file holds the cloud jwt and a refresh token that does not expire, so it is
-   * written owner-only — the same `0600` the runtime gives its control socket. `Bun.write` takes no mode
-   * and lands on `0666 & ~umask` (0644 on a default shell), so the mode is applied after the write; an
-   * existing world-readable file is tightened by the next write rather than left as it was found.
-   */
+  // Holds the cloud jwt and a non-expiring refresh token, so owner-only 0600; Bun.write takes no mode (0644 on a
+  // default umask), so chmod follows the write and also tightens an existing world-readable file.
   static async #setAkanGlobalConfig(akanConfig: AkanGlobalConfig) {
     await mkdir(basePath, { recursive: true, mode: 0o700 });
     await Bun.write(configPath, JSON.stringify(akanConfig, null, 2));
