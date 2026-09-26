@@ -9,23 +9,15 @@ export class ScalarRunner extends runner("scalar") {
       dict: { model: scalarName, models: pluralizeName(scalarName), sysName: sys.name },
       overwrite: false,
     });
+    const read = async (suffix: string) => {
+      const filename = `${scalarName}.${suffix}`;
+      return { filename, content: await sys.readFile(`lib/__scalar/${scalarName}/${filename}`) };
+    };
     return {
-      abstract: {
-        filename: `${scalarName}.abstract.md`,
-        content: await sys.readFile(`lib/__scalar/${scalarName}/${scalarName}.abstract.md`),
-      },
-      constant: {
-        filename: `${scalarName}.constant.ts`,
-        content: await sys.readFile(`lib/__scalar/${scalarName}/${scalarName}.constant.ts`),
-      },
-      dictionary: {
-        filename: `${scalarName}.dictionary.ts`,
-        content: await sys.readFile(`lib/__scalar/${scalarName}/${scalarName}.dictionary.ts`),
-      },
-      document: {
-        filename: `${scalarName}.document.ts`,
-        content: await sys.readFile(`lib/__scalar/${scalarName}/${scalarName}.document.ts`),
-      },
+      abstract: await read("abstract.md"),
+      constant: await read("constant.ts"),
+      dictionary: await read("dictionary.ts"),
+      document: await read("document.ts"),
     };
   }
 }

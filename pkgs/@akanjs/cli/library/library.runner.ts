@@ -8,8 +8,7 @@ export class LibraryRunner extends runner("library") {
   async createLibrary(libName: string, workspace: Workspace) {
     await workspace.mkdir(`libs/${libName}`);
     await workspace.applyTemplate({ basePath: `libs/${libName}`, template: "libRoot", dict: { libName } });
-    const lib = LibExecutor.from(workspace, libName);
-    return lib;
+    return LibExecutor.from(workspace, libName);
   }
   async removeLibrary(lib: Lib) {
     await lib.workspace.removeDir(`libs/${lib.name}`);
