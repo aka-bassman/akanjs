@@ -6,6 +6,7 @@ import React, {
   type ChangeEvent,
   type InputHTMLAttributes,
   type KeyboardEvent,
+  type ReactNode,
   type RefObject,
   type TextareaHTMLAttributes,
   useEffect,
@@ -16,6 +17,38 @@ import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
 import { agentAttrs } from "./agentAttrs";
 import { inputRecipe } from "./recipe";
 import { createOverridable, useUiRecipe } from "./UiOverride";
+
+const statusClassOf = (status: string, firstFocus: boolean) =>
+  status === "error"
+    ? "border-destructive"
+    : !firstFocus && status === "warning"
+      ? "border-warning"
+      : status === "success"
+        ? "border-success"
+        : "";
+
+const blurOnEscape =
+  (
+    onPressEnter?: (value: string, event: KeyboardEvent<HTMLInputElement>) => void,
+    onPressEscape?: (e: KeyboardEvent<HTMLInputElement>) => void,
+  ) =>
+  (e: KeyboardEvent<HTMLInputElement>) => {
+    if (onPressEnter && e.key === "Enter") onPressEnter(e.currentTarget.value, e);
+    if (e.key === "Escape") {
+      e.currentTarget.blur();
+      onPressEscape?.(e);
+    }
+  };
+
+const LeadingIcon = ({ icon, className }: { icon: ReactNode; className?: string }) => {
+  if (!icon) return null;
+  return <div className={cn("absolute inset-y-0 left-4 z-10 flex items-center justify-center", className)}>{icon}</div>;
+};
+
+export const InvalidMessage = ({ message }: { message: ReactNode }) => {
+  if (!message) return null;
+  return <div className="absolute -bottom-4 animate-fadeIn text-destructive text-xs">{message}</div>;
+};
 
 export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & {
   inputStyleType?: "bordered" | "borderless" | "underline";
@@ -69,14 +102,6 @@ const DefaultInput = ({
         ? "rounded-none border-0 border-b"
         : "",
   );
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (onPressEnter && e.key === "Enter") onPressEnter(e.currentTarget.value, e);
-    if (e.key === "Escape") {
-      e.currentTarget.blur();
-
-      onPressEscape?.(e);
-    }
-  };
 
   return (
     <div className={cn("relative isolate flex items-center", className)}>
@@ -92,7 +117,7 @@ const DefaultInput = ({
         onBlur={(e) => {
           if (firstFocus && value) setFirstFocus(false);
         }}
-        onKeyDown={handleKeyDown}
+        onKeyDown={blurOnEscape(onPressEnter, onPressEscape)}
         className={cn(
           "text-foreground outline-hidden duration-300 focus:border-primary focus:outline-hidden",
           inputType,
@@ -149,14 +174,7 @@ const DefaultTextArea = ({
       : validateResult === false
         ? l("base.invalidValueError")
         : validateResult;
-  const statusClass =
-    status === "error"
-      ? "border-destructive"
-      : !firstFocus && status === "warning"
-        ? "border-warning"
-        : status === "success"
-          ? "border-success"
-          : "";
+  const statusClass = statusClassOf(status, firstFocus);
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (onPressEnter && e.key === "Enter") onPressEnter(e.currentTarget.value, e);
   };
@@ -184,9 +202,7 @@ const DefaultTextArea = ({
           inputClassName,
         )}
       />
-      {invalidMessage ? (
-        <div className="absolute -bottom-4 animate-fadeIn text-destructive text-xs">{invalidMessage}</div>
-      ) : null}
+      <InvalidMessage message={invalidMessage} />
     </div>
   );
 };
@@ -232,14 +248,7 @@ const DefaultPassword = ({
       : validateResult === false
         ? l("base.invalidValueError")
         : validateResult;
-  const statusClass =
-    status === "error"
-      ? "border-destructive"
-      : !firstFocus && status === "warning"
-        ? "border-warning"
-        : status === "success"
-          ? "border-success"
-          : "";
+  const statusClass = statusClassOf(status, firstFocus);
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (onPressEnter && e.key === "Enter") onPressEnter(e.currentTarget.value, e);
     if (onPressEscape && e.key === "Escape") onPressEscape(e);
@@ -248,11 +257,7 @@ const DefaultPassword = ({
   return (
     <div className={cn("relative isolate pb-2", className)}>
       <div className={cn("relative flex items-center justify-between", inputWrapperClassName)}>
-        {icon ? (
-          <div className={cn("absolute inset-y-0 left-4 z-10 flex items-center justify-center", iconClassName)}>
-            {icon}
-          </div>
-        ) : null}
+        <LeadingIcon icon={icon} className={iconClassName} />
         <input
           {...rest}
           {...agentAttrs(onChange)}
@@ -337,38 +342,20 @@ const DefaultEmail = ({
       : validateResult === false
         ? l("base.invalidValueError")
         : validateResult;
-  const statusClass =
-    status === "error"
-      ? "border-destructive"
-      : !firstFocus && status === "warning"
-        ? "border-warning"
-        : status === "success"
-          ? "border-success"
-          : "";
+  const statusClass = statusClassOf(status, firstFocus);
   const inputType = cn(inputBase, inputStyleType === "underline" ? "rounded-none" : "");
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (onPressEnter && e.key === "Enter") onPressEnter(e.currentTarget.value, e);
-    if (e.key === "Escape") {
-      e.currentTarget.blur();
-      onPressEscape?.(e);
-    }
-  };
 
   return (
     <div className={cn("relative isolate mb-5", className)}>
       <div className={cn("flex items-center", inputWrapperClassName)}>
-        {icon ? (
-          <div className={cn("absolute inset-y-0 left-4 z-10 flex items-center justify-center", iconClassName)}>
-            {icon}
-          </div>
-        ) : null}
+        <LeadingIcon icon={icon} className={iconClassName} />
         <input
           {...rest}
           {...agentAttrs(onChange)}
           type="email"
           value={value}
           ref={inputRef}
-          onKeyDown={handleKeyDown}
+          onKeyDown={blurOnEscape(onPressEnter, onPressEscape)}
           onBlur={(e) => {
             if (firstFocus && value) setFirstFocus(false);
           }}
@@ -384,9 +371,7 @@ const DefaultEmail = ({
           )}
         />
       </div>
-      {invalidMessage ? (
-        <div className="absolute -bottom-4 animate-fadeIn text-destructive text-xs">{invalidMessage}</div>
-      ) : null}
+      <InvalidMessage message={invalidMessage} />
     </div>
   );
 };
@@ -450,16 +435,7 @@ const DefaultNumber = ({
       : validateResult === false
         ? l("base.invalidValueError")
         : validateResult;
-  const statusClass =
-    validate !== undefined
-      ? status === "error"
-        ? "border-destructive"
-        : !firstFocus && status === "warning"
-          ? "border-warning"
-          : status === "success"
-            ? "border-success"
-            : ""
-      : "";
+  const statusClass = validate !== undefined ? statusClassOf(status, firstFocus) : "";
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const numberValue = parseFloat(e.currentTarget.value.replace(/[^\d-]/g, ""));
@@ -514,11 +490,7 @@ const DefaultNumber = ({
   return (
     <div className={cn("relative isolate", className)}>
       <div className={cn("flex items-center", inputWrapperClassName)}>
-        {icon ? (
-          <div className={cn("absolute inset-y-0 left-4 z-10 flex items-center justify-center", iconClassName)}>
-            {icon}
-          </div>
-        ) : null}
+        <LeadingIcon icon={icon} className={iconClassName} />
         <input
           {...rest}
           {...agentAttrs(onChange)}
@@ -543,9 +515,7 @@ const DefaultNumber = ({
         />
       </div>
 
-      {invalidMessage ? (
-        <div className="absolute -bottom-4 animate-fadeIn text-destructive text-xs">{invalidMessage}</div>
-      ) : null}
+      <InvalidMessage message={invalidMessage} />
     </div>
   );
 };

@@ -3,6 +3,7 @@ import { cn, usePage } from "akanjs/client";
 import { type ComponentType, createElement, Fragment, type ReactNode } from "react";
 
 import { buttonRecipe } from "./Button";
+import { InvalidMessage } from "./Input";
 import { createOverridable, useUiOverride, useUiRecipe } from "./UiOverride";
 
 const selectedCls = "border-transparent bg-primary text-primary-foreground hover:bg-primary/90";
@@ -79,9 +80,7 @@ const DefaultToggleSelect = <I extends string | number | boolean | null>({
           </button>
         );
       })}
-      {invalidMessage ? (
-        <div className="absolute -bottom-4 animate-fadeIn text-destructive text-xs">{invalidMessage}</div>
-      ) : null}
+      <InvalidMessage message={invalidMessage} />
     </div>
   );
 };
@@ -154,9 +153,7 @@ const DefaultMulti = ({
           </button>
         );
       })}
-      {invalidMessage ? (
-        <div className="absolute -bottom-4 animate-fadeIn text-destructive text-xs">{invalidMessage}</div>
-      ) : null}
+      <InvalidMessage message={invalidMessage} />
     </div>
   );
 };
