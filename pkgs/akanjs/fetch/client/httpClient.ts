@@ -46,11 +46,8 @@ export class HttpClient {
   setTimeout(timeout?: number | false) {
     this.#timeout = timeout;
   }
-  #resolveBaseUrl(baseUrl?: string) {
-    return (baseUrl ?? this.baseUrl).replace(/\/$/, "");
-  }
   #resolveUrl(url: string, options: FetchOptions) {
-    return `${this.#resolveBaseUrl(options.baseUrl)}${url}`;
+    return `${(options.baseUrl ?? this.baseUrl).replace(/\/$/, "")}${url}`;
   }
   // Without `Accept: application/json` a proxy takes this call for a navigation and answers with its own HTML page.
   #makeHeaders(headers: Record<string, string>, options: FetchOptions) {
@@ -105,7 +102,9 @@ export class HttpClient {
 
   async #request<Returns>(url: string, init: RequestInit, options: FetchOptions = {}): Promise<Returns> {
     const res = await this.#fetch(url, this.#withTimeout(init, options));
-    return await this.#readJsonResponse<Returns>(res);
+    const body = await this.#readBody(res);
+    if (res.ok) return body as Returns;
+    throw this.#restoreError(body, res.status);
   }
 
   //* An upload gets no deadline: a large file on a slow uplink is a long request that is still working.
@@ -126,12 +125,6 @@ export class HttpClient {
       if (error instanceof Error && error.name === "AbortError") throw error;
       throw this.#restoreError({ error: serverUnreachableKey, details: String(error) }, 503);
     }
-  }
-
-  async #readJsonResponse<Returns>(res: Response): Promise<Returns> {
-    const body = await this.#readBody(res);
-    if (res.ok) return body as Returns;
-    throw this.#restoreError(body, res.status);
   }
 
   //* A proxy answers a restarting upstream with its own page (nginx HTML, the gateway's plain-text 503), not our JSON.
@@ -200,34 +193,26 @@ export class HttpClient {
     return [argValue as Blob | string];
   }
   static makeBody(bodyArgs: SerializedArg[], uploadArgs: SerializedArg[], argMap: Map<string, unknown>) {
-    if (uploadArgs.length > 0) {
-      const formData = new FormData();
-      uploadArgs.forEach((arg) => {
-        const argValue = argMap.get(arg.name);
-        if (arg.nullable && (argValue === null || argValue === undefined)) return;
-        if (!arg.nullable && (argValue === null || argValue === undefined))
-          throw new Error(`Argument ${arg.name} is required`);
-        HttpClient.#toUploadValues(argValue).forEach((value) => {
-          formData.append(arg.name, value);
-        });
+    const valueOf = (arg: SerializedArg) => {
+      const argValue = argMap.get(arg.name);
+      if (!arg.nullable && (argValue === null || argValue === undefined))
+        throw new Error(`Argument ${arg.name} is required`);
+      return argValue;
+    };
+    if (!uploadArgs.length) return Object.fromEntries(bodyArgs.map((arg) => [arg.name, valueOf(arg)]));
+    const formData = new FormData();
+    uploadArgs.forEach((arg) => {
+      const argValue = valueOf(arg);
+      if (argValue === null || argValue === undefined) return;
+      HttpClient.#toUploadValues(argValue).forEach((value) => {
+        formData.append(arg.name, value);
       });
-      bodyArgs.forEach((arg) => {
-        const argValue = argMap.get(arg.name);
-        if (arg.nullable && (argValue === null || argValue === undefined)) return;
-        if (!arg.nullable && (argValue === null || argValue === undefined))
-          throw new Error(`Argument ${arg.name} is required`);
-        formData.append(arg.name, typeof argValue === "string" ? argValue : JSON.stringify(argValue));
-      });
-      return formData;
-    } else {
-      const body: Record<string, unknown> = {};
-      bodyArgs.forEach((arg) => {
-        const argValue = argMap.get(arg.name);
-        if (!arg.nullable && (argValue === null || argValue === undefined))
-          throw new Error(`Argument ${arg.name} is required`);
-        body[arg.name] = argValue;
-      });
-      return body;
-    }
+    });
+    bodyArgs.forEach((arg) => {
+      const argValue = valueOf(arg);
+      if (argValue === null || argValue === undefined) return;
+      formData.append(arg.name, typeof argValue === "string" ? argValue : JSON.stringify(argValue));
+    });
+    return formData;
   }
 }

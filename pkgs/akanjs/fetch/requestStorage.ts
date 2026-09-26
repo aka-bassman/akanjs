@@ -61,10 +61,6 @@ if (typeof window === "undefined") {
 
 export const requestStorage: RequestStorage | null = _requestStorage;
 
-function createRequestPolicy(): AkanRequestPolicy {
-  return { tags: new Set() };
-}
-
 export function createRequestStore(
   request: Request,
   policy: Partial<Omit<AkanRequestPolicy, "tags">> = {},
@@ -73,7 +69,7 @@ export function createRequestStore(
     request,
     queryCache: new Map(),
     queryLog: [],
-    policy: { ...createRequestPolicy(), ...policy },
+    policy: { tags: new Set(), ...policy },
     dynamicUsage: { headers: false, cookies: false },
   };
 }
@@ -84,12 +80,6 @@ function isRequestStore(store: Request | AkanRequestStore | undefined): store is
 
 function normalizeRequestStore(store: Request | AkanRequestStore): AkanRequestStore {
   return isRequestStore(store) ? store : createRequestStore(store);
-}
-
-function getActiveRequestStore(): AkanRequestStore | undefined {
-  const store = requestStorage?.getStore() as Request | AkanRequestStore | undefined;
-  if (store) return isRequestStore(store) ? store : createRequestStore(store);
-  return globalThis.__AKAN_REQUEST_FALLBACK_STACK__?.at(-1);
 }
 
 export function setRequestTheme(theme: AkanTheme | undefined): void {
@@ -125,7 +115,9 @@ export function pushRequestFallback(storeOrRequest: Request | AkanRequestStore):
 
 // Here, free of client deps, so the RSC worker reads request headers/cookies without `akanjs/client`'s macro chain.
 export function getRequestStore(): AkanRequestStore | undefined {
-  return getActiveRequestStore();
+  const store = requestStorage?.getStore() as Request | AkanRequestStore | undefined;
+  if (store) return normalizeRequestStore(store);
+  return globalThis.__AKAN_REQUEST_FALLBACK_STACK__?.at(-1);
 }
 
 export function getRequest(options: { trackDynamic?: boolean } = {}): Request | undefined {
