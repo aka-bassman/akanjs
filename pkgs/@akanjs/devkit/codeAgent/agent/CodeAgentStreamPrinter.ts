@@ -8,12 +8,6 @@ export interface CodeAgentStreamPrinterOptions {
   write?: (text: string) => void;
 }
 
-/**
- * Prints the akan wire to a terminal, reading nothing but the contract.
- *
- * That restriction is the point: the TUI and the web host read the same events, so anything this printer cannot
- * render is a hole in the contract rather than a missing feature of one host.
- */
 export class CodeAgentStreamPrinter {
   readonly #options: CodeAgentStreamPrinterOptions;
   readonly #write: (text: string) => void;
@@ -45,8 +39,7 @@ export class CodeAgentStreamPrinter {
       case "session":
         return this.#line(chalk.dim(codeAgentEventLabel(event)));
       case "turn_end":
-        // Every other reason is one the operator already knows: they typed the prompt, or pressed the key.
-        // A truncated answer is the one that looks exactly like a finished one unless it is said out loud.
+        // Only `truncated` is said: a cut answer looks exactly like a finished one.
         if (event.stopReason === "truncated") return this.#line(chalk.yellow(codeAgentEventLabel(event)));
         return;
       case "turn_start":
@@ -54,8 +47,7 @@ export class CodeAgentStreamPrinter {
       case "queue":
       case "context":
         return;
-      // The rail is a live status for a screen that redraws. A stream has no row to update, and the pool
-      // already says on the transcript when a child starts and what it spent when it stops.
+      // A stream has no rail to redraw; the pool already reports a child's start and cost as notices.
       case "subagent":
         return;
       case "question":

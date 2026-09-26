@@ -26,18 +26,9 @@ export interface CodeMail {
   text: string;
 }
 
-/**
- * How two `akan code` sessions in one workspace reach each other.
- *
- * A directory, not a socket or a daemon: the sessions already share a checkout and already write their
- * transcripts there, and a mailbox on disk survives one end restarting, needs nothing listening to accept a
- * message, and is inspectable with `cat` when a message does not arrive.
- *
- * Presence is a heartbeat file rather than a registration, because the interesting failure is a session that
- * died without saying so — a registry would keep listing it forever, while a stale mtime says it is gone.
- */
+// A directory, not a socket or daemon: it survives either end restarting and needs nothing listening.
+// Presence is a heartbeat file, not a registration, so a session that died silently goes stale on its own.
 export class CodeMailbox {
-  /** A session older than this said nothing for four heartbeats, so it is not there to answer. */
   static readonly staleMs = 20_000;
   static readonly beatMs = 5_000;
   static readonly pollMs = 1_500;
@@ -66,8 +57,7 @@ export class CodeMailbox {
   open(cwd: string, onMail: (mail: CodeMail) => void) {
     mkdirSync(path.join(this.#dir, "live"), { recursive: true });
     mkdirSync(path.join(this.#dir, "inbox"), { recursive: true });
-    // Whatever was already in the inbox belongs to an earlier run of this session, which has read it or is
-    // never going to; delivering it now would replay a conversation that already happened.
+    // What is already in the inbox belongs to an earlier run; delivering it would replay a past conversation.
     this.#read = CodeMailbox.#lines(this.inbox).length;
     this.beat(cwd);
     this.#beat = setInterval(() => this.beat(cwd), CodeMailbox.beatMs);
