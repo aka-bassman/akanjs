@@ -45,30 +45,12 @@ const blockTags = new Set([
   "UL",
 ]);
 
-/**
- * Serializes what the page is rendering into compact text an agent can answer questions from: headings keep their
- * level and their anchor, links keep their href, controls keep their value and `data-akan-*` annotation. The
- * agent's own UI is marked `data-agent-ui` and skipped, so a turn never re-reads its own transcript, and a
- * password value is never read — the screen shows dots, so the DOM holds more than the user sees.
- *
- * A region the app marks `data-agent-skip` — what `Agent.Skip` renders — costs a `[skipped: <name>]` line instead
- * of its text. It stands in the output rather than vanishing because a deleted region reads as an absent one, and
- * an agent asked about a footer it never saw answers that the page has none. Naming the region as `section` reads
- * it: the marker is what the default read leaves out, not a wall.
- *
- * A heading carries `(#anchor)` whenever it opens a container that has an id or a scope path, because that is the
- * name `readScreen({ section })` and `highlight` take: printing the text without the name leaves an agent
- * guessing at a slug. For the same reason a truncated read ends with the headings below the cut instead of only
- * a character count — otherwise everything past the limit is unreachable, since nothing names it.
- */
 export interface ScreenReadOptions {
-  /**
-   * Carry each image's address as well as its caption. Off by default because a gallery is one long URL per
-   * thumbnail, which is the read's whole budget spent on the part of the screen it can say the least about.
-   */
+  /** Also print each image's address. Default false. */
   images?: boolean;
 }
 
+/** The rendered page as compact text for an agent; skips `data-agent-ui` and never reads a password value. */
 export class ScreenReader {
   static readonly limit = 8000;
 
@@ -82,11 +64,7 @@ export class ScreenReader {
     return reader.#text() || "The page is rendering nothing readable.";
   }
 
-  /**
-   * One heading's own section: the heading, then what follows it until the next heading of the same level or
-   * higher. Reads the heading's container when the heading is the only one in it — the shape a docs slide or an
-   * `<article>` has — and otherwise the heading's own following siblings.
-   */
+  /** One heading's section: its container when that holds no peer heading, else its following siblings. */
   static readFrom(heading: HTMLElement, root?: HTMLElement | null, options: ScreenReadOptions = {}): string {
     if (typeof document === "undefined") return "No rendered document is available.";
     const reader = new ScreenReader(options);
@@ -105,11 +83,6 @@ export class ScreenReader {
     return reader.#text() || "That section is rendering nothing readable.";
   }
 
-  /**
-   * The outermost ancestor that still holds this heading and no other of its level — the section, not the title
-   * wrapper inside it. Climbing matters: a docs slide puts its heading two or three divs down, so the innermost
-   * match is often the heading and nothing else.
-   */
   static #sectionOf(heading: HTMLElement, root?: HTMLElement | null): HTMLElement | null {
     const level = headingLevels[heading.tagName.toUpperCase() as keyof typeof headingLevels] ?? 1;
     const boundary = root ?? document.body;
@@ -124,7 +97,6 @@ export class ScreenReader {
     return container;
   }
 
-  /** The anchor a heading is addressable by: its own id, or the id or scope path of the container it opens. */
   static anchorOf(heading: HTMLElement): string {
     if (heading.id) return heading.id;
     let parent = heading.parentElement;
@@ -136,12 +108,8 @@ export class ScreenReader {
     return "";
   }
 
-  /**
-   * `checkVisibility()` reports whether the element has a layout box, and a `display: contents` wrapper has none
-   * while its children do — so Chrome answers false for a wrapper the user is looking straight at, and skipping it
-   * would drop that whole subtree (happy-dom answers true, so no DOM test sees the difference). Reading through it
-   * is safe only because the walk is top-down: a `display: none` ancestor bails on its own computed display first.
-   */
+  // Chrome's checkVisibility() is false for a `display: contents` wrapper with visible children (happy-dom: true).
+  // Reading through it is safe only because the walk is top-down: a `display: none` ancestor has already bailed.
   static #rendered(el: HTMLElement) {
     if (typeof el.checkVisibility !== "function" || el.checkVisibility()) return true;
     return getComputedStyle(el).display === "contents";
@@ -162,10 +130,6 @@ export class ScreenReader {
     this.#images = images;
   }
 
-  /**
-   * Past the walk budget the text is dropped but the headings are not: a section below the cut is exactly what the
-   * truncation note owes the reader, and it is the only way that part of the screen can be named at all.
-   */
   #outline(node: Node): void {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node as HTMLElement;
@@ -192,12 +156,7 @@ export class ScreenReader {
       : `${kept}${note}`;
   }
 
-  /**
-   * An image is named whether or not it carries an `alt`: dropping an unlabelled one leaves a card that renders a
-   * picture reading exactly like a card that renders nothing, and "the page shows no image" is the one answer the
-   * screen cannot support. The address rides only when it was asked for, and never for a `data:` URL — that is
-   * the bytes themselves rather than somewhere to fetch them, and one of them outweighs the whole read.
-   */
+  // Named even without alt, or it reads as no image; never a `data:` URL, which is the bytes themselves.
   #image(el: HTMLElement) {
     const alt = (el.getAttribute("alt") ?? "").replace(/\s+/g, " ").trim();
     const src = this.#images ? (el as HTMLImageElement).currentSrc || el.getAttribute("src") || "" : "";
@@ -205,7 +164,7 @@ export class ScreenReader {
     this.#buffer += ` [image${alt ? `: ${alt}` : ""}]${address}`;
   }
 
-  /** What stands where a skipped region was: its own name, and the anchor `section` takes to read it on request. */
+  // A marker rather than nothing: a region that vanishes reads to the agent as one the page lacks.
   #mark(el: HTMLElement, label: string) {
     const anchor = el.getAttribute("data-agent-scope") ?? el.getAttribute("data-agent-zone") ?? el.id;
     this.#flush();
@@ -303,10 +262,6 @@ export class ScreenReader {
     if (href && href !== "#" && !href.startsWith("javascript:") && text !== href) this.#buffer += ` (${href})`;
   }
 
-  /**
-   * A control the person cannot use publishes no tool, so saying so here is what turns a silent refusal into a
-   * fact the agent could have read. It reads `aria-disabled` too: a styled-off div carries no native property.
-   */
   static #off(el: HTMLElement) {
     const native = (el as HTMLInputElement | HTMLButtonElement).disabled;
     return native || el.getAttribute("aria-disabled") === "true" ? " (disabled)" : "";

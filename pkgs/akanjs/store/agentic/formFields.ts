@@ -11,21 +11,12 @@ export interface FormFieldRef {
   field: ConstantField;
 }
 
-/** Written by the document layer, never by the person at the form. */
 const baseFields = new Set(["id", "createdAt", "updatedAt", "removedAt"]);
 const MAX_DEPTH = 4;
 
-/**
- * What a form's fields look like to an agent: which setter action belongs to which field, what shape a value for
- * it has, and whether a value it sent is one that field accepts.
- *
- * The action-to-field map is built **forward** from `formSetterNames`, never by taking a name apart:
- * `set(.+)On(.+)` has more than one reading whenever a field or a model name contains `On`.
- */
 export class FormFields {
   static #index: Map<string, FormFieldRef> | null = null;
 
-  /** Every `set<Field>On<Model>` this client knows, against the field it writes. */
   static ref(action: string): FormFieldRef | null {
     FormFields.#index ??= FormFields.#buildIndex();
     return FormFields.#index.get(action) ?? null;
@@ -43,7 +34,6 @@ export class FormFields {
     return index;
   }
 
-  /** The fields of a model's form an agent may write, with the setter each one answers to. */
   static patchable(refName: string): { key: string; action: string; field: ConstantField; schema: JsonSchema }[] {
     const className = capitalize(refName);
     const model = ConstantRegistry.getDatabase(refName);
@@ -56,14 +46,7 @@ export class FormFields {
       });
   }
 
-  /**
-   * The shape a value for one field has, or null when there is nothing honest to publish.
-   *
-   * A relation is left out rather than described as its id: the form holds the whole related document, so writing
-   * an id would need a lookup the store does not do — a relation is picked or uploaded, never typed. `hidden`,
-   * `secret`, and `resolve` are out at every level, the first two because their reads are masked and a writer for
-   * one would be the door around that, the last because it is computed and has no setter at all.
-   */
+  /** Null for a relation (picked, never typed) and for hidden/secret/resolve, whose writer would bypass the mask. */
   static schema(field: ConstantField, depth = 0): JsonSchema | null {
     if (field.fieldType !== "property" || depth > MAX_DEPTH) return null;
     const leaf = FormFields.#leafSchema(field, depth);
@@ -81,8 +64,7 @@ export class FormFields {
       return value ? { type: "object", additionalProperties: value } : null;
     }
     if (PrimitiveRegistry.has(modelRef)) {
-      // An agent-faced primitive is written through the editor that owns it, which can refuse a lossy rewrite; a
-      // form setter publishing `agent.schema` would take the same value around that guard.
+      // Only its own editor may write it — it can refuse a lossy rewrite a setter here would take around it.
       if (PrimitiveRegistry.agentOf(modelRef)) return null;
       try {
         return StToolBuilder.schemaOf(modelRef as unknown as ParamFieldType);
@@ -117,12 +99,7 @@ export class FormFields {
     return { type: "object", properties: Object.fromEntries(entries), additionalProperties: false };
   }
 
-  /**
-   * The value the store should receive, or a throw naming what was wrong with the one that arrived.
-   *
-   * `additionalProperties: false` travels in the published schema and nothing on the wire enforces it, so an
-   * undeclared key is reported here rather than written into the form and shipped on the next submit.
-   */
+  /** Throws on a bad value: nothing on the wire enforces the published schema, `additionalProperties` included. */
   static checked(action: string, path: string, field: ConstantField, value: unknown, depth = 0): unknown {
     if (value === null) {
       if (!field.nullable) throw new Error(`"${path}" of ${action} does not take null.`);
@@ -173,20 +150,12 @@ export class FormFields {
     return !!value && typeof value === "object" && !Array.isArray(value);
   }
 
-  /**
-   * The tool that lists what a field can be set to. One name across both picker hooks on purpose: a form draws a
-   * relation picker and an upload control side by side, and a model that learned this name on one field spells it
-   * the same on the next. Two names one word apart would cost a failed call to learn.
-   */
+  /** Shared by both picker hooks on purpose, so a model that learned it on one field spells it the same on the next. */
   static optionsToolName(refName: string, key: string): string {
     return `load${capitalize(key)}OptionsOn${capitalize(refName)}`;
   }
 
-  /**
-   * The database model a relation field points at, or null for anything else — a primitive, an enum, a scalar.
-   * It is the question both picker hooks ask of a field `schema` refused, and the refusal alone does not answer
-   * it: a `hidden` scalar and an undescribable one are refused too, and neither is something to pick.
-   */
+  /** The database model a relation field points at, else null. */
   static relationOf(field: ConstantField): string | null {
     const modelRef = field.modelRef as unknown as Cls;
     if (field.fieldType !== "property" || field.enum || !modelRef || PrimitiveRegistry.has(modelRef)) return null;
@@ -199,14 +168,7 @@ export class FormFields {
     return field.arrDepth > 0 || (field.modelRef as unknown) === Map || !!FormFields.#scalarModel(field);
   }
 
-  /**
-   * The embedded model an array field's rows are, or null for every other field.
-   *
-   * This is the one shape where writing the whole array is a hazard rather than an inconvenience: the agent has to
-   * echo every row it is *not* changing, `checked` validates types and not values, so one mistyped row it was never
-   * asked to touch is written silently. A relation array is excluded — its rows travel as ids, which are the payload
-   * and are refused by name when wrong — and so is an array of primitives, for the same reason.
-   */
+  /** The embedded model of an array field's rows, else null — relation and primitive arrays included. */
   static rowModelOf(field: ConstantField) {
     return field.arrDepth > 0 ? FormFields.#scalarModel(field) : null;
   }

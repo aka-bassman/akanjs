@@ -11,18 +11,12 @@ export interface AllDictionary {
 
 interface TranslatorState {
   langDictionaryMap: Map<string, Dictionary>;
-  // Tracks dictionary objects already merged into the map. The seeded snapshot
-  // (`allDictionary[lang]`) is a stable reference within a build, so repeat seeds skip the merge.
+  // A seeded snapshot is one reference per build, so a repeat seed skips the merge.
   seededDicts: WeakSet<object>;
-  // Tracks dictionary snapshots already installed via replace. Replacing is snapshot semantics, but
-  // the same object may be passed repeatedly while rendering the same build.
   replacedDicts: WeakSet<object>;
-  // Browser-only source of truth for the active locale (set by ClientWrapper from the server-resolved
-  // `lang`). Never written on the server (concurrent requests share this state), where locale stays
-  // request-scoped via getPageInfo/x-locale.
+  // Browser-only: never written on the server, where concurrent requests share this state.
   activeLocale?: string;
-  // Browser-only copy of the server-resolved route path. This keeps the first client render aligned
-  // with SSR; after hydration, usePage can derive the path from window.location again.
+  // Browser-only copy of the server-resolved path, so the first client render matches SSR.
   activePath?: string;
 }
 
@@ -75,16 +69,12 @@ export class Translator {
     const node = pathGetLoose(key, dictionary, ".") as { t?: unknown } | null;
     return typeof node?.t === "string" ? node.t : undefined;
   }
-  // Every dictionary declares its own locale tuple, so an app that configures a locale its libs — and the
-  // framework's own dictionaries — never wrote has no entry at all for their keys. Rendering the dotted key as
-  // prose is the one answer that is always wrong.
+  // A locale no lib dictionary wrote falls back to the default locale's text: the dotted key as prose is always wrong.
   static #lookupDefault(lang: string, key: string) {
     const { defaultLocale } = parseAkanI18nEnv();
     return defaultLocale === lang ? undefined : Translator.#lookup(defaultLocale, key);
   }
-  // Synchronously merge a single locale's dictionary into the shared map.
-  // Idempotent: re-seeding the same locale merges keys without dropping existing ones, and re-seeding
-  // the exact same snapshot object is skipped for performance.
+  // Merges without dropping existing keys; the same snapshot object is skipped.
   static seed(lang: string, dict: Dictionary | undefined) {
     if (!dict) return;
     const state = getTranslatorState();

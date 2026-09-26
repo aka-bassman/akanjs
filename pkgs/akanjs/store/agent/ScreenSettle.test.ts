@@ -21,7 +21,6 @@ describe("ScreenSettle", () => {
       setTimeout(() => clearInterval(timer), 120);
       await ScreenSettle.wait({ quietMs: 40, timeoutMs: 2000 });
     });
-    // It cannot have resolved during the mutation stream, and it must not have needed the timeout either.
     expect(took).toBeGreaterThanOrEqual(120);
     expect(took).toBeLessThan(1000);
     expect(ticks).toBeGreaterThan(2);

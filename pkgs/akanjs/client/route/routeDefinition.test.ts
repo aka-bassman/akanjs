@@ -45,7 +45,6 @@ describe("page() chain", () => {
     expect(mod.head).toBeUndefined();
     expect(await mod.generateHead?.(props({ projectId: pid, lang: "en" }))).toBe(`head:${pid}`);
     expect(mod.Loading?.({ params: { projectId: pid } })).toBe(`loading:${pid}`);
-    // A single `?tags=a` is one tag; a repeated key is the list; `Int` and the enum arrive parsed.
     expect(await mod.default?.(props({ projectId: pid, lang: "en" }, { page: "3", tags: "a", period: "day" }))).toBe(
       `page:${pid}:3:a:day`,
     );
@@ -141,7 +140,6 @@ describe("page() chain", () => {
         pattern: "/:lang/org/:orgId",
       }),
     ).toThrow('sits under [orgId] but declares no .param("orgId")');
-    // A layout under the same segment may leave it undeclared: most read none of them.
     expect(() =>
       resolveRouteModule(
         { default: layout().render(({ children }) => children) } as never,

@@ -107,8 +107,7 @@ type Equals<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B 
 const pinned = <_Assertion extends true>() => true;
 
 describe("AgentValueOf", () => {
-  // `via.ts` augments the global String, Boolean, Date and Map constructors with model field metadata, so these
-  // four are the ones a `FIELD_META`-first mapping silently reads as models. Nothing else here can regress alone.
+  // `via.ts` gives String, Boolean, Date and Map field metadata, so a FIELD_META-first mapping reads them as models.
   test("an augmented global constructor is its scalar, not the model its field metadata makes it look like", () => {
     expect(pinned<Equals<AgentValueOf<StringConstructor>, string>>()).toBe(true);
     expect(pinned<Equals<AgentValueOf<BooleanConstructor>, boolean>>()).toBe(true);

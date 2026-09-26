@@ -16,19 +16,10 @@ import { agentRead, type ConstantModelRef, type MaskModel, mask, maskFieldsOf } 
 // biome-ignore lint/suspicious/noExplicitAny: enum values are arbitrary string/number literal unions.
 type AgentSingleType = typeof PrimitiveScalar | EnumInstance<string, any> | ConstantModelRef;
 
-/** What a readable declaration names its value as. One level of array, because a published value is one JSON shape. */
+/** A scalar, an enum, or a model — or one array level of one. */
 export type AgentFieldType = AgentSingleType | AgentSingleType[];
 
-/**
- * A model class resolves to its state object rather than its instance type, so a component may hand over either
- * the hydrated document or the plain data copied out of one — masking reads the model that was named, not the
- * class the value still carries.
- *
- * A scalar is recognised by `refName` and has to be matched before `FIELD_META`: `via.ts` augments the global
- * `String`, `Boolean`, `Date` and `Map` constructors with `DatabaseConstantStatics`, so those four carry field
- * metadata and would otherwise read as models. A model carries no `refName`, and `Map` — carrying neither — falls
- * through to the model branch and is refused at declaration time instead.
- */
+// `refName` is matched before `FIELD_META`: `via.ts` gives the global String/Boolean/Date/Map field metadata too.
 export type AgentValueOf<T> = T extends readonly (infer F)[]
   ? AgentValueOf<F>[]
   : T extends { refName: "Any" }
@@ -47,14 +38,7 @@ export type AgentValueOf<T> = T extends readonly (infer F)[]
 
 type ValueKind = "any" | "date" | "scalar" | "agent" | "enum" | "model";
 
-/**
- * Turns a declared type into what an agent may read of a value of that type.
- *
- * The type is the whole declaration: it typechecks what the component hands over, and it decides how the value is
- * rendered — a model class masks by that model, a `Date` leaves as an ISO string, a primitive declaring an agent
- * face is read into it, a scalar passes. `Any` is the escape hatch and passes the value untouched, so a payload
- * nobody modeled stays publishable and the caller owns whether it is JSON and whether it is worth its tokens.
- */
+/** Renders a value by its declared type: a model masks, a Date is ISO, an agent-faced primitive reads, Any passes. */
 export class AgentValue {
   static serialize(type: AgentFieldType, value: unknown): unknown {
     const single = Array.isArray(type) ? type[0] : type;
@@ -62,10 +46,7 @@ export class AgentValue {
     return AgentValue.#one(single, value);
   }
 
-  /**
-   * Reports an unreadable type the way `st.tool` reports an undescribable argument — on the console, and the
-   * declaration goes unpublished. Throwing would cost the route its server render over an agent-tooling mistake.
-   */
+  /** Logs and returns false for an unreadable type; throwing would cost the route its server render. */
   static publishable(owner: string, type: AgentFieldType): boolean {
     try {
       AgentValue.#kindOf(Array.isArray(type) ? type[0] : type);

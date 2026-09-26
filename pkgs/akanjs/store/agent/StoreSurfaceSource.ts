@@ -1,35 +1,20 @@
 import { router } from "akanjs/client";
-import type { SurfaceSource, ToolEntry } from "use-agentic";
+import { AgenticSurface, type SurfaceSource, type ToolEntry } from "use-agentic";
 import { AgentBridge } from "./AgentBridge";
 import { ScreenFlash } from "./ScreenFlash";
 import { ScreenReader } from "./ScreenReader";
 import { ScreenSettle } from "./ScreenSettle";
 import { ScreenTarget } from "./ScreenTarget";
 
-/**
- * The tools every akan screen has whatever it declares: where it can go, what it is rendering, what one of the
- * store keys it reads holds, and where on screen a thing the user is being told about actually is. Everything else
- * an agent may do is a component's own `st.tool` declaration — the store contributes no actions, because a method
- * on a store class is not something the screen offers the user.
- *
- * Per zone view: a zone's `readState` reaches the keys its own subtree subscribes, and its `readScreen` and
- * `highlight` reach into its own `data-agent-zone` container rather than the whole document. A page can shadow any
- * of them by registering a hook tool of the same name — hook entries win over a source's. **That is a root-scope
- * move only**: inside a zone the hook entry is registered under its scope-prefixed name, which can never collide
- * with the bare name a source publishes, so a zone drops a built-in with the session's `builtins` option instead.
- */
+/** Every screen's built-in tools. A same-named hook tool shadows one at root scope only; a zone uses `builtins`. */
 export class StoreSurfaceSource implements SurfaceSource {
-  /**
-   * What `tools()` contributes, in the order it builds them — the list a session's `builtins` option selects from.
-   * A screen that declares a hook tool of one of these names is not in it: that entry is the screen's, not this
-   * source's, so withholding the built-ins never withholds a tool a component published on purpose.
-   */
+  /** What a session's `builtins` option selects from, in build order. */
   static readonly builtins = ["navigate", "goBack", "readScreen", "readState", "highlight"] as const;
 
   #bridge: AgentBridge | null;
   readonly #builtins = new Map<string, ToolEntry[]>();
 
-  /** Lazy by default: `AgentBridge.of()` walks the whole store, so it waits for the first enumeration. */
+  /** Without a bridge, `AgentBridge.of()` runs at the first `readState` call. */
   constructor(bridge?: AgentBridge) {
     this.#bridge = bridge ?? null;
   }
@@ -50,7 +35,6 @@ export class StoreSurfaceSource implements SurfaceSource {
     return builtins;
   };
 
-  /** Screen-driving is client navigation, so the agent gets the same router `Link` rides. */
   static #navigate(): ToolEntry {
     return {
       name: "navigate",
@@ -69,8 +53,6 @@ export class StoreSurfaceSource implements SurfaceSource {
       run: async (args) => {
         const path = String(args.path);
         router.push(path);
-        // A path with no route leaves the page where it was rather than replacing it, so this is a miss the model
-        // can recover from in the same turn — and the screen it is still on is the one its tools belong to.
         try {
           await router.navigation();
         } catch {
@@ -78,26 +60,19 @@ export class StoreSurfaceSource implements SurfaceSource {
             `There is no route at ${path}, so the page did not move. Call readScreen — it prints each link on this screen with its own path — and navigate to one of those.`,
           );
         }
-        // The push returns while the payload for the new route is still in flight, so without this the readScreen
-        // right after it reads the page the user just left, and the new screen's tools are not registered yet.
+        // `push` returns before the new route's payload lands; without this the next readScreen reads the old page.
         await ScreenSettle.wait({ appearMs: 800, timeoutMs: 5000 });
         return `Now on ${path}. Call readScreen to see it; this screen's own tools and state are listed from the next turn.`;
       },
     };
   }
 
-  /**
-   * Global rather than declared by whatever `Link.Back` happens to be on screen: history is not a control the page
-   * owns. Every route has a previous page, the browser's own back gesture is always there, and a page that draws
-   * no back link is not a page you may not leave — the same reasoning that makes `navigate` a built-in.
-   */
   static #goBack(): ToolEntry {
     return {
       name: "goBack",
       description:
         "Go back to the previous page in this session's history. Use it to undo a navigation; use navigate for a path.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
-      // Re-checked at call time, so a first page with nothing behind it refuses instead of leaving the app.
       guard: () => (router.canGoBack() ? true : "There is no previous page in this session's history."),
       run: async () => {
         router.back();
@@ -107,7 +82,6 @@ export class StoreSurfaceSource implements SurfaceSource {
     };
   }
 
-  /** What the user is looking at, read from the rendered DOM — the store never held it, so no key can answer it. */
   static #readScreen(viewKey: string): ToolEntry {
     const where = viewKey ? "in this zone" : "on this page";
     const subject = viewKey ? "this zone" : "the current page";
@@ -152,11 +126,6 @@ export class StoreSurfaceSource implements SurfaceSource {
     };
   }
 
-  /**
-   * Showing beats describing: an agent that has just been asked where something is can put it in front of the
-   * user instead of writing directions to it. It drives nothing and changes no data — it is the one built-in that
-   * exists for the *user's* benefit rather than the model's, which is why it is worth a slot on every screen.
-   */
   static #highlight(viewKey: string): ToolEntry {
     return {
       name: "highlight",
@@ -168,7 +137,6 @@ export class StoreSurfaceSource implements SurfaceSource {
         required: ["target"],
         additionalProperties: false,
       },
-      // Scrolling and a ring are a change no resource holds, so there is no report to wait for.
       settle: false,
       run: (args) => {
         const name = typeof args.target === "string" ? args.target.trim() : "";
@@ -190,7 +158,6 @@ export class StoreSurfaceSource implements SurfaceSource {
     };
   }
 
-  /** The pull half of the state context block: keys are listed there, values arrive masked through this. */
   #readState(viewKey: string): ToolEntry {
     return {
       name: "readState",
@@ -214,3 +181,24 @@ export class StoreSurfaceSource implements SurfaceSource {
     return document.querySelector<HTMLElement>(`[data-agent-zone="${CSS.escape(viewKey)}"]`) ?? undefined;
   }
 }
+
+export interface StoreSurface {
+  bridge: AgentBridge;
+  source: StoreSurfaceSource;
+  surface: AgenticSurface;
+}
+
+const SURFACE_KEY = Symbol.for("akanjs.store.agentSurface");
+
+/** Once per runtime, lazily; never attached on the server, where one global surface would span requests. */
+export const ensureStoreSurface = (): StoreSurface => {
+  const holder = globalThis as typeof globalThis & { [SURFACE_KEY]?: StoreSurface };
+  if (!holder[SURFACE_KEY]) {
+    const bridge = AgentBridge.of();
+    const source = new StoreSurfaceSource(bridge);
+    const surface = AgenticSurface.shared;
+    if (typeof window !== "undefined") surface.addSource(source);
+    holder[SURFACE_KEY] = { bridge, source, surface };
+  }
+  return holder[SURFACE_KEY];
+};

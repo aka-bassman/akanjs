@@ -3,7 +3,6 @@ import { useSpringValue } from "@react-spring/web";
 import { useDrag } from "@use-gesture/react";
 import {
   type CsrContextType,
-  type CsrTransitionStyles,
   router as clientRouter,
   Device,
   debugFrame,
@@ -91,27 +90,110 @@ const getSyncRouteHref = (location: {
   return `${path}${search ? `?${search}` : ""}${location.hash ? `#${location.hash}` : ""}`;
 };
 
-const getKeyboardAwarePageHeight = ({ frameLayout }: RouteState) => frameLayout.contentViewport.height;
+type Progress = UseCsrTransition["transProgress"];
+type FramePageState = PathRoute["pageState"];
 
-const getKeyboardAwareBottomPadding = ({ frameLayout }: RouteState, pageState: PathRoute["pageState"]) =>
-  Math.max(
+const tween = (progress: Progress, from: number, to: number) => progress.to([0, 1], [from, to]);
+const fadeIn = (progress: Progress) => ({ opacity: progress.to((value) => value) });
+const fadeOut = (progress: Progress) => ({ opacity: progress.to((value) => 1 - value) });
+
+const pageContentStyle = ({ frameLayout }: RouteState, pageState: FramePageState) => ({
+  paddingTop: pageState.topSafeArea + pageState.topInset,
+  paddingBottom: Math.max(
     pageState.bottomSafeArea,
     pageState.bottomInset +
       pageState.bottomSafeArea -
       (frameLayout.keyboard.sticky ? frameLayout.keyboardAccessory.height : 0),
-  );
+  ),
+  height: frameLayout.contentViewport.height,
+});
+
+const prevPageContentStyle = (clientHeight: number, prevPageState: FramePageState) => ({
+  paddingTop: prevPageState.topSafeArea + prevPageState.topInset,
+  paddingBottom: prevPageState.bottomInset + prevPageState.bottomSafeArea,
+  height: clientHeight,
+});
+
+const tweenedSafeAreas = (
+  progress: Progress,
+  clientHeight: number,
+  pageState: FramePageState,
+  prevPageState: FramePageState,
+) => ({
+  topSafeArea: {
+    containerStyle: {
+      backgroundColor: pageState.topSafeAreaColor,
+      height: tween(progress, prevPageState.topSafeArea, pageState.topSafeArea),
+    },
+  },
+  bottomSafeArea: {
+    containerStyle: {
+      backgroundColor: pageState.bottomSafeAreaColor,
+      top: tween(progress, clientHeight - prevPageState.bottomSafeArea, clientHeight - pageState.bottomSafeArea),
+      height: tween(progress, prevPageState.bottomSafeArea, pageState.bottomSafeArea),
+    },
+  },
+});
+
+const tweenedTopInset = (progress: Progress, pageState: FramePageState, prevPageState: FramePageState) => ({
+  top: tween(progress, prevPageState.topSafeArea, pageState.topSafeArea),
+  height: tween(progress, prevPageState.topInset, pageState.topInset),
+});
+
+const tweenedBottomInset = (
+  progress: Progress,
+  clientHeight: number,
+  pageState: FramePageState,
+  prevPageState: FramePageState,
+) => ({
+  height: tween(progress, prevPageState.bottomInset, pageState.bottomInset),
+  top: tween(progress, getBottomInsetTop(clientHeight, prevPageState), getBottomInsetTop(clientHeight, pageState)),
+});
+
+const useFadeSpring = () => {
+  const transUnit = useSpringValue(1, { config: { clamp: true } });
+  const transUnitRange = useMemo(() => [0, 1], []);
+  return {
+    transUnit,
+    transUnitRange,
+    transProgress: transUnit.to((unit) => unit),
+    transPercent: transUnit.to([0, 1], [0, 100], "clamp"),
+  };
+};
+
+const useSlideSpring = (size: number) => {
+  const transUnit = useSpringValue(0, { config: { clamp: true } });
+  const transUnitRange = useMemo(() => [size, 0], [size]);
+  const transUnitReversed = transUnit.to((unit) => transUnitRange[0] - unit);
+  const transUnitRangeReversed = useMemo(() => [0, size], [size]);
+  return {
+    transUnit,
+    transUnitRange,
+    transProgress: transUnitReversed.to(transUnitRangeReversed, [0, 1], "clamp"),
+    transPercent: transUnitReversed.to(transUnitRangeReversed, [0, 100], "clamp"),
+  };
+};
+
+const usePlayOnForward = (
+  { transUnit, transUnitRange }: Pick<UseCsrTransition, "transUnit" | "transUnitRange">,
+  { history, location }: RouteState,
+  config: { duration: number; easing?: (t: number) => number },
+) => {
+  useEffect(() => {
+    if (history.current.type === "forward") {
+      void transUnit.start(transUnitRange[0], { immediate: true });
+      void transUnit.start(transUnitRange[1], { config });
+    } else void transUnit.start(transUnitRange[1], { immediate: true });
+  }, [location.pathname]);
+};
 
 const useNoneTrans = (routeState: RouteState): UseCsrTransition => {
   const { clientHeight, location, prevLocation } = routeState;
-  const pageContentHeight = getKeyboardAwarePageHeight(routeState);
-  const transDirection = "none";
   const transUnit = useSpringValue(0, { config: { clamp: true } });
   const transUnitRange = useMemo(() => [0, 0], []);
-  const transProgress = transUnit.to((unit) => 1);
-  const transPercent = transUnit.to((unit) => 100);
   const pageState = location.pathRoute.pageState;
   const prevPageState = prevLocation?.pathRoute.pageState ?? defaultPageState;
-  const csrTranstionStyles: CsrTransitionStyles = {
+  return {
     topSafeArea: {
       containerStyle: {
         backgroundColor: pageState.topSafeAreaColor,
@@ -131,11 +213,7 @@ const useNoneTrans = (routeState: RouteState): UseCsrTransition => {
         left: 0,
         height: clientHeight,
       },
-      contentStyle: {
-        paddingTop: pageState.topSafeArea + pageState.topInset,
-        paddingBottom: getKeyboardAwareBottomPadding(routeState, pageState),
-        height: pageContentHeight,
-      },
+      contentStyle: pageContentStyle(routeState, pageState),
     },
     prevPage: {
       containerStyle: {
@@ -162,34 +240,25 @@ const useNoneTrans = (routeState: RouteState): UseCsrTransition => {
     bottomInset: {
       containerStyle: {
         height: pageState.bottomInset,
-        top: clientHeight - pageState.bottomInset - pageState.bottomSafeArea,
+        top: getBottomInsetTop(clientHeight, pageState),
       },
       contentStyle: { opacity: 1 },
       prevContentStyle: { opacity: 0 },
     },
-  };
-
-  const useCsrTransition: UseCsrTransition = {
-    ...csrTranstionStyles,
     pageBind: () => ({}),
     pageClassName: "touch-pan-y",
-    transDirection,
+    transDirection: "none",
     transUnitRange,
     transUnit,
-    transPercent,
-    transProgress,
+    transProgress: transUnit.to(() => 1),
+    transPercent: transUnit.to(() => 100),
   };
-  return useCsrTransition;
 };
 
 const useFadeTrans = (routeState: RouteState): UseCsrTransition => {
-  const { clientHeight, location, prevLocation, onBack, history } = routeState;
-  const pageContentHeight = getKeyboardAwarePageHeight(routeState);
-  const transDirection = "none";
-  const transUnit = useSpringValue(1, { config: { clamp: true } });
-  const transUnitRange = useMemo(() => [0, 1], []);
-  const transProgress = transUnit.to((unit) => unit);
-  const transPercent = transUnit.to([0, 1], [0, 100], "clamp");
+  const { clientHeight, location, prevLocation, onBack } = routeState;
+  const spring = useFadeSpring();
+  const { transUnit, transUnitRange, transProgress } = spring;
   const pageState = location.pathRoute.pageState;
   const prevPageState = prevLocation?.pathRoute.pageState ?? defaultPageState;
   const pageBottomInsetTop = getBottomInsetTop(clientHeight, pageState);
@@ -200,90 +269,44 @@ const useFadeTrans = (routeState: RouteState): UseCsrTransition => {
       await transUnit.start(transUnitRange[0]);
     };
   }, []);
-  useEffect(() => {
-    if (history.current.type === "forward") {
-      void transUnit.start(transUnitRange[0], { immediate: true });
-      void transUnit.start(transUnitRange[1], { config: { duration: 150 } });
-    } else {
-      void transUnit.start(transUnitRange[1], { immediate: true });
-      return;
-    }
-  }, [location.pathname]);
+  usePlayOnForward(spring, routeState, { duration: 150 });
 
-  const csrTranstionStyles: CsrTransitionStyles = {
-    topSafeArea: {
-      containerStyle: {
-        backgroundColor: pageState.topSafeAreaColor,
-        height: transProgress.to([0, 1], [prevPageState.topSafeArea, pageState.topSafeArea]),
-      },
-    },
-    bottomSafeArea: {
-      containerStyle: {
-        backgroundColor: pageState.bottomSafeAreaColor,
-        top: transProgress.to(
-          [0, 1],
-          [clientHeight - prevPageState.bottomSafeArea, clientHeight - pageState.bottomSafeArea],
-        ),
-        height: transProgress.to([0, 1], [prevPageState.bottomSafeArea, pageState.bottomSafeArea]),
-      },
-    },
+  return {
+    ...tweenedSafeAreas(transProgress, clientHeight, pageState, prevPageState),
     page: {
       containerStyle: {},
-      contentStyle: {
-        paddingTop: pageState.topSafeArea + pageState.topInset,
-        paddingBottom: getKeyboardAwareBottomPadding(routeState, pageState),
-        opacity: transUnit,
-        height: pageContentHeight,
-      },
+      contentStyle: { ...pageContentStyle(routeState, pageState), opacity: transUnit },
     },
     prevPage: {
       containerStyle: {
         opacity: transProgress.to((progress) => 1 - progress),
       },
-      contentStyle: {
-        paddingTop: prevPageState.topSafeArea + prevPageState.topInset,
-        paddingBottom: prevPageState.bottomInset + prevPageState.bottomSafeArea,
-        height: clientHeight,
-      },
+      contentStyle: prevPageContentStyle(clientHeight, prevPageState),
     },
     topInset: {
-      containerStyle: {
-        top: transProgress.to([0, 1], [prevPageState.topSafeArea, pageState.topSafeArea]),
-        height: transProgress.to([0, 1], [prevPageState.topInset, pageState.topInset]),
-      },
-      contentStyle: {
-        opacity: transProgress,
-      },
-      prevContentStyle: {
-        opacity: transProgress.to((progress) => 1 - progress),
-      },
+      containerStyle: tweenedTopInset(transProgress, pageState, prevPageState),
+      contentStyle: { opacity: transProgress },
+      prevContentStyle: fadeOut(transProgress),
     },
     topLeftAction: {
-      containerStyle: {
-        top: transProgress.to([0, 1], [prevPageState.topSafeArea, pageState.topSafeArea]),
-        height: transProgress.to([0, 1], [prevPageState.topInset, pageState.topInset]),
-      },
+      containerStyle: tweenedTopInset(transProgress, pageState, prevPageState),
       contentStyle: {
-        top: transProgress.to([0, 1], [0, -(pageState.bottomInset - prevPageState.bottomInset) * 2]),
-        opacity: transProgress.to((progress) => progress),
+        top: tween(transProgress, 0, -(pageState.bottomInset - prevPageState.bottomInset) * 2),
+        ...fadeIn(transProgress),
       },
       prevContentStyle: {
-        top: transProgress.to([0, 1], [0, -(pageState.bottomInset - prevPageState.bottomInset) * 2]),
-        opacity: transProgress.to((progress) => 1 - progress),
+        top: tween(transProgress, 0, -(pageState.bottomInset - prevPageState.bottomInset) * 2),
+        ...fadeOut(transProgress),
       },
     },
     bottomInset: {
-      containerStyle: {
-        height: transProgress.to([0, 1], [prevPageState.bottomInset, pageState.bottomInset]),
-        top: transProgress.to([0, 1], [prevBottomInsetTop, pageBottomInsetTop]),
-      },
+      containerStyle: tweenedBottomInset(transProgress, clientHeight, pageState, prevPageState),
       contentStyle: {
         height: pageState.bottomInset,
         translateY: transProgress.to((progress) =>
           getFrameContentOffset(pageBottomInsetTop, prevBottomInsetTop, pageBottomInsetTop, progress),
         ),
-        opacity: transProgress.to((progress) => progress),
-        //animate origin from top to bottom
+        ...fadeIn(transProgress),
         transformOrigin: "top",
       },
       prevContentStyle: {
@@ -291,33 +314,21 @@ const useFadeTrans = (routeState: RouteState): UseCsrTransition => {
         translateY: transProgress.to((progress) =>
           getFrameContentOffset(prevBottomInsetTop, prevBottomInsetTop, pageBottomInsetTop, progress),
         ),
-        opacity: transProgress.to((progress) => 1 - progress),
+        ...fadeOut(transProgress),
         transformOrigin: "top",
       },
     },
-  };
-
-  const useCsrTransition: UseCsrTransition = {
-    ...csrTranstionStyles,
     pageBind: () => ({}),
     pageClassName: "",
-    transDirection,
-    transUnitRange,
-    transUnit,
-    transPercent,
-    transProgress,
+    transDirection: "none",
+    ...spring,
   };
-  return useCsrTransition;
 };
 
 const useScaleOutTrans = (routeState: RouteState): UseCsrTransition => {
-  const { clientHeight, location, prevLocation, onBack, history } = routeState;
-  const pageContentHeight = getKeyboardAwarePageHeight(routeState);
-  const transDirection = "none";
-  const transUnit = useSpringValue(1, { config: { clamp: true } });
-  const transUnitRange = useMemo(() => [0, 1], []);
-  const transProgress = transUnit.to((unit) => unit);
-  const transPercent = transUnit.to([0, 1], [0, 100], "clamp");
+  const { clientHeight, location, prevLocation, onBack } = routeState;
+  const spring = useFadeSpring();
+  const { transUnit, transUnitRange, transProgress } = spring;
   const pageState = location.pathRoute.pageState;
   const prevPageState = prevLocation?.pathRoute.pageState ?? defaultPageState;
 
@@ -326,127 +337,55 @@ const useScaleOutTrans = (routeState: RouteState): UseCsrTransition => {
       await transUnit.start(transUnitRange[0], { config: { duration: ANDROID_SCALE_TRANSITION_DURATION } });
     };
   }, []);
-  useEffect(() => {
-    if (history.current.type === "forward") {
-      void transUnit.start(transUnitRange[0], { immediate: true });
-      void transUnit.start(transUnitRange[1], { config: { duration: ANDROID_SCALE_TRANSITION_DURATION } });
-    } else {
-      void transUnit.start(transUnitRange[1], { immediate: true });
-      return;
-    }
-  }, [location.pathname]);
+  usePlayOnForward(spring, routeState, { duration: ANDROID_SCALE_TRANSITION_DURATION });
 
-  const csrTranstionStyles: CsrTransitionStyles = {
-    topSafeArea: {
-      containerStyle: {
-        backgroundColor: pageState.topSafeAreaColor,
-        height: transProgress.to([0, 1], [prevPageState.topSafeArea, pageState.topSafeArea]),
-      },
-    },
-    bottomSafeArea: {
-      containerStyle: {
-        backgroundColor: pageState.bottomSafeAreaColor,
-        top: transProgress.to(
-          [0, 1],
-          [clientHeight - prevPageState.bottomSafeArea, clientHeight - pageState.bottomSafeArea],
-        ),
-        height: transProgress.to([0, 1], [prevPageState.bottomSafeArea, pageState.bottomSafeArea]),
-      },
-    },
+  return {
+    ...tweenedSafeAreas(transProgress, clientHeight, pageState, prevPageState),
     page: {
       containerStyle: {
         transform: transProgress.to((progress) => `scale(${0.92 + progress * 0.08})`),
       },
-      contentStyle: {
-        paddingTop: pageState.topSafeArea + pageState.topInset,
-        paddingBottom: getKeyboardAwareBottomPadding(routeState, pageState),
-        opacity: transProgress,
-        height: pageContentHeight,
-      },
+      contentStyle: { ...pageContentStyle(routeState, pageState), opacity: transProgress },
     },
     prevPage: {
       containerStyle: {
         transform: transProgress.to((progress) => `scale(${1 - progress * 0.02})`),
       },
       contentStyle: {
-        paddingTop: prevPageState.topSafeArea + prevPageState.topInset,
-        paddingBottom: prevPageState.bottomInset + prevPageState.bottomSafeArea,
+        ...prevPageContentStyle(clientHeight, prevPageState),
         opacity: transProgress.to((progress) => 1 - progress * 0.35),
-        height: clientHeight,
       },
     },
     topInset: {
-      containerStyle: {
-        top: transProgress.to([0, 1], [prevPageState.topSafeArea, pageState.topSafeArea]),
-        height: transProgress.to([0, 1], [prevPageState.topInset, pageState.topInset]),
-      },
-      contentStyle: {
-        opacity: transProgress,
-      },
-      prevContentStyle: {
-        opacity: transProgress.to((progress) => 1 - progress),
-      },
+      containerStyle: tweenedTopInset(transProgress, pageState, prevPageState),
+      contentStyle: { opacity: transProgress },
+      prevContentStyle: fadeOut(transProgress),
     },
     topLeftAction: {
-      containerStyle: {
-        top: transProgress.to([0, 1], [prevPageState.topSafeArea, pageState.topSafeArea]),
-        height: transProgress.to([0, 1], [prevPageState.topInset, pageState.topInset]),
-      },
-      contentStyle: {
-        opacity: transProgress,
-      },
-      prevContentStyle: {
-        opacity: transProgress.to((progress) => 1 - progress),
-      },
+      containerStyle: tweenedTopInset(transProgress, pageState, prevPageState),
+      contentStyle: { opacity: transProgress },
+      prevContentStyle: fadeOut(transProgress),
     },
     bottomInset: {
-      containerStyle: {
-        height: transProgress.to([0, 1], [prevPageState.bottomInset, pageState.bottomInset]),
-        top: transProgress.to(
-          [0, 1],
-          [
-            clientHeight - prevPageState.bottomInset - prevPageState.bottomSafeArea,
-            clientHeight - pageState.bottomInset - pageState.bottomSafeArea,
-          ],
-        ),
-      },
-      contentStyle: {
-        opacity: transProgress,
-      },
-      prevContentStyle: {
-        opacity: transProgress.to((progress) => 1 - progress),
-      },
+      containerStyle: tweenedBottomInset(transProgress, clientHeight, pageState, prevPageState),
+      contentStyle: { opacity: transProgress },
+      prevContentStyle: fadeOut(transProgress),
     },
-  };
-
-  const useCsrTransition: UseCsrTransition = {
-    ...csrTranstionStyles,
     pageBind: () => ({}),
     pageClassName: "",
-    transDirection,
-    transUnitRange,
-    transUnit,
-    transPercent,
-    transProgress,
+    transDirection: "none",
+    ...spring,
   };
-  return useCsrTransition;
 };
 
 const useStackTrans = (routeState: RouteState): UseCsrTransition => {
-  const { clientWidth, clientHeight, location, prevLocation, history, onBack, pageContentRef } = routeState;
-  const pageContentHeight = getKeyboardAwarePageHeight(routeState);
-  const transDirection = "horizontal";
-  const transUnit = useSpringValue(0, { config: { clamp: true } });
-  const transUnitRange = useMemo(() => [clientWidth, 0], [clientWidth]);
-  const transUnitReversed = transUnit.to((unit) => transUnitRange[0] - unit);
-  const transUnitRangeReversed = useMemo(() => [0, clientWidth], [clientWidth]);
-  const transProgress = transUnitReversed.to(transUnitRangeReversed, [0, 1], "clamp");
-  const transPercent = transUnitReversed.to(transUnitRangeReversed, [0, 100], "clamp");
+  const { clientWidth, clientHeight, location, prevLocation, onBack, pageContentRef } = routeState;
+  const spring = useSlideSpring(clientWidth);
+  const { transUnit, transUnitRange, transProgress } = spring;
   const initThreshold = useMemo(() => Math.floor(clientWidth), [clientWidth]);
   const threshold = useMemo(() => Math.floor(clientWidth / 3), [clientWidth]);
   const pageState = location.pathRoute.pageState;
   const prevPageState = prevLocation?.pathRoute.pageState ?? defaultPageState;
-  const pageClassName = "touch-pan-y";
   const gestureIntent = useRef<GestureIntent>("pending");
   const scrollLockRef = useRef<{ overflowY: string; touchAction: string } | null>(null);
   const stackBackConfigRef = useRef<{ duration: number } | null>(null);
@@ -476,15 +415,7 @@ const useStackTrans = (routeState: RouteState): UseCsrTransition => {
     };
   }, []);
   useEffect(() => unlockPageScroll, [unlockPageScroll]);
-  useEffect(() => {
-    if (history.current.type === "forward") {
-      void transUnit.start(transUnitRange[0], { immediate: true });
-      void transUnit.start(transUnitRange[1], { config: { duration: 150 } });
-    } else {
-      void transUnit.start(transUnitRange[1], { immediate: true });
-      return;
-    }
-  }, [location.pathname]);
+  usePlayOnForward(spring, routeState, { duration: 150 });
 
   const pageBind = useDrag(
     ({ first, last, movement: [mx, my], velocity: [vx], direction: [dx], initial: [ix], cancel }) => {
@@ -533,31 +464,11 @@ const useStackTrans = (routeState: RouteState): UseCsrTransition => {
     { filterTaps: true },
   );
 
-  const csrTranstionStyles: CsrTransitionStyles = {
-    topSafeArea: {
-      containerStyle: {
-        backgroundColor: pageState.topSafeAreaColor,
-        height: transProgress.to([0, 1], [prevPageState.topSafeArea, pageState.topSafeArea]),
-      },
-    },
-    bottomSafeArea: {
-      containerStyle: {
-        backgroundColor: pageState.bottomSafeAreaColor,
-        top: transProgress.to(
-          [0, 1],
-          [clientHeight - prevPageState.bottomSafeArea, clientHeight - pageState.bottomSafeArea],
-        ),
-        height: transProgress.to([0, 1], [prevPageState.bottomSafeArea, pageState.bottomSafeArea]),
-      },
-    },
+  return {
+    ...tweenedSafeAreas(transProgress, clientHeight, pageState, prevPageState),
     page: {
       containerStyle: {},
-      contentStyle: {
-        paddingTop: pageState.topSafeArea + pageState.topInset,
-        paddingBottom: getKeyboardAwareBottomPadding(routeState, pageState),
-        translateX: transUnit,
-        height: pageContentHeight,
-      },
+      contentStyle: { ...pageContentStyle(routeState, pageState), translateX: transUnit },
     },
     prevPage: {
       containerStyle: {
@@ -567,86 +478,43 @@ const useStackTrans = (routeState: RouteState): UseCsrTransition => {
         translateX: transUnit.to((unit) => (unit - clientWidth) / 5),
       },
       contentStyle: {
-        paddingTop: prevPageState.topSafeArea + prevPageState.topInset,
-        paddingBottom: prevPageState.bottomInset + prevPageState.bottomSafeArea,
-        height: clientHeight,
+        ...prevPageContentStyle(clientHeight, prevPageState),
         opacity: transProgress.to((progress) => 1 - progress / 2),
       },
     },
     topInset: {
-      containerStyle: {
-        top: transProgress.to([0, 1], [prevPageState.topSafeArea, pageState.topSafeArea]),
-        height: transProgress.to([0, 1], [prevPageState.topInset, pageState.topInset]),
-      },
-      contentStyle: {
-        opacity: transProgress.to((progress) => progress),
-        translateX: transProgress.to([0, 1], [clientWidth / 5, 0]),
-      },
-      prevContentStyle: {
-        opacity: transProgress.to((progress) => 1 - progress),
-        translateX: transProgress.to([0, 1], [0, -clientWidth / 5]),
-      },
+      containerStyle: tweenedTopInset(transProgress, pageState, prevPageState),
+      contentStyle: { ...fadeIn(transProgress), translateX: tween(transProgress, clientWidth / 5, 0) },
+      prevContentStyle: { ...fadeOut(transProgress), translateX: tween(transProgress, 0, -clientWidth / 5) },
     },
     topLeftAction: {
       containerStyle: {
-        top: transProgress.to([0, 1], [prevPageState.topSafeArea, pageState.topSafeArea]),
-        height: transProgress.to([0, 1], [prevPageState.topInset, pageState.topInset]),
-        minWidth: transProgress.to([0, 1], [prevPageState.topInset, pageState.topInset]),
+        ...tweenedTopInset(transProgress, pageState, prevPageState),
+        minWidth: tween(transProgress, prevPageState.topInset, pageState.topInset),
       },
-      contentStyle: {
-        opacity: transProgress.to((progress) => progress),
-      },
-      prevContentStyle: {
-        opacity: transProgress.to((progress) => 1 - progress),
-      },
+      contentStyle: fadeIn(transProgress),
+      prevContentStyle: fadeOut(transProgress),
     },
     bottomInset: {
-      containerStyle: {
-        height: transProgress.to([0, 1], [prevPageState.bottomInset, pageState.bottomInset]),
-        top: transProgress.to(
-          [0, 1],
-          [
-            clientHeight - prevPageState.bottomInset - prevPageState.bottomSafeArea,
-            clientHeight - pageState.bottomInset - pageState.bottomSafeArea,
-          ],
-        ),
-      },
-      contentStyle: {
-        height: pageState.bottomInset,
-        translateX: transUnit,
-        opacity: transProgress.to((progress) => progress),
-      },
+      containerStyle: tweenedBottomInset(transProgress, clientHeight, pageState, prevPageState),
+      contentStyle: { height: pageState.bottomInset, translateX: transUnit, ...fadeIn(transProgress) },
       prevContentStyle: {
         height: prevPageState.bottomInset,
         translateX: transUnit.to((unit) => (unit - clientWidth) / 5),
-        opacity: transProgress.to((progress) => 1 - progress),
+        ...fadeOut(transProgress),
       },
     },
-  };
-
-  const useCsrTransition: UseCsrTransition = {
-    ...csrTranstionStyles,
     pageBind,
-    pageClassName,
-    transDirection,
-    transUnitRange,
-    transUnit,
-    transPercent,
-    transProgress,
+    pageClassName: "touch-pan-y",
+    transDirection: "horizontal",
+    ...spring,
   };
-  return useCsrTransition;
 };
 
 const useBottomUpTrans = (routeState: RouteState): UseCsrTransition => {
-  const { clientHeight, history, location, prevLocation, onBack } = routeState;
-  const pageContentHeight = getKeyboardAwarePageHeight(routeState);
-  const transDirection = "vertical";
-  const transUnit = useSpringValue(0, { config: { clamp: true } });
-  const transUnitRange = useMemo(() => [clientHeight, 0], [clientHeight]);
-  const transUnitReversed = transUnit.to((unit) => transUnitRange[0] - unit);
-  const transUnitRangeReversed = useMemo(() => [0, clientHeight], [clientHeight]);
-  const transProgress = transUnitReversed.to(transUnitRangeReversed, [0, 1], "clamp");
-  const transPercent = transUnitReversed.to(transUnitRangeReversed, [0, 100], "clamp");
+  const { clientHeight, location, prevLocation, onBack } = routeState;
+  const spring = useSlideSpring(clientHeight);
+  const { transUnit, transUnitRange, transProgress } = spring;
   const initThreshold = useMemo(() => Math.floor(clientHeight / 3), [clientHeight]);
   const threshold = useMemo(() => Math.floor(clientHeight / 2), [clientHeight]);
   const pageState = location.pathRoute.pageState;
@@ -656,15 +524,7 @@ const useBottomUpTrans = (routeState: RouteState): UseCsrTransition => {
       await transUnit.start(transUnitRange[0], { config: { duration: 220, easing: linearEasing } });
     };
   }, []);
-  useEffect(() => {
-    if (history.current.type === "forward") {
-      void transUnit.start(transUnitRange[0], { immediate: true });
-      void transUnit.start(transUnitRange[1], { config: { duration: 220, easing: linearEasing } });
-    } else {
-      void transUnit.start(transUnitRange[1], { immediate: true });
-      return;
-    }
-  }, [location.pathname]);
+  usePlayOnForward(spring, routeState, { duration: 220, easing: linearEasing });
 
   const pageBind = useDrag(
     ({ first, last, movement: [, my], initial: [, iy], cancel }) => {
@@ -682,101 +542,41 @@ const useBottomUpTrans = (routeState: RouteState): UseCsrTransition => {
     { axis: "y", filterTaps: true, threshold: 10 },
   );
 
-  const csrTranstionStyles: CsrTransitionStyles = {
-    topSafeArea: {
-      containerStyle: {
-        backgroundColor: pageState.topSafeAreaColor,
-        height: transProgress.to([0, 1], [prevPageState.topSafeArea, pageState.topSafeArea]),
-      },
-    },
-    bottomSafeArea: {
-      containerStyle: {
-        backgroundColor: pageState.bottomSafeAreaColor,
-        top: transProgress.to(
-          [0, 1],
-          [clientHeight - prevPageState.bottomSafeArea, clientHeight - pageState.bottomSafeArea],
-        ),
-        height: transProgress.to([0, 1], [prevPageState.bottomSafeArea, pageState.bottomSafeArea]),
-      },
-    },
+  return {
+    ...tweenedSafeAreas(transProgress, clientHeight, pageState, prevPageState),
     page: {
       containerStyle: {},
-      contentStyle: {
-        paddingTop: pageState.topSafeArea + pageState.topInset,
-        paddingBottom: getKeyboardAwareBottomPadding(routeState, pageState),
-        translateY: transUnit,
-        height: pageContentHeight,
-      },
+      contentStyle: { ...pageContentStyle(routeState, pageState), translateY: transUnit },
     },
     prevPage: {
       containerStyle: {
         translateY: 0,
       },
       contentStyle: {
-        paddingTop: prevPageState.topSafeArea + prevPageState.topInset,
-        paddingBottom: prevPageState.bottomInset + prevPageState.bottomSafeArea,
-        height: clientHeight,
+        ...prevPageContentStyle(clientHeight, prevPageState),
         opacity: transProgress.to((progress) => 1 - progress / 2),
       },
     },
     topInset: {
-      containerStyle: {
-        top: transProgress.to([0, 1], [prevPageState.topSafeArea, pageState.topSafeArea]),
-        height: transProgress.to([0, 1], [prevPageState.topInset, pageState.topInset]),
-      },
-      contentStyle: {
-        opacity: transProgress.to((progress) => progress),
-        // translateX: transProgress.to([0, 1], [clientWidth / 5, 0]),
-      },
-      prevContentStyle: {
-        opacity: transProgress.to((progress) => 1 - progress),
-        // translateX: transProgress.to([0, 1], [0, -clientWidth / 5]),
-      },
+      containerStyle: tweenedTopInset(transProgress, pageState, prevPageState),
+      contentStyle: fadeIn(transProgress),
+      prevContentStyle: fadeOut(transProgress),
     },
     topLeftAction: {
-      containerStyle: {
-        top: transProgress.to([0, 1], [prevPageState.topSafeArea, pageState.topSafeArea]),
-        height: transProgress.to([0, 1], [prevPageState.topInset, pageState.topInset]),
-      },
-      contentStyle: {
-        opacity: transProgress.to((progress) => progress),
-      },
-      prevContentStyle: {
-        opacity: transProgress.to((progress) => 1 - progress),
-      },
+      containerStyle: tweenedTopInset(transProgress, pageState, prevPageState),
+      contentStyle: fadeIn(transProgress),
+      prevContentStyle: fadeOut(transProgress),
     },
     bottomInset: {
-      containerStyle: {
-        height: transProgress.to([0, 1], [prevPageState.bottomInset, pageState.bottomInset]),
-        top: transProgress.to(
-          [0, 1],
-          [
-            clientHeight - prevPageState.bottomInset - prevPageState.bottomSafeArea,
-            clientHeight - pageState.bottomInset - pageState.bottomSafeArea,
-            // prevPageState.bottomInset ? clientHeight - pageState.bottomInset - pageState.bottomSafeArea : 0,
-          ],
-        ),
-      },
-      contentStyle: {
-        opacity: transProgress.to((progress) => progress),
-      },
-      prevContentStyle: {
-        opacity: transProgress.to((progress) => 1 - progress),
-      },
+      containerStyle: tweenedBottomInset(transProgress, clientHeight, pageState, prevPageState),
+      contentStyle: fadeIn(transProgress),
+      prevContentStyle: fadeOut(transProgress),
     },
-  };
-
-  const useCsrTransition: UseCsrTransition = {
-    ...csrTranstionStyles,
     pageBind,
     pageClassName: "touch-pan-x",
-    transDirection,
-    transUnitRange,
-    transUnit,
-    transPercent,
-    transProgress,
+    transDirection: "vertical",
+    ...spring,
   };
-  return useCsrTransition;
 };
 
 export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]) => {
@@ -1001,6 +801,14 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
     window.setTimeout(() => setTransitionPageStateSnapshot(null), 360);
     await prepareForFrameTransition();
   }, []);
+  const settle = (prev: LocationState["prevLocation"]) =>
+    setLocationState({
+      location: getCurrentLocation(),
+      prevLocation: prev,
+      pendingLocation: null,
+      navigationIntent: null,
+      phase: "idle",
+    });
   const applyingSyncNavigation = useRef(false);
   const broadcastSyncNavigation = useCallback((kind: "push" | "replace" | "back" | "pop", href: string) => {
     if (applyingSyncNavigation.current) return;
@@ -1021,13 +829,7 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
 
       if (!usePendingNavigation) {
         setHistoryForward({ type: kind, location: toLocation, scrollTop, scrollToTop });
-        setLocationState({
-          location: getCurrentLocation(),
-          prevLocation: kind === "replace" ? prevLocation : fromLocation,
-          pendingLocation: null,
-          navigationIntent: null,
-          phase: "idle",
-        });
+        settle(kind === "replace" ? prevLocation : fromLocation);
         if (kind === "push") window.history.pushState({}, "", href);
         else window.history.replaceState({}, "", href);
         return;
@@ -1193,27 +995,21 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
     return () => debugFrame("csr.unmount", { lastPath: resolvedLocation.pathRoute.path });
   }, []);
   const getRouter = useCallback((): RouterInstance => {
+    const forward =
+      (kind: "push" | "replace") =>
+      (href: string, { scrollToTop }: RouteOptions = {}) => {
+        const location = getCurrentLocation();
+        debugFrame(`router.${kind}`, { from: location.href, to: href, scrollToTop });
+        if (location.href === href) {
+          if (!pageContentRef.current) return;
+          pageContentRef.current.scrollTop = getScrollTop(location);
+          return;
+        }
+        runForwardNavigation(kind, href, { scrollToTop });
+      };
     const router: RouterInstance = {
-      push: (href: string, { scrollToTop }: RouteOptions = {}) => {
-        const location = getCurrentLocation();
-        debugFrame("router.push", { from: location.href, to: href, scrollToTop });
-        if (location.href === href) {
-          if (!pageContentRef.current) return;
-          pageContentRef.current.scrollTop = getScrollTop(location);
-          return;
-        }
-        runForwardNavigation("push", href, { scrollToTop });
-      },
-      replace: (href: string, { scrollToTop }: RouteOptions = {}) => {
-        const location = getCurrentLocation();
-        debugFrame("router.replace", { from: location.href, to: href, scrollToTop });
-        if (location.href === href) {
-          if (!pageContentRef.current) return;
-          pageContentRef.current.scrollTop = getScrollTop(location);
-          return;
-        }
-        runForwardNavigation("replace", href, { scrollToTop });
-      },
+      push: forward("push"),
+      replace: forward("replace"),
       refresh: () => {
         window.location.reload();
       },
@@ -1226,25 +1022,14 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
         await onBack.current[location.pathRoute.pageState.transition]?.();
         const scrollTop = pageContentRef.current?.scrollTop ?? 0;
         setHistoryBack({ type: "back", location, scrollTop, scrollToTop });
-        setLocationState({
-          location: getCurrentLocation(),
-          prevLocation: getPrevLocation(),
-          pendingLocation: null,
-          navigationIntent: null,
-          phase: "idle",
-        });
+        settle(getPrevLocation());
         broadcastSyncNavigation("back", getSyncRouteHref(targetLocation));
         window.history.back();
       },
     };
-    window.onpopstate = async (ev: PopStateEvent) => {
+    window.onpopstate = async () => {
       const href = window.location.href.replace(window.location.origin, "");
-      const routeType =
-        href === getNextLocation()?.href // && history.current.type !== "back"
-          ? "forward"
-          : href === getPrevLocation()?.href
-            ? "back"
-            : null;
+      const routeType = href === getNextLocation()?.href ? "forward" : href === getPrevLocation()?.href ? "back" : null;
       const scrollTop = pageContentRef.current?.scrollTop ?? 0;
       debugFrame("router.popstate", { href, routeType, scrollTop });
       if (!routeType) return;
@@ -1252,27 +1037,14 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
         if (shouldPrepareFrameTransition(href)) await startFrameTransition();
         const location = getCurrentLocation();
         setHistoryForward({ type: "popForward", location, scrollTop });
-        setLocationState({
-          location: getCurrentLocation(),
-          prevLocation: location,
-          pendingLocation: null,
-          navigationIntent: null,
-          phase: "idle",
-        });
+        settle(location);
         broadcastSyncNavigation("pop", getSyncRouteHref(getLocation(href)));
       } else {
-        // back
         const location = getCurrentLocation();
         if (shouldPrepareFrameTransition(href)) await startFrameTransition();
         await onBack.current[location.pathRoute.pageState.transition]?.();
         setHistoryBack({ type: "popBack", location, scrollTop });
-        setLocationState({
-          location: getCurrentLocation(),
-          prevLocation: getPrevLocation(),
-          pendingLocation: null,
-          navigationIntent: null,
-          phase: "idle",
-        });
+        settle(getPrevLocation());
         broadcastSyncNavigation("pop", getSyncRouteHref(getLocation(href)));
       }
     };
@@ -1364,9 +1136,7 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
     bottomUp: useBottomUpTransition,
     scaleOut: useScaleOutTransition,
   };
-  // Keyboard-driven height/padding changes animate instead of snapping. It belongs to the current page's
-  // contentStyle, so it is merged here rather than in CSR: CSR renders one container per path route and
-  // would rebuild this object for every one of them on every render.
+  // Merged here, not in CSR: CSR renders one container per path route and would rebuild it for each on every render.
   const contentResizeStyle = useMemo(() => {
     if (!shouldAnchorContentBottom || !keyboardFrame.sticky) return null;
     const duration = keyboardFrame.animationDuration ?? 420;

@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
 import { Translator } from "../client/translator";
+import { csrClientBase, fakeElement, fakeReact, hooks } from "./hookHarness.fixture";
 
 type RenderHookResult<T> = {
   get current(): T;
@@ -10,13 +11,6 @@ type Permission = "prompt" | "granted" | "denied";
 
 const originalWindow = globalThis.window;
 const originalDocument = globalThis.document;
-const effectCleanups: Array<() => void> = [];
-let hookIndex = 0;
-const hookStates: unknown[] = [];
-const hookMemoStates: Array<{ deps: unknown[]; value: unknown }> = [];
-
-const sameDeps = (a: unknown[] | undefined, b: unknown[] | undefined) =>
-  !!a && !!b && a.length === b.length && a.every((value, index) => Object.is(value, b[index]));
 
 const cameraState = {
   permissions: { camera: "prompt" as Permission, photos: "prompt" as Permission },
@@ -46,65 +40,17 @@ const assigned: string[] = [];
 const deepLinks: string[] = [];
 
 beforeAll(() => {
-  mock.module("react", () => ({
-    Fragment: ({ children }: { children: unknown }) => children,
-    useCallback: <T,>(fn: T, deps?: unknown[]) => {
-      const index = hookIndex++;
-      const memo = hookMemoStates[index];
-      if (memo && sameDeps(memo.deps, deps)) return memo.value as T;
-      hookMemoStates[index] = { deps: deps ?? [], value: fn };
-      return fn;
-    },
-    useMemo: <T,>(factory: () => T, deps?: unknown[]) => {
-      const index = hookIndex++;
-      const memo = hookMemoStates[index];
-      if (memo && sameDeps(memo.deps, deps)) return memo.value as T;
-      const value = factory();
-      hookMemoStates[index] = { deps: deps ?? [], value };
-      return value;
-    },
-    useRef: <T,>(initial: T) => {
-      const index = hookIndex++;
-      if (!hookStates[index]) hookStates[index] = { current: initial };
-      return hookStates[index] as { current: T };
-    },
-    useState: <T,>(initial: T) => {
-      const index = hookIndex++;
-      if (hookStates[index] === undefined)
-        hookStates[index] = typeof initial === "function" ? (initial as () => T)() : initial;
-      const setState = (next: T | ((prev: T) => T)) => {
-        const state = hookStates[index] as T;
-        const nextState = typeof next === "function" ? (next as (prev: T) => T)(state) : next;
-        if (typeof state === "object" && state && typeof nextState === "object" && nextState) {
-          Object.assign(state, nextState);
-        } else {
-          hookStates[index] = nextState;
-        }
-      };
-      return [hookStates[index] as T, setState] as const;
-    },
-    useEffect: (fn: () => (() => undefined) | undefined) => {
-      const cleanup = fn();
-      if (cleanup) effectCleanups.push(cleanup);
-    },
-    forwardRef: (fn: unknown) => fn,
-    lazy: (loader: unknown) => ({ loader }),
-    memo: <T,>(component: T) => component,
-    act: async (fn: () => void | Promise<void>) => await fn(),
-  }));
+  mock.module("react", () =>
+    fakeReact({
+      useEffect: (fn: () => (() => undefined) | undefined) => {
+        const cleanup = fn();
+        if (cleanup) hooks.cleanups.push(cleanup);
+      },
+      lazy: (loader: unknown) => ({ loader }),
+    }),
+  );
   mock.module("akanjs/client", () => ({
-    DEFAULT_BOTTOM_INSET: 34,
-    DEFAULT_TOP_INSET: 44,
-    csrContext: { Provider: ({ children }: { children: unknown }) => children },
-    defaultPageState: {
-      transition: "none",
-      topSafeArea: 0,
-      bottomSafeArea: 0,
-      topInset: 0,
-      bottomInset: 0,
-      gesture: true,
-      cache: false,
-    },
+    ...csrClientBase(),
     Device: {
       load: async () => ({
         lang: "en",
@@ -209,28 +155,11 @@ const installCapacitorBridge = () => {
 };
 
 const installWindow = () => {
-  const createElement = (tagName = "div") =>
-    ({
-      nodeType: 1,
-      nodeName: tagName.toUpperCase(),
-      tagName: tagName.toUpperCase(),
-      namespaceURI: "http://www.w3.org/1999/xhtml",
-      ownerDocument: null,
-      style: {},
-      childNodes: [],
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      appendChild: () => undefined,
-      removeChild: () => undefined,
-      insertBefore: () => undefined,
-      setAttribute: () => undefined,
-      removeAttribute: () => undefined,
-    }) as unknown as HTMLDivElement;
   const document = {
     nodeType: 9,
-    documentElement: createElement("html"),
+    documentElement: fakeElement("html"),
     defaultView: null,
-    createElement,
+    createElement: fakeElement,
     addEventListener: () => undefined,
     removeEventListener: () => undefined,
   } as unknown as Document;
@@ -255,14 +184,14 @@ const installWindow = () => {
 };
 
 const renderHook = <T,>(hook: () => T): RenderHookResult<T> => {
-  hookIndex = 0;
+  hooks.index = 0;
   const current = hook();
   return {
     get current() {
       return current;
     },
     unmount: () =>
-      effectCleanups.splice(0).forEach((cleanup) => {
+      hooks.cleanups.splice(0).forEach((cleanup) => {
         cleanup();
       }),
   };
@@ -291,10 +220,10 @@ afterEach(() => {
   pushState.registrationListeners = [];
   assigned.length = 0;
   deepLinks.length = 0;
-  effectCleanups.splice(0);
-  hookIndex = 0;
-  hookStates.length = 0;
-  hookMemoStates.length = 0;
+  hooks.cleanups.splice(0);
+  hooks.index = 0;
+  hooks.states.length = 0;
+  hooks.memos.length = 0;
 });
 
 describe("native hooks", () => {
@@ -304,7 +233,6 @@ describe("native hooks", () => {
     const hook = renderHook(() => useCamera());
 
     expect(await hook.current.getPhoto("prompt")).toEqual({ dataUrl: "data:image/png;base64,test" });
-    // The OS draws this sheet from strings, so a hard-coded label shipped one language to every visitor.
     expect(cameraState.promptLabels).toEqual({
       promptLabelHeader: "base.cameraPromptHeader",
       promptLabelPhoto: "base.cameraPromptPhoto",

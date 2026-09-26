@@ -16,19 +16,8 @@ interface ScreenScopeOptions {
 
 const ITEM_CAP = 100;
 
-/**
- * Announces what a component has on screen: one scope for its mounted lifetime, plus an `<id>.items` resource
- * naming what it currently renders. `Load.Units`/`Load.View` call this, so every list and detail view is visible
- * to the in-page agent with no app code. Items are capped and the cap is declared — a truncated list must never
- * read as the whole one.
- *
- * Opened under the scope it is mounted in, not at the root: a list inside an `Agent.Zone` belongs to that zone's
- * view, and a view only sees keys in its own subtree.
- *
- * Returns the scope path, which the caller puts on the container it renders as `data-agent-scope`: that attribute
- * is how `readScreen({ section })` and `highlight` resolve a path the agent read in the screen context back to the
- * element. A caller that renders no container of its own simply is not addressable that way.
- */
+/** Opens a scope under the ambient one, plus an `<id>.items` resource capped at 100 and marked `truncated` past it.
+ * Returns the path the caller sets as `data-agent-scope`, which `readScreen({ section })` and `highlight` resolve. */
 export const useScreenScope = ({ id, kind, label, items }: ScreenScopeOptions) => {
   const surface = useSurface();
   const parent = useScopePath();

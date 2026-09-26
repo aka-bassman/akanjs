@@ -6,6 +6,7 @@ import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
 import type { RootStoreCls } from "./rootStore";
 import { type StoreCls, store } from "./store";
+import { MemoryStorage } from "./store.fixture";
 import { StoreInstance } from "./storeInstance";
 import { StoreRegistry } from "./storeRegistry";
 
@@ -38,28 +39,6 @@ const setupEnv = () => {
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
   process.env.AKAN_PUBLIC_ENV = "testing";
 };
-
-class MemoryStorage implements Storage {
-  #values = new Map<string, string>();
-  get length() {
-    return this.#values.size;
-  }
-  clear() {
-    this.#values.clear();
-  }
-  getItem(key: string) {
-    return this.#values.get(key) ?? null;
-  }
-  key(index: number) {
-    return [...this.#values.keys()][index] ?? null;
-  }
-  removeItem(key: string) {
-    this.#values.delete(key);
-  }
-  setItem(key: string, value: string) {
-    this.#values.set(key, value);
-  }
-}
 
 const installBrowser = (searchParams: Record<string, string | string[]> = {}) => {
   const localStorage = new MemoryStorage();
@@ -442,7 +421,6 @@ describe("signal generated store contract", () => {
     gates[0]?.();
     await first;
 
-    // Page 2 then page 3, and page 2 answers last — the slower response must not become the visible list.
     const toPage2 = instance.do.setPageOfStoreTestItemByTitle(2);
     const toPage3 = instance.do.setPageOfStoreTestItemByTitle(3);
     gates[2]?.();
@@ -481,7 +459,6 @@ describe("signal generated store contract", () => {
     await instance.do.loadMoreOfStoreTestItemByTitle();
     expect(signal.calls.storeTestItemListByTitle).toHaveBeenLastCalledWith("Ada", 2, 2, "latest", undefined);
     expect(titles()).toEqual(["row0", "row1", "row2", "row3"]);
-    // The window did not move, which is what keeps live placement — first page only — working past the first "more".
     expect(instance.get().pageOfStoreTestItemByTitle).toBe(1);
     expect(instance.get().isCumulativeOfStoreTestItemByTitle).toBe(true);
 
@@ -489,12 +466,10 @@ describe("signal generated store contract", () => {
     expect(titles()).toEqual(["row0", "row1", "row2", "row3", "row4"]);
     expect(instance.get().hasMoreOfStoreTestItemByTitle).toBe(false);
 
-    // Nothing left to ask for, so the action is a no-op rather than a request that returns nothing.
     signal.calls.storeTestItemListByTitle.mockClear();
     await instance.do.loadMoreOfStoreTestItemByTitle();
     expect(signal.calls.storeTestItemListByTitle).not.toHaveBeenCalled();
 
-    // A refresh of an accumulated list refetches all of it, rather than collapsing it back to one window.
     await instance.do.refreshStoreTestItemByTitle({ invalidate: true });
     expect(signal.calls.storeTestItemListByTitle).toHaveBeenLastCalledWith("Ada", 0, 5, "latest", expect.any(Object));
     expect(titles()).toEqual(["row0", "row1", "row2", "row3", "row4"]);
@@ -513,7 +488,6 @@ describe("signal generated store contract", () => {
     });
 
     await expect(instance.do.setPageOfStoreTestItemByTitle(2)).rejects.toThrow("network gone");
-    // The framework toasts the error; what must not survive it is a spinner nothing will ever turn off.
     expect(instance.get().storeTestItemListLoadingByTitle).toBe(false);
   });
 
@@ -563,12 +537,10 @@ describe("signal generated store contract", () => {
       { title: "created", count: 0, tags: [] },
       { sliceName: "storeTestItemByTitle" },
     );
-    // The issuing slice is stamped too: its list took the optimistic splice, but the payload it hydrated from did not.
     staleAts().forEach((staleAt) => {
       expect(staleAt.getTime()).toBeGreaterThanOrEqual(before);
     });
 
-    // A refresh restamps initAt past staleAt, which is what Load.Units reads to stop refetching.
     await instance.do.refreshStoreTestItem({ invalidate: true });
     expect((instance.get().storeTestItemInitAt as Date).getTime()).toBeGreaterThanOrEqual(
       (instance.get().storeTestItemStaleAt as Date).getTime(),
@@ -724,7 +696,6 @@ describe("live sync store action", () => {
     expect(liveState(instance).count).toBe(1);
     expect(liveState(instance).staleAt).toBeGreaterThanOrEqual(before);
 
-    // A row the window never held changes nothing, including the count.
     await instance.do.applyLiveStoreTestItemByTitle({ op: "leave", id: "cccccccccccccccccccccccc" });
     expect(liveState(instance).count).toBe(1);
   });
@@ -758,8 +729,6 @@ describe("live sync store action", () => {
     await instance.do.loadMoreOfStoreTestItemByTitle();
     expect(liveState(instance).titles).toEqual(["row400", "row300", "row200", "row100"]);
 
-    // The bug this replaced: paging by number moved `pageOf<Model>` off 1, and placement is refused anywhere
-    // else — so one "more" used to switch live sync off for good, silently.
     await instance.do.applyLiveStoreTestItemByTitle({
       op: "enter",
       id: "cccccccccccccccccccccccc",
@@ -767,7 +736,6 @@ describe("live sync store action", () => {
     });
     expect(liveState(instance).titles).toEqual(["row400", "row300", "Cyd", "row200", "row100"]);
 
-    // Nothing falls off the end to make room: every one of those rows is on screen.
     expect(liveState(instance).count).toBe(3);
   });
 
@@ -796,7 +764,6 @@ describe("live sync store action", () => {
     await instance.do.applyLiveStoreTestItemByTitle(oldest);
     expect(liveState(instance).titles).toEqual(["row400", "row300"]);
 
-    // Once the server says it has nothing left, the slot past the tail is this list's to fill.
     await instance.do.loadMoreOfStoreTestItemByTitle();
     expect(instance.get().hasMoreOfStoreTestItemByTitle).toBe(false);
     await instance.do.applyLiveStoreTestItemByTitle(oldest);
@@ -839,11 +806,9 @@ describe("live sync store action", () => {
     );
     await instance.do.newStoreTestItem({ title: "Cyd", count: 0, tags: [] });
     await instance.do.createStoreTestItemInForm({ sliceName: "storeTestItemByTitle" });
-    // Placed by the sort rather than at the head, which is what the head insertion used to do.
     expect(liveState(instance).titles).toEqual(["Ada", "Cyd", "Ben"]);
     expect(liveState(instance).count).toBe(3);
 
-    // The server publishes this create back into the room the creator is in, so the same row arrives again.
     await instance.do.applyLiveStoreTestItemByTitle({ op: "enter", id: created, light: light(created, "Cyd", 200) });
     expect(liveState(instance).count).toBe(3);
     expect(liveState(instance).ids.filter((id) => id === created)).toHaveLength(1);
@@ -856,11 +821,9 @@ describe("live sync store action", () => {
     expect(signal.rooms[0].args).toEqual(["Ada"]);
     expect(signal.rooms[0].open).toBe(true);
 
-    // The room is what carries events into the list, so this is the wiring the browser actually exercises.
     signal.rooms[0].handleEvent({ op: "leave", id: "aaaaaaaaaaaaaaaaaaaaaaaa" });
     expect(liveState(instance).ids).toEqual(["bbbbbbbbbbbbbbbbbbbbbbbb"]);
 
-    // Same args again shares the one room rather than opening a second that double-applies every event.
     await instance.do.watchLiveStoreTestItemByTitle(["Ada"]);
     expect(signal.rooms).toHaveLength(1);
 
@@ -875,17 +838,14 @@ describe("live sync store action", () => {
 
   test("a filled pauseOn argument opens no room, and clearing it opens one", async () => {
     const { instance, signal } = await arrange();
-    // Text in the box makes the filter build a query the router cannot answer, so there is no room to open.
     await instance.do.watchLiveStoreTestItemBySearch(["Ada", "lovelace"]);
     expect(signal.rooms).toHaveLength(0);
 
     await instance.do.watchLiveStoreTestItemBySearch(["Ada", null]);
     expect(signal.rooms).toHaveLength(1);
-    // The trailing null is trimmed and re-expanded, which is what the list query sends too; the fetch handler
-    // serializes the hole to an explicit null so the room id matches the server's.
+    // Trimmed and re-expanded like the list query; the fetch handler sends the hole as null so room ids match.
     expect(signal.rooms[0].args).toEqual(["Ada", undefined]);
 
-    // And filling it again releases the room rather than leaving one open on stale arguments.
     await instance.do.watchLiveStoreTestItemBySearch(["Ada", "lovelace"]);
     expect(signal.rooms[0].open).toBe(false);
     expect(signal.rooms).toHaveLength(1);

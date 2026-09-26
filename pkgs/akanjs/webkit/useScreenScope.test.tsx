@@ -1,20 +1,8 @@
 import "../test/registerDom";
 import { describe, expect, test } from "bun:test";
-import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider, AgentScope } from "use-agentic";
+import { mount } from "../store/mount.fixture";
 import { useScreenScope } from "./useScreenScope";
-
-const mount = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
-  return () => {
-    act(() => root.unmount());
-    container.remove();
-  };
-};
 
 describe("useScreenScope", () => {
   test("opens a scope with an items resource for the mounted lifetime", () => {

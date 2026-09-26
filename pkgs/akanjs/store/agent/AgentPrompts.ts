@@ -1,11 +1,6 @@
 import type { PromptContent, PromptMessage, PromptResult } from "akanjs/signal";
 import type { ChatMessage } from "use-agentic";
 
-/**
- * The chat's slash-command parser and the bridge from prompt messages to chat turns. The app's own prompts are
- * `page().prompt()` declarations served over MCP, which a browser chat does not list; what stays here is what the
- * chat's built-in commands need.
- */
 export class AgentPrompts {
   /** `/name arg1 "an arg with spaces"` — positional because a prompt's arguments are flat strings by protocol. */
   static parseCommand(draft: string): { name: string; args: string[] } | null {
@@ -14,11 +9,6 @@ export class AgentPrompts {
     return { name: match[1], args: AgentPrompts.#args(match[2] ?? "") };
   }
 
-  /**
-   * Whitespace separates arguments, and quotes are how a sentence stays one of them — a prompt taking a single
-   * `String` is the common case, and splitting "plan the week" into three arguments fills the second parameter
-   * with the second word.
-   */
   static #args(rest: string): string[] {
     const args: string[] = [];
     for (const token of rest.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)) args.push(token[1] ?? token[2] ?? token[3]);
@@ -31,11 +21,7 @@ export class AgentPrompts {
     return result.map((message) => AgentPrompts.#messageOf(message));
   }
 
-  /**
-   * A binary block becomes an attachment. It used to become the string `[image]`, which a model reads as having
-   * been shown a picture — so a prompt built with `Msg.imageOf` produced confident answers about bytes that never
-   * left the server. The other block types are text already and stay text.
-   */
+  // A binary block becomes an attachment: an `[image]` placeholder reads to a model as a picture it was shown.
   static #messageOf(message: PromptMessage): ChatMessage {
     const { role, content } = message;
     if (content.type !== "image" && content.type !== "audio") return { role, text: AgentPrompts.textOf(content) };

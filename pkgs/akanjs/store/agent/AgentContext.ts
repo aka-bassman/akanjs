@@ -2,15 +2,9 @@ import type { ContextBlock, SurfaceView } from "use-agentic";
 import type { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
 import type { AgentBridge } from "./AgentBridge";
-import { ensureStoreSurface } from "./storeSurface";
+import { ensureStoreSurface } from "./StoreSurfaceSource";
 
-/**
- * The akan default context for a turn: where the user is (route), what is on screen (scopes and their curated
- * resources), and which store keys the mounted components are reading (live keys). Live entries carry names and
- * small primitives only — anything bigger is one `readState` call away, masked — so the block cannot bloat with
- * what happens to be in the store. Base-store plumbing is kept off the surface by `st.use.x({ agent: false })`
- * at each call site, and the route block carries the three of them that matter.
- */
+/** A turn's default context: route, on-screen scopes, and live keys (small primitives inline, the rest by name). */
 export class AgentContext {
   static of(): AgentContext {
     return new AgentContext(StoreRegistry.instance, ensureStoreSurface().bridge);
@@ -55,7 +49,6 @@ export class AgentContext {
     };
   }
 
-  /** Primitives ride inline; anything bigger stays a name the agent pulls with `readState`. */
   static #inlineValue(value: unknown): unknown {
     if (value === null) return null;
     switch (typeof value) {

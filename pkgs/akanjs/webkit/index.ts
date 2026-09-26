@@ -1,7 +1,6 @@
 export { bootCsr } from "./bootCsr";
-export { createRobotPage } from "./createRobotPage";
-export { createSitemapPage } from "./createSitemapPage";
 export { lazy } from "./lazy";
+export { createRobotPage, createSitemapPage } from "./seoPages";
 export type * from "./types";
 export { useBodyScrollLock } from "./useBodyScrollLock";
 export { useCamera } from "./useCamera";

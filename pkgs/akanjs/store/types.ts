@@ -22,7 +22,7 @@ type PickFunc<
   F extends keyof State = IsAny<State> extends true ? any : keyof State extends never ? any : keyof State,
 > = (...fields: F[]) => {
   [K in (typeof fields)[number]]: Exclude<State[K], null | undefined | "loading">;
-}; // & { [K in keyof T as T[K] extends (...args: any) => any ? K : never]: T[K] };
+};
 export interface SetGet<State = any> {
   set: (setState: Partial<State> | ((state: State) => void)) => void;
   get: () => State;

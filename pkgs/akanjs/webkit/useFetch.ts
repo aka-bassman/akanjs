@@ -2,7 +2,6 @@
 import { isThenable } from "akanjs/common";
 import { useEffect, useMemo, useState } from "react";
 
-/** Tracks fulfillment state for a promise or immediate value inside a client component. */
 export const useFetch = <Return>(
   fnOrPromise: Promise<Return> | Return,
   { onError }: { onError?: (err: string) => void } = {},
@@ -33,11 +32,7 @@ export const useFetch = <Return>(
     : { fulfilled: false, value: null };
 };
 
-/**
- * Like `useFetch`, but takes a factory function that is only called once
- * (or when `deps` change). Prevents duplicate network requests caused by
- * React re-renders.
- */
+/** Calls `factory` once per `deps` change, so a re-render does not start another request. */
 export const useFetchFn = <Return>(
   factory: () => Promise<Return> | Return,
   deps: unknown[] = [],

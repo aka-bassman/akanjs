@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { csrClientBase } from "./hookHarness.fixture";
 
 const originalWindow = globalThis.window;
 const originalDocument = globalThis.document;
@@ -22,18 +23,7 @@ const setRequiredEnv = () => {
 beforeAll(() => {
   setRequiredEnv();
   mock.module("akanjs/client", () => ({
-    DEFAULT_BOTTOM_INSET: 34,
-    DEFAULT_TOP_INSET: 44,
-    csrContext: { Provider: ({ children }: { children: unknown }) => children },
-    defaultPageState: {
-      transition: "none",
-      topSafeArea: 0,
-      bottomSafeArea: 0,
-      topInset: 0,
-      bottomInset: 0,
-      gesture: true,
-      cache: false,
-    },
+    ...csrClientBase(),
     router: {
       state: {},
       set: () => undefined,

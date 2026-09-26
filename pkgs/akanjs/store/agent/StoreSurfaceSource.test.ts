@@ -1,11 +1,11 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { Int, SLICE_META } from "akanjs/base";
+import { Int } from "akanjs/base";
 import { Translator } from "akanjs/client/translator";
 import { ConstantRegistry, via } from "akanjs/constant";
-import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
 import { AgenticSurface } from "use-agentic";
 import { store } from "../store";
+import { stubSignal } from "../store.fixture";
 import { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
 import { AgentBridge } from "./AgentBridge";
@@ -40,19 +40,6 @@ const serializedSignal: SerializedSignal = {
   slice: { "": { args: [] } },
 };
 
-const makeSignal = () => {
-  const handlers: Record<string, unknown> = {};
-  const fetch = new Proxy(handlers, { get: (target, key: string) => (target[key] ??= async () => null) });
-  return {
-    refName: "surfaceNote",
-    _slice: { [SLICE_META]: {} },
-    cnst: noteConstant,
-    fetch,
-    serializedSignal,
-    slices: [],
-  } as unknown as ClientSignal<"surfaceNote">;
-};
-
 let source: StoreSurfaceSource;
 let instance: StoreInstance;
 const entryOf = (name: string) => source.tools().find((tool) => tool.name === name);
@@ -63,7 +50,7 @@ beforeAll(() => {
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
   process.env.AKAN_PUBLIC_ENV = "testing";
   Translator.setActiveLocale("en");
-  class SurfaceNoteStore extends store(makeSignal(), () => ({})) {
+  class SurfaceNoteStore extends store(stubSignal("surfaceNote", noteConstant, serializedSignal), () => ({})) {
     async publishNote() {
       await Promise.resolve();
     }
@@ -76,7 +63,6 @@ beforeAll(() => {
 
 describe("StoreSurfaceSource", () => {
   test("contributes the built-ins and nothing the store declared", () => {
-    // The store's own methods and generated setters are not tools: an agent gets what a component declared.
     expect(
       source
         .tools()
@@ -113,7 +99,6 @@ describe("StoreSurfaceSource", () => {
     expect(navigate?.guard?.({ path: "//evil.example" })).toContain("internal path");
     expect(navigate?.guard?.({ path: "/docs/intro" })).toBe(true);
     await expect(surface.call("navigate", { path: "https://evil.example" })).rejects.toThrow("internal path");
-    // Waiting for the screen to settle has nothing to wait for with no document, so the call still answers.
     expect(await surface.call("navigate", { path: "/docs/intro" })).toContain("Now on /docs/intro.");
   });
 
@@ -152,7 +137,6 @@ describe("StoreSurfaceSource", () => {
     surface.addSource(source);
     const goBack = entryOf("goBack");
     expect(goBack?.parameters).toEqual({ type: "object", properties: {}, additionalProperties: false });
-    // History is the browser's, not a control the page draws — but an entry page has nothing behind it.
     await expect(surface.call("goBack", {})).rejects.toThrow("no previous page");
   });
 
@@ -171,8 +155,6 @@ describe("StoreSurfaceSource", () => {
   });
 
   test("the built-ins that change nothing a resource holds do not wait for the screen", () => {
-    // Every settle is 120ms of quiet at the very least, and a turn that reads ten keys pays it ten times for a
-    // report that is empty by construction.
     for (const name of ["readScreen", "readState", "highlight"]) expect(entryOf(name)?.settle).toBe(false);
     for (const name of ["navigate", "goBack"]) expect(entryOf(name)?.settle).toBeUndefined();
   });
@@ -193,7 +175,6 @@ describe("StoreSurfaceSource", () => {
     await expect(surface.call("readScreen", { section: "taskList" })).rejects.toThrow(
       "No section named taskList is on screen",
     );
-    // With no document there is nothing to offer, but the refusal still says how to read the screen at all.
     await expect(surface.call("readScreen", { section: "taskList" })).rejects.toThrow("This screen names no sections");
   });
 

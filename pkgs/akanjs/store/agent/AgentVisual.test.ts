@@ -5,8 +5,7 @@ import { AgentCursor } from "./AgentCursor";
 import { AgentVisual } from "./AgentVisual";
 import { ScreenFlash } from "./ScreenFlash";
 
-// Every `router.*` access resolves through a Proxy whose getter calls `getEnv()`, and that refuses to answer
-// without the three public names a build injects. Matching a link's address to a navigate argument needs it.
+// `router.*` reads `getEnv()`, which refuses to answer without the three public names a build injects.
 process.env.AKAN_PUBLIC_APP_NAME ??= "visualtest";
 process.env.AKAN_PUBLIC_REPO_NAME ??= "visualtest";
 process.env.AKAN_PUBLIC_SERVE_DOMAIN ??= "visualtest.local";
@@ -15,8 +14,7 @@ process.env.AKAN_PUBLIC_SERVE_DOMAIN ??= "visualtest.local";
   "http://localhost:8282/en/docs/arch/agentic",
 );
 
-// happy-dom lays nothing out, so `elementFromPoint` cannot answer what is painted where. Hit-test against the
-// boxes each test stubs instead — an element with no box is not on screen, which is what the real check says too.
+// happy-dom lays nothing out, so hit-test the boxes each test stubs; an element with no box is off screen.
 document.elementFromPoint = ((x: number, y: number) =>
   // Reversed, because the real one answers with what is painted on top and later siblings paint over earlier ones.
   [...document.body.querySelectorAll<HTMLElement>("*")].reverse().find((el) => {
@@ -24,7 +22,6 @@ document.elementFromPoint = ((x: number, y: number) =>
     return right - left > 0 && bottom - top > 0 && x >= left && x <= right && y >= top && y <= bottom;
   }) ?? null) as typeof document.elementFromPoint;
 
-/** Puts a fixture somewhere the user can see, which nothing in a headless DOM does on its own. */
 const boxed = (el: Element | null, top = 100, left = 40, width = 120, height = 24) => {
   (el as HTMLElement).getBoundingClientRect = () =>
     ({ top, left, width, height, bottom: top + height, right: left + width }) as DOMRect;
@@ -67,15 +64,12 @@ describe("AgentVisual", () => {
     expect(target.classList.contains(ScreenFlash.ringClass)).toBe(false);
   });
 
-  // A form control publishes its setter and is annotated with the same name, so a field the agent filled rings
-  // without the app writing anything — the whole point of passing the setter by reference.
   test("a field the agent filled rings, found by the setter's own name", async () => {
     AgentVisual.on(start("setTitleOnTask", { value: "Ship it" }));
     await settled();
     expect(document.querySelector('[data-akan-state="taskForm.title"]')?.className).toContain(ScreenFlash.actingClass);
   });
 
-  // `fillTaskForm` writes several fields and is published by the form rather than by any one control.
   test("a tool no single control carries draws nothing until it names its fields", async () => {
     AgentVisual.on(start("fillTaskForm", { patch: { title: "Ship it" } }));
     await settled();
@@ -88,7 +82,6 @@ describe("AgentVisual", () => {
     expect(document.querySelectorAll(`.${ScreenFlash.actingClass}`)).toHaveLength(0);
   });
 
-  // A tab registers one tool for the whole strip, so its menus are told apart by the key each one carries.
   test("namesakes are told apart by the key the call named", async () => {
     document.body.innerHTML = `
       <button data-akan-action="switchTabInDocs" data-akan-key="overview">Overview</button>
@@ -118,8 +111,6 @@ describe("AgentVisual", () => {
     expect(document.querySelectorAll(`.${ScreenFlash.actingClass}`)).toHaveLength(0);
   });
 
-  // `navigate` drives the router, which is not an element — so it falls through and draws nothing, by the same
-  // rule as any other call that lands on no control.
   test("a call that lands on no control draws nothing, navigate included", async () => {
     AgentVisual.on(start("navigate", { path: "/docs/intro" }));
     await settled();
@@ -158,7 +149,6 @@ describe("AgentVisual form patches", () => {
     `;
   });
 
-  // The form publishes one tool for every field, so ringing the form would say nothing about what changed.
   test("a patch rings one control per field it named, and nothing for a field it did not", async () => {
     AgentVisual.on(start("fillTaskForm", { title: "Ship it", status: "done" }));
     await settled();
@@ -184,7 +174,6 @@ describe("AgentVisual form patches", () => {
     );
   });
 
-  // `fillTask` is a tool an app wrote; only the generated `fill<Model>Form` fans out over state annotations.
   test("a hand-written tool whose name merely starts with fill is not a form patch", async () => {
     AgentVisual.on(start("fillTask", { title: "Ship it" }));
     await settled();
@@ -206,7 +195,6 @@ describe("AgentVisual navigation", () => {
     seen(document.querySelector('a[href="/en/docs/other"]'), { top: 200, left: 40 });
   });
 
-  // The locale segment is on the href and never on the tool argument, so the two are compared as routes.
   test("navigate presses the link on screen that goes where it is going", async () => {
     await AgentVisual.on(start("navigate", { path: "/docs/intro/quickstart" }));
     await settled();
@@ -233,7 +221,6 @@ describe("AgentVisual navigation", () => {
     expect(document.querySelectorAll(`.${ScreenFlash.actingClass}`)).toHaveLength(0);
   });
 
-  // Scrolling to a link and then leaving the page it is on is two motions for one act.
   test("a link the user cannot see yet is left alone", async () => {
     const link = document.querySelector('a[href="/en/docs/intro/quickstart"]');
     (link as HTMLElement).getBoundingClientRect = () => ({ top: 0, left: 0, width: 0, height: 0 }) as DOMRect;
@@ -269,7 +256,6 @@ describe("AgentCursor", () => {
     expect(document.querySelector(`.${AgentCursor.className}`)).not.toBeNull();
   });
 
-  // The gap between two calls of one turn is a model turn long, and the pointer used to expire inside it.
   test("the pointer waits out the gap between two calls of one turn, and goes when the turn does", async () => {
     AgentVisual.turn(true);
     AgentVisual.on(start("submitTask"));
@@ -330,8 +316,6 @@ describe("AgentCursor out of sight", () => {
     AgentCursor.hide();
   });
 
-  // `checkVisibility` answers about the element alone, so a control under a backdrop passes it while being
-  // invisible — and a pointer sent there lands on a blank patch of overlay.
   test("a control under something else is not pointed at", async () => {
     boxed(document.querySelector("[data-cover]"), 0, 0, 800, 600);
     AgentVisual.on(start("submitTask"));
@@ -369,7 +353,6 @@ describe("AgentCursor waiting", () => {
     AgentCursor.hide();
   });
 
-  // A person clicks and takes the hand away; a spinner left on the button covers the change it just caused.
   test("the pointer drifts clear of what it pressed before it starts waiting", async () => {
     AgentVisual.turn(true);
     AgentVisual.on(start("submitTask"));
@@ -405,8 +388,6 @@ describe("AgentCursor scrolling", () => {
     if (!el.classList.contains(AgentCursor.scrollingClass)) return "still";
     return el.classList.contains(`${AgentCursor.scrollingClass}-up`) ? "up" : "down";
   };
-  // The pointer has to already be somewhere for the scroll to be attributed to it, which is the case that
-  // motivated this: a pointer left over from the previous call, holding still while the page slides under it.
   const afterFirstCall = async () => {
     box("here", 100);
     AgentVisual.on(start("here"));
@@ -448,7 +429,6 @@ describe("AgentCursor scrolling", () => {
     expect(scrolling()).toBe("still");
   });
 
-  // Nothing to attribute the scroll to yet, so nothing claims it.
   test("the first call of all scrolls with no pointer to say so", async () => {
     box("below", 2000);
     AgentVisual.on(start("below"));
@@ -457,7 +437,6 @@ describe("AgentCursor scrolling", () => {
 });
 
 describe("AgentCursor travel", () => {
-  // Centred on the given point, and inside the viewport: a control the user cannot see is one the pointer skips.
   const at = (el: HTMLElement, box: { top: number; left: number }) => boxed(el, box.top - 10, box.left - 10, 20, 20);
   const hop = async (from: { top: number; left: number }, to: { top: number; left: number }) => {
     const near = document.querySelector('[data-akan-action="near"]') as HTMLElement;
@@ -484,8 +463,7 @@ describe("AgentCursor travel", () => {
     AgentCursor.hide();
   });
 
-  // The press is what has to wait for the arrival, so whether it waited is how a test sees the glide at all —
-  // the class that disables the transition is committed and dropped inside one frame, by design.
+  // The no-transition class lives for one frame, so whether the press waited is the only sign of the glide.
   test("a hop shorter than a glide is worth presses at once", async () => {
     const cursor = await hop({ top: 100, left: 100 }, { top: 100, left: 140 });
     expect(cursor.style.transform).toBe("translate3d(140px, 100px, 0)");

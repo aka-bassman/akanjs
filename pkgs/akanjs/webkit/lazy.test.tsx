@@ -5,7 +5,6 @@ import { lazy } from "./lazy";
 
 const renderToText = async (node: ReactNode) => new Response(await renderToReadableStream(node)).text();
 
-/** A loader that only settles once the caller says so, standing in for a chunk still in flight. */
 const deferredLoader = () => {
   let resolve!: () => void;
   const gate = new Promise<void>((r) => {
@@ -32,8 +31,6 @@ describe("lazy", () => {
     );
     release();
 
-    // No boundary of its own, so `loading` never renders: the suspension is someone else's to catch —
-    // in an app that someone is the route, which is the whole bug this flag exists for.
     expect(await html).not.toContain("placeholder");
     expect(await html).toContain("loaded");
   });

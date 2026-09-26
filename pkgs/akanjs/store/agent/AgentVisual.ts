@@ -11,39 +11,13 @@ export interface AgentVisualOption {
   cursor?: boolean;
 }
 
-/**
- * What the page shows while the agent is driving it.
- *
- * The transcript already says what the agent did, and it is the wrong place to say it: the chat panel is closed
- * as often as it is open, and a form that fills itself or a tab that switches on its own is a change the user
- * watches happen with nothing anywhere attributing it. So this draws at the place the change landed, from the one
- * signal that knows a call is running — never from a store action, which cannot tell the agent's write from the
- * user's.
- *
- * Nothing here is ever waited on. A call starts the moment the event is handed over; the ring catching up a frame
- * later costs the turn nothing, and an animation that held a call would make the agent slower for a decoration.
- *
- * A call that lands on no control draws nothing. That still covers most of `navigate` — the router is not an
- * element, and the top-of-page bar tried for it read as chrome the page had grown rather than as the agent doing
- * something — but a destination the screen already offers as a link is an element, and that one is pressed.
- *
- * The pointer's unit is the **turn**, not the call. A model's calls arrive with its own writing between them, so
- * a pointer that lived for a call's length spent every turn disappearing and coming back; between calls it waits
- * where it last acted, as a spinner, and goes when the turn does.
- */
+/** Draws where an agent call lands, from tool activity: a store action cannot tell agent writes from the user's. */
 export class AgentVisual {
-  /**
-   * Past this many calls in one turn, the reveal stops scrolling and only rings. A model that batches eight
-   * writes is one screen-worth of work, and eight scrolls across the page for it is motion sickness rather than
-   * attribution — the rings still say where each one landed.
-   */
+  /** Past this many calls in one turn the reveal only rings, without scrolling. */
   static readonly revealCap = 4;
-  /** How many of a form patch's fields are drawn. A patch of twenty is a form being filled, not twenty events. */
+  /** How many of a form patch's fields are drawn. */
   static readonly fieldCap = 5;
-  /**
-   * The longest a call is held for the drawing that has to precede it. Every millisecond here is one the agent
-   * spends on a decoration, so the press is given time to land and the call goes either way.
-   */
+  /** The longest a navigate call waits for its press to land. */
   static readonly leadMs = 600;
 
   static #revealed = 0;
@@ -61,10 +35,7 @@ export class AgentVisual {
     };
   }
 
-  /**
-   * The boundary the pointer lives between, and the one the scroll budget is spent in. Raising a pointer here
-   * would be a pointer with nowhere to point yet, so the turn's start only resets what the last turn used.
-   */
+  /** Resets the per-turn scroll budget; the pointer is held until the turn ends. */
   static turn(running: boolean, { cursor = true }: AgentVisualOption = {}) {
     if (typeof document === "undefined") return;
     AgentVisual.#turning = running;
@@ -87,14 +58,11 @@ export class AgentVisual {
     }
     AgentVisual.#acting += 1;
     const pressed = AgentVisual.#targetsOf(event).map((target) => AgentVisual.#act(target, { reveal, cursor }));
-    // The one call that is waited on. A navigation replaces the tree the link is in, so a press that has not
-    // landed by the time the router runs is a press on an element that is already gone — and a click the user
-    // never sees is the same as no click at all. Everything else draws while the call is already running.
+    // Only a navigate waits: the route change removes the link before an unlanded press could show.
     if (!cursor || !pressed.length || !AgentVisual.#navigating(event.name)) return;
     return AgentVisual.#capped(Promise.all(pressed));
   }
 
-  /** Resolves when the drawing has landed or when its budget runs out, whichever comes first. */
   static #capped(drawing: Promise<unknown>): Promise<void> {
     return new Promise((resolve) => {
       const done = () => resolve();
@@ -103,11 +71,6 @@ export class AgentVisual {
     });
   }
 
-  /**
-   * The elements one call landed on. Normally the single control that published the tool; for the form patch it
-   * is one control per field named in the arguments, since `fill<Model>Form` is published by the form rather than
-   * by any one of them and ringing the form as a whole would say nothing about what changed.
-   */
   static #targetsOf(event: ToolActivity): HTMLElement[] {
     if (AgentVisual.#navigating(event.name)) return AgentVisual.#linkTo(event.args.path);
     const form = AgentVisual.#formOf(event.name);
@@ -117,12 +80,7 @@ export class AgentVisual {
       .flatMap((key) => AgentVisual.#only(ScreenTarget.controls(`${form}.${key}`)));
   }
 
-  /**
-   * One verb is registered once per row and every registration carries the same name, so several matches means the
-   * agent acted somewhere the name alone cannot place. The call's own arguments break the tie when a control says
-   * which one it is (`data-akan-key`, from `agentAttrs(handler, key)`) — that is how a tab's menus are told apart.
-   * Short of exactly one answer nothing is drawn: ringing a guessed control is worse than ringing none.
-   */
+  // Several matches are narrowed by `data-akan-key` against the args; short of exactly one, nothing is drawn.
   static #only(targets: HTMLElement[], args?: Record<string, unknown>): HTMLElement[] {
     if (targets.length === 1) return targets;
     if (!targets.length || !args) return [];
@@ -150,14 +108,7 @@ export class AgentVisual {
     return pressed;
   }
 
-  /**
-   * The link on screen that goes where a `navigate` call is going, when exactly one does and the user can already
-   * see it. Off-screen links are left alone deliberately: scrolling to a link and then leaving the page it is on
-   * is two motions for one act, and the destination is where the attention belongs by then.
-   *
-   * Addresses are compared through `router.routeOf`, which strips the locale and base-path segments an `<a>`
-   * carries and a tool argument does not — `/en/docs/intro` and `/docs/intro` are the same route.
-   */
+  // Compared through `router.routeOf`: an href carries locale and base-path segments a tool argument lacks.
   static #linkTo(path: unknown): HTMLElement[] {
     const wanted = AgentVisual.#routeOf(typeof path === "string" ? path : "");
     if (!wanted || !document.body) return [];
@@ -185,7 +136,6 @@ export class AgentVisual {
     return name.slice(name.lastIndexOf(".") + 1) === "navigate";
   }
 
-  /** `fillTaskForm` → `taskForm`, which is what the fields of that form carry in `data-akan-state`. */
   static #formOf(name: string) {
     const bare = name.slice(name.lastIndexOf(".") + 1);
     const match = /^fill([A-Z]\w*)Form$/.exec(bare);
@@ -193,11 +143,7 @@ export class AgentVisual {
     return `${match[1][0].toLowerCase()}${match[1].slice(1)}Form`;
   }
 
-  /**
-   * The turn is the batch, and `turn` resets this. The quiet-second timer stays as the fallback for a host that
-   * reports no turn at all — a model's calls arrive back to back through one serialized queue, so a second of
-   * quiet is the end of a batch even when nothing said so.
-   */
+  // The quiet-second timer ends a batch for a host that reports no turns.
   static #count() {
     AgentVisual.#revealed += 1;
     if (AgentVisual.#idle) clearTimeout(AgentVisual.#idle);

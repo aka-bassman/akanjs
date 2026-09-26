@@ -5,6 +5,7 @@ import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
 import { DraftStore } from "./draftStore";
 import { store } from "./store";
+import { MemoryStorage } from "./store.fixture";
 import { StoreInstance } from "./storeInstance";
 import { StoreRegistry } from "./storeRegistry";
 
@@ -24,28 +25,6 @@ const noteConstant = ConstantRegistry.buildModel("draftNote", NoteInput, NoteObj
   NoteLight,
   NoteInsight,
 });
-
-class MemoryStorage implements Storage {
-  #values = new Map<string, string>();
-  get length() {
-    return this.#values.size;
-  }
-  clear() {
-    this.#values.clear();
-  }
-  getItem(key: string) {
-    return this.#values.get(key) ?? null;
-  }
-  key(index: number) {
-    return [...this.#values.keys()][index] ?? null;
-  }
-  removeItem(key: string) {
-    this.#values.delete(key);
-  }
-  setItem(key: string, value: string) {
-    this.#values.set(key, value);
-  }
-}
 
 const NOTE_ID = "aaaaaaaaaaaaaaaaaaaaaaaa";
 let serverUpdatedAt = new Date("2026-01-01T00:00:00.000Z");
@@ -247,7 +226,6 @@ describe("form draft lifecycle", () => {
     await settle();
     expect(draftCount()).toBe(1);
 
-    // What an autosaving form leaves behind: the record now holds the draft's values, under a newer `updatedAt`.
     serverTitle = "autosaved";
     serverUpdatedAt = new Date("2026-02-02T00:00:00.000Z");
     const second = makeInstance();
@@ -327,11 +305,7 @@ describe("form draft write scheduling", () => {
   });
 });
 
-/**
- * An app store that extends a lib store for the same model is registered alongside it, so every entry the lib
- * declared reaches `StoreRegistry.merge` twice. Drafts made that unconditional — one is generated per model — but
- * a lib store's own `persist` or `computed` key had the same collision before them.
- */
+// An app store extending a lib store for the same model sends every lib entry through `StoreRegistry.merge` twice.
 describe("a lib store extended by an app store", () => {
   test("merges when both are registered, and the model keeps one draft entry", () => {
     class LibExtStore extends store(makeSignal(), () => ({})) {}

@@ -41,12 +41,10 @@ describe("ScreenTarget", () => {
   test("a zone root scopes the search to its own subtree, itself included", () => {
     const zone = ScreenTarget.container("comments");
     expect(ScreenTarget.find("approveComment", zone)?.textContent).toBe("Approve");
-    // Straying outside the zone is what a zone view exists to prevent.
     expect(ScreenTarget.find("submitTask", zone)).toBeNull();
     expect(ScreenTarget.container("comments", zone)).toBe(zone);
   });
 
-  // What `readScreen({ section })` is: the resolver above, then the same reader over that element only.
   test("a resolved section reads as that part of the screen and nothing else", () => {
     const text = ScreenReader.read(ScreenTarget.container("taskInOrg"));
     expect(text).toContain("## Tasks");
@@ -60,8 +58,6 @@ describe("ScreenTarget", () => {
       <div id="images-env"><h2>Images And Public Env</h2><p>public env body</p></div>
       <div id="secret-files"><h2>Secret Files</h2><p>secret body</p></div>
     `);
-    // The failure this fixes: the agent read the heading, guessed the slug, and was told nothing was named.
-    // It resolves to the heading itself — the precise thing to flash — while a section read walks out to its body.
     expect(ScreenTarget.find("images-and-public-env")?.tagName).toBe("H2");
     expect(ScreenReader.readFrom(ScreenTarget.find("images-and-public-env") as HTMLElement)).toContain(
       "public env body",
@@ -70,13 +66,11 @@ describe("ScreenTarget", () => {
     expect(ScreenTarget.heading("images and public env")?.textContent).toBe("Images And Public Env");
     expect(ScreenTarget.heading("secret")?.textContent).toBe("Secret Files");
     expect(ScreenTarget.heading("pricing")).toBeNull();
-    // A heading's anchor is a section name a refusal can offer, deduped against the scope paths.
     expect(ScreenTarget.containerNames()).toEqual(["images-env", "secret-files"]);
   });
 
   test("a control never resolves by its visible label, and the names on offer are the ones rendered", () => {
     expect(ScreenTarget.control("Save")).toBeNull();
-    // Document order per attribute, so a refusal reads the same way twice.
     expect(ScreenTarget.containerNames()).toEqual(["comments", "taskInOrg"]);
     expect(ScreenTarget.anchorNames()).toEqual(["comments", "taskInOrg"]);
     expect(ScreenTarget.targetNames()).toEqual([

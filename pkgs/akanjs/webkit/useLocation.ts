@@ -7,14 +7,11 @@ interface UseLocationOptions {
 }
 export const useLocation = ({ rootRouteGuide }: UseLocationOptions) => {
   const getLocation = useCallback((href: string): Location => {
-    const getPathSegments = (pathname: string) => {
-      return [
-        ...pathname
-          .split("/")
-          .filter((pathSegment) => !!pathSegment)
-          .map((pathSegment) => `/${pathSegment}`),
-      ];
-    };
+    const getPathSegments = (pathname: string) =>
+      pathname
+        .split("/")
+        .filter((pathSegment) => !!pathSegment)
+        .map((pathSegment) => `/${pathSegment}`);
     const getPathRoute = (pathname: string): PathRoute => {
       const pathSegments = getPathSegments(pathname);
       const getTargetRouteGuide = (pathSegments: string[], routeGuide: RouteGuide): RouteGuide => {

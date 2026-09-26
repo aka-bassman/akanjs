@@ -26,8 +26,7 @@ const makeJwt = (payload: Record<string, unknown>) => {
   return `header.${encoded}.signature`;
 };
 
-// The auth-token helpers are re-implemented here rather than imported: the real ones read `getEnv()`, which
-// this file mocks, and a static import would have bound the real one before `beforeAll` installs the mock.
+// Re-implemented, not imported: the real helpers read `getEnv()`, and a static import binds it before the mock.
 const legacyAuthTokenKey = "jwt";
 const authTokenKey = () => `${legacyAuthTokenKey}:${envState.appName}`;
 const isOwnAuthToken = (jwt: string) => {
@@ -42,8 +41,7 @@ const isOwnAuthToken = (jwt: string) => {
   }
 };
 
-// The real parser, not a copy of it: `client/cookie.ts` reads through this one on both sides, so a mock that
-// reimplemented it could pass while the two disagreed — which is the bug this indirection removed.
+// The real parser: `client/cookie.ts` reads through it on both sides, so a copy could pass while the two disagree.
 const requestCookies = () => parseCookieHeader(requestState.request?.headers.get("cookie") ?? "");
 
 const requestHeaders = () => {
@@ -153,8 +151,7 @@ const installBrowserGlobals = (cookie = "") => {
     },
     configurable: true,
   });
-  // A real jar merges each write by name and drops an expired one. A plain `{ cookie }` field would have
-  // let the last write win outright, hiding the migration's "write the scoped key, delete the legacy one".
+  // A real jar merges writes by name and drops expired ones; a plain field would hide the legacy-key delete.
   Object.defineProperty(globalThis, "document", {
     value: {
       get cookie() {
@@ -244,8 +241,6 @@ describe("cookies, headers, and auth", () => {
     expect(getCookie("jwt")).toBe("abc");
     expect(headers().get("x-locale")).toBe("ko");
     expect(getHeader("x-locale")).toBe("ko");
-    // Nothing, and says so: the response carries a Set-Cookie and this helper has no hold on it. It used to
-    // return the `true` of deleting from a Map built one line earlier and discarded, which read as a removal.
     expect(removeCookie("jwt")).toBeUndefined();
     expect(cookies().get("jwt")).toEqual({ name: "jwt", value: "abc" });
   });
@@ -334,8 +329,7 @@ describe("cookies, headers, and auth", () => {
     const { getAccount } = await import("./cookie");
     expect(getAccount()).toMatchObject({ userId: "u9" });
 
-    // Nothing sends this and no guard accepts it, so reading it made the client claim a session the endpoint
-    // would have treated as anonymous.
+    // No guard accepts a bare `jwt` header, so honouring it would claim a session the endpoint treats as anonymous.
     requestState.request = new Request("https://example.test", { headers: { jwt } });
     expect(getAccount() as unknown).toEqual({ appName: "test-app", environment: "debug" });
   });

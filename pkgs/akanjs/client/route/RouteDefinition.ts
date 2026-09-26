@@ -31,10 +31,7 @@ export interface RouteArgResolveOption {
   strict?: boolean;
 }
 
-/**
- * What a route file declares in place of named exports. The chain is the only surface — the module exports the
- * finished definition and the loader turns it back into the module shape every renderer already reads.
- */
+/** What a route file declares in place of named exports; the loader turns it back into the module shape. */
 export abstract class RouteDefinition<
   Args extends RouteArgsShape = Record<never, never>,
   Extra extends object = Record<never, never>,
@@ -78,11 +75,7 @@ export abstract class RouteDefinition<
     this.args.push(arg);
   }
 
-  /**
-   * Typed values out of the URL halves the router matched. A path value the declared type refuses is a URL that
-   * matched the pattern and nothing under it, so a page answers not-found; a search value that fails is dropped
-   * the way an absent one is. Under `strict` both are refused by name, which is what a prompt caller can act on.
-   */
+  /** A path value the type refuses answers not-found; a failing search value is dropped. `strict` refuses both by name. */
   resolveArgs(input: RouteArgInput, { strict = false }: RouteArgResolveOption = {}): Record<string, unknown> {
     const resolved: Record<string, unknown> = {};
     for (const arg of this.args) {
@@ -102,10 +95,7 @@ export abstract class RouteDefinition<
     return resolved;
   }
 
-  /**
-   * The `[x]` segments of the file's path against the `.param()` stages. A page must name every segment it sits
-   * under, so nothing reaches its body undeclared; a layout may name a subset, since most read none of them.
-   */
+  /** A page must declare every `[x]` segment it sits under with `.param()`; a layout may declare a subset. */
   assertPattern(pattern: string, key: string) {
     const inPath = pattern
       .split("/")
@@ -161,10 +151,7 @@ export abstract class RouteDefinition<
     return (this.kind === "page" ? args : { ...args, children: props.children }) as RouteBaseArgs & Args & Extra;
   }
 
-  /**
-   * A single value where a list was declared is a one-item list: the URL spells `?tags=a` for one tag. A prompt
-   * argument is one string whatever it holds, so under `strict` a list is read comma-separated.
-   */
+  /** One value where a list was declared is a one-item list (`?tags=a`); under `strict` a list is comma-separated. */
   static #lift(arg: RouteArgInfo, raw: string | string[], strict: boolean): unknown {
     if (!arg.list) return Array.isArray(raw) ? raw[0] : raw;
     if (Array.isArray(raw)) return raw;

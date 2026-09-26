@@ -44,30 +44,7 @@ export const clonePageState = (pageState: PageState): PageState => ({ ...pageSta
 
 const resolveFrameSlotHeight = (slot: FrameSlotRegistration) => slot.height ?? slot.estimatedHeight ?? 0;
 
-const isInsetLockedByConfig = (_pathRoute: PathRoute, _key: "topInset" | "bottomInset") => {
-  // Inset reservation is an explicit route-level contract. Frame slots still
-  // carry measured runtime details (notably keyboard accessory height), but
-  // they no longer infer page chrome size when pageConfig omits the inset.
-  return true;
-};
-
 const getLeafLayout = (pathRoute: PathRoute) => pathRoute.renderLayouts.at(-1);
-
-function isSlotEligibleForTarget({
-  sourcePath,
-  targetPath,
-  slot,
-  visiblePaths,
-}: {
-  sourcePath: string;
-  targetPath: string;
-  slot: FrameSlotRegistration;
-  visiblePaths: Set<string>;
-}) {
-  if (visiblePaths.has(sourcePath)) return true;
-  if (sourcePath === targetPath && slot.scope === "layout" && slot.cache) return true;
-  return slot.scope === "layout" && Boolean(slot.cache);
-}
 
 export function getFrameSlotsForPath(
   pathRoute: PathRoute,
@@ -79,8 +56,8 @@ export function getFrameSlotsForPath(
   const targetLeafLayout = getLeafLayout(pathRoute);
   return Object.entries(frameSlots).flatMap(([sourcePath, slotsById]) => {
     const sourceRoute = routeByPath.get(sourcePath);
-    const slots = Object.values(slotsById).filter((slot) =>
-      isSlotEligibleForTarget({ sourcePath, targetPath: pathRoute.path, slot, visiblePaths }),
+    const slots = Object.values(slotsById).filter(
+      (slot) => visiblePaths.has(sourcePath) || (slot.scope === "layout" && Boolean(slot.cache)),
     );
     if (sourcePath === pathRoute.path) return slots;
     if (!sourceRoute || !targetLeafLayout || getLeafLayout(sourceRoute) !== targetLeafLayout) return [];
@@ -96,22 +73,8 @@ export function applyFrameSlots(
   visiblePaths: Set<string>,
 ) {
   const slots = getFrameSlotsForPath(pathRoute, frameSlots, pathRoutes, visiblePaths);
-  if (slots.length === 0) return clonePageState(basePageState);
   const pageState = clonePageState(basePageState);
-  if (!isInsetLockedByConfig(pathRoute, "topInset")) {
-    pageState.topInset = Math.max(
-      pageState.topInset,
-      ...slots.filter((slot) => slot.type === "topInset").map(resolveFrameSlotHeight),
-    );
-  }
-  if (!isInsetLockedByConfig(pathRoute, "bottomInset")) {
-    pageState.bottomInset = Math.max(
-      pageState.bottomInset,
-      ...slots.filter((slot) => slot.type === "bottomInset").map(resolveFrameSlotHeight),
-    );
-  }
-  const explicit = pathRoute.explicitPageConfigKeys ?? {};
-  if (!explicit.cache && slots.some((slot) => slot.cache)) pageState.cache = true;
+  if (!pathRoute.explicitPageConfigKeys?.cache && slots.some((slot) => slot.cache)) pageState.cache = true;
   return pageState;
 }
 
@@ -148,8 +111,7 @@ export function useFrameSlots() {
           const nextBucket = { ...prev[bucket] };
           if (Object.keys(nextPathSlots).length > 0) nextBucket[path] = nextPathSlots;
           else delete nextBucket[path];
-          const next = { ...prev, [bucket]: nextBucket };
-          return next;
+          return { ...prev, [bucket]: nextBucket };
         });
       };
     },
@@ -285,7 +247,6 @@ export function hasBottomAnchoredKeyboardSlot(path: string, frameSlots: FrameSlo
 
 export function resolveKeyboardFrame({
   keyboardHeight,
-  bottomSafeArea,
   visualViewportKeyboardHeight,
   platformProfile,
   sticky,
@@ -544,8 +505,7 @@ export function createFrameSnapshot({
 
 const getTransitionDuration = (type: TransitionType) => {
   if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return 1;
-  if (type === "bottomUp") return 220;
-  if (type === "scaleOut") return 220;
+  if (type === "bottomUp" || type === "scaleOut") return 220;
   if (type === "fade" || type === "stack") return 150;
   return 0;
 };

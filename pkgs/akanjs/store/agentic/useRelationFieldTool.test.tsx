@@ -2,9 +2,8 @@ import "../../test/registerDom";
 import { describe, expect, test } from "bun:test";
 import { DataList, Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
-import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
+import { mount } from "../mount.fixture";
 import { store } from "../store";
 import { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
@@ -56,18 +55,6 @@ StoreRegistry.register(RelStore);
 const instance = new StoreInstance(StoreRegistry.merge("relRoot", RelStore));
 const dispatch = instance.do as unknown as { [key: string]: (value: unknown) => void };
 
-const mount = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
-  return () => {
-    act(() => root.unmount());
-    container.remove();
-  };
-};
-
-/** Empty until `load` runs, the way a slice list is until the dropdown opens. */
 const source = (loaded: Org[], options: { disabled?: boolean } = {}) => {
   let list = new DataList<Org>([]);
   return {
@@ -114,7 +101,6 @@ describe("useRelationFieldTool", () => {
       additionalProperties: false,
     });
 
-    // The list is empty before the load, so the refusal points at the tool that fills it rather than at an id.
     await expect(surface.call("setOrgOnRelItem", { orgId: "org-1" })).rejects.toThrow(
       "No relOrg is loaded yet. Call loadOrgOptionsOnRelItem first for the ids.",
     );

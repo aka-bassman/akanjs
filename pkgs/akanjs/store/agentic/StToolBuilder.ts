@@ -19,36 +19,23 @@ import {
   useSurface,
 } from "use-agentic";
 import { tagAction } from "../actionTag";
-// Through the `"use client"` shim, not `react` — the RSC pages bundle stubs client modules per file, and a raw
-// react-hook import here resolves against react's react-server build, which has no hooks. Same as `storeInstance`.
+// Through the `"use client"` shim: a raw `react` import resolves to react-server in the RSC bundle, which has no hooks.
 import { useEffect, useRef } from "../hooks";
 
-/**
- * The two ways a card ends the call it is parked on. `submit`'s value is what the model reads back, `cancel` is
- * why there is none; the first one settles it and the card leaves the screen.
- */
+/** `submit`'s value is what the model reads back; the first of the two calls settles the card. */
 export interface StToolCardControl {
   submit: (value: unknown) => void;
   cancel: (reason?: string) => void;
 }
 
 export interface StToolMeta {
-  /**
-   * Whether the call has to be waited out before what it did to the screen is reported back to the model. `false`
-   * is a read that returns what is already there; the default waits, because a write may still be landing when
-   * `exec` resolves and a report taken then describes the screen one tick before the call.
-   */
+  /** Default true: the screen is waited out before the call reports; `false` for a read of what is already there. */
   settle?: boolean;
   confirm?: ToolConfirm;
   guard?: ToolGuard;
 }
 
-/**
- * What one argument may be: a scalar, an enum, or **one** array level of either. The array level is here because
- * `fill<Model>Form` already describes exactly that for a form field, so the same shape reaching an agent through a
- * form and not through a component tool was an oversight rather than a boundary — and a tool that cannot say
- * "a list of these" says it in prose instead, which is a format the app then owns a parser for.
- */
+/** A scalar, an enum, or one array level of either. */
 export type StToolArgType = ParamFieldType | readonly [ParamFieldType];
 
 interface StToolArg {
@@ -64,24 +51,11 @@ export interface StToolArgOption<V> {
 }
 
 type ScalarValue<T> = T extends EnumInstance<string, infer V> ? V : T extends { [CLIENT_VALUE]: infer V } ? V : never;
-/** What one element carries, which is the whole argument unless it is an array. `oneOf` narrows this one. */
 type ElementValue<T> = T extends readonly [infer E] ? ScalarValue<E> : ScalarValue<T>;
 type ArgValue<T> = T extends readonly [unknown] ? ElementValue<T>[] : ElementValue<T>;
 type NarrowedValue<T, V> = T extends readonly [unknown] ? V[] : V;
 
-/**
- * A component tool past its description: `.arg()` for what the caller must pass, `.opt()` for what it may, and
- * one `.exec()`.
- *
- * This is not A12's rejected store-action builder — a store action derives its schema from the endpoint it is
- * named after, while a component tool exists nowhere else, so declaring is the only source there is. `.arg()` and
- * `.opt()` only accumulate data; `.exec()` is the one hook, so the chain must complete in one unconditional
- * statement.
- *
- * A falsy name declares the tool without publishing it: the callable still works for the click that a person
- * makes, and nothing reaches the agent. That is how a conditional surface stays writable at all — `.exec()` is a
- * hook, so a component can never skip the declaration, only the publication.
- */
+/** `.arg()`/`.opt()` only accumulate; `.exec()` is the hook. A falsy name declares the tool without publishing it. */
 export class StToolBuilder<Args extends unknown[] = []> {
   readonly #name: string | null;
   readonly #desc: string;
@@ -89,8 +63,7 @@ export class StToolBuilder<Args extends unknown[] = []> {
   readonly #args: StToolArg[];
 
   constructor(name: string | null, desc: string, meta: StToolMeta = {}, args: StToolArg[] = []) {
-    // Normalized so "withheld" is one value: the render-to-render comparisons below decide whether this tool is
-    // still the one that is registered, and `""` alternating with `null` would read as a different tool.
+    // One "withheld" value: `""` alternating with `null` would compare as a different tool between renders.
     this.#name = name || null;
     this.#desc = desc;
     this.#meta = meta;
@@ -131,10 +104,7 @@ export class StToolBuilder<Args extends unknown[] = []> {
     optional: boolean,
     option: StToolArgOption<ElementValue<T>>,
   ): StToolBuilder<[...Args, ArgValue<T> | null]> {
-    // An argument nothing can describe withdraws the whole tool — the same withholding a falsy name performs, so
-    // the callable still drives the click a person makes and the route still renders. Publishing the rest of the
-    // arguments would hand an agent a tool it can only call wrong; throwing would cost a page its server render
-    // over an agent-tooling concern. Reported here, where the type was written, rather than on the first call.
+    // An undescribable argument withholds the tool (logged) rather than throwing and costing the page its render.
     const published = this.#name && StToolBuilder.#describable(this.#name, name, type) ? this.#name : null;
     return new StToolBuilder(published, this.#desc, this.#meta, [
       ...this.#args,
@@ -142,16 +112,7 @@ export class StToolBuilder<Args extends unknown[] = []> {
     ]);
   }
 
-  /**
-   * The only hook in the chain. `run`, `guard`, and `confirm` stay always-latest, and so does the **name** —
-   * `desc` and `args` are read once per name because a component that renders once per row declares one tool
-   * many times and only its own arguments differ.
-   *
-   * The name has to follow the render, because withholding it is how a conditional surface is written
-   * (`st.tool(canRemove && "removeX")`). Frozen on the first render it failed both ways: a control that appeared
-   * later never published, and — worse — one that went away stayed published, leaving an agent a lever the screen
-   * no longer offers.
-   */
+  /** The hook. `run`/`guard`/`confirm` and the name follow every render; `desc`/`args` are read once per name. */
   exec(run: (...args: Args) => unknown): (...args: Args) => Promise<void> {
     const surface = useSurface();
     const scope = useScopePath();
@@ -165,7 +126,6 @@ export class StToolBuilder<Args extends unknown[] = []> {
       const call = async (...args: Args) => {
         await live.current.run(...args);
       };
-      // No name, no annotation: `data-akan-action` names a tool an agent can reach, and this one is unreachable.
       callable.current = {
         name: this.#name,
         fn: this.#name ? tagAction(call, { action: AgenticSurface.fullName(scope, this.#name) }) : call,
@@ -199,18 +159,7 @@ export class StToolBuilder<Args extends unknown[] = []> {
     return callable.current.fn;
   }
 
-  /**
-   * The other way a chain ends, for a tool whose answer belongs to the **user**: the call parks in the chat, the
-   * card renders there, and what it submits is what the model reads back. `.exec()` runs a function; this one runs
-   * a person, which is the whole difference — a name and a phone number are theirs to type, and a model that
-   * invents them has answered its own question.
-   *
-   * The arguments arrive positional like `.exec()`'s, and they are checked **before** the card is parked rather
-   * than while it renders: a bad argument has to reach the model as a refusal it can correct, and a throw inside
-   * the render would take the chat panel down with it instead.
-   *
-   * `confirm` is not read here. The card in front of the user is already the asking.
-   */
+  /** A tool the user answers with a chat card. Args are checked in the guard, before the card parks; no `confirm`. */
   card(render: (control: StToolCardControl, ...args: Args) => ReactNode): void {
     const surface = useSurface();
     const scope = useScopePath();
@@ -258,7 +207,6 @@ export class StToolBuilder<Args extends unknown[] = []> {
     return StToolBuilder.#schemaOfArg(arg.type, arg.oneOf);
   }
 
-  /** The array level `FormFields` wraps a field's leaf in, for an argument that declared one instead. */
   static #schemaOfArg(type: StToolArgType, oneOf?: readonly (string | number)[]): JsonSchema {
     const narrowed = (schema: JsonSchema): JsonSchema => (oneOf ? { ...schema, enum: [...oneOf] } : schema);
     if (!Array.isArray(type)) return narrowed(StToolBuilder.schemaOf(type as ParamFieldType));
@@ -282,7 +230,7 @@ export class StToolBuilder<Args extends unknown[] = []> {
     }
   }
 
-  /** Scalars and enums only — the value arrives as JSON from a model, so a class instance has no way in. */
+  /** Scalars and enums only (a value arrives as JSON); throws for anything else. */
   static schemaOf(type: ParamFieldType): JsonSchema {
     if (isEnum(type as Cls)) {
       const enumRef = type as EnumInstance;
@@ -326,7 +274,7 @@ export class StToolBuilder<Args extends unknown[] = []> {
     });
   }
 
-  /** What `AgentBridge` does for endpoint arguments, for a component tool's own — nothing on the wire enforces the published schema. */
+  /** Nothing on the wire enforces the published schema, so every argument value is checked here. */
   static checkedValue(
     toolName: string,
     argName: string,
