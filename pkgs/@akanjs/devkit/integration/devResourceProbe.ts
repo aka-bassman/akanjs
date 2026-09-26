@@ -14,35 +14,21 @@ export interface DevResourceProc {
 
 export interface DevResourceProbeOptions {
   appName: string;
-  /** Must be the workspace root: package resolution has to match the real dev processes. */
+  // Must be the workspace root: package resolution has to match the real dev processes.
   workspaceRoot: string;
-  /** A tenant runs `node_modules/@akanjs/cli`; this repo runs its own `dist` build. */
   cliEntry: string;
   port: number;
   edits: number;
   idleSeconds: number;
-  /** `0` leaves idle suspend at its default; any other value also arms the suspend phase. */
+  // `0` leaves idle suspend at its default; any other value also arms the suspend phase.
   suspendSeconds: number;
-  /** App-relative file to append a comment to, once per edit. */
   editPath: string;
   logPath: string;
 }
 
-/**
- * Process-tree RSS over boot, browse, edits and idle-suspend — probe #1 of
- * `04-measurement-harness.md`, and the source of every idle/warm/suspended number in the
- * `optimize-resource` docs.
- *
- *   bun pkgs/@akanjs/devkit/integration/devResourceProbe.ts <app> [--idle=120] [--edits=3] [--suspend=60]
- *
- * Run it from the workspace root. Two things it exists to get right, both learned the hard way:
- * it walks the process tree to a **fixpoint** (the tree is seven levels deep in places, so a
- * fixed-depth walk silently misses the workers), and it **restores the edited file** in a `finally`
- * so a killed probe cannot leave a comment in the tree.
- *
- * On macOS, a plateau that drops with no activity is the OS trimming idle pages, not convergence —
- * report both numbers rather than the lower one.
- */
+// Usage, from the workspace root:
+//   bun pkgs/@akanjs/devkit/integration/devResourceProbe.ts <app> [--idle=120] [--edits=3] [--suspend=60]
+// On macOS a plateau that drops with no activity is the OS trimming idle pages, not convergence; report both.
 export class DevResourceProbe {
   static readonly #columns: DevResourceRole[] = ["host", "builder", "batch", "gateway", "replica", "rsc"];
 
@@ -128,7 +114,7 @@ export class DevResourceProbe {
     console.info(`[probe] IDLE BASELINE ${idleTotal.toFixed(0)}MB`);
     await this.#reportMetrics("idle");
 
-    // 4.2: every idle number understates, because route modules are evaluated on first request.
+    // Every idle number understates: route modules are evaluated on first request.
     const routes = await this.#staticRoutes();
     const first = await this.#browse(routes);
     console.info(`[probe] browsed ${routes.length} static route(s): ok=${first.ok} failed=${first.failed}`);
@@ -169,7 +155,6 @@ export class DevResourceProbe {
     return "other";
   }
 
-  /** One `ps`, then walk from the host pid to a fixpoint — the tree is seven levels deep in places. */
   async #sampleTree(): Promise<DevResourceProc[]> {
     const proc = Bun.spawn(["ps", "-eo", "pid=,ppid=,rss=,time=,command="], { stdout: "pipe" });
     const text = await new Response(proc.stdout).text();
@@ -221,10 +206,6 @@ export class DevResourceProbe {
     return total;
   }
 
-  /**
-   * Static route urls from the page tree: `(group)` segments are stripped, and a route with a
-   * `[dynamic]` segment is skipped because it needs a real id to render.
-   */
   async #staticRoutes(): Promise<string[]> {
     const glob = new Bun.Glob("**/_index.tsx");
     const cwd = path.join(this.#options.workspaceRoot, "apps", this.#options.appName, "page");
@@ -258,7 +239,6 @@ export class DevResourceProbe {
     return { ok, failed };
   }
 
-  /** Only the counters 4.2 asks for; the raw payload is hundreds of fields. */
   async #reportMetrics(label: string): Promise<void> {
     const child = await (async () => {
       try {
@@ -285,9 +265,6 @@ export class DevResourceProbe {
       "rscWorkerRecycleCount",
       "httpFullSsrCount",
     ];
-    // `rssBytes` is the replica's own; the RSC worker is a separate process reporting under
-    // `rscWorker*`. These used to be the same field, because the worker's report shadowed the
-    // replica's — so this line printed the worker's RSS labelled as the child's.
     const toMb = (bytes: unknown) => (Number(bytes ?? 0) / 1024 / 1024).toFixed(0);
     const parts = keys.map((key) => `${key}=${child[key] ?? "?"}`);
     console.info(

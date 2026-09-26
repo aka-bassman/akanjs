@@ -35,12 +35,7 @@ export interface SsrCacheSample {
   heap: SsrHeapSample;
 }
 
-/**
- * RSS minus JS heap is what a module graph costs beyond its objects — compiled code, module
- * records, native allocator retention — so the split is what separates "the app retains objects"
- * from "the runtime retains code". `jscExtra` is JSC's off-heap attribution, which is where
- * typed-array backing stores (cached Flight chunks) land.
- */
+// `jscExtra` is JSC's off-heap attribution, where typed-array backing stores (cached Flight chunks) land.
 export interface SsrHeapSample {
   replicaHeapUsedMb: number;
   replicaJscHeapMb: number;
@@ -52,51 +47,25 @@ export interface SsrHeapSample {
 
 export interface SsrMemoryProbeOptions {
   appName: string;
-  /** Built app directory — `dist/apps/<app>` unless the build was relocated. */
   distDir: string;
   port: number;
   basePaths: string;
   repoName: string;
   serveDomain: string;
   scenarios: number[];
-  /** Repeat count for scenario 1 (same route) and per-route passes in scenario 6. */
   repeats: number;
   concurrencies: number[];
   idleSeconds: number;
-  /** Report cadence forced on the children; also bounds how long a sample waits for a fresh one. */
   metricsIntervalMs: number;
-  /** Disables both result caches at boot — the second half of scenario 3. */
   cacheOff: boolean;
-  /**
-   * Forces `Bun.gc(true)` before every metrics sample. Required for the s7 ratchet test: without
-   * it, growth across passes cannot be told apart from garbage that has not been collected yet.
-   */
   gcOnReport: boolean;
-  /** s7: how many times to walk the whole route list. */
   passes: number;
-  /** s8: cumulative distinct-route counts to sample the per-route slope at. */
   sweep: number[];
   logPath: string;
 }
 
-/**
- * Production process-tree RSS and cache occupancy — probe §0.3 of
- * `local/reduce-ssr-ram/01-measurement-harness.md`, and the source of the phase 0 results table.
- *
- *   bun pkgs/@akanjs/devkit/integration/ssrMemoryProbe.ts <app> [--scenarios=1,2,5] [--cache=off]
- *
- * The production tree is gateway → replica × N → rsc worker × N, with no builder; `DevResourceProbe`
- * measures the dev tree instead and the two are not interchangeable.
- *
- * Two things this exists to get right:
- *
- * - **Replica and worker RSS are reported separately.** They are separate processes and the worker
- *   holds a private copy of the pages bundle, so one summed number hides which of the two grows.
- * - **On Linux it samples the cgroup's `anon` / `file` split, not just RSS.** Whether a cache is
- *   anonymous heap (an OOM contributor) or page cache (evictable) is the entire question phase 2
- *   asks; RSS cannot answer it, and neither can macOS, where the file half does not exist in the
- *   same form. Read a macOS run as directional only.
- */
+// Usage: bun pkgs/@akanjs/devkit/integration/ssrMemoryProbe.ts <app> [--scenarios=1,2,5] [--cache=off]
+// The cgroup `anon`/`file` split exists only on Linux; read a macOS run as directional.
 export class SsrMemoryProbe {
   static readonly #columns: SsrProcRole[] = ["gateway", "replica", "rsc"];
 
@@ -155,10 +124,7 @@ export class SsrMemoryProbe {
         NODE_ENV: "production",
         USE_AKANJS_PKGS: "true",
         AKAN_PUBLIC_APP_NAME: appName,
-        // `getEnv()` requires these one at a time, and a missing one fails the *replica* while the
-        // gateway stays up: the process tree still looks like a healthy three, and only the child's
-        // `ready` flag and the 503s give it away. Both are why `#waitForReady` checks child
-        // readiness rather than the gateway's own 200.
+        // A missing one fails the replica while the gateway stays up and keeps answering.
         AKAN_PUBLIC_REPO_NAME: process.env.AKAN_PUBLIC_REPO_NAME ?? repoName,
         AKAN_PUBLIC_SERVE_DOMAIN: process.env.AKAN_PUBLIC_SERVE_DOMAIN ?? serveDomain,
         AKAN_PUBLIC_ENV: "local",
@@ -221,11 +187,7 @@ export class SsrMemoryProbe {
       for (const concurrency of concurrencies) await this.#run(`s6 concurrency=${concurrency}`, routes, concurrency);
     }
 
-    // s7 — ratchet vs working set. Every pass renders the same routes, so pass 1 pays for module
-    // evaluation and later passes pay for nothing new. Flat later passes mean the memory is a
-    // working set and only a smaller bundle or fewer replicas reduces it; continued growth means
-    // per-render retention, which is a bug worth more than any ceiling. Run with `--cache=off --gc`
-    // or it measures cache hits and uncollected garbage instead.
+    // s7: flat passes after the first mean a working set; continued growth means per-render retention.
     if (scenarios.includes(7)) {
       if (!this.#options.cacheOff)
         console.info("[probe] WARNING s7 without --cache=off measures cache hits from pass 2 on");
@@ -235,8 +197,7 @@ export class SsrMemoryProbe {
         await this.#run(`s7 pass ${pass}/${this.#options.passes}`, routes, 1);
     }
 
-    // s8 — per-route slope vs fixed intercept. Cumulative: each step adds routes the process has
-    // not seen, so the RSS series against distinct-route count separates the two.
+    // s8: cumulative, so RSS against distinct-route count separates the per-route slope from the intercept.
     if (scenarios.includes(8)) {
       for (const count of this.#options.sweep) {
         const subset = routes.slice(0, Math.min(count, routes.length));
@@ -255,11 +216,7 @@ export class SsrMemoryProbe {
     }
   }
 
-  /**
-   * A scenario is only a measurement if its requests succeeded. A gateway whose replica died still
-   * answers — with 503s, instantly — and the resulting RSS row looks like a legitimately cheap one.
-   * Fail loudly rather than publish that number.
-   */
+  // A dead replica still answers instant 503s, which would read as a legitimately cheap row.
   async #run(label: string, urls: string[], concurrency: number): Promise<void> {
     const started = Date.now();
     const { ok, failed, statuses } = await this.#browse(urls, concurrency);
@@ -307,11 +264,7 @@ export class SsrMemoryProbe {
     return `${(bytes / 1024 / 1024).toFixed(1)}MiB`;
   }
 
-  /**
-   * Reads the container's own accounting. `memory.current` counts page cache, so a disk-backed
-   * cache still shows up here — but under `file`, which the kernel reclaims under pressure instead
-   * of OOM-killing. That split is what phase 2 has to move. Returns null off cgroup v2.
-   */
+  // cgroup v2 only. `file` is page cache the kernel reclaims under pressure; `anon` is what gets OOM-killed.
   static readCgroupSample(): SsrCgroupSample | null {
     try {
       const current = Number.parseInt(fs.readFileSync("/sys/fs/cgroup/memory.current", "utf8").trim(), 10);
@@ -328,22 +281,14 @@ export class SsrMemoryProbe {
     }
   }
 
-  /**
-   * Waits for a metrics report sampled *after* `since` before reading the cache columns.
-   *
-   * The counters ride a periodic IPC report, so reading immediately after a browse returns the
-   * state from before it — and the two-hop path (worker → replica → gateway) means the `rsc*` and
-   * `rscWorker*` fields can be a further interval behind. Without this wait every row silently
-   * attributes one scenario's cache growth to the previous scenario.
-   */
+  // Counters ride a periodic two-hop IPC report (worker → replica → gateway), so wait until both hops have
+  // re-reported after `since`, or one scenario's growth lands in the next row.
   async #sampleCaches(since: number): Promise<SsrCacheSample | null> {
     const deadline = Date.now() + this.#options.metricsIntervalMs * 3 + 5_000;
     let children: Array<Record<string, number>> = [];
     let fresh = false;
     while (Date.now() < deadline) {
       children = await this.#fetchChildMetrics();
-      // Both hops must have re-reported: `reportedAt` is the replica's own sample time, and
-      // `rscWorkerReportedAt` the worker's as of the replica's last read of it.
       fresh =
         children.length > 0 &&
         children.every(
@@ -402,7 +347,6 @@ export class SsrMemoryProbe {
     return "other";
   }
 
-  /** One `ps`, then walk from the gateway pid to a fixpoint. */
   async #sampleTree(): Promise<SsrProc[]> {
     const proc = Bun.spawn(["ps", "-eo", "pid=,ppid=,rss=,time=,command="], { stdout: "pipe" });
     const text = await new Response(proc.stdout).text();
@@ -441,10 +385,6 @@ export class SsrMemoryProbe {
     return [...kept.values()].filter((proc) => proc.role !== "other" || proc.pid === this.#gatewayPid);
   }
 
-  /**
-   * Concrete urls from the built route seed index. `:lang` takes the default locale; any route with
-   * another `:param` is skipped because it needs a real id to render.
-   */
   async #staticRoutes(): Promise<string[]> {
     const artifactDir = path.join(this.#options.distDir, ".akan", "artifact");
     const seed = (await Bun.file(path.join(artifactDir, "route-seed-index.json")).json()) as {
@@ -495,11 +435,7 @@ export class SsrMemoryProbe {
     return { ok, failed, statuses };
   }
 
-  /**
-   * Waits for a **child** to report ready, not for the gateway to answer. The gateway binds and
-   * serves `/health` happily while every replica is in a crash-restart loop, so a 200 here proves
-   * nothing about whether anything can render.
-   */
+  // The gateway answers `/health` while every replica crash-loops, so wait for a ready child instead.
   async #waitForReady(timeoutMs: number): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     let lastError = "";
