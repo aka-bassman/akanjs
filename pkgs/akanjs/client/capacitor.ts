@@ -216,13 +216,13 @@ const getCapacitorPlugin = <Plugin>(name: string): Plugin => {
   return plugin as Plugin;
 };
 
-export const loadCapacitorApp = () =>
-  loadCapacitorModule("app", async () => ({ App: getCapacitorPlugin<CapacitorAppModule["App"]>("App") }));
+const loadCapacitorPlugin = <K extends keyof CapacitorModuleMap>(
+  name: K,
+  plugin: keyof CapacitorModuleMap[K] & string,
+) => loadCapacitorModule(name, async () => ({ [plugin]: getCapacitorPlugin(plugin) }) as CapacitorModuleMap[K]);
 
-export const loadCapacitorBrowser = () =>
-  loadCapacitorModule("browser", async () => ({
-    Browser: getCapacitorPlugin<CapacitorBrowserModule["Browser"]>("Browser"),
-  }));
+export const loadCapacitorApp = () => loadCapacitorPlugin("app", "App");
+export const loadCapacitorBrowser = () => loadCapacitorPlugin("browser", "Browser");
 
 export const loadCapacitorCamera = () =>
   loadCapacitorModule("camera", async () => ({
@@ -231,28 +231,11 @@ export const loadCapacitorCamera = () =>
     CameraSource: { Prompt: "PROMPT", Camera: "CAMERA", Photos: "PHOTOS" },
   }));
 
-export const loadCapacitorContacts = () =>
-  loadCapacitorModule("contacts", async () => ({
-    Contacts: getCapacitorPlugin<CapacitorContactsModule["Contacts"]>("Contacts"),
-  }));
-
-export const loadCapacitorCore = () =>
-  loadCapacitorModule("core", async () => ({
-    CapacitorCookies: getCapacitorPlugin<CapacitorCoreModule["CapacitorCookies"]>("CapacitorCookies"),
-  }));
-
-export const loadCapacitorDevice = () =>
-  loadCapacitorModule("device", async () => ({
-    Device: getCapacitorPlugin<CapacitorDeviceModule["Device"]>("Device"),
-  }));
-
-export const loadCapacitorFcm = () =>
-  loadCapacitorModule("fcm", async () => ({ FCM: getCapacitorPlugin<CapacitorFcmModule["FCM"]>("FCM") }));
-
-export const loadCapacitorGeolocation = () =>
-  loadCapacitorModule("geolocation", async () => ({
-    Geolocation: getCapacitorPlugin<CapacitorGeolocationModule["Geolocation"]>("Geolocation"),
-  }));
+export const loadCapacitorContacts = () => loadCapacitorPlugin("contacts", "Contacts");
+export const loadCapacitorCore = () => loadCapacitorPlugin("core", "CapacitorCookies");
+export const loadCapacitorDevice = () => loadCapacitorPlugin("device", "Device");
+export const loadCapacitorFcm = () => loadCapacitorPlugin("fcm", "FCM");
+export const loadCapacitorGeolocation = () => loadCapacitorPlugin("geolocation", "Geolocation");
 
 export const loadCapacitorHaptics = () =>
   loadCapacitorModule("haptics", async () => ({
@@ -260,37 +243,10 @@ export const loadCapacitorHaptics = () =>
     ImpactStyle: { Light: "LIGHT", Medium: "MEDIUM", Heavy: "HEAVY" },
   }));
 
-export const loadCapacitorKeyboard = () =>
-  loadCapacitorModule("keyboard", async () => ({
-    Keyboard: getCapacitorPlugin<CapacitorKeyboardModule["Keyboard"]>("Keyboard"),
-  }));
-
-export const loadCapacitorPreferences = () =>
-  loadCapacitorModule("preferences", async () => ({
-    Preferences: getCapacitorPlugin<CapacitorPreferencesModule["Preferences"]>("Preferences"),
-  }));
-
-export const loadCapacitorPushNotifications = () =>
-  loadCapacitorModule("pushNotifications", async () => ({
-    PushNotifications: getCapacitorPlugin<CapacitorPushNotificationsModule["PushNotifications"]>("PushNotifications"),
-  }));
-
-export const loadCapacitorSafeArea = () =>
-  loadCapacitorModule("safeArea", async () => ({
-    SafeArea: getCapacitorPlugin<CapacitorSafeAreaModule["SafeArea"]>("SafeArea"),
-  }));
-
-export const loadCapacitorSpeechRecognition = () =>
-  loadCapacitorModule("speechRecognition", async () => ({
-    SpeechRecognition: getCapacitorPlugin<CapacitorSpeechRecognitionModule["SpeechRecognition"]>("SpeechRecognition"),
-  }));
-
-export const loadCapacitorTextToSpeech = () =>
-  loadCapacitorModule("textToSpeech", async () => ({
-    TextToSpeech: getCapacitorPlugin<CapacitorTextToSpeechModule["TextToSpeech"]>("TextToSpeech"),
-  }));
-
-export const loadCapacitorUpdater = () =>
-  loadCapacitorModule("updater", async () => ({
-    CapacitorUpdater: getCapacitorPlugin<CapacitorUpdaterModule["CapacitorUpdater"]>("CapacitorUpdater"),
-  }));
+export const loadCapacitorKeyboard = () => loadCapacitorPlugin("keyboard", "Keyboard");
+export const loadCapacitorPreferences = () => loadCapacitorPlugin("preferences", "Preferences");
+export const loadCapacitorPushNotifications = () => loadCapacitorPlugin("pushNotifications", "PushNotifications");
+export const loadCapacitorSafeArea = () => loadCapacitorPlugin("safeArea", "SafeArea");
+export const loadCapacitorSpeechRecognition = () => loadCapacitorPlugin("speechRecognition", "SpeechRecognition");
+export const loadCapacitorTextToSpeech = () => loadCapacitorPlugin("textToSpeech", "TextToSpeech");
+export const loadCapacitorUpdater = () => loadCapacitorPlugin("updater", "CapacitorUpdater");

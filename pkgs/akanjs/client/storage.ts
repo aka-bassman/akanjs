@@ -1,56 +1,47 @@
 import { getEnv } from "akanjs/base";
-import { loadCapacitorPreferences } from "./capacitor";
+import { type CapacitorPreferencesModule, loadCapacitorPreferences } from "./capacitor";
 
-const getLocalStorageItem = (key: string) => localStorage.getItem(key);
+type Preferences = CapacitorPreferencesModule["Preferences"];
 
-const setLocalStorageItem = (key: string, value: string) => {
-  localStorage.setItem(key, value);
-};
-
-const removeLocalStorageItem = (key: string) => {
-  localStorage.removeItem(key);
+const inStorage = async <T>(native: (preferences: Preferences) => Promise<T>, local: () => T) => {
+  const env = getEnv();
+  if (env.side === "server") return;
+  if (env.renderMode === "ssr") return local();
+  try {
+    const { Preferences } = await loadCapacitorPreferences();
+    return await native(Preferences);
+  } catch {
+    return local();
+  }
 };
 
 export const storage = {
-  getItem: async (key: string) => {
-    const env = getEnv();
-    if (env.side === "server") return;
-    if (env.renderMode === "ssr") return getLocalStorageItem(key);
-    try {
-      const { Preferences } = await loadCapacitorPreferences();
-      return (await Preferences.get({ key })).value;
-    } catch {
-      return getLocalStorageItem(key);
-    }
-  },
-  setItem: async (key: string, value: string) => {
-    const env = getEnv();
-    if (env.side === "server") return;
-    if (env.renderMode === "ssr") {
-      setLocalStorageItem(key, value);
-      return;
-    }
-    try {
-      const { Preferences } = await loadCapacitorPreferences();
-      await Preferences.set({ key, value });
-      return;
-    } catch {
-      setLocalStorageItem(key, value);
-      return;
-    }
-  },
+  getItem: (key: string) =>
+    inStorage(
+      async (preferences) => (await preferences.get({ key })).value,
+      () => localStorage.getItem(key),
+    ),
+  setItem: (key: string, value: string) =>
+    inStorage(
+      async (preferences) => {
+        await preferences.set({ key, value });
+      },
+      () => {
+        localStorage.setItem(key, value);
+      },
+    ),
   removeItem: async (key: string) => {
     const env = getEnv();
     if (env.side === "server") return;
     if (env.renderMode === "ssr") {
-      removeLocalStorageItem(key);
+      localStorage.removeItem(key);
       return;
     }
     try {
       const { Preferences } = await loadCapacitorPreferences();
       return Preferences.remove({ key });
     } catch {
-      removeLocalStorageItem(key);
+      localStorage.removeItem(key);
       return;
     }
   },

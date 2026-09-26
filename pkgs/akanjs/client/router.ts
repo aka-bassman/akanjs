@@ -20,12 +20,6 @@ export interface RouterInstance {
   back: (routeOptions?: RouteOptions) => void;
   refresh: () => void;
 }
-interface InternalRouterInstance {
-  push: (href: string, routeOptions?: RouteOptions) => void | Promise<void>;
-  replace: (href: string, routeOptions?: RouteOptions) => void | Promise<void>;
-  back: (routeOptions?: RouteOptions) => void;
-  refresh: () => void;
-}
 interface RouterOptions {
   prefix?: string;
   lang?: string;
@@ -167,7 +161,7 @@ class Router {
   #navigation: Promise<void> = Promise.resolve();
   #historyIdx = 0;
   // FIXME: on the server push/replace only log; the redirect they used to issue is disabled.
-  #instance: InternalRouterInstance = {
+  #instance: RouterInstance = {
     push: (href: string) => {
       const { href: fullHref } = this.#getPathInfo(href);
       Logger.info(`push to:${fullHref}`);
@@ -207,21 +201,15 @@ class Router {
     // already initialized in next server
   }
   #initSsrClientRouter(options: SsrClientRouterOption) {
+    const navigate = (method: "push" | "replace") => (href: string, routeOptions?: RouteOptions) => {
+      const pathInfo = this.#getPathInfo(href);
+      const navigationPathInfo = this.#getNavigationPathInfo(href);
+      this.#postPathChange(pathInfo);
+      return options.router[method](navigationPathInfo.href, routeOptions);
+    };
     this.#instance = {
-      push: (href: string, routeOptions) => {
-        const router = options.router;
-        const pathInfo = this.#getPathInfo(href);
-        const navigationPathInfo = this.#getNavigationPathInfo(href);
-        this.#postPathChange(pathInfo);
-        return router.push(navigationPathInfo.href, routeOptions);
-      },
-      replace: (href: string, routeOptions) => {
-        const router = options.router;
-        const pathInfo = this.#getPathInfo(href);
-        const navigationPathInfo = this.#getNavigationPathInfo(href);
-        this.#postPathChange(pathInfo);
-        return router.replace(navigationPathInfo.href, routeOptions);
-      },
+      push: navigate("push"),
+      replace: navigate("replace"),
       back: () => {
         const router = options.router;
         const pathInfo = this.#getPathInfo(document.referrer);
