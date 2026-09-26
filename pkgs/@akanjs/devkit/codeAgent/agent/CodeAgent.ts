@@ -195,7 +195,7 @@ export class CodeAgent {
     this.#mailbox.open(cwd, (mail) => {
       const from = `${mail.fromName} (${mail.from.slice(0, 8)})`;
       this.#emit({ type: "notice", level: "info", message: `message from ${from}` });
-      void this.prompt(`Message from another session — ${from}:\n${mail.text}`).catch((error: unknown) =>
+      void this.#prompt(`Message from another session — ${from}:\n${mail.text}`).catch((error: unknown) =>
         this.#emit({ type: "notice", level: "error", message: String(error) }),
       );
     });
@@ -278,6 +278,11 @@ export class CodeAgent {
   }
 
   async prompt(message: string, images?: CodeAgentImage[]) {
+    this.#suspended.clear();
+    await this.#prompt(message, images);
+  }
+
+  async #prompt(message: string, images?: CodeAgentImage[]) {
     const session = this.#require();
     // From the first prompt, not the answer, so the session is not nameless while it is worth watching.
     if (!session.sessionName && message.trim()) this.setName(codeAgentSessionName(message));
@@ -308,7 +313,7 @@ export class CodeAgent {
     const suspendedRendered = codeAgentRenderAnswer(suspended, answer);
     this.#emit({ type: "question_resolved", questionId, answer, rendered: suspendedRendered });
     // As prose: compaction and the next turn read message content only, so a structured-only answer is lost.
-    await this.prompt(`The user answered: ${suspendedRendered}\nContinue the task.`);
+    await this.#prompt(`The user answered: ${suspendedRendered}\nContinue the task.`);
     return true;
   }
 
@@ -320,7 +325,7 @@ export class CodeAgent {
     if (this.#profile.interaction.approval !== "suspend") return false;
     if (!this.#suspended.takeApproval(approvalId)) return false;
     this.#emit({ type: "approval_resolved", approvalId, approved });
-    if (approved) await this.prompt("The user approved the pending action. Retry it and continue.");
+    if (approved) await this.#prompt("The user approved the pending action. Retry it and continue.");
     return true;
   }
 
