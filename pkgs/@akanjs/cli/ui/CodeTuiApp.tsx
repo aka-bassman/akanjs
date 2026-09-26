@@ -10,52 +10,31 @@ export interface CodeTuiOption {
 }
 
 export interface CodeTuiSnapshot {
-  /** The rules the prompt sits between, each carrying a label at either end. */
   topRule: CodeTuiSpan[];
   bottomRule: CodeTuiSpan[];
-  /** Already windowed and wrapped by the controller: one entry is exactly one row. */
-  lines: CodeTuiLine[];
+  lines: CodeTuiLine[]; // windowed and wrapped by the controller: one entry is exactly one row
   above: number;
   below: number;
   following: boolean;
-  /**
-   * A command's answer or the session list, held over the transcript until it is dismissed. Windowed by the
-   * controller, which also draws the chosen row — `selectable` only says whether enter picks or closes.
-   */
+  // `selectable`: enter picks the highlighted row rather than closing the overlay.
   overlay: { title: string; lines: CodeTuiLine[]; above: number; below: number; selectable: boolean } | null;
   status: string;
-  /**
-   * The sub-agent rail drawn under the prompt: this session's row, then one per child running right now.
-   *
-   * Already built to one line each by the controller, which counts them into the frame's height before the
-   * transcript gets what is left — see `CodeTui.layout`.
-   */
   subagents: CodeTuiLine[];
   mode: "input" | "select" | "confirm";
-  /** The prompt buffer as the rows it draws on. */
   input: string[];
   placeholder: string;
-  /** The clipboard holds a picture nothing else can offer — `cmd+v` never reaches an application. */
-  offered: boolean;
-  /**
-   * Where the terminal cursor goes, in frame cells, so an IME draws its composing text in the right place.
-   *
-   * The controller works it out rather than this file: it owns the row split, and a caret placed from two
-   * halves of the same arithmetic is a caret that drifts the moment one half changes.
-   */
-  cursor: { x: number; y: number } | null;
+  offered: boolean; // the clipboard holds an image to attach
+  cursor: { x: number; y: number } | null; // in frame cells, so an IME draws its composing text at the caret
   prompt: string;
   options: CodeTuiOption[];
   selected: number;
   checked: string[];
   multiSelect: boolean;
-  /** The slash-command menu, open only while a bare command is being typed. */
   menu: CodeTuiOption[];
   menuSelected: number;
   notice: string;
   hint: string;
   columns: number;
-  /** The whole frame, which is one row short of the terminal — see `CodeTui.frameRowsOf`. */
   frameRows: number;
   bodyHeight: number;
 }
@@ -91,28 +70,14 @@ export type CodeTuiEditKey =
   | "deleteWord"
   | "deleteToStart";
 
-/** Width of the `› ` / `◐ ` marker every prompt row carries, which the caret sits after. */
-export const promptMarkWidth = 2;
+export const promptMarkWidth = 2; // the `› ` / `◐ ` marker every prompt row carries
 
-/**
- * What a terminal in bracketed-paste mode wraps a paste in, as Ink hands it over.
- *
- * The real bytes are `ESC[200~` and `ESC[201~`; Ink parses them as unknown escape sequences and strips the
- * leading escape before the handler sees them, so these are what to match on.
- */
+// Ink strips the leading ESC of the bracketed-paste markers `ESC[200~` / `ESC[201~` before the handler sees them.
 const pasteOpen = "[200~";
 const pasteClose = "[201~";
 
-/**
- * What a terminal sends for shift+enter when it cannot report the key itself, as one event.
- *
- * The usual binding sends the two characters a shell reads as a line continuation — `\` then the return. The
- * backslash stops Ink parsing the pair as a return, so it arrives with every key flag false and its whole
- * text in `input`; unmatched here it falls to the type-anything branch, which is how the backslash ends up in
- * the prompt with a line break after it. The other spelling of the same binding puts an `ESC` between the
- * two, and that one Ink does split — the backslash is typed and the return arrives as `meta+return`, which is
- * why the backslash is removed at {@link CodeTuiEditor.newline} rather than here.
- */
+// A shift+enter binding sent as `\` + return arrives as one unparsed chunk; the ESC-separated spelling is split by
+// Ink instead, which is why its backslash is removed in `CodeTuiEditor.newline`.
 const continuation = /^[^\r\n]*\\(?:\r\n|[\r\n])$/;
 
 const Styled = ({ span }: { span: CodeTuiSpan }) => (
@@ -206,24 +171,13 @@ export const CodeTuiApp = ({ actions }: { actions: CodeTuiActions }) => {
     return unsubscribe;
   }, [actions]);
 
-  /**
-   * The real terminal cursor is parked on the caret.
-   *
-   * Without it the cursor stays where Ink finished drawing — the bottom of the frame — and a terminal draws an
-   * IME's composing text at the cursor. Typing Korean then shows the syllable being composed at the end of the
-   * whole view, jumping into the input only once it is committed.
-   *
-   * Set during render, not from an effect: `useCursor` only stores the value and hands it to Ink from an
-   * insertion effect of the *next* render, so a position written after commit is one frame stale — the cursor
-   * trails a character behind while typing, which is exactly where an IME draws.
-   */
+  // Set during render: `useCursor` applies the value from the next render's insertion effect, so a position set
+  // after commit trails a frame behind — and an IME draws its composing text wherever the cursor is.
   setCursorPosition(snapshot.cursor ?? undefined);
 
   useInput((input, key) => {
     const page = Math.max(1, snapshot.bodyHeight - 3);
-    // Everything between the two markers is text the person did not type, so it is collected here and handed
-    // over in one piece: a pasted newline that reached the enter binding would send half a paste, and a
-    // pasted `/` would open the command menu. An empty one is the whole point — see `CodeTui.pasted`.
+    // A paste is collected whole: a pasted newline would otherwise submit half of it.
     if (input === pasteOpen) {
       pasting.current = [];
       return;
@@ -237,8 +191,7 @@ export const CodeTuiApp = ({ actions }: { actions: CodeTuiActions }) => {
       pasting.current.push(key.return ? "\n" : key.tab ? "\t" : input);
       return;
     }
-    // Read after the paste buffer and before every key: a wheel report is a CSI sequence that would otherwise
-    // reach the last branch of this handler and be typed into the prompt one notch at a time.
+    // Before every key: a wheel report is a CSI sequence that would otherwise be typed into the prompt.
     const wheel = mouse.current.read(input);
     if (wheel) {
       if (wheel.rows) actions.scroll(wheel.rows);
@@ -249,8 +202,6 @@ export const CodeTuiApp = ({ actions }: { actions: CodeTuiActions }) => {
     if (key.pageUp) return actions.scroll(-page);
     if (key.pageDown) return actions.scroll(page);
     if (key.escape) return actions.cancel();
-    // An open overlay takes the keys it uses and swallows the rest: it is a modal, and a key that typed into
-    // the prompt behind it would be typing somewhere the caret is not drawn.
     if (snapshot.overlay) {
       if (key.upArrow) return actions.scroll(-1);
       if (key.downArrow) return actions.scroll(1);
@@ -274,13 +225,9 @@ export const CodeTuiApp = ({ actions }: { actions: CodeTuiActions }) => {
     if (key.downArrow) return actions.vertical(1);
     if (key.leftArrow) return actions.edit(key.meta ? "wordLeft" : "left");
     if (key.rightArrow) return actions.edit(key.meta ? "wordRight" : "right");
-    // Shift+enter is the newline key. It only arrives as itself under the kitty keyboard protocol, so the two
-    // sequences a terminal sends in its place are bound too and nothing advertises them: ESC+CR, which is what
-    // a VS Code or iTerm2 key binding is written as, and a bare line feed, which is byte-identical to ^j.
+    // Without the kitty protocol, shift+enter arrives as ESC+CR (meta+return) or a bare LF, which is ^j.
     if (key.return && (key.shift || key.meta)) return actions.newline();
     if (key.ctrl && input === "j") return actions.newline();
-    // Everything but the return is typed, and the backslash with it, so that one rule removes it: the line
-    // continuation a binding sends and one the person actually typed then differ by the character before it.
     if (continuation.test(input)) {
       actions.type(input.replace(/[\r\n]+$/, ""));
       return actions.newline();
@@ -292,8 +239,6 @@ export const CodeTuiApp = ({ actions }: { actions: CodeTuiActions }) => {
     if (key.ctrl && input === "a") return actions.edit("home");
     if (key.ctrl && input === "e") return actions.edit("end");
     if (key.ctrl && input === "d") return actions.edit("delete");
-    // The terminal has already pasted whatever text the clipboard held by the time this runs; what it cannot
-    // deliver is an image, which is the only thing the handler goes looking for.
     if (key.ctrl && input === "v") return actions.paste();
     if (input && !key.ctrl && !key.meta) return actions.type(input);
   });
