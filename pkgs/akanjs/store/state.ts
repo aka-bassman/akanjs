@@ -1,5 +1,4 @@
 import { DataList } from "akanjs/base";
-import { capitalize } from "akanjs/common";
 import { ConstantRegistry, type DefaultOf } from "akanjs/constant";
 import type { ExtractSort, FilterInstance } from "akanjs/document";
 import type {
@@ -15,6 +14,7 @@ import type {
   SliceCls,
 } from "akanjs/signal";
 import { databaseStateNames } from "./databaseStateNames";
+import { sliceKeysOf } from "./sliceKeys";
 import type { StoreSliceArgs, StoreSliceMap, StoreSliceSuffixCap, Submit } from "./types";
 
 /** Armed by `new<Model>` / `edit<Model>`, cleared by a submit or a reset. */
@@ -193,48 +193,9 @@ export const createDatabaseState = (refName: string) => {
 };
 export const createSliceState = (refName: string, slice: { [key: string]: SerializedSlice }) => {
   const cnst = ConstantRegistry.getDatabase(refName);
-  const [fieldName, className] = [refName, capitalize(refName)];
-  const names = {
-    model: fieldName,
-    Model: className,
-    defaultModel: `default${className}`,
-    defaultModelInsight: `default${className}Insight`,
-    modelList: `${fieldName}List`,
-    modelListLoading: `${fieldName}ListLoading`,
-    modelInitList: `${fieldName}InitList`,
-    modelInitAt: `${fieldName}InitAt`,
-    modelStaleAt: `${fieldName}StaleAt`,
-    modelSelection: `${fieldName}Selection`,
-    modelInsight: `${fieldName}Insight`,
-    lastPageOfModel: `lastPageOf${className}`,
-    pageOfModel: `pageOf${className}`,
-    limitOfModel: `limitOf${className}`,
-    hasMoreOfModel: `hasMoreOf${className}`,
-    isCumulativeOfModel: `isCumulativeOf${className}`,
-    queryArgsOfModel: `queryArgsOf${className}`,
-    sortOfModel: `sortOf${className}`,
-  };
   const sliceState: Record<string, unknown> = {};
   Object.entries(slice).forEach(([suffix]) => {
-    const sliceName = `${refName}${capitalize(suffix)}`;
-    const SliceName = capitalize(sliceName);
-    const namesOfSlice: { [key in SliceStateKey]: string } = {
-      defaultModel: SliceName.replace(names.Model, names.defaultModel),
-      modelList: sliceName.replace(names.model, names.modelList),
-      modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-      modelInitList: sliceName.replace(names.model, names.modelInitList),
-      modelInitAt: sliceName.replace(names.model, names.modelInitAt),
-      modelStaleAt: sliceName.replace(names.model, names.modelStaleAt),
-      modelSelection: sliceName.replace(names.model, names.modelSelection),
-      modelInsight: sliceName.replace(names.model, names.modelInsight),
-      lastPageOfModel: SliceName.replace(names.Model, names.lastPageOfModel),
-      pageOfModel: SliceName.replace(names.Model, names.pageOfModel),
-      limitOfModel: SliceName.replace(names.Model, names.limitOfModel),
-      hasMoreOfModel: SliceName.replace(names.Model, names.hasMoreOfModel),
-      isCumulativeOfModel: SliceName.replace(names.Model, names.isCumulativeOfModel),
-      queryArgsOfModel: SliceName.replace(names.Model, names.queryArgsOfModel),
-      sortOfModel: SliceName.replace(names.Model, names.sortOfModel),
-    };
+    const namesOfSlice = sliceKeysOf(refName, suffix).state;
     const singleSliceState = {
       [namesOfSlice.defaultModel]: new cnst.full(),
       [namesOfSlice.modelList]: new DataList(),

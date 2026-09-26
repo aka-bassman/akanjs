@@ -38,12 +38,13 @@ import type {
   SliceCls,
 } from "akanjs/signal";
 import { tagAction } from "./actionTag";
+import { databaseStateNames } from "./databaseStateNames";
 import { DraftStore } from "./draftStore";
 import { formSetterNames } from "./formSetterNames";
 import { type LiveSortableRow, livePlacementIndex } from "./liveInsert";
 import { SliceRequest } from "./SliceRequest";
-import type { SliceActionKey } from "./sliceRole";
-import type { DraftState, SliceStateKey } from "./state";
+import { sliceKeysOf } from "./sliceKeys";
+import type { DraftState } from "./state";
 import type { SetGet, StoreSliceArgs, StoreSliceMap, StoreSliceSuffixCap } from "./types";
 
 type _SliceMap<S extends SliceCls> = StoreSliceMap<S>;
@@ -485,23 +486,15 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
   let openFormBase: object | null = null;
   const slices = Object.entries(slice).map(([suffix, serializedSlice]) => ({
     sliceName: `${refName}${capitalize(suffix)}`,
-    suffix,
+    keys: sliceKeysOf(refName, suffix),
     slice: serializedSlice,
   }));
   const names = {
-    model: fieldName,
-    _model: `_${fieldName}`,
+    ...databaseStateNames(refName),
     Model: className,
-    modelOperation: `${fieldName}Operation`,
-    defaultModel: `default${className}`,
     modelInsight: `${fieldName}Insight`,
-    modelForm: `${fieldName}Form`,
-    modelSubmit: `${fieldName}Submit`,
-    modelLoading: `${fieldName}Loading`,
-    modelFormLoading: `${fieldName}FormLoading`,
     modelList: `${fieldName}List`,
     modelListLoading: `${fieldName}ListLoading`,
-    modelSelection: `${fieldName}Selection`,
     createModelInForm: `create${className}InForm`,
     updateModelInForm: `update${className}InForm`,
     createModel: `create${className}`,
@@ -515,39 +508,15 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
     viewModel: `view${className}`,
     setModel: `set${className}`,
     resetModel: `reset${className}`,
-    modelViewAt: `${fieldName}ViewAt`,
-    modelModal: `${fieldName}Modal`,
-    modelDraft: `${fieldName}FormDraft`,
     loadModelDraft: `load${className}FormDraft`,
     restoreModelDraft: `restore${className}FormDraft`,
     discardModelDraft: `discard${className}FormDraft`,
-    initModel: `init${className}`,
-    modelInitList: `${fieldName}InitList`,
-    modelInitAt: `${fieldName}InitAt`,
-    modelStaleAt: `${fieldName}StaleAt`,
-    refreshModel: `refresh${className}`,
-    selectModel: `select${className}`,
-    setPageOfModel: `setPageOf${className}`,
-    loadMoreOfModel: `loadMoreOf${className}`,
-    setLimitOfModel: `setLimitOf${className}`,
-    setQueryArgsOfModel: `setQueryArgsOf${className}`,
-    setSortOfModel: `setSortOf${className}`,
-    applyLiveModel: `applyLive${className}`,
-    watchLiveModel: `watchLive${className}`,
-    lastPageOfModel: `lastPageOf${className}`,
-    pageOfModel: `pageOf${className}`,
-    limitOfModel: `limitOf${className}`,
-    hasMoreOfModel: `hasMoreOf${className}`,
-    isCumulativeOfModel: `isCumulativeOf${className}`,
-    queryArgsOfModel: `queryArgsOf${className}`,
-    sortOfModel: `sortOf${className}`,
   };
+  const defaultKeyOf = (sliceName: string) => capitalize(sliceName).replace(names.Model, names.defaultModel);
   // A back-navigation replays the pre-write RSC payload; this stamp makes `Load.Units` refetch on re-hydration.
   const staleAtOfSlices = () => {
     const staleAt = new Date();
-    return Object.fromEntries(
-      slices.map(({ sliceName }) => [sliceName.replace(names.model, names.modelStaleAt), staleAt]),
-    );
+    return Object.fromEntries(slices.map(({ keys }) => [keys.state.modelStaleAt, staleAt]));
   };
   const updatedAtOf = (model: Full): string | null => {
     const updatedAt = (model as unknown as { updatedAt?: { toISOString?: () => string } }).updatedAt;
@@ -601,26 +570,32 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
     return null;
   };
   // A live slice places the row through `applyLive`, so the server's echo of this create is not counted twice.
-  function applyLocalCreate(
-    this: SetGet,
-    sliceName: string,
-    model: Full,
-    seen: { modelList: DataList<Light>; modelListLoading: boolean; modelInsight: Insight & BaseInsight },
-  ) {
-    if (slices.find((entry) => entry.sliceName === sliceName)?.slice.live) {
-      const applyLive = (this as unknown as DynamicRecord)[
-        capitalize(sliceName).replace(names.Model, names.applyLiveModel)
-      ] as ((event: LiveEventPayload) => void) | undefined;
+  function applyLocalCreate(this: SetGet, sliceName: string, model: Full, seen: { [key: string]: any }) {
+    const target = slices.find((entry) => entry.sliceName === sliceName);
+    if (target?.slice.live) {
+      const applyLive = (this as unknown as DynamicRecord)[target.keys.action.applyLiveModel] as
+        | ((event: LiveEventPayload) => void)
+        | undefined;
       applyLive?.({ op: "enter", id: model.id, light: new cnst.light().set(model) as unknown as object });
       return;
     }
-    if (seen.modelListLoading) return;
+    if (seen[sliceName.replace(names.model, names.modelListLoading)]) return;
+    const listKey = sliceName.replace(names.model, names.modelList);
+    const insightKey = sliceName.replace(names.model, names.modelInsight);
+    const modelInsight = seen[insightKey] as Insight & BaseInsight;
     this.set({
-      [sliceName.replace(names.model, names.modelList)]: new DataList([model, ...seen.modelList]),
-      [sliceName.replace(names.model, names.modelInsight)]: new cnst.insight().set({
-        ...seen.modelInsight,
-        count: seen.modelInsight.count + 1,
-      }),
+      [listKey]: new DataList([model, ...(seen[listKey] as DataList<Light>)]),
+      [insightKey]: new cnst.insight().set({ ...modelInsight, count: modelInsight.count + 1 }),
+    });
+  }
+  function patchLists(this: SetGet, updatedModel: Full) {
+    const updatedLightModel = new cnst.light().set(updatedModel) as unknown as Light;
+    slices.forEach(({ keys: { state: namesOfSlice } }) => {
+      const currentState = this.get() as { [key: string]: any };
+      const modelList = currentState[namesOfSlice.modelList] as DataList<Light>;
+      const modelListLoading = currentState[namesOfSlice.modelListLoading] as boolean;
+      if (modelListLoading || !modelList.has(updatedModel.id)) return;
+      this.set({ [namesOfSlice.modelList]: new DataList(modelList).set(updatedLightModel) });
     });
   }
   const baseAction = {
@@ -628,19 +603,9 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       this: SetGet,
       { path, modal, sliceName = names.model, onError, onSuccess }: CreateOption<Full> = {},
     ) {
-      const SliceName = capitalize(sliceName);
-      const namesOfSlice = {
-        defaultModel: SliceName.replace(names.Model, names.defaultModel),
-        modelList: sliceName.replace(names.model, names.modelList),
-        modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-        modelInsight: sliceName.replace(names.model, names.modelInsight),
-      };
       const currentState = this.get() as { [key: string]: any };
       const modelForm = currentState[names.modelForm] as Input;
-      const modelList = currentState[namesOfSlice.modelList] as DataList<Light>;
-      const modelListLoading = currentState[namesOfSlice.modelListLoading] as boolean;
-      const modelInsight = currentState[namesOfSlice.modelInsight] as Insight & BaseInsight;
-      const defaultModel = currentState[namesOfSlice.defaultModel] as Full;
+      const defaultModel = currentState[defaultKeyOf(sliceName)] as Full;
       const modelInput = (cnst.input.purify as (form: any) => DefaultOf<Input> | null)(modelForm);
 
       if (!modelInput) return;
@@ -656,21 +621,17 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         ...staleAtOfSlices(),
         ...(typeof path === "string" && path ? { [path]: model } : {}),
       });
-      applyLocalCreate.call(this, sliceName, model, { modelList, modelListLoading, modelInsight });
+      applyLocalCreate.call(this, sliceName, model, currentState);
       await onSuccess?.(model);
     },
     [names.updateModelInForm]: async function (
       this: SetGet,
       { path, modal, sliceName = names.model, onError, onSuccess }: CreateOption<Full> = {},
     ) {
-      const SliceName = capitalize(sliceName);
-      const namesOfSlice = {
-        defaultModel: SliceName.replace(names.Model, names.defaultModel),
-      };
       const currentState = this.get() as { [key: string]: any };
       const model = currentState[names.model] as Full | null;
       const modelForm = currentState[names.modelForm] as Input & { id: string };
-      const defaultModel = currentState[namesOfSlice.defaultModel] as Full;
+      const defaultModel = currentState[defaultKeyOf(sliceName)] as Full;
       const modelInput = (cnst.input.purify as (form: any) => DefaultOf<Input> | null)(modelForm);
       if (!modelInput) return;
       if (model?.id === modelForm.id) this.set({ [names.modelLoading]: modelForm.id });
@@ -689,19 +650,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         ...staleAtOfSlices(),
         ...(typeof path === "string" && path ? { [path]: updatedModel } : {}),
       });
-      const updatedLightModel = new cnst.light().set(updatedModel) as unknown as Light;
-      slices.forEach(({ sliceName }) => {
-        const namesOfSlice = {
-          modelList: sliceName.replace(names.model, names.modelList),
-          modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-        };
-        const currentState = this.get() as { [key: string]: any };
-        const modelList = currentState[namesOfSlice.modelList] as DataList<Light>;
-        const modelListLoading = currentState[namesOfSlice.modelListLoading] as boolean;
-        if (modelListLoading || !modelList.has(updatedModel.id)) return;
-        const newModelList = new DataList(modelList).set(updatedLightModel);
-        this.set({ [namesOfSlice.modelList]: newModelList });
-      });
+      patchLists.call(this, updatedModel);
       await onSuccess?.(updatedModel);
     },
     [names.createModel]: async function (
@@ -709,15 +658,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       data: GetStateObject<Input>,
       { path, modal, sliceName = names.model, onError, onSuccess }: CreateOption<Full> = {},
     ) {
-      const namesOfSlice = {
-        modelList: sliceName.replace(names.model, names.modelList),
-        modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-        modelInsight: sliceName.replace(names.model, names.modelInsight),
-      };
       const currentState = this.get() as { [key: string]: any };
-      const modelList = currentState[namesOfSlice.modelList] as DataList<Light>;
-      const modelListLoading = currentState[namesOfSlice.modelListLoading] as boolean;
-      const modelInsight = currentState[namesOfSlice.modelInsight] as Insight & BaseInsight;
       const modelInput = (cnst.input.purify as (data: any) => Input | null)(data);
       if (!modelInput) return;
       this.set({ [names.modelLoading]: true });
@@ -730,7 +671,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         ...staleAtOfSlices(),
         ...(typeof path === "string" && path ? { [path]: model } : {}),
       });
-      applyLocalCreate.call(this, sliceName, model, { modelList, modelListLoading, modelInsight });
+      applyLocalCreate.call(this, sliceName, model, currentState);
       await onSuccess?.(model);
     },
     [names.updateModel]: async function (
@@ -755,19 +696,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         ...staleAtOfSlices(),
         ...(typeof path === "string" && path ? { [path]: updatedModel } : {}),
       });
-      const updatedLightModel = new cnst.light().set(updatedModel) as unknown as Light;
-      slices.forEach(({ sliceName }) => {
-        const namesOfSlice = {
-          modelList: sliceName.replace(names.model, names.modelList),
-          modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-        };
-        const currentState = this.get() as { [key: string]: any };
-        const modelList = currentState[namesOfSlice.modelList] as DataList<Light>;
-        const modelListLoading = currentState[namesOfSlice.modelListLoading] as boolean;
-        if (modelListLoading || !modelList.has(updatedModel.id)) return;
-        const newModelList = new DataList(modelList).set(updatedLightModel);
-        this.set({ [namesOfSlice.modelList]: newModelList });
-      });
+      patchLists.call(this, updatedModel);
       await onSuccess?.(updatedModel);
     },
     [names.removeModel]: async function (this: SetGet, id: string, options?: FetchPolicy & { modal?: string | null }) {
@@ -777,13 +706,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         fetchPolicyOptions,
       );
       const lightModel = new cnst.light().set(model) as unknown as Light;
-      slices.forEach(({ sliceName }) => {
-        const namesOfSlice = {
-          modelList: sliceName.replace(names.model, names.modelList),
-          modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-          modelSelection: sliceName.replace(names.model, names.modelSelection),
-          modelInsight: sliceName.replace(names.model, names.modelInsight),
-        };
+      slices.forEach(({ keys: { state: namesOfSlice } }) => {
         const currentState = this.get() as { [key: string]: any };
         const modelList = currentState[namesOfSlice.modelList] as DataList<Light>;
         const modelListLoading = currentState[namesOfSlice.modelListLoading] as boolean;
@@ -842,17 +765,14 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       partial: Partial<Full> = {},
       { modal, setDefault, sliceName = names.model, draftScope }: NewOption = {},
     ) {
-      const SliceName = capitalize(sliceName);
-      const namesOfSlice = {
-        defaultModel: SliceName.replace(names.Model, names.defaultModel),
-      };
+      const defaultModelKey = defaultKeyOf(sliceName);
       const currentState = this.get() as { [key: string]: any };
-      const defaultModel = currentState[namesOfSlice.defaultModel] as Full;
+      const defaultModel = currentState[defaultModelKey] as Full;
       const merged = { ...plainFieldsOf(defaultModel), ...partial };
       const modelForm = immerify(modelRef, merged);
       this.set({
         [names.modelForm]: modelForm,
-        [namesOfSlice.defaultModel]: setDefault ? immerify(modelRef, merged) : defaultModel,
+        [defaultModelKey]: setDefault ? immerify(modelRef, merged) : defaultModel,
         [names.model]: null,
         [names.modelModal]: modal ?? "edit",
         [names.modelFormLoading]: false,
@@ -900,19 +820,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         [names.modelLoading]: false,
         ...staleAtOfSlices(),
       });
-      const updatedLightModel = new cnst.light().set(updatedModel) as unknown as Light;
-      slices.forEach(({ sliceName }) => {
-        const namesOfSlice = {
-          modelList: sliceName.replace(names.model, names.modelList),
-          modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-        };
-        const currentState = this.get() as { [key: string]: any };
-        const modelList = currentState[namesOfSlice.modelList] as DataList<Light>;
-        const modelListLoading = currentState[namesOfSlice.modelListLoading] as boolean;
-        if (modelListLoading || !modelList.has(updatedModel.id)) return;
-        const newModelList = new DataList(modelList).set(updatedLightModel);
-        this.set({ [namesOfSlice.modelList]: newModelList });
-      });
+      patchLists.call(this, updatedModel);
     },
     [names.viewModel]: async function (
       this: SetGet,
@@ -940,11 +848,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       const lightModels = withSharedInstances(() =>
         fullOrLightModels.map((fullOrLightModel) => new cnst.light().set(fullOrLightModel) as unknown as Light),
       );
-      slices.forEach(({ sliceName }) => {
-        const namesOfSlice = {
-          modelList: sliceName.replace(names.model, names.modelList),
-          modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-        };
+      slices.forEach(({ keys: { state: namesOfSlice } }) => {
         const modelList = currentState[namesOfSlice.modelList] as DataList<Light>;
         const modelListLoading = currentState[namesOfSlice.modelListLoading] as boolean;
         if (modelListLoading) return;
@@ -997,8 +901,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       });
     },
   };
-  const sliceAction = slices.reduce((acc, { sliceName, slice }) => {
-    const SliceName = capitalize(sliceName);
+  const sliceAction = slices.reduce((acc, { sliceName, keys, slice }) => {
     // One ticket per slice: every action below writes the same list.
     const requests = new SliceRequest();
     // One room per slice, not per component: a second room would apply every event to the one list twice.
@@ -1006,33 +909,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
     const livePauseIdxs = (slice.live?.pauseOn ?? [])
       .map((name) => slice.args.findIndex((arg) => arg.name === name))
       .filter((idx) => idx >= 0);
-    const namesOfSlice: { [key in SliceActionKey | SliceStateKey | "modelList"]: string } = {
-      defaultModel: SliceName.replace(names.Model, names.defaultModel),
-      modelInsight: sliceName.replace(names.model, names.modelInsight),
-      modelList: sliceName.replace(names.model, names.modelList),
-      modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-      initModel: SliceName.replace(names.Model, names.initModel),
-      modelInitList: SliceName.replace(names.Model, names.modelInitList),
-      modelInitAt: SliceName.replace(names.Model, names.modelInitAt),
-      modelStaleAt: SliceName.replace(names.Model, names.modelStaleAt),
-      refreshModel: SliceName.replace(names.Model, names.refreshModel),
-      selectModel: SliceName.replace(names.Model, names.selectModel),
-      setPageOfModel: SliceName.replace(names.Model, names.setPageOfModel),
-      loadMoreOfModel: SliceName.replace(names.Model, names.loadMoreOfModel),
-      setLimitOfModel: SliceName.replace(names.Model, names.setLimitOfModel),
-      setQueryArgsOfModel: SliceName.replace(names.Model, names.setQueryArgsOfModel),
-      setSortOfModel: SliceName.replace(names.Model, names.setSortOfModel),
-      applyLiveModel: SliceName.replace(names.Model, names.applyLiveModel),
-      watchLiveModel: SliceName.replace(names.Model, names.watchLiveModel),
-      lastPageOfModel: SliceName.replace(names.Model, names.lastPageOfModel),
-      pageOfModel: SliceName.replace(names.Model, names.pageOfModel),
-      limitOfModel: SliceName.replace(names.Model, names.limitOfModel),
-      hasMoreOfModel: SliceName.replace(names.Model, names.hasMoreOfModel),
-      isCumulativeOfModel: SliceName.replace(names.Model, names.isCumulativeOfModel),
-      queryArgsOfModel: SliceName.replace(names.Model, names.queryArgsOfModel),
-      sortOfModel: SliceName.replace(names.Model, names.sortOfModel),
-      modelSelection: SliceName.replace(names.Model, names.modelSelection),
-    };
+    const namesOfSlice = { ...keys.state, ...keys.action };
     // Read off the batch, not the insight count: that is absent under `{ insight: false }` and drifts with live events.
     const hasMoreFrom = (batch: unknown[], askedFor: number) => ({
       [namesOfSlice.hasMoreOfModel]: batch.length >= askedFor && askedFor > 0,

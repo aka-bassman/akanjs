@@ -12,6 +12,7 @@ import { useFormTools } from "./agentic/useFormTools";
 import { DraftStore } from "./draftStore";
 import { useEffect, useRef, useSyncExternalStore } from "./hooks";
 import type { RootStoreCls } from "./rootStore";
+import { sliceKeysOf } from "./sliceKeys";
 import type { SliceActionKey, SliceActionRole, SliceStateRole } from "./sliceRole";
 import type { DraftState, SliceStateKey } from "./state";
 import { evaluateInitializers, type SearchParamsState, type StateDerivedMeta } from "./stateBuilder";
@@ -393,74 +394,15 @@ export class StoreInstance {
   #buildSlices(store: RootStoreCls) {
     Object.entries(store.slice).forEach(([refName, sliceObj]) => {
       Object.entries(sliceObj).forEach(([suffix, serializedSlice]) => {
-        const sliceName = `${refName}${capitalize(suffix)}`;
-        this.#buildSlice(refName, sliceName, serializedSlice);
+        this.#buildSlice(refName, suffix, serializedSlice);
       });
     });
   }
 
-  #buildSlice(refName: string, sliceName: string, serializedSlice: { args?: SerializedArg[] }) {
-    const [fieldName, className] = [refName, capitalize(refName)];
-    const names: { [key in SliceStateKey | SliceActionKey | "model" | "Model"]: string } = {
-      model: fieldName,
-      Model: className,
-      defaultModel: `default${className}`,
-      modelInsight: `${fieldName}Insight`,
-      modelList: `${fieldName}List`,
-      modelListLoading: `${fieldName}ListLoading`,
-      modelInitList: `${fieldName}InitList`,
-      modelInitAt: `${fieldName}InitAt`,
-      modelStaleAt: `${fieldName}StaleAt`,
-      pageOfModel: `pageOf${className}`,
-      limitOfModel: `limitOf${className}`,
-      hasMoreOfModel: `hasMoreOf${className}`,
-      isCumulativeOfModel: `isCumulativeOf${className}`,
-      queryArgsOfModel: `queryArgsOf${className}`,
-      sortOfModel: `sortOf${className}`,
-      modelSelection: `${fieldName}Selection`,
-      initModel: `init${className}`,
-      refreshModel: `refresh${className}`,
-      selectModel: `select${className}`,
-      setPageOfModel: `setPageOf${className}`,
-      loadMoreOfModel: `loadMoreOf${className}`,
-      setLimitOfModel: `setLimitOf${className}`,
-      setQueryArgsOfModel: `setQueryArgsOf${className}`,
-      setSortOfModel: `setSortOf${className}`,
-      applyLiveModel: `applyLive${className}`,
-      watchLiveModel: `watchLive${className}`,
-      lastPageOfModel: `lastPageOf${className}`,
-    };
-    const SliceName = capitalize(sliceName);
-    const namesOfSliceState: { [key in SliceStateKey]: string } = {
-      defaultModel: SliceName.replace(names.Model, names.defaultModel),
-      modelInitList: SliceName.replace(names.Model, names.modelInitList),
-      modelInsight: sliceName.replace(names.model, names.modelInsight),
-      modelList: sliceName.replace(names.model, names.modelList),
-      modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-      modelInitAt: SliceName.replace(names.Model, names.modelInitAt),
-      modelStaleAt: SliceName.replace(names.Model, names.modelStaleAt),
-      lastPageOfModel: SliceName.replace(names.Model, names.lastPageOfModel),
-      pageOfModel: SliceName.replace(names.Model, names.pageOfModel),
-      limitOfModel: SliceName.replace(names.Model, names.limitOfModel),
-      hasMoreOfModel: SliceName.replace(names.Model, names.hasMoreOfModel),
-      isCumulativeOfModel: SliceName.replace(names.Model, names.isCumulativeOfModel),
-      queryArgsOfModel: SliceName.replace(names.Model, names.queryArgsOfModel),
-      sortOfModel: SliceName.replace(names.Model, names.sortOfModel),
-      modelSelection: SliceName.replace(names.Model, names.modelSelection),
-    };
-    const namesOfSliceAction: { [key in SliceActionKey]: string } = {
-      initModel: SliceName.replace(names.Model, names.initModel),
-      refreshModel: SliceName.replace(names.Model, names.refreshModel),
-      selectModel: SliceName.replace(names.Model, names.selectModel),
-      setPageOfModel: SliceName.replace(names.Model, names.setPageOfModel),
-      loadMoreOfModel: SliceName.replace(names.Model, names.loadMoreOfModel),
-      setLimitOfModel: SliceName.replace(names.Model, names.setLimitOfModel),
-      setQueryArgsOfModel: SliceName.replace(names.Model, names.setQueryArgsOfModel),
-      setSortOfModel: SliceName.replace(names.Model, names.setSortOfModel),
-      applyLiveModel: SliceName.replace(names.Model, names.applyLiveModel),
-      watchLiveModel: SliceName.replace(names.Model, names.watchLiveModel),
-    };
-
+  #buildSlice(refName: string, suffix: string, serializedSlice: { args?: SerializedArg[] }) {
+    const sliceName = `${refName}${capitalize(suffix)}`;
+    const names = sliceKeysOf(refName);
+    const { state: namesOfSliceState, action: namesOfSliceAction } = sliceKeysOf(refName, suffix);
     const targetSlice: {
       do: { [key: string]: (...args: any[]) => void };
       use: { [key: string]: () => any };
@@ -481,18 +423,18 @@ export class StoreInstance {
     for (const key of Object.keys(namesOfSliceAction) as SliceActionKey[]) {
       const rootActionKey = namesOfSliceAction[key];
       if (!this.do[rootActionKey]) continue;
-      targetSlice.do[names[key]] = this.do[rootActionKey];
+      targetSlice.do[names.action[key]] = this.do[rootActionKey];
       this.#sliceActionRoles.set(rootActionKey, { role: key, refName, sliceName, args });
     }
 
     for (const key of Object.keys(namesOfSliceState) as SliceStateKey[]) {
       const rootStateKey = namesOfSliceState[key];
       if (this.use[rootStateKey]) {
-        targetSlice.use[names[key]] = this.use[rootStateKey];
+        targetSlice.use[names.state[key]] = this.use[rootStateKey];
         this.#sliceStateRoles.set(rootStateKey, { role: key, refName, sliceName });
       }
       const setRootKey = `set${capitalize(rootStateKey)}`;
-      const setLocalKey = `set${capitalize(names[key])}`;
+      const setLocalKey = `set${capitalize(names.state[key])}`;
       if (this.do[setRootKey]) targetSlice.do[setLocalKey] = this.do[setRootKey];
     }
 
@@ -500,7 +442,7 @@ export class StoreInstance {
       const state = this.get();
       return Object.fromEntries(
         (Object.entries(namesOfSliceState) as [SliceStateKey, string][]).map(([key, value]) => [
-          names[key],
+          names.state[key],
           state[value],
         ]),
       );
