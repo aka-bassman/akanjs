@@ -2,14 +2,14 @@ import type { AppInfo, LibInfo } from "akanjs";
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
   return {
-    filename: "AuthGuard.ts",
+    filename: "guards.ts",
     content: `import type { Guard, GuardScope, SignalContext } from "akanjs/signal";
 
-// ===== AuthGuard.ts =====
+// ===== guards.ts =====
 // Convention: srvkit/ folder — server-only helpers, cannot import from client code.
 // Implements the Guard interface from akanjs/signal.
 // Guards are applied at endpoint/slice declaration: { guards: { root: SignedIn } }.
-// Naming: PascalCase .ts, static name property matches the guard identifier.
+// Naming: camelCase file, PascalCase classes; each static name matches its guard identifier.
 // Scanned by akan sync into srvkit/index.ts barrel automatically.
 
 export class SignedIn implements Guard {
