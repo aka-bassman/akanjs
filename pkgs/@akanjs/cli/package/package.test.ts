@@ -299,11 +299,7 @@ describe("PackageRunner", () => {
     );
   });
 
-  /**
-   * Writes a dist tree that imports its own subpaths, the way `@akanjs/devkit` does. `exports` targets
-   * are matched exactly by Bun, so a wildcard of `"./*": "./*"` reaches neither `executors.ts` nor
-   * `frontendBuild/index.ts` — invisible in the monorepo, where tsconfig `paths` probes both.
-   */
+  // Imports its own subpaths like `@akanjs/devkit`; Bun matches `exports` exactly, so `"./*": "./*"` reaches neither.
   const writeSelfImportingDist = async (exports: Record<string, unknown>) => {
     const { root, pkg } = await createTempPackage("@sample/tool");
     tempRoots.push(root);
@@ -352,8 +348,7 @@ describe("PackageRunner", () => {
       "./*": "./*.ts",
     });
 
-    // Passing means the comment and the `.test.ts` fixture above were both ignored: each names a
-    // subpath that resolves to nothing, and neither is an import a consumer would ever run.
+    // Passing means the comment and the `.test.ts` fixture above, which name unresolvable subpaths, were ignored.
     await expect(new PackageRunner().verifyDistPackage(pkg)).resolves.toMatchObject({ name: "@sample/tool" });
   });
 });
