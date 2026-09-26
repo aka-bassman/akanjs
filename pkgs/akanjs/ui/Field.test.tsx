@@ -4,7 +4,7 @@ import type { Dayjs } from "akanjs/base";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { setTestEnv } from "./testHelpers";
+import { mount, setTestEnv } from "./testHelpers";
 
 let Field: typeof import("./Field").Field;
 let DraggableList: typeof import("./DraggableList").DraggableList;
@@ -56,10 +56,7 @@ const handlerOf = (el: Element) => {
 };
 
 const render = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
+  const { container, unmount } = mount(node);
   const inputs = [...container.querySelectorAll("input")];
   return {
     changeFrom: handlerOf(inputs[0]),
@@ -69,10 +66,7 @@ const render = (node: ReactNode) => {
         el.getAttribute("data-akan-action"),
         el.getAttribute("data-akan-state"),
       ]),
-    unmount: () => {
-      act(() => root.unmount());
-      container.remove();
-    },
+    unmount,
   };
 };
 

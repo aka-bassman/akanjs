@@ -1,9 +1,8 @@
 import "../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import type { Dayjs } from "akanjs/base";
-import { act, type ReactNode, Suspense } from "react";
-import { createRoot } from "react-dom/client";
-import { setTestEnv } from "./testHelpers";
+import { act, type ReactNode } from "react";
+import { mountSuspense, setTestEnv } from "./testHelpers";
 
 let DatePicker: typeof import("./DatePicker").DatePicker;
 let dayjs: typeof import("akanjs/base").dayjs;
@@ -42,14 +41,9 @@ const changedTo = <T,>(onChange: { mock: { calls: unknown[][] } }): T => {
 };
 
 const mount = async (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => {
-    root.render(<Suspense>{node}</Suspense>);
-  });
+  const { container, unmount } = await mountSuspense(node);
   const input = (index = 0) => [...container.querySelectorAll("input")][index] as HTMLInputElement;
-  return { input, unmount: () => act(() => root.unmount()) };
+  return { input, unmount };
 };
 
 describe("DatePicker", () => {
