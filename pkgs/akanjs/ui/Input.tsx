@@ -45,6 +45,12 @@ const LeadingIcon = ({ icon, className }: { icon: ReactNode; className?: string 
   return <div className={cn("absolute inset-y-0 left-4 z-10 flex items-center justify-center", className)}>{icon}</div>;
 };
 
+export const invalidMessageOf = (
+  skip: unknown,
+  result: boolean | string | undefined,
+  l: (key: "base.invalidValueError") => string,
+) => (skip || result === true ? null : result === false ? l("base.invalidValueError") : result);
+
 export const InvalidMessage = ({ message }: { message: ReactNode }) => {
   if (!message) return null;
   return <div className="absolute -bottom-4 animate-fadeIn text-destructive text-xs">{message}</div>;
@@ -88,12 +94,7 @@ const DefaultInput = ({
   const [firstFocus, setFirstFocus] = useState(true);
   const validateResult = validate ? validate(value) : undefined;
   const inputBase = (useUiRecipe("input") ?? inputRecipe)();
-  const invalidMessage =
-    (value && !value.length) || validateResult === true || firstFocus
-      ? null
-      : validateResult === false
-        ? l("base.invalidValueError")
-        : validateResult;
+  const invalidMessage = invalidMessageOf((value && !value.length) || firstFocus, validateResult, l);
   const inputType = cn(
     inputBase,
     inputStyleType === "borderless"
@@ -168,12 +169,7 @@ const DefaultTextArea = ({
   const [firstFocus, setFirstFocus] = useState(true);
   const status: "error" | "warning" | "success" =
     !nullable && !value.length ? "warning" : validateResult === true ? "success" : "error";
-  const invalidMessage =
-    !value.length || validateResult === true || firstFocus
-      ? null
-      : validateResult === false
-        ? l("base.invalidValueError")
-        : validateResult;
+  const invalidMessage = invalidMessageOf(!value.length || firstFocus, validateResult, l);
   const statusClass = statusClassOf(status, firstFocus);
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (onPressEnter && e.key === "Enter") onPressEnter(e.currentTarget.value, e);
@@ -242,12 +238,7 @@ const DefaultPassword = ({
   const inputBase = (useUiRecipe("input") ?? inputRecipe)();
   const status: "error" | "warning" | "success" =
     !nullable && !value.length ? "warning" : validateResult === true ? "success" : "error";
-  const invalidMessage =
-    !value.length || validateResult === true || firstFocus
-      ? ""
-      : validateResult === false
-        ? l("base.invalidValueError")
-        : validateResult;
+  const invalidMessage = invalidMessageOf(!value.length || firstFocus, validateResult, l) ?? "";
   const statusClass = statusClassOf(status, firstFocus);
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (onPressEnter && e.key === "Enter") onPressEnter(e.currentTarget.value, e);
@@ -336,12 +327,7 @@ const DefaultEmail = ({
   const validateResult = !isValidEmail ? l("base.emailInvalidError") : validate(value);
   const status: "error" | "warning" | "success" =
     !nullable && !value.length ? "warning" : !isValidEmail ? "error" : validateResult === true ? "success" : "error";
-  const invalidMessage =
-    !value.length || validateResult === true || firstFocus
-      ? null
-      : validateResult === false
-        ? l("base.invalidValueError")
-        : validateResult;
+  const invalidMessage = invalidMessageOf(!value.length || firstFocus, validateResult, l);
   const statusClass = statusClassOf(status, firstFocus);
   const inputType = cn(inputBase, inputStyleType === "underline" ? "rounded-none" : "");
 
@@ -429,12 +415,7 @@ const DefaultNumber = ({
       : !nullable && value === null
         ? "warning"
         : "";
-  const invalidMessage =
-    value === null || validateResult === true
-      ? null
-      : validateResult === false
-        ? l("base.invalidValueError")
-        : validateResult;
+  const invalidMessage = invalidMessageOf(value === null, validateResult, l);
   const statusClass = validate !== undefined ? statusClassOf(status, firstFocus) : "";
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

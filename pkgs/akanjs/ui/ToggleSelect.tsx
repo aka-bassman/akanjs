@@ -3,7 +3,7 @@ import { cn, usePage } from "akanjs/client";
 import { type ComponentType, createElement, Fragment, type ReactNode } from "react";
 
 import { buttonRecipe } from "./Button";
-import { InvalidMessage } from "./Input";
+import { InvalidMessage, invalidMessageOf } from "./Input";
 import { createOverridable, useUiOverride, useUiRecipe } from "./UiOverride";
 
 const selectedCls = "border-transparent bg-primary text-primary-foreground hover:bg-primary/90";
@@ -39,12 +39,11 @@ const DefaultToggleSelect = <I extends string | number | boolean | null>({
   const { l } = usePage();
   const toggleBtn = (useUiRecipe("button") ?? buttonRecipe)({ variant: "outline", size: "sm" });
   const validateResult = value !== null ? validate(value) : false;
-  const invalidMessage =
-    value === null || (typeof value === "string" && !value.length) || validateResult === true
-      ? null
-      : validateResult === false
-        ? l("base.invalidValueError")
-        : validateResult;
+  const invalidMessage = invalidMessageOf(
+    value === null || (typeof value === "string" && !value.length),
+    validateResult,
+    l,
+  );
   const options = items.map(
     (item) =>
       (typeof item === "string" || typeof item === "number" ? { label: item.toString(), value: item } : item) as {
@@ -108,12 +107,7 @@ const DefaultMulti = ({
   const { l } = usePage();
   const toggleBtn = (useUiRecipe("button") ?? buttonRecipe)({ variant: "outline", size: "sm" });
   const validateResult = validate(value);
-  const invalidMessage =
-    !value.length || validateResult === true
-      ? null
-      : validateResult === false
-        ? l("base.invalidValueError")
-        : validateResult;
+  const invalidMessage = invalidMessageOf(!value.length, validateResult, l);
   const options = items.map(
     (item) =>
       (typeof item === "string" || typeof item === "number" ? { label: item.toString(), value: item } : item) as {
