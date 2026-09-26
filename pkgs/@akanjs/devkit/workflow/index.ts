@@ -2,7 +2,6 @@ export * from "./artifacts";
 export * from "./executor";
 export * from "./moduleIndex";
 export * from "./plan";
-export * from "./primitive";
 export * from "./render";
 export * from "./rolloutGate";
 export * from "./source";

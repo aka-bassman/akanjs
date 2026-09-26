@@ -1,7 +1,6 @@
 import ts from "typescript";
 import type { Sys } from "../commandDecorators";
 import { generatedFilePathsForTarget } from "./artifacts";
-import { createPrimitiveWriteReport } from "./primitive";
 import {
   callExpressionName,
   expressionName,
@@ -17,6 +16,7 @@ import type {
   PrimitiveGeneratedFile,
   PrimitiveNextAction,
   PrimitiveValidationCommand,
+  PrimitiveWriteReport,
   WorkflowDiagnostic,
 } from "./types";
 
@@ -65,6 +65,27 @@ export const nextActionsForTarget = (target: string) =>
     { command: `akan sync ${target}`, reason: "Refresh generated Akan files after source changes." },
     { command: `akan lint ${target}`, reason: "Validate the target after generated files are refreshed." },
   ] satisfies PrimitiveNextAction[];
+
+export const createPrimitiveWriteReport = ({
+  command,
+  status,
+  changedFiles = [],
+  generatedFiles = [],
+  validationCommands = [],
+  diagnostics = [],
+  nextActions = [],
+}: Omit<PrimitiveWriteReport, "schemaVersion" | "status"> & {
+  status?: PrimitiveWriteReport["status"];
+}): PrimitiveWriteReport => ({
+  schemaVersion: 1,
+  command,
+  status: status ?? (diagnostics.some((diagnostic) => diagnostic.severity === "error") ? "failed" : "passed"),
+  changedFiles,
+  generatedFiles,
+  validationCommands,
+  diagnostics,
+  nextActions,
+});
 
 export const createPassedPrimitiveReport = ({
   command,
