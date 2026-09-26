@@ -442,9 +442,9 @@ export class DevHmrController {
   #shouldFullReloadForFiles(files: string[], routeIds: string[] | undefined): boolean {
     if (files.length === 0) return false;
     const runtimeRoots = [
-      `${path.sep}pkgs${path.sep}akanjs${path.sep}server${path.sep}src${path.sep}hmr${path.sep}`,
-      `${path.sep}pkgs${path.sep}akanjs${path.sep}server${path.sep}src${path.sep}rscClient.tsx`,
-      `${path.sep}pkgs${path.sep}akanjs${path.sep}server${path.sep}src${path.sep}ssrFromRscRenderer.tsx`,
+      `${path.sep}pkgs${path.sep}akanjs${path.sep}server${path.sep}hmr${path.sep}`,
+      `${path.sep}pkgs${path.sep}akanjs${path.sep}server${path.sep}rscClient.tsx`,
+      `${path.sep}pkgs${path.sep}akanjs${path.sep}server${path.sep}ssrFromRscRenderer.tsx`,
     ];
     if (files.some((file) => runtimeRoots.some((needle) => path.resolve(file).includes(needle)))) return true;
     if (files.some((file) => path.basename(file).endsWith(".signal.ts"))) return true;

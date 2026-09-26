@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import type { DevBuildStatus } from "../artifact";
+import type { RscWorker } from "../rscWorkerHost";
 import {
+  DevHmrController,
   devBuildStatusToHmrMessage,
   isAkanRuntimeMetadataFile,
   manifestClientEntriesForFiles,
 } from "./devHmrController";
+import type { HmrMessage } from "./wsHub";
 
 describe("DevHmrController runtime metadata detection", () => {
   test("detects generated app client runtime metadata files", () => {
@@ -108,5 +111,41 @@ describe("DevHmrController build status HMR messages", () => {
       message: "Build failed",
       files: 1,
     });
+  });
+});
+
+describe("DevHmrController pages-updated broadcast", () => {
+  const broadcastTypesFor = async (changedFile: string) => {
+    const originalSend = process.send;
+    process.send = ((): boolean => true) as typeof process.send;
+    const controller = new DevHmrController({
+      renderState: { buildId: 0, cssAssets: {}, cssBytesByUrl: {} },
+      rsc: { reload: async () => undefined, updateCssAssets: () => undefined } as unknown as RscWorker,
+      seedIndex: { entries: [], globalLayoutFiles: [] },
+      upgradeHmrWs: () => true,
+    });
+    const messages: HmrMessage[] = [];
+    controller.hub.setPublisher((_topic, payload) => messages.push(JSON.parse(payload) as HmrMessage));
+    try {
+      process.emit("message", {
+        type: "pages-updated",
+        data: { bundlePath: "/repo/pages.js", buildId: 7, changedFiles: [changedFile] },
+      });
+      for (let tick = 0; tick < 100 && messages.length === 0; tick++) await Bun.sleep(1);
+      return messages.map((message) => message.type);
+    } finally {
+      controller.dispose();
+      process.send = originalSend;
+    }
+  };
+
+  test("fully reloads when the framework's HMR client, RSC client or SSR renderer source changes", async () => {
+    for (const file of ["hmr/clientScript.ts", "rscClient.tsx", "ssrFromRscRenderer.tsx"]) {
+      expect(await broadcastTypesFor(`/repo/pkgs/akanjs/server/${file}`)).toEqual(["reload"]);
+    }
+  });
+
+  test("refreshes RSC in place for an ordinary non-client source change", async () => {
+    expect(await broadcastTypesFor("/repo/apps/demo/lib/task/task.service.ts")).toEqual(["rsc-refresh"]);
   });
 });
