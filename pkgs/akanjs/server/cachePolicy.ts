@@ -95,6 +95,9 @@ export function isPublicRouteCacheableRequest(request: Request): boolean {
   return [...parseCookieHeader(cookie).keys()].every((name) => name === "theme");
 }
 
+const isAtOrUnder = (value: string, prefix: string) =>
+  value === prefix || value.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
+
 export function isRouteCachePathAllowed(
   pathname: string,
   options: { allow?: string | null; deny?: string | null; defaultAllow?: boolean } = {},
@@ -105,9 +108,7 @@ export function isRouteCachePathAllowed(
       .map((prefix) => prefix.trim())
       .filter(Boolean);
     if (prefixes.length === 0) return false;
-    return prefixes.some(
-      (prefix) => pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`),
-    );
+    return prefixes.some((prefix) => isAtOrUnder(pathname, prefix));
   };
   if (matches(options.deny)) return false;
   const allow = options.allow ?? "";
@@ -201,10 +202,7 @@ export function shouldInvalidateRouteCacheEntry(
       if (!path) return false;
       const normalized = path.startsWith("/") ? path : `/${path}`;
       return (
-        metadata.pathname === normalized ||
-        metadata.pathname.startsWith(normalized.endsWith("/") ? normalized : `${normalized}/`) ||
-        metadata.routeId === normalized ||
-        Boolean(metadata.routeId?.startsWith(normalized.endsWith("/") ? normalized : `${normalized}/`))
+        isAtOrUnder(metadata.pathname, normalized) || (!!metadata.routeId && isAtOrUnder(metadata.routeId, normalized))
       );
     });
   }

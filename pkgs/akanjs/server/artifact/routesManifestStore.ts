@@ -18,7 +18,9 @@ export class RoutesManifestStore {
     return {
       ...manifest,
       clientManifest: RoutesManifestStore.#serializeClientManifest(manifest.clientManifest, normalizedArtifactDir),
-      ssrManifest: RoutesManifestStore.#serializeSsrManifest(manifest.ssrManifest, normalizedArtifactDir),
+      ssrManifest: RoutesManifestStore.#mapSsrManifest(manifest.ssrManifest, (artifactPath) =>
+        RoutesManifestStore.#serializeArtifactPath(artifactPath, normalizedArtifactDir),
+      ),
       knownEntries: manifest.knownEntries.map((entry) =>
         RoutesManifestStore.#serializeArtifactPath(entry, normalizedArtifactDir),
       ),
@@ -39,7 +41,9 @@ export class RoutesManifestStore {
     return {
       ...manifest,
       clientManifest: { ...manifest.clientManifest },
-      ssrManifest: RoutesManifestStore.#normalizeSsrManifest(manifest.ssrManifest, artifactDir),
+      ssrManifest: RoutesManifestStore.#mapSsrManifest(manifest.ssrManifest, (artifactPath) =>
+        RoutesManifestStore.#normalizeArtifactPath(artifactPath, artifactDir),
+      ),
       knownEntries: (manifest.knownEntries ?? []).map((entry) =>
         RoutesManifestStore.#normalizeStoredPath(entry, artifactDir),
       ),
@@ -54,34 +58,13 @@ export class RoutesManifestStore {
     return serialized;
   }
 
-  static #serializeSsrManifest(ssrManifest: SsrManifest, artifactDir: string): SsrManifest {
+  static #mapSsrManifest(ssrManifest: SsrManifest, mapPath: (artifactPath: string) => string): SsrManifest {
     const moduleMap: SsrManifest["moduleMap"] = {};
     for (const [entryUrl, byName] of Object.entries(ssrManifest.moduleMap)) {
-      const serializedByName: Record<string, SsrManifestEntry> = {};
-      for (const [name, entry] of Object.entries(byName)) {
-        serializedByName[name] = {
-          ...entry,
-          id: RoutesManifestStore.#serializeArtifactPath(entry.id, artifactDir),
-          chunks: entry.chunks.map((chunk) => RoutesManifestStore.#serializeArtifactPath(chunk, artifactDir)),
-        };
-      }
-      moduleMap[entryUrl] = serializedByName;
-    }
-    return { ...ssrManifest, moduleMap };
-  }
-
-  static #normalizeSsrManifest(ssrManifest: SsrManifest, artifactDir: string): SsrManifest {
-    const moduleMap: SsrManifest["moduleMap"] = {};
-    for (const [entryUrl, byName] of Object.entries(ssrManifest.moduleMap)) {
-      const normalizedByName: Record<string, SsrManifestEntry> = {};
-      for (const [name, entry] of Object.entries(byName)) {
-        normalizedByName[name] = {
-          ...entry,
-          id: RoutesManifestStore.#normalizeArtifactPath(entry.id, artifactDir),
-          chunks: entry.chunks.map((chunk) => RoutesManifestStore.#normalizeArtifactPath(chunk, artifactDir)),
-        };
-      }
-      moduleMap[entryUrl] = normalizedByName;
+      const mappedByName: Record<string, SsrManifestEntry> = {};
+      for (const [name, entry] of Object.entries(byName))
+        mappedByName[name] = { ...entry, id: mapPath(entry.id), chunks: entry.chunks.map((chunk) => mapPath(chunk)) };
+      moduleMap[entryUrl] = mappedByName;
     }
     return { ...ssrManifest, moduleMap };
   }

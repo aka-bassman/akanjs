@@ -293,6 +293,21 @@ export class RouteTreeBuilder {
 
   static #makeRouteRender(key: string, kind: "page" | "layout", loader: () => Promise<RouteModuleSource>): RouteRender {
     const loadModule = RouteTreeBuilder.#makeLazyModule(key, kind, loader);
+    const syncFallbacks = (mod: LayoutModule) => {
+      routeRender.NotFound = mod.NotFound;
+      routeRender.Error = mod.Error;
+      return mod;
+    };
+    const loadSynced = async () => {
+      const { module: mod } = await loadModule();
+      routeRender.Loading = mod.Loading as never;
+      if (kind === "layout") syncFallbacks(mod as LayoutModule);
+      return mod;
+    };
+    const pageConfigOf = async () => {
+      const { module: mod } = await loadModule();
+      return "pageConfig" in mod ? mod.pageConfig : undefined;
+    };
     const routeRender: RouteRender = {
       isAsync: true,
       resolveLoading: async () => {
@@ -300,50 +315,22 @@ export class RouteTreeBuilder {
         routeRender.Loading = mod.Loading as never;
       },
       render: async (props: LayoutProps | PageProps) => {
-        const { module: mod } = await loadModule();
-        routeRender.Loading = mod.Loading as never;
-        if (kind === "layout") {
-          const layoutMod = mod as LayoutModule;
-          routeRender.NotFound = layoutMod.NotFound;
-          routeRender.Error = layoutMod.Error;
-        }
+        const mod = await loadSynced();
         if (!mod.default) throw new Error(`[route-convention] ${key} has no default export`);
         return mod.default(props as never);
       },
       resolveHead: async (props: PageProps) => {
-        const { module: mod } = await loadModule();
-        routeRender.Loading = mod.Loading as never;
-        if (kind === "layout") {
-          const layoutMod = mod as LayoutModule;
-          routeRender.NotFound = layoutMod.NotFound;
-          routeRender.Error = layoutMod.Error;
-        }
+        const mod = await loadSynced();
         return mod.generateHead ? await mod.generateHead(props) : mod.head;
       },
     };
     if (kind === "page") {
-      routeRender.getPageConfig = async () => {
-        const { module: mod } = await loadModule();
-        return "pageConfig" in mod ? mod.pageConfig : undefined;
-      };
+      routeRender.getPageConfig = pageConfigOf;
       routeRender.getRouteDefinition = async () => (await loadModule()).definition;
     } else {
-      routeRender.getLayoutPageConfig = async () => {
-        const { module: mod } = await loadModule();
-        return "pageConfig" in mod ? mod.pageConfig : undefined;
-      };
-      routeRender.resolveNotFound = async () => {
-        const mod = (await loadModule()).module as LayoutModule;
-        routeRender.NotFound = mod.NotFound;
-        routeRender.Error = mod.Error;
-        return mod.NotFound;
-      };
-      routeRender.resolveError = async () => {
-        const mod = (await loadModule()).module as LayoutModule;
-        routeRender.NotFound = mod.NotFound;
-        routeRender.Error = mod.Error;
-        return mod.Error;
-      };
+      routeRender.getLayoutPageConfig = pageConfigOf;
+      routeRender.resolveNotFound = async () => syncFallbacks((await loadModule()).module as LayoutModule).NotFound;
+      routeRender.resolveError = async () => syncFallbacks((await loadModule()).module as LayoutModule).Error;
     }
     return routeRender;
   }

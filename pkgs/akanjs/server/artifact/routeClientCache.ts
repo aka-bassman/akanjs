@@ -136,14 +136,14 @@ export class RouteClientCache {
     return delta;
   }
 
+  #dropBuilt(predicate: (routeId: string) => boolean): string[] {
+    const dropped = [...this.#built.keys()].filter((routeId) => predicate(routeId));
+    for (const id of dropped) this.#built.delete(id);
+    return dropped;
+  }
+
   invalidate(predicate: (routeId: string) => boolean): string[] {
-    const dropped: string[] = [];
-    for (const id of [...this.#built.keys()]) {
-      if (predicate(id)) {
-        this.#built.delete(id);
-        dropped.push(id);
-      }
-    }
+    const dropped = this.#dropBuilt(predicate);
     if (dropped.length > 0) {
       this.#rebuildKnownEntriesPreservingManifest(this.merged.generation + 1);
       this.#building.clear();
@@ -154,13 +154,7 @@ export class RouteClientCache {
 
   invalidateClientEntries({ routePredicate, staleEntries }: InvalidateClientEntriesOptions): string[] {
     const normalizedStaleEntries = new Set([...staleEntries].map((entry) => RouteClientCache.#normalizePath(entry)));
-    const dropped: string[] = [];
-    for (const id of [...this.#built.keys()]) {
-      if (routePredicate(id)) {
-        this.#built.delete(id);
-        dropped.push(id);
-      }
-    }
+    const dropped = this.#dropBuilt(routePredicate);
     if (dropped.length === 0 && normalizedStaleEntries.size === 0) return dropped;
 
     this.#rebuildKnownEntriesPreservingManifest(this.merged.generation + 1, normalizedStaleEntries);
@@ -172,11 +166,7 @@ export class RouteClientCache {
   }
 
   clear(): string[] {
-    const dropped: string[] = [];
-    for (const id of [...this.#built.keys()]) {
-      this.#built.delete(id);
-      dropped.push(id);
-    }
+    const dropped = this.#dropBuilt(() => true);
     const nextGeneration = this.merged.generation + 1;
     this.merged = this.#getEmptyMerged(nextGeneration);
     this.#revision += 1;
