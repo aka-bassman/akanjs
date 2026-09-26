@@ -5,6 +5,7 @@ import { type AkanRequestStore, type AkanTheme, pushRequestFallback, requestStor
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
 import { createFromNodeStream } from "react-server-dom-webpack/client.node";
+import { parsePositiveInt } from "./cachePolicy";
 import type { SsrChunkRegistryStats, SsrFromRscInput, SsrLateRedirect } from "./ssrTypes";
 
 const DEFAULT_SSR_CHUNK_REGISTRY_MAX_ENTRIES = 1024;
@@ -355,7 +356,11 @@ export function interleaveRscScriptsWithHtml(
   const bootstrapDetector = new InlineBootstrapDetector();
   const pendingRscScripts: Uint8Array[] = [];
   const pendingControlScripts: Uint8Array[] = [];
-  const maxPendingRscScripts = SsrFromRscRendererConfig.maxPendingInlineRscScripts(options.maxPendingRscScripts);
+  const explicitMax = options.maxPendingRscScripts;
+  const maxPendingRscScripts =
+    explicitMax !== undefined && Number.isFinite(explicitMax) && explicitMax > 0
+      ? Math.floor(explicitMax)
+      : (parsePositiveInt(process.env.AKAN_MAX_PENDING_INLINE_RSC_SCRIPTS) ?? DEFAULT_MAX_PENDING_INLINE_RSC_SCRIPTS);
   const queueDrainResolvers: Array<() => void> = [];
   const scriptAvailableResolvers: Array<() => void> = [];
   let errored = false;
@@ -495,14 +500,6 @@ export function interleaveRscScriptsWithHtml(
       options.onComplete?.();
     },
   });
-}
-
-class SsrFromRscRendererConfig {
-  static maxPendingInlineRscScripts(explicit?: number): number {
-    if (explicit !== undefined && Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
-    const parsed = Number.parseInt(process.env.AKAN_MAX_PENDING_INLINE_RSC_SCRIPTS ?? "", 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_PENDING_INLINE_RSC_SCRIPTS;
-  }
 }
 
 class InlineBootstrapDetector {
@@ -657,7 +654,9 @@ export class SsrFromRscRenderer {
     // import(), not require(): client chunks may use top-level await, which Bun's require() refuses.
     // XXX Bounds key tracking, not memory: Bun's ESM registry keeps an evicted module for the process lifetime, so
     // `ssrChunkRegistrySize` is not bytes held and only recycling the process reclaims SSR chunk memory.
-    const registry = new SsrChunkRegistry<Record<string, unknown>>(SsrFromRscRenderer.#getSsrChunkRegistryMaxEntries());
+    const registry = new SsrChunkRegistry<Record<string, unknown>>(
+      parsePositiveInt(process.env.AKAN_SSR_CHUNK_REGISTRY_MAX_ENTRIES) ?? DEFAULT_SSR_CHUNK_REGISTRY_MAX_ENTRIES,
+    );
     g.__webpack_chunk_load__ = async (chunkId: string) => {
       if (registry.get(chunkId)) {
         SsrFromRscRenderer.#chunkRegistryStats.ssrChunkCacheHitCount += 1;
@@ -722,11 +721,6 @@ export class SsrFromRscRenderer {
     return error.message === "Connection closed." || error.name === "AkanRedirectError";
   }
 
-  static #getSsrChunkRegistryMaxEntries(): number {
-    const parsed = Number.parseInt(process.env.AKAN_SSR_CHUNK_REGISTRY_MAX_ENTRIES ?? "", 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SSR_CHUNK_REGISTRY_MAX_ENTRIES;
-  }
-
   // A stream splice, not a React <head> child: once any module fetch starts, the spec flips the document's
   // "allow-import-maps" bit and no later importmap is acquired.
   static #injectHeadScriptsIntoHead(
@@ -760,7 +754,7 @@ export class SsrFromRscRenderer {
       if (!htmlTheme) return html;
       return html.replace(htmlOpenRe, (tag) => {
         if (/\sdata-theme\s*=/.test(tag)) return tag;
-        return tag.replace(/>$/, ` data-theme="${SsrFromRscRenderer.#escapeHtmlAttr(htmlTheme)}">`);
+        return tag.replace(/>$/, ` data-theme="${escapeHtmlAttr(htmlTheme)}">`);
       });
     };
 
@@ -796,21 +790,11 @@ export class SsrFromRscRenderer {
     );
   }
 
-  static #escapeHtmlAttr(value: string): string {
-    return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  static #createBootstrapModulePreloadTags(bootstrapModules: string[] = []): string {
+    return bootstrapModules.map((src) => `<link rel="modulepreload" href="${escapeHtmlAttr(src)}">`).join("");
   }
 
-  static #createBootstrapModulePreloadTags(bootstrapModules?: string[]): string {
-    if (!bootstrapModules?.length) return "";
-    return bootstrapModules
-      .map((src) => `<link rel="modulepreload" href="${SsrFromRscRenderer.#escapeHtmlAttr(src)}">`)
-      .join("");
-  }
-
-  static #createBootstrapModuleScriptTags(bootstrapModules?: string[]): string {
-    if (!bootstrapModules?.length) return "";
-    return bootstrapModules
-      .map((src) => `<script type="module" src="${SsrFromRscRenderer.#escapeHtmlAttr(src)}"></script>`)
-      .join("");
+  static #createBootstrapModuleScriptTags(bootstrapModules: string[] = []): string {
+    return bootstrapModules.map((src) => `<script type="module" src="${escapeHtmlAttr(src)}"></script>`).join("");
   }
 }

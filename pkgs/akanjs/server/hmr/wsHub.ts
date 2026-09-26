@@ -73,7 +73,7 @@ export class HmrWsHub {
   }
 }
 
-const isSyncNavigationEnabled = () =>
+export const isSyncNavigationEnabled = () =>
   process.env.AKAN_PUBLIC_SYNC_NAVIGATION === "true" ||
   process.env.AKAN_PUBLIC_SYNC_NAVIGATION === "1" ||
   process.env.SYNC_DOMAIN === "true" ||

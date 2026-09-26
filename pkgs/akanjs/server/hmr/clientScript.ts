@@ -1,15 +1,11 @@
+import { isSyncNavigationEnabled } from "./wsHub";
+
 // A classic inline script that runs before any module script, so it stays dependency-free. swapCss must drop both the
 // SSR <link> and the CSR artifact's inline <style data-akan-css="active">, or every CSS save leaves two sheets.
-const SYNC_NAVIGATION_ENABLED =
-  process.env.AKAN_PUBLIC_SYNC_NAVIGATION === "true" ||
-  process.env.AKAN_PUBLIC_SYNC_NAVIGATION === "1" ||
-  process.env.SYNC_DOMAIN === "true" ||
-  process.env.SYNC_DOMAIN === "1";
-
 export const HMR_CLIENT_SCRIPT = `(function(){
   if (self.__AKAN_HMR_INSTALLED__) return;
   self.__AKAN_HMR_INSTALLED__ = true;
-  var syncNavigationEnabled = ${JSON.stringify(SYNC_NAVIGATION_ENABLED)};
+  var syncNavigationEnabled = ${JSON.stringify(isSyncNavigationEnabled())};
   var syncNavigationClientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
   var proto = location.protocol === "https:" ? "wss:" : "ws:";
   var url = proto + "//" + location.host + "/_akan/hmr";

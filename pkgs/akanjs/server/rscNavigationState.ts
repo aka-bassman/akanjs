@@ -211,17 +211,9 @@ export function deleteRscCacheEntryIfCurrent<T>(cache: RscNavigationCache<T>, hr
   return cache.delete(href);
 }
 
-export function rememberRscCacheNode<T>(
-  cache: RscNavigationCache<RscNavigationCacheNode<T>>,
-  node: RscNavigationCacheNode<T>,
-  maxEntries: number,
-): void {
-  rememberRscCacheEntry(cache, node.href, node, maxEntries);
-}
-
-export function rememberRscPatchCacheNode<T>(
-  cache: RscNavigationCache<RscPatchNavigationCacheNode<T>>,
-  node: RscPatchNavigationCacheNode<T>,
+export function rememberRscCacheNode<N extends { href: string }>(
+  cache: RscNavigationCache<N>,
+  node: N,
   maxEntries: number,
 ): void {
   rememberRscCacheEntry(cache, node.href, node, maxEntries);

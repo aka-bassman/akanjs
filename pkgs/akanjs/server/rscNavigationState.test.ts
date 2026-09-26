@@ -13,7 +13,6 @@ import {
   type RscNavigationCacheNode,
   rememberRscCacheEntry,
   rememberRscCacheNode,
-  rememberRscPatchCacheNode,
   resolveCachedRscPatchNavigation,
 } from "./rscNavigationState";
 
@@ -655,7 +654,7 @@ describe("RSC navigation state helpers", () => {
 
     expect(node).not.toBeNull();
     if (!node) return;
-    rememberRscPatchCacheNode(cache, node, 32);
+    rememberRscCacheNode(cache, node, 32);
 
     expect(cache.get(targetState.href)).toBe(node);
     expect(cache.get(targetState.href)?.thenable).toBe(patchThenable);
@@ -679,9 +678,9 @@ describe("RSC navigation state helpers", () => {
     };
     const cache = new Map();
 
-    rememberRscPatchCacheNode(cache, makeNode("/docs/a"), 2);
-    rememberRscPatchCacheNode(cache, makeNode("/docs/b"), 2);
-    rememberRscPatchCacheNode(cache, makeNode("/docs/c"), 2);
+    rememberRscCacheNode(cache, makeNode("/docs/a"), 2);
+    rememberRscCacheNode(cache, makeNode("/docs/b"), 2);
+    rememberRscCacheNode(cache, makeNode("/docs/c"), 2);
 
     expect(cache.has("https://example.test/docs/a")).toBe(false);
     expect(cache.has("https://example.test/docs/b")).toBe(true);

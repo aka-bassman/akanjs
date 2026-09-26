@@ -368,24 +368,22 @@ export class DevHmrController {
     for (const [entry, entryDeps] of Object.entries(depsByEntry)) {
       const resolvedEntry = path.resolve(entry);
       this.#recentClientEntries.add(resolvedEntry);
-      const entryRouteIds = this.#clientEntryRouteIds.get(resolvedEntry) ?? new Set<string>();
-      entryRouteIds.add(routeId);
-      this.#clientEntryRouteIds.set(resolvedEntry, entryRouteIds);
+      DevHmrController.#addTo(this.#clientEntryRouteIds, resolvedEntry, routeId);
       for (const dep of entryDeps) {
         const resolvedDep = path.resolve(dep);
         this.#recentClientFiles.add(resolvedDep);
-        const entries = this.#clientFileEntries.get(resolvedDep) ?? new Set<string>();
-        entries.add(resolvedEntry);
-        this.#clientFileEntries.set(resolvedDep, entries);
+        DevHmrController.#addTo(this.#clientFileEntries, resolvedDep, resolvedEntry);
       }
     }
     for (const dep of deps) {
       const resolved = path.resolve(dep);
       this.#recentClientFiles.add(resolved);
-      const routeIds = this.#clientFileRouteIds.get(resolved) ?? new Set<string>();
-      routeIds.add(routeId);
-      this.#clientFileRouteIds.set(resolved, routeIds);
+      DevHmrController.#addTo(this.#clientFileRouteIds, resolved, routeId);
     }
+  }
+
+  static #addTo(map: Map<string, Set<string>>, key: string, value: string) {
+    map.set(key, (map.get(key) ?? new Set<string>()).add(value));
   }
 
   #rememberClientEntries(routeId: string, entries: string[]): Set<string> {
@@ -404,9 +402,7 @@ export class DevHmrController {
     for (const entry of entries) {
       const resolvedEntry = path.resolve(entry);
       this.#recentClientEntries.add(resolvedEntry);
-      const routeIds = this.#clientEntryRouteIds.get(resolvedEntry) ?? new Set<string>();
-      routeIds.add(routeId);
-      this.#clientEntryRouteIds.set(resolvedEntry, routeIds);
+      DevHmrController.#addTo(this.#clientEntryRouteIds, resolvedEntry, routeId);
     }
     return orphanedEntries;
   }

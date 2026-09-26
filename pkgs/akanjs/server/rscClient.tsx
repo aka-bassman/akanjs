@@ -28,7 +28,6 @@ import {
   type RscNavigationCacheNode,
   type RscPatchNavigationCacheNode,
   rememberRscCacheNode,
-  rememberRscPatchCacheNode,
   resolveCachedRscPatchNavigation,
 } from "./rscNavigationState";
 import { isAkanRscPartialCommitEnabled } from "./rscPartialCommit";
@@ -433,7 +432,7 @@ function Root(): ReactNode {
             ) {
               currentCommitFromCache = true;
               rememberPatchedRouteState(patchResult.tree, patchResult.patchedNode);
-              rememberRscPatchCacheNode(rscPatchCache, cachedPatch, MAX_RSC_CACHE_ENTRIES);
+              rememberRscCacheNode(rscPatchCache, cachedPatch, MAX_RSC_CACHE_ENTRIES);
               return;
             }
           }
@@ -466,7 +465,7 @@ function Root(): ReactNode {
               outletKey: fetched.outletKey,
               headSnapshot: fetched.headSnapshot,
             });
-            if (patchCacheNode) rememberRscPatchCacheNode(rscPatchCache, patchCacheNode, MAX_RSC_CACHE_ENTRIES);
+            if (patchCacheNode) rememberRscCacheNode(rscPatchCache, patchCacheNode, MAX_RSC_CACHE_ENTRIES);
             return;
           }
           rscPatchCache.delete(target);
