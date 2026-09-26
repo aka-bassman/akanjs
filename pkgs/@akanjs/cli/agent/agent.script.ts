@@ -1,8 +1,6 @@
 import { script, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { Logger } from "akanjs/common";
-import { AgentRunner } from "./agent.runner";
-
-type AgentTarget = "cursor" | "agents-md" | "claude";
+import { AgentRunner, type AgentTarget } from "./agent.runner";
 
 const resolveTargets = (target: string | null): AgentTarget[] => {
   if (!target || target === "all") return ["cursor", "agents-md", "claude"];

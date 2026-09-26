@@ -14,7 +14,7 @@ import { Prompter } from "@akanjs/devkit/prompter";
 import { collectRecipeSources, scanRecipes } from "@akanjs/devkit/recipeScanner";
 import { Logger } from "akanjs/common";
 
-type AgentTarget = "cursor" | "agents-md" | "claude";
+export type AgentTarget = "cursor" | "agents-md" | "claude";
 
 const targetPaths: Record<AgentTarget, string> = {
   cursor: ".cursor/rules/akan.mdc",
@@ -114,7 +114,7 @@ const renderManagedBlock = async (workspace: Workspace) => {
   const block = `## Workspace
 
 - Repo: ${context.repoName}
-- Apps: ${context.apps.map((app) => app.name).join(", ") || "none"}
+- Apps: ${appNames.join(", ") || "none"}
 - Libraries: ${context.libs.map((lib) => lib.name).join(", ") || "none"}
 - Packages: ${context.pkgs.map((pkg) => pkg.name).join(", ") || "none"}
 
