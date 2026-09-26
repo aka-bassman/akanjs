@@ -142,7 +142,7 @@ export class FontOptimizer {
         fonts.push(...this.#extractFontsExport(source, filePath));
       }),
     );
-    return this.#dedupeFonts(fonts);
+    return [...new Map(fonts.map((font) => [JSON.stringify(font), font] as const)).values()];
   }
 
   async #optimizeFont(font: ReactFont) {
@@ -181,7 +181,7 @@ export class FontOptimizer {
       this.#app.logger.warn(
         `[font] ${path.relative(this.#app.cwdPath, filePath)} declares fonts the build cannot read without evaluating the module — write the list inline, or nothing is subset for it and every /_akan/fonts request 404s`,
       );
-    return fonts.map((font) => this.#withFontDefaults(font));
+    return fonts.map((font) => ({ ...font, subsets: font.subsets ?? [...DEFAULT_FONT_SUBSETS] }));
   }
 
   #isReadableFont(value: unknown): value is ReactFont {
@@ -262,16 +262,6 @@ export class FontOptimizer {
     return null;
   }
 
-  #dedupeFonts(fonts: ReactFont[]) {
-    const map = new Map<string, ReactFont>();
-    for (const font of fonts) map.set(JSON.stringify(font), font);
-    return [...map.values()];
-  }
-
-  #withFontDefaults(font: ReactFont): ReactFont {
-    return { ...font, subsets: font.subsets ?? [...DEFAULT_FONT_SUBSETS] };
-  }
-
   #getFontSubsets(font: ReactFont): ReactFontSubset[] {
     return font.subsets ?? DEFAULT_FONT_SUBSETS;
   }
@@ -288,12 +278,8 @@ export class FontOptimizer {
     return font.optimize !== false;
   }
 
-  #getFontStyles(font: ReactFont): ReactFontStyle[] {
-    return font.styles?.length ? font.styles : ["normal"];
-  }
-
   #getFontFaces(font: ReactFont): ReactFontFace[] {
-    const enabledStyles = new Set(this.#getFontStyles(font));
+    const enabledStyles = new Set<ReactFontStyle>(font.styles?.length ? font.styles : ["normal"]);
     return font.paths
       .map((fontPath) => {
         const style = fontPath.style ?? "normal";
@@ -380,14 +366,10 @@ export class FontOptimizer {
 
   async #convertToWoff2(buffer: Buffer, sourcePath: string) {
     const { createFont } = await import("fonteditor-core");
-    await this.#initWoff2();
+    this.#woff2Ready ??= import("fonteditor-core").then(({ woff2 }) => woff2.init()).then(() => undefined);
+    await this.#woff2Ready;
     const font = createFont(buffer, { type: this.#getFontType(sourcePath, buffer) });
     return font.write({ type: "woff2", toBuffer: true });
-  }
-
-  async #initWoff2() {
-    this.#woff2Ready ??= import("fonteditor-core").then(({ woff2 }) => woff2.init()).then(() => undefined);
-    return this.#woff2Ready;
   }
 
   #getFontType(sourcePath: string, buffer: Buffer) {

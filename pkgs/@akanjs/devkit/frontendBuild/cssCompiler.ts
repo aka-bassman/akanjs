@@ -247,7 +247,6 @@ export class CssCompiler {
 
     const sourceDirs = new Set<string>();
     for (const entry of compilers) {
-      if (!entry) continue;
       for (const s of entry.compiler.sources as { base: string }[]) sourceDirs.add(s.base);
     }
     const scanStarted = Date.now();
@@ -258,7 +257,6 @@ export class CssCompiler {
     const parts: string[] = [];
     const imported: ImportedStylesheet[] = [];
     for (const entry of compilers) {
-      if (!entry) continue;
       const part = entry.compiler.build(candidates);
       parts.push(part);
       for (const [cssPath, content] of entry.imported) {
@@ -292,17 +290,12 @@ export class CssCompiler {
       if (await this.#fileExists(filePath)) return filePath;
       throw new Error(`[css] failed to resolve stylesheet import "${id}" from ${fromBase} (no file at ${filePath})`);
     }
-    const resolver = await this.#getCssImportResolver();
-    const resolved = await resolver.resolve(id, fromBase);
+    this.#cssImportResolver ??= await CssImportResolver.create(this.#app);
+    const resolved = await this.#cssImportResolver.resolve(id, fromBase);
     if (resolved) return resolved;
     throw new Error(`[css] failed to resolve stylesheet import "${id}" from ${fromBase}`);
   }
 
-  async #getCssImportResolver() {
-    if (this.#cssImportResolver) return this.#cssImportResolver;
-    this.#cssImportResolver = await CssImportResolver.create(this.#app);
-    return this.#cssImportResolver;
-  }
   async #loadModule(id: string, fromBase: string) {
     const p = require.resolve(id, { paths: [fromBase] });
     const mod = await import(p);

@@ -42,7 +42,7 @@ async function precompressRoot(root: string, result: PrecompressArtifactsResult)
   for await (const filePath of glob.scan({ cwd: root, absolute: true })) {
     if (!(await shouldPrecompress(filePath))) continue;
     const bytes = await Bun.file(filePath).bytes();
-    const buffer = toArrayBuffer(bytes);
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     const gz = Bun.gzipSync(buffer, { level: GZIP_LEVEL });
     const br = brotliCompress(buffer, path.extname(filePath).toLowerCase());
     await Promise.all([Bun.write(`${filePath}.gz`, gz), Bun.write(`${filePath}.br`, br)]);
@@ -69,10 +69,6 @@ async function shouldPrecompress(filePath: string): Promise<boolean> {
   const file = Bun.file(filePath);
   if (!(await file.exists())) return false;
   return file.size >= MIN_COMPRESS_BYTES;
-}
-
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
 function formatBytes(bytes: number): string {
