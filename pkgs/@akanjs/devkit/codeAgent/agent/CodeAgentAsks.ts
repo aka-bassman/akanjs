@@ -5,16 +5,8 @@ interface Deferred<T> {
   promise: Promise<T>;
 }
 
-/**
- * Holds what the agent is waiting on a person for.
- *
- * A question is a **single slot**: asking one ends the turn, so a second cannot exist. An approval is a
- * **queue**: "may I write this file" naturally arrives twice in a row while a turn is still running, and a
- * single slot would drop the second silently.
- *
- * Idempotency is by id. Two browser tabs, or answering after a refresh, both produce a second answer for an id
- * that is already resolved — which must be ignored rather than applied to whatever is pending now.
- */
+// A question is a single slot (asking ends the turn); approvals queue, since two can arrive within one turn.
+// Idempotent by id: a second tab, or an answer after a refresh, for an already resolved id is ignored.
 export class CodeAgentAsks {
   #question: { question: CodeAgentQuestion; deferred: Deferred<string> } | undefined;
   readonly #approvals = new Map<string, Deferred<boolean>>();
@@ -26,7 +18,6 @@ export class CodeAgentAsks {
     return this.#question?.question.questionId;
   }
 
-  /** The open question, so an answer can be rendered against the options it was asked with. */
   questionOf(questionId: string) {
     return this.#question?.question.questionId === questionId ? this.#question.question : undefined;
   }
@@ -41,8 +32,7 @@ export class CodeAgentAsks {
   }
 
   openQuestion(question: CodeAgentQuestion) {
-    // A question opened while one is already pending replaces it: the old turn is gone, so nobody is left to
-    // receive the old answer, and leaving it would strand the caller forever.
+    // Replaces a pending question: its turn is gone, and leaving it unresolved would strand its caller.
     this.#question?.deferred.resolve("");
     const deferred = CodeAgentAsks.#defer<string>();
     this.#question = { question, deferred };

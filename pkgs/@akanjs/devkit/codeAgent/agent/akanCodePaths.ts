@@ -2,30 +2,16 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-/**
- * Where the shipped akan skills sit, which differs between the source tree and the bundle: the CLI's entry
- * chunks are flattened into the package root, so `skills/` is a sibling of the caller there and one level up
- * here, beside this folder. Same two-candidate shape the guidelines lookup uses.
- */
+// Two candidates: the CLI bundle flattens entry chunks into the package root, where `skills/` is a sibling.
 const builtinSkillsDir = () => {
   const candidates = [path.join(import.meta.dir, "skills"), path.join(import.meta.dir, "..", "skills")];
   return candidates.find((candidate) => existsSync(candidate));
 };
 
-/**
- * Where `akan code` keeps what belongs to the person rather than to the repo.
- *
- * `AKAN_CODE_HOME` moves the whole set. A container that mounts no home directory, a CI job that must not
- * write to one, and a second checkout that wants its own credentials all need the same thing, and moving the
- * files apart would let a `models.json` and the `auth.json` it names drift into different directories.
- */
+// One override for the whole set, so a `models.json` and the `auth.json` it names never drift apart.
 const globalDir = () => process.env.AKAN_CODE_HOME ?? path.join(homedir(), ".akan", "code");
 
-/**
- * Sessions live in the workspace — they are project history, and a second checkout of the same repo is a
- * different project. Credentials live in the home directory instead: a repo directory is the one place a key
- * must never be, because it is the place that gets committed, zipped and shared.
- */
+// Credentials live under the home directory, never the repo: a repo is what gets committed, zipped and shared.
 export const akanCodePaths = {
   workspaceDir: (workspaceRoot: string) => path.join(workspaceRoot, ".akan", "code"),
   sessionsDir: (workspaceRoot: string) => path.join(workspaceRoot, ".akan", "code", "sessions"),
@@ -34,13 +20,7 @@ export const akanCodePaths = {
   mailDir: (workspaceRoot: string) => path.join(workspaceRoot, ".akan", "code", "mail"),
   builtinSkillsDir,
   mcpFile: (workspaceRoot: string) => path.join(workspaceRoot, ".akan", "code", "mcp.json"),
-  /**
-   * The MCP servers that belong to the person rather than to one checkout.
-   *
-   * A server is an integration with an account — the credential for it is already global, in `mcpAuth.json` —
-   * so declaring it per repo means declaring it again in every repo and signing in again in each. The
-   * workspace file stays, for a server that is genuinely this repo's, and wins on a name they share.
-   */
+  /** Person-wide MCP servers; the workspace `mcpFile` wins on a name they share. */
   globalMcpFile: () => path.join(globalDir(), "mcp.json"),
   globalSkillsDir: () => path.join(globalDir(), "skills"),
   globalDir,
