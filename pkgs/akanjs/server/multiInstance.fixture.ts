@@ -11,7 +11,6 @@ import { slice } from "../signal/slice";
 import { AkanLib } from "./akanLib";
 import { AkanOption } from "./akanOption";
 
-// One model with a live list, served by several instances of one app in `multiInstance.conformance.test.ts`.
 const CrossItemInput = via((f) => ({ title: f(String), category: f(String), score: f(Int, { default: 0 }) }));
 const CrossItemObject = via(CrossItemInput, () => ({}));
 const CrossItemLight = via(CrossItemObject, ["title", "category", "score"] as const, () => ({}));

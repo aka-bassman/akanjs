@@ -1,6 +1,4 @@
-// styleguard-disable inline-color — 이 서버 부트스트랩 파일은 백엔드가 아직/끝내 뜨지 못했을 때 보여주는
-// 독립형 상태 페이지 HTML(인라인 <style>)을 렌더한다. 그 경로에서는 앱 테마/토큰 CSS 파이프라인이 없으므로
-// 하드코딩 색이 불가피하다. 파일 전체 범위의 명시적 예외.
+// styleguard-disable inline-color — the standalone status page renders before any theme CSS exists.
 import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { Logger, logSeverity } from "akanjs/common";
@@ -48,7 +46,6 @@ interface ChildState {
   lastErrorMessage?: string;
 }
 
-/** The shape `#startSolo` needs off `server.ts`; the module itself is loaded by path, so it has no type here. */
 interface SoloServer {
   start: (options: { listen: boolean }) => Promise<unknown>;
 }
@@ -63,20 +60,14 @@ type GatewayUpstream = {
   ws?: Extract<AkanUpstream, { type: "tcp" }>;
 };
 
-/**
- * Received-only close codes cannot be sent in a close frame. The gateway deliberately normalizes
- * every unsendable code, including semantically distinct 1005 and 1006 events, to 1001 in both
- * relay directions. In particular, Bun's global client `WebSocket.close()` throws an
- * InvalidAccessError for these codes at the client-to-upstream relay; normalization at the
- * upstream-to-client `Bun.ServerWebSocket.close()` relay is defensive and keeps behavior symmetric.
- */
+// Receive-only close codes (1004-1006) cannot be sent: Bun's client `WebSocket.close()` throws InvalidAccessError on
+// them, so both relay directions map every unsendable code to 1001.
 const relayableCloseCode = (code: number): number => {
   if (code >= 3000 && code <= 4999) return code;
   if (code >= 1000 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006) return code;
   return 1001;
 };
 
-/** Options for the Akan gateway that launches child server replicas and listens for traffic. */
 export interface AkanAppOptions {
   replica?: number | string;
   serverPath?: string;
@@ -84,37 +75,19 @@ export interface AkanAppOptions {
   port?: number;
   wsBasePort?: number;
   openapi?: boolean;
-  /**
-   * Where the signal endpoints are mounted, `/api` by default. Handed down as `AKAN_API_PREFIX`, which every
-   * server process reads — the replicas that build the route table, and the RSC worker, whose page-side
-   * `fetch.*` calls travel over HTTP like any other client's. A server-rendered page also carries it to the
-   * browser, so the tab's `fetchClient` follows the process that rendered it. A prebuilt CSR or mobile bundle
-   * cannot be reached that way and follows `akan.config.ts` instead.
-   */
+  /** Signal endpoint mount, `/api` by default; handed down as `AKAN_API_PREFIX` (CSR/mobile follow akan.config.ts). */
   prefix?: string;
   /** Where the websocket upgrade sits under `prefix`, `/ws` by default. Handed down as `AKAN_WS_PREFIX`. */
   websocketPrefix?: string;
-  /**
-   * Boot only these modules and the ones they reach, in every child. Omitted or empty mounts every enabled
-   * module. Handed down as `AKAN_MODULES`, since each replica builds its own container.
-   */
+  /** Boot only these modules and what they reach; omitted or empty mounts every enabled one. `AKAN_MODULES`. */
   modules?: string[];
-  /**
-   * The inverse of `modules`: mount everything except these and whatever reaches them, in every child. Written
-   * for a lib the app depends on but does not serve — `server.ts` is generated from the dependency graph, so a
-   * lib cannot be dropped by editing it. Handed down as `AKAN_DISABLE_MODULES`, and applied after `modules`.
-   */
+  /** Mount all but these and whatever reaches them, applied after `modules`. `AKAN_DISABLE_MODULES`. */
   disableModules?: string[];
-  /**
-   * The same, by owning lib: every module the named libs registered stays out of every child, along with
-   * everything that reaches one. Handed down as `AKAN_DISABLE_LIBS`.
-   */
+  /** Like `disableModules`, by owning lib. `AKAN_DISABLE_LIBS`. */
   disableLibs?: string[];
   /**
-   * Run the one replica in this process instead of spawning it — see `#startSolo`. Defaults on for a single
-   * traffic replica the environment configured, and off whenever `replica` is passed here, because code that
-   * states a topology is asking for the gateway that serves it. `AKAN_SOLO=false` turns it off; like
-   * `AKAN_SSR`, the env can only narrow, so it cannot force a gateway's replicas into one process.
+   * Run the lone replica in this process. Default: on for one env-configured traffic replica, off when `replica` is
+   * passed; `AKAN_SOLO=false` can only turn it off.
    */
   solo?: boolean;
 }
@@ -127,16 +100,13 @@ interface AkanReplicaConfig {
   value: string;
 }
 
-/** Gateway/orchestrator that starts Akan child servers and proxies HTTP/WebSocket traffic. */
 export class AkanApp {
   static readonly #childRestartBaseDelayMs = 1_000;
   static readonly #childRestartMaxDelayMs = 30_000;
   static readonly #childRestartGraceMs = 5_000;
-  /** In dev, stop restarting a replica that never boots after this many consecutive failures. */
   static readonly #devMaxChildBootFailures = 3;
 
   readonly logger = new Logger("AkanApp");
-  /** Hosted by `akan start`: crash loops should yield to the dev host, which restarts on file edits. */
   readonly #devHosted = process.env.AKAN_COMMAND_TYPE === "start";
   readonly #healthTimeoutMs = AkanApp.#parseHealthTimeoutMs();
   readonly #upstreamWaitMs = AkanApp.#parseUpstreamWaitMs();
@@ -152,7 +122,6 @@ export class AkanApp {
   readonly #openapi?: boolean;
   readonly #prefix: string;
   readonly #websocketPrefix: string;
-  /** The gateway hands `/_akan/client|styles|fonts` straight off disk, so it needs the same answer its children do. */
   readonly #web = getWebConfigFromEnv();
   readonly #modules: string[];
   readonly #disableModules: string[];
@@ -205,15 +174,8 @@ export class AkanApp {
     this.#logHub = LogHub.attach();
   }
 
-  /**
-   * One replica that serves traffic means there is nothing to balance and nothing to fan pubsub out to, so the
-   * gateway is a second Bun runtime and a proxy hop in front of the only server there is. Measured on
-   * `apps/akan`: 28MB of RSS and half the requests per second.
-   *
-   * A batch-only replica is excluded because it never listens — keeping the gateway is what leaves something
-   * bound to answer `/_akan/app/health`. `akan start` is excluded because the gateway is also the dev host's
-   * builder relay, its crash page, and what holds the port across a child restart.
-   */
+  // A batch-only replica never listens, so the gateway stays to answer `/_akan/app/health`; under `akan start` the
+  // gateway is also the builder relay, the crash page, and what holds the port across a child restart.
   static #resolveSolo(options: AkanAppOptions, replica: AkanReplicaConfig) {
     if (options.solo !== undefined) return options.solo;
     if (process.env.AKAN_SOLO === "false" || process.env.AKAN_SOLO === "0") return false;
@@ -252,12 +214,8 @@ export class AkanApp {
     return Math.max(min, parsed);
   }
 
-  /**
-   * The command that started this gateway outranks an inherited `NODE_ENV`: the command is a statement about
-   * this run, while the env var can arrive from a shell export, a CI image, or the workspace `.env` Bun loads
-   * on its own. Handing a dev child `NODE_ENV=production` makes it serve from the production route cache and
-   * throw on every route, since only `akan build` writes the routes manifest that cache expects.
-   */
+  // The command outranks an inherited NODE_ENV: a dev child told `production` reads the routes manifest only
+  // `akan build` writes, and throws on every route.
   static #defaultChildNodeEnv() {
     if (process.env.AKAN_COMMAND_TYPE === "start") return "development";
     if (process.env.AKAN_COMMAND_TYPE === "build") return "production";
@@ -265,31 +223,21 @@ export class AkanApp {
     return Bun.main.endsWith(".js") ? "production" : "development";
   }
 
-  /**
-   * Dev builds and first-touch transpiles can stall a child's event loop well past the production
-   * pong budget, so `akan start` runs with a wider timeout to avoid restarting healthy replicas.
-   */
+  // Dev builds and first-touch transpiles stall a child's event loop well past the production pong budget.
   static #parseHealthTimeoutMs() {
     const configured = Number(process.env.AKAN_HEALTH_TIMEOUT_MS);
     if (Number.isFinite(configured) && configured > 0) return configured;
     return process.env.AKAN_COMMAND_TYPE === "start" ? 15_000 : 5_000;
   }
 
-  /**
-   * How long a request waits for a replica that is booting or restarting before the gateway answers
-   * 503. Dev pays first-touch transpiles on the boot path, so it gets the wider budget; `0` restores
-   * the old fail-immediately behavior.
-   */
+  // How long a request waits for a booting or restarting replica before a 503; `0` fails immediately.
   static #parseUpstreamWaitMs() {
     const configured = Number(process.env.AKAN_UPSTREAM_WAIT_MS);
     if (Number.isFinite(configured) && configured >= 0) return configured;
     return process.env.AKAN_COMMAND_TYPE === "start" ? 15_000 : 5_000;
   }
 
-  /**
-   * Must exceed the child's own shutdown timeout (see `AkanServer.#defaultShutdownTimeoutMs`) so
-   * children always get to exit on their own before this gateway stops waiting.
-   */
+  // Must exceed `AkanServer.#defaultShutdownTimeoutMs` so children exit on their own before the gateway stops waiting.
   static #childShutdownWaitMs() {
     const configured = Number(process.env.AKAN_CHILD_SHUTDOWN_WAIT_MS);
     if (Number.isFinite(configured) && configured > 0) return configured;
@@ -327,15 +275,13 @@ export class AkanApp {
     process.on("SIGINT", () => this.#handleShutdownSignal("SIGINT"));
     process.on("SIGTERM", () => this.#handleShutdownSignal("SIGTERM"));
     await new Promise<void>((resolve) => {
-      // Keep the orchestrator alive while child processes run.
       this.#resolveStopped = resolve;
     });
   }
 
   async #startSolo() {
     const role = this.#getRole(0);
-    // The env a spawned child would have been handed, minus `AKAN_CHILD_SOCKET`: its absence is what tells
-    // `AkanServer` it owns the whole surface, so it binds `PORT` and answers `/_akan/app/*` itself.
+    // A child's env minus `AKAN_CHILD_SOCKET`, whose absence makes `AkanServer` bind `PORT` and own `/_akan/app/*`.
     Object.assign(process.env, {
       PORT: String(this.#port),
       NODE_ENV: AkanApp.#defaultChildNodeEnv(),
@@ -350,10 +296,8 @@ export class AkanApp {
       ...(this.#disableModules.length ? { AKAN_DISABLE_MODULES: this.#disableModules.join(",") } : {}),
       ...(this.#disableLibs.length ? { AKAN_DISABLE_LIBS: this.#disableLibs.join(",") } : {}),
     });
-    // This process already ran as the gateway, so anything that read the env before the assignment above
-    // cached the prefix this gateway was about to change.
+    // Anything that read the env before the assignment above cached the prefix it just changed.
     resetEnvCache();
-    // The only boot line a container with no gateway prints; every other line on this path is `verbose`.
     this.logger.info(`Starting ${role} replica in this process (solo); set AKAN_SOLO=false for the gateway`);
     const mod = (await import(this.#serverPath)) as { server?: SoloServer; app?: SoloServer };
     const server = mod.server ?? mod.app;
@@ -389,8 +333,7 @@ export class AkanApp {
       Promise.all([...this.#children.values()].map((child) => child.proc.exited.catch(() => undefined))),
       new Promise((resolve) => setTimeout(resolve, AkanApp.#childShutdownWaitMs())),
     ]);
-    // The graceful path was the shutdown IPC message above; anything still alive after the full
-    // budget is stuck (or trapping SIGTERM), so escalate straight to SIGKILL and wait it out.
+    // Anything alive after the full budget is stuck or trapping SIGTERM, so escalate straight to SIGKILL.
     const stragglers = [...this.#children.values()].filter((child) => !child.proc.killed);
     for (const child of stragglers) child.proc.kill("SIGKILL");
     await Promise.all(stragglers.map((child) => child.proc.exited.catch(() => undefined)));
@@ -411,10 +354,7 @@ export class AkanApp {
     });
   }
 
-  /**
-   * The IPC channel closes when the dev host dies (including SIGKILL). Exiting takes the children
-   * down too, so a dead host never strands a gateway tree that would block the next `akan start`.
-   */
+  // Fires when the dev host dies, even by SIGKILL; exiting keeps a stranded tree from blocking the next `akan start`.
   #handleHostDisconnect() {
     if (this.#stopping) return;
     this.logger.warn("Host IPC channel closed; shutting down gateway and children");
@@ -433,8 +373,7 @@ export class AkanApp {
       cwd: process.cwd(),
       env: {
         ...process.env,
-        // The child listens on a unix socket, but its own loopback fetches (SSR, the RSC worker it spawns) go
-        // back through this gateway, so it has to carry the port the gateway resolved rather than the raw env.
+        // Its loopback fetches (SSR, its RSC worker) come back through this gateway, so pass the resolved port.
         PORT: String(this.#port),
         NODE_ENV: AkanApp.#defaultChildNodeEnv(),
         AKAN_REPLICA: this.#replica.value,
@@ -570,10 +509,7 @@ export class AkanApp {
     this.#spawn(idx);
   }
 
-  /**
-   * Dev-only terminal state: the same broken code fails every boot, so retrying is pure churn.
-   * The dev host replaces this whole gateway on the next server-side edit, which clears the state.
-   */
+  // Dev-only terminal state, cleared when the dev host replaces this gateway on the next server-side edit.
   #markChildCrashed(child: ChildState, reason: string) {
     // The child's `error` IPC and its exit event both funnel here; report only once.
     if (child.status === "crashed") return;
@@ -593,7 +529,6 @@ export class AkanApp {
     this.#reportBackendBuildStatus({ ok: false, message });
   }
 
-  /** Forwards a backend-phase build status to the dev host so failures reach the HMR overlay. */
   #reportBackendBuildStatus({ ok, message }: { ok: boolean; message: string }) {
     process.send?.({
       type: "build-status",
@@ -623,8 +558,7 @@ export class AkanApp {
 
   async #prepareRuntimeDir() {
     await mkdir(this.#runtimeDir, { recursive: true });
-    // Socket names are run-scoped, so leftovers from crashed runs never conflict — but they also
-    // never get reused; sweep them all instead of only this run's paths.
+    // Run-scoped socket names never conflict but never get reused either, so sweep every leftover.
     const entries = await readdir(this.#runtimeDir).catch(() => []);
     await Promise.all(
       entries
@@ -667,7 +601,6 @@ export class AkanApp {
     await writer?.close();
   }
 
-  /** The journal every child forwards into, and the socket `akan logs` reads it from. Additive to the text file. */
   async #startLogHub() {
     const hub = LogHub.attach();
     this.#logHub = hub;
@@ -772,16 +705,14 @@ export class AkanApp {
 
   #upgradeWebSocket(req: Request, server: Bun.Server<GatewayWsData>): Response | undefined {
     const child = this.#pickFederationChild();
-    // Prefer the ws upstream the child actually bound (it may have fallen back from the preferred
-    // port); the computed port is only a fallback for children that predate wsUpstream reporting.
+    // Prefer the ws port the child actually bound (it may have fallen back); the computed one covers older children.
     const upstream = child?.upstream ? (child.wsUpstream ?? this.#getChildUpstream(child.idx, child.role).ws) : null;
     if (!child || !upstream) return new Response("No websocket upstream is ready", { status: 503 });
     const url = new URL(req.url);
     const upstreamWs = new WebSocket(`ws://${upstream.host}:${upstream.port}${url.pathname}${url.search}`, {
       headers: this.#makeProxyHeaders(req, child.idx, server),
     } as unknown as string[]);
-    // No socket id here: the child mints its own on the socket it accepts from us, and that is the one
-    // the room bookkeeping and every endpoint see. A second id on this hop would only look authoritative.
+    // No socket id on this hop: the child mints the one its room bookkeeping and endpoints see.
     const upgraded = server.upgrade(req, { data: { childIdx: child.idx, upstream: upstreamWs } });
     if (!upgraded) {
       upstreamWs.close();
@@ -926,14 +857,8 @@ export class AkanApp {
     return candidate.code === "FailedToOpenSocket" || String(candidate.message ?? "").includes("FailedToOpenSocket");
   }
 
-  /**
-   * The socket opened and then died under us: the child crashed, or was recycled, while its response was still
-   * in flight. Distinct from `FailedToOpenSocket` — that one means the child was already gone when we dialled,
-   * and only that one implies the socket needs a restart, which the child's own exit handler schedules anyway.
-   * Rethrowing this instead reaches Bun as an unhandled route error, which answers 500 and prints the raw
-   * `TypeError` against whatever URL happened to be in flight — usually a browser background probe, which is
-   * how a dead child gets misread as a bug in the probed route.
-   */
+  // The child died mid-response. Unlike `FailedToOpenSocket` it needs no restart from here, and rethrowing would
+  // answer a raw 500 `TypeError` blamed on whatever URL was in flight.
   static #isUpstreamMidFlightClose(error: unknown): boolean {
     if (!error || typeof error !== "object") return false;
     const candidate = error as { code?: unknown; message?: unknown };
@@ -963,11 +888,7 @@ export class AkanApp {
     });
   }
 
-  /**
-   * A replica that is booting or restarting is normally back within a second or two, and a browser
-   * handed a 503 stays on that dead page until somebody reloads by hand — so a request waits for the
-   * upstream instead of failing at it. A dev crash loop is terminal, so it is answered immediately.
-   */
+  // Waits rather than 503s at once: a restarting replica is back within seconds, but a browser stays on a 503 page.
   async #pickReadyFederationChild(req: Request): Promise<ChildState | null> {
     const ready = this.#pickFederationChild();
     if (ready?.upstream) return ready;
@@ -981,7 +902,6 @@ export class AkanApp {
     return null;
   }
 
-  /** Dev-only terminal state: every traffic replica gave up booting. The detail is the boot error. */
   #getCrashLoopDetail(): string | null {
     if (!this.#devHosted) return null;
     const trafficChildren = [...this.#children.values()].filter((child) => child.role !== "batch");
@@ -993,10 +913,7 @@ export class AkanApp {
     );
   }
 
-  /**
-   * Both states answer 503, so an ingress or CDN reads them exactly as before; the HTML body is what
-   * a browser navigation needs, since nothing on a bare-text 503 can bring the page back on its own.
-   */
+  // Stays a 503 for ingress/CDN; the self-reloading HTML is for browser navigations a bare 503 would strand.
   #respondWithUnavailable(req: Request): Response {
     const crashDetail = this.#getCrashLoopDetail();
     const page = crashDetail
@@ -1021,10 +938,7 @@ export class AkanApp {
     return AkanApp.#unavailableResponse(req, page.text);
   }
 
-  /**
-   * An API caller asks for JSON, so it is answered with the payload `HttpClient` restores into an `Err` —
-   * a bare-text 503 reaches the browser as a JSON parse error naming the page body instead of the outage.
-   */
+  // JSON callers get the payload `HttpClient` restores into an `Err`; bare text would surface as a JSON parse error.
   static #unavailableResponse(req: Request, detail: string): Response {
     const headers = { "cache-control": "no-store" };
     if (!req.headers.get("accept")?.includes("application/json")) return new Response(detail, { status: 503, headers });
@@ -1079,10 +993,7 @@ export class AkanApp {
     return text.replace(/[&<>"']/g, (ch) => replacements[ch] ?? ch);
   }
 
-  /**
-   * Gateway-observed upstream round-trip time. The pure proxy overhead is this value
-   * minus the child handler time captured in the per-request trace.
-   */
+  // Upstream round trip as the gateway sees it; proxy overhead = this minus the child's traced handler time.
   #recordProxyHop(durationMs: number) {
     this.#proxyHopCount += 1;
     this.#proxyHopSumMs += durationMs;
@@ -1091,8 +1002,7 @@ export class AkanApp {
 
   async #proxyResponse(req: Request, upstreamRes: Response): Promise<Response> {
     const headers = new Headers(upstreamRes.headers);
-    // Bun fetch transparently decompresses upstream bodies but keeps these
-    // headers, which makes browsers try to decode an already-decoded payload.
+    // Bun fetch decompresses upstream bodies but keeps these headers, so browsers would decode twice.
     headers.delete("content-encoding");
     headers.delete("content-length");
     this.#rewriteInternalLocation(headers);
@@ -1101,9 +1011,7 @@ export class AkanApp {
       statusText: upstreamRes.statusText,
       headers,
     });
-    // The gateway is the only hop that still sees the real client's Accept-Encoding, so it is where the child's
-    // JSON gets compressed. Narrowed to JSON on purpose: `compressResponse` buffers, and everything else the
-    // gateway relays — SSR HTML, an RSC flight payload — is streamed so the browser can start on the shell.
+    // Only this hop sees the client's Accept-Encoding. JSON only: `compressResponse` buffers; HTML/RSC must stream.
     return AkanApp.#isProxiedJson(headers) ? await compressResponse(req, proxied) : proxied;
   }
 
@@ -1499,10 +1407,7 @@ export class AkanApp {
     this.#logWriter?.write(`${idx}-${role}`, AkanApp.#stripAnsi(prefixedLine));
   }
 
-  /**
-   * In ndjson mode a stack trace is one record, and `AKAN_CHILD_STDERR` does not apply: the line that killed a
-   * child is the one the collector must not miss.
-   */
+  // ndjson ignores `AKAN_CHILD_STDERR`: the stack that killed a child is the one record a collector must not miss.
   #writeChildStderrBlock(idx: number, role: AkanChildRole, pid: number | null, lines: string[]) {
     const text = lines.join("");
     if (AkanApp.#isBenignRsdwConnectionClosedBlock(text)) return;

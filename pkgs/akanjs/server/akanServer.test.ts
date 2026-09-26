@@ -188,7 +188,6 @@ describe("AkanServer web config", () => {
 
       process.env.AKAN_CSR = "false";
       expect(make().web).toEqual({ ssr: true, csr: false });
-      // Narrowing only: `setWeb` cannot put back what the env took away.
       expect(make().setWeb(true).web).toEqual({ ssr: true, csr: false });
       expect(make().setWeb({ csr: true }).web).toEqual({ ssr: true, csr: false });
 
@@ -267,8 +266,6 @@ describe("AkanServer MCP config", () => {
     ];
 
     try {
-      // A child of the gateway is handed nothing but its environment, so every field has an env spelling for a
-      // deployment to reach — what an app writes in `option.ts` merges over these.
       process.env.AKAN_MCP = "true";
       process.env.AKAN_MCP_READONLY = "true";
       process.env.AKAN_MCP_PATH = "/agent";
@@ -309,8 +306,7 @@ describe("AkanServer MCP config", () => {
       expect(overridden.mcpOption.instructions).toBe("Domain tools for the test app.");
       expect(overridden.mcpReadOnly).toBe(false);
 
-      // "Code wins over the env of the same name" is about a value, not about a key being present: a caller
-      // assembling options conditionally passes `undefined`, which a spread would read as a value and erase.
+      // An explicit `undefined` in code must not erase the env's value.
       const partial = new AkanServer("serverGet", createEnv(tmp), "all", createLib(), {
         mcp: { path: undefined, language: "en", auth: { resource: undefined } },
       });
@@ -328,8 +324,6 @@ describe("AkanServer MCP config", () => {
     const { AkanServer, AkanOption, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-fn-"));
     try {
-      // A token verifier is built on the app's signing secret and an issuer on its host, both of which live in the
-      // env the server is constructed with — so a lib's `option.ts` reads them off the env rather than restating.
       const verify = () => ({ sub: "u1" });
       const lib = createLib(
         new AkanOption().setMcp((env) => ({
@@ -367,7 +361,6 @@ describe("AkanServer MCP config", () => {
       expect(overridden.mcpOption.language).toBe("ja");
       expect(overridden.mcpOption.instructions).toBe("Domain tools for the test app.");
 
-      // A boolean carries no fields, so turning the surface off leaves what the option and the env already said.
       const off = new AkanServer("serverGet", createEnv(tmp), "all", createLib(new AkanOption().setMcp(false)));
       expect(off.mcp).toBe(false);
       expect(off.mcpOption.language).toBe("ko");
@@ -415,10 +408,7 @@ describe("AkanServer MCP config", () => {
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-path-"));
     const vars = ["AKAN_MCP_PATH", "AKAN_PUBLIC_MCP", "AKAN_PUBLIC_MCP_READONLY"];
     try {
-      // Route key and OAuth metadata path are both built by concatenation, so a bare `mcp` published its metadata
-      // at `/.well-known/oauth-protected-resourcemcp` — a URL no client would ever look for.
       process.env.AKAN_MCP_PATH = "mcp";
-      // The pairing `AKAN_OPENAPI` already has: a value carried under the public prefix need not be spelled twice.
       process.env.AKAN_PUBLIC_MCP = "true";
       process.env.AKAN_PUBLIC_MCP_READONLY = "true";
       const server = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
@@ -440,13 +430,11 @@ describe("AkanServer MCP config", () => {
     const stop = Logger.addSink(({ message }) => void lines.push(message));
     const server = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
     try {
-      // Routes on, web off: the report rides with the builtin routes, so a `script`/`console` command that mounts
-      // none stays quiet about a catalogue it is not serving.
+      // Routes on, web off: the report rides with the builtin routes, which a script/console process never mounts.
       await server.init({ web: false });
       const log = lines.join("\n");
       expect(log).toContain("MCP catalogue: tools=4 resourceTemplates=2");
-      // Nobody wrote an opt-in, so the boot log is the only place a missing tool has an explanation — and this
-      // fixture's `[Public]` writes and guardless reads are exactly the two shapes the guarded rule keeps out.
+      // The fixture's `[Public]` writes and guardless reads are the two shapes the guard rule refuses.
       expect(log).toContain('did not expose "createServerResolverTestItem"');
       expect(log).toContain('did not expose "updateTitle"');
     } finally {

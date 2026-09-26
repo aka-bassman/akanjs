@@ -106,8 +106,7 @@ const waitForRawCloseCode = (socket: Socket) =>
     "timed out waiting for raw websocket close",
   );
 
-// Poll rather than fs.watch: Bun coalesces appends made within one window and drops all but the first
-// event, so a close relayed right after the upgrade line never wakes a watcher.
+// Poll, not fs.watch: Bun coalesces appends within one window and drops all but the first event.
 const observeNextRelayEvent = async (filePath: string, trigger: () => void | Promise<void>): Promise<string> => {
   const previous = (await readFile(filePath, "utf8")).trim().split("\n").filter(Boolean).length;
   await trigger();
@@ -237,8 +236,7 @@ describe("makeAkanChildProxyHeaders", () => {
       },
     });
 
-    // A trusted (private) peer, which is what an ingress in front of the gateway is — without one the forwarded
-    // headers are the client's own word for itself and are dropped.
+    // A private peer is a trusted ingress; from any other peer forwarded headers are the client's own claim.
     const headers = makeAkanChildProxyHeaders(req, 2, { address: "10.0.0.2", port: 443, family: "IPv4" });
 
     expect(headers.get("connection")).toBeNull();
@@ -314,7 +312,6 @@ describe("makeAkanChildProxyHeaders", () => {
       headers: { host: "internal.example", "x-real-ip": "10.0.0.1", "x-forwarded-for": "10.0.0.1" },
     });
 
-    // A public peer is a client talking to this port directly, so its headers are not a proxy's word for anyone.
     const headers = makeAkanChildProxyHeaders(req, 0, { address: "198.51.100.7", port: 40_000, family: "IPv4" });
 
     expect(headers.get("x-real-ip")).toBe("198.51.100.7");
@@ -535,7 +532,6 @@ describe("AkanApp", () => {
       expect(settled?.status).toBe("crashed");
       expect(settled?.restartCount).toBe(2);
 
-      // With every traffic replica crashed, the gateway surfaces the boot error instead of a bare 503.
       const htmlRes = await fetch(`http://127.0.0.1:${port}/`, { headers: { accept: "text/html" } });
       expect(htmlRes.status).toBe(503);
       expect(htmlRes.headers.get("content-type") ?? "").toContain("text/html");
@@ -783,7 +779,6 @@ describe("AkanApp", () => {
     };
 
     expect(await readAsset(undefined)).toContain("export const x = 1;");
-    // With ssr off the prefix is not the gateway's any more, so it falls through to the child like any path.
     expect(await readAsset("false")).toBe("from-child");
   }, 40_000);
 
@@ -949,7 +944,6 @@ describe("AkanApp", () => {
     const serverPath = path.join(root, "server.ts");
     const observedPath = path.join(root, "observed.txt");
     const runtimeDir = path.join(root, "runtime");
-    // AkanApp does not expose the OS-assigned port, so the test must select a gateway port.
     const port = 24_000 + Math.floor(Math.random() * 10_000);
     await writeWebSocketRelayChild(serverPath, observedPath);
 
@@ -989,7 +983,6 @@ describe("AkanApp", () => {
     const serverPath = path.join(root, "server.ts");
     const observedPath = path.join(root, "observed.txt");
     const runtimeDir = path.join(root, "runtime");
-    // AkanApp does not expose the OS-assigned port, so the test must select a gateway port.
     const port = 24_000 + Math.floor(Math.random() * 10_000);
     await writeWebSocketRelayChild(serverPath, observedPath);
 
@@ -1052,7 +1045,6 @@ describe("AkanApp solo", () => {
     }
   };
 
-  /** Records the pid that ran it, which is what separates an in-process start from a spawned child. */
   const writeReportingServer = async (serverPath: string, reportPath: string) =>
     await Bun.write(
       serverPath,
@@ -1105,7 +1097,6 @@ describe("AkanApp solo", () => {
       const report = (await readReport(reportPath)) as { pid: number; listen: boolean; childSocket: string | null };
       expect(report.pid).toBe(process.pid);
       expect(report.listen).toBe(true);
-      // Its absence is what `AkanServer` reads to know it owns `/_akan/app/*` and the rotating log.
       expect(report.childSocket).toBeNull();
       expect(await readdir(runtimeDir).catch(() => [])).toEqual([]);
     });
@@ -1180,8 +1171,7 @@ describe("AkanApp solo", () => {
     });
   }, 10_000);
 
-  // The RSC worker fetches the API back over the loopback, and `AKAN_PUBLIC_SERVER_PORT` defaults to 8282 —
-  // so the port this gateway resolved has to reach the tree as `PORT`, whether it came from an option or the env.
+  // Loopback fetches from the RSC worker assume `AKAN_PUBLIC_SERVER_PORT` (default 8282) unless `PORT` says otherwise.
   test("publishes the resolved port to the replica it runs in this process", async () => {
     const { serverPath, reportPath, runtimeDir } = await makeSoloRoot("akan-app-solo-port-");
     const port = 24_000 + Math.floor(Math.random() * 10_000);
