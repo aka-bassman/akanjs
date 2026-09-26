@@ -2,7 +2,6 @@ import type { Cls, MergeAllTypes, PromiseOrObject } from "akanjs/base";
 import type { Logger } from "akanjs/common";
 import type { QueryOf } from "akanjs/constant";
 import type {
-  CRUDEventType,
   DatabaseModel,
   DataInputOf,
   DocumentUpdateInput,
@@ -11,6 +10,7 @@ import type {
   GetDocObject,
   ListQueryOption,
   QueryMethodPart,
+  SaveEventListener,
   SaveEventType,
   UpdateResult,
 } from "akanjs/document";
@@ -128,14 +128,8 @@ export type DatabaseService<
   __libsPostUpdate: (doc: Doc) => Promise<Doc>;
   __libsPreRemove: (id: string) => Promise<void>;
   __libsPostRemove: (doc: Doc) => Promise<Doc>;
-  listenPre: (
-    type: SaveEventType,
-    listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
-  ) => () => void;
-  listenPost: (
-    type: SaveEventType,
-    listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
-  ) => () => void;
+  listenPre: (type: SaveEventType, listener: SaveEventListener<Doc>) => () => void;
+  listenPost: (type: SaveEventType, listener: SaveEventListener<Doc>) => () => void;
 } & { [key in `${T}Model`]: Model } & {
   [K in `get${_CapitalizedRefName}`]: (id: string) => Promise<Doc>;
 } & {

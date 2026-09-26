@@ -1,13 +1,13 @@
-import type { MergeAllKeyOfObjects, PromiseOrObject, UnCls } from "akanjs/base";
+import type { MergeAllKeyOfObjects, UnCls } from "akanjs/base";
 import { capitalize, lowerlize } from "akanjs/common";
 import type { ConstantModel, QueryOf } from "akanjs/constant";
 import type {
-  CRUDEventType,
   DatabaseModel,
   DataInputOf,
   Doc,
   FindQueryOption,
   ListQueryOption,
+  SaveEventListener,
   SaveEventType,
   UpdateChain,
 } from "akanjs/document";
@@ -114,18 +114,10 @@ export class ServiceModel<
       async _postRemove(this: DatabaseService, doc: Doc) {
         return doc;
       },
-      listenPre(
-        this: DatabaseService,
-        type: SaveEventType,
-        listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
-      ) {
+      listenPre(this: DatabaseService, type: SaveEventType, listener: SaveEventListener<Doc>) {
         return this.__databaseModel.listenPre(type, listener);
       },
-      listenPost(
-        this: DatabaseService,
-        type: SaveEventType,
-        listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
-      ) {
+      listenPost(this: DatabaseService, type: SaveEventType, listener: SaveEventListener<Doc>) {
         return this.__databaseModel.listenPost(type, listener);
       },
       async __create(this: DatabaseService, data: DataInputOf) {

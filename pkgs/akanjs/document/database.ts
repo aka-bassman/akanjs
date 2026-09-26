@@ -1,11 +1,11 @@
-import type { MergedValues, PromiseOrObject } from "akanjs/base";
+import type { MergedValues } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import type { DocumentModel, QueryOf } from "akanjs/constant";
 import type { CacheAdaptor, CacheSetOptions, CacheValue } from "akanjs/service";
 import type { DataLoader } from "./dataLoader";
 import type { DocumentUpdateInput } from "./documentQuery";
 import type { ExtractQuery, ExtractSort, FilterInstance } from "./filterMeta";
-import type { CRUDEventType, Mdl, SaveEventType, UpdateResult } from "./into";
+import type { Mdl, SaveEventListener, SaveEventType, UpdateResult } from "./into";
 import type { DataInputOf, FindQueryOption, ListQueryOption } from "./types";
 
 export class CacheDatabase<T = unknown> {
@@ -170,14 +170,8 @@ export type DatabaseInstanceWithQuerySort<
   __count(query: _QueryOfDoc): Promise<number>;
   __insight(query: _QueryOfDoc): Promise<Insight>;
   clone(data: _DataInput & { id: string }): Promise<Doc>;
-  listenPre: (
-    type: SaveEventType,
-    listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
-  ) => () => void;
-  listenPost: (
-    type: SaveEventType,
-    listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
-  ) => () => void;
+  listenPre: (type: SaveEventType, listener: SaveEventListener<Doc>) => () => void;
+  listenPost: (type: SaveEventType, listener: SaveEventListener<Doc>) => () => void;
 } & {
   [key in _CapitalizedRefName]: Mdl<Doc, Obj, _DocumentObj>;
 } & {
