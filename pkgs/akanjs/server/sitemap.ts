@@ -31,9 +31,7 @@ export function createDefaultSitemapUrls({ origin, basePath, entries, i18n }: De
 }
 
 export function isSitemapPath(pathname: string, basePaths: readonly string[]): boolean {
-  const normalized = normalizePathname(pathname);
-  if (basePaths.length === 0) return normalized === "/sitemap.xml";
-  return normalized === "/sitemap.xml";
+  return normalizePathname(pathname) === "/sitemap.xml";
 }
 
 export function getSitemapBasePath(

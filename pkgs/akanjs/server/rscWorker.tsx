@@ -30,7 +30,6 @@ import {
   type LruTtlCacheOptions,
   parsePositiveInt,
   type RouteCacheEntry,
-  type RouteCacheInvalidation,
   type RouteCacheRenderState,
   resolvePublicRouteCacheEntryDecision,
   resolveRouteCacheStoreTtl,
@@ -296,7 +295,8 @@ export class RscRenderer {
         return;
       case "invalidate-cache":
         this.#logger.verbose(`received invalidate-cache reason=${msg.reason ?? "(none)"}`);
-        this.#invalidateResultCache(msg);
+        invalidateCachedRscResults(this.#resultCache, msg);
+        invalidateCachedRscResults(this.#patchResultCache, msg);
         return;
       case "log-level":
         this.#logForwarder.setMinSev(msg.minSev);
@@ -325,11 +325,6 @@ export class RscRenderer {
     void reader.cancel().catch(() => {
       // Best-effort: the render loop also checks `#cancelledRenderRequests` before sending more chunks.
     });
-  }
-
-  #invalidateResultCache(invalidation: RouteCacheInvalidation): void {
-    invalidateCachedRscResults(this.#resultCache, invalidation);
-    invalidateCachedRscResults(this.#patchResultCache, invalidation);
   }
 
   async #handleInit(msg: InitMsg): Promise<void> {
@@ -709,10 +704,7 @@ export class RscRenderer {
               msg.clientManifest ?? this.#clientManifest,
               { requestId, status: 404, trace },
             );
-            if (systemResult.cancelled) return;
-            if (!systemResult.control) {
-              return;
-            }
+            if (systemResult.cancelled || !systemResult.control) return;
           }
           if (
             match &&
@@ -755,9 +747,8 @@ export class RscRenderer {
         this.#stats.lastRenderLoadedModules = afterLoadedKeys.filter((key) => !beforeLoadedKeys.includes(key));
         this.#stats.lastRenderLoadedModuleDelta = this.#stats.lastRenderLoadedModules.length;
         this.#recordRouteStats(routeId, result.bytes, this.#stats.lastRenderDurationMs);
-        const responseTheme = getRequestTheme();
         this.#logger.verbose(
-          `render[${requestId}] done chunks=${result.chunksCount} bytes=${result.bytes} theme=${responseTheme ?? "(none)"} in ${
+          `render[${requestId}] done chunks=${result.chunksCount} bytes=${result.bytes} theme=${getRequestTheme() ?? "(none)"} in ${
             Date.now() - startedAt
           }ms`,
         );
@@ -1073,7 +1064,7 @@ export class RscRenderer {
         searchParams,
         pathname,
         url,
-        error: kind === "error" ? RscRenderer.#errorForFallback(error) : undefined,
+        error: kind === "error" && process.env.NODE_ENV !== "production" ? error : undefined,
         digest: kind === "error" ? "AKAN_RENDER_ERROR" : undefined,
       });
       if (!element) return false;
@@ -1469,12 +1460,10 @@ export class RscRenderer {
     if (!routeHead.headSnapshot) return undefined;
     return mergeAkanHeadSnapshots(
       routeHead.headSnapshot,
-      shouldRenderLocaleAlternates(options) ? this.#createLocaleAlternateHeadSnapshot(url) : undefined,
+      shouldRenderLocaleAlternates(options)
+        ? createAkanLocaleAlternateHeadSnapshot(this.#getLocaleAlternateLanguages(url))
+        : undefined,
     );
-  }
-
-  #createLocaleAlternateHeadSnapshot(url: URL): ResolvedHead["headSnapshot"] {
-    return createAkanLocaleAlternateHeadSnapshot(this.#getLocaleAlternateLanguages(url));
   }
 
   #getLocaleAlternateLanguages(url: URL): Record<string, string> {
@@ -1517,11 +1506,6 @@ export class RscRenderer {
   static #getLocale(pathname: string, i18n: AkanI18nConfig): string {
     const [segment] = pathname.split("/").filter(Boolean);
     return segment && i18n.locales.includes(segment) ? segment : i18n.defaultLocale;
-  }
-
-  static #errorForFallback(error: unknown): unknown {
-    if (process.env.NODE_ENV !== "production") return error;
-    return undefined;
   }
 
   static #getPublicRequestUrl(url: URL): URL {

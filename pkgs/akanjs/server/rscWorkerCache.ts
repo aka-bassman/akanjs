@@ -33,8 +33,8 @@ export interface RscPatchCacheKeyInput {
   patch: AkanRscPatchMetadata;
 }
 
-export function createRscPatchCacheKey({ baseEntry, targetRouterState, patch }: RscPatchCacheKeyInput): string {
-  return [
+export function createRscPatchCacheEntry({ baseEntry, targetRouterState, patch }: RscPatchCacheKeyInput) {
+  const key = [
     "patch-v1",
     baseEntry.key,
     targetRouterState.buildId ?? "",
@@ -46,10 +46,7 @@ export function createRscPatchCacheKey({ baseEntry, targetRouterState, patch }: 
     JSON.stringify(patch.segmentPath),
     patch.headSafe === true ? "head-safe" : "head-unsafe",
   ].join("\n");
-}
-
-export function createRscPatchCacheEntry(input: RscPatchCacheKeyInput): RouteCacheEntry {
-  return { key: createRscPatchCacheKey(input), ttl: input.baseEntry.ttl };
+  return { key, ttl: baseEntry.ttl };
 }
 
 export function isRscPatchResultCacheEligible(input: {
@@ -117,7 +114,6 @@ export function resolveRscWorkerPatchCacheEntry(input: {
   if (
     !input.cacheEntry ||
     !input.targetRouterState ||
-    input.safePatchDecision.status !== "patch" ||
     !patch ||
     !isRscPatchResultCacheEligible({ partialCommitEnabled: input.partialCommitEnabled, patch })
   ) {

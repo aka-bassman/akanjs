@@ -1,4 +1,4 @@
-import type { PageDefinition, PathRoute, RouteDefinition } from "akanjs/client";
+import type { PageDefinition, PathRoute } from "akanjs/client";
 import { Logger } from "akanjs/common";
 import { getRequestStore } from "akanjs/fetch";
 import type { PagePromptEntry, PagePromptRecord, PagePromptRun, PagePromptRunInput } from "../signal/mcp/pagePrompt";
@@ -76,7 +76,8 @@ export class RscPagePrompts {
     const entries: PagePromptEntry[] = [];
     const owners = new Map<string, string>();
     for (const route of routes) {
-      const meta = RscPagePrompts.#promptOf(await route.renderPage.getRouteDefinition?.());
+      const definition = await route.renderPage.getRouteDefinition?.();
+      const meta = definition?.kind === "page" ? (definition as PageDefinition).promptMeta : undefined;
       if (!meta) continue;
       const owner = owners.get(meta.name);
       if (owner)
@@ -86,10 +87,6 @@ export class RscPagePrompts {
     }
     // Alphabetical, like the tool catalogue: a client's slash menu and a prompt cache both key on order.
     return entries.sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  static #promptOf(definition: RouteDefinition | undefined) {
-    return definition?.kind === "page" ? (definition as PageDefinition).promptMeta : undefined;
   }
 
   static #pathParams(pattern: string) {

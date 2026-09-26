@@ -225,8 +225,7 @@ export function createRscHostRenderStream(input: {
             settleStream();
             pendingChunks = nextRscHostPendingChunkCount(pendingChunks, controller.desiredSize);
             if (isRscHostPendingChunkOverflow(pendingChunks, maxPendingChunks)) {
-              const msg = `rsc worker host queue exceeded ${maxPendingChunks} pending chunks`;
-              const error = new Error(msg);
+              const error = new Error(`rsc worker host queue exceeded ${maxPendingChunks} pending chunks`);
               input.onPendingChunkOverflow?.();
               cancelRender(error);
               controller.error(error);
@@ -264,12 +263,9 @@ export function createRscHostRenderStream(input: {
             }
             controller.error(new Error(`redirect after stream started: ${location}`));
           },
-          onLateRedirect: (location, method, status) => {
-            settleLateControl({ type: "redirect", location, method, status });
-          },
-          onCacheState: (state) => {
-            settleCacheState(state);
-          },
+          onLateRedirect: (location, method, status) =>
+            settleLateControl({ type: "redirect", location, method, status }),
+          onCacheState: settleCacheState,
           onNotFound: () => {
             settleLateControl(null);
             settleCacheState({ cacheable: false, reason: "not-found" });
@@ -293,9 +289,7 @@ export function createRscHostRenderStream(input: {
         }
         input.sendRenderOrQueue();
       },
-      cancel: (reason) => {
-        cancelRender(reason);
-      },
+      cancel: cancelRender,
       pull: () => {
         pendingChunks = Math.max(0, pendingChunks - 1);
       },
@@ -332,22 +326,6 @@ export interface RscWorkerReloadInput {
   buildId: number;
   /** Undefined keeps the current bundle (e.g. a client-manifest-only reload after a lazy route build). */
   pagesBundlePath?: string;
-}
-
-export interface RscWorkerRestartOptions {
-  baseDelayMs?: number;
-  maxDelayMs?: number;
-  /** `undefined` retries forever, so a short supervisor outage cannot wedge SSR for good. */
-  maxAttempts?: number;
-}
-
-export interface RscWorkerOptions {
-  clientManifest: ClientManifest;
-  pagesBundlePath: string;
-  pagesBundleBuildId: number;
-  cssAssets?: Record<string, CssAsset>;
-  i18n?: AkanI18nConfig;
-  restart?: RscWorkerRestartOptions;
 }
 
 type WorkerStatus = "starting" | "ready" | "restarting" | "stopped";
@@ -389,9 +367,6 @@ export class RscWorker {
   #restartTimer: ReturnType<typeof setTimeout> | null = null;
   #recycleTimer: ReturnType<typeof setTimeout> | null = null;
   #rollingRecycle: { oldProc: RscProcess; reason: string } | null = null;
-  readonly #restartOpts: Required<Pick<RscWorkerRestartOptions, "baseDelayMs" | "maxDelayMs">> & {
-    maxAttempts: number | undefined;
-  };
 
   readonly #failBeforeReady: boolean;
 
@@ -403,7 +378,6 @@ export class RscWorker {
     this.#cssAssets = artifact.cssAssets ?? {};
     this.#basePaths = artifact.basePaths ?? [];
     this.#i18n = artifact.i18n ?? DEFAULT_AKAN_I18N;
-    this.#restartOpts = { baseDelayMs: 200, maxDelayMs: 30_000, maxAttempts: undefined };
     this.ready = new Promise<void>((resolve, reject) => {
       this.#resolveReady = () => {
         if (this.#readyResolved) return;
@@ -420,63 +394,16 @@ export class RscWorker {
     this.#proc = this.#spawn();
   }
 
-  render(req: Request): ReadableStream<Uint8Array> {
-    const requestId = crypto.randomUUID();
-    const headers: Array<[string, string]> = [];
-    req.headers.forEach((value, key) => {
-      headers.push([key, value]);
-    });
-
-    return new ReadableStream<Uint8Array>({
-      start: (controller) => {
-        this.#pending.set(requestId, {
-          onChunk: (data) => controller.enqueue(data),
-          onEnd: () => controller.close(),
-          onError: (msg) => controller.error(new Error(msg)),
-        });
-        const send = () => {
-          // Gone means cancelled, or the worker died between queueing and flushing and its exit path failed it.
-          if (!this.#pending.has(requestId)) return;
-          try {
-            this.#proc.send({ type: "render", requestId, url: req.url, method: req.method, headers });
-          } catch (err) {
-            this.#resolvePending(requestId, (p) =>
-              p.onError(`rsc worker send failed: ${err instanceof Error ? err.message : String(err)}`),
-            );
-          }
-        };
-        if (this.#status === "ready") send();
-        else if (this.#status === "stopped") {
-          this.#resolvePending(requestId, (p) => p.onError("rsc worker is stopped"));
-        } else {
-          this.#queuedSends.push(send);
-        }
-      },
-      cancel: () => {
-        this.#pending.delete(requestId);
-        this.#cancelRender(requestId);
-      },
-    });
-  }
-
   renderWithMeta(
     req: Request,
     options: { clientManifest?: ClientManifest; signal?: AbortSignal } = {},
   ): Promise<RscRenderResult> {
     const requestId = crypto.randomUUID();
     return createRscHostRenderStream({
-      setPending: (pending) => {
-        this.#pending.set(requestId, pending);
-      },
-      deletePending: () => {
-        this.#pending.delete(requestId);
-      },
-      sendRenderOrQueue: () => {
-        this.#sendRenderOrQueue(requestId, req, options.clientManifest);
-      },
-      cancelRender: () => {
-        this.#cancelRender(requestId);
-      },
+      setPending: (pending) => this.#pending.set(requestId, pending),
+      deletePending: () => this.#pending.delete(requestId),
+      sendRenderOrQueue: () => this.#sendRenderOrQueue(requestId, req, options.clientManifest),
+      cancelRender: () => this.#cancelRender(requestId),
       signal: options.signal,
       onPendingChunkOverflow: () => {
         this.#hostPendingChunkOverflowCount += 1;
@@ -535,14 +462,10 @@ export class RscWorker {
   kill(): void {
     this.#killed = true;
     this.#status = "stopped";
-    if (this.#restartTimer) {
-      clearTimeout(this.#restartTimer);
-      this.#restartTimer = null;
-    }
-    if (this.#recycleTimer) {
-      clearTimeout(this.#recycleTimer);
-      this.#recycleTimer = null;
-    }
+    if (this.#restartTimer) clearTimeout(this.#restartTimer);
+    if (this.#recycleTimer) clearTimeout(this.#recycleTimer);
+    this.#restartTimer = null;
+    this.#recycleTimer = null;
     this.#rollingRecycle?.oldProc.kill();
     this.#rollingRecycle = null;
     this.#proc.kill();
@@ -581,7 +504,7 @@ export class RscWorker {
     }
     if (this.#pending.size > 0 || this.#queuedSends.length > 0) {
       if (!this.#recycleTimer) {
-        const graceMs = RscWorker.#getRscRecycleGraceMs();
+        const graceMs = MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_RECYCLE_GRACE_MS") ?? 5_000;
         this.#recycleTimer = setTimeout(() => {
           this.#recycleTimer = null;
           this.restartWhenIdle(reason);
@@ -592,11 +515,9 @@ export class RscWorker {
     this.#lastRecycleReason = reason;
     this.#recycleCount += 1;
     this.#lastRecycleAtMono = performance.now();
-    const oldPid = this.#proc.pid;
-    this.#logger.info(`[rsc] rolling recycle worker reason=${reason} oldPid=${oldPid}`);
+    this.#logger.info(`[rsc] rolling recycle worker reason=${reason} oldPid=${this.#proc.pid}`);
     this.#status = "restarting";
-    const oldProc = this.#proc;
-    this.#rollingRecycle = { oldProc, reason };
+    this.#rollingRecycle = { oldProc: this.#proc, reason };
     this.#proc = this.#spawn();
     return true;
   }
@@ -891,18 +812,9 @@ export class RscWorker {
   }
 
   #scheduleRestart(): void {
-    const attempt = this.#restartAttempts;
-    if (this.#restartOpts.maxAttempts !== undefined && attempt >= this.#restartOpts.maxAttempts) {
-      this.#status = "stopped";
-      const msg = `[rsc] worker failed ${attempt} restarts; giving up. SSR will return errors until the server restarts.`;
-      this.#logger.error(msg);
-      this.#rejectReady(new Error(msg));
-      return;
-    }
-
     this.#status = "restarting";
-    const delay = Math.min(this.#restartOpts.baseDelayMs * 2 ** attempt, this.#restartOpts.maxDelayMs);
-    this.#restartAttempts = attempt + 1;
+    const delay = Math.min(200 * 2 ** this.#restartAttempts, 30_000);
+    this.#restartAttempts += 1;
     this.#restartCount += 1;
     this.#logger.verbose(`[rsc] worker crashed, restarting in ${delay}ms (attempt ${this.#restartAttempts})`);
     this.#restartTimer = setTimeout(() => {
@@ -921,9 +833,9 @@ export class RscWorker {
     const maxReloads = RscWorker.#getRscMaxReloads();
     if (!maxReloads || this.#reloadsSinceSpawn < maxReloads) return false;
     // A save-on-keystroke burst reloads in place; the counter stays over the threshold, so the next reload recycles.
-    const sinceLastRecycleMs = this.#lastRecycleAtMono === null ? null : performance.now() - this.#lastRecycleAtMono;
-    if (sinceLastRecycleMs !== null && sinceLastRecycleMs < RscWorker.#getRscMinRecycleIntervalMs()) return false;
-    return true;
+    if (this.#lastRecycleAtMono === null) return true;
+    const minIntervalMs = MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MIN_RECYCLE_INTERVAL_MS") ?? 1_000;
+    return performance.now() - this.#lastRecycleAtMono >= minIntervalMs;
   }
 
   #maybeRecycleFromMetrics(metrics: AkanMetricsReport): void {
@@ -938,29 +850,17 @@ export class RscWorker {
       this.restartWhenIdle(`renderCount>${maxRenderCount}`);
       return;
     }
-    const maxRouteModules = RscWorker.#getRscMaxRouteModules();
+    const maxRouteModules = MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_ROUTE_MODULES");
     if (maxRouteModules && (metrics.rscLoadedRouteModuleCount ?? 0) >= maxRouteModules) {
       this.restartWhenIdle(`routeModules>${maxRouteModules}`);
     }
-  }
-
-  static #isProductionRuntime(): boolean {
-    return process.env.NODE_ENV === "production";
-  }
-
-  static #getRscRecycleGraceMs(): number {
-    return MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_RECYCLE_GRACE_MS") ?? 5_000;
   }
 
   // Production imports the pages bundle once at boot and never reloads, so only dev gets a threshold.
   static #getRscMaxReloads(): number | null {
     if (process.env.AKAN_RSC_WORKER_MAX_RELOADS !== undefined)
       return MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_RELOADS");
-    return RscWorker.#isProductionRuntime() ? null : RscWorker.#devMaxReloads;
-  }
-
-  static #getRscMinRecycleIntervalMs(): number {
-    return MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MIN_RECYCLE_INTERVAL_MS") ?? 1_000;
+    return process.env.NODE_ENV === "production" ? null : RscWorker.#devMaxReloads;
   }
 
   static #getRscMaxRssBytes(): number | null {
@@ -969,11 +869,7 @@ export class RscWorker {
       bytesEnv: "AKAN_RSC_WORKER_MAX_RSS",
       limitFraction: 0.55,
       // Dev has no limit to derive from, yet should recycle before swapping; well above the ~142MB post-boot baseline.
-      fallbackBytes: RscWorker.#isProductionRuntime() ? null : RscWorker.#devMaxRssBytes,
+      fallbackBytes: process.env.NODE_ENV === "production" ? null : RscWorker.#devMaxRssBytes,
     });
-  }
-
-  static #getRscMaxRouteModules(): number | null {
-    return MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_ROUTE_MODULES");
   }
 }

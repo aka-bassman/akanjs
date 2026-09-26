@@ -160,10 +160,6 @@ export function decodeAkanHeadSnapshot(value: string | null | undefined): AkanHe
   }
 }
 
-export function readAkanHeadSnapshotResponseHeader(headers: Headers): AkanHeadSnapshotDecodeResult {
-  return decodeAkanHeadSnapshot(headers.get(AKAN_RSC_PATCH_HEAD_SNAPSHOT_HEADER));
-}
-
 export function decodeAkanRouterState(value: string | null | undefined): AkanRouterStateV1 | null {
   if (!value) return null;
   const json = decodeBase64Url(value);
@@ -214,7 +210,7 @@ export function readAkanRscPatchMetadataResponseHeaders(headers: Headers): AkanR
   const segmentPath = decodeAkanRscPatchSegmentPath(headers.get(AKAN_RSC_PATCH_SEGMENT_PATH_HEADER));
   if (!Number.isInteger(patchStartIndex) || patchStartIndex < 0 || !patchStartSegmentKey || !segmentPath) return null;
   if (segmentPath[patchStartIndex] !== patchStartSegmentKey) return null;
-  const headSnapshotResult = readAkanHeadSnapshotResponseHeader(headers);
+  const headSnapshotResult = decodeAkanHeadSnapshot(headers.get(AKAN_RSC_PATCH_HEAD_SNAPSHOT_HEADER));
   return {
     patchStartIndex,
     patchStartSegmentKey,

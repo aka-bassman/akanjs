@@ -166,15 +166,7 @@ export class RouteElementComposer {
       if (!fallback) continue;
       const renders = [
         ...layoutStack.slice(0, index + 1),
-        RouteElementComposer.#makeFallbackRouteRender({
-          kind,
-          fallback,
-          params,
-          searchParams,
-          pathname,
-          error,
-          digest,
-        }),
+        RouteElementComposer.#makeFallbackRouteRender({ kind, fallback, pathname, error, digest }),
       ];
       return RouteElementComposer.composeRenders({ renders, params, searchParams });
     }
@@ -209,12 +201,10 @@ export class RouteElementComposer {
         </Suspense>
       );
       const segment = segments?.[i];
-      if (segment?.kind === "page") {
-        const routeSegments = segments;
-        if (!routeSegments) continue;
+      if (segments && segment?.kind === "page") {
         const outletKey =
           createAkanSegmentOutletKey(
-            routeSegments.slice(0, i + 1).map((item) => item.key),
+            segments.slice(0, i + 1).map((item) => item.key),
             i,
           ) ?? segment.key;
         element = <AkanSegmentOutletReference segmentKey={outletKey}>{element}</AkanSegmentOutletReference>;
@@ -223,7 +213,7 @@ export class RouteElementComposer {
     return element;
   }
 
-  static async renderAsync({
+  static AsyncRender = async ({
     routeRender,
     children,
     params,
@@ -233,17 +223,7 @@ export class RouteElementComposer {
     children: ReactNode;
     params: Record<string, string>;
     searchParams: Record<string, string | string[]>;
-  }) {
-    const node = await routeRender.render({ children, params, searchParams } as never);
-    return RouteElementComposer.#normalizeReactNode(node);
-  }
-
-  static AsyncRender = (props: {
-    routeRender: RouteRender;
-    children: ReactNode;
-    params: Record<string, string>;
-    searchParams: Record<string, string | string[]>;
-  }) => RouteElementComposer.renderAsync(props);
+  }) => RouteElementComposer.#normalizeReactNode(await routeRender.render({ children, params, searchParams } as never));
 
   static #makeFallbackRouteRender({
     kind,
@@ -254,18 +234,13 @@ export class RouteElementComposer {
   }: {
     kind: "not-found" | "error";
     fallback: LayoutNotFoundRender | LayoutErrorRender;
-    params: Record<string, string>;
-    searchParams: Record<string, string | string[]>;
     pathname: string;
     error?: unknown;
     digest?: string;
   }): RouteRender {
     return {
       render: (props: { params: Record<string, string>; searchParams: Record<string, string | string[]> }) => {
-        const { params, searchParams } = props as {
-          params: Record<string, string>;
-          searchParams: Record<string, string | string[]>;
-        };
+        const { params, searchParams } = props;
         return kind === "not-found"
           ? (fallback as LayoutNotFoundRender)({ params, searchParams, pathname })
           : (fallback as LayoutErrorRender)({ params, searchParams, pathname, error, digest });
@@ -280,15 +255,10 @@ export class RouteElementComposer {
     const props = node.props as { children?: ReactNode };
     if (!("children" in props)) return node;
 
-    const normalizedChildren = RouteElementComposer.#normalizeReactChildren(props.children);
+    const normalizedChildren = RouteElementComposer.#normalizeReactNode(props.children);
     if (normalizedChildren === props.children) return node;
 
     return cloneElement(node as ReactElement<{ children?: ReactNode }>, undefined, normalizedChildren);
-  }
-
-  static #normalizeReactChildren(children: ReactNode): ReactNode {
-    if (Array.isArray(children)) return Children.toArray(children).map(RouteElementComposer.#normalizeReactNode);
-    return RouteElementComposer.#normalizeReactNode(children);
   }
 
   static #getRenderStack(pathRoute: PathRoute): RouteRender[] {

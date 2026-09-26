@@ -15,7 +15,7 @@ export interface SubRouteIndexResponseOptions extends SubRouteIndexOptions {
   method?: string;
 }
 
-export { createSystemPageDocument, getSystemPageHomeHref } from "./systemPageDocument";
+export { getSystemPageHomeHref } from "./systemPageDocument";
 
 export async function createSystemPageResponse(options: SystemPageResponseOptions): Promise<Response> {
   return await renderDocumentResponse({

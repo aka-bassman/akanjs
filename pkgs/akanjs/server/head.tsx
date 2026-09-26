@@ -50,7 +50,7 @@ export function shouldRenderLocaleAlternates(options: { isSpecialRoute?: boolean
   return options.isSpecialRoute !== true;
 }
 
-export function isResolvedHead(value: unknown): value is ResolvedHead {
+function isResolvedHead(value: unknown): value is ResolvedHead {
   return isRecord(value) && "node" in value;
 }
 
