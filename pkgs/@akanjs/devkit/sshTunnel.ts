@@ -20,7 +20,6 @@ interface TunnelSocketData {
   closed: boolean;
 }
 
-type BunServer = { stop(): void };
 type BunSocket = Bun.Socket<TunnelSocketData>;
 
 const closeQuietly = (close: () => void) => {
@@ -126,7 +125,7 @@ export const createSshTunnel = async (options: SshTunnelOptions): Promise<SshTun
       closing = true;
       for (const socket of sockets) closeSocket(socket, error);
       closeQuietly(() => client.end());
-      closeBunServer(server);
+      server.stop();
     };
 
     client.once("error", (error) => closeTunnel(error));
@@ -145,8 +144,4 @@ const closeBunSocket = (socket: BunSocket, error?: Error) => {
   if (error) socket.data.stream?.destroy();
   else socket.data.stream?.end();
   closeQuietly(() => socket.end());
-};
-
-const closeBunServer = (server: BunServer) => {
-  server.stop();
 };
