@@ -14,12 +14,7 @@ interface JsonRpcResponse {
 
 const protocolVersion = "2025-06-18";
 
-/**
- * A server that answered correctly and asked who is calling.
- *
- * Its own class because the caller has to tell it apart from every other connect failure: this one is fixed by
- * signing in, and reporting it as "unavailable" sends someone to debug a server that is working.
- */
+// Its own class: a 401 is fixed by signing in, and calling it "unavailable" sends someone to debug a working server.
 export class McpUnauthorized extends Error {
   /** The `WWW-Authenticate` value, which names the resource metadata discovery starts from. */
   readonly challenge: string;
@@ -31,13 +26,6 @@ export class McpUnauthorized extends Error {
   }
 }
 
-/**
- * A client for one MCP server, over stdio or streamable HTTP.
- *
- * **Every failure is non-fatal.** A server that will not start, answers nothing, or dies mid-session costs its
- * own tools and nothing else: an agent that cannot finish a turn because an unrelated integration is down is
- * worse than one with fewer tools.
- */
 export class McpClient {
   /** A ceiling on a server that never stops paging; 50 pages is 5,000 tools at the usual page size. */
   static readonly maxToolPages = 50;
@@ -67,14 +55,7 @@ export class McpClient {
     return this;
   }
 
-  /**
-   * Every page of the server's tool list, not the first one.
-   *
-   * `tools/list` is paginated: a server holding more tools than its page size answers a `nextCursor` and
-   * expects to be asked again. Reading one page looks like it worked — the tools are sorted, so what goes
-   * missing is the tail of the alphabet rather than anything a caller would notice as absent. An akan server
-   * pages at 100 by default (`option.setMcp({ pageSize })`), so any app past 100 endpoints hit this.
-   */
+  /** Every page: `tools/list` pages by `nextCursor` (an akan server at 100), and one page silently drops the tail. */
   async listTools(): Promise<McpToolInfo[]> {
     const tools: McpToolInfo[] = [];
     let cursor: string | undefined;
@@ -108,7 +89,6 @@ export class McpClient {
     this.#proc = Bun.spawn([this.ref.command, ...(this.ref.args ?? [])], {
       stdin: "pipe",
       stdout: "pipe",
-      // A server's diagnostics belong in its own stderr, never mixed into the JSON-RPC stream.
       stderr: "ignore",
       env: { ...process.env, ...this.ref.env },
     });
@@ -177,8 +157,7 @@ export class McpClient {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
     });
-    // Raised rather than returned as a JSON-RPC error: a 401 carries no body worth reading, and the whole of
-    // what the caller needs is in the header that came with it.
+    // Thrown, not returned as a JSON-RPC error: a 401's body says nothing, and the caller needs its header.
     if (response.status === 401)
       throw new McpUnauthorized(this.ref.name, response.headers.get("www-authenticate") ?? "");
     this.#sessionId = response.headers.get("mcp-session-id") ?? this.#sessionId;

@@ -34,12 +34,6 @@ export interface AkanCodePluginsOptions {
   onAsk?: (question: Omit<CodeAgentQuestion, "questionId">) => Promise<string | undefined>;
 }
 
-/**
- * Assembles the akan capability pack for one profile.
- *
- * Gating happens here rather than at run time: a capability the profile excludes is never constructed, so the
- * model cannot call it and it costs nothing in the system prompt either.
- */
 export interface AkanCodePluginsResult {
   extensions: InlineExtension[];
   /** Names the session's tool allowlist has to carry, or the model is told these tools do not exist. */
@@ -50,6 +44,7 @@ export interface AkanCodePluginsResult {
   dispose: () => void;
 }
 
+// Gated at assembly, not at call time: a capability the profile excludes is never built and costs no prompt tokens.
 export class AkanCodePlugins {
   static async build(options: AkanCodePluginsOptions): Promise<AkanCodePluginsResult> {
     const mcp = await McpToolPack.connect({
@@ -140,8 +135,7 @@ export class AkanCodePlugins {
     ];
     const previewUrl = await AkanCodePlugins.#previewUrl(options);
     if (!previewUrl) return sources;
-    // A dev server is up and the agent still cannot look at the page. Said once, at assembly, because the
-    // alternative is a UI turn that quietly skips its only visual check and reads as a clean run.
+    // Said once here, or a UI turn silently skips its only visual check and reads as a clean run.
     const reason = PreviewView.unavailableReason();
     if (reason) options.onNotice?.(reason);
     else sources.push(new PreviewFeedback({ cwd: options.cwd, previewUrl, canSeeImages: options.canSeeImages }));

@@ -30,30 +30,13 @@ interface TokenResponse {
   error_description?: string;
 }
 
-/**
- * The client half of the MCP authorization spec: discovery, registration, and the authorization code flow.
- *
- * Every step is discovered rather than configured. A `401` names the resource metadata, that names the
- * authorization server, and its RFC 8414 document names the endpoints — so connecting to a server nobody has
- * described here needs no entry beyond its url. `pkgs/akanjs/server/mcp/McpAuth.ts` is the other half of the
- * same contract, and an akan app is therefore a server this can sign in to with nothing declared at all.
- *
- * **PKCE is mandatory and `S256` is the only method.** OAuth 2.1 drops `plain`, and the spec requires a client
- * to refuse a server whose metadata does not offer `S256` rather than fall back — a downgrade a network
- * attacker would otherwise choose on the client's behalf.
- */
+// Every endpoint is discovered from the 401 challenge; `pkgs/akanjs/server/mcp/McpAuth.ts` is the server half.
 export class McpOAuth {
   /** RFC 9728. A client tries the path-inserted spelling first and the bare one second. */
   static readonly resourceWellKnown = "/.well-known/oauth-protected-resource";
   static readonly serverWellKnown = "/.well-known/oauth-authorization-server";
   static readonly openidWellKnown = "/.well-known/openid-configuration";
-  /**
-   * Loopback ports tried in order, and why there is a fixed list rather than an ephemeral port.
-   *
-   * A registered client is bound to the exact `redirect_uri` it was registered with, so a port chosen afresh
-   * every time would invalidate the registration on every sign-in. The port that was used is stored with the
-   * client; this list is only what a first sign-in reaches for.
-   */
+  /** A fixed list, not an ephemeral port: a registered client is bound to its exact `redirect_uri`. */
   static readonly ports = [33418, 33419, 33420, 33421, 33422];
   static readonly callbackPath = "/callback";
   /** How long the browser half may take before the loopback server gives the port back. */
@@ -63,12 +46,7 @@ export class McpOAuth {
     return response.json() as Promise<Record<string, unknown>>;
   }
 
-  /**
-   * The `resource_metadata` a `WWW-Authenticate` challenge points at.
-   *
-   * Taken from the header when it is there rather than derived, because a resource served under a path has
-   * its path inserted into the well-known url and only the server knows which spelling it published.
-   */
+  /** The challenge's `resource_metadata` wins over derived urls: only the server knows which spelling it published. */
   static resourceMetadataUrls(serverUrl: string, challenge?: string | null) {
     const named = challenge ? /resource_metadata="([^"]+)"/.exec(challenge)?.[1] : undefined;
     if (named) return [named];
@@ -91,12 +69,7 @@ export class McpOAuth {
     ];
   }
 
-  /**
-   * Everything needed to run the flow, from the server url and whatever its `401` said.
-   *
-   * A resource that publishes no metadata is not refused: plenty of servers implement the token half of the
-   * spec and not the discovery half, and for those the server's own origin is the issuer to try.
-   */
+  /** A resource with no metadata falls back to its own origin as issuer: many servers skip the discovery half. */
   static async discover(serverUrl: string, challenge?: string | null): Promise<McpOAuthServer> {
     const resourceDoc = await McpOAuth.#first(McpOAuth.resourceMetadataUrls(serverUrl, challenge));
     const resource = typeof resourceDoc?.resource === "string" ? resourceDoc.resource : serverUrl;
@@ -107,8 +80,7 @@ export class McpOAuth {
       const doc = await McpOAuth.#first(McpOAuth.serverMetadataUrls(issuer));
       if (!doc) continue;
       const methods = McpOAuth.#strings(doc.code_challenge_methods_supported);
-      // The spec says refuse rather than downgrade: a metadata document that omits S256 is either a server
-      // too old for OAuth 2.1 or one a network attacker rewrote, and both answers are "do not send a code".
+      // Refuse rather than downgrade (OAuth 2.1): a document without S256 is too old or rewritten by an attacker.
       if (methods.length && !methods.includes("S256"))
         throw new Error(`${issuer} does not offer PKCE S256, which is the only method this client will use.`);
       const authorizationEndpoint = typeof doc.authorization_endpoint === "string" ? doc.authorization_endpoint : "";
@@ -155,13 +127,6 @@ export class McpOAuth {
     return { clientId: body.client_id, ...(body.client_secret ? { clientSecret: body.client_secret } : {}) };
   }
 
-  /**
-   * The authorization code flow, start to finish, against a loopback redirect.
-   *
-   * The browser is opened by the caller: this module has no opinion about how a host reaches one, and a pod
-   * has no browser at all. `state` is checked on the way back, and `iss` too whenever the server sends it —
-   * without that check a response from one authorization server can be replayed at another.
-   */
   static async authorize(options: {
     server: McpOAuthServer;
     clientId: string;
@@ -195,6 +160,7 @@ export class McpOAuth {
     if (error) throw new Error(`${error}: ${params.get("error_description") ?? "the authorization was refused"}`);
     if (params.get("state") !== state) throw new Error("The authorization response carried the wrong state.");
     const iss = params.get("iss");
+    // Without the iss check a response from one authorization server can be replayed at another.
     if (iss && iss !== options.server.issuer)
       throw new Error(`The authorization response came from ${iss}, not ${options.server.issuer}.`);
     const code = params.get("code");
@@ -245,7 +211,6 @@ export class McpOAuth {
     };
   }
 
-  /** The first url that answers a JSON document; a 404 on one spelling is the normal case, not a failure. */
   static async #first(urls: string[]) {
     for (const url of urls) {
       try {

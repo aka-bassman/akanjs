@@ -8,18 +8,11 @@ export interface PreviewFeedbackOptions {
   previewUrl?: string;
   /** Every akan route sits under `/:lang`, so a bare path renders nothing. */
   routes?: string[];
-  /** Only a model whose input includes images gets one attached; a screenshot is ~83KB per shot. */
+  /** Only a model whose input includes images gets a screenshot attached. */
   canSeeImages?: boolean;
 }
 
-/**
- * Looks at the page after a turn changed the UI.
- *
- * akan is a UI framework, so "does it run" is half the question. The default findings are **text** — page
- * console errors, an empty body, an error overlay, horizontal overflow, a dropped colour slot — because they
- * cost a few hundred tokens, work with any model, and name the defect rather than depicting it. A screenshot is
- * attached only when the active model can actually read one.
- */
+// Findings are text, not screenshots: a few hundred tokens, readable by any model, and naming the defect.
 export class PreviewFeedback implements TurnFeedbackSource {
   readonly key = "preview";
   readonly #options: PreviewFeedbackOptions;

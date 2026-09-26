@@ -9,15 +9,6 @@ export interface MailToolPackOptions {
   mailbox: () => CodeMailbox | undefined;
 }
 
-/**
- * Lets the agent reach the other `akan code` sessions running in this workspace.
- *
- * The person can already do it with `/peers` and `/msg`; this is the half that makes it *coordination* — one
- * session asking another to take a piece of the work, or telling it the file they both touch has moved.
- *
- * A message arrives at the other end as a prompt, so the tool's cost is a whole turn of somebody else's
- * window. That is why the description says what it says: it is for handing over work, not for chatting.
- */
 export class MailToolPack {
   static readonly toolNames = ["list_peers", "send_peer_message"];
 

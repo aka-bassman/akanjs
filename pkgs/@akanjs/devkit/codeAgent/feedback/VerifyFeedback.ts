@@ -8,13 +8,7 @@ export interface VerifyFeedbackOptions {
   readOnly?: boolean;
 }
 
-/**
- * Runs the validation chain over whatever a turn changed and feeds the failures back.
- *
- * The model has a verification tool and the observed failure is that it finishes without calling it — so this
- * is not a second tool but a hook. Detection reads git rather than tool events, because an edit made through
- * `bash` produces no write tool call and is exactly the kind a model forgets to verify.
- */
+// A hook, not a reliance on the akan_verify tool: the observed failure is a model finishing without calling it.
 export class VerifyFeedback implements TurnFeedbackSource {
   readonly key = "verify";
   readonly #options: VerifyFeedbackOptions;

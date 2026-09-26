@@ -9,13 +9,7 @@ export interface AkanEditScopeResult {
 
 const empty: AkanEditScopeResult = { paths: [], apps: [], libs: [], needsSync: false, touchesTsx: false };
 
-/**
- * What the working tree says changed, and which akan targets that implicates.
- *
- * Read from git rather than from tool events on purpose: a model that edits through `bash` — a heredoc, `sed`,
- * a codemod — produces no write tool call at all, and a verification gate that trusts tool events would wave
- * exactly those turns through.
- */
+// Read from git, not tool events: an edit made through `bash` (a heredoc, sed, a codemod) produces no write tool call.
 export class AkanEditScope {
   static async since(cwd: string, baseline: ReadonlySet<string>): Promise<AkanEditScopeResult> {
     const current = await AkanEditScope.#status(cwd);
