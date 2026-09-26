@@ -80,7 +80,6 @@ export type SampleOf<Model> = DocumentModel<{
 export const sampleOf = <Model, FieldObj extends FieldObject>(
   modelRef: ConstantCls<Model, FieldObj>,
 ): DocumentModel<{ [K in keyof Model as Model[K] extends BaseObject ? never : K]: NonNullable<Model[K]> }> => {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return Object.fromEntries(
     Object.entries(modelRef[FIELD_META]).map(([key, field]) => [
       key,

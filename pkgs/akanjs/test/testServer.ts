@@ -163,7 +163,7 @@ export class TestServer {
   async terminate() {
     const now = Date.now();
     const elapsed = now - this.#startAt;
-    await sleep(50); // cooldown
+    await sleep(50);
     await this.#server?.stop();
     this.#server = undefined;
     await this.#dropSchema?.();
@@ -179,10 +179,7 @@ export class TestServer {
     }
     this.#logger.info(`System Terminated in ${Date.now() - now}ms`);
   }
-  /**
-   * Which database mode's adaptors the server runs: `single` unless `AKAN_TEST_DATABASE_MODE` names another, and never
-   * whatever `AKAN_DATABASE_MODE` a developer's shell happens to hold — the suite pins it, so it cannot drift silently.
-   */
+  // `single` unless `AKAN_TEST_DATABASE_MODE` names another; never the `AKAN_DATABASE_MODE` of a developer's shell.
   static #modeFromEnv(): DatabaseMode {
     return DatabaseModes.parse(process.env.AKAN_TEST_DATABASE_MODE?.trim() || "single", "AKAN_TEST_DATABASE_MODE");
   }
