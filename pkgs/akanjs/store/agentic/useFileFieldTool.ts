@@ -10,20 +10,10 @@ import { StoreRegistry } from "../storeRegistry";
 import { type FormFieldRef, FormFields } from "./formFields";
 
 export interface FileFieldSource<T extends { id: string }> {
-  /**
-   * The files this field may be set to, read live rather than closed over: one attached mid-conversation joins the
-   * list between two calls. **Omitted publishes nothing** — a shared `Field.Img` forwards an optional prop, and a
-   * call site that hands it nothing has no candidates and must not grow a tool that refuses every id.
-   */
+  /** Read live on every call. Omitted publishes nothing. */
   read?: () => readonly T[];
-  /** How one file reads to a person, so an agent can name the one it means — a filename, a caption. */
   label: (file: T) => string;
-  /**
-   * How many files the field holds, when it holds a list. Nothing derives it: `ConstantField` carries `arrDepth`,
-   * which says the value is a list and not how long a legal one is, so the control passes the number it already
-   * renders. Without it the cap is the server's `Err`, and an agent that learns a limit by tripping one is the
-   * failure the listing tool exists to avoid.
-   */
+  /** The list's cap; nothing derives it from the field, so without it the limit is only the server's `Err`. */
   max?: number;
   min?: number;
   disabled?: boolean;
@@ -40,23 +30,7 @@ const rowsOf = (ref: FormFieldRef): unknown[] => {
 
 const counted = (num: number) => `${num} ${num === 1 ? "file" : "files"}`;
 
-/**
- * The tools an upload control owes an agent: list the files it may put in the field, then put one there by id.
- *
- * `FormFields.schema` publishes nothing for a relation and is right not to — writing an id would need a lookup the
- * store does not do — and `useRelationFieldTool` answers that for the relation a dropdown picks. The other half of
- * its reasoning, *"a relation is picked **or uploaded**"*, is this hook.
- *
- * It is not that one minus its loader. A picker's `read` is the whole resolvable set, so rewriting the array is
- * always expressible and `add`/`sub` would be a convenience — which is why neither that hook nor `useFieldTool`
- * publishes them for a list of ids. An upload control's `read` is what *this conversation* brought, and the field
- * may already hold files that predate it: naming the array whole would then drop them, because the ids that would
- * keep them are ids the guard has never heard of. So here the pair is the only way to add one file to a field that
- * already holds some, which is the ordinary case rather than a shortcut.
- *
- * `read` is the control's and not the framework's because the ids are the host's: the conversation carries
- * `MessageAttachment.ref`s, and only whoever set them can turn one back into the model a form field holds.
- */
+/** Lists offered files and sets the field by id; `add`/`sub` are the only way to keep files `read` does not offer. */
 export const useFileFieldTool = <T extends { id: string }>(
   onChange: unknown,
   { read, label, max, min, disabled }: FileFieldSource<T>,
@@ -71,8 +45,7 @@ export const useFileFieldTool = <T extends { id: string }>(
     if (!action || disabled || !read) return;
     const ref = FormFields.ref(action);
     const target = ref && FormFields.relationOf(ref.field);
-    // A field the form can describe on its own is `useFieldTool`'s, and one a dropdown picks is the relation
-    // hook's: publishing two setters under one name would register one action with two argument shapes.
+    // A describable field is `useFieldTool`'s: two setters under one name would give one action two shapes.
     if (!ref || !target || FormFields.schema(ref.field)) return;
     const many = ref.field.arrDepth > 0;
     const nullable = !!ref.field.nullable && !many;
@@ -92,14 +65,6 @@ export const useFileFieldTool = <T extends { id: string }>(
       });
     };
     const pair = many && !!dispatcherOf(names.addFieldOnModel) && !!dispatcherOf(names.subFieldOnModel);
-    /**
-     * One refusal for every entry that names a file, so a wrong id never reaches a setter as a silent drop.
-     *
-     * On a list it also says where the boundary is. The ids the field already holds are real, on screen, and in
-     * the form the agent just read — and they are not in `read`, which is only what reached this screen. Refusing
-     * one as "no such file" reads as the form being wrong rather than the verb, and the next move is to doubt the
-     * value instead of reaching for the tool that does cover it.
-     */
     const guardIds = (name: string, value: unknown, allowNull: boolean): true | string => {
       if (allowNull && (value === null || value === undefined)) return true;
       const wanted = Array.isArray(value) ? value : [value];
@@ -116,7 +81,6 @@ export const useFileFieldTool = <T extends { id: string }>(
         .map((file) => `${file.id} (${live.current.label(file)})`)
         .join(", ")}.${route}`;
     };
-    /** The cap, checked against what the field would hold afterwards rather than against what the call named. */
     const guardCount = (after: number, subbing = false): true | string => {
       if (max !== undefined && after > max)
         return `${ref.key} holds at most ${counted(max)}, and that would make ${after}. Remove one with ${names.subFieldOnModel} first.`;
@@ -166,8 +130,6 @@ export const useFileFieldTool = <T extends { id: string }>(
         },
       },
     ];
-    // Append and remove-by-position. Where `useFieldTool` offers these as the weaker way to write an array, here
-    // they are the only way to reach one the conversation did not put there — see the note above the hook.
     if (pair)
       entries.push(
         {

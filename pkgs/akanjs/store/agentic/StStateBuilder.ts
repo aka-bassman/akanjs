@@ -15,19 +15,12 @@ export interface StStateMeta {
 }
 
 interface StStateDeclaration {
-  /** The name as written this render, which is what says whether the resolution below still applies. */
   key: string | null;
   name: string | null;
   set: { schema: JsonSchema; type: ParamFieldType } | null;
 }
 
-/**
- * Local state past its description, waiting for its initial value. `.init()` is the one hook and returns what
- * `useState` returns.
- *
- * The declared type does both halves: it renders the read, and — with `set` — it is the schema of the setter tool
- * an agent writes through. A type nothing can describe costs the write, not the read and not the render.
- */
+/** `.init()` is the hook and returns what `useState` returns; an undescribable type costs only the setter tool. */
 export class StStateBuilder<T extends AgentFieldType> {
   readonly #name: string | null;
   readonly #type: T;
@@ -47,16 +40,13 @@ export class StStateBuilder<T extends AgentFieldType> {
   init(
     initial: AgentValueOf<T> | null | (() => AgentValueOf<T> | null),
   ): [AgentValueOf<T> | null, Dispatch<SetStateAction<AgentValueOf<T> | null>>];
-  // `unknown`, because TS compares an implementation signature's return against every overload's in both
-  // directions, and a nullable state's setter is assignable to a non-nullable one's in neither.
+  // `unknown`: TS checks the return against every overload both ways, and the two setters assign in neither.
   init(initial: AgentValueOf<T> | null | (() => AgentValueOf<T> | null)): unknown {
     type Value = AgentValueOf<T> | null;
     const name = this.#name;
     const type = this.#type;
     const declared = useRef<StStateDeclaration | null>(null);
-    // Keyed on the name, not frozen: withholding it is how a conditional surface is written, so a value that
-    // becomes readable later has to publish and one that goes away has to stop. `publishable` still reports once
-    // per name rather than once per render.
+    // Re-resolved on a name change, not frozen: a withheld name that appears later must publish, and vice versa.
     if (declared.current?.key !== name)
       declared.current = {
         key: name,
@@ -78,7 +68,6 @@ export class StStateBuilder<T extends AgentFieldType> {
     });
   }
 
-  /** A `set` an agent could only call wrong leaves the key readable — the same trade `st.tool`'s `.arg` makes. */
   static #writable(name: string, type: AgentFieldType): StStateDeclaration["set"] {
     const scalar = type as unknown as ParamFieldType;
     try {

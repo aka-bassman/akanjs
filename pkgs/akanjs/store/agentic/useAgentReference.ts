@@ -4,19 +4,7 @@ import { SessionContext } from "use-agentic";
 import { useContext } from "../hooks";
 import { type AgentFieldType, AgentValue, type AgentValueOf } from "./AgentValue";
 
-/**
- * What a component hands over when the user points at data it is already drawing.
- *
- * The pointer and the value are declared apart on purpose. `refName`/`refId`/`path` say *what was pointed at*, and
- * travel so the agent can read it again later; `type` and `value` say *what is being shown to the model now*, and
- * the component supplies the value it already holds, so there is no round trip. They come apart because the two
- * are genuinely different in the case this exists for: a rich-text field stored as `field(Any)` is an editor
- * document at its path and a paragraph of prose to a reader, and the model wants the paragraph.
- *
- * `type` is `st.expose`'s vocabulary, not a second one. It decides what leaves the browser — a model class masks
- * by that model, a scalar passes, `Any` passes untouched — so naming a `Light` class that does not carry the field
- * is how a reference arrives empty.
- */
+/** `refName`/`refId`/`path` say what was pointed at; `value` is what the model is shown now, masked by `type`. */
 export interface AgentReferenceInput<T extends AgentFieldType> {
   refName: string;
   refId: string;
@@ -28,13 +16,7 @@ export interface AgentReferenceInput<T extends AgentFieldType> {
   value: AgentValueOf<T>;
 }
 
-/**
- * Points the enclosing agent session at data, from anywhere that draws it.
- *
- * No-ops outside a session rather than throwing, the same call `AgentValue.publishable` makes: a card carrying a
- * reference button is mounted on whatever routes render it, and a route that happens to host no agent must not
- * lose its render over it.
- */
+/** Stages a reference in the enclosing agent session; outside one it warns and does nothing. */
 export const useAgentReference = () => {
   const session = useContext(SessionContext);
   return <T extends AgentFieldType>({ type, value, ...pointer }: AgentReferenceInput<T>) => {

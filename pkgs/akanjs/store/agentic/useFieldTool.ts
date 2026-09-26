@@ -9,12 +9,7 @@ import { useEffect, useRef } from "../hooks";
 import { StoreRegistry } from "../storeRegistry";
 import { type FormFieldRef, FormFields } from "./formFields";
 
-/**
- * A control's `transform` is what it does to every value a person types, so an agent's write goes through it too —
- * otherwise a `Field.Phone` stores `010-1234-5678` for the person and the raw digits for the agent. It normalizes
- * one scalar, so an array-valued control (`TextList`, `Tags`, `DoubleNumber`) applies it per element. A cleared
- * nullable field stays null: a normalizer written for a value would turn it into one.
- */
+// The control's `transform` applies to agent writes too, per element for an array; a cleared null stays null.
 const normalized = (value: unknown, transform: unknown): unknown => {
   if (typeof transform !== "function" || value === null) return value;
   const apply = transform as (input: unknown) => unknown;
@@ -30,20 +25,8 @@ const rowsOf = (ref: FormFieldRef): unknown[] => {
   return Array.isArray(rows) ? rows : [];
 };
 
-/**
- * Append and remove-by-index for an array of embedded rows, beside the whole-array setter.
- *
- * Not new authority: the setter this control already published can produce any array these two can, so they are
- * strictly weaker — which is what makes deriving them from the same field sound. What they add is that neither can
- * touch a row it was not given, so the agent stops having to retype the rows it is leaving alone.
- *
- * Both take a list and act atomically. Removing indices one call at a time would shift the ones not yet removed, so
- * `sub` filters the whole set at once, the way the generated action already does.
- *
- * `add` appends and publishes no insert position: the `+` a person presses always appends, and the framework cannot
- * see the `limit` an app may pass from its own `onAdd`. `addOrSub` is never published — it matches by `indexOf`, so
- * on rows it compares by reference and every toggle would append.
- */
+// Append and remove-by-index are strictly weaker than the whole-array setter, so sound to derive from it.
+// `addOrSub` is never published: it matches rows by reference, so every toggle would append.
 const rowEntries = (ref: FormFieldRef, arraySchema: JsonSchema): ToolEntry[] => {
   if (!FormFields.rowModelOf(ref.field)) return [];
   const names = formSetterNames(capitalize(ref.refName), ref.key);
@@ -88,23 +71,15 @@ const rowEntries = (ref: FormFieldRef, arraySchema: JsonSchema): ToolEntry[] => 
 };
 
 export interface FieldToolOptions {
-  /** The control's own normalizer. Applied to the agent's write exactly as it is to the person's typing. */
+  /** Applied to the agent's write exactly as to the person's typing. */
   transform?: unknown;
-  /** True while the person cannot use the control. Publishes nothing, so the agent gets no lever the screen withholds. */
+  /** While true, nothing is published. */
   disabled?: boolean;
-  /** The person can drag entries into a new order, so `move<Field>On<Model>` is a lever the screen really has. */
+  /** Also publishes `move<Field>On<Model>`, for a list the person can drag. */
   sortable?: boolean;
 }
 
-/**
- * Reorder-by-position for a list the person can drag, beside the whole-array setter.
- *
- * The drag is the lever the screen actually offers, and it changes no row's content — so an agent asked to move one
- * row should not have to retype the nine it is leaving alone, which is the same argument that gives an embedded-row
- * array its `add`/`sub`. There is no store action behind it: reordering *is* a whole-array write, so this splices
- * the live rows and hands them to the setter the drag hands them to, `transform` deliberately not applied — the
- * values are already stored, and normalizing them again is not something dragging does.
- */
+// No store action: splices the live rows into the setter, without `transform` — the values are already stored.
 const moveEntry = (ref: FormFieldRef, onChange: () => (value: unknown) => unknown): ToolEntry => {
   const name = formSetterNames(capitalize(ref.refName), ref.key).moveFieldOnModel;
   return {
@@ -134,19 +109,7 @@ const moveEntry = (ref: FormFieldRef, onChange: () => (value: unknown) => unknow
   };
 };
 
-/**
- * Publishes the setter a form control is already holding, for exactly as long as the control is usable.
- *
- * The control is the declaration — the same rule the rest of the surface follows. A handler passed by reference
- * (`onChange={st.do.setTitleOnTask}`) names the field it writes, so the tool and the person press one function;
- * an inline arrow names nothing and publishes nothing, which is the existing `data-akan-action` rule with
- * consequences. Publishing from the form's subscription instead would offer every field of the model, including
- * the ones this template draws no control for.
- *
- * `disabled` withdraws the tool for the same reason the whole surface is declaration-only: a field the person
- * cannot type into is not one an agent may write in their place. It also closes the field to `fill<Model>Form`,
- * whose guard offers only what a control published — so one gate covers both writers.
- */
+/** Publishes a by-reference setter while its control is usable; `disabled` also closes it to `fill<Model>Form`. */
 export const useFieldTool = (onChange: unknown, { transform, disabled, sortable }: FieldToolOptions = {}) => {
   const surface = useSurface();
   const scope = useScopePath();
