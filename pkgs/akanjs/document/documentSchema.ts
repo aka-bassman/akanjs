@@ -35,37 +35,36 @@ export class DocumentSchema<Doc = unknown> {
   readonly indexes: DocumentIndexDescriptor[] = [];
 
   pre<HookDoc = Doc>(type: SaveEventType, hook: DocumentSaveHook<HookDoc>) {
-    const hooks = this.preHooks.get(type) ?? [];
-    hooks.push(hook as unknown as DocumentSaveHook<Doc>);
-    this.preHooks.set(type, hooks);
-    return this;
+    return this.#add(this.preHooks, type, hook);
   }
 
   post<HookDoc = Doc>(type: SaveEventType, hook: DocumentSaveHook<HookDoc>) {
-    const hooks = this.postHooks.get(type) ?? [];
-    hooks.push(hook as unknown as DocumentSaveHook<Doc>);
-    this.postHooks.set(type, hooks);
+    return this.#add(this.postHooks, type, hook);
+  }
+
+  removePre<HookDoc = Doc>(type: SaveEventType, hook: DocumentSaveHook<HookDoc>) {
+    return this.#remove(this.preHooks, type, hook);
+  }
+
+  removePost<HookDoc = Doc>(type: SaveEventType, hook: DocumentSaveHook<HookDoc>) {
+    return this.#remove(this.postHooks, type, hook);
+  }
+
+  #add(hooks: Map<SaveEventType, DocumentSaveHook<Doc>[]>, type: SaveEventType, hook: unknown) {
+    const list = hooks.get(type) ?? [];
+    list.push(hook as DocumentSaveHook<Doc>);
+    hooks.set(type, list);
     return this;
   }
 
   // A removal replaces the array rather than splicing it: a write already running holds the list it started with,
   // so a listener that unsubscribes from inside a hook cannot make the loop skip the hook after it.
-  removePre<HookDoc = Doc>(type: SaveEventType, hook: DocumentSaveHook<HookDoc>) {
-    const hooks = this.preHooks.get(type);
-    if (hooks)
-      this.preHooks.set(
+  #remove(hooks: Map<SaveEventType, DocumentSaveHook<Doc>[]>, type: SaveEventType, hook: unknown) {
+    const list = hooks.get(type);
+    if (list)
+      hooks.set(
         type,
-        hooks.filter((registered) => registered !== (hook as unknown)),
-      );
-    return this;
-  }
-
-  removePost<HookDoc = Doc>(type: SaveEventType, hook: DocumentSaveHook<HookDoc>) {
-    const hooks = this.postHooks.get(type);
-    if (hooks)
-      this.postHooks.set(
-        type,
-        hooks.filter((registered) => registered !== (hook as unknown)),
+        list.filter((registered) => registered !== hook),
       );
     return this;
   }

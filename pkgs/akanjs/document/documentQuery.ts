@@ -45,24 +45,7 @@ export type DocumentQueryNode =
 /** The four real SQL columns. Everything else lives inside `_doc`, which is what makes the two compile differently. */
 export const baseDocumentColumns = new Set(["id", "createdAt", "updatedAt", "removedAt"]);
 
-export type DocumentQueryOperator =
-  | "eq"
-  | "ne"
-  | "oneOf"
-  | "notOneOf"
-  | "gt"
-  | "gte"
-  | "lt"
-  | "lte"
-  | "between"
-  | "exists"
-  | "missing"
-  | "empty"
-  | "has"
-  | "contains";
-
-/** The operator-object shorthand's keys: `{ status: { oneOf: [...] } }` reaches the same operators as `q.oneOf`. */
-export const queryOperatorKeys = new Set<string>([
+const documentQueryOperators = [
   "eq",
   "ne",
   "oneOf",
@@ -77,7 +60,11 @@ export const queryOperatorKeys = new Set<string>([
   "empty",
   "has",
   "contains",
-]);
+] as const;
+export type DocumentQueryOperator = (typeof documentQueryOperators)[number];
+
+/** The operator-object shorthand's keys: `{ status: { oneOf: [...] } }` reaches the same operators as `q.oneOf`. */
+export const queryOperatorKeys = new Set<string>(documentQueryOperators);
 
 export type DocumentQueryValue =
   | DocumentPrimitive

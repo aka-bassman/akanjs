@@ -40,7 +40,7 @@ export const setFilterMeta = (
       .flatMap((sort) => Object.keys(sort)),
   );
   const existingFilterMeta = getFilterMeta(filterRef, { allowEmpty: true });
-  if (existingFilterMeta) {
+  if (existingFilterMeta)
     Object.assign(existingFilterMeta, {
       ...filterMeta,
       query: Object.assign(
@@ -54,20 +54,14 @@ export const setFilterMeta = (
         filterMeta.sort,
       ),
     });
-    sortField.forEach((field) => {
-      filterRef.sortField.add(field);
-    });
-  } else {
+  else
     Object.assign(filterRef, {
       [FILTER_META]: {
         query: Object.assign({}, ...libFilterMetas.map((libFilterMeta) => libFilterMeta.query), filterMeta.query),
         sort: Object.assign({}, ...libFilterMetas.map((libFilterMeta) => libFilterMeta.sort), filterMeta.sort),
       },
     });
-    sortField.forEach((field) => {
-      filterRef.sortField.add(field);
-    });
-  }
+  for (const field of sortField) filterRef.sortField.add(field);
 };
 export const getFilterInfoByKey = <ArgNames extends string[] = [], Args extends any[] = any[], Model = any>(
   modelRef: FilterCls,

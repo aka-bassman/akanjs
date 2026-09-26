@@ -173,59 +173,42 @@ function groupBy<T>(items: T[], getKey: (item: T) => unknown): Record<string, T[
   return groups;
 }
 
-const setQueryOperator = (query: QueryOf<unknown>, fieldName: string, op: "oneOf" | "has", value: unknown) => {
-  (query as QueryRecord)[fieldName] = { kind: "op", op, value };
-};
+const findWhere = (model: LoaderModel, query: QueryOf<unknown>, field: string, op: "oneOf" | "has", value: unknown) =>
+  Promise.resolve(model.find({ ...query, [field]: { kind: "op", op, value } }));
 
-export const createLoader = <Key, Value>(model: LoaderModel, fieldName = "id", defaultQuery: QueryOf<unknown> = {}) => {
-  return new DataLoader<Key, Value>(
-    (fields) => {
-      const query: QueryOf<unknown> = { ...defaultQuery };
-      setQueryOperator(query, fieldName, "oneOf", fields);
-      const data = Promise.resolve(model.find(query)).then((list) => {
+export const createLoader = <Key, Value>(model: LoaderModel, fieldName = "id", defaultQuery: QueryOf<unknown> = {}) =>
+  new DataLoader<Key, Value>(
+    (fields) =>
+      findWhere(model, defaultQuery, fieldName, "oneOf", fields).then((list) => {
         const listByKey = keyBy(list, fieldName);
         return fields.map((id: unknown) => listByKey[String(id)] ?? null);
-      });
-      return data as unknown as Promise<Value[]>;
-    },
+      }) as unknown as Promise<Value[]>,
     { name: "dataloader" },
   );
-};
-export const createArrayLoader = <K, V>(model: LoaderModel, fieldName = "id", defaultQuery: QueryOf<unknown> = {}) => {
-  return new DataLoader<K, V>((fields) => {
-    const query: QueryOf<unknown> = { ...defaultQuery };
-    setQueryOperator(query, fieldName, "has", fields);
-    const data = Promise.resolve(model.find(query)).then((list) => {
-      return fields.map((field) => list.filter((item) => field === item[fieldName]));
-    });
-    return data as unknown as Promise<V[]>;
-  });
-};
+export const createArrayLoader = <K, V>(model: LoaderModel, fieldName = "id", defaultQuery: QueryOf<unknown> = {}) =>
+  new DataLoader<K, V>(
+    (fields) =>
+      findWhere(model, defaultQuery, fieldName, "has", fields).then((list) =>
+        fields.map((field) => list.filter((item) => field === item[fieldName])),
+      ) as unknown as Promise<V[]>,
+  );
 export const createArrayElementLoader = <K, V>(
   model: LoaderModel,
   fieldName = "id",
   defaultQuery: QueryOf<unknown> = {},
-) => {
-  return new DataLoader<K, V>(
-    (fields) => {
-      const query: QueryOf<unknown> = { ...defaultQuery };
-      setQueryOperator(query, fieldName, "oneOf", fields);
-      const data = Promise.resolve(model.find(query)).then((list) => {
+) =>
+  new DataLoader<K, V>(
+    (fields) =>
+      findWhere(model, defaultQuery, fieldName, "oneOf", fields).then((list) => {
         const flat: ArrayElementLoaderItem[] = list.flatMap((datum) => {
           const values = Array.isArray(datum[fieldName]) ? datum[fieldName] : [];
-          return values.map((datField: unknown) => ({
-            ...datum,
-            key: datField,
-          }));
+          return values.map((datField: unknown) => ({ ...datum, key: datField }));
         });
         const listByKey = groupBy(flat, (dat) => dat.key);
         return fields.map((id) => listByKey[String(id)] ?? null);
-      });
-      return data as unknown as Promise<V[]>;
-    },
+      }) as unknown as Promise<V[]>,
     { name: "dataloader" },
   );
-};
 
 export const createQueryLoader = <Key, Value>(
   model: LoaderModel,
