@@ -23,10 +23,10 @@ export type EnumInstance<RefName extends string = string, T = string | number> =
   }
 >;
 
-/** Returns true when a class was created by `enumOf`. */
+/** True for a `class X extends enumOf(...) {}`, not for the bare `enumOf(...)` result. */
 export const isEnum = (enumRef: Cls) => Object.getPrototypeOf(Object.getPrototypeOf(enumRef) ?? {}) === EnumPrototype;
 
-/** Creates a typed scalar enum class from a readonly list of string or number values. */
+/** `type` is `String` for string values, else `Int` when every value is an integer, else `Float`. */
 export const enumOf = <RefName extends string, T = string | number>(
   refName: RefName,
   values: readonly T[],
@@ -78,9 +78,7 @@ export const enumOf = <RefName extends string, T = string | number>(
   return Enum as unknown as EnumInstance<RefName, T>;
 };
 
-/** Id-keyed list helper used for light model collections and immutable-style list updates. */
 export class DataList<Light extends { id: string }> {
-  // [immerable] = true;
   #idMap: Map<string, number>;
   length: number;
   values: Light[];
