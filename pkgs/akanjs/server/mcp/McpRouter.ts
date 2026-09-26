@@ -271,24 +271,10 @@ export class McpRouter {
         const slot = await this.#acquire(call);
         return "refused" in slot ? slot.refused : await this.#toolsCall(call, document, slot.release);
       }
-      case "prompts/get": {
-        const slot = await this.#acquire(call);
-        if ("refused" in slot) return slot.refused;
-        try {
-          return await this.#promptsGet(call, document);
-        } finally {
-          slot.release();
-        }
-      }
-      case "resources/read": {
-        const slot = await this.#acquire(call);
-        if ("refused" in slot) return slot.refused;
-        try {
-          return await this.#resourcesRead(call, document);
-        } finally {
-          slot.release();
-        }
-      }
+      case "prompts/get":
+        return await this.#limited(call, () => this.#promptsGet(call, document));
+      case "resources/read":
+        return await this.#limited(call, () => this.#resourcesRead(call, document));
       default:
         // Legacy clients read a 404 as "session gone" and would re-handshake in a loop, so they get the error at 200.
         return McpRouter.#error(call.id, McpErrorCode.methodNotFound, McpRouter.#methodNotFound(call.method), {
@@ -307,6 +293,16 @@ export class McpRouter {
   }
 
   // Counted before the tool lookup, so a loop over an unknown name is throttled too.
+  async #limited(call: McpCall, run: () => Promise<Response>): Promise<Response> {
+    const slot = await this.#acquire(call);
+    if ("refused" in slot) return slot.refused;
+    try {
+      return await run();
+    } finally {
+      slot.release();
+    }
+  }
+
   async #acquire(call: McpCall): Promise<{ refused: Response } | { release: () => void }> {
     if (!this.#limiter) return { release: () => {} };
     const verdict = await this.#limiter.acquire(McpAuth.callerKey(call.req));

@@ -101,9 +101,9 @@ export class SqliteSnapshot {
     const packedPath = path.join(dir, name);
     const sourceHash = createHash("sha256");
     const uploadHash = createHash("sha256");
-    const stages: NodeJS.ReadWriteStream[] = [SqliteSnapshot.#tap(sourceHash), createGzip()];
+    const stages: NodeJS.ReadWriteStream[] = [SqliteSnapshot.tap(sourceHash), createGzip()];
     if (encryptor) stages.push(encryptor.transform());
-    stages.push(SqliteSnapshot.#tap(uploadHash));
+    stages.push(SqliteSnapshot.tap(uploadHash));
     await pipeline([createReadStream(rawPath), ...stages, createWriteStream(packedPath)]);
     await rm(rawPath, { force: true });
     const file: SnapshotFile = {
@@ -139,7 +139,7 @@ export class SqliteSnapshot {
     }
   }
 
-  static #tap(hash: ReturnType<typeof createHash>) {
+  static tap(hash: ReturnType<typeof createHash>) {
     return new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         hash.update(chunk);
