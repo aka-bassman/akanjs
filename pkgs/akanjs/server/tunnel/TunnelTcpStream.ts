@@ -1,10 +1,7 @@
 import { type TunnelOpenFrame, tunnelWireContract } from "akanjs/common";
 import { type TunnelStream, type TunnelStreamLink, tunnelResetCodeOf } from "./tunnelStream";
 
-/**
- * A raw TCP stream to a local port — what SSH through the tunnel rides. The provider side only: what opens one
- * is undefined in wire version 1, so nothing in the framework calls this yet.
- */
+/** A raw TCP stream to a local port (SSH); provider side only — nothing opens one in wire version 1 yet. */
 export class TunnelTcpStream implements TunnelStream {
   readonly #open: TunnelOpenFrame;
   readonly #link: TunnelStreamLink;
@@ -39,7 +36,6 @@ export class TunnelTcpStream implements TunnelStream {
               for (let at = 0; at < data.byteLength; at += tunnelWireContract.chunkBytes)
                 void this.#link.sendPayload(data.subarray(at, at + tunnelWireContract.chunkBytes));
             },
-            // Everything `write` could not take is held here and retried, in order, when the kernel buffer frees.
             drain: (socket) => this.#flush(socket),
             close: () => {
               if (!this.#closed) this.#link.sendFrame({ type: "end", streamId });

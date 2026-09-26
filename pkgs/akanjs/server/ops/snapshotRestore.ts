@@ -100,8 +100,7 @@ export class SnapshotRestore {
     return stagedPath;
   }
 
-  //* The old -wal/-shm travel with the old file under the same prefix: left in place they would be replayed into the
-  //* restored database, and moved together they still open as the consistent pre-restore state.
+  //* The old -wal/-shm move with the old file: left in place they would be replayed into the restored database.
   static async #preserve(target: string, stamp: string) {
     if (!existsSync(target)) return null;
     const preserved = `${target}.pre-restore-${stamp}`;

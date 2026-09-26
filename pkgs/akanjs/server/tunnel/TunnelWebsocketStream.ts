@@ -1,12 +1,8 @@
 import { type TunnelHeaderList, type TunnelOpenFrame, tunnelWireContract, tunnelWsPayload } from "akanjs/common";
 import { type TunnelStream, type TunnelStreamLink, tunnelResetCodeOf, wsBytes } from "./tunnelStream";
 
-/**
- * Handshake headers that belong to the public caller's upgrade and not to this one: the key, the version and
- * the extension list are negotiated per connection, and replaying them makes the local server answer a
- * handshake that was never asked of it. The subprotocol is the exception — it is the caller's choice and
- * travels as `protocols` instead.
- */
+// Negotiated per connection: replayed, they make the local server answer a handshake never asked of it.
+// The subprotocol is the caller's choice, so it travels as `protocols` instead.
 const handshakeHeaders = new Set([
   "sec-websocket-key",
   "sec-websocket-version",

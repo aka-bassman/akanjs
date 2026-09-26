@@ -3,11 +3,8 @@ import { getEnv } from "../../base/baseEnv";
 import { resolveDefaultSqliteFile } from "../../service/predefinedAdaptor/sqlitePath";
 import type { SnapshotSources } from "./snapshotTypes";
 
-/**
- * Where the SQLite files live, by the same precedence the adaptors use — deployment env first, then the default
- * layout. A path an app sets only in `env.server.ts` is invisible here; the solo server passes the adaptor's own
- * answer instead, and a gateway deployment names it with SQLITE_DATABASE_PATH / AKAN_SOLID_DB_PATH.
- */
+// A path set only in `env.server.ts` is invisible here: the solo server passes the adaptor's own answer instead,
+// and a gateway deployment names it with SQLITE_DATABASE_PATH / AKAN_SOLID_DB_PATH.
 export class SqliteFiles {
   static fromEnv(): SnapshotSources {
     const { appName, environment, operationMode, databaseMode } = getEnv();

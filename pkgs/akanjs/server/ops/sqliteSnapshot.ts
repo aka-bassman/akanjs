@@ -122,8 +122,7 @@ export class SqliteSnapshot {
     return { file, problems, packedPath };
   }
 
-  //* A readonly second connection reads the last committed state alongside an open write transaction; a read-write
-  //* one returns SQLITE_MISUSE for VACUUM INTO against a WAL database another process holds.
+  //* Readonly on purpose: a read-write connection gets SQLITE_MISUSE for VACUUM INTO on a WAL db another process holds.
   static vacuumInto(source: string, target: string) {
     const db = new Database(source, { readonly: true });
     try {
