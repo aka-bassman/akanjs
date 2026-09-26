@@ -10,11 +10,7 @@ export interface StoreSurface {
 
 const SURFACE_KEY = Symbol.for("akanjs.store.agentSurface");
 
-/**
- * Attaches the app's store catalogue to the shared surface, once per runtime, lazily — nothing pays for the
- * bridge walk until something agent-facing (the dock, a chat) actually asks. On the server it builds but does not
- * attach: a server-global surface would be shared across requests, and no session assembles context there.
- */
+/** Once per runtime, lazily; never attached on the server, where one global surface would span requests. */
 export const ensureStoreSurface = (): StoreSurface => {
   const holder = globalThis as typeof globalThis & { [SURFACE_KEY]?: StoreSurface };
   if (!holder[SURFACE_KEY]) {

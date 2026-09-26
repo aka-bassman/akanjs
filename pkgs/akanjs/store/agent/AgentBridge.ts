@@ -6,27 +6,13 @@ import { StoreRegistry } from "../storeRegistry";
 import { StoreCatalogue } from "./StoreCatalogue";
 import type { SerializedStoreState } from "./types";
 
-/**
- * What an in-page agent may read out of the store the user is looking at.
- *
- * Reads only. Driving the app is a component's declaration to make: `st.tool` binds a name and a schema to the
- * same handler the control on screen calls, so what an agent can do is what the screen offers the user and nothing
- * else. A store method that no component declared is not a lever this screen has — publishing one made the surface
- * the bundle rather than the screen, and gave the model levers whose effect it could not see.
- *
- * A key is readable while a mounted component subscribes it through `st.use` / `st.sel` / `st.ref`, and its value
- * is masked by the model that key declares. Masking is not optional even though the data mostly came from the
- * server already masked: `<model>Form` holds what the *user* typed, credentials included, and an in-page agent
- * ships what it reads to a remote model. The mask is by the declared model rather than by the value's class,
- * because `immerify` copies a form into a plain object and the class is gone by the time anyone can ask.
- */
+/** Masked store reads for an in-page agent: `<model>Form` holds typed credentials, and reads ship to a remote model. */
 export class AgentBridge {
   readonly refusals: AgentRefusal[];
 
   readonly #instance: StoreInstance;
   readonly #state: { [key: string]: SerializedStoreState };
 
-  /** The bridge for the app running in this process: the one store every `st.use` goes through. */
   static of() {
     return new AgentBridge(StoreRegistry.instance);
   }
@@ -53,12 +39,7 @@ export class AgentBridge {
       .sort((a, b) => a.localeCompare(b));
   }
 
-  /**
-   * The value behind a state key, stripped of what the model marks `hidden` or `secret`.
-   *
-   * The key itself has to be one the screen reads, not merely one its store owns: a component subscribing
-   * `userList` says the screen shows a user list, and says nothing about `userForm` sitting in the same store.
-   */
+  /** The masked value of a key a mounted component reads; throws for any other key. */
   read(key: string, viewKey = ""): unknown {
     const entry = this.#state[key];
     if (!entry) throw new Error(`Unknown state key: ${key}.${this.#readableInstead(viewKey)}`);
@@ -77,7 +58,6 @@ export class AgentBridge {
     );
   }
 
-  /** Named the way `readScreen` and `highlight` name theirs: a refusal with no way forward costs a whole turn. */
   #readableInstead(viewKey: string): string {
     const keys = this.readableKeys(viewKey);
     return keys.length ? ` Readable here: ${keys.join(", ")}.` : " This screen reads no state keys.";
@@ -87,7 +67,6 @@ export class AgentBridge {
     return value instanceof DataList ? value.values : value;
   }
 
-  /** True when nothing inside could be carrying a model's fields, so there is nothing a mask would have to strip. */
   static #isPlainValue(value: unknown): boolean {
     if (value === null || value === undefined) return true;
     if (Array.isArray(value)) return value.every((item) => AgentBridge.#isPlainValue(item));
