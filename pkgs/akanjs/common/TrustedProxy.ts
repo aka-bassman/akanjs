@@ -1,4 +1,4 @@
-import { normalizeIpAddress } from "./clientAddress";
+import { clientAddressFromHeaders, normalizeIpAddress } from "./clientAddress";
 
 // Forwarded headers are forgeable, so they are believed only from a private, loopback or link-local peer;
 // `AKAN_TRUSTED_PROXIES` adds a comma-separated CIDR list, and `*` trusts every peer.
@@ -40,10 +40,8 @@ export class TrustedProxy {
   /** A `null` peer is a unix socket, which only a local proxy opens, so its headers count; `undefined` is not. */
   static clientAddress(headers: Headers, peerAddress: string | null | undefined): string | null {
     if (peerAddress === null || TrustedProxy.isTrusted(peerAddress)) {
-      const realIp = headers.get("x-real-ip")?.trim();
-      if (realIp) return normalizeIpAddress(realIp);
-      const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-      if (forwarded) return normalizeIpAddress(forwarded);
+      const recorded = clientAddressFromHeaders(headers);
+      if (recorded) return recorded;
     }
     return peerAddress ? normalizeIpAddress(peerAddress) : null;
   }

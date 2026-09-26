@@ -58,18 +58,19 @@ export interface ValidatePageSourceFileOptions {
   filePath?: string;
 }
 
+const toRouteKey = (filePath: string) =>
+  filePath.startsWith("./") ? filePath : `./${filePath.split(/[\\/]/).join("/")}`;
+
 export function isRouteSourceFile(filePath: string): boolean {
   if (!SOURCE_EXT_RE.test(filePath)) return false;
-  const key = filePath.startsWith("./") ? filePath : `./${filePath.split(/[\\/]/).join("/")}`;
-  return tryParseRouteModuleKey(key) !== null;
+  return tryParseRouteModuleKey(toRouteKey(filePath)) !== null;
 }
 
 /** `null` when the file is fine, including a non-source asset, which `page/` tolerates. */
 export function getPageSourceFileViolation(filePath: string): string | null {
   if (!SOURCE_EXT_RE.test(filePath)) return null;
 
-  const key = filePath.startsWith("./") ? filePath : `./${filePath.split(/[\\/]/).join("/")}`;
-  const match = ROUTE_SOURCE_RE.exec(key);
+  const match = ROUTE_SOURCE_RE.exec(toRouteKey(filePath));
   if (!match) return "invalid page source file";
 
   const file = match[1] as string;
@@ -89,8 +90,7 @@ export function validatePageSourceFile(filePath: string, options: ValidatePageSo
 
   const violation = getPageSourceFileViolation(filePath);
   if (!violation) return true;
-  const key = filePath.startsWith("./") ? filePath : `./${filePath.split(/[\\/]/).join("/")}`;
-  throw new Error(`[route-convention] ${violation}: ${options.filePath ?? key}`);
+  throw new Error(`[route-convention] ${violation}: ${options.filePath ?? toRouteKey(filePath)}`);
 }
 
 export function validateSubRoutePageKey(
