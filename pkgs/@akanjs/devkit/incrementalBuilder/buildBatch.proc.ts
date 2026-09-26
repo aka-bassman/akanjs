@@ -53,6 +53,13 @@ class BuildBatch {
     });
   }
 
+  #fail(need: keyof BuildBatchResult["errors"], label: string, err: unknown): void {
+    const message = err instanceof Error ? err.message : String(err);
+    this.#logger.error(`${label} failed: ${message}`);
+    this.#result.errors[need] = message;
+    if (need !== "base") this.#emitStatus(need, message);
+  }
+
   // Streams nothing: the builder is not serving yet, so the watcher reads the outcome from the batch result.
   async #buildBase(): Promise<void> {
     const started = Date.now();
@@ -62,9 +69,7 @@ class BuildBatch {
       this.#result.optimizedFonts = optimizedFonts;
       this.#logger.verbose(`base-artifact ok buildId=${artifact.pagesBundleBuildId} (${Date.now() - started}ms)`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.#logger.error(`base-artifact failed: ${message}`);
-      this.#result.errors.base = message;
+      this.#fail("base", "base-artifact", err);
     }
   }
 
@@ -75,10 +80,7 @@ class BuildBatch {
       this.#logger.verbose(`csr-rebundle ok (${Date.now() - started}ms)`);
       this.#emitStatus("csr");
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.#logger.error(`csr-rebundle failed: ${message}`);
-      this.#result.errors.csr = message;
-      this.#emitStatus("csr", message);
+      this.#fail("csr", "csr-rebundle", err);
     }
   }
 
@@ -98,10 +100,7 @@ class BuildBatch {
       this.#emitStatus("pages");
       this.#logger.verbose(`pages-rebundle ok buildId=${next.buildId} (${Date.now() - started}ms)`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.#logger.error(`pages-rebundle failed: ${message}`);
-      this.#result.errors.pages = message;
-      this.#emitStatus("pages", message);
+      this.#fail("pages", "pages-rebundle", err);
     }
   }
 
@@ -143,10 +142,7 @@ class BuildBatch {
       });
       this.#logger.verbose(`css-compile ok assets=${Object.keys(cssAssets).length} (${Date.now() - started}ms)`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.#logger.error(`css-rebuild failed: ${message}`);
-      this.#result.errors.css = message;
-      this.#emitStatus("css", message);
+      this.#fail("css", "css-rebuild", err);
     }
   }
 
@@ -164,7 +160,6 @@ class BuildBatch {
   }
 
   static #shouldReoptimizeFonts(previous: OptimizedFonts, changedFiles: string[]): boolean {
-    if (changedFiles.length === 0) return false;
     return changedFiles.some((file) => {
       const normalized = path.resolve(file);
       if (/\.(woff2?|ttf|otf)$/i.test(normalized)) return true;

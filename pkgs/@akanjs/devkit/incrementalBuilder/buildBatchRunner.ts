@@ -6,12 +6,6 @@ import type { BuildBatchMessage, BuildBatchRequest, BuildBatchResult } from "./b
 // No pool on purpose: one worker at a time, exiting after its batch, returns the arenas `Bun.build` never frees.
 // A worker that dies without reporting must not take the watcher down; its needs come back as errors.
 export class BuildBatchRunner {
-  static readonly #entryCandidates = (workspaceRoot: string) => [
-    path.join(workspaceRoot, "pkgs/@akanjs/devkit/incrementalBuilder/buildBatch.proc.ts"),
-    path.join(workspaceRoot, "node_modules/@akanjs/devkit/incrementalBuilder/buildBatch.proc.ts"),
-    path.join(import.meta.dir, "buildBatch.proc.js"),
-    path.join(import.meta.dir, "buildBatch.proc.ts"),
-  ];
   #logger = new Logger("BuildBatchRunner");
   #entry: string | null = null;
   #workspaceRoot: string;
@@ -23,7 +17,12 @@ export class BuildBatchRunner {
 
   async #resolveEntry(): Promise<string> {
     if (this.#entry) return this.#entry;
-    const candidates = BuildBatchRunner.#entryCandidates(this.#workspaceRoot);
+    const candidates = [
+      path.join(this.#workspaceRoot, "pkgs/@akanjs/devkit/incrementalBuilder/buildBatch.proc.ts"),
+      path.join(this.#workspaceRoot, "node_modules/@akanjs/devkit/incrementalBuilder/buildBatch.proc.ts"),
+      path.join(import.meta.dir, "buildBatch.proc.js"),
+      path.join(import.meta.dir, "buildBatch.proc.ts"),
+    ];
     for (const candidate of candidates) {
       if (!(await Bun.file(candidate).exists())) continue;
       this.#entry = candidate;
