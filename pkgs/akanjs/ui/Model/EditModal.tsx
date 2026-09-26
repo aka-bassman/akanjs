@@ -344,6 +344,7 @@ export default function EditModal<Full extends { id: string }>({
             },
     [disabled, modelFormId],
   );
+  const editProps = { type, slice, className, draftBarClassName, checkSubmit, edit, modal, loadingWrapper };
   if (type === "modal")
     return (
       <Modal
@@ -356,17 +357,7 @@ export default function EditModal<Full extends { id: string }>({
         action={<Submit />}
       >
         {isModalOpen ? (
-          <EditModel
-            type={type}
-            slice={slice}
-            className={className}
-            draftBarClassName={draftBarClassName}
-            checkSubmit={checkSubmit}
-            edit={edit}
-            modal={modal}
-            loadingWrapper={loadingWrapper}
-            cancelEdit={handleCancel}
-          >
+          <EditModel {...editProps} cancelEdit={handleCancel}>
             {children}
           </EditModel>
         ) : null}
@@ -374,16 +365,7 @@ export default function EditModal<Full extends { id: string }>({
     );
   else if (isModalOpen)
     return (
-      <EditModel
-        type={type}
-        slice={slice}
-        className={className}
-        draftBarClassName={draftBarClassName}
-        checkSubmit={checkSubmit}
-        edit={edit}
-        modal={modal}
-        loadingWrapper={loadingWrapper}
-      >
+      <EditModel {...editProps}>
         <Title />
         {children}
         {type === "form" ? <Submit /> : null}

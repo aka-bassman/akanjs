@@ -419,44 +419,32 @@ const DefaultNumber = ({
   const statusClass = validate !== undefined ? statusClassOf(status, firstFocus) : "";
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter" && e.key !== "Escape") return;
     const numberValue = parseFloat(e.currentTarget.value.replace(/[^\d-]/g, ""));
-    if (e.key === "Enter") {
-      if (Number.isNaN(numberValue)) {
-        e.currentTarget.value = "";
-        setFormatValue("");
-        onChange(null);
-        return;
-      }
-      if (rest.max !== undefined && numberValue > parseFloat(rest.max as string)) {
-        const maxValue = formatter ? formatter(String(rest.max)) : String(rest.max);
-        e.currentTarget.value = maxValue;
-        setFormatValue(maxValue);
-        onPressEnter?.(parseFloat(maxValue), e);
-        return;
-      } else if (rest.min !== undefined && numberValue < parseFloat(rest.min as string)) {
-        const minValue = formatter ? formatter(String(rest.min)) : String(rest.min);
-        e.currentTarget.value = minValue;
-        setFormatValue(minValue);
-        onPressEnter?.(parseFloat(minValue), e);
-        return;
-      }
-      setFormatValue(formatter ? formatter(String(numberValue)) : String(numberValue));
-      onPressEnter?.(numberValue, e);
+    if (Number.isNaN(numberValue)) {
+      e.currentTarget.value = "";
+      setFormatValue("");
+      onChange(null);
+      return;
     }
+    const bound =
+      rest.max !== undefined && numberValue > parseFloat(rest.max as string)
+        ? rest.max
+        : rest.min !== undefined && numberValue < parseFloat(rest.min as string)
+          ? rest.min
+          : undefined;
+    const boundValue = bound === undefined ? undefined : formatter ? formatter(String(bound)) : String(bound);
     if (e.key === "Escape") {
-      if (Number.isNaN(numberValue)) {
-        e.currentTarget.value = "";
-        setFormatValue("");
-        onChange(null);
-        return;
-      }
-      if (rest.max !== undefined && numberValue > parseFloat(rest.max as string)) {
-        e.currentTarget.value = formatter ? formatter(String(rest.max)) : String(rest.max);
-      } else if (rest.min !== undefined && numberValue < parseFloat(rest.min as string)) {
-        e.currentTarget.value = formatter ? formatter(String(rest.min)) : String(rest.min);
-      }
+      if (boundValue !== undefined) e.currentTarget.value = boundValue;
       e.currentTarget.blur();
       onPressEscape?.(e);
+    } else if (boundValue !== undefined) {
+      e.currentTarget.value = boundValue;
+      setFormatValue(boundValue);
+      onPressEnter?.(parseFloat(boundValue), e);
+    } else {
+      setFormatValue(formatter ? formatter(String(numberValue)) : String(numberValue));
+      onPressEnter?.(numberValue, e);
     }
   };
 
