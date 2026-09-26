@@ -10,7 +10,7 @@ import { config, useSpring } from "react-spring";
 import { buttonRecipe } from "../Button";
 import { useOverlayLayerProps } from "../overlayLayer";
 
-import { DialogContext } from "./context";
+import { DialogContext } from "./Provider";
 
 const MODAL_MARGIN = 0; // px
 const OPACITY = { START: 0, END: 1 };

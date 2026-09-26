@@ -7,7 +7,7 @@ import { BiX } from "react-icons/bi";
 import { buttonRecipe } from "../Button";
 import { useOverlayLayerProps } from "../overlayLayer";
 
-import { DialogContext } from "./context";
+import { DialogContext } from "./Provider";
 
 export interface ModalProps {
   className?: string;

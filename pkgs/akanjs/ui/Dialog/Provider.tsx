@@ -2,9 +2,34 @@
 import { cn } from "akanjs/client";
 import { capitalize } from "akanjs/common";
 import { st } from "akanjs/store";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { sharedContext } from "../../client/sharedContext";
+import { agentAttrs } from "../agentAttrs";
 
-import { DialogContext } from "./context";
+export interface DialogContextType {
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  openDialog: () => void;
+  closeDialog: () => void;
+  /** The drawing surface's own dismissal, where `confirmClose` and `onCancel` live; flipping `open` skips both. */
+  registerDismiss: (dismiss: (() => void) | null) => void;
+  title: ReactNode;
+  setTitle: (title: ReactNode) => void;
+  action: ReactNode;
+  setAction: (action: ReactNode) => void;
+}
+
+export const DialogContext = sharedContext<DialogContextType>("dialog", {
+  open: false,
+  setOpen: (open: boolean) => null,
+  openDialog: () => null,
+  closeDialog: () => null,
+  registerDismiss: (dismiss: (() => void) | null) => null,
+  title: null,
+  setTitle: (title: ReactNode) => null,
+  action: null,
+  setAction: (action: ReactNode) => null,
+});
 
 export interface ProviderProps {
   className?: string;
@@ -67,5 +92,61 @@ export const Provider = ({
         {children}
       </div>
     </DialogContext.Provider>
+  );
+};
+
+export interface TitleProps {
+  children?: ReactNode;
+}
+export const Title = ({ children }: TitleProps) => {
+  const { setTitle } = useContext(DialogContext);
+  useEffect(() => {
+    setTitle(children);
+  }, [children]);
+  return null;
+};
+
+export interface ActionProps {
+  children?: ReactNode;
+}
+export const Action = ({ children }: ActionProps) => {
+  const { setAction } = useContext(DialogContext);
+  useEffect(() => {
+    setAction(children);
+  }, [children]);
+  return null;
+};
+
+export interface ContentProps {
+  className?: string;
+  children?: ReactNode;
+}
+export const Content = ({ className, children }: ContentProps) => {
+  return <div className={cn("block w-full", className)}>{children}</div>;
+};
+
+export interface TriggerProps {
+  className?: string;
+  children?: ReactNode;
+}
+export const Trigger = ({ className, children }: TriggerProps) => {
+  const { openDialog } = useContext(DialogContext);
+  return (
+    <div className={className} onClick={openDialog} {...agentAttrs(openDialog)}>
+      {children}
+    </div>
+  );
+};
+
+export interface CloseProps {
+  className?: string;
+  children?: ReactNode;
+}
+export const Close = ({ className, children }: CloseProps) => {
+  const { closeDialog } = useContext(DialogContext);
+  return (
+    <a className={className} onClick={closeDialog} {...agentAttrs(closeDialog)}>
+      {children}
+    </a>
   );
 };
