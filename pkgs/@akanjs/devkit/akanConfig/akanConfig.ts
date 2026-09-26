@@ -32,32 +32,11 @@ import {
 
 const DEFAULT_BARREL_IMPORTS = ["akanjs/webkit", "akanjs/common", "akanjs/ui", "akanjs/server"];
 const DEFAULT_OPTIMIZE_IMPORTS = [
-  "lucide-react",
-  "date-fns",
-  "lodash-es",
-  "ramda",
-  "antd",
-  "react-bootstrap",
-  "ahooks",
-  "@ant-design/icons",
-  "@headlessui/react",
-  "@headlessui-float/react",
-  "@heroicons/react/20/solid",
-  "@heroicons/react/24/solid",
-  "@heroicons/react/24/outline",
-  "@visx/visx",
-  "@tremor/react",
-  "rxjs",
-  "@mui/material",
-  "@mui/icons-material",
-  "recharts",
-  "react-use",
-  "@material-ui/core",
-  "@material-ui/icons",
-  "@tabler/icons-react",
-  "mui-core",
-  "react-icons/*",
-];
+  "lucide-react date-fns lodash-es ramda antd react-bootstrap ahooks @ant-design/icons @headlessui/react",
+  "@headlessui-float/react @heroicons/react/20/solid @heroicons/react/24/solid @heroicons/react/24/outline",
+  "@visx/visx @tremor/react rxjs @mui/material @mui/icons-material recharts react-use @material-ui/core",
+  "@material-ui/icons @tabler/icons-react mui-core react-icons/*",
+].flatMap((line) => line.split(" "));
 const WORKSPACE_BARREL_FACETS = ["ui", "webkit", "common", "client", "server"] as const;
 const DEFAULT_DOCKER_IMAGE = "oven/bun:1-slim";
 const SSR_RUNTIME_PACKAGES = ["react", "react-dom", "react-server-dom-webpack"] as const;
@@ -72,19 +51,11 @@ const MOBILE_RUNTIME_PACKAGES = [
 // `npx cap sync` registers only plugins the app's own package.json declares (else the bridge throws `Capacitor plugin
 // "Device" is not available.`), so they are declared there with "*" and deduped to the root-installed version.
 const MOBILE_APP_CAPACITOR_PLUGINS = [
-  "@capacitor/app",
-  "@capacitor/browser",
-  "@capacitor/camera",
-  "@capacitor/core",
-  "@capacitor/device",
-  "@capacitor/geolocation",
-  "@capacitor/haptics",
-  "@capacitor/inappbrowser",
-  "@capacitor/keyboard",
-  "@capacitor/preferences",
-  "@capacitor/push-notifications",
+  ..."app browser camera core device geolocation haptics inappbrowser keyboard preferences push-notifications"
+    .split(" ")
+    .map((name) => `@capacitor/${name}`),
   "capacitor-plugin-safe-area",
-] as const;
+];
 const DEFAULT_AKAN_IMAGE_CONFIG: AkanImageConfig = {
   deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
   imageSizes: [32, 48, 64, 96, 128, 256, 384],
@@ -341,24 +312,12 @@ export class AkanAppConfig implements AppConfigResult {
   }
   #applyRoutes(routes: AkanRouteConfig[] = []) {
     for (const route of routes) {
-      if (route.basePath) {
-        const basePath = route.basePath.replace(/^\/+|\/+$/g, "");
-        this.basePaths.add(basePath);
-        const domains = this.subRoutes.getOrInsert(basePath, new Set());
-        Object.keys(route.domains).forEach((branch) => void this.branches.add(branch));
-        Object.values(route.domains)
-          .flat()
-          .forEach((domain) => {
-            if (domain) domains.add(domain.toLowerCase().replace(/:\d+$/, ""));
-          });
-      } else {
-        Object.keys(route.domains).forEach((branch) => void this.branches.add(branch));
-        Object.values(route.domains)
-          .flat()
-          .forEach((domain) => {
-            if (domain) this.domains.add(domain.toLowerCase().replace(/:\d+$/, ""));
-          });
-      }
+      const basePath = route.basePath ? route.basePath.replace(/^\/+|\/+$/g, "") : null;
+      if (basePath !== null) this.basePaths.add(basePath);
+      const domains = basePath !== null ? this.subRoutes.getOrInsert(basePath, new Set()) : this.domains;
+      for (const branch of Object.keys(route.domains)) this.branches.add(branch);
+      for (const domain of Object.values(route.domains).flat())
+        if (domain) domains.add(domain.toLowerCase().replace(/:\d+$/, ""));
     }
     const appName = this.app.name.toLowerCase();
     const serveDomain = this.baseDevEnv.serveDomain.toLowerCase();
@@ -491,7 +450,9 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
     if (rootVersion) return rootVersion;
     // The framework's own (peer)dependencies resolve plugin runtime packages without a hardcoded list.
     const akanPackageJson = getAkanPackageJson();
-    return akanPackageJson.dependencies?.[lib] ?? akanPackageJson.peerDependencies?.[lib];
+    const version = akanPackageJson.dependencies?.[lib] ?? akanPackageJson.peerDependencies?.[lib];
+    if (!version) throw new Error(`Dependency ${lib} not found in package.json`);
+    return version;
   }
   #getProductionRuntimePackages() {
     return [
@@ -536,11 +497,7 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
     };
     return libs
       .filter((lib) => !rootDependencies[lib])
-      .map((lib) => {
-        const version = this.#resolveProductionDependencyVersion(lib);
-        if (!version) throw new Error(`Dependency ${lib} not found in package.json`);
-        return `${lib}@${version}`;
-      });
+      .map((lib) => `${lib}@${this.#resolveProductionDependencyVersion(lib)}`);
   }
   get akanVersion() {
     return getAkanPackageJson().version;
@@ -552,11 +509,10 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
       version: "1.0.0",
       main: "./main.js",
       dependencies: Object.fromEntries(
-        [...new Set(this.#getProductionRuntimePackages())].map((lib) => {
-          const version = this.#resolveProductionDependencyVersion(lib);
-          if (!version) throw new Error(`Dependency ${lib} not found in package.json`);
-          return [lib, version];
-        }),
+        [...new Set(this.#getProductionRuntimePackages())].map((lib) => [
+          lib,
+          this.#resolveProductionDependencyVersion(lib),
+        ]),
       ),
       ...data,
     };
@@ -631,24 +587,13 @@ export class AkanLibConfig implements LibConfigResult {
 }
 
 //! need to refactor
-export const increaseBuildNum = async (app: App) => {
-  const appConfig = await AkanAppConfig.from(app);
+const shiftBuildNum = async (app: App, delta: number) => {
+  const { buildNum } = (await AkanAppConfig.from(app)).mobile;
   const akanConfigPath = path.join(app.cwdPath, "akan.config.ts");
   const akanConfig = fs.readFileSync(akanConfigPath, "utf8");
-  const akanConfigContent = akanConfig.replace(
-    `buildNum: ${appConfig.mobile.buildNum}`,
-    `buildNum: ${appConfig.mobile.buildNum + 1}`,
-  );
-  fs.writeFileSync(akanConfigPath, akanConfigContent);
+  fs.writeFileSync(akanConfigPath, akanConfig.replace(`buildNum: ${buildNum}`, `buildNum: ${buildNum + delta}`));
 };
 
-export const decreaseBuildNum = async (app: App) => {
-  const appConfig = await AkanAppConfig.from(app);
-  const akanConfigPath = path.join(app.cwdPath, "akan.config.ts");
-  const akanConfig = fs.readFileSync(akanConfigPath, "utf8");
-  const akanConfigContent = akanConfig.replace(
-    `buildNum: ${appConfig.mobile.buildNum}`,
-    `buildNum: ${appConfig.mobile.buildNum - 1}`,
-  );
-  fs.writeFileSync(akanConfigPath, akanConfigContent);
-};
+export const increaseBuildNum = async (app: App) => await shiftBuildNum(app, 1);
+
+export const decreaseBuildNum = async (app: App) => await shiftBuildNum(app, -1);
