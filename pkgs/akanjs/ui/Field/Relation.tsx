@@ -24,20 +24,22 @@ const renderRow = <Light extends { id: string }>(
   return model ? render(model) : <Unresolved id={id} />;
 };
 
-export interface ParentProps<Light> {
+interface RelationProps<Light> {
   label?: string;
   desc?: string;
   labelClassName?: string;
-  selectClassName?: string;
   className?: string;
   disabled?: boolean;
   nullable?: boolean;
   initArgs?: any[];
-  value: Light | null;
   slice: SliceMeta;
-  onChange: (value: Light | null) => void;
   onSearch?: (text: string) => void;
   sortOption?: (a: Light, b: Light) => number;
+}
+export interface ParentProps<Light> extends RelationProps<Light> {
+  selectClassName?: string;
+  value: Light | null;
+  onChange: (value: Light | null) => void;
   renderOption: (model: Light) => ReactNode;
   renderSelected?: (value: Light) => ReactNode;
 }
@@ -83,30 +85,17 @@ export const Parent = <Light extends { id: string }>({
         onChange={(modelId) => {
           onChange(modelId ? (models.get(modelId) ?? null) : null);
         }}
-        onOpen={() => {
-          if (disabled) return;
-          void load();
-        }}
+        onOpen={disabled ? undefined : load}
         onSearch={onSearch}
       />
     </div>
   );
 };
 
-export interface ParentIdProps<Light> {
-  label?: string;
-  desc?: string;
-  labelClassName?: string;
-  className?: string;
+export interface ParentIdProps<Light> extends RelationProps<Light> {
   selectClassName?: string;
-  disabled?: boolean;
-  nullable?: boolean;
-  initArgs?: any[];
   value: string | null;
-  slice: SliceMeta;
   onChange: (id: string | null, model: Light | null) => void;
-  onSearch?: (text: string) => void;
-  sortOption?: (a: Light, b: Light) => number;
   renderOption?: (model: Light) => ReactNode;
   renderSelected?: (value: Light) => ReactNode;
 }
@@ -149,10 +138,7 @@ export const ParentId = <Light extends { id: string }>({
         options={options}
         renderOption={(renderId) => (renderId ? renderRow(models, renderId, renderOption ?? optionLabel) : null)}
         renderSelected={(renderId) => (renderId ? renderRow(models, renderId, renderSelected ?? optionLabel) : null)}
-        onOpen={() => {
-          if (disabled) return;
-          void load();
-        }}
+        onOpen={disabled ? undefined : load}
         onChange={(modelId) => {
           if (modelId) onChange(modelId, models.get(modelId) ?? null);
           else onChange(null, null);
@@ -163,20 +149,10 @@ export const ParentId = <Light extends { id: string }>({
   );
 };
 
-export interface ChildrenProps<Light> {
-  label?: string;
-  desc?: string;
-  labelClassName?: string;
+export interface ChildrenProps<Light> extends RelationProps<Light> {
   selectClassName?: string;
-  className?: string;
-  disabled?: boolean;
-  nullable?: boolean;
-  initArgs?: any[];
   value: Light[] | null;
   onChange: (value: Light[]) => void;
-  onSearch?: (text: string) => void;
-  slice: SliceMeta;
-  sortOption?: (a: Light, b: Light) => number;
   renderOption: (model: Light) => ReactNode;
   renderSelected?: (value: Light) => ReactNode;
 }
@@ -218,10 +194,7 @@ export const Children = <Light extends { id: string }>({
         value={(value ?? []).map((model) => model.id)}
         loading={listLoading}
         options={options}
-        onOpen={() => {
-          if (disabled) return;
-          void load();
-        }}
+        onOpen={disabled ? undefined : load}
         renderOption={(modelId: string) => renderRow(models, modelId, renderOption)}
         renderSelected={(modelId: string) => renderRow(models, modelId, renderSelected)}
         onChange={(modelIds: string[]) => {
@@ -233,19 +206,9 @@ export const Children = <Light extends { id: string }>({
   );
 };
 
-export interface ChildrenIdProps<Light> {
-  label?: string;
-  desc?: string;
-  labelClassName?: string;
-  className?: string;
-  disabled?: boolean;
-  nullable?: boolean;
-  initArgs?: any[];
+export interface ChildrenIdProps<Light> extends RelationProps<Light> {
   value: string[] | null;
-  slice: SliceMeta;
   onChange: (value: string[]) => void;
-  onSearch?: (text: string) => void;
-  sortOption?: (a: Light, b: Light) => number;
   renderOption: (model: Light) => ReactNode;
 }
 export const ChildrenId = <Light extends { id: string }>({
@@ -285,10 +248,7 @@ export const ChildrenId = <Light extends { id: string }>({
         options={options}
         renderOption={(renderId: string) => renderRow(models, renderId, renderOption)}
         renderSelected={(renderId: string) => renderRow(models, renderId, renderOption)}
-        onOpen={() => {
-          if (disabled) return;
-          void load();
-        }}
+        onOpen={disabled ? undefined : load}
         onChange={(modelIds) => {
           onChange(modelIds);
         }}

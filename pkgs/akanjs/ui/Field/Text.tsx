@@ -6,7 +6,21 @@ import { agentAttrs } from "../agentAttrs";
 import { Input } from "../Input";
 import { Label } from "./Label";
 
-export interface TextProps {
+export const lengthValidator =
+  (
+    l: (key: string, param?: Record<string, string | number>) => string,
+    minlength: number,
+    maxlength: number,
+    validate?: (text: string) => boolean | string,
+  ) =>
+  (text: string) =>
+    text.length < minlength
+      ? l("base.textTooShortError", { minlength })
+      : text.length > maxlength
+        ? l("base.textTooLongError", { maxlength })
+        : (validate?.(text) ?? true);
+
+interface TextFieldProps {
   label?: string;
   desc?: string;
   labelClassName?: string;
@@ -22,6 +36,8 @@ export interface TextProps {
   minlength?: number;
   maxlength?: number;
   onPressEnter?: () => void;
+}
+export interface TextProps extends TextFieldProps {
   inputStyleType?: "bordered" | "borderless" | "underline";
 }
 export const Text = ({
@@ -59,34 +75,15 @@ export const Text = ({
         disabled={disabled}
         className={cn("w-full", "")}
         inputClassName={cn("w-full focus:border-primary", inputClassName)}
-        validate={(text: string) => {
-          if (text.length < minlength) return l("base.textTooShortError", { minlength });
-          else if (text.length > maxlength) return l("base.textTooLongError", { maxlength });
-          else return validate?.(text) ?? true;
-        }}
+        validate={lengthValidator(l, minlength, maxlength, validate)}
         onPressEnter={onPressEnter}
       />
     </div>
   );
 };
 
-export interface TextAreaProps {
-  label?: string;
-  desc?: string;
-  labelClassName?: string;
-  className?: string;
-  value: string | null;
-  onChange: (value: string) => void;
-  inputClassName?: string;
-  placeholder?: string;
-  nullable?: boolean;
-  disabled?: boolean;
-  transform?: (value: string) => string;
-  validate?: (text: string) => boolean | string;
+export interface TextAreaProps extends TextFieldProps {
   rows?: number;
-  minlength?: number;
-  maxlength?: number;
-  onPressEnter?: () => void;
 }
 export const TextArea = ({
   label,
@@ -123,33 +120,14 @@ export const TextArea = ({
         rows={rows}
         className={cn("h-full w-full")}
         inputClassName={cn("w-full focus:border-primary", inputClassName)}
-        validate={(text: string) => {
-          if (text.length < minlength) return l("base.textTooShortError", { minlength });
-          else if (text.length > maxlength) return l("base.textTooLongError", { maxlength });
-          else return validate?.(text) ?? true;
-        }}
+        validate={lengthValidator(l, minlength, maxlength, validate)}
         onPressEnter={onPressEnter}
       />
     </div>
   );
 };
 
-export interface EmailProps {
-  label?: string;
-  desc?: string;
-  labelClassName?: string;
-  className?: string;
-  value: string | null;
-  onChange: (value: string) => void;
-  inputClassName?: string;
-  placeholder?: string;
-  nullable?: boolean;
-  disabled?: boolean;
-  transform?: (value: string) => string;
-  validate?: (text: string) => boolean | string;
-  minlength?: number;
-  maxlength?: number;
-  onPressEnter?: () => void;
+export interface EmailProps extends TextFieldProps {
   inputStyleType?: "bordered" | "borderless" | "underline";
 }
 export const Email = ({
@@ -187,34 +165,14 @@ export const Email = ({
         className={cn("w-full", "")}
         inputClassName={cn("w-full focus:border-primary", inputClassName)}
         inputStyleType={inputStyleType}
-        validate={(text: string) => {
-          if (text.length < minlength) return l("base.textTooShortError", { minlength });
-          else if (text.length > maxlength) return l("base.textTooLongError", { maxlength });
-          else return validate?.(text) ?? true;
-        }}
+        validate={lengthValidator(l, minlength, maxlength, validate)}
         onPressEnter={onPressEnter}
       />
     </div>
   );
 };
 
-export interface PhoneProps {
-  label?: string;
-  desc?: string;
-  labelClassName?: string;
-  className?: string;
-  value: string | null;
-  onChange: (value: string) => void;
-  inputClassName?: string;
-  placeholder?: string;
-  nullable?: boolean;
-  disabled?: boolean;
-  transform?: (value: string) => string;
-  validate?: (text: string) => boolean | string;
-  minlength?: number;
-  maxlength?: number;
-  onPressEnter?: () => void;
-}
+export type PhoneProps = TextFieldProps;
 export const Phone = ({
   label,
   desc,
@@ -259,24 +217,9 @@ export const Phone = ({
   );
 };
 
-export interface PasswordProps {
-  label?: string;
-  desc?: string;
-  labelClassName?: string;
-  className?: string;
-  value: string | null;
-  onChange: (value: string) => void;
+export interface PasswordProps extends TextFieldProps {
   confirmValue?: string | null;
   onChangeConfirm?: (value: string) => void;
-  inputClassName?: string;
-  placeholder?: string;
-  nullable?: boolean;
-  disabled?: boolean;
-  transform?: (value: string) => string;
-  validate?: (text: string) => boolean | string;
-  minlength?: number;
-  maxlength?: number;
-  onPressEnter?: () => void;
   showConfirm?: boolean;
 }
 export const Password = ({
@@ -316,11 +259,7 @@ export const Password = ({
           disabled={disabled}
           className={cn("w-full", "")}
           inputClassName={cn("w-full focus:border-primary", inputClassName)}
-          validate={(text: string) => {
-            if (text.length < minlength) return l("base.textTooShortError", { minlength });
-            else if (text.length > maxlength) return l("base.textTooLongError", { maxlength });
-            else return validate?.(text) ?? true;
-          }}
+          validate={lengthValidator(l, minlength, maxlength, validate)}
           onPressEnter={onPressEnter}
         />
         {showConfirm ? (

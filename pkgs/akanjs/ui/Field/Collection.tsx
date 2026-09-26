@@ -12,6 +12,7 @@ import { DraggableList } from "../DraggableList";
 import { Input } from "../Input";
 import { useUiRecipe } from "../UiOverride";
 import { Label } from "./Label";
+import { lengthValidator } from "./Text";
 
 export interface ListProps<Item> {
   className?: string;
@@ -143,12 +144,7 @@ export const TextList = ({
                       newValue[idx] = transform(text);
                       onChange(newValue);
                     }}
-                    validate={(text: string) => {
-                      if (text.length < minTextlength) return l("base.textTooShortError", { minlength: minTextlength });
-                      else if (text.length > maxTextlength)
-                        return l("base.textTooLongError", { maxlength: maxTextlength });
-                      else return validate?.(text) ?? true;
-                    }}
+                    validate={lengthValidator(l, minTextlength, maxTextlength, validate)}
                     className={cn("w-full", inputClassName)}
                     inputClassName="h-8 w-full"
                     placeholder={placeholder}
@@ -186,22 +182,7 @@ export const TextList = ({
   );
 };
 
-export interface TagsProps {
-  label?: string;
-  desc?: string;
-  labelClassName?: string;
-  className?: string;
-  value: string[] | null;
-  onChange: (value: string[]) => void;
-  inputClassName?: string;
-  placeholder?: string;
-  disabled?: boolean;
-  transform?: (value: string) => string;
-  validate?: (text: string) => boolean | string;
-  minlength?: number;
-  maxlength?: number;
-  minTextlength?: number;
-  maxTextlength?: number;
+export interface TagsProps extends TextListProps {
   secret?: boolean;
 }
 export const Tags = ({
@@ -268,11 +249,7 @@ export const Tags = ({
               setInputVisible(false);
               setTag("");
             }}
-            validate={(text: string) => {
-              if (text.length < minTextlength) return l("base.textTooShortError", { minlength: minTextlength });
-              else if (text.length > maxTextlength) return l("base.textTooLongError", { maxlength: maxTextlength });
-              else return validate?.(text) ?? true;
-            }}
+            validate={lengthValidator(l, minTextlength, maxTextlength, validate)}
           />
         ) : !disabled ? (
           <div
