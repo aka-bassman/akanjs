@@ -372,9 +372,7 @@ export class CloudRunner extends runner("cloud") {
         return;
       }
     }
-    // The local registry carries its own token on every publish below, and `npm login` has no registry argument —
-    // it would prompt for npmjs.org credentials to authorize a publish that never reaches npmjs.org, which also
-    // makes the whole local-registry flow interactive and therefore unscriptable.
+    // No `npm login` for a local registry: it takes no registry argument and would prompt for npmjs.org credentials.
     if (!registry) {
       Logger.info("Logging in to npm...");
       await workspace.spawn("npm", ["login"], { stdio: "inherit" });
@@ -446,8 +444,7 @@ export class CloudRunner extends runner("cloud") {
   async downloadEnv(cloudApi: CloudApi, workspace: Workspace, workspaceId: string) {
     await workspace.mkdir("local");
     const localPath = (await cloudApi.downloadEnv(workspaceId)) as string;
-    // Pass a path relative to workspaceRoot so tar never sees a Windows drive letter
-    // (e.g. "C:\...") which GNU tar would interpret as a remote "host:file" spec.
+    // Relative, so GNU tar never reads a Windows drive letter (`C:\…`) as a remote `host:file` spec.
     const relativePath = path.relative(workspace.workspaceRoot, localPath).split(path.sep).join("/");
     await workspace.spawn("tar", ["-xf", relativePath], { cwd: workspace.workspaceRoot });
     await workspace.remove(localPath);
@@ -520,8 +517,7 @@ export class CloudRunner extends runner("cloud") {
         ),
       )
     ).flat();
-    //* The managed block is a workspace-level file listing every app: syncing it from one slice would drop
-    //* every other app's secret patterns from it.
+    //* Every app, not the slice: the managed block is workspace-wide, so a slice would drop the others' patterns.
     await this.#syncSecretGitignore(workspace, workspaceAppNames);
     const customSecretPaths = await this.#gatherCustomSecretFiles(workspace, appNames);
     const envFilePaths = [...new Set([...defaultEnvFilePaths, ...customSecretPaths])].sort();
