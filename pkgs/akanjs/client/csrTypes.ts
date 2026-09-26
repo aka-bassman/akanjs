@@ -18,21 +18,10 @@ export type PageSafeAreaConfig =
       bottom?: boolean;
       android?: "auto" | "edge-to-edge" | "none";
     };
-/**
- * Server-render strategy for the initial full-document SSR pass.
- * - `"stream"` (default): flush the shell — including any `Loading` Suspense
- *   fallback — as soon as it is ready, then stream the resolved page. Redirects
- *   decided in the shell still become real HTTP redirects; redirects thrown
- *   inside suspended content degrade to soft (client) redirects.
- * - `"block"`: buffer the whole document until every Suspense boundary resolves
- *   before sending a byte. The `Loading` fallback never reaches the browser, but
- *   a non-redirect error thrown in slow content can still yield a clean error
- *   page. Use only for routes that need that guarantee and do not care about SEO
- *   or first-paint of the fallback.
- */
+/** `"stream"` flushes the shell (`Loading` included) then streams; a redirect in suspended content becomes a client one.
+ * `"block"` buffers the whole document, so an error in slow content can still render a clean error page. */
 export type SsrRenderMode = "stream" | "block";
 
-/** Per-page CSR configuration for transition, safe-area, and gesture behavior. */
 export interface PageConfig {
   transition?: TransitionType;
   safeArea?: PageSafeAreaConfig;
@@ -44,20 +33,12 @@ export interface PageConfig {
   cache?: boolean;
   /** Initial full-document SSR strategy. Defaults to `"stream"`. */
   ssr?: SsrRenderMode;
-  /**
-   * Opt in to guarded RSC page suffix commits when the page does not require
-   * head updates and the retained route chain head is invariant for
-   * sibling navigations under the same layout.
-   */
+  /** Opt-in suffix-only RSC commits, for a page needing no head update under a layout head its siblings share. */
   rscPatchHeadSafe?: boolean;
   topSafeAreaColor?: string;
   bottomSafeAreaColor?: string;
-  /**
-   * Keeps the route out of `akan build`. The route still serves under `akan start`, but nothing about it
-   * reaches production: no bundle, no manifest entry, no URL. On a `_layout`, every route under that
-   * directory is excluded with it. Must be written as a literal `true`/`false` — the build reads it from
-   * the source without evaluating the module.
-   */
+  /** Keeps the route (on a `_layout`, its whole directory) out of `akan build` while `akan start` serves it. Write a
+   * literal `true`/`false`: the build reads it off the source without evaluating the module. */
   devOnly?: boolean;
 }
 
@@ -79,7 +60,6 @@ export interface PageProps {
   params: { [key: string]: string };
   searchParams: { [key: string]: string | string[] };
 }
-/** Props passed to Akan layout route modules. */
 export interface LayoutProps extends PageProps {
   children: ReactNode;
 }
@@ -124,8 +104,7 @@ export interface RouteRender {
   render: LayoutRender | PageRender;
   isAsync?: boolean;
   Loading?: LayoutLoadingRender | PageLoadingRender;
-  /** Loads the module and populates `Loading` without running `render`/`resolveHead`.
-   * Used by the patch (suffix) compose path, which never calls `resolveHead`. */
+  /** Loads the module and fills `Loading` without running `render`/`resolveHead` (the suffix compose path). */
   resolveLoading?: () => void | Promise<void>;
   NotFound?: LayoutNotFoundRender;
   Error?: LayoutErrorRender;
@@ -196,18 +175,10 @@ export interface Route {
   renderOverrides?: RouteRender;
   pageIncludesOwnLayout?: boolean;
   isSpecialRoute?: boolean;
-  // Page?:
-  //   | (({ params, searchParams }: PageProps) => ReactNode)
-  //   | (({ params, searchParams }: PageProps) => Promise<ReactNode>);
-  // Layout?:
-  //   | (({ children, params, searchParams }: LayoutProps) => ReactNode)
-  //   | (({ children, params, searchParams }: LayoutProps) => Promise<ReactNode>);
   loader?: () => unknown;
   pageState?: PageState;
   pageConfigChain?: PageConfig[];
   explicitPageConfigKeys?: Partial<Record<keyof PageConfig, boolean>>;
-  // action?: any;
-  // ErrorBoundary?: any;
   children: Map<string, Route>;
 }
 

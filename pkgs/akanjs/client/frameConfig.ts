@@ -121,10 +121,8 @@ export function getExplicitPageConfigKeys(configChain: PageConfig[] = []): Parti
   return explicitKeys;
 }
 
-//? Lives here, not beside `PageState` in `csrTypes.ts`: the RSC worker runs under the `react-server`
-//? condition, where `react` exports no `createContext` and no hooks, so a value import of any module that
-//? reaches one is a boot-time link error. This file is the react-free half of the page frame contract, and
-//? `routeTreeBuilder.ts` imports the fallback from here.
+//? Not in `csrTypes.ts`: under `react-server`, `react` exports no `createContext` or hooks, so the RSC worker (via
+//? `routeTreeBuilder.ts`) needs this react-free half of the page frame contract.
 export const defaultPageState: PageState = {
   transition: "none",
   topSafeArea: 0,

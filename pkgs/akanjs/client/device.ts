@@ -83,7 +83,6 @@ const createWebDevice = ({
   });
 };
 
-/** Capacitor-aware device helper for platform info, safe areas, keyboard, haptics, and scroll state. */
 export class Device {
   static instance: Device | null = null;
   static async load({

@@ -43,16 +43,11 @@ export const setCookie = (
     .catch(() => undefined);
 };
 
-/**
- * Reads through `cookies()` on both sides, which is the only way the two agree: a hand-rolled
- * `split("=")[1]` truncates a value at its first `=` (base64 padding) and never decodes the `j:` form the
- * server branch does. Capacitor's own docs say to read `document.cookie`, and `cookies()` does.
- */
+/** Reads through `cookies()` on both sides: a hand-rolled `split("=")` cuts base64 padding and skips the `j:` form. */
 export const getCookie = (key: string): string | undefined => cookies().get(key)?.value;
 
 export const removeCookie = (key: string, options: { path: string } = { path: "/" }) => {
   // Nothing to do on the server: the response is what carries a Set-Cookie, and this helper has no hold on it.
-  // Deleting from `cookies()` mutated a Map built one line earlier and thrown away, which read as a removal.
   if (getEnv().side === "server") return;
   // biome-ignore lint/suspicious/noDocumentCookie: Akan auth helpers intentionally manage browser cookies.
   document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=${options.path};`;
@@ -79,13 +74,8 @@ export const getStoredAuthToken = async (): Promise<string | undefined> => {
   return legacy && isOwnAuthToken(legacy) ? legacy : undefined;
 };
 
-/**
- * Decodes the current JWT into account data when it belongs to this app/environment.
- *
- * The two credentials read here are exactly the two the server honours — the app-scoped auth cookie and
- * `Authorization: Bearer` (`AccountMiddleware`). It used to fall back to a bare `jwt` *header*, which nothing
- * sends and no guard accepts, so a request carrying one read as signed in here and anonymous at the endpoint.
- */
+/** The current JWT's account when minted for this app and environment. Reads only the two credentials the server
+ * honours — the app-scoped auth cookie and `Authorization: Bearer` — so the two never disagree on who is signed in. */
 export const getAccount = <AddData = unknown>(): Account<AddData> => {
   const jwt = getAuthToken() ?? getHeader("authorization")?.replace(/^Bearer\s+/i, "");
   const defaultAccount = { appName: getEnv().appName, environment: getEnv().environment } as Account<AddData>;
@@ -105,8 +95,7 @@ export const setAuth = ({ jwt }: SetAuthOption) => {
   fetch.setJwt(jwt);
   setCookie(authTokenKey(), jwt);
   void storage.setItem(authTokenKey(), jwt);
-  // The global key is shared with every app on this host, so leaving ours behind would keep feeding the
-  // migration fallback a token the scoped key already supersedes.
+  // The global key is shared by every app on this host; ours would keep feeding the migration fallback a stale token.
   removeCookie(legacyAuthTokenKey);
   void storage.removeItem(legacyAuthTokenKey);
 };
@@ -118,8 +107,7 @@ export const initAuth = ({ jwt }: InitAuthOption = {}) => {
   const stored = getAuthToken();
   const token = jwt ?? stored;
   if (token && !isOwnAuthToken(token)) {
-    // A neighbouring app's token decodes fine here and fails every guard, so adopting it trades this app's
-    // credential for one that can only 401. It reaches this branch from `?jwt=` or a stale scoped cookie.
+    // A neighbouring app's token decodes fine and fails every guard: adopting it would trade our credential for a 401.
     Logger.warn("JWT ignored: it was minted for another app or environment");
     if (token === stored) resetAuth();
     return;

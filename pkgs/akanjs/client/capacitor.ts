@@ -188,7 +188,6 @@ type CapacitorImportCache = Partial<{
 type CapacitorPluginRegistry = Record<string, unknown>;
 
 declare global {
-  // eslint-disable-next-line no-var
   var __AKAN_CAPACITOR_IMPORTS__: CapacitorImportCache | undefined;
 }
 

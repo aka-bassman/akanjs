@@ -166,18 +166,15 @@ class Router {
   #indexPath = "/";
   #navigation: Promise<void> = Promise.resolve();
   #historyIdx = 0;
+  // FIXME: on the server push/replace only log; the redirect they used to issue is disabled.
   #instance: InternalRouterInstance = {
     push: (href: string) => {
       const { href: fullHref } = this.#getPathInfo(href);
       Logger.info(`push to:${fullHref}`);
-      // ! need to revive
-      // if (getEnv().side === "server") void redirect(fullHref);
     },
     replace: (href: string) => {
       const { pathname } = this.#getPathInfo(href);
       Logger.info(`replace to:${pathname}`);
-      // ! need to revive
-      // if (getEnv().side === "server") void redirect(fullHref);
     },
     back: () => {
       throw new Error("back is only available in client");
@@ -187,7 +184,6 @@ class Router {
     },
   };
   init(options: SsrClientRouterOption | SsrServerRouterOption | CSRClientRouterOption) {
-    // if (this.isInitialized) throw new Error("Router is already initialized");
     this.#prefix = options.prefix ?? "";
     this.#lang = options.lang ?? parseAkanI18nEnv().defaultLocale;
     this.#routePaths = new Set(
@@ -386,14 +382,8 @@ class Router {
     this.#postDevSyncNavigation("replace", href);
     return undefined as never;
   }
-  /**
-   * The navigation `push` / `replace` last started, for a caller that has to know whether it landed. **Rejects
-   * when the route refused to move** — a target that resolves to nothing leaves the page where it was instead of
-   * replacing it, and `push` returns long before that is known, so this is the only place it can be reported.
-   *
-   * A method rather than a getter: `router` is a Proxy that binds functions to the real instance, and a getter
-   * reached through it would run with the Proxy as `this` and fail on the private field.
-   */
+  /** The last `push`/`replace`; rejects when the route refused to move. A method, not a getter: through the `router`
+   * Proxy a getter would run with the Proxy as `this` and fail on the private field. */
   navigation(): Promise<void> {
     return this.#navigation;
   }
@@ -416,7 +406,6 @@ class Router {
   }
   back(routeOptions?: RouteOptions) {
     if (getEnv().side === "server") throw new Error("back is only available in client side");
-    // history보고 뒤로갈지 끌지 정하던가 먹통하던가
     this.#checkInitialized();
     this.#instance.back(routeOptions);
     return undefined as never;
@@ -467,11 +456,7 @@ class Router {
     this.#instance.replace(`${path}${search ? `?${search}` : ""}${hash ? `#${hash}` : ""}`);
     return undefined as never;
   }
-  /**
-   * A pathname with the locale and base-path segments taken off — the app-internal route it names, which is what
-   * a tool argument and a `<a href>` have in common. Unguarded, unlike `getPath`, whose default argument is the
-   * one thing in it that needs a browser.
-   */
+  /** A pathname without its locale and base-path segments; unlike `getPath`, it needs no browser. */
   routeOf(pathname: string) {
     return getPathInfo(pathname, this.#lang, this.#prefix).path;
   }
