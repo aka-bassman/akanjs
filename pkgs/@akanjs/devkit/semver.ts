@@ -1,13 +1,12 @@
 // `Bun.semver.order` compares ranges loosely (`^3.1049.0` vs `^3.721.0` answers 0), so the operator comes off first.
 const stripRangeOperator = (version: string) => version.replace(/^[\s^~>=<v]+/, "").trim();
 
-const parseVersion = (version: string): number[] => {
-  return version
+const parseVersion = (version: string): number[] =>
+  version
     .replace(/^[^\d]*/, "")
     .split(/[.-]/)
     .map((part) => Number.parseInt(part, 10))
     .map((part) => (Number.isFinite(part) ? part : 0));
-};
 
 const compareNumeric = (a: string, b: string): number => {
   const left = parseVersion(a);
