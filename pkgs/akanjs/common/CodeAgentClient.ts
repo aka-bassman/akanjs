@@ -13,14 +13,9 @@ export interface CodeAgentTransport {
   close?(): void | Promise<void>;
 }
 
-interface PendingReply {
-  resolve: (data: unknown) => void;
-  reject: (error: Error) => void;
-}
-
 export class CodeAgentClient {
   readonly #transport: CodeAgentTransport;
-  readonly #pending = new Map<string, PendingReply>();
+  readonly #pending = new Map<string, { resolve: (data: unknown) => void; reject: (error: Error) => void }>();
   readonly #listeners = new Set<(event: CodeAgentEvent) => void>();
   #nextId = 0;
   #lastSeq = 0;

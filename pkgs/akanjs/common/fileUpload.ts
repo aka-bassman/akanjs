@@ -1,12 +1,3 @@
-interface FileUploadSerializedEndpoint {
-  fileUpload?: boolean;
-}
-
-interface FileUploadSerializedSignal {
-  prefix?: string;
-  endpoint: Record<string, FileUploadSerializedEndpoint>;
-}
-
 export const fileUploadContract = {
   fields: { files: "files", metas: "metas", type: "type", parentId: "parentId" },
   buildMetas: (fileList: FileList | File[]) =>
@@ -20,7 +11,7 @@ export interface FileUploadCapability {
 }
 
 export const resolveFileUploadCapability = (
-  serializedSignal: Record<string, FileUploadSerializedSignal>,
+  serializedSignal: Record<string, { prefix?: string; endpoint: Record<string, { fileUpload?: boolean }> }>,
 ): FileUploadCapability | null => {
   const matches: FileUploadCapability[] = [];
   for (const [refName, signal] of Object.entries(serializedSignal))

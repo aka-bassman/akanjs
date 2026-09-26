@@ -141,11 +141,11 @@ export class Logger {
     const level = record.level;
     if (level === null) return record.message;
     const replicaMsg = record.replicaIdx === null ? "" : `#${record.replicaIdx} `;
-    const processMsg = Logger.#colorize(`[${record.name}] ${replicaMsg}${record.pid ?? "window"} -`, level);
+    const processMsg = colorizeMap[level](`[${record.name}] ${replicaMsg}${record.pid ?? "window"} -`);
     const timestampMsg = dayjs(record.at).format("MM/DD/YYYY, HH:mm:ss A");
-    const logLevelMsg = Logger.#colorize(level.toUpperCase().padStart(7, " "), level);
+    const logLevelMsg = colorizeMap[level](level.toUpperCase().padStart(7, " "));
     const contextMsg = record.context ? clc.yellow(`[${record.context}] `) : "";
-    const contentMsg = Logger.#colorize(record.message, level);
+    const contentMsg = colorizeMap[level](record.message);
     const attrsMsg = record.attrs ? Logger.formatAttrs(record.attrs) : "";
     const timeDiffMsg = clc.yellow(`+${record.elapsedMs}ms`);
     return `${processMsg} ${timestampMsg} ${logLevelMsg} ${contextMsg} ${contentMsg}${attrsMsg ? ` ${attrsMsg}` : ""} ${timeDiffMsg}\n`;
@@ -250,9 +250,6 @@ export class Logger {
     let floor = Number.POSITIVE_INFINITY;
     for (const minSev of Logger.#sinks.values()) floor = Math.min(floor, minSev ?? Logger.#fileSev);
     Logger.#sinkFloorSev = floor;
-  }
-  static #colorize(msg: string, logLevel: LogLevel) {
-    return colorizeMap[logLevel](msg);
   }
   static stripAnsi(msg: string) {
     return msg.replace(ansiPattern, "");
