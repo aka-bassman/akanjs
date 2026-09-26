@@ -1,26 +1,5 @@
-// Browser-side HMR client. Delivered as a classic inline <script> (appended
-// to the RSC bootstrap content) so it starts listening before any module
-// script runs. Keep it small and free of dependencies — we cannot rely on any
-// framework code being available when this executes.
-//
-// Protocol (see wsHub.ts `HmrMessage` for the TypeScript shape):
-//   { type: "hello", buildId, cssAssets }  → initial handshake on connect
-//   { type: "reload", buildId }          → full page refresh
-//   { type: "rsc-refresh", buildId }     → RSC tree refresh without document reload
-//   { type: "client-refresh", buildId }  → React Fast Refresh, with RSC fallback
-//   { type: "css-update", cssAssets }    → atomic current-subroute <link> swap, no reload
-//   { type: "sync-navigation", href }    → dev-only cross-client navigation sync
-//   { type: "error", message }           → forwarded build error, console only
-//   { type: "build-status", status }     → build error/recovery overlay
-//   { type: "ok", generation }           → legacy build recovery
-//   { type: "error", message }           → legacy forwarded build error
-//
-// The server-rendered HTML tags the "active" stylesheet with
-// data-akan-css="active" (see rscWorker.tsx) so swapCss can remove the stale
-// one after the new stylesheet has finished loading without a flash of
-// unstyled content. The CSR artifact carries the same sheet as an inline
-// <style data-akan-css="active"> (see csrArtifactBuilder.ts), so the swap
-// removes both shapes or the CSR page keeps two sheets after every CSS save.
+// A classic inline script that runs before any module script, so it stays dependency-free. swapCss must drop both the
+// SSR <link> and the CSR artifact's inline <style data-akan-css="active">, or every CSS save leaves two sheets.
 const SYNC_NAVIGATION_ENABLED =
   process.env.AKAN_PUBLIC_SYNC_NAVIGATION === "true" ||
   process.env.AKAN_PUBLIC_SYNC_NAVIGATION === "1" ||

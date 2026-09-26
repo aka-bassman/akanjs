@@ -470,12 +470,6 @@ describe("late redirect stderr suppression", () => {
   });
 });
 
-/**
- * React rejects `stream.allReady` when a render fails after the shell has flushed, and holds no handler of its
- * own on that path. Nothing in shell-first streaming reads the promise, so before this guard the rejection
- * reached `process.on("unhandledRejection")` — which `ShutdownManager` answered by exiting, killing a whole
- * federation replica over one page's boundary error.
- */
 describe("SsrFromRscRenderer.holdPostShellErrors", () => {
   const withRejectionWatch = async (fn: () => void | Promise<void>): Promise<unknown[]> => {
     const seen: unknown[] = [];

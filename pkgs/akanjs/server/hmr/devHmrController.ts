@@ -462,9 +462,7 @@ export class DevHmrController {
     if (files.some((file) => runtimeRoots.some((needle) => path.resolve(file).includes(needle)))) return true;
     if (files.some((file) => path.basename(file).endsWith(".signal.ts"))) return true;
 
-    // A route source file that is not in the current seed index is likely a
-    // newly added route/layout. The backend's route seed index is static for
-    // this process, so a full reload is the safer recovery path.
+    // An unindexed page file is likely a new route, and the seed index is fixed for this process: reload fully.
     return (
       routeIds === undefined &&
       files.some((file) => path.resolve(file).includes(`${path.sep}page${path.sep}`) && /\.(tsx|ts|jsx|js)$/.test(file))

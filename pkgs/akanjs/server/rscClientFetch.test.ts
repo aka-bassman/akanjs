@@ -138,8 +138,6 @@ describe("fetchRscNavigationResponse", () => {
     });
     let bodyCancelled = false;
     globalThis.fetch = (async () =>
-      // What the RSC route actually answers for a target that resolves to nothing: a Flight payload whose root
-      // is `null`. Decoded, it commits an empty tree over the whole document.
       new Response(
         new ReadableStream<Uint8Array>({
           start(controller) {

@@ -42,9 +42,7 @@ export async function fetchRscNavigationResponse(
     if (shouldApplyNavigation()) await options.navigate?.(redirect, { replace: method !== "push", scrollToTop: true });
     return { type: "redirected", status };
   }
-  // The RSC endpoint answers a target that resolves to nothing with `0:null` under a 404 — a Flight payload whose
-  // root is literally null. Decoded like any other it commits an empty tree over the whole document, so the status
-  // has to be read before the body reaches the decoder.
+  // A 404 carries `0:null`, a Flight root of null that would commit an empty tree over the document if decoded.
   if (response.status === 404) {
     await response.body?.cancel();
     return { type: "not-found" };
