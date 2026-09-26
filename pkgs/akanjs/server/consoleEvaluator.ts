@@ -2,8 +2,7 @@ type AsyncFunctionConstructor = new (...args: string[]) => (scope: object) => Pr
 
 const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as AsyncFunctionConstructor;
 
-// JavaScriptCore closes the wrapper function itself, so an input ending inside an open bracket reports
-// `Unexpected token '}'` — the same message a stray `}` gives, which is why a typo can hold the buffer open.
+// JSC closes the wrapper function itself, so input ending inside an open bracket reports `Unexpected token '}'`.
 const incompleteSyntaxMessages = [
   "Unexpected end of script",
   "Unexpected EOF",

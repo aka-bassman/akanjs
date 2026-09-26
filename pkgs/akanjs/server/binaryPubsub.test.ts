@@ -3,7 +3,6 @@ import { websocketBinaryFrameContract } from "akanjs/common";
 import { WsClient } from "../fetch/client/wsClient";
 import { BinaryPubsub } from "./binaryPubsub";
 
-/** Stands in for `Bun.Server.publish`, whose contract is `-1` backpressured, `0` no subscriber, bytes otherwise. */
 class FakeServer {
   status = 1;
   readonly published: { roomId: string; bytes: number }[] = [];
@@ -142,11 +141,7 @@ describe("BinaryPubsub", () => {
   });
 });
 
-/**
- * The one hop both suites above fake on either side: a real Bun socket carrying a real frame into a real
- * `WsClient`. Browsers deliver a binary frame as a Blob unless `binaryType` is set, so this is what proves
- * the bytes arrive synchronously and in the same room the JSON protocol would have used.
- */
+// Browsers deliver a binary frame as a Blob unless `binaryType` is set; this proves the bytes arrive synchronously.
 describe("BinaryPubsub over a real socket", () => {
   test("delivers published bytes to a subscribed WsClient, alongside a JSON frame on the same socket", async () => {
     const pubsub = new BinaryPubsub();

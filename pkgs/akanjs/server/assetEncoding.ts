@@ -7,7 +7,6 @@ export interface EncodedSidecar {
   encoding: string;
 }
 
-/** Picks the best precompressed sidecar the caller accepts, or null to serve the file as-is. */
 export const resolveEncodedSidecar = async (
   req: Request,
   filePath: string,

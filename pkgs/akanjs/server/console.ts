@@ -28,10 +28,7 @@ export const parseAkanConsoleQuery = (args: string): Record<string, string> => {
   return query;
 };
 
-/**
- * `.tail` and `.trace` attach to the *running* server's control socket — the console booted its own
- * `listen: false` server, whose logs are not the ones anybody is looking for.
- */
+/** Attaches to the running server's control socket, not the console's own `listen: false` server. */
 export const createAkanConsoleLogCommands = (
   appName: string,
   runtimeDir: string,

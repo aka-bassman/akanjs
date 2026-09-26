@@ -8,8 +8,7 @@ const startMarker = Buffer.from("\u001b[200~", "latin1");
 const endMarker = Buffer.from("\u001b[201~", "latin1");
 const markerLength = startMarker.length;
 
-// Bracketed paste is the only way a terminal says where a paste begins and ends: readline drops the markers
-// silently, so without them a pasted block is indistinguishable from lines typed one at a time.
+// Bracketed paste is the only paste boundary a terminal gives, and readline silently drops its markers.
 export class ConsolePasteFilter extends Transform {
   static readonly enableSequence = "\u001b[?2004h";
   static readonly disableSequence = "\u001b[?2004l";

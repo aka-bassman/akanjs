@@ -47,12 +47,10 @@ export class AkanConsoleSession {
     this.#commands = options.commands ?? {};
   }
 
-  /** Runs when the session closes; what a command that holds a connection uses to let go of it. */
   onClose(dispose: () => void) {
     this.#disposers.push(dispose);
   }
 
-  /** Output that arrives between keystrokes: the prompt line is cleared, the text lands, the prompt redraws. */
   write(text: string) {
     if (this.#closed || !this.#interface) {
       this.#output.write(text);
@@ -98,8 +96,7 @@ export class AkanConsoleSession {
     this.#chain = this.#chain.then(task).catch((error: unknown) => this.#report(error));
   }
 
-  // Fires after every input chunk and at the end of a paste: a whole pasted block reaches the buffer before the
-  // first flush attempt, so it is evaluated as one command instead of line by line.
+  // Flushes only at a chunk or paste boundary, so a pasted block is evaluated as one command, not line by line.
   #onBoundary() {
     if (!this.#lineSeen || this.#filter.isPasting || !this.#filter.endsWithNewline) return;
     this.#lineSeen = false;

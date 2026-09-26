@@ -125,8 +125,7 @@ describe("ImageOptimizer", () => {
   });
 
   test("downgrades an avif-only config to webp where no OS codec exists", async () => {
-    // The `bun` backend is what a Linux container runs, and it has no AV1 encoder. Forcing it here
-    // means the downgrade is covered on a macOS dev machine too, where `system` would have encoded.
+    // Linux containers run the `bun` backend (no AV1 encoder); forcing it covers the downgrade on macOS too.
     const backend = Bun.Image.backend;
     Bun.Image.backend = "bun";
     try {

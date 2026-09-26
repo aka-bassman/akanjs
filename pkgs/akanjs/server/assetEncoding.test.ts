@@ -45,7 +45,6 @@ describe("resolveEncodedSidecar", () => {
     expect(await resolve("gzip, br", bareAssetPath)).toBeNull();
   });
 
-  // A q-value of 0 is an explicit refusal; treating it as a preference sends a body the client cannot decode.
   test("honours q=0 as a refusal", async () => {
     expect((await resolve("br;q=0, gzip"))?.encoding).toBe("gzip");
     expect(await resolve("br;q=0, gzip;q=0")).toBeNull();
@@ -55,7 +54,6 @@ describe("resolveEncodedSidecar", () => {
     expect((await resolve("*"))?.encoding).toBe("br");
   });
 
-  // "brotli" is not the `br` token — a prefix match would send brotli bytes to a client that never asked.
   test("does not match a token that merely starts with br", async () => {
     expect(await resolve("brotli")).toBeNull();
   });

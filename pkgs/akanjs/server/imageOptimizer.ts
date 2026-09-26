@@ -85,20 +85,12 @@ export class ImageOptimizer {
     this.#semaphore = new Semaphore(ImageOptimizer.#resolveConcurrency(this.#config.maxConcurrency));
   }
 
-  /**
-   * Bun.Image encodes on the worker pool that fs, hashing and every other off-thread call also queue on, and the
-   * pool is sized by the CPU count Bun sees — 1 under a container `cpu` limit. Holding image work to half the
-   * slots leaves a stat or a bcrypt waiting behind a couple of encodes instead of behind the whole flood.
-   */
+  // Bun.Image shares the off-thread pool with fs and hashing, sized by visible CPUs (1 under a cpu limit): take half.
   static #resolveConcurrency(configured: number): number {
     return configured > 0 ? configured : Math.max(1, Math.floor(navigator.hardwareConcurrency / 2));
   }
 
-  /**
-   * AVIF, HEIC and TIFF ride the OS codec, which only the `system` backend has — macOS and Windows.
-   * A Linux container runs the `bun` backend, where both encode and decode raise
-   * `ERR_IMAGE_FORMAT_UNSUPPORTED`, so those types are decided up front rather than thrown at.
-   */
+  // AVIF/HEIC/TIFF need the OS codec of the `system` backend (macOS, Windows); Linux's `bun` backend throws on them.
   static #isCodecAvailable(contentType: string): boolean {
     if (contentType !== ImageOptimizer.#avif && contentType !== ImageOptimizer.#heic && contentType !== "image/tiff")
       return true;
@@ -118,10 +110,7 @@ export class ImageOptimizer {
     }
   }
 
-  /**
-   * A cold `srcSet` puts the same width in flight several times over, and the cache file only exists once
-   * the first of them has finished, so identical requests join one run instead of each fetching and encoding.
-   */
+  // A cold srcSet requests one width several times before its cache file exists: identical requests join one run.
   async #loadOptimizedImage(parsed: ParsedImageRequest): Promise<OptimizedImage> {
     const key = `${parsed.href}|${parsed.width}|${parsed.quality}|${parsed.outputType}`;
     const joined = this.#inflight.get(key);
@@ -150,12 +139,8 @@ export class ImageOptimizer {
     return optimized;
   }
 
-  /**
-   * The bytes are keyed by the source's own etag/mtime, so finding them means reading the source first — free for
-   * a local file, a full re-download for a remote one. This pointer is keyed by the request alone and carries the
-   * TTL (upstream `max-age`, floored by `minimumCacheTTL`), so a warm remote image never touches the origin.
-   * Dev is left out: re-fetching every time is what makes an upstream edit show up immediately.
-   */
+  // Keyed by the request alone (the bytes are keyed by the source etag, which costs a re-download), so a warm remote
+  // image skips the origin until its TTL. Dev skips it so an upstream edit shows up immediately.
   async #readRemotePointer(parsed: ParsedImageRequest): Promise<OptimizedImage | null> {
     let pointer: RemoteCachePointer;
     try {
