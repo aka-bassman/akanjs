@@ -61,8 +61,7 @@ describe("TextFieldPaths", () => {
   });
 
   test("rejects an indexed child under a secret or hidden parent", () => {
-    // `_doc` stores a secret in plaintext, so the mirror would publish `noti.label` even though `noti` itself is
-    // never serialised to a client. Checking only the leaf field leaves that whole subtree open.
+    // `_doc` stores a secret in plaintext, so the mirror would publish `noti.label` though `noti` never leaves.
     expect(() => via((f) => ({ noti: f.secret(NotiInput) }))).toThrow(
       'Text field "noti.label" is under a secret field',
     );
@@ -106,9 +105,7 @@ describe("TextFieldPaths", () => {
     expect([...Full.text.desc]).toEqual(["summary"]);
   });
 
-  // The `@ts-expect-error` lines are half the assertion: a masked builder takes no `text` role, so this is a
-  // compile error at the call site and never reaches a boot. The throw is the backstop for an option object the
-  // excess-property check cannot see through, and it is what these tests exercise.
+  // The `@ts-expect-error` lines are half the assertion; the throw is the backstop for what the type cannot see.
   test("rejects secret and hidden fields", () => {
     // @ts-expect-error a secret field takes no text role
     expect(() => via((f) => ({ token: f.secret(String, { text: "title" }) }))).toThrow(

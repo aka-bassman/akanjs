@@ -68,8 +68,7 @@ describe("mask", () => {
 describe("leakingFieldsOf", () => {
   test("reports hidden and secret, and never visual", () => {
     expect(leakingFieldsOf(MaskFile, fileValue)).toEqual(["origin"]);
-    // A refusal here means the value must not be published at all. A blur placeholder is not a secret — it is
-    // merely not worth its tokens, which masking answers by dropping it.
+    // A blur placeholder is cost, not a secret: masking drops it, but a value carrying it may still be published.
     expect(leakingFieldsOf(MaskPost, { title: "A post", body: "<p>x</p>" })).toEqual([]);
   });
 });
