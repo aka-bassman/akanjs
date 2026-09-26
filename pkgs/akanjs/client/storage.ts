@@ -39,7 +39,7 @@ export const storage = {
     }
     try {
       const { Preferences } = await loadCapacitorPreferences();
-      return Preferences.remove({ key });
+      return await Preferences.remove({ key });
     } catch {
       localStorage.removeItem(key);
       return;
