@@ -65,11 +65,8 @@ export class PackageRunner extends runner("package") {
     await pkg.dist.mkdir(pkg.dist.cwdPath);
     const scanner = await TypeScriptDependencyScanner.from(pkg);
     const { npmDeps, npmDevDeps, missingDeps } = await scanner.getPackageBuildDependencies(pkg.name);
-    // The three pi packages are reached only through `@earendil-works/pi-coding-agent`, and are named here
-    // because Bun applies neither that package's own `npm-shrinkwrap.json` nor this workspace's `overrides` to
-    // a consumer's install: its `^0.80.6` resolves to the newest 0.80.x, which dropped `getOAuthApiKey` from
-    // `pi-ai/oauth` and killed `akan code` on its first import. A published dependency is the only pin a
-    // consumer's resolver honours.
+    // The pi packages are pinned here: Bun applies neither pi-coding-agent's `npm-shrinkwrap.json` nor our
+    // `overrides` to a consumer's install, and a published dependency is the only pin its resolver honours.
     const packageRuntimeDependencies: Record<string, string[]> = {
       "@akanjs/devkit": [
         "tailwind-scrollbar",
@@ -88,8 +85,7 @@ export class PackageRunner extends runner("package") {
         "tailwind-scrollbar",
       ].filter((dep) => dep !== "akanjs" && dep !== "@akanjs/devkit");
     }
-    // Workspace packages each build embeds into its own dist, so naming them as dependencies would point a
-    // consumer at a registry entry that does not exist.
+    // Embedded into the dist, so naming them as dependencies would point a consumer at a missing registry entry.
     const packageBundledRuntimeDependencies: Record<string, string[]> = {
       "@akanjs/cli": ["@akanjs/devkit"],
       akanjs: ["use-agentic"],
@@ -147,7 +143,6 @@ export class PackageRunner extends runner("package") {
   /** Matches the tail of the text preceding a specifier when that specifier is actually imported. */
   static readonly #importPosition = /(?:\bfrom\s*|\brequire\s*\(\s*|\bimport\s*\(\s*|\bimport\s+)$/;
 
-  /** Splits `akanjs/server/akanApp` into the package name and the `exports` subpath to look up. */
   static #splitSpecifier(specifier: string) {
     const segments = specifier.split("/");
     const name = specifier.startsWith("@") ? segments.slice(0, 2).join("/") : segments[0];
@@ -155,14 +150,7 @@ export class PackageRunner extends runner("package") {
     return { name, subpath: subpath ? `./${subpath}` : "." };
   }
 
-  /**
-   * Collects every specifier the dist tree imports from `packageNames`, mapped to the importing files.
-   *
-   * Only import positions in non-test files count. Test files are skipped because the transform suites
-   * carry specifiers as fixture *data* (`"akanjs/server/akanApp"`, `"akanjs/ui/*"`) that never resolve
-   * and never run for a consumer, and whole-line comments are skipped because this package documents
-   * subpath imports in prose.
-   */
+  // Test files carry specifiers as fixture data, and comment lines document subpath imports in prose: both skipped.
   async #collectDistAkanImports(distPath: string, packageNames: Iterable<string>) {
     const alternatives = [...new Set(packageNames)].map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     const specifierPattern = new RegExp(`["'](${alternatives.join("|")})((?:/[^"'\\s]*)?)["']`, "g");
@@ -186,16 +174,8 @@ export class PackageRunner extends runner("package") {
     return imports;
   }
 
-  /**
-   * Fails when the dist tree imports a subpath of itself, or of a sibling akan package, that the
-   * corresponding `exports` map cannot reach.
-   *
-   * This is the check that `"exports": { "./*": "./*" }` in `@akanjs/devkit` needed and did not have.
-   * Exports targets are matched exactly — no extension appended, no `index.ts` probed — so every
-   * subpath import in the published package failed at runtime while `tsc`, the bundle, and the whole
-   * test suite stayed green, because inside the monorepo those specifiers resolve through tsconfig
-   * `paths` instead. Nothing short of resolving against the built manifest can see the difference.
-   */
+  // Exports targets match exactly (no extension appended, no `index.ts` probed), and tsconfig `paths` hide a miss
+  // inside the monorepo, so only resolving against the built manifest catches an unreachable subpath.
   async #verifyDistExportsReachable(pkg: Pkg, peerExportsMaps: Map<string, PackageExportsMap>) {
     const exportsMaps = new Map(peerExportsMaps).set(pkg.name, await PackageExportsMap.from(pkg.dist.cwdPath));
     const imports = await this.#collectDistAkanImports(pkg.dist.cwdPath, exportsMaps.keys());
