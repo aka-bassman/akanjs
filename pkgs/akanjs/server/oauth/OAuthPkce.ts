@@ -1,9 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
-/** RFC 7636 with `S256` only: OAuth 2.1 drops `plain`, and an MCP client refuses a server whose metadata offers nothing else. */
+// RFC 7636 with `S256` only: OAuth 2.1 drops `plain`, and MCP clients refuse a server not offering S256.
 export class OAuthPkce {
   static readonly method = "S256";
-  // RFC 7636 §4.1: 43–128 characters from the unreserved set.
   static readonly #verifier = /^[A-Za-z0-9\-._~]{43,128}$/;
   // base64url of a 32-byte digest, which is the only shape an S256 challenge can have.
   static readonly #challenge = /^[A-Za-z0-9\-_]{43}$/;

@@ -40,6 +40,7 @@ import type { SignalRoutes } from "../types";
 import { McpRouter, type McpRouterProps } from "./McpRouter";
 
 // Signals and models live here, not in the shared resolver fixture: changing it alters every other test's output.
+
 // Says yes like `Public` does, but is a real guard — which is the whole difference an exposed mutation turns on.
 class SignedIn implements Guard {
   static name = "SignedIn";

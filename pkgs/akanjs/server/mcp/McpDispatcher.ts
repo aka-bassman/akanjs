@@ -52,7 +52,7 @@ export class McpDispatcher {
       };
     } catch (error) {
       const status = McpDispatcher.#statusOf(error);
-      // No credential: a 401 challenge, since only the client can fix it. A refused one: a tool error the model acts on.
+      // No credential: a 401 challenge, as only the client can fix it. A refused one: a tool error the model acts on.
       if ((status === 401 || status === 403) && !req.headers.get("authorization")) throw new McpAuthRequiredError();
       return McpDispatcher.#failure(this.#message(error, status, exposed.refName));
     }

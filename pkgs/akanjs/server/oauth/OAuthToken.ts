@@ -12,10 +12,7 @@ export interface OAuthTokenSuccess {
 }
 
 export class OAuthToken {
-  /**
-   * RFC 6749 §4.1.3 and §6: the token endpoint speaks form encoding only, and a client authenticates through the
-   * `Authorization` header or the body, never both — two credentials on one request is a request nobody can audit.
-   */
+  // RFC 6749 §4.1.3/§6: form encoding only, and one credential channel — two on one request cannot be audited.
   static async parse(req: Request): Promise<OAuthTokenParseResult> {
     const type = req.headers.get("content-type")?.toLowerCase() ?? "";
     if (!type.startsWith("application/x-www-form-urlencoded"))
@@ -51,11 +48,7 @@ export class OAuthToken {
     return OAuthToken.#fail("unsupported_grant_type", "Only authorization_code and refresh_token are supported.");
   }
 
-  /**
-   * Whether the credential presented is this client's. A public client has none to present, and a secret it sends
-   * anyway is ignored rather than refused — OAuth 2.1 §2.3 lets a public client keep naming itself. A confidential
-   * client must present its secret, compared as hashes in constant time.
-   */
+  // OAuth 2.1 §2.3: a public client's stray secret is ignored, not refused.
   static authenticate(
     client: OAuthClientRecord,
     credential: OAuthClientCredential,
@@ -82,10 +75,7 @@ export class OAuthToken {
     );
   }
 
-  /**
-   * `null` when both channels carried a credential. RFC 6749 §2.3.1 form-encodes the two halves of the Basic pair.
-   * Shared with the revocation endpoint, which RFC 7009 §2.1 authenticates the same way.
-   */
+  /** `null` when both channels carried a credential. Basic halves are form-encoded (RFC 6749 §2.3.1). */
   static credentialOf(req: Request, form: URLSearchParams): OAuthClientCredential | null {
     const header = req.headers.get("authorization");
     const bodySecret = form.get("client_secret") ?? undefined;

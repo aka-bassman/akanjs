@@ -1,6 +1,6 @@
 export type OAuthClientAuthMethod = "none" | "client_secret_post" | "client_secret_basic";
 
-/** How a client came to be known: declared in the app's option, registered over RFC 7591, or read off its `client_id` URL. */
+/** Declared in the app's option, registered over RFC 7591, or read off its `client_id` URL. */
 export type OAuthClientSource = "static" | "dynamic" | "metadataDocument";
 
 export interface OAuthClientRecord {
@@ -13,7 +13,6 @@ export interface OAuthClientRecord {
   source: OAuthClientSource;
 }
 
-/** The metadata a registration request carries, before the server assigns an identifier to it. */
 export type OAuthClientMetadata = Pick<
   OAuthClientRecord,
   "clientName" | "redirectUris" | "grantTypes" | "tokenEndpointAuthMethod"

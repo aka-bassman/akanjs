@@ -5,7 +5,7 @@ import type { OAuthClientRecord, OAuthRedirectPolicy } from "./oauthTypes";
 
 export interface OAuthClientIdMetadataResult {
   client: OAuthClientRecord;
-  /** How long the document may be reused, from its `Cache-Control`, clamped to something a server can live with. */
+  /** From `Cache-Control` max-age (else `defaultTtlMs`), clamped to `minTtlMs`..`maxTtlMs`. */
   ttlMs: number;
 }
 
@@ -15,18 +15,11 @@ export type OAuthDocumentFetch = (input: string | URL | Request, init?: RequestI
 
 export interface OAuthClientIdMetadataFetchOptions extends OAuthRedirectPolicy {
   fetchImpl?: OAuthDocumentFetch;
-  /**
-   * Resolves the document's host before it is fetched and refuses one whose addresses are not all public. On by
-   * default with the system resolver; `false` trusts the name alone, for a deployment whose egress policy already
-   * closes the private range.
-   */
+  /** SSRF check: every resolved address must be public. Default: system resolver; `false` trusts the name alone. */
   resolve?: OAuthAddressLookup | false;
 }
 
-/**
- * OAuth Client ID Metadata Documents (draft-ietf-oauth-client-id-metadata-document): a client whose `client_id`
- * is an HTTPS URL hosts its own registration there, and the server reads it instead of holding a registry.
- */
+// draft-ietf-oauth-client-id-metadata-document: an HTTPS `client_id` hosts the client's own registration.
 export class OAuthClientIdMetadata {
   static readonly maxBytes = 64 * 1024;
   static readonly timeoutMs = 5_000;
@@ -40,13 +33,8 @@ export class OAuthClientIdMetadata {
     return !!url && url.protocol === "https:" && url.pathname !== "/" && !url.username && !url.password;
   }
 
-  /**
-   * Whether a document URL may be fetched on the client's say-so. The fetch API never shows the address a name
-   * resolved to, so this judges the name: no address literals (a client hosts its document under a name), no
-   * single-label or reserved-suffix names, no explicit port. A public name that resolves into the private range is
-   * `resolvesPublicly`'s to catch; the rebinding window between that lookup and the fetch is the residual the
-   * deployment's egress policy owns — the SSRF section of the draft says as much.
-   */
+  // SSRF: fetch never shows the resolved address, so this judges the name; `resolvesPublicly` checks the addresses,
+  // and the DNS-rebinding window between that lookup and the fetch is left to the egress policy, as the draft says.
   static isFetchable(url: URL): boolean {
     const host = url.hostname.toLowerCase();
     if (url.port) return false;
@@ -55,11 +43,7 @@ export class OAuthClientIdMetadata {
     return !/\.(?:localhost|local|internal|lan|home|arpa)$/.test(host);
   }
 
-  /**
-   * Whether every address the name resolves to is public. The resolver is asked separately from the fetch, so a
-   * name that flips between the two (DNS rebinding) is the residual; what this closes is the ordinary case of a
-   * public name parked on a private address, which `isFetchable` cannot see.
-   */
+  // Closes a public name parked on a private address, which `isFetchable` cannot see.
   static async resolvesPublicly(hostname: string, resolve: OAuthAddressLookup = OAuthClientIdMetadata.#lookup) {
     try {
       const addresses = await resolve(hostname);
@@ -96,10 +80,7 @@ export class OAuthClientIdMetadata {
     return client ? { client, ttlMs: OAuthClientIdMetadata.#ttl(res.headers.get("cache-control")) } : null;
   }
 
-  /**
-   * §4: `client_id` MUST equal the URL the document was fetched from, `client_name` and `redirect_uris` MUST be
-   * present. Only public clients are accepted — `private_key_jwt` needs a JWKS the token endpoint does not read.
-   */
+  // §4 MUSTs, plus public clients only: `private_key_jwt` needs a JWKS the token endpoint does not read.
   static validate(clientId: string, json: unknown, policy: OAuthRedirectPolicy = {}): OAuthClientRecord | null {
     if (!json || typeof json !== "object" || Array.isArray(json)) return null;
     const doc = json as Record<string, unknown>;
@@ -122,7 +103,7 @@ export class OAuthClientIdMetadata {
     };
   }
 
-  /** The system resolver, under the same deadline as the fetch: a resolver that hangs is a fetch that hangs. */
+  // Same deadline as the fetch: a resolver that hangs is a fetch that hangs.
   static readonly #lookup: OAuthAddressLookup = async (hostname) =>
     await Promise.race([
       lookup(hostname, { all: true }),
