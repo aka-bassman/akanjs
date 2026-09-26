@@ -75,15 +75,8 @@ export interface SubspacePullResult {
   incoming: SubspaceIncomingCommit[];
 }
 
-/**
- * One customer repo, mirrored from this workspace.
- *
- * Push is a squashed snapshot of the workspace's own tracked files, so a subspace's history never
- * carries the workspace's — which is also what keeps one customer's commit messages out of another's
- * repo. Pull is the reverse and rare: it compares the subspace against the last push it received rather
- * than against the workspace, so the diff is exactly the customer's own work however far the workspace
- * has moved on.
- */
+// Push is a squashed snapshot, so no workspace history (or other customer's commit message) reaches a subspace;
+// pull diffs against the last push received, so it is exactly the customer's own work.
 export class Subspace {
   static readonly anchorFile = "akan.subspace.json";
   /** Never reaches a subspace: it names every other customer's repo. */
@@ -133,7 +126,6 @@ export class Subspace {
     return (await this.#git(["rev-parse", "--short", "HEAD"])).trim();
   }
 
-  /** Adds the subspace as a remote if absent, then fetches the branch into this workspace's object store. */
   async fetch(branch: string) {
     const remotes = (await this.#git(["remote"])).split("\n").map((line) => line.trim());
     if (remotes.includes(this.#remote)) await this.#git(["remote", "set-url", this.#remote, this.#declaration.repo]);
@@ -147,10 +139,7 @@ export class Subspace {
     }
   }
 
-  /**
-   * The last push, located by the one file only a push writes. A tag or a recorded sha would have to be
-   * kept in step by hand; this file is already in the subspace's history and cannot drift out of it.
-   */
+  //* Located by the one file only a push writes: unlike a tag or a recorded sha, it cannot drift out of the history.
   async anchor(branch: string): Promise<SubspaceAnchor> {
     const ref = `${this.#remote}/${branch}`;
     const commit = (await this.#git(["log", "-1", "--format=%H", ref, "--", Subspace.anchorFile])).trim();
@@ -184,11 +173,7 @@ export class Subspace {
     return Subspace.subspaceOwnedDirs.includes(segments[2] ?? "");
   }
 
-  /**
-   * A library manifest always differs: the subspace's copy carries the `akan.source` stamp a push writes and
-   * the workspace's does not. Comparing it with that key removed is what keeps `status` and `diff` from
-   * reporting every library as changed forever.
-   */
+  // A library manifest always differs by the `akan.source` stamp a push writes, so it is compared without that key.
   #isStamped(file: string) {
     return /^libs\/[^/]+\/package\.json$/.test(file);
   }
@@ -273,11 +258,7 @@ export class Subspace {
     return held;
   }
 
-  /**
-   * Puts back only the files the workspace does not ship. The workspace still owns the tracked env switch files
-   * (`env.server.ts` / `env.client.ts`), which is what keeps them in step; everything else under `env/` —
-   * the per-environment values, which the workspace gitignores and never had — belongs to the subspace and wins.
-   */
+  // The workspace owns the tracked env switch files; the per-environment values it gitignores belong to the subspace.
   async #restoreSubspaceOwned(held: { from: string; to: string }[]) {
     for (const { from, to } of held) await Subspace.#copyMissing(to, from);
     await rm(path.join(this.#clonePath, Subspace.holdDir), { recursive: true, force: true });
@@ -293,12 +274,7 @@ export class Subspace {
     }
   }
 
-  /**
-   * `git archive` emits exactly the tracked files at HEAD, which is why the copy needs no exclude list of
-   * its own: generated barrels, the `(libs)`/`public/libs` symlinks, env values, secrets and the lockfile
-   * are all outside git and cannot enter the archive. Spawned without a shell, whose quoting differs between
-   * `sh` and `cmd.exe`.
-   */
+  // `git archive` emits only tracked files, so generated barrels, lib symlinks, env values and secrets never enter.
   async #extract(paths: string[], excludes: string[] = []) {
     // Relative, because GNU tar reads a drive-letter archive name (`C:\…`) as `host:path` on a remote host.
     const archivePath = path.relative(this.#workspace.workspaceRoot, `${this.#clonePath}.tar`);
@@ -317,11 +293,7 @@ export class Subspace {
     }
   }
 
-  /**
-   * Verify-only, and an allowlist rather than a filter so no secret can reach a customer's clone even by
-   * accident. `AKAN_PUBLIC_*` values are the ones akan embeds in every client bundle, so they are public
-   * by construction; the cloud workspace id is pinned to `local` rather than copied.
-   */
+  // An allowlist, not a filter, so no secret can reach a customer's clone; `AKAN_PUBLIC_*` ships in every bundle anyway.
   #localEnv() {
     const { serveDomain } = WorkspaceExecutor.getBaseDevEnv();
     return {
@@ -334,13 +306,8 @@ export class Subspace {
     };
   }
 
-  /**
-   * The CLI identifies a workspace root by `package.json` + `tsconfig.json` + `.env`, so a clone with no
-   * `.env` cannot run `akan sync` at all — and one can never arrive with the slice, since every akan
-   * workspace gitignores it and the subspace's real values are its own. Excluded through the clone's
-   * `.git/info/exclude` rather than through the copied `.gitignore`: a workspace that omitted the pattern
-   * would otherwise commit this file into the customer's repo.
-   */
+  // The CLI needs a `.env` to recognise a workspace root and none arrives with the slice. Excluded through
+  // `.git/info/exclude`, not the copied `.gitignore`, so it can never be committed to the customer's repo.
   async #writeLocalEnv() {
     const excludePath = path.join(this.#clonePath, ".git/info/exclude");
     const exclude = (await FileSys.fileExists(excludePath)) ? await FileSys.readText(excludePath) : "";
@@ -354,11 +321,7 @@ export class Subspace {
     await FileSys.writeText(envPath, `${lines.join("\n")}\n`);
   }
 
-  /**
-   * A workspace's root manifest is the union of every app it holds, so shipping it verbatim installs
-   * every other customer's dependency tree in this repo. It is rebuilt from this subspace's own slices
-   * instead, keeping the workspace's exact version specs.
-   */
+  // The root manifest is the union of every app's dependencies, so it is rebuilt from this subspace's slices.
   async #rewriteManifest(plans: SlicePlan[]) {
     const manifestPath = path.join(this.#clonePath, "package.json");
     if (!(await FileSys.fileExists(manifestPath))) return [];
@@ -383,8 +346,7 @@ export class Subspace {
     for (const member of Subspace.memberDirs)
       await rm(path.join(this.#clonePath, member), { recursive: true, force: true });
 
-    //* The shell is overlaid, never reconciled: a subspace owns its deployment (its own CI files and
-    //* workflows live there), so a root entry the workspace does not have is left alone rather than deleted.
+    //* Overlaid, never reconciled: a subspace owns its deployment, so a root entry the workspace lacks is left alone.
     await this.#extract(["."], ["apps/*", "libs/*", "pkgs/*"]);
     await this.#extract(paths);
     await this.#restoreSubspaceOwned(held);
@@ -400,11 +362,7 @@ export class Subspace {
     return { libs, pruned };
   }
 
-  /**
-   * The `akan:secrets` block akan generates lists every app in the workspace by name, so it is filtered down to
-   * this subspace's own apps. `bun.lock` is un-ignored because a subspace commits its lockfile — that is what
-   * makes two subspaces on one branch resolve the same dependency tree rather than merely the same ranges.
-   */
+  // `akan:secrets` names every workspace app, so it is filtered; `bun.lock` is un-ignored because a subspace commits it.
   async #rewriteGitignore() {
     const gitignorePath = path.join(this.#clonePath, ".gitignore");
     if (!(await FileSys.fileExists(gitignorePath))) return;
@@ -442,12 +400,8 @@ export class Subspace {
     }
   }
 
-  /**
-   * Written onto the clone's manifest directly rather than through `LibSource`, which addresses a library
-   * by its position in the *workspace's* workspace. The hash follows the same rule — the library's own git files
-   * with `env/` and the stamp itself left out — and is only written when it would change, so an
-   * up-to-date subspace stays clean and the push is skipped.
-   */
+  // Not through `LibSource`, which addresses a library by its position in the workspace. The hash skips `env/` and
+  // the stamp itself.
   async #stampLib(clone: Executor, lib: string, branch: string) {
     const manifestPath = path.join(this.#clonePath, "libs", lib, "package.json");
     if (!(await FileSys.fileExists(manifestPath))) return;
@@ -456,9 +410,8 @@ export class Subspace {
     const [hash, previous] = await Promise.all([this.#hashLib(clone, lib), this.#committedStamp(clone, lib)]);
     const manifest = (await FileSys.readJson(manifestPath)) as Record<string, unknown>;
     const akan = (manifest[LibSource.manifestKey] ?? {}) as Record<string, unknown>;
-    //* The extraction overwrote the manifest with the workspace's, stamp and all, so the previous stamp has to
-    //* come from the clone's HEAD. Reusing its `syncedAt` when nothing else moved is what leaves the file
-    //* byte-identical to what is committed — otherwise every push is dirty and none is ever skipped.
+    //* The extraction overwrote the manifest, so the previous stamp comes from the clone's HEAD; reusing its
+    //* `syncedAt` when nothing moved keeps the file byte-identical, or no push would ever be skipped.
     const unchanged = previous?.origin === origin && previous.sha === sha && previous.hash === hash;
     const syncedAt = unchanged ? previous.syncedAt : new Date().toISOString();
     manifest[LibSource.manifestKey] = { ...akan, source: { origin, sha, hash, syncedAt } };
@@ -491,9 +444,8 @@ export class Subspace {
       .split("\0")
       .filter((file) => !!file && !this.#isSubspaceOwned(file))
       .sort();
-    //* `--cached` reads the clone's index, which the slice replaced the members without updating — so it still
-    //* names every file the workspace has deleted or moved since the last push, and opening one throws. The
-    //* index is only reconciled by the `git add -A` a push commits with, long after the stamp is written.
+    //* The index still lists files the workspace deleted since the last push (only the push's `git add -A`
+    //* reconciles it), and opening one throws.
     const present = await Promise.all(
       candidates.map(async (file) => await FileSys.entryExists(path.join(this.#clonePath, file))),
     );
@@ -544,11 +496,8 @@ export class Subspace {
     return { files, patch: await this.#git(["diff", from, "HEAD", "--", ...files]) };
   }
 
-  /**
-   * Refuses the subspace rather than throwing, so one customer repo that fails to install or sync does not
-   * abort the push to the rest of the subspaces. The env is passed explicitly so the child sees the values
-   * written into the clone instead of inheriting the workspace's own.
-   */
+  // Refuses rather than throws, so one failing subspace does not abort the rest; the env is explicit so the child
+  // sees the clone's values, not the workspace's.
   async #verify(clone: Executor) {
     const env = { ...process.env, ...this.#localEnv() };
     try {
@@ -639,10 +588,7 @@ export class Subspace {
     await this.#git(["apply", "--3way", absolute]);
   }
 
-  /**
-   * A library hunk is never applied by default: the workspace is the one copy every other subspace is pushed from,
-   * so adopting one customer's edit silently would ship it to all of them.
-   */
+  // Not applied by default: every subspace is pushed from the workspace, so one customer's lib edit would ship to all.
   async #savePatch(range: string, files: string[], label: string) {
     const patchPath = path.join(this.#workspace.workspaceRoot, ".akan/subspace", `${this.name}-${label}.patch`);
     await mkdir(path.dirname(patchPath), { recursive: true });
