@@ -1,5 +1,3 @@
-export { AkanResponse } from "./akanResponse";
-export { copyBunRequestFields } from "./bunRequestFields";
 export { HostBasePathWebProxy } from "./hostBasePathWebProxy";
 export { LocaleWebProxy } from "./localeWebProxy";
 export type {
@@ -12,4 +10,5 @@ export type {
   WebProxyReturn,
   WebProxyRunResult,
 } from "./types";
-export { WebProxyRunner } from "./webProxyRunner";
+export { AkanResponse } from "./types";
+export { copyBunRequestFields, WebProxyRunner } from "./webProxyRunner";

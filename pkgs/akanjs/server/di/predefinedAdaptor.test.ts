@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { DatabaseMode } from "akanjs";
 import type { AdaptorCls } from "akanjs/service";
 import { collectPredefinedDependencies, getPredefinedAdaptor, predefinedAdaptorRole } from "./predefinedAdaptor";
-import { resolveAdaptorHierarchy } from "./resolveAdaptorHierarchy";
+import { resolveAdaptorHierarchy } from "./resolveHierarchy";
 
 // Registers a mode's adaptor set as DiLifecycle does before any service plugs more. Ids: `local/database-modes/`.
 const resolveMode = (mode: DatabaseMode) => {

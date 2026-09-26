@@ -7,8 +7,7 @@ import { getApiPrefix, getWsPrefix, normalizeRoutePrefix, resetEnvCache } from "
 import { isTraceEnabled } from "../signal/trace";
 import { makeAkanChildProxyHeaders } from "./akanAppHeaders";
 import type { BuilderCsrReq, BuilderCsrRes, BuilderMessage, BuilderReq, BuilderRes } from "./artifact";
-import { resolveEncodedSidecar } from "./assetEncoding";
-import { compressResponse } from "./contentEncoding";
+import { compressResponse, resolveEncodedSidecar } from "./contentEncoding";
 import { isPortInUseError } from "./lifecycle/portInUse";
 import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { ChildOutputReader } from "./logging/childOutputReader";

@@ -21,7 +21,6 @@ import {
   RouteSeedIndexStore,
   RoutesManifestStore,
 } from "./artifact";
-import { resolveEncodedSidecar } from "./assetEncoding";
 import {
   getClientFacingOrigin,
   hasRouteCacheInvalidationScope,
@@ -35,6 +34,7 @@ import {
   shouldInvalidateRouteCacheEntry,
   shouldStoreRouteCache,
 } from "./cachePolicy";
+import { resolveEncodedSidecar } from "./contentEncoding";
 import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import { DevHmrController } from "./hmr/devHmrController";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { type AdaptorCls, adapt, CacheAdaptorRole } from "akanjs/service";
-import { resolveAdaptorHierarchy } from "./resolveAdaptorHierarchy";
+import { resolveAdaptorHierarchy } from "./resolveHierarchy";
 
 describe("resolveAdaptorHierarchy", () => {
   test("initializes cache provider before adaptors with memory injections", () => {

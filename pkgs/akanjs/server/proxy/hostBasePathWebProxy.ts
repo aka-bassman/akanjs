@@ -3,8 +3,7 @@ import path from "node:path";
 import { getEnv } from "akanjs/base";
 import { Logger, resolveSubRouteHosts } from "akanjs/common";
 import type { BaseBuildArtifact } from "../types";
-import { AkanResponse } from "./akanResponse";
-import type { WebProxy } from "./types";
+import { AkanResponse, type WebProxy } from "./types";
 
 export class HostBasePathWebProxy implements WebProxy {
   static readonly refName = "HostBasePathWebProxy";

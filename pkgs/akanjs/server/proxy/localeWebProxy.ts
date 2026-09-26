@@ -1,8 +1,7 @@
 import { getApiPrefix } from "akanjs/base";
 import { parseAkanI18nEnv } from "akanjs/common";
-import { AkanResponse } from "./akanResponse";
 import { getPublicRequestUrl, isInternalProxyRequest } from "./hostBasePathWebProxy";
-import type { WebProxy } from "./types";
+import { AkanResponse, type WebProxy } from "./types";
 
 function getLocale(request: Bun.BunRequest): string {
   const i18n = parseAkanI18nEnv();

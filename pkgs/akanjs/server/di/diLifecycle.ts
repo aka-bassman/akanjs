@@ -26,8 +26,7 @@ import type { WebProxyRegistration } from "../proxy";
 import { CascadeRunner, DatabaseResolver, ServiceResolver, SignalResolver } from "../resolver";
 import type { SignalRoutes, WebsocketRoutes } from "../types";
 import { collectPredefinedDependencies, getPredefinedAdaptor, predefinedAdaptorRole } from "./predefinedAdaptor";
-import { collectAdaptors, resolveAdaptorHierarchy } from "./resolveAdaptorHierarchy";
-import { resolveServiceHierarchy } from "./resolveServiceHierarchy";
+import { collectAdaptors, resolveAdaptorHierarchy, resolveServiceHierarchy } from "./resolveHierarchy";
 import {
   assertUniqueRegistrations,
   type DiModuleCandidate,

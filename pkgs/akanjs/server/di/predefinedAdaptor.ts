@@ -34,7 +34,7 @@ import {
   type WebsocketAdaptor,
   WebsocketAdaptorRole,
 } from "akanjs/service";
-import { collectAdaptors } from "./resolveAdaptorHierarchy";
+import { collectAdaptors } from "./resolveHierarchy";
 
 export interface PredefinedAdaptor {
   database: AdaptorCls<DatabaseAdaptor>;
