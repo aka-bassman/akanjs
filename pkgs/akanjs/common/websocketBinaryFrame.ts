@@ -11,15 +11,7 @@ const MAX_ROOM_BYTES = 0xffff;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/**
- * Framework-owned binary pubsub frame, shared by the publisher and the client dispatcher. A room whose whole
- * return is `Binary` sends its bytes in a websocket binary frame instead of the JSON `{ type: "pub" }` envelope,
- * because `Buffer.toJSON()` turns bytes into `{ type: "Buffer", data: number[] }` — 3.6x the wire and ~300x the
- * encode cost on a 64 KB payload, and a shape `JSON.parse` never restores.
- *
- * Text and binary frames coexist on one socket, so this is additive: every JSON endpoint is untouched, and a
- * federation gateway relays a binary frame unchanged with no code of its own.
- */
+// Not the JSON envelope: `Buffer.toJSON()` spells bytes `{ type: "Buffer", data: number[] }` (3.6x, never restored).
 export const websocketBinaryFrameContract = {
   encode: ({ roomId, payload }: WebsocketBinaryFrame): Uint8Array => {
     const room = encoder.encode(roomId);

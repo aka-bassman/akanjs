@@ -7,7 +7,6 @@ interface FileUploadSerializedSignal {
   endpoint: Record<string, FileUploadSerializedEndpoint>;
 }
 
-/** Framework-owned file-upload contract shared by client-safe packages. */
 export const fileUploadContract = {
   fields: { files: "files", metas: "metas", type: "type", parentId: "parentId" },
   buildMetas: (fileList: FileList | File[]) =>
@@ -20,7 +19,6 @@ export interface FileUploadCapability {
   prefix?: string;
 }
 
-/** Discovers the upload endpoint marked with `{ fileUpload: true }` from the serialized signal. */
 export const resolveFileUploadCapability = (
   serializedSignal: Record<string, FileUploadSerializedSignal>,
 ): FileUploadCapability | null => {

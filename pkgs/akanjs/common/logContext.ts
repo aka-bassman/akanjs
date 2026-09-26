@@ -1,6 +1,6 @@
 import type { LogRecord } from "./Logger";
 
-/** A per-request ring the Logger hands every record to; the trace decides at its end whether any of it is shown. */
+/** A per-request ring of every record; the trace decides at its end whether any of it is shown. */
 export interface LogFlightRecorder {
   minSev: number;
   capture(record: LogRecord, written: boolean): void;
@@ -17,9 +17,7 @@ export interface LogContextSnapshot {
 
 export type LogContextReader = () => LogContextSnapshot | undefined;
 
-// Pinned to `process` for the reason `akanjs/signal/trace.ts` pins its ALS there: the akan worker evaluates the
-// app bundle and the framework runtime as separate module realms, so a module-level slot would let the signal
-// layer register a reader that the Logger instance in the other realm never sees.
+// Pinned to `process`: the worker evaluates the app bundle and the framework runtime as separate module realms.
 const slot: { __akanLogContextReader?: LogContextReader | null } =
   typeof process === "undefined" ? {} : (process as unknown as { __akanLogContextReader?: LogContextReader | null });
 

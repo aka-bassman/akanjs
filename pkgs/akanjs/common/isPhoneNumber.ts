@@ -1,4 +1,3 @@
-/** Returns true when the value matches Akan's supported dashed phone-number format. */
 export const isPhoneNumber = (phone?: string | null) => {
   if (!phone) return false;
   const comp = phone.startsWith("0") ? phone.slice(1) : phone;

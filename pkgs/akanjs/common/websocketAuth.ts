@@ -8,11 +8,7 @@ export interface WebsocketAuthAckData {
   revokedRooms: string[];
 }
 
-/**
- * Framework-owned websocket auth contract shared by the client and the server dispatcher.
- * The credential frame carries the raw bearer token; verifying it stays in userland middleware,
- * so the server only swaps the credential snapshot held on the socket.
- */
+// The frame carries the raw bearer token; verifying it stays in userland middleware.
 export const websocketAuthContract = {
   key: "__auth",
   makeRequest: (jwt: string | null): WebsocketAuthRequest => ({ key: "__auth", data: [jwt] }),

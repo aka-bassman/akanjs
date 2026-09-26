@@ -26,16 +26,7 @@ export type CodeTranscriptPart =
   | { kind: "approval"; id: string; request: CodeAgentApprovalRequest; approved?: boolean }
   | { kind: "host"; id: string; hostKind: string; text: string };
 
-/**
- * Folds the akan wire into what a screen shows.
- *
- * It reads the contract and nothing else, so the terminal and a browser can share it — and so anything it
- * cannot render is a hole in the contract rather than a missing feature of one host.
- *
- * ⚠️ **Tool and host rows are upserted by id, and the first row of a turn is index `0`.** A truthy check on the
- * looked-up index sends that first `tool_end` down the append path, and the same call ends up on screen twice.
- * `undefined` is the only absence here; `== null` would be wrong for the same reason.
- */
+// Rows are upserted by id and the first is index 0, so a looked-up index is tested against `undefined`, not truthiness.
 export class CodeTranscript {
   readonly #parts: CodeTranscriptPart[] = [];
   readonly #indexById = new Map<string, number>();
@@ -61,13 +52,7 @@ export class CodeTranscript {
     return this.#info;
   }
 
-  /**
-   * The one line that says what this session is, derived here rather than by each host.
-   *
-   * The declared context window is on it deliberately: a model descriptor that is wrong but self-consistent —
-   * a 65k window declared for a provider that serves 1M — passes every programmatic check there is, and the
-   * only thing that catches it is a person reading the number.
-   */
+  // The window is printed so a wrong but self-consistent descriptor (65k declared for a 1M model) gets noticed.
   get headline() {
     if (!this.#info) return "starting…";
     return [
@@ -106,22 +91,16 @@ export class CodeTranscript {
     return this.#queue;
   }
 
-  /** The sub-agents running right now. Not a transcript row: they are a state, and the state is the list. */
   get subagents() {
     return this.#subagents;
   }
 
-  /** Bumped on every applied event, so a view can tell "changed" from "same" without comparing arrays. */
+  /** Bumped on every applied event. */
   get revision() {
     return this.#revision;
   }
 
-  /**
-   * Drops every row, keeping what the session *is*.
-   *
-   * Only the screen: the model's own window is untouched, so a cleared transcript and a fresh conversation are
-   * two different things and a host that offers this has to say which one it did.
-   */
+  /** Drops every row but keeps the session info; the model's own window is untouched. */
   clear() {
     this.#revision += 1;
     this.#parts.length = 0;
@@ -130,18 +109,12 @@ export class CodeTranscript {
     this.#openThinking = undefined;
   }
 
-  /**
-   * A locally typed prompt, shown before the engine echoes it back as a `message`.
-   *
-   * Attachments ride beside the text rather than in it: the engine's echo carries the words only, and the
-   * two rows are matched by text to keep one bubble.
-   */
+  /** A locally typed prompt, drawn before the engine echoes it back as a `message` matched by text. */
   echo(text: string, images = 0) {
     this.#revision += 1;
     this.#push({ kind: "user", id: this.#id(), text, ...(images ? { images } : {}) });
   }
 
-  /** Something the host has to say — a slash-command answer, a key hint — in the same column as the rest. */
   note(level: "info" | "warning" | "error", text: string) {
     this.#revision += 1;
     this.#notice(level, text);
@@ -169,9 +142,7 @@ export class CodeTranscript {
       case "message":
         return this.#message(event.role, event.text);
       case "tool_start":
-        // Closing the open prose is what keeps the transcript in time order. A turn is prose → tool → prose,
-        // and a bubble left open collects the text that came *after* the call into the bubble that sits
-        // *above* it — which reads as "the tools are listed separately from what was said".
+        // Closing the open prose keeps time order: text after the call must not land in the bubble above it.
         this.#closeStreams(false);
         return this.#upsertTool(event.tool, {});
       case "tool_progress":
@@ -207,8 +178,7 @@ export class CodeTranscript {
       case "compaction":
         this.#compacting = event.phase === "start";
         if (event.phase === "start") return;
-        // A manual compaction that fails throws to whoever asked for it, and that caller reports it. The automatic
-        // ones have no caller, so this line is the only place their failure is ever seen.
+        // A failed manual compaction is reported by its caller; only an automatic one's failure surfaces here.
         if ((event.error || event.aborted) && event.reason === "manual") return;
         if (event.error) return this.#notice("warning", event.error);
         if (event.aborted) return this.#notice("info", "Compaction cancelled.");
@@ -231,8 +201,7 @@ export class CodeTranscript {
       case "idle":
         this.#streaming = false;
         this.#queue = { steering: 0, followUp: 0 };
-        // A child cannot outlive the turn that asked for it, so an idle session has none — and a row left
-        // standing after the pool's last frame was missed would claim one is still reading.
+        // A child cannot outlive its turn, so an idle session has none even when the pool's last frame was missed.
         this.#subagents = [];
         this.#closeStreams(false);
         return;
@@ -288,16 +257,10 @@ export class CodeTranscript {
     });
   }
 
-  /**
-   * The final message wins over the deltas that built it.
-   *
-   * A retried request streams its first attempt's tokens too, so a bubble assembled from deltas alone shows
-   * the abandoned answer followed by the real one.
-   */
+  // The final message replaces its deltas: a retried request also streamed its abandoned first attempt.
   #message(role: "user" | "assistant", text: string) {
     if (role === "user") {
-      // The turn's own prompt was already drawn when the user pressed enter; a second copy is not a second
-      // message. Anything else — a feedback loop reopening a turn — has no local echo and has to be shown.
+      // Skip the echo of a prompt already drawn locally; a feedback loop's reopened turn has no local echo.
       const last = this.#parts.at(-1);
       if (last?.kind === "user" && last.text === text) return;
       this.#push({ kind: "user", id: this.#id(), text });

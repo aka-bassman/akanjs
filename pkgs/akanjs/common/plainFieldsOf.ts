@@ -1,8 +1,4 @@
-/**
- * Own and inherited enumerable data of an object as a plain record. An Akan model keeps its Date fields as
- * enumerable prototype accessors, which `Object.keys` and a spread never reach; methods are non-enumerable and stay
- * out either way.
- */
+// `for...in`: an Akan model keeps its Date fields as enumerable prototype accessors that `Object.keys` never reaches.
 export const plainFieldsOf = (source: object): Record<string, unknown> => {
   const out: Record<string, unknown> = {};
   for (const key in source) {

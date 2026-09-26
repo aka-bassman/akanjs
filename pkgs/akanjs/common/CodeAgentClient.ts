@@ -18,12 +18,6 @@ interface PendingReply {
   reject: (error: Error) => void;
 }
 
-/**
- * Speaks the code-agent wire over any line transport — a child process's stdio, a websocket, an in-process pair.
- *
- * It has no dependencies because the browser holds one too. Everything host-specific (spawning, reconnecting,
- * authenticating) belongs to whoever builds the transport.
- */
 export class CodeAgentClient {
   readonly #transport: CodeAgentTransport;
   readonly #pending = new Map<string, PendingReply>();
@@ -37,12 +31,12 @@ export class CodeAgentClient {
     this.#transport.onLine((line) => this.#receive(line));
   }
 
-  /** The highest sequence accepted. A reconnecting host replays from here. */
+  /** The highest sequence accepted; a reconnecting host replays from here. */
   get lastSeq() {
     return this.#lastSeq;
   }
 
-  /** A new session restarts the sequence, so the watermark has to go with it or every frame reads as a duplicate. */
+  /** Call on a new session, which restarts the sequence. */
   resetSeq() {
     this.#lastSeq = 0;
   }

@@ -64,11 +64,7 @@ export function isRouteSourceFile(filePath: string): boolean {
   return tryParseRouteModuleKey(key) !== null;
 }
 
-/**
- * Why a `page/` file breaks the route convention, or null when it is fine. Null also covers a non-source
- * asset, which `page/` tolerates. `akan sync <lib>` reports these alongside its other layout violations,
- * so the rule stays in one place instead of being restated where it cannot afford to throw.
- */
+/** `null` when the file is fine, including a non-source asset, which `page/` tolerates. */
 export function getPageSourceFileViolation(filePath: string): string | null {
   if (!SOURCE_EXT_RE.test(filePath)) return null;
 

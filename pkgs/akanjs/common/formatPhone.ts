@@ -1,4 +1,3 @@
-/** Formats supported phone-number strings into dashed display form. */
 export const formatPhone = (value: string) => {
   if (!value) return "";
   if (value.length === 10) return value.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3");

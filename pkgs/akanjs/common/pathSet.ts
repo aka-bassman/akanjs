@@ -4,8 +4,7 @@ type MutableIndexable = Record<string | number, unknown>;
 type PathSegment = string | number;
 type Container = MutableIndexable | Map<PathSegment, unknown>;
 
-// A `field(Map, …)` value holds its entries outside its own keys, so bracket access would write a stray property
-// instead of an entry — and immer would drop it when the draft is finalized.
+// A `field(Map, …)` value holds entries outside its keys: bracket access would write a stray property immer drops.
 const readChild = (container: Container, key: PathSegment) =>
   container instanceof Map ? container.get(key) : container[key];
 

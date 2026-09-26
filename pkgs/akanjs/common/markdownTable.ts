@@ -10,8 +10,6 @@ export interface TableBlock {
 const cellSplit = /(?<!\\)\|/;
 const delimiter = /^:?-+:?$/;
 
-/** GFM table scan, kept out of the block scanner because the delimiter row makes it the one shape that has to
- *  read the line after the one it starts on. */
 export class MarkdownTable {
   static at(lines: string[], at: number): { block: TableBlock; next: number } | null {
     const header = lines[at];
@@ -24,8 +22,7 @@ export class MarkdownTable {
       const line = lines[next];
       if (!line.trim() || !line.includes("|")) break;
       const cells = MarkdownTable.#cells(line);
-      // GFM sizes every row to the header — a short row is padded, a long one truncated — so the columns hold
-      // their shape where a model miscounted its own pipes.
+      // GFM sizes every row to the header: a short row is padded, a long one truncated.
       rows.push(head.map((_, idx) => cells[idx] ?? ""));
     }
     return { block: { kind: "table", aligns, head, rows }, next };
@@ -40,8 +37,7 @@ export class MarkdownTable {
       .map((cell) => cell.trim().replace(/\\\|/g, "|"));
   }
 
-  /** The delimiter row is what separates a table from a paragraph that merely contains a pipe, and from the
-   *  `---` of a rule — which is why the pipe is required of it rather than of the header. */
+  // The pipe is required of the delimiter row, not the header: that is what tells a table from a rule's `---`.
   static #aligns(line: string | undefined): (Align | null)[] | null {
     if (!line?.includes("|")) return null;
     const cells = MarkdownTable.#cells(line);

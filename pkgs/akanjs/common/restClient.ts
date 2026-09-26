@@ -1,10 +1,3 @@
-/**
- * A plain REST client for a service that is not an Akan API: base url, headers, timeout, JSON in and out.
- *
- * Not `akanjs/fetch`'s `HttpClient`, which builds an Akan endpoint's path from its serialized args and restores
- * an `Err` from the response. Two classes of the same name in one package meant an app importing both barrels
- * got a collision, so this one is named for what it is.
- */
 export interface RestClientOptions {
   baseUrl?: string;
   headers?: HeadersInit;

@@ -24,9 +24,6 @@ const bullet = /^(\s*)[-*+]\s+(.*)$/;
 const ordered = /^(\s*)(\d{1,9})[.)]\s+(.*)$/;
 const lazyLine = /^\s+\S/;
 
-/**
- * Block scanner for assistant chat text — the CommonMark subset a model actually emits over this wire.
- */
 export class MarkdownBlocks {
   static of(source: string): MarkdownBlock[] {
     return new MarkdownBlocks(source).#run();
@@ -66,10 +63,9 @@ export class MarkdownBlocks {
     this.#at += 1;
   }
 
-  // An unclosed fence is the normal mid-stream state, so it runs to the end of the text: falling back to a
-  // paragraph would flip the whole block from code to prose and back on the delta that closes it.
+  // An unclosed fence is the normal mid-stream state, so it runs to the end instead of flipping to a paragraph.
   #code(marker: string, info: string) {
-    // The info string's first word is the language by CommonMark; the rest is metadata no renderer here reads.
+    // CommonMark: the info string's first word is the language.
     const lang = info.trim().split(/\s+/)[0];
     this.#at += 1;
     const body: string[] = [];
@@ -107,8 +103,7 @@ export class MarkdownBlocks {
     this.#blocks.push({ kind: "list", items });
   }
 
-  // The other marker is an item only where it is indented: a numbered step whose sub-points are bullets is the
-  // shape a model reaches for most often, while switching marker at the margin starts a list of its own.
+  // The other marker is an item only where indented (a numbered step's bullets); at the margin it starts a new list.
   static #item(line: string, isOrdered: boolean): MarkdownItem | null {
     const numbered = ordered.exec(line);
     const bulleted = bullet.exec(line);
