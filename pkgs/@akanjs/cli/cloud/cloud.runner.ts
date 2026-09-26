@@ -67,31 +67,20 @@ export class CloudRunner extends runner("cloud") {
       : process.env;
   }
 
+  async #ask(message: string, validate?: (value: string) => boolean | string) {
+    return (await input({ message, validate })).trim();
+  }
+
   async #addRemoteEnvServer(): Promise<SelectedRemoteEnvServer> {
-    const name = (
-      await input({
-        message: "Remote server name: ",
-        validate: (value) => (value.trim() ? true : "Remote server name is required"),
-      })
-    ).trim();
-    const host = (
-      await input({
-        message: "Remote server host: ",
-        validate: (value) => (value.trim() ? true : "Remote server host is required"),
-      })
-    ).trim();
-    const username = (await input({ message: "Remote server username (optional): " })).trim() || undefined;
-    const portInput = (
-      await input({
-        message: "Remote server SSH port (optional): ",
-        validate: (value) => {
-          const trimmed = value.trim();
-          if (!trimmed) return true;
-          const port = Number(trimmed);
-          return Number.isInteger(port) && port > 0 ? true : "SSH port must be a positive integer";
-        },
-      })
-    ).trim();
+    const name = await this.#ask("Remote server name: ", (value) => !!value.trim() || "Remote server name is required");
+    const host = await this.#ask("Remote server host: ", (value) => !!value.trim() || "Remote server host is required");
+    const username = (await this.#ask("Remote server username (optional): ")) || undefined;
+    const portInput = await this.#ask("Remote server SSH port (optional): ", (value) => {
+      const trimmed = value.trim();
+      if (!trimmed) return true;
+      const port = Number(trimmed);
+      return Number.isInteger(port) && port > 0 ? true : "SSH port must be a positive integer";
+    });
     const config: RemoteEnvServerConfig = {
       host,
       ...(username ? { username } : {}),
@@ -111,10 +100,7 @@ export class CloudRunner extends runner("cloud") {
     const selectedName = await select<string>({
       message: "Select the remote env server",
       choices: [
-        ...serverEntries.map(([name, config]) => ({
-          name: `${name} (${config.username ? `${config.username}@` : ""}${config.host}${config.port ? `:${config.port}` : ""})`,
-          value: name,
-        })),
+        ...serverEntries.map((entry) => this.#serverChoice(entry)),
         { name: "Add new remote server", value: addRemoteEnvServerValue },
         { name: "Remove remote server", value: removeRemoteEnvServerValue },
       ],
@@ -132,10 +118,7 @@ export class CloudRunner extends runner("cloud") {
   async #removeRemoteEnvServer(serverEntries: [string, RemoteEnvServerConfig][]) {
     const selectedName = await select<string>({
       message: "Select the remote env server to remove",
-      choices: serverEntries.map(([name, config]) => ({
-        name: `${name} (${config.username ? `${config.username}@` : ""}${config.host}${config.port ? `:${config.port}` : ""})`,
-        value: name,
-      })),
+      choices: serverEntries.map((entry) => this.#serverChoice(entry)),
     });
     const shouldRemove = await confirm({
       message: `Remove remote env server "${selectedName}"?`,
@@ -146,14 +129,14 @@ export class CloudRunner extends runner("cloud") {
     Logger.info(`Removed remote env server "${selectedName}"`);
   }
 
+  #serverChoice([name, config]: [string, RemoteEnvServerConfig]) {
+    return { name: `${name} (${this.#getSshTarget(config)}${config.port ? `:${config.port}` : ""})`, value: name };
+  }
+
   async #getRemoteEnvServerWithUsername(): Promise<SelectedRemoteEnvServer> {
     const remoteServer = await this.#selectRemoteEnvServer();
     if (remoteServer.config.username) return remoteServer;
-    const username = (
-      await input({
-        message: `SSH username for ${remoteServer.config.host} (optional): `,
-      })
-    ).trim();
+    const username = await this.#ask(`SSH username for ${remoteServer.config.host} (optional): `);
     return {
       ...remoteServer,
       config: {
@@ -173,7 +156,7 @@ export class CloudRunner extends runner("cloud") {
   }
 
   #getScpTarget(config: RemoteEnvServerConfig, remotePath: string) {
-    return `${config.username ? `${config.username}@` : ""}${config.host}:${remotePath}`;
+    return `${this.#getSshTarget(config)}:${remotePath}`;
   }
 
   #getSshTarget(config: RemoteEnvServerConfig) {
@@ -301,13 +284,12 @@ export class CloudRunner extends runner("cloud") {
   }
   async #askWindowsTestTarget(): Promise<WindowsTestTargetConfig> {
     Logger.info("No Windows test target is configured yet; it is saved to ~/.akan/config.json once entered.");
-    const host = (await input({ message: "Windows host (ip or name): ", validate: (value) => !!value.trim() })).trim();
-    const user = (await input({ message: "SSH user: ", validate: (value) => !!value.trim() })).trim();
-    const identityFile = (
-      await input({ message: "SSH private key path: ", validate: (value) => !!value.trim() })
-    ).trim();
-    const knownHostsFile = (await input({ message: "known_hosts file (optional): " })).trim();
-    const utmVm = (await input({ message: "UTM VM name, to start it and find its ip (optional): " })).trim();
+    const required = (value: string) => !!value.trim();
+    const host = await this.#ask("Windows host (ip or name): ", required);
+    const user = await this.#ask("SSH user: ", required);
+    const identityFile = await this.#ask("SSH private key path: ", required);
+    const knownHostsFile = await this.#ask("known_hosts file (optional): ");
+    const utmVm = await this.#ask("UTM VM name, to start it and find its ip (optional): ");
     return {
       host,
       user,
@@ -409,12 +391,10 @@ export class CloudRunner extends runner("cloud") {
     const latestPublishedVersion = await getLatestPackageVersion("akanjs", tag, registryUrl);
     const rootPackageJson = await workspace.getPackageJson();
     if (!rootPackageJson.dependencies) throw new Error("No dependencies found in package.json");
-    if (rootPackageJson.dependencies.akanjs) rootPackageJson.dependencies.akanjs = latestPublishedVersion;
-    if (rootPackageJson.devDependencies?.akanjs) rootPackageJson.devDependencies.akanjs = latestPublishedVersion;
-    if (rootPackageJson.dependencies["@akanjs/devkit"])
-      rootPackageJson.dependencies["@akanjs/devkit"] = latestPublishedVersion;
-    if (rootPackageJson.devDependencies?.["@akanjs/devkit"])
-      rootPackageJson.devDependencies["@akanjs/devkit"] = latestPublishedVersion;
+    for (const name of ["akanjs", "@akanjs/devkit"]) {
+      if (rootPackageJson.dependencies[name]) rootPackageJson.dependencies[name] = latestPublishedVersion;
+      if (rootPackageJson.devDependencies?.[name]) rootPackageJson.devDependencies[name] = latestPublishedVersion;
+    }
     await workspace.setPackageJson(rootPackageJson);
     await workspace.spawn("bun", ["install", ...this.#getRegistryArgs(registryUrl)], {
       env: this.#getRegistryEnv(registryUrl),
