@@ -21,7 +21,6 @@ enableMapSet();
 
 type StoreStateRecord = Record<string, unknown>;
 
-/** Long enough that a burst of typing is one write, short enough that a route change lands what came before it. */
 const DRAFT_DEBOUNCE_MS = 400;
 type StoreAction = (...args: unknown[]) => unknown;
 type TranslationParam = Record<string, string | number>;
@@ -193,11 +192,7 @@ export class StoreInstance {
     }, [key, count, scopeKey]);
   }
 
-  /**
-   * `sel` and `ref` take an opaque selector, so the keys it reads are learned by running it once over a recording
-   * proxy. Captured at mount, like every surface declaration: the retained set must equal the released set, and a
-   * selector is a new closure every render.
-   */
+  // Keys are learned by running the selector over a recording proxy, once at mount: retained must equal released.
   #useLiveSelector(selector: (state: StoreStateRecord) => unknown) {
     const scopeKey = useScopePath().join(".");
     useEffect(() => {
@@ -249,18 +244,12 @@ export class StoreInstance {
   readonly #liveKeys = new Map<string, Map<string, number>>();
   readonly #generatedSetters = new Set<string>();
 
-  /**
-   * How many mounted components are reading each state key right now. `st.use.*` is a hook, so subscription is
-   * presence — this is how an agent context knows which keys the screen is actually built from.
-   */
+  /** How many mounted components read each state key right now. */
   get liveKeys(): ReadonlyMap<string, number> {
     return this.liveKeysIn("");
   }
 
-  /**
-   * The live keys as one zone view sees them: retentions tagged at the view's scope or below. The empty view is the
-   * whole screen. Zones are views, not walls — a key read inside a zone counts for that zone and for the root alike.
-   */
+  /** Live keys retained at `viewKey`'s scope or below; `""` is the whole screen. */
   liveKeysIn(viewKey: string): ReadonlyMap<string, number> {
     const keys = new Map<string, number>();
     for (const [key, scopes] of this.#liveKeys) {
@@ -274,23 +263,15 @@ export class StoreInstance {
     return keys;
   }
 
-  /** Which module declared each action. See `ActionOwner`. */
   get actionOwners(): ReadonlyMap<string, ActionOwner> {
     return this.#actionOwners;
   }
 
-  /**
-   * How many arguments each action declares.
-   *
-   * Recorded because `do[key]` is a rest-argument wrapper around the real method, so its own `length` is zero for
-   * everything — the arity is gone by the time anyone holding the instance could ask. A rest parameter on the method
-   * itself still reads as zero; nothing can recover that.
-   */
+  /** Each method's own `length`: `do[key]` is a rest-argument wrapper whose `length` is 0. */
   get actionArity(): ReadonlyMap<string, number> {
     return this.#actionArity;
   }
 
-  /** What each generated slice key is, for a reader that has only the finished store. See `SliceActionRole`. */
   get sliceActionRoles(): ReadonlyMap<string, SliceActionRole> {
     return this.#sliceActionRoles;
   }
@@ -299,12 +280,12 @@ export class StoreInstance {
     return this.#sliceStateRoles;
   }
 
-  /** Keys the store materializes from a computation, the URL, or storage. `set` throws on them. */
+  /** `search()` and `computed()` keys; `set` throws on them. */
   get derivedKeys(): ReadonlySet<string> {
     return this.#derivedMeta.derivedKeys;
   }
 
-  /** The `set<Key>` conveniences `#extendAccessors` writes for every plain state key. Their value is untyped. */
+  /** The generated `set<Key>` setters for plain state keys; their value is untyped. */
   get generatedSetters(): ReadonlySet<string> {
     return this.#generatedSetters;
   }
@@ -334,7 +315,6 @@ export class StoreInstance {
     return this;
   }
 
-  /** `<model>Form` for a model this client knows, or null — the only state key whose setters are worth publishing. */
   static #formRefNameOf(key: string) {
     if (!key.endsWith("Form")) return null;
     const refName = key.slice(0, -"Form".length);
@@ -351,8 +331,7 @@ export class StoreInstance {
   #extendAccessors(state: StoreStateRecord, actions: { [key: string]: StoreAction }) {
     for (const k of Object.keys(state)) {
       if (typeof state[k] !== "function") {
-        // Reading a form is what publishes its field setters: the component that put the form on screen is the
-        // one saying an agent may fill it, and no app writes `st.tool` once per field to say the same thing.
+        // Subscribing a `<model>Form` publishes its fill tool: the component that shows the form opts it in.
         const formRefName = StoreInstance.#formRefNameOf(k);
         this.use[k] = formRefName
           ? (options?: StoreUseOptions) => {
@@ -381,7 +360,6 @@ export class StoreInstance {
         Logger.verbose(`${k} action loading...`);
         const start = Date.now();
         try {
-          // An action's return is unreachable by design (`no-return-in-store-action.grit`), so it is not read.
           await (this.#ctx[k] as StoreAction)(...args);
           Logger.verbose(`=> ${k} action dispatched (${Date.now() - start}ms)`);
         } catch (error) {
@@ -390,8 +368,7 @@ export class StoreInstance {
           throw error;
         }
       };
-      // Carried over from the method rather than rebuilt, because a generated setter knows the state path it writes
-      // and this wrapper does not. Everything else at least knows its own name.
+      // Carried over, not rebuilt: a generated setter's tag holds the state path this wrapper cannot know.
       this.do[k] = tagAction(dispatch, actionTagOf(actions[k]) ?? { action: k });
     }
   }
@@ -576,16 +553,7 @@ export class StoreInstance {
     }
   }
 
-  /**
-   * Schedules a save of every open form whose value moved.
-   *
-   * A form is only saved while `<model>Draft.key` is armed — `new<Model>` / `edit<Model>` arm it and a submit or
-   * reset disarms it — so a store that never opened a form writes nothing. The dirty comparison happens in the
-   * flush rather than here: it encodes the whole form, and a keystroke is not worth that.
-   *
-   * The debounce belongs to the store, not to a component, so an editor that unmounts mid-window still lands its
-   * last write. Only a closing tab can outrun it, which is what the flush listeners answer.
-   */
+  // The debounce lives in the store, not a component, so an editor unmounting mid-window still lands its last write.
   #syncDrafts(prev: StoreStateRecord, next: StoreStateRecord) {
     if (typeof window === "undefined") return;
     for (const meta of Object.values(this.#derivedMeta.drafts)) {
@@ -595,9 +563,7 @@ export class StoreInstance {
         continue;
       }
       if (Object.is(prev[meta.formKey], next[meta.formKey])) continue;
-      // Opening a form, applying a draft, restoring one and discarding one all write the form and the draft slot
-      // in a single `set`. None of them is the user typing: scheduling them would re-stamp `savedAt` on a draft
-      // nobody touched, and the one at open would race the read that is about to offer the saved form back.
+      // A `set` that also moves the draft slot (open, apply, restore, discard) is not typing, so it schedules nothing.
       if (!Object.is(prev[meta.draftKey], next[meta.draftKey])) continue;
       this.#armDraftFlush();
       this.#cancelDraftTimer(meta.formKey);
@@ -624,8 +590,7 @@ export class StoreInstance {
     if (!draft?.key || !form) return;
     try {
       const hash = DraftStore.formHash(refName, form);
-      // Back at the value it was opened with — including a restored draft the user then undid — so there is
-      // nothing to come back to and a leftover record would offer to restore what is already on screen.
+      // Back at the opened value: a leftover record would offer to restore what is already on screen.
       if (hash === draft.baseHash) {
         await DraftStore.remove(draft.key);
         return;
@@ -641,7 +606,7 @@ export class StoreInstance {
     }
   }
 
-  /** Lands every pending write before the page or the app goes away. */
+  /** Writes every pending draft now, cancelling its debounce. */
   flushDrafts = () => {
     for (const [formKey, timer] of this.#draftTimers) {
       clearTimeout(timer);

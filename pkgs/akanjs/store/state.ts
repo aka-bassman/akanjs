@@ -17,17 +17,10 @@ import type {
 import { databaseStateNames } from "./databaseStateNames";
 import type { StoreSliceArgs, StoreSliceMap, StoreSliceSuffixCap, Submit } from "./types";
 
-/**
- * The open form's draft slot, armed by `new<Model>` / `edit<Model>` and cleared by a submit or a reset.
- *
- * `pending` is a draft that was read and deliberately *not* applied, which is the whole point: an edit form whose
- * record moved since the draft was taken shows a restore bar instead of replacing what the server just returned.
- * The form the editor opened with is kept outside the store — restoring it is what "start fresh" does, and a
- * secret field in it has no business in a value a component can subscribe to.
- */
+/** Armed by `new<Model>` / `edit<Model>`, cleared by a submit or a reset. */
 export interface DraftState {
   key: string;
-  /** The hash of the form as it was opened. A write only becomes a draft once the form moves off it. */
+  /** Hash of the form as opened; a write only becomes a draft once the form moves off it. */
   baseHash: string;
   /** The edited record's `updatedAt` at open time, or null for a new form. */
   baseUpdatedAt: string | null;
@@ -226,7 +219,7 @@ export const createSliceState = (refName: string, slice: { [key: string]: Serial
     const sliceName = `${refName}${capitalize(suffix)}`;
     const SliceName = capitalize(sliceName);
     const namesOfSlice: { [key in SliceStateKey]: string } = {
-      defaultModel: SliceName.replace(names.Model, names.defaultModel), //clusterInSelf Cluster
+      defaultModel: SliceName.replace(names.Model, names.defaultModel),
       modelList: sliceName.replace(names.model, names.modelList),
       modelListLoading: sliceName.replace(names.model, names.modelListLoading),
       modelInitList: sliceName.replace(names.model, names.modelInitList),
