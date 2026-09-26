@@ -1,4 +1,5 @@
 import { type Dayjs, dayjs } from "akanjs/base";
+import { isValidDate } from "akanjs/common";
 
 export type DocumentId = string & { readonly __brand: "DocumentId" };
 
@@ -215,3 +216,17 @@ export const sanitizeJson = (value: unknown): unknown => {
   });
   return Object.fromEntries(entries);
 };
+
+const convertOperatorValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map((v) => convertOperatorValue(v));
+  if (!value) return value;
+  if (isValidDate(value as Date)) return dayjs(value as Date).valueOf();
+  if (typeof value !== "object" || value.constructor !== Object) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, value]) => [key, convertOperatorValue(value)]),
+  );
+};
+export const convertAggregateMatch = (query: unknown) =>
+  Object.fromEntries(
+    Object.entries(query as Record<string, unknown>).map(([key, value]) => [key, convertOperatorValue(value)]),
+  );
