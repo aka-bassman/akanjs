@@ -120,11 +120,7 @@ export class CloudRunner extends runner("cloud") {
       message: "Select the remote env server to remove",
       choices: serverEntries.map((entry) => this.#serverChoice(entry)),
     });
-    const shouldRemove = await confirm({
-      message: `Remove remote env server "${selectedName}"?`,
-      default: false,
-    });
-    if (!shouldRemove) return;
+    if (!(await confirm({ message: `Remove remote env server "${selectedName}"?`, default: false }))) return;
     await GlobalConfig.removeRemoteEnvServer(selectedName);
     Logger.info(`Removed remote env server "${selectedName}"`);
   }
@@ -137,13 +133,7 @@ export class CloudRunner extends runner("cloud") {
     const remoteServer = await this.#selectRemoteEnvServer();
     if (remoteServer.config.username) return remoteServer;
     const username = await this.#ask(`SSH username for ${remoteServer.config.host} (optional): `);
-    return {
-      ...remoteServer,
-      config: {
-        ...remoteServer.config,
-        ...(username ? { username } : {}),
-      },
-    };
+    return { ...remoteServer, config: { ...remoteServer.config, ...(username ? { username } : {}) } };
   }
 
   #getRemoteEnvArchivePath() {
@@ -315,29 +305,17 @@ export class CloudRunner extends runner("cloud") {
       ? `${majorVersion}.${minorVersion}`
       : `${majorVersion}.${minorVersion}.${patchVersion}`;
     const tag = distTag ?? (isOfficialRelease ? "latest" : (patchVersion.split("-").at(1) ?? "dev"));
-    const getNextVersion = async (prefix: string, tag: string) => {
-      try {
-        const latestPublishedVersion = await getLatestPackageVersion("akanjs", tag, registry);
-        const latestPatch = latestPublishedVersion.startsWith(prefix)
-          ? parseInt(latestPublishedVersion.split(".").at(-1) ?? "-1")
-          : -1;
-        const nextVersion = `${prefix}.${latestPatch + 1}`;
-        return { nextVersion, latestPublishedVersion };
-      } catch {
-        return { nextVersion: `${prefix}.0`, latestPublishedVersion: null };
-      }
-    };
-    const { nextVersion, latestPublishedVersion } = await getNextVersion(targetVersionPrefix, tag);
+    const latestPublishedVersion = await getLatestPackageVersion("akanjs", tag, registry).catch(() => null);
+    const latestPatch = latestPublishedVersion?.startsWith(targetVersionPrefix)
+      ? parseInt(latestPublishedVersion.split(".").at(-1) ?? "-1")
+      : -1;
+    const nextVersion = `${targetVersionPrefix}.${latestPatch + 1}`;
     Logger.info(`Latest published version of akanjs: ${latestPublishedVersion ?? "none"}`);
     Logger.info(`Next version of akanjs: ${nextVersion}`);
     for (const library of akanPkgs) {
       const packageJson = (await workspace.readJson(`pkgs/${library}/package.json`)) as { version: string };
-      const newPackageJsonStr = JSON.stringify(
-        this.#normalizeAkanPackageJson(packageJson, library, nextVersion),
-        null,
-        2,
-      );
-      await workspace.writeFile(`pkgs/${library}/package.json`, newPackageJsonStr);
+      const newPackageJson = this.#normalizeAkanPackageJson(packageJson, library, nextVersion);
+      await workspace.writeFile(`pkgs/${library}/package.json`, JSON.stringify(newPackageJson, null, 2));
       const distPackageJson = (await workspace.readJson(`dist/pkgs/${library}/package.json`)) as {
         version: string;
         dependencies?: Record<string, string>;
@@ -345,14 +323,9 @@ export class CloudRunner extends runner("cloud") {
       const newDistPackageJson = this.#normalizeAkanPackageJson(distPackageJson, library, nextVersion);
       await workspace.writeJson(`dist/pkgs/${library}/package.json`, newDistPackageJson);
     }
-    if (confirmPublish) {
-      const isDeployConfirmed = await confirm({
-        message: "Are you sure you want to deploy the libraries?",
-      });
-      if (!isDeployConfirmed) {
-        Logger.error("Deployment cancelled");
-        return;
-      }
+    if (confirmPublish && !(await confirm({ message: "Are you sure you want to deploy the libraries?" }))) {
+      Logger.error("Deployment cancelled");
+      return;
     }
     // No `npm login` for a local registry: it takes no registry argument and would prompt for npmjs.org credentials.
     if (!registry) {
@@ -446,9 +419,7 @@ export class CloudRunner extends runner("cloud") {
         cwd: workspace.workspaceRoot,
         stdio: "inherit",
       });
-      await workspace.spawn("tar", ["-xf", envArchivePath], {
-        cwd: workspace.workspaceRoot,
-      });
+      await workspace.spawn("tar", ["-xf", envArchivePath], { cwd: workspace.workspaceRoot });
       await workspace.remove(envArchivePath);
     } catch (error) {
       throw new Error(`Failed to download env archive from remote server "${remoteServer.name}"`, { cause: error });
@@ -509,9 +480,7 @@ export class CloudRunner extends runner("cloud") {
           ? `No environment files found to archive for ${appNames.join(", ") || "(no apps)"}`
           : "No environment files found to archive",
       );
-    await workspace.spawn("tar", ["-cf", archivePath, ...envFilePaths], {
-      cwd: workspace.workspaceRoot,
-    });
+    await workspace.spawn("tar", ["-cf", archivePath, ...envFilePaths], { cwd: workspace.workspaceRoot });
     Logger.info(`Archived ${envFilePaths.length} environment files to ${archivePath}`);
     return { files: envFilePaths, path: archivePath };
   }
