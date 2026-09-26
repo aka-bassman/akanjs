@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AkanModuleContext } from "../akanContext";
 import type { Workspace } from "../commandDecorators";
+import { writeText } from "../testHelpers";
 import { buildAkanModuleContextIndex } from "./moduleIndex";
 
 const tempRoots: string[] = [];
@@ -19,11 +20,6 @@ const makeWorkspace = async () => {
     root,
     workspace: { workspaceRoot: root } as Workspace,
   };
-};
-
-const writeText = async (filePath: string, content: string) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content);
 };
 
 const moduleContext = (files: string[], name = "post"): AkanModuleContext => ({
