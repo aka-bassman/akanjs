@@ -1,17 +1,13 @@
 import path from "node:path";
 import { assertUniqueRoutePatterns, compareRouteSpecificity, parseRouteModuleKey } from "akanjs/common";
+import {
+  ROUTE_SEED_INDEX_JSON,
+  type RouteSeedEntry,
+  type RouteSeedIndex,
+} from "akanjs/server/artifact/routeSeedIndexStore";
 import type { PageEntry } from "./implicitRootLayout";
 
-export interface RouteSeedEntry {
-  routeId: string;
-  pattern: string;
-  seeds: string[];
-}
-
-export interface RouteSeedIndex {
-  entries: RouteSeedEntry[];
-  globalLayoutFiles: string[];
-}
+export { ROUTE_SEED_INDEX_JSON, type RouteSeedEntry, type RouteSeedIndex };
 
 export type SerializedRouteSeedEntry = Pick<RouteSeedEntry, "routeId"> &
   Partial<Pick<RouteSeedEntry, "pattern" | "seeds">>;
@@ -67,8 +63,6 @@ export function computeRouteSeedIndex(pageEntries: PageEntry[]): RouteSeedIndex 
   seedEntries.sort((a, b) => compareRouteSpecificity(a.pattern, b.pattern));
   return { entries: seedEntries, globalLayoutFiles };
 }
-
-export const ROUTE_SEED_INDEX_JSON = "route-seed-index.json";
 
 export function serializeRouteSeedIndexForArtifact(
   index: RouteSeedIndex,
