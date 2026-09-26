@@ -2,7 +2,7 @@ import type { ContextBlock, SurfaceView } from "use-agentic";
 import type { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
 import type { AgentBridge } from "./AgentBridge";
-import { ensureStoreSurface } from "./storeSurface";
+import { ensureStoreSurface } from "./StoreSurfaceSource";
 
 /** A turn's default context: route, on-screen scopes, and live keys (small primitives inline, the rest by name). */
 export class AgentContext {

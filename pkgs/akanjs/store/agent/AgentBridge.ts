@@ -3,8 +3,7 @@ import { ConstantRegistry, type MaskModel, mask } from "akanjs/constant";
 import type { AgentRefusal } from "akanjs/signal";
 import type { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
-import { StoreCatalogue } from "./StoreCatalogue";
-import type { SerializedStoreState } from "./types";
+import { type SerializedStoreState, StoreCatalogue } from "./StoreCatalogue";
 
 /** Masked store reads for an in-page agent: `<model>Form` holds typed credentials, and reads ship to a remote model. */
 export class AgentBridge {
