@@ -40,7 +40,6 @@ describe("sessionView", () => {
     const view = sessionView(surface, [], false);
     expect(named(view)).toEqual([]);
     expect(view.tool("navigate")).toBeNull();
-    // The same answer a name that was never registered gets: a withheld tool must not be found by guessing it.
     expect(view.call("navigate")).rejects.toThrow("Unknown tool: navigate");
   });
 
@@ -66,8 +65,6 @@ describe("sessionView", () => {
     own.registerTool([], { name: "navigate", run: async () => "root" });
     own.registerTool(["panel"], { name: "pick", run: async () => "picked" });
     const view = sessionView(own, ["panel"], false);
-    // The root declaration is out of this view either way, so what `navigate` would have meant here is the
-    // built-in — and that is the one being withheld.
     expect(named(view)).toEqual(["panel.pick"]);
   });
 });

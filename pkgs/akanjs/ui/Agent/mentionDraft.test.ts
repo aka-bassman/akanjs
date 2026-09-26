@@ -48,8 +48,6 @@ describe("MentionDraft", () => {
     expect(labels(editor)).toEqual(["Karina", "Cut 3 body"]);
   });
 
-  // Every offset the chat hands over is an offset into the draft string, tokens counted in full, because that is
-  // the text its `@` menu and its recall both measure against.
   test("the caret round-trips through a draft-string offset", () => {
     const editor = written(`compare ${karina} and this`);
     for (const at of [0, 3, 8, 8 + karina.length, `compare ${karina} and this`.length]) {

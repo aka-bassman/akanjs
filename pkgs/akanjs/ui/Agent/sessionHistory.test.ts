@@ -129,7 +129,6 @@ describe("sessionHistoryOf", () => {
       { name: "shot.png", mimeType: "image/png" },
       { name: "spec.pdf", mimeType: "application/pdf" },
       { name: "hosted.png", mimeType: "image/png", url: "https://cdn/hosted.png" },
-      // The handle is what a restored conversation has left to find the file with; only the bytes are too big to keep.
       { name: "kept.png", mimeType: "image/png", ref: "file_42" },
     ]);
     history?.clear();
@@ -154,7 +153,6 @@ describe("sessionHistoryOf", () => {
     const kept = stored(history) ?? [];
     const calls = kept.flatMap((message) => message.toolCalls ?? []).map((call) => call.id);
     const answers = kept.flatMap((message) => message.toolResults ?? []).map((result) => result.id);
-    // Nothing restored answers a call the window cut away, and nothing restored is left unanswered.
     expect(answers.every((id) => calls.includes(id))).toBe(true);
     expect(calls.every((id) => answers.includes(id))).toBe(true);
     history.clear();

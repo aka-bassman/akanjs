@@ -7,10 +7,7 @@ let html: string;
 let bridge: InstanceType<typeof import("akanjs/store")["AgentBridge"]>;
 let Dock: typeof import("./Dock")["Dock"];
 
-/**
- * Imported after the environment is set, not before: the `akanjs/store` barrel reaches `baseSt`, which calls
- * `getEnv()` while the module is still evaluating. Static imports all run before any test body could set it.
- */
+// Imported after the env is set: the `akanjs/store` barrel's `baseSt` calls `getEnv()` on load.
 beforeAll(async () => {
   process.env.AKAN_PUBLIC_APP_NAME = "docktest";
   process.env.AKAN_PUBLIC_REPO_NAME = "docktest";
@@ -78,13 +75,11 @@ describe("Agent.Dock", () => {
   });
 
   test("the withheld section is empty once the catalogue refuses nothing", () => {
-    // Base keys used to land here as a catalogue refusal; opt-out is now `{ agent: false }` at each `st.use`.
     const count = html.match(/Withheld<\/span><span[^>]*>(\d+)</)?.[1];
     expect(count).toBe("0");
   });
 
   test("offers no tool the page did not declare", () => {
-    // Tools come from the surface, so a store method and a generated setter appear nowhere in the dock.
     expect(html).not.toContain("wipeDesk");
     expect(html).not.toContain("setLabelOnDockDesk");
   });

@@ -3,8 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 let Markdown: typeof import("./Markdown").default;
 
-/** Imported after the environment is set: `./Markdown` reaches the `akanjs/client` barrel, which calls `getEnv()`
- *  while the module is still evaluating. Same pattern as Chat.test.tsx. */
+// Imported after the env is set: the `akanjs/client` barrel calls `getEnv()` on load.
 beforeAll(async () => {
   process.env.AKAN_PUBLIC_APP_NAME = "markdowntest";
   process.env.AKAN_PUBLIC_REPO_NAME = "markdowntest";
