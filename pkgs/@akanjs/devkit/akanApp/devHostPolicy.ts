@@ -28,7 +28,6 @@ const DEV_IDLE_MIN_UPTIME_MS = 30_000;
 
 export const SOURCE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 
-/\.(css|scss|sass|less|json|svg|png|jpe?g|webp|gif|avif|ico|woff2?|ttf|otf|mp3|mp4|wav|html)$/i;
 const SERVER_SUFFIXES = [".service.ts", ".document.ts"];
 
 const SHARED_SUFFIXES = [".constant.ts", ".dictionary.ts", ".signal.ts"];

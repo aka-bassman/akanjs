@@ -47,6 +47,8 @@ import {
 
 const backendMsgTypeSet = new Set<BuilderMessage["type"]>(["build-route", "build-csr"]);
 
+const asMib = (bytes: number) => Math.round(bytes / 1024 / 1024);
+
 const BACKEND_RESTART_DEBOUNCE_MS = 120;
 
 // Above the gateway's ~5s child-shutdown wait: a gateway SIGKILLed mid-shutdown strands orphan replicas.
@@ -158,23 +160,17 @@ export class AkanAppHost {
   async stop() {
     this.#cancelIdleSuspend();
     this.#stopIdleWatcher();
-    if (this.#restartTimer) {
-      clearTimeout(this.#restartTimer);
-      this.#restartTimer = null;
-    }
-    if (this.#backendRecoveryTimer) {
-      clearTimeout(this.#backendRecoveryTimer);
-      this.#backendRecoveryTimer = null;
-    }
-    if (this.#builderRecoveryTimer) {
-      clearTimeout(this.#builderRecoveryTimer);
-      this.#builderRecoveryTimer = null;
-    }
+    this.#clearRestartTimers();
     // Before the backend goes away, while it can still receive the answer.
     this.#failPendingBuilderMessages("dev server is shutting down");
     await this.#stopBackend();
     this.#stopBuilder();
     return this;
+  }
+  #clearRestartTimers() {
+    for (const timer of [this.#restartTimer, this.#backendRecoveryTimer, this.#builderRecoveryTimer])
+      if (timer) clearTimeout(timer);
+    this.#restartTimer = this.#backendRecoveryTimer = this.#builderRecoveryTimer = null;
   }
   kill() {
     void this.stop();
@@ -474,7 +470,6 @@ export class AkanAppHost {
   #handleBuilderMetrics(metrics: BuilderMetrics): void {
     if (this.#rssCeilingAbandoned) return;
     const ceilingBytes = IncrementalBuilderHost.maxRssBytes();
-    const asMib = (bytes: number) => Math.round(bytes / 1024 / 1024);
     const decision = decideBuilderRssRecycle({
       rssBytes: metrics.rssBytes,
       ceilingBytes,
@@ -516,7 +511,6 @@ export class AkanAppHost {
     const freshRssBytes = await AkanAppHost.readProcessRssBytes(pid);
     if (!isRssCeilingUnreachable(freshRssBytes, ceilingBytes)) return;
     this.#rssCeilingAbandoned = true;
-    const asMib = (bytes: number) => Math.round(bytes / 1024 / 1024);
     this.logger.error(
       `[builder-recycle] a freshly recycled builder is already at ${asMib(freshRssBytes ?? 0)}MiB with nothing built on demand, so the ${asMib(ceilingBytes)}MiB ceiling cannot be met for this app; no longer enforcing it this session. Raise AKAN_BUILDER_MAX_RSS_MB, or set it to 0 to leave the builder unbounded.`,
     );
@@ -546,7 +540,6 @@ export class AkanAppHost {
     reason: string,
     { rssBytes, ceilingBytes }: { rssBytes: number; ceilingBytes: number },
   ): Promise<void> {
-    const asMib = (bytes: number) => Math.round(bytes / 1024 / 1024);
     if (decideBuilderRssSettle({ rssBytes, ceilingBytes }) === "recycle-now") {
       this.#recycleBuilderForRss(reason);
       return;
@@ -772,7 +765,7 @@ export class AkanAppHost {
     await this.#startBuilder({ announceBootState: true });
     // Merged: the watcher's batch and the stamps overlap on the ordinary one-save-during-suspend case.
     const missed = await this.#takeBuilderGapChanges();
-    const backendFiles = [...new Set([...files.filter((file) => this.#isBackendFile(file)), ...missed])];
+    const backendFiles = [...new Set([...files.filter((file) => this.#backendGraph.has(file)), ...missed])];
     if (backendFiles.length === 0) return;
     this.logger.verbose(`[idle-suspend] ${backendFiles.length} backend file(s) changed while suspended`);
     this.#scheduleBackendRestart({ files: backendFiles, roles: [] });
@@ -831,13 +824,6 @@ export class AkanAppHost {
     for (const message of pending) this.#sendToBuilder(message);
   }
 
-  #holdUntilBuilderReady(message: BuilderMessage): void {
-    this.#pendingBuilderMessages.push(message);
-    this.logger.verbose(
-      `[builder] holding ${message.type} until the builder is ready (${this.#pendingBuilderMessages.length} waiting)`,
-    );
-  }
-
   // Held requests carry the departing backend's ids, which the new one reissues from 1, so a replay would
   // misdeliver answers; nothing is answered because the old backend is already stopped.
   #discardPendingBuilderMessages(reason: string): void {
@@ -849,12 +835,15 @@ export class AkanAppHost {
     const held = this.#pendingBuilderMessages.splice(0);
     if (held.length === 0) return;
     this.logger.warn(`failing ${held.length} held builder request(s): ${reason}`);
-    for (const message of held) {
-      if (message.type === "build-route")
-        this.#sendToBackend({ type: "build-route-res", id: message.id, ok: false, error: reason });
-      else if (message.type === "build-csr")
-        this.#sendToBackend({ type: "build-csr-res", id: message.id, ok: false, error: reason });
-    }
+    for (const message of held) this.#failBuilderRequest(message, reason);
+  }
+  #failBuilderRequest(message: BuilderMessage, error: string): boolean {
+    if (message.type === "build-route")
+      this.#sendToBackend({ type: "build-route-res", id: message.id, ok: false, error });
+    else if (message.type === "build-csr")
+      this.#sendToBackend({ type: "build-csr-res", id: message.id, ok: false, error });
+    else return false;
+    return true;
   }
   #recycleBuilderForRss(reason: string): void {
     // Dropping the recycle costs nothing: the next build re-reports an over-ceiling rss and re-arms it.
@@ -988,18 +977,7 @@ export class AkanAppHost {
     { refreshConfig = false }: { refreshConfig?: boolean } = {},
   ): Promise<void> {
     const generation = message.devPlan?.generation ?? message.generation;
-    if (this.#restartTimer) {
-      clearTimeout(this.#restartTimer);
-      this.#restartTimer = null;
-    }
-    if (this.#backendRecoveryTimer) {
-      clearTimeout(this.#backendRecoveryTimer);
-      this.#backendRecoveryTimer = null;
-    }
-    if (this.#builderRecoveryTimer) {
-      clearTimeout(this.#builderRecoveryTimer);
-      this.#builderRecoveryTimer = null;
-    }
+    this.#clearRestartTimers();
     this.#builderRecoveryAttempts = 0;
     this.#pendingRestartReason = null;
     this.#lastGoodFrontend = {};
@@ -1096,7 +1074,7 @@ export class AkanAppHost {
       return shouldRestart;
     }
     if (message.kinds.includes("code")) await this.#backendGraph.refresh();
-    if (message.files.some((file) => this.#isBackendFile(file))) return true;
+    if (message.files.some((file) => this.#backendGraph.has(file))) return true;
     if (!this.#backendGraph.lastRefreshSucceeded) {
       const fallbackFiles = message.files.filter((file) =>
         isLegacyBackendFallbackFile(file, this.app.workspace.workspaceRoot),
@@ -1109,9 +1087,6 @@ export class AkanAppHost {
       }
     }
     return false;
-  }
-  #isBackendFile(file: string): boolean {
-    return this.#backendGraph.has(file);
   }
   async #startBuilder({
     announceBootState = false,
@@ -1206,27 +1181,13 @@ export class AkanAppHost {
     const status = this.#builder?.status ?? "stopped";
     // A returning builder is a gap, not a failure: hold the request (`BuilderRpc`'s timeout still bounds it).
     if (shouldHoldForReturningBuilder({ status, heldCount: this.#pendingBuilderMessages.length })) {
-      this.#holdUntilBuilderReady(message);
+      this.#pendingBuilderMessages.push(message);
+      this.logger.verbose(
+        `[builder] holding ${message.type} until the builder is ready (${this.#pendingBuilderMessages.length} waiting)`,
+      );
       return;
     }
-    if (message.type === "build-route") {
-      this.#sendToBackend({
-        type: "build-route-res",
-        id: message.id,
-        ok: false,
-        error: `builder is ${status}; reload after the builder is ready`,
-      });
-      return;
-    }
-    if (message.type === "build-csr") {
-      this.#sendToBackend({
-        type: "build-csr-res",
-        id: message.id,
-        ok: false,
-        error: `builder is ${status}; reload after the builder is ready`,
-      });
-      return;
-    }
+    if (this.#failBuilderRequest(message, `builder is ${status}; reload after the builder is ready`)) return;
     this.logger.warn("akanAppHost builder is not running");
   }
   #stopBuilder(): void {
