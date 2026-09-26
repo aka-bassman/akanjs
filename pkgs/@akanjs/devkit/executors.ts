@@ -185,6 +185,11 @@ const parseEnvFile = (envPath: string): Record<string, string> => {
   return env;
 };
 
+const withCapitalizedDict = (dict: { [key: string]: string } = {}) => ({
+  ...dict,
+  ...Object.fromEntries(Object.entries(dict).map(([key, value]) => [capitalize(key), capitalize(value)])),
+});
+
 export class Executor {
   static verbose = false;
   static setVerbose(verbose: boolean) {
@@ -210,155 +215,53 @@ export class Executor {
   #stderr(data: Buffer) {
     Logger.raw(chalk.red(data.toString()));
   }
-  exec(command: string, options: ExecOptions = {}) {
-    const cwd = options.cwd?.toString() ?? this.cwdPath;
-    const proc = exec(command, { cwd: this.cwdPath, ...options });
+  #settle(
+    proc: ChildProcess,
+    target: { command: string; args?: string[]; cwd: string },
+    { onClose = false, keepLogs = false, redStderr = false } = {},
+  ): Promise<{ code: number | null; signal: NodeJS.Signals | null; stdout: string }> {
     let stdout = "";
     let stderr = "";
     proc.stdout?.on("data", (data: Buffer) => {
       stdout += data.toString();
+      if (keepLogs) this.logs.push(data.toString());
       this.#stdout(data);
     });
     proc.stderr?.on("data", (data: Buffer) => {
       stderr += data.toString();
-      this.#stdout(data); // 정상로그도 stderr로 나옴
+      if (keepLogs) this.logs.push(data.toString());
+      if (redStderr) this.#stderr(data);
+      else this.#stdout(data); // 정상로그도 stderr로 나옴
     });
     return new Promise((resolve, reject) => {
-      proc.on("error", (error) => {
-        reject(
-          new CommandExecutionError({
-            command,
-            cwd,
-            code: null,
-            signal: null,
-            stdout,
-            stderr,
-            cause: error,
-          }),
-        );
-      });
-      proc.on("exit", (code, signal) => {
-        if (code || signal)
-          reject(
-            new CommandExecutionError({
-              command,
-              cwd,
-              code,
-              signal,
-              stdout,
-              stderr,
-            }),
-          );
-        else resolve({ code, signal });
+      proc.on("error", (cause) =>
+        reject(new CommandExecutionError({ ...target, code: null, signal: null, stdout, stderr, cause })),
+      );
+      proc.on(onClose ? "close" : "exit", (code: number | null, signal: NodeJS.Signals | null) => {
+        if ((onClose ? code !== 0 : code) || signal)
+          reject(new CommandExecutionError({ ...target, code, signal, stdout, stderr }));
+        else resolve({ code, signal, stdout });
       });
     });
+  }
+  exec(command: string, options: ExecOptions = {}): Promise<unknown> {
+    const target = { command, cwd: options.cwd?.toString() ?? this.cwdPath };
+    const proc = exec(command, { cwd: this.cwdPath, ...options });
+    return this.#settle(proc, target).then(({ code, signal }) => ({ code, signal }));
   }
 
   spawn(command: string, args: string[] = [], options: SpawnOptions = {}): Promise<string> {
-    const cwd = options.cwd?.toString() ?? this.cwdPath;
-    const proc = spawn(command, args, {
-      cwd: this.cwdPath,
-      ...options,
-    });
-    let stdout = "";
-    let stderr = "";
-
-    proc.stdout?.on("data", (data: Buffer) => {
-      stdout += data.toString();
-      this.logs.push(data.toString());
-      this.#stdout(data);
-    });
-    proc.stderr?.on("data", (data: Buffer) => {
-      stderr += data.toString();
-      this.logs.push(data.toString());
-      this.#stdout(data); // 정상로그도 stderr로 나옴
-    });
-    return new Promise((resolve, reject) => {
-      proc.on("error", (error) => {
-        reject(
-          new CommandExecutionError({
-            command,
-            args,
-            cwd,
-            code: null,
-            signal: null,
-            stdout,
-            stderr,
-            cause: error,
-          }),
-        );
-      });
-      proc.on("close", (code, signal) => {
-        if (code !== 0 || signal)
-          reject(
-            new CommandExecutionError({
-              command,
-              args,
-              cwd,
-              code,
-              signal,
-              stdout,
-              stderr,
-            }),
-          );
-        else resolve(stdout);
-      });
-    });
+    const target = { command, args, cwd: options.cwd?.toString() ?? this.cwdPath };
+    const proc = spawn(command, args, { cwd: this.cwdPath, ...options });
+    return this.#settle(proc, target, { onClose: true, keepLogs: true }).then(({ stdout }) => stdout);
   }
   spawnSync(command: string, args: string[] = [], options: SpawnOptions = {}): ChildProcess {
-    const proc = spawn(command, args, {
-      cwd: this.cwdPath,
-      ...options,
-    });
-    return proc;
+    return spawn(command, args, { cwd: this.cwdPath, ...options });
   }
-  fork(modulePath: string, args: string[] = [], options: ForkOptions = {}) {
-    const cwd = options.cwd?.toString() ?? this.cwdPath;
-    const proc = fork(modulePath, args, {
-      cwd: this.cwdPath,
-      ...options,
-    });
-    let stdout = "";
-    let stderr = "";
-    proc.stdout?.on("data", (data: Buffer) => {
-      stdout += data.toString();
-      this.#stdout(data);
-    });
-    proc.stderr?.on("data", (data: Buffer) => {
-      stderr += data.toString();
-      this.#stderr(data);
-    });
-    return new Promise((resolve, reject) => {
-      proc.on("error", (error) => {
-        reject(
-          new CommandExecutionError({
-            command: modulePath,
-            args,
-            cwd,
-            code: null,
-            signal: null,
-            stdout,
-            stderr,
-            cause: error,
-          }),
-        );
-      });
-      proc.on("exit", (code, signal) => {
-        if (code || signal)
-          reject(
-            new CommandExecutionError({
-              command: modulePath,
-              args,
-              cwd,
-              code,
-              signal,
-              stdout,
-              stderr,
-            }),
-          );
-        else resolve({ code, signal });
-      });
-    });
+  fork(modulePath: string, args: string[] = [], options: ForkOptions = {}): Promise<unknown> {
+    const target = { command: modulePath, args, cwd: options.cwd?.toString() ?? this.cwdPath };
+    const proc = fork(modulePath, args, { cwd: this.cwdPath, ...options });
+    return this.#settle(proc, target, { redStderr: true }).then(({ code, signal }) => ({ code, signal }));
   }
   getPath(filePath: string) {
     if (path.isAbsolute(filePath)) return filePath;
@@ -399,10 +302,9 @@ export class Executor {
   }
   async getFilesAndDirs(dirPath: string): Promise<{ files: string[]; dirs: string[] }> {
     const fullDirPath = this.getPath(dirPath);
-    const fileGlob = new Bun.Glob("*");
-    const files = Array.from(fileGlob.scanSync({ cwd: fullDirPath, onlyFiles: true }));
-    const dirGlob = new Bun.Glob("*");
-    const allEntries = Array.from(dirGlob.scanSync({ cwd: fullDirPath, onlyFiles: false }));
+    const glob = new Bun.Glob("*");
+    const files = Array.from(glob.scanSync({ cwd: fullDirPath, onlyFiles: true }));
+    const allEntries = Array.from(glob.scanSync({ cwd: fullDirPath, onlyFiles: false }));
     const dirs = allEntries.filter((entry) => !files.includes(entry));
     return { files, dirs };
   }
@@ -556,6 +458,11 @@ export class Executor {
     dict: { [key: string]: string } = {},
     options: { [key: string]: unknown } = {},
   ): Promise<FileContent | null> {
+    const convertPath = (target: string) =>
+      Object.entries(dict).reduce(
+        (converted, [key, value]) => converted.replace(new RegExp(`__${key}__`, "g"), value),
+        target,
+      );
     if (targetPath.endsWith(".ts") || targetPath.endsWith(".tsx")) {
       const getContent = (await import(templatePath)) as {
         default: (
@@ -568,32 +475,20 @@ export class Executor {
       if (result === null) return null;
       const filename = typeof result === "object" ? result.filename : path.basename(targetPath).replace(".js", ".ts");
       const content = typeof result === "object" ? result.content : result;
-      const dirname = path.dirname(targetPath);
-      const convertedTargetPath = Object.entries(dict).reduce(
-        (path, [key, value]) => path.replace(new RegExp(`__${key}__`, "g"), value),
-        `${dirname}/${filename}`,
-      );
+      const convertedTargetPath = convertPath(`${path.dirname(targetPath)}/${filename}`);
       this.logger.verbose(`Apply template ${templatePath} to ${convertedTargetPath}`);
       return this.writeFile(convertedTargetPath, content, { overwrite });
     } else if (targetPath.endsWith(".template")) {
       const content = await FileSys.readText(templatePath);
-      const convertedTargetPath = Object.entries(dict).reduce(
-        (path, [key, value]) => path.replace(new RegExp(`__${key}__`, "g"), value),
-        targetPath.slice(0, -9),
-      );
+      const convertedTargetPath = convertPath(targetPath.slice(0, -9));
       const convertedContent = Object.entries(dict).reduce(
         (data, [key, value]) => data.replace(new RegExp(`<%= ${key} %>`, "g"), value),
         content,
       );
       this.logger.verbose(`Apply template ${templatePath} to ${convertedTargetPath}`);
-      return this.writeFile(convertedTargetPath, convertedContent, {
-        overwrite,
-      });
+      return this.writeFile(convertedTargetPath, convertedContent, { overwrite });
     } else if (staticTemplateFileExtensions.has(path.extname(targetPath).toLowerCase())) {
-      const convertedTargetPath = Object.entries(dict).reduce(
-        (path, [key, value]) => path.replace(new RegExp(`__${key}__`, "g"), value),
-        targetPath,
-      );
+      const convertedTargetPath = convertPath(targetPath);
       const writePath = this.getPath(convertedTargetPath);
       const dirname = path.dirname(writePath);
       if (!(await FileSys.dirExists(dirname))) await mkdir(dirname, { recursive: true });
@@ -619,13 +514,11 @@ export class Executor {
   }): Promise<FileContent[]> {
     const templateRoot = await this.#resolveTemplateRoot();
     const templatePath = `${templateRoot}${template ? `/${template}` : ""}`;
-    const prefixTemplatePath = templatePath;
-    if ((await stat(prefixTemplatePath)).isFile()) {
-      const filename = path.basename(prefixTemplatePath);
+    if ((await stat(templatePath)).isFile()) {
       const fileContent = await this.#applyTemplateFile(
         {
-          templatePath: prefixTemplatePath,
-          targetPath: path.join(basePath, filename),
+          templatePath,
+          targetPath: path.join(basePath, path.basename(templatePath)),
           scanInfo,
           overwrite,
         },
@@ -683,13 +576,7 @@ export class Executor {
     options?: { [key: string]: unknown };
     overwrite?: boolean;
   }): Promise<FileContent[]> {
-    const dict = {
-      ...(options.dict ?? {}),
-      ...Object.fromEntries(
-        Object.entries(options.dict ?? {}).map(([key, value]) => [capitalize(key), capitalize(value)]),
-      ),
-    };
-    const fileContents = await this._applyTemplate({ ...options, dict });
+    const fileContents = await this._applyTemplate({ ...options, dict: withCapitalizedDict(options.dict) });
     await this.#formatAppliedTemplate(fileContents);
     return fileContents;
   }
@@ -804,7 +691,6 @@ export class WorkspaceExecutor extends Executor {
     this.repoName = repoName;
   }
 
-  static #execs = new Map<string, WorkspaceExecutor>();
   static fromRoot({
     workspaceRoot = process.cwd(),
     repoName = resolveRepoName(workspaceRoot),
@@ -812,7 +698,7 @@ export class WorkspaceExecutor extends Executor {
     workspaceRoot?: string;
     repoName?: string;
   } = {}) {
-    return WorkspaceExecutor.#execs.get(repoName) ?? new WorkspaceExecutor({ workspaceRoot, repoName });
+    return new WorkspaceExecutor({ workspaceRoot, repoName });
   }
   static getBaseDevEnv(envPath?: string) {
     // Bun auto-loads .env, so we use process.env directly
@@ -967,41 +853,23 @@ export class WorkspaceExecutor extends Executor {
     return await getDirs(basePath);
   }
 
-  async getScalarConstantFiles() {
+  async #fromEverySys<T>(read: (sys: SysExecutor) => Promise<T[]>): Promise<T[]> {
     const [appNames, libNames] = await this.getSyss();
-    const scalarConstantExampleFiles = [
-      ...(
-        await Promise.all(appNames.map((appName) => AppExecutor.from(this, appName).getScalarConstantFiles()))
-      ).flat(),
-      ...(
-        await Promise.all(libNames.map((libName) => LibExecutor.from(this, libName).getScalarConstantFiles()))
-      ).flat(),
-    ];
-    return scalarConstantExampleFiles;
+    const fromApps = await Promise.all(appNames.map((appName) => read(AppExecutor.from(this, appName))));
+    const fromLibs = await Promise.all(libNames.map((libName) => read(LibExecutor.from(this, libName))));
+    return [...fromApps.flat(), ...fromLibs.flat()];
+  }
+  async getScalarConstantFiles() {
+    return await this.#fromEverySys((sys) => sys.getScalarConstantFiles());
   }
   async getConstantFiles() {
-    const [appNames, libNames] = await this.getSyss();
-    const moduleConstantExampleFiles = [
-      ...(await Promise.all(appNames.map((appName) => AppExecutor.from(this, appName).getConstantFiles()))).flat(),
-      ...(await Promise.all(libNames.map((libName) => LibExecutor.from(this, libName).getConstantFiles()))).flat(),
-    ];
-    return moduleConstantExampleFiles;
+    return await this.#fromEverySys((sys) => sys.getConstantFiles());
   }
   async getDictionaryFiles() {
-    const [appNames, libNames] = await this.getSyss();
-    const moduleDictionaryExampleFiles = [
-      ...(await Promise.all(appNames.map((appName) => AppExecutor.from(this, appName).getDictionaryFiles()))).flat(),
-      ...(await Promise.all(libNames.map((libName) => LibExecutor.from(this, libName).getDictionaryFiles()))).flat(),
-    ];
-    return moduleDictionaryExampleFiles;
+    return await this.#fromEverySys((sys) => sys.getDictionaryFiles());
   }
   async getViewFiles() {
-    const [appNames, libNames] = await this.getSyss();
-    const viewExampleFiles = [
-      ...(await Promise.all(appNames.map((appName) => AppExecutor.from(this, appName).getViewsSourceCode()))).flat(),
-      ...(await Promise.all(libNames.map((libName) => LibExecutor.from(this, libName).getViewsSourceCode()))).flat(),
-    ];
-    return viewExampleFiles;
+    return await this.#fromEverySys((sys) => sys.getViewsSourceCode());
   }
 }
 
@@ -1193,7 +1061,7 @@ export class SysExecutor extends Executor {
 
   async getDatabaseModules() {
     const databaseModules = (await this.readdir("lib"))
-      .filter((name) => !name.startsWith("_") && !name.startsWith("__") && !name.endsWith(".ts"))
+      .filter((name) => !name.startsWith("_") && !name.endsWith(".ts"))
       .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${name}.constant.ts`).exists());
     return databaseModules;
   }
@@ -1212,49 +1080,32 @@ export class SysExecutor extends Executor {
     return scalarModules;
   }
 
-  async getViewComponents() {
-    const viewComponents = (await this.readdir("lib"))
-      .filter((name) => !name.startsWith("_") && !name.startsWith("__") && !name.endsWith(".ts"))
-      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${capitalize(name)}.View.tsx`).exists());
-    return viewComponents;
+  async #getComponentModules(role: "View" | "Unit" | "Template") {
+    return (await this.readdir("lib"))
+      .filter((name) => !name.startsWith("_") && !name.endsWith(".ts"))
+      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${capitalize(name)}.${role}.tsx`).exists());
   }
-
+  async #getComponentSources(role: "View" | "Unit" | "Template") {
+    const modules = await this.#getComponentModules(role);
+    return Promise.all(modules.map((name) => this.getLocalFile(`lib/${name}/${capitalize(name)}.${role}.tsx`)));
+  }
+  async getViewComponents() {
+    return await this.#getComponentModules("View");
+  }
   async getUnitComponents() {
-    const unitComponents = (await this.readdir("lib"))
-      .filter((name) => !name.startsWith("_") && !name.startsWith("__") && !name.endsWith(".ts"))
-      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${capitalize(name)}.Unit.tsx`).exists());
-    return unitComponents;
+    return await this.#getComponentModules("Unit");
   }
   async getTemplateComponents() {
-    const templateComponents = (await this.readdir("lib"))
-      .filter((name) => !name.startsWith("_") && !name.startsWith("__") && !name.endsWith(".ts"))
-      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${capitalize(name)}.Template.tsx`).exists());
-    return templateComponents;
+    return await this.#getComponentModules("Template");
   }
-
   async getViewsSourceCode() {
-    const viewComponents = await this.getViewComponents();
-    return Promise.all(
-      viewComponents.map((viewComponent) =>
-        this.getLocalFile(`lib/${viewComponent}/${capitalize(viewComponent)}.View.tsx`),
-      ),
-    );
+    return await this.#getComponentSources("View");
   }
   async getUnitsSourceCode() {
-    const unitComponents = await this.getUnitComponents();
-    return Promise.all(
-      unitComponents.map((unitComponent) =>
-        this.getLocalFile(`lib/${unitComponent}/${capitalize(unitComponent)}.Unit.tsx`),
-      ),
-    );
+    return await this.#getComponentSources("Unit");
   }
   async getTemplatesSourceCode() {
-    const templateComponents = await this.getTemplateComponents();
-    return Promise.all(
-      templateComponents.map((templateComponent) =>
-        this.getLocalFile(`lib/${templateComponent}/${capitalize(templateComponent)}.Template.tsx`),
-      ),
-    );
+    return await this.#getComponentSources("Template");
   }
 
   async getScalarConstantFiles() {
@@ -1303,18 +1154,8 @@ export class SysExecutor extends Executor {
     dict?: { [key: string]: string };
     overwrite?: boolean;
   }): Promise<FileContent[]> {
-    const dict = {
-      ...(options.dict ?? {}),
-      ...Object.fromEntries(
-        Object.entries(options.dict ?? {}).map(([key, value]) => [capitalize(key), capitalize(value)]),
-      ),
-    };
     const scanInfo = await this.scan();
-    const fileContents = await this._applyTemplate({
-      ...options,
-      scanInfo,
-      dict,
-    });
+    const fileContents = await this._applyTemplate({ ...options, scanInfo, dict: withCapitalizedDict(options.dict) });
     await this.scan();
     return fileContents;
   }
@@ -1337,12 +1178,8 @@ export class AppExecutor extends SysExecutor {
     super({ workspace, name, type: "app" });
     this.dist = new Executor(`dist/${name}`, `${this.workspace.workspaceRoot}/dist/apps/${name}`);
   }
-  static #execs = new Map<string, AppExecutor>();
   static from(executor: SysExecutor | WorkspaceExecutor, name: string) {
-    const exec = AppExecutor.#execs.get(name);
-    if (exec) return exec;
-    else if (executor instanceof WorkspaceExecutor) return new AppExecutor({ workspace: executor, name });
-    else return new AppExecutor({ workspace: executor.workspace, name });
+    return new AppExecutor({ workspace: executor instanceof WorkspaceExecutor ? executor : executor.workspace, name });
   }
   getEnv() {
     return WorkspaceExecutor.getBaseDevEnv().env;
@@ -1736,12 +1573,8 @@ export class LibExecutor extends SysExecutor {
     super({ workspace, name, type: "lib" });
     this.dist = new Executor(`dist/${name}`, `${this.workspace.workspaceRoot}/dist/libs/${name}`);
   }
-  static #execs = new Map<string, LibExecutor>();
   static from(executor: SysExecutor | WorkspaceExecutor, name: string) {
-    const exec = LibExecutor.#execs.get(name);
-    if (exec) return exec;
-    else if (executor instanceof WorkspaceExecutor) return new LibExecutor({ workspace: executor, name });
-    else return new LibExecutor({ workspace: executor.workspace, name });
+    return new LibExecutor({ workspace: executor instanceof WorkspaceExecutor ? executor : executor.workspace, name });
   }
 
   #akanConfig: AkanLibConfig | null = null;
@@ -1768,8 +1601,7 @@ export class PkgExecutor extends Executor {
     this.dist = new Executor(`dist/${name}`, `${this.workspace.workspaceRoot}/dist/pkgs/${name}`);
   }
   static from(executor: SysExecutor | WorkspaceExecutor, name: string) {
-    if (executor instanceof WorkspaceExecutor) return new PkgExecutor({ workspace: executor, name });
-    return new PkgExecutor({ workspace: executor.workspace, name });
+    return new PkgExecutor({ workspace: executor instanceof WorkspaceExecutor ? executor : executor.workspace, name });
   }
 
   #scanInfo: PkgInfo | null = null;
