@@ -634,8 +634,11 @@ export class SqlDocumentStore {
       const props = (this.database.doc[FIELD_META] as unknown as FieldMap)[field]?.getProps?.();
       if (value === null && !props?.nullable) {
         if (props?.default != null) {
-          doc[field] =
-            typeof props.default === "function" ? (props.default as (data: unknown) => unknown)(doc) : props.default;
+          doc[field] = freshDefault(
+            typeof props.default === "function" ? (props.default as (data: unknown) => unknown)(doc) : props.default,
+          );
+        } else if (props?.isClass && props.isScalar) {
+          doc[field] = getDefault((props.modelRef as { [FIELD_META]: FieldMap })[FIELD_META] as never);
         } else {
           doc[field] = SqlDocumentStore.#primitiveDefault(props as Record<string, unknown>);
         }
