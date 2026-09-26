@@ -27,10 +27,9 @@ import {
   parseRouteModuleKey,
   routeSegmentToTreePath,
 } from "akanjs/common";
-import { createElement, memo, type ReactNode, useRef } from "react";
 import * as ReactDOM from "react-dom/client";
+import { RenderLayer } from "./RenderLayer";
 import { useCsrValues } from "./useCsrValues";
-import { useFetch } from "./useFetch";
 
 type RouteModuleWithConfig = RouteModule & { pageConfig?: PageConfig };
 type CsrRouteModuleLoader = () => Promise<RouteModuleSource>;
@@ -40,44 +39,6 @@ declare global {
   interface Window {
     __AKAN_MOBILE_TARGET__?: { name: string; basePath?: string; indexPath?: string };
   }
-}
-
-interface RootRenderLayerProps {
-  renders: RouteRender[];
-  index: number;
-  params: Record<string, string>;
-  searchParams: Record<string, string | string[]>;
-}
-const RootRenderLayer = memo(({ renders, index, params, searchParams }: RootRenderLayerProps) => {
-  const isLast = index >= renders.length - 1;
-  const children = isLast ? null : (
-    <RootRenderLayer renders={renders} index={index + 1} params={params} searchParams={searchParams} />
-  );
-  const routeRender = renders[index];
-  const isAsyncRender = isAsyncRouteRender(routeRender);
-  const resultRef = useRef<ReactNode | Promise<ReactNode> | null>(null);
-  if (isAsyncRender && resultRef.current === null) {
-    resultRef.current = routeRender?.render({ children, params, searchParams } as never) ?? null;
-  }
-  const { fulfilled, value: Layout } = useFetch(resultRef.current);
-  if (!routeRender) return null;
-  if (!isAsyncRender) return createElement(routeRender.render as never, { children, params, searchParams } as never);
-  if (!fulfilled || !Layout) return <>{composeLoadingFallback(renders.slice(index), params)}</>;
-  return Layout;
-});
-
-function isAsyncRouteRender(routeRender?: RouteRender): boolean {
-  return Boolean(routeRender?.isAsync || routeRender?.render.constructor.name === "AsyncFunction");
-}
-
-function composeLoadingFallback(renders: RouteRender[], params: Record<string, string>): ReactNode {
-  let element: ReactNode = null;
-  for (let i = renders.length - 1; i >= 0; i--) {
-    const Loading = renders[i]?.Loading;
-    if (!Loading) continue;
-    element = Loading({ params, children: element } as never) as ReactNode;
-  }
-  return element;
 }
 
 export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
@@ -274,7 +235,7 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
     return (
       <csrContext.Provider value={csrValues}>
         {location.pathRoute.renderRootLayouts.length > 0 ? (
-          <RootRenderLayer
+          <RenderLayer
             renders={location.pathRoute.renderRootLayouts}
             index={0}
             params={location.params}
