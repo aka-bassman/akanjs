@@ -18,7 +18,7 @@ import type {
   SliceCls,
   SliceInfo,
 } from "akanjs/signal";
-import { refusesAgents } from "../guard";
+import { type GuardCls, refusesAgents } from "../guard";
 
 export class FetchSerializer {
   static logger = new Logger("FetchSerializer");
@@ -123,15 +123,10 @@ export class FetchSerializer {
 
   static serializeDatabaseSignal(sliceCls: SliceCls, endpointCls: EndpointCls): SerializedSignal {
     const sliceMeta = sliceCls[SLICE_META] as { [key: string]: SliceInfo };
-    const endpointMeta = endpointCls[ENDPOINT_META] as { [key: string]: EndpointInfo };
     const prefix = sliceCls.srv.cnst?.refName;
     const slice: { [key: string]: SerializedSlice } = {};
     for (const [key, sliceInfo] of Object.entries(sliceMeta)) {
       slice[key] = FetchSerializer.#serializeSlice(sliceInfo);
-    }
-    const endpoint: { [key: string]: SerializedEndpoint } = {};
-    for (const [key, endpointInfo] of Object.entries(endpointMeta)) {
-      endpoint[key] = FetchSerializer.#serializeEndpoint(endpointInfo);
     }
     const filter = FetchSerializer.#serializeFilter(sliceCls);
     // On the argument itself, so every schema reader (API explorer, OpenAPI, MCP) sees the keys it may pick.
@@ -141,26 +136,40 @@ export class FetchSerializer {
       ...(prefix ? { prefix } : {}),
       ...(Object.keys(slice).length ? { slice } : {}),
       ...(filter ? { filter } : {}),
-      ...(sliceCls.getGuards.filter((g) => g.name !== "None").length
-        ? { getGuards: sliceCls.getGuards.map((g) => g.name) }
-        : {}),
-      ...(sliceCls.cruGuards.filter((g) => g.name !== "None").length
-        ? { cruGuards: sliceCls.cruGuards.map((g) => g.name) }
-        : {}),
+      ...FetchSerializer.#guardNames("getGuards", sliceCls.getGuards),
+      ...FetchSerializer.#guardNames("cruGuards", sliceCls.cruGuards),
       // Emitted only when overriding cru (a distinct array reference); otherwise the client falls back to cruGuards.
-      ...(sliceCls.createGuards !== sliceCls.cruGuards && sliceCls.createGuards.filter((g) => g.name !== "None").length
-        ? { createGuards: sliceCls.createGuards.map((g) => g.name) }
-        : {}),
-      ...(sliceCls.updateGuards !== sliceCls.cruGuards && sliceCls.updateGuards.filter((g) => g.name !== "None").length
-        ? { updateGuards: sliceCls.updateGuards.map((g) => g.name) }
-        : {}),
-      ...(sliceCls.removeGuards !== sliceCls.cruGuards && sliceCls.removeGuards.filter((g) => g.name !== "None").length
-        ? { removeGuards: sliceCls.removeGuards.map((g) => g.name) }
-        : {}),
+      ...FetchSerializer.#guardNames(
+        "createGuards",
+        sliceCls.createGuards,
+        sliceCls.createGuards !== sliceCls.cruGuards,
+      ),
+      ...FetchSerializer.#guardNames(
+        "updateGuards",
+        sliceCls.updateGuards,
+        sliceCls.updateGuards !== sliceCls.cruGuards,
+      ),
+      ...FetchSerializer.#guardNames(
+        "removeGuards",
+        sliceCls.removeGuards,
+        sliceCls.removeGuards !== sliceCls.cruGuards,
+      ),
       ...FetchSerializer.#serializeSliceMcp(sliceCls),
       ...FetchSerializer.#serializeSliceAgents(sliceCls),
-      endpoint,
+      endpoint: FetchSerializer.#serializeEndpoints(endpointCls),
     };
+  }
+
+  static #guardNames<Key extends string>(key: Key, guards: GuardCls[], emit = true) {
+    if (!emit || !guards.some((guard) => guard.name !== "None")) return {};
+    return { [key]: guards.map((guard) => guard.name) } as { [K in Key]: string[] };
+  }
+
+  static #serializeEndpoints(endpointCls: EndpointCls) {
+    const endpoint: { [key: string]: SerializedEndpoint } = {};
+    for (const [key, endpointInfo] of Object.entries(endpointCls[ENDPOINT_META] as { [key: string]: EndpointInfo }))
+      endpoint[key] = FetchSerializer.#serializeEndpoint(endpointInfo);
+    return endpoint;
   }
 
   static #serializeSliceAgents(sliceCls: SliceCls): { agents?: SerializedSignalMcp } {
@@ -183,12 +192,7 @@ export class FetchSerializer {
   }
 
   static serializeServiceSignal(endpointCls: EndpointCls): SerializedSignal {
-    const endpointMeta = endpointCls[ENDPOINT_META] as { [key: string]: EndpointInfo };
-    const endpoint: { [key: string]: SerializedEndpoint } = {};
-    for (const [key, endpointInfo] of Object.entries(endpointMeta)) {
-      endpoint[key] = FetchSerializer.#serializeEndpoint(endpointInfo);
-    }
-    return { endpoint };
+    return { endpoint: FetchSerializer.#serializeEndpoints(endpointCls) };
   }
 
   /** A container that has not finished booting answers an empty catalogue rather than throwing. */

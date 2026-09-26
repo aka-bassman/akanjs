@@ -20,7 +20,7 @@ import type { Adaptor, AdaptorCls, DatabaseService, InjectRegistry, LiveRegistry
 import type { Internal, InternalCls, InternalInfo, MiddlewareCls } from ".";
 import { CrossSiteGuard } from "./CrossSiteGuard";
 import { EndpointCache } from "./endpointCache";
-import type { EndpointInfo, EndpointType } from "./endpointInfo";
+import type { ArgInfo, EndpointInfo, EndpointType } from "./endpointInfo";
 import { Exception, isExceptionLike } from "./exception";
 import { type GuardCls, guardOf } from "./guard";
 import { SignalFailure } from "./SignalFailure";
@@ -32,6 +32,9 @@ export type SignalTransportType = "http" | "websocket";
 export type HttpPeerResolver = (req: Request) => { address: string; port: number } | null;
 
 const httpEndpointTypes = new Set<EndpointType>(["query", "mutation"]);
+
+const deserializeArg = (arg: ArgInfo, value: unknown) =>
+  deserialize(arg.argRef, arg.arrDepth, value, { key: arg.name, nullable: arg.option?.nullable, enum: arg.enum });
 
 interface WebSocketRequest {
   ws: Bun.ServerWebSocket<unknown>;
@@ -124,13 +127,9 @@ export class SignalContext<
       const httpCtx = this.getHttpContext();
       CrossSiteGuard.assertOrigin(httpCtx.req, httpCtx.url, this.key);
     }
-    if (this.trace) {
-      const start = performance.now();
-      this.args = await this.ctx.getArgs(this.endpointInfo);
-      this.trace.recordSpan("argParse", performance.now() - start);
-    } else {
-      this.args = await this.ctx.getArgs(this.endpointInfo);
-    }
+    const start = this.trace ? performance.now() : 0;
+    this.args = await this.ctx.getArgs(this.endpointInfo);
+    this.trace?.recordSpan("argParse", performance.now() - start);
     return this;
   }
   // Sequential, not parallel: a call refused by two guards names the same one every time and stops at the first.
@@ -264,25 +263,18 @@ export class SignalContext<
     // A pubsub's return is not sent; a live slice's exec returns the resolved query its room is routed by.
     if (this.endpointInfo.type === "pubsub") return result;
     if (result instanceof Response) return result;
+    const resolveOption = {
+      signalContext: this,
+      returnRef: this.endpointInfo.returns.returnRef,
+      arrDepth: this.endpointInfo.returns.arrDepth,
+      registry: this.#registry,
+      live: this.#live,
+    };
     if (!this.trace) {
-      const resolved = await SignalContext.resolveReturn(result, {
-        signalContext: this,
-        returnRef: this.endpointInfo.returns.returnRef,
-        arrDepth: this.endpointInfo.returns.arrDepth,
-        registry: this.#registry,
-        live: this.#live,
-      });
+      const resolved = await SignalContext.resolveReturn(result, resolveOption);
       return this.ctx.makeResponse(this.#settleUndefined(resolved), this.endpointInfo);
     }
-    const resolved = await traceSpan("resolveReturn", () =>
-      SignalContext.resolveReturn(result, {
-        signalContext: this,
-        returnRef: this.endpointInfo.returns.returnRef,
-        arrDepth: this.endpointInfo.returns.arrDepth,
-        registry: this.#registry,
-        live: this.#live,
-      }),
-    );
+    const resolved = await traceSpan("resolveReturn", () => SignalContext.resolveReturn(result, resolveOption));
     return await traceSpan("serialize", async () =>
       this.ctx.makeResponse(this.#settleUndefined(resolved), this.endpointInfo),
     );
@@ -550,26 +542,21 @@ export class SignalContext<
     }
     if (arrDepth > 0 && Array.isArray(value) && value.length === 0) return [];
     if (arrDepth === 0)
-      return await service.__load(String(value)).then((doc) => {
-        if (doc === null) {
-          if (nullable) return null;
-          else throw new Error(`Document ${value} is not found`);
-        } else return doc.toJSON();
-      });
+      return await service.__load(String(value)).then((doc) => SignalContext.#loadedJson(doc, value, nullable));
     if (arrDepth === 1)
-      return await service.__loadMany(value as string[]).then((docs) =>
-        docs.map((doc) => {
-          if (doc === null) {
-            if (nullable) return null;
-            else throw new Error(`Document ${value} is not found`);
-          } else return doc.toJSON();
-        }),
-      );
+      return await service
+        .__loadMany(value as string[])
+        .then((docs) => docs.map((doc) => SignalContext.#loadedJson(doc, value, nullable)));
     return await Promise.all(
       (value as unknown[]).map(
         async (v) => await SignalContext.loadNested(v, service, { arrDepth: arrDepth - 1, nullable }),
       ),
     );
+  }
+  static #loadedJson(doc: { toJSON: () => unknown } | null, value: unknown, nullable: boolean) {
+    if (doc !== null) return doc.toJSON();
+    if (nullable) return null;
+    throw new Error(`Document ${value} is not found`);
   }
   getHttpContext<Appended = unknown>() {
     if (this.transport !== "http") throw new Error("Transport is not http");
@@ -712,26 +699,14 @@ export class HttpExecutionContext<Appended = unknown> {
     const args = endpointInfo.args.map((arg) => {
       switch (arg.type) {
         case "param":
-          return deserialize(arg.argRef, arg.arrDepth, this.params[arg.name], {
-            key: arg.name,
-            nullable: arg.option?.nullable,
-            enum: arg.enum,
-          });
+          return deserializeArg(arg, this.params[arg.name]);
         case "body":
           if (arg.argRef === Upload) return this.body[arg.name];
-          return deserialize(arg.argRef, arg.arrDepth, this.body[arg.name], {
-            key: arg.name,
-            nullable: arg.option?.nullable,
-            enum: arg.enum,
-          });
+          return deserializeArg(arg, this.body[arg.name]);
         case "search": {
           const raw = arg.arrDepth ? this.url.searchParams.getAll(arg.name) : this.url.searchParams.get(arg.name);
           const value = arg.argRef === Any ? HttpExecutionContext.#parseAny(arg.name, raw) : raw;
-          const result = deserialize(arg.argRef, arg.arrDepth, value, {
-            key: arg.name,
-            nullable: arg.option?.nullable,
-            enum: arg.enum,
-          });
+          const result = deserializeArg(arg, value);
           this.searchParams[arg.name] = result;
           return result;
         }
@@ -770,17 +745,8 @@ export class WebSocketExecutionContext<Appended = unknown> {
     const args = endpointInfo.args.map((arg, idx) => {
       switch (arg.type) {
         case "msg":
-          return deserialize(arg.argRef, arg.arrDepth, this.data[idx], {
-            key: arg.name,
-            nullable: arg.option?.nullable,
-            enum: arg.enum,
-          });
         case "room":
-          return deserialize(arg.argRef, arg.arrDepth, this.data[idx], {
-            key: arg.name,
-            nullable: arg.option?.nullable,
-            enum: arg.enum,
-          });
+          return deserializeArg(arg, this.data[idx]);
         default:
           return undefined;
       }

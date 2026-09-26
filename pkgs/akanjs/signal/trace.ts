@@ -12,21 +12,14 @@ import {
 let traceEnabledCache: boolean | null = null;
 let logContextEnabledCache: boolean | null = null;
 
-/** Reads `AKAN_TRACE=1` once and caches it. */
-export const isTraceEnabled = (): boolean => {
-  if (traceEnabledCache === null) traceEnabledCache = process.env.AKAN_TRACE === "1";
-  return traceEnabledCache;
-};
+export const isTraceEnabled = (): boolean => (traceEnabledCache ??= process.env.AKAN_TRACE === "1");
 
 export const setTraceEnabled = (enabled: boolean): void => {
   traceEnabledCache = enabled;
 };
 
-export const isLogContextEnabled = (): boolean => {
-  if (logContextEnabledCache === null)
-    logContextEnabledCache = !(process.env.AKAN_LOG_CONTEXT === "0" || process.env.AKAN_LOG_CONTEXT === "false");
-  return logContextEnabledCache;
-};
+export const isLogContextEnabled = (): boolean =>
+  (logContextEnabledCache ??= !(process.env.AKAN_LOG_CONTEXT === "0" || process.env.AKAN_LOG_CONTEXT === "false"));
 
 export const setLogContextEnabled = (enabled: boolean): void => {
   logContextEnabledCache = enabled;
@@ -50,10 +43,7 @@ export const setCanonicalLineMode = (mode: CanonicalLineMode): void => {
 };
 
 let flightEnabledCache: boolean | null = null;
-export const isFlightRecorderEnabled = (): boolean => {
-  if (flightEnabledCache === null) flightEnabledCache = isOn(process.env.AKAN_LOG_FLIGHT);
-  return flightEnabledCache;
-};
+export const isFlightRecorderEnabled = (): boolean => (flightEnabledCache ??= isOn(process.env.AKAN_LOG_FLIGHT));
 export const setFlightRecorderEnabled = (enabled: boolean): void => {
   flightEnabledCache = enabled;
   refreshLoggerContextGate();
@@ -295,12 +285,8 @@ const traceProcessStore = process as unknown as {
   __akanTraceAggregator?: TraceAggregator;
 };
 
-let alsInstance = traceProcessStore.__akanTraceAls;
-if (!alsInstance) {
-  alsInstance = new AsyncLocalStorage<SignalTrace>();
-  traceProcessStore.__akanTraceAls = alsInstance;
-}
-const als = alsInstance;
+traceProcessStore.__akanTraceAls ??= new AsyncLocalStorage<SignalTrace>();
+const als = traceProcessStore.__akanTraceAls;
 
 export const getCurrentTrace = (): SignalTrace | undefined => als.getStore();
 
@@ -469,12 +455,8 @@ const round = (value: number, digits = 3): number => {
   return Math.round(value * factor) / factor;
 };
 
-let aggregatorInstance = traceProcessStore.__akanTraceAggregator;
-if (!aggregatorInstance) {
-  aggregatorInstance = new TraceAggregator();
-  traceProcessStore.__akanTraceAggregator = aggregatorInstance;
-}
-export const traceAggregator: TraceAggregator = aggregatorInstance;
+traceProcessStore.__akanTraceAggregator ??= new TraceAggregator();
+export const traceAggregator: TraceAggregator = traceProcessStore.__akanTraceAggregator;
 
 export const getTraceSnapshot = () => traceAggregator.snapshot();
 

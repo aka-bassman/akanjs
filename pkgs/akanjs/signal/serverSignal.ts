@@ -65,14 +65,14 @@ export const serverSignal = <EnpCls, IntCls>(
     queue: plug(QueueAdaptorRole),
   })) {
     static readonly [ENDPOINT_META] = Object.fromEntries(
-      Object.entries((endpointRef as unknown as EndpointCls)[ENDPOINT_META])
-        .filter(([key, endpointInfo]) => endpointInfo.type === "pubsub")
-        .map(([key, value]) => [key, value]),
+      Object.entries((endpointRef as unknown as EndpointCls)[ENDPOINT_META]).filter(
+        ([, endpointInfo]) => endpointInfo.type === "pubsub",
+      ),
     );
     static readonly [INTERNAL_META] = Object.fromEntries(
-      Object.entries((internalRef as unknown as InternalCls)[INTERNAL_META])
-        .filter(([key, internalInfo]) => internalInfo.type === "process")
-        .map(([key, value]) => [key, value]),
+      Object.entries((internalRef as unknown as InternalCls)[INTERNAL_META]).filter(
+        ([, internalInfo]) => internalInfo.type === "process",
+      ),
     );
   } as unknown as ServerSignalCls<EnpCls, IntCls>;
 };
