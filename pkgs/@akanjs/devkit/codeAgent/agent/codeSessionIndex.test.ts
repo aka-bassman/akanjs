@@ -44,6 +44,15 @@ describe("CodeSessionIndex", () => {
     expect(CodeSessionIndex.list(dir).map((entry) => entry.id)).toEqual(["s3"]);
   });
 
+  test("a session past the read limit is still listed, from its opening lines", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "akan-sessions-"));
+    const filler = assistant("x".repeat(64 * 1024));
+    write(dir, "big", [session("big"), user("port the dashboard"), ...Array.from({ length: 10 }, () => filler)]);
+    const [entry] = CodeSessionIndex.list(dir);
+    expect(entry?.id).toBe("big");
+    expect(entry?.opening).toBe("port the dashboard");
+  });
+
   test("an id resolves to its file, and an unknown one to nothing", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "akan-sessions-"));
     const file = write(dir, "s4", [session("s4"), user("hi")]);
