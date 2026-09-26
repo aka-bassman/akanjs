@@ -1,9 +1,7 @@
 import { cn } from "akanjs/client";
 
 export interface TemplateProps {
-  /** Additional classes merged with the default vertical form/template spacing. */
   className?: string;
-  /** Template content, usually Field components in a model form. */
   children?: React.ReactNode;
 }
 export const Template = ({ className, children }: TemplateProps) => {
