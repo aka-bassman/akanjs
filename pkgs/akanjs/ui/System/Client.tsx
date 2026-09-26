@@ -41,10 +41,6 @@ import { getFrameCssVars } from "./Common";
 import { Messages } from "./Messages";
 import { Reconnect } from "./Reconnect";
 
-declare global {
-  var __AKAN_GET_SYNC_ROUTE_HREF__: ((href: string) => string) | undefined;
-}
-
 export const Client = () => {
   return <></>;
 };

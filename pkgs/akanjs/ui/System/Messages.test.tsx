@@ -1,8 +1,7 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
-import { l, setTestEnv } from "../testHelpers.fixture";
+import { l, mountAsync, setTestEnv } from "../testHelpers.fixture";
 import { type AkanUiOverrides, UiOverrideProvider } from "../UiOverride";
 
 let Messages: typeof import("./Messages").Messages;
@@ -17,16 +16,7 @@ beforeAll(async () => {
   ({ st } = await import("akanjs/store"));
 });
 
-const mount = async (children = <Messages />) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => root.render(children));
-  return () => {
-    act(() => root.unmount());
-    container.remove();
-  };
-};
+const mount = async (children = <Messages />) => (await mountAsync(children)).unmount;
 
 const wait = (ms: number) => act(async () => new Promise((resolve) => setTimeout(resolve, ms)));
 

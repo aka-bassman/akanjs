@@ -5,7 +5,7 @@ import { ConstantRegistry, via } from "akanjs/constant";
 import type { SerializedSignal } from "akanjs/signal";
 import { AgenticSurface } from "use-agentic";
 import { store } from "../store";
-import { stubSignal } from "../store.fixture";
+import { setTestEnv, stubSignal } from "../store.fixture";
 import { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
 import { AgentBridge } from "./AgentBridge";
@@ -45,10 +45,7 @@ let instance: StoreInstance;
 const entryOf = (name: string) => source.tools().find((tool) => tool.name === name);
 
 beforeAll(() => {
-  process.env.AKAN_PUBLIC_APP_NAME = "surfacetest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "surfacetest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("surfacetest");
   Translator.setActiveLocale("en");
   class SurfaceNoteStore extends store(stubSignal("surfaceNote", noteConstant, serializedSignal), () => ({})) {
     async publishNote() {

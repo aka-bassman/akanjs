@@ -30,21 +30,12 @@ import { FetchHandle } from "./fetchHandle";
 import { HttpClient } from "./httpClient";
 import type { ErrorConstructor } from "./remoteError";
 import { SliceInitHandle } from "./sliceInitHandle";
+import { expandQueryArgs, normalizeQueryArgs } from "./sliceQueryArgs";
 import { WsClient } from "./wsClient";
 
 type FetchHandler = (...args: unknown[]) => PromiseOrObject<unknown>;
 type FetchHandlerFactory = () => FetchHandler;
 type UnknownRecord = Record<string, unknown>;
-
-const isNullableArg = (arg: SerializedArg) => arg.nullable ?? arg.type === "search";
-
-const normalizeQueryArgs = (queryArgs: unknown[], args: SerializedArg[]) => {
-  let length = Math.min(queryArgs.length, args.length);
-  while (length > 0 && isNullableArg(args[length - 1]) && queryArgs[length - 1] == null) length--;
-  return queryArgs.slice(0, length);
-};
-
-const expandQueryArgs = (queryArgs: unknown[], args: SerializedArg[]) => args.map((_, idx) => queryArgs[idx]);
 
 export type FetchProxy<
   FetchType = unknown,

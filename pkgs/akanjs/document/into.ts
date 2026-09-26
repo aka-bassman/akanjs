@@ -10,6 +10,7 @@ import type { DocumentProjection } from "./types";
 
 export type CRUDEventType = "create" | "update" | "remove";
 export type SaveEventType = "save" | CRUDEventType;
+export type SaveEventListener<Doc> = (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>;
 
 interface DefaultMdlStats<
   TDocument,
@@ -24,14 +25,8 @@ interface DefaultMdlStats<
   pickById: (docId: string | undefined, projection?: _Projection) => Promise<TDocument>;
   sample: (query: _FilterQuery, size?: number) => Promise<TDocument[]>;
   sampleOne: (query: _FilterQuery) => Promise<TDocument | null>;
-  listenPre: (
-    eventType: SaveEventType,
-    listener: (doc: TDocument, type: CRUDEventType, previous?: TDocument) => PromiseOrObject<void>,
-  ) => () => void;
-  listenPost: (
-    eventType: SaveEventType,
-    listener: (doc: TDocument, type: CRUDEventType, previous?: TDocument) => PromiseOrObject<void>,
-  ) => () => void;
+  listenPre: (eventType: SaveEventType, listener: SaveEventListener<TDocument>) => () => void;
+  listenPost: (eventType: SaveEventType, listener: SaveEventListener<TDocument>) => () => void;
 }
 export interface UpdateResult {
   acknowledged: boolean;

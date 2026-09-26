@@ -7,6 +7,7 @@ import {
   type LogRecord,
   logSeverity,
   registerLogContextReader,
+  round,
 } from "akanjs/common";
 
 let traceEnabledCache: boolean | null = null;
@@ -449,11 +450,6 @@ class TraceAggregator {
     return { enabled: isTraceEnabled(), endpoints };
   }
 }
-
-const round = (value: number, digits = 3): number => {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
-};
 
 traceProcessStore.__akanTraceAggregator ??= new TraceAggregator();
 export const traceAggregator: TraceAggregator = traceProcessStore.__akanTraceAggregator;

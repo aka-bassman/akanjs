@@ -1,6 +1,7 @@
 import { createElement, type ReactNode, startTransition, type Usable, use, useLayoutEffect, useState } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { createFromReadableStream } from "react-server-dom-webpack/client.browser";
+import type {} from "../client/rscNavigation";
 import {
   type AkanHeadSnapshotV1,
   type AkanRouterStateV1,
@@ -41,15 +42,7 @@ declare global {
   var __RSC_PUSH__: ((type: InlineRscChunk[0], data: string) => void) | undefined;
   var __RSC_CLOSE__: (() => void) | undefined;
   var __AKAN_RSC_INITIAL_STATE__: string | undefined;
-  var __AKAN_RSC_NAVIGATE__:
-    | ((href: string, options?: { replace?: boolean; scrollToTop?: boolean }) => Promise<void>)
-    | undefined;
   var __AKAN_RSC_REFRESH__: ((options?: { buildId?: number }) => Promise<void>) | undefined;
-  var __AKAN_RSC_CLEAR_CACHE__: (() => void) | undefined;
-  var __AKAN_RSC_IS_FROM_CACHE__: (() => boolean) | undefined;
-  var __AKAN_DEV_SYNC_NAVIGATION__: ((href: string, kind: "push" | "replace" | "back" | "pop") => void) | undefined;
-  var __AKAN_DEV_SYNC_NAVIGATION_APPLYING__: boolean | undefined;
-  var __AKAN_GET_SYNC_ROUTE_HREF__: ((href: string) => string) | undefined;
 }
 
 function decodeInlineRscChunk([type, data]: InlineRscChunk): Uint8Array {

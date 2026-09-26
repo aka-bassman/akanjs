@@ -5,13 +5,7 @@ import type { ClientSignal } from "akanjs/fetch";
 import { act, type ReactNode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 
-/** Call before importing `akanjs/client` or `akanjs/store`: both read the env while the module evaluates. */
-export const setTestEnv = (appName: string) => {
-  process.env.AKAN_PUBLIC_APP_NAME = appName;
-  process.env.AKAN_PUBLIC_REPO_NAME = appName;
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
-};
+export { setTestEnv } from "../store/store.fixture";
 
 export const l = Object.assign((key: string) => key, {
   _: (key: string) => key,
@@ -19,28 +13,29 @@ export const l = Object.assign((key: string) => key, {
   trans: (translation: Record<string, string>) => translation.en,
 });
 
-export const mount = (node: ReactNode) => {
+const attach = () => {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
-  act(() => root.render(node));
-  return {
-    container,
-    unmount: () => {
-      act(() => root.unmount());
-      container.remove();
-    },
+  const unmount = () => {
+    act(() => root.unmount());
+    container.remove();
   };
+  return { container, root, unmount };
+};
+
+export const mount = (node: ReactNode) => {
+  const { container, root, unmount } = attach();
+  act(() => root.render(node));
+  return { container, unmount };
 };
 
 export const mountAsync = async (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
+  const { container, root, unmount } = attach();
   await act(async () => {
     root.render(node);
   });
-  return { container, unmount: () => act(() => root.unmount()) };
+  return { container, unmount };
 };
 
 export const mountSuspense = (node: ReactNode) => mountAsync(<Suspense>{node}</Suspense>);

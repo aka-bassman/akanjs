@@ -1,5 +1,5 @@
 import { INJECT_META } from "akanjs/base";
-import { lowerlize } from "akanjs/common";
+import { lowerlize, toError } from "akanjs/common";
 import { ConstantRegistry } from "akanjs/constant";
 import type { InjectInfo } from "akanjs/service";
 import type { DatabaseModule, ServiceModule } from "../akanLib";
@@ -119,10 +119,6 @@ export const throwStageFailures = (
   const summary = failures.map((f) => `  • ${f.label}: ${reasonMessage(f.reason)}`).join("\n");
   const errors = failures.map((f) => toError(f.reason));
   throw new AggregateError(errors, `[DI:${stageLabel}] ${failures.length}/${total} task(s) failed:\n${summary}`);
-};
-
-export const toError = (reason: unknown): Error => {
-  return reason instanceof Error ? reason : new Error(String(reason));
 };
 
 export const reasonMessage = (reason: unknown): string => {

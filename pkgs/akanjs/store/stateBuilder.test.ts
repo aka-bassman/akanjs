@@ -8,6 +8,7 @@ import {
   resolveDerivedState,
   resolveWritableState,
 } from "./stateBuilder";
+import { setTestEnv } from "./store.fixture";
 
 class StateBuilderTestMode extends enumOf("StateBuilderTestMode", ["list", "grid"] as const) {}
 const StateBuilderTestAddress = via((f) => ({
@@ -16,12 +17,7 @@ const StateBuilderTestAddress = via((f) => ({
 }));
 ConstantRegistry.buildScalar("stateBuilderTestAddress", StateBuilderTestAddress, { StateBuilderTestAddress });
 
-const setupEnv = () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "storetest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "storetest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
-};
+const setupEnv = () => setTestEnv("storetest");
 
 describe("makeDefaultFactory", () => {
   test("preserves DataList instances when cloning default state", async () => {

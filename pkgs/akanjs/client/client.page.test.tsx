@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
 import { interpolateTranslation } from "../common/interpolateTranslation";
-import { pathGetLoose } from "../common/pathGetLoose";
+import { pathGetLoose } from "../common/objectPath";
 
 type EnvMode = "browser" | "server";
 

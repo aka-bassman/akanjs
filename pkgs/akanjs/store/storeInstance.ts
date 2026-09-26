@@ -1,7 +1,7 @@
 import { ACTION_META, ACTION_OWNER_META, getEnv, STATE_DERIVED_META, STATE_INIT_META } from "akanjs/base";
 import { Translator } from "akanjs/client";
 import { loadCapacitorApp } from "akanjs/client/capacitor";
-import { capitalize, type DynamicRecord, Logger, parseAkanI18nEnv } from "akanjs/common";
+import { capitalize, type DynamicRecord, isRecord, Logger, parseAkanI18nEnv } from "akanjs/common";
 import { ConstantRegistry } from "akanjs/constant";
 import type { SerializedArg } from "akanjs/signal";
 import { enableMapSet, produce } from "immer";
@@ -25,9 +25,6 @@ type StoreStateRecord = Record<string, unknown>;
 const DRAFT_DEBOUNCE_MS = 400;
 type StoreAction = (...args: unknown[]) => unknown;
 type TranslationParam = Record<string, string | number>;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value && typeof value === "object" && !Array.isArray(value));
 
 const getActionErrorKey = (error: unknown) => {
   if (typeof error === "string") return error;

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { matchRoutePattern } from "akanjs/common";
+import { matchRoutePrefix } from "../../common/routeConvention";
 
 export interface RouteSeedEntry {
   routeId: string;
@@ -71,7 +72,7 @@ export class RouteSeedIndexStore {
     const candidates = entries
       .map((entry) => ({
         entry,
-        params: RouteSeedIndexStore.#matchRoutePrefix(entry.pattern ?? entry.routeId, pathname),
+        params: matchRoutePrefix(entry.pattern ?? entry.routeId, pathname),
       }))
       .filter((entry): entry is { entry: RouteSeedEntry; params: Record<string, string> } => Boolean(entry.params))
       .sort((a, b) => {
@@ -81,24 +82,6 @@ export class RouteSeedIndexStore {
         return a.entry.pattern < b.entry.pattern ? -1 : a.entry.pattern > b.entry.pattern ? 1 : 0;
       });
     return candidates[0] ?? null;
-  }
-
-  static #matchRoutePrefix(pattern: string, pathname: string): Record<string, string> | null {
-    const patternParts = pattern.split("/").filter(Boolean);
-    const pathParts = pathname.split("/").filter(Boolean);
-    if (patternParts.length > pathParts.length) return null;
-    const params: Record<string, string> = {};
-    for (let index = 0; index < patternParts.length; index++) {
-      const patternPart = patternParts[index];
-      const pathPart = pathParts[index];
-      if (!patternPart || !pathPart) return null;
-      if (patternPart.startsWith(":")) {
-        params[patternPart.slice(1)] = decodeURIComponent(pathPart);
-        continue;
-      }
-      if (patternPart !== pathPart) return null;
-    }
-    return params;
   }
 
   static #normalizeArtifactPath(artifactPath: string, artifactDir: string): string {

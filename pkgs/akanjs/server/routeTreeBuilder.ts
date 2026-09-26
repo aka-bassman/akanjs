@@ -26,6 +26,7 @@ import {
   type RouteModuleSource,
   resolveRouteModule,
 } from "../client/route/resolveRouteModule";
+import { matchRoutePrefix } from "../common/routeConvention";
 
 type RouteModuleKindWithOverrides = "page" | "layout" | "overrides";
 
@@ -115,7 +116,7 @@ export class RouteTreeBuilder {
     const candidates = fallbackRoutes
       .map((fallbackRoute) => ({
         fallbackRoute,
-        params: RouteTreeBuilder.#matchRoutePrefix(fallbackRoute.path, pathname),
+        params: matchRoutePrefix(fallbackRoute.path, pathname),
       }))
       .filter((entry): entry is { fallbackRoute: LayoutFallbackRoute; params: Record<string, string> } =>
         Boolean(entry.params),
@@ -358,23 +359,5 @@ export class RouteTreeBuilder {
       }
       return undefined;
     };
-  }
-
-  static #matchRoutePrefix(pattern: string, pathname: string): Record<string, string> | null {
-    const patternParts = pattern.split("/").filter(Boolean);
-    const pathParts = pathname.split("/").filter(Boolean);
-    if (patternParts.length > pathParts.length) return null;
-    const params: Record<string, string> = {};
-    for (let index = 0; index < patternParts.length; index++) {
-      const patternPart = patternParts[index];
-      const pathPart = pathParts[index];
-      if (!patternPart || !pathPart) return null;
-      if (patternPart.startsWith(":")) {
-        params[patternPart.slice(1)] = decodeURIComponent(pathPart);
-        continue;
-      }
-      if (patternPart !== pathPart) return null;
-    }
-    return params;
   }
 }

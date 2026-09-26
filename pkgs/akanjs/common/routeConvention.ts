@@ -215,6 +215,20 @@ export function matchRoutePattern(pattern: string, pathname: string): Record<str
   return params;
 }
 
+export function matchRoutePrefix(pattern: string, pathname: string): Record<string, string> | null {
+  const patternParts = pattern.split("/").filter(Boolean);
+  const pathParts = pathname.split("/").filter(Boolean);
+  if (patternParts.length > pathParts.length) return null;
+  const params: Record<string, string> = {};
+  for (let i = 0; i < patternParts.length; i++) {
+    const pat = patternParts[i];
+    const val = pathParts[i];
+    if (pat.startsWith(":")) params[pat.slice(1)] = decodeURIComponent(val);
+    else if (pat !== val) return null;
+  }
+  return params;
+}
+
 export function assertUniqueRoutePatterns(entries: { key: string; pattern: string }[]): void {
   const byPattern = new Map<string, string>();
   for (const entry of entries) {

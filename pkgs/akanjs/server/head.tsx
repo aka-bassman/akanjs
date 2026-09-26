@@ -1,9 +1,6 @@
 import type { Head, ResolvedHead, ResolveHeadResult } from "akanjs/client";
+import { isRecord } from "akanjs/common";
 import { AKAN_RSC_HEAD_SNAPSHOT_VERSION, type AkanHeadSnapshotV1 } from "./routeState";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
 
 export function createAkanLocaleAlternateHeadSnapshot(languages: Record<string, string>): AkanHeadSnapshotV1 {
   return {

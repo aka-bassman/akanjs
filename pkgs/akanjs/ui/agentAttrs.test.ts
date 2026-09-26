@@ -1,8 +1,7 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import type { ClientSignal } from "akanjs/fetch";
 import { createElement } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
-import { setTestEnv } from "./testHelpers.fixture";
+import { setTestEnv, stubSignal } from "../store/store.fixture";
 
 let html: string;
 let plainHtml: string;
@@ -10,14 +9,13 @@ let plainHtml: string;
 beforeAll(async () => {
   setTestEnv("attrtest");
 
-  const [{ Int, SLICE_META }, { ConstantRegistry, via }, storeFacet, { registerClientRuntime }, { Input }] =
-    await Promise.all([
-      import("akanjs/base"),
-      import("akanjs/constant"),
-      import("akanjs/store"),
-      import("akanjs/client/clientRuntime"),
-      import("./Input"),
-    ]);
+  const [{ Int }, { ConstantRegistry, via }, storeFacet, { registerClientRuntime }, { Input }] = await Promise.all([
+    import("akanjs/base"),
+    import("akanjs/constant"),
+    import("akanjs/store"),
+    import("akanjs/client/clientRuntime"),
+    import("./Input"),
+  ]);
   const { store, StoreInstance, StoreRegistry } = storeFacet;
   // `Input` localizes its own validation message through `usePage()`, which needs the generated app client.
   registerClientRuntime({ usePage: () => ({ l: (key: string) => key }) } as never);
@@ -35,15 +33,12 @@ beforeAll(async () => {
     AttrInsight,
   });
 
-  const handlers: Record<string, unknown> = {};
-  const signal = {
-    refName: "attrMember",
-    _slice: { [SLICE_META]: {} },
-    cnst,
-    fetch: new Proxy(handlers, { get: (target, key: string) => (target[key] ??= async () => null) }),
-    serializedSignal: { prefix: "attrMember", cruGuards: ["SignedIn"], endpoint: {}, slice: {} },
-    slices: [],
-  } as unknown as ClientSignal<"attrMember">;
+  const signal = stubSignal("attrMember", cnst, {
+    prefix: "attrMember",
+    cruGuards: ["SignedIn"],
+    endpoint: {},
+    slice: {},
+  });
 
   class MemberStore extends store(signal, () => ({})) {}
   StoreRegistry.register(MemberStore);

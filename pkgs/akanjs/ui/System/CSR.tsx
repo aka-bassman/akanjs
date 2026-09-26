@@ -8,16 +8,15 @@ import {
   getPathInfo,
   type PathRoute,
   type ReactFont,
-  type RouteRender,
   router,
   useCsr,
   type WebAppManifest,
 } from "akanjs/client";
 import { st } from "akanjs/store";
 import { animated } from "akanjs/ui";
-import { useFetch } from "akanjs/webkit";
-import { type ComponentProps, createElement, memo, type ReactNode, type RefObject, useEffect, useRef } from "react";
+import { type ComponentProps, type ReactNode, type RefObject, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { RenderLayer } from "../../webkit/RenderLayer";
 
 import { FontFace } from "../FontFace";
 import { Load } from "../Load";
@@ -492,6 +491,7 @@ const CSRPageContainer = ({ pathRoute, prefix, layoutStyle }: CSRPageContainerPr
               index={0}
               params={location.params}
               searchParams={location.searchParams}
+              leaf={<></>}
             />
           </ClientPathWrapper>
         </animated.div>,
@@ -500,45 +500,5 @@ const CSRPageContainer = ({ pathRoute, prefix, layoutStyle }: CSRPageContainerPr
     </>
   );
 };
-
-interface RenderLayerProps {
-  renders: RouteRender[];
-  index: number;
-  params: Record<string, string>;
-  searchParams: Record<string, string | string[]>;
-}
-const RenderLayer = memo(({ renders, index, params, searchParams }: RenderLayerProps) => {
-  const isLast = index >= renders.length - 1;
-  const children = isLast ? (
-    <></>
-  ) : (
-    <RenderLayer renders={renders} index={index + 1} params={params} searchParams={searchParams} />
-  );
-  const routeRender = renders[index];
-  const isAsyncRender = isAsyncRouteRender(routeRender);
-  const resultRef = useRef<ReactNode | Promise<ReactNode> | null>(null);
-  if (isAsyncRender && resultRef.current === null) {
-    resultRef.current = routeRender?.render({ children, params, searchParams } as never) ?? null;
-  }
-  const { fulfilled, value: Component } = useFetch(resultRef.current);
-  if (!routeRender) return null;
-  if (!isAsyncRender) return createElement(routeRender.render as never, { children, params, searchParams } as never);
-  if (!fulfilled || !Component) return <>{composeLoadingFallback(renders.slice(index), params)}</>;
-  return <>{Component}</>;
-});
-
-function isAsyncRouteRender(routeRender?: RouteRender): boolean {
-  return Boolean(routeRender?.isAsync || routeRender?.render.constructor.name === "AsyncFunction");
-}
-
-function composeLoadingFallback(renders: RouteRender[], params: Record<string, string>): ReactNode {
-  let element: ReactNode = null;
-  for (let i = renders.length - 1; i >= 0; i--) {
-    const Loading = renders[i]?.Loading;
-    if (!Loading) continue;
-    element = Loading({ params, children: element } as never) as ReactNode;
-  }
-  return element;
-}
 
 export default CSRProvider;

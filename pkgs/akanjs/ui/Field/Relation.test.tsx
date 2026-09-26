@@ -1,9 +1,8 @@
 import "../../test/registerDom";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { DataList } from "akanjs/base";
-import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
-import { setTestEnv } from "../testHelpers.fixture";
+import { act } from "react";
+import { mountAsync, setTestEnv } from "../testHelpers.fixture";
 
 interface Row {
   id: string;
@@ -66,20 +65,6 @@ beforeEach(async () => {
   LightRefCache.reset();
 });
 
-const mount = async (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => root.render(node));
-  return {
-    container,
-    unmount: () => {
-      act(() => root.unmount());
-      container.remove();
-    },
-  };
-};
-
 /** Lets the id read settle: the row lands in a promise callback, and the subscription re-renders from there. */
 const settle = async () => {
   await act(async () => {
@@ -98,7 +83,7 @@ const click = async (el: Element | undefined) => {
 
 describe("Field.Parent", () => {
   test("renders the row it holds before the option list has loaded", async () => {
-    const { container, unmount } = await mount(
+    const { container, unmount } = await mountAsync(
       <Field.Parent<Row>
         slice={slice}
         value={{ id: "item-1", name: "Acme" }}
@@ -114,7 +99,7 @@ describe("Field.Parent", () => {
 
   test("keeps the list's own copy of a row it also holds", async () => {
     listed = [{ id: "item-1", name: "Acme Corp" }];
-    const { container, unmount } = await mount(
+    const { container, unmount } = await mountAsync(
       <Field.Parent<Row>
         slice={slice}
         value={{ id: "item-1", name: "Acme" }}
@@ -128,7 +113,7 @@ describe("Field.Parent", () => {
   });
 
   test("opens on the store's own list rather than invalidating it", async () => {
-    const { container, unmount } = await mount(
+    const { container, unmount } = await mountAsync(
       <Field.Parent<Row> slice={slice} value={null} onChange={() => undefined} renderOption={(m) => m.name} />,
     );
     await click(triggerOf(container));
@@ -140,7 +125,7 @@ describe("Field.Parent", () => {
 describe("Field.ParentId", () => {
   test("reads the row by id and renders what it reads", async () => {
     lightRows.set("item-1", { id: "item-1", name: "Acme" });
-    const { container, unmount } = await mount(
+    const { container, unmount } = await mountAsync(
       <Field.ParentId<Row> slice={slice} value="item-1" onChange={() => undefined} />,
     );
     await settle();
@@ -151,7 +136,7 @@ describe("Field.ParentId", () => {
 
   test("labels the option from the row when no renderer says otherwise", async () => {
     lightRows.set("item-1", { id: "item-1", name: "Acme" });
-    const { container, unmount } = await mount(
+    const { container, unmount } = await mountAsync(
       <Field.ParentId<Row> slice={slice} value="item-1" onChange={() => undefined} />,
     );
     await settle();
@@ -161,12 +146,12 @@ describe("Field.ParentId", () => {
   });
 
   test("shows the id when the row cannot be read, and reads it once", async () => {
-    const first = await mount(<Field.ParentId<Row> slice={slice} value="gone" onChange={() => undefined} />);
+    const first = await mountAsync(<Field.ParentId<Row> slice={slice} value="gone" onChange={() => undefined} />);
     await settle();
     expect(triggerOf(first.container).textContent).toContain("gone");
     first.unmount();
 
-    const second = await mount(<Field.ParentId<Row> slice={slice} value="gone" onChange={() => undefined} />);
+    const second = await mountAsync(<Field.ParentId<Row> slice={slice} value="gone" onChange={() => undefined} />);
     await settle();
     expect(triggerOf(second.container).textContent).toContain("gone");
     expect(lightCalls).toEqual(["gone"]);
@@ -175,7 +160,7 @@ describe("Field.ParentId", () => {
 
   test("leaves a row the list already carries alone", async () => {
     seed([{ id: "item-1", name: "Acme" }]);
-    const { container, unmount } = await mount(
+    const { container, unmount } = await mountAsync(
       <Field.ParentId<Row> slice={slice} value="item-1" onChange={() => undefined} />,
     );
     await settle();
@@ -187,7 +172,7 @@ describe("Field.ParentId", () => {
 
 describe("Field.Children", () => {
   test("renders every row it holds before the option list has loaded", async () => {
-    const { container, unmount } = await mount(
+    const { container, unmount } = await mountAsync(
       <Field.Children<Row>
         slice={slice}
         value={[
@@ -208,7 +193,7 @@ describe("Field.ChildrenId", () => {
   test("reads every id it holds", async () => {
     lightRows.set("item-1", { id: "item-1", name: "Acme" });
     lightRows.set("item-2", { id: "item-2", name: "Globex" });
-    const { container, unmount } = await mount(
+    const { container, unmount } = await mountAsync(
       <Field.ChildrenId<Row>
         slice={slice}
         value={["item-1", "item-2"]}

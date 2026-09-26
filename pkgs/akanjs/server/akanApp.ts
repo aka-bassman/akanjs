@@ -259,7 +259,7 @@ export class AkanApp {
     }
     this.#snapshotTimer = setInterval(() => this.#requestRoomSnapshots(), 30_000);
     this.#healthTimer = setInterval(() => this.#checkHealth(), 2_000);
-    this.#startMetricsReporting();
+    this.#metricsTimer ??= ProcessMetricsCollector.startReporting(() => this.#reportMetrics());
     process.on("message", (message) => this.#handleHostMessage(message as BuilderMessage));
     process.on("disconnect", () => this.#handleHostDisconnect());
     process.on("SIGINT", () => this.#handleShutdownSignal("SIGINT"));
@@ -1190,15 +1190,6 @@ export class AkanApp {
     const child = this.#children.get(childIdx);
     if (!child) return;
     child.metrics = { ...child.metrics, pid: metrics.pid ?? child.pid, ...metrics };
-  }
-
-  #startMetricsReporting() {
-    if (this.#metricsTimer) return;
-    const report = () => {
-      void this.#reportMetrics();
-    };
-    report();
-    this.#metricsTimer = setInterval(report, ProcessMetricsCollector.parseMemoryLogIntervalMs());
   }
 
   async #reportMetrics() {

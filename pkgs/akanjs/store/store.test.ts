@@ -6,7 +6,7 @@ import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
 import type { RootStoreCls } from "./rootStore";
 import { type StoreCls, store } from "./store";
-import { MemoryStorage } from "./store.fixture";
+import { MemoryStorage, setTestEnv } from "./store.fixture";
 import { StoreInstance } from "./storeInstance";
 import { StoreRegistry } from "./storeRegistry";
 
@@ -33,12 +33,7 @@ const storeTestConstant = ConstantRegistry.buildModel(
   StoreTestInsight,
   { StoreTestInput, StoreTestObject, StoreTestFull, StoreTestLight, StoreTestInsight },
 );
-const setupEnv = () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "storetest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "storetest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
-};
+const setupEnv = () => setTestEnv("storetest");
 
 const installBrowser = (searchParams: Record<string, string | string[]> = {}) => {
   const localStorage = new MemoryStorage();

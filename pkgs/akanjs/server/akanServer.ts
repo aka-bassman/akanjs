@@ -448,7 +448,7 @@ export class AkanServer {
     this.#localPublish = localPublish;
 
     this.status = "running";
-    this.#startMetricsReporting();
+    this.#metricsTimer ??= ProcessMetricsCollector.startReporting(() => this.#reportMetrics());
     this.#di.registerSchedule(this.serverMode);
     this.logger.verbose(`🚀 ${this.name} is running on ${unix ? `unix://${unix}` : `port ${port}`}`);
     const wsPort = this.#wsServer?.port;
@@ -477,7 +477,7 @@ export class AkanServer {
       this.status = "running";
       if (!isNoListenCommand) {
         Logger.role = this.serverMode;
-        this.#startMetricsReporting();
+        this.#metricsTimer ??= ProcessMetricsCollector.startReporting(() => this.#reportMetrics());
         this.#di.registerSchedule(this.serverMode);
         this.#registerParentIpc();
         await this.#startLogTransport();
@@ -560,15 +560,6 @@ export class AkanServer {
         .then(() => process.exit(0))
         .catch(() => process.exit(1));
     }
-  }
-
-  #startMetricsReporting() {
-    if (this.#metricsTimer) return;
-    const report = () => {
-      void this.#reportMetrics();
-    };
-    report();
-    this.#metricsTimer = setInterval(report, ProcessMetricsCollector.parseMemoryLogIntervalMs());
   }
 
   async #reportMetrics() {

@@ -1,8 +1,7 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import type { ClientSignal } from "akanjs/fetch";
 import { createElement } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
-import { setTestEnv } from "../testHelpers.fixture";
+import { setTestEnv, stubSignal } from "../../store/store.fixture";
 
 let html: string;
 let bridge: InstanceType<typeof import("akanjs/store")["AgentBridge"]>;
@@ -11,7 +10,7 @@ let Dock: typeof import("./Dock")["Dock"];
 beforeAll(async () => {
   setTestEnv("docktest");
 
-  const [{ Int, SLICE_META }, { ConstantRegistry, via }, storeFacet, dockFacet] = await Promise.all([
+  const [{ Int }, { ConstantRegistry, via }, storeFacet, dockFacet] = await Promise.all([
     import("akanjs/base"),
     import("akanjs/constant"),
     import("akanjs/store"),
@@ -42,15 +41,7 @@ beforeAll(async () => {
     endpoint: {},
     slice: { "": { args: [] } },
   };
-  const handlers: Record<string, unknown> = {};
-  const signal = {
-    refName: "dockDesk",
-    _slice: { [SLICE_META]: {} },
-    cnst,
-    fetch: new Proxy(handlers, { get: (target, key: string) => (target[key] ??= async () => null) }),
-    serializedSignal,
-    slices: [],
-  } as unknown as ClientSignal<"dockDesk">;
+  const signal = stubSignal("dockDesk", cnst, serializedSignal);
 
   class DeskStore extends store(signal, () => ({ deskDraft: "" })) {
     wipeDesk() {

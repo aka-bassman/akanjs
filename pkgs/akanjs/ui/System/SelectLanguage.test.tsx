@@ -1,8 +1,7 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
-import { act, type ReactElement } from "react";
-import { createRoot } from "react-dom/client";
-import { setTestEnv } from "../testHelpers.fixture";
+import type { ReactElement } from "react";
+import { mount, setTestEnv } from "../testHelpers.fixture";
 
 let SelectLanguage: typeof import("./SelectLanguage").SelectLanguage;
 let lib: typeof import("use-agentic");
@@ -21,13 +20,9 @@ beforeAll(async () => {
 });
 
 const offered = (node: ReactElement) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
+  const { unmount } = mount(node);
   const tool = lib.AgenticSurface.shared.snapshot().tools.find((tool) => tool.name === "setLanguage");
-  act(() => root.unmount());
-  container.remove();
+  unmount();
   const properties = tool?.parameters?.properties as { language?: { enum?: string[] } } | undefined;
   return properties?.language?.enum;
 };
