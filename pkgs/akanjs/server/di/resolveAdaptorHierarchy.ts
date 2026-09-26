@@ -9,14 +9,9 @@ interface AdaptorNode extends DependencyNode {
 export interface AdaptorHierarchy {
   graph: Map<string, AdaptorNode>;
   classToKey: Map<AdaptorCls, string>;
-  /** Each stage contains adaptor map keys that can be initialized concurrently. Stages run sequentially. */
   stages: string[][];
 }
 
-/**
- * Recursively collects all AdaptorCls referenced via `plug` injections,
- * starting from the given sources (services, adaptors, or anything with INJECT_META).
- */
 export function collectAdaptors(sources: { [INJECT_META]: Record<string, InjectInfo> }[]): Set<AdaptorCls> {
   const discovered = new Set<AdaptorCls>();
 

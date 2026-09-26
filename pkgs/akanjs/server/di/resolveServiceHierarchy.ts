@@ -9,7 +9,6 @@ interface ServiceNode extends DependencyNode {
 export interface ServiceHierarchy {
   graph: Map<string, ServiceNode>;
   classToKey: Map<ServiceCls, string>;
-  /** Each stage contains service map keys that can be initialized concurrently. Stages run sequentially. */
   stages: string[][];
 }
 

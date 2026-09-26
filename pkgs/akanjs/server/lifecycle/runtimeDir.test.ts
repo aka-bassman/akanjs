@@ -31,8 +31,6 @@ describe("runtime dir", () => {
     expect(resolveRuntimeDir()).toBe(path.resolve(process.cwd(), "local", "apps", "minimal", "runtime"));
   });
 
-  // The gateway writes child sockets here and a solo server writes the rotating log; switching between the
-  // two modes must not move either, which is the only reason this resolution is shared rather than inlined.
   test("answers the same for the gateway and for a solo server", () => {
     delete process.env.AKAN_RUNTIME_DIR;
     process.env.NODE_ENV = "production";

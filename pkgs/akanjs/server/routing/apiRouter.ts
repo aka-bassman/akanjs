@@ -9,12 +9,6 @@ import { SignalResolver } from "../resolver";
 import type { HttpRoutes, SignalRouteOptions, WebsocketRoutes } from "../types";
 import { AppWsData } from "./appWsData";
 
-/**
- * Minimal render-state view the HMR WS hello message needs.
- * `LazyHmrController` exposes this shape via `state.buildId` / `state.cssAssets`,
- * so the ws handler can greet freshly-connected clients
- * without reaching into the full controller.
- */
 export interface HmrStateSource {
   readonly state: {
     buildId: number;
@@ -31,7 +25,6 @@ export interface ApiRouteInputs {
   builtinRoutes?: HttpRoutes;
   routeOptions?: Record<string, SignalRouteOptions>;
   renderEnvRoutes: HttpRoutes;
-  /** Upgrades the incoming request into an app-signal WebSocket. */
   upgradeAppWs: (req: Request, data: AppWsData) => boolean;
   webProxyRunner?: WebProxyRunner | null;
 }
@@ -42,7 +35,6 @@ type RouteHandler = (req: Request) => Response | Promise<Response | undefined> |
 export interface WebsocketHandlersInputs {
   wsRoutes: WebsocketRoutes;
   registry: InjectRegistry;
-  /** Only live rooms need it — a room is released from the routing table when its last socket goes. */
   live?: LiveRegistry;
   hmrHub: HmrWsHub | null;
   hmrState: HmrStateSource | null;
@@ -53,12 +45,7 @@ export interface WebsocketHandlersInputs {
 type WsTaggedData = { kind?: string };
 
 export class ApiRouter {
-  /**
-   * Builds the full route table served by `Bun.serve`. Responsibilities:
-   *   1. Expose the WS upgrade endpoint at `<prefix><websocketPrefix>`.
-   *   2. Prefix every endpoint-generated route with `prefix`.
-   *   3. Merge render-env routes (CSR/SSR) last so they can catch-all `/*`.
-   */
+  // Render-env (CSR/SSR) routes merge last so they can catch-all `/*`.
   static buildRoutes({
     prefix,
     websocketPrefix,
@@ -92,12 +79,6 @@ export class ApiRouter {
       : routeTable;
   }
 
-  /**
-   * Builds the `websocket` handler config for `Bun.serve`. Multiplexes two
-   * logical channels on the same upgrade port:
-   *   - `kind === "akan-hmr"` — dev HMR, delegated to `HmrWsHub`.
-   *   - everything else — app signal channel, dispatched via `wsRoutes`.
-   */
   static buildWebsocketHandlers({
     wsRoutes,
     registry,
@@ -111,9 +92,7 @@ export class ApiRouter {
       // The only signal that a backpressured socket has caught up, so a parked frame retries here or on a timer.
       drain: () => onDrain?.(),
       open: (ws) => {
-        // HMR sockets live in a separate logical channel from the app's signal
-        // websockets. We tag them via `data.kind === "akan-hmr"` at upgrade
-        // time so the dispatcher can skip signal handling.
+        // HMR and app sockets share this upgrade; HMR ones are tagged `kind: "akan-hmr"` at upgrade time.
         const data = ws.data as WsTaggedData | undefined;
         if (data?.kind === "akan-hmr" && hmrHub && hmrState) {
           hmrHub.attach(ws as unknown as Bun.ServerWebSocket<HmrWsData>);
@@ -139,8 +118,7 @@ export class ApiRouter {
             const msg = JSON.parse(message) as WebsocketReqData;
             if (!msg.key) throw new Error("Message key is required");
             if (msg.key === websocketAuthContract.key) {
-              // Must stay synchronous: a subscribe frame sent right behind this one is dispatched
-              // next and has to see the new credential, not the one it replaced.
+              // Must stay synchronous: the next frame (e.g. a subscribe) has to see the new credential.
               AppWsData.applyCredential(AppWsData.of(ws), websocketAuthContract.readJwt(msg.data));
               const revokedRooms = await SignalResolver.revalidateWsRooms(ws, registry, live);
               ws.send(JSON.stringify(websocketAuthContract.makeAck(revokedRooms)));
@@ -236,15 +214,8 @@ export class ApiRouter {
     };
   }
 
-  /**
-   * Signal endpoints answer with a fully-built JSON body, so this is the one place every model response passes
-   * through with the request still in hand. The web routes are deliberately left out: their bodies stream, and
-   * `compressResponse` buffers.
-   *
-   * Behind the gateway this finds `Accept-Encoding: identity` and does nothing — the gateway asks for an
-   * identity body because Bun's `fetch` decodes any `Content-Encoding` it is handed, so a child that
-   * compressed here would only be paying to have the gateway undo it. The gateway compresses instead.
-   */
+  // Signal routes only: web bodies stream and `compressResponse` buffers. Behind the gateway this sees
+  // `Accept-Encoding: identity` (Bun's fetch decodes any Content-Encoding), so the gateway compresses instead.
   static #compressRoute(route: RouteValue): RouteValue {
     return ApiRouter.#mapRoute(route, (handler) => async (req) => {
       const response = await handler(req);

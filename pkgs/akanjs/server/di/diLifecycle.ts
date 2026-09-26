@@ -45,29 +45,11 @@ import {
 
 export interface DiLifecycleProps {
   env: BackendEnv;
-  /**
-   * Boot only these modules and the ones they reach, leaving every other module out of the container. Omitted or
-   * empty mounts every module whose service is enabled.
-   */
   modules?: string[];
-  /**
-   * Drop these modules and everything that reaches them, leaving the rest mounted. Applied over `modules`
-   * rather than beside it, so a module named by both stays out.
-   */
   disableModules?: string[];
-  /**
-   * The same, by owning lib: every database and service module the named libs registered goes, along with
-   * everything that reaches one. What a lib's `option.ts` contributes — middleware, web proxies, adaptor
-   * overrides — is untouched, as it is under `modules`.
-   */
   disableLibs?: string[];
 }
 
-/**
- * Owns the app's DI container state (registry + live maps + init order) and
- * encapsulates every init / destroy step. `AkanServer` delegates to this so the
- * top-level class can focus on HTTP / WS wiring and process lifecycle.
- */
 export class DiLifecycle {
   readonly logger: Logger = new Logger("DiLifecycle");
   readonly registry = getDefaultInjectRegistry();
@@ -84,13 +66,11 @@ export class DiLifecycle {
   readonly #adaptor = new Map<string, AdaptorCls>();
   readonly #middleware = new Map<string, MiddlewareCls>();
   readonly webProxies: WebProxyRegistration[] = [];
-  /** refName → why the module was dropped at construction time. Kept for introspection, not control flow. */
   readonly disabledModules = new Map<string, string>();
   readonly #predefinedAdaptor;
   readonly #predefinedAdaptorRole = predefinedAdaptorRole;
   readonly #cascade = new CascadeRunner();
 
-  /** Read-only view of the resolved module maps, for tooling that needs to describe the container. */
   get modules(): {
     database: ReadonlyMap<string, DatabaseModule>;
     service: ReadonlyMap<string, ServiceModule>;
@@ -107,8 +87,7 @@ export class DiLifecycle {
     };
   }
 
-  // The rule `getEnv()` settles on, run where a boot may fail: a mode that is misspelled, ambiguous or missing its
-  // drivers stops here and says what to fix, instead of surfacing as an import error inside an adaptor's init.
+  // Fails the boot with what to fix, instead of an import error inside an adaptor's init.
   static #databaseMode() {
     const { environment, operationMode } = getEnv();
     const mode = DatabaseModes.resolve({
@@ -146,15 +125,13 @@ export class DiLifecycle {
       service: srv.base,
       signal: SignalRegistry.registerService("base" as const, BaseInternal, BaseEndpoint, Base),
     });
-    // The in-page agent relay ships with the framework; a lib that still carries its own `agent` module wins the
-    // refName below (candidates merge last), so an older workspace copy keeps working unchanged.
+    // A lib still carrying its own `agent` module wins the refName below (candidates merge last).
     const frameworkAgent: ServiceModule | null = DiLifecycle.#envOn("AKAN_AGENT", "AKAN_PUBLIC_AGENT")
       ? { service: srv.agent, signal: agentSignal }
       : null;
     if (frameworkAgent) this.#service.set("agent", frameworkAgent);
     this.#middleware.set(Logging.refName, Logging);
-    // Registered rather than opt-in because it is what makes an endpoint's declared `timeout` mean anything;
-    // it stands aside for every endpoint that declared none.
+    // Always registered: it gives a declared `timeout` its meaning and stands aside when none is declared.
     this.#middleware.set(Timeout.refName, Timeout);
     const defaultOption = createDefaultAkanOption();
     defaultOption.getMiddlewares().forEach((middleware) => {
@@ -163,8 +140,7 @@ export class DiLifecycle {
     this.webProxies.push(...defaultOption.getWebProxies());
     const databaseCandidates = new Map<string, DiModuleCandidate>();
     const serviceCandidates = new Map<string, DiModuleCandidate>();
-    // Last writer wins, exactly as the candidate maps do: two libs declaring one refName leave the surviving
-    // candidate's own lib as its owner, so disabling the other lib does not take a module it did not provide.
+    // Last writer wins like the candidate maps, so disabling a lib never takes a module it did not provide.
     const moduleLibs = new Map<string, string>();
     libs.forEach((lib) => {
       lib.option.getMiddlewares().forEach((middleware) => {
@@ -213,7 +189,6 @@ export class DiLifecycle {
       this.#scalar.set("agentTurn", { constant: agentTurnConstant, database: agentTurnDocument });
     const adaptorClaims = new Map<string, AdaptorCls>();
     const adaptorRegistrations: Registration[] = [];
-    // A class reached twice is one adaptor, not two claimants; only a rival class under the same refName is recorded.
     const claimAdaptor = (adaptorCls: AdaptorCls, owner: string) => {
       const claimed = adaptorClaims.get(adaptorCls.refName);
       if (claimed === adaptorCls) return;
@@ -304,7 +279,6 @@ export class DiLifecycle {
       this.disabledModules.set(refName, reason);
       this.logger.verbose(`Skipping disabled module "${refName}": ${reason}`);
     });
-    // The named ones are the caller's own list; the modules that came with them are the surprise worth a line.
     const cascaded = [...excludedClosure]
       .filter((refName) => !excluded.has(refName))
       .sort((a, b) => a.localeCompare(b));
@@ -319,11 +293,7 @@ export class DiLifecycle {
     return new Set(disabledReasons.keys());
   }
 
-  /**
-   * The modules the caller took off, by name and by owning lib, each mapped to the reason it is gone. An
-   * unknown name is refused for the mirror of the reason `modules` refuses one: a typo there drops a module
-   * silently, and a typo here keeps one running silently.
-   */
+  // Unknown names throw: a typo here would keep a module running silently.
   #resolveExcludedModules({
     candidates,
     disableModules,
@@ -350,8 +320,7 @@ export class DiLifecycle {
       });
     }
     if (disableLibs.length) {
-      // Every mounted lib, not just the ones that registered a module: a lib that carries only scalars or an
-      // `option.ts` is a legitimate name to write, and refusing it would read as a typo.
+      // Every mounted lib counts: one carrying only scalars or an `option.ts` is a legitimate name.
       const known = new Set(this.#libs.map((lib) => lib.name));
       const unknown = disableLibs.filter((name) => !known.has(name));
       if (unknown.length) {
@@ -369,13 +338,7 @@ export class DiLifecycle {
     return excluded;
   }
 
-  /**
-   * The named modules closed over everything they reach: the services and signals they inject, and the cascade
-   * edges whose absence fails `CascadeRunner.seal`. `null` means no selection was asked for.
-   *
-   * An unknown name is refused rather than ignored, because a typo would otherwise boot an app with the module
-   * silently missing — the one failure this option exists to make impossible.
-   */
+  // Unknown names throw: a typo would otherwise boot with the module silently missing.
   #resolveSelectedModules(candidates: Map<string, DiModuleCandidate>, modules: string[]) {
     if (!modules.length) return null;
     const known = new Set([...candidates.keys(), ...this.#service.keys()]);
@@ -405,21 +368,12 @@ export class DiLifecycle {
     return selected;
   }
 
-  /**
-   * Run every init stage in dependency order and collect the generated routes.
-   *
-   * A stage runs its tasks in parallel and reports every failure, which means the ones that *succeeded*
-   * alongside a failure are live: connections opened, timers armed, `onInit` done. The error then propagates and
-   * the process usually exits, so this rarely mattered — but a caller that catches and retries (a test harness,
-   * a dev restart) accumulated them. `destroyAll` already walks the stages in reverse and skips what was never
-   * registered, so the wind-down is the one that already exists.
-   */
+  // Unwinds on failure: stage siblings that succeeded are live, and a retrying caller would accumulate them.
   async initializeAll(): Promise<SignalRoutes> {
     try {
       return await this.#initializeAll();
     } catch (error) {
       await this.destroyAll().catch((destroyError: unknown) => {
-        // The init failure is the one worth reporting; a failure while unwinding it is a footnote.
         this.logger.warn(`Failed to unwind a partial init: ${reasonMessage(destroyError)}`);
       });
       throw error;
@@ -452,7 +406,6 @@ export class DiLifecycle {
     };
   }
   async destroyAll() {
-    // 1. Run destroy internals (scheduled jobs, etc.)
     const internalNow = Date.now();
     this.logger.verbose("Running destroy internals...");
     try {
@@ -462,26 +415,22 @@ export class DiLifecycle {
     }
     this.logger.verbose(`Destroy internals in ${Date.now() - internalNow}ms`);
 
-    // 2. Destroy services (reverse order)
     const serviceNow = Date.now();
     this.logger.verbose("Destroying services...");
     await this.destroyServices();
     this.logger.verbose(`Destroy services in ${Date.now() - serviceNow}ms`);
 
-    // 3. Destroy adaptors (reverse order)
     const adaptorNow = Date.now();
     this.logger.verbose("Destroying adaptors...");
     await this.destroyAdaptors();
     this.logger.verbose(`Destroy adaptors in ${Date.now() - adaptorNow}ms`);
 
-    // 4. Destroy external uses (SDK clients, API wrappers, etc.)
     const usesNow = Date.now();
     this.logger.verbose("Destroying uses...");
     await this.destroyUses();
     this.logger.verbose(`Destroy uses in ${Date.now() - usesNow}ms`);
   }
 
-  /** Register scheduled jobs declared on internal signals. */
   registerSchedule(serverMode: "federation" | "batch" | "all") {
     const internals = [...this.#service.values(), ...this.#database.values()].map((mod) => mod.signal.internal);
     const failures: { label: string; reason: unknown }[] = [];
@@ -502,19 +451,16 @@ export class DiLifecycle {
     );
   }
 
-  /** Run the framework-level scheduler's onInit hooks after routes come up. */
   async runSchedulerInit() {
     const scheduler = this.#getScheduler();
     await scheduler._runInit();
   }
 
-  /** Run the framework-level scheduler's onDestroy hooks during shutdown. */
   async runSchedulerDestroy() {
     const scheduler = this.#getScheduler();
     await scheduler._runDestroy();
   }
 
-  /** Destroy services in reverse init order. Errors are logged, not thrown. */
   async destroyServices(): Promise<void> {
     const reversedStages = [...this.hierarchy.serviceStages].reverse();
     for (const stage of reversedStages) {
@@ -535,7 +481,6 @@ export class DiLifecycle {
     }
   }
 
-  /** Destroy adaptors in reverse init order. Errors are logged, not thrown. */
   async destroyAdaptors(): Promise<void> {
     const reversedStages = [...this.hierarchy.adaptorStages].reverse();
     for (const stage of reversedStages) {
@@ -743,8 +688,7 @@ export class DiLifecycle {
         })),
       );
     }
-    // Sealed only now: a service that registered a `remove` listener in `onInit` still counts against a bulk
-    // cascade, and every target service is live, so an unmounted one fails here instead of mid-removal.
+    // Sealed after every onInit: remove listeners registered there count, and an unmounted target fails here.
     this.#cascade.seal((refName: string) => this.getService(refName));
   }
 

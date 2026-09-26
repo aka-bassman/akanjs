@@ -391,7 +391,6 @@ describe("DiLifecycle adaptor overrides", () => {
     const lifecycle = new DiLifecycle({ env }, dependency, app);
     try {
       await lifecycle.initializeAll();
-      // Libs merge in mount order with the app last, so an app narrows one field without restating the rest.
       expect(lifecycle.registry.uses.get("llmOption")).toEqual({
         apiKey: "key-llmOption",
         model: "app-model",

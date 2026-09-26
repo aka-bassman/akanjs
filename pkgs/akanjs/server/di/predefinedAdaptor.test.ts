@@ -4,8 +4,7 @@ import type { AdaptorCls } from "akanjs/service";
 import { collectPredefinedDependencies, getPredefinedAdaptor, predefinedAdaptorRole } from "./predefinedAdaptor";
 import { resolveAdaptorHierarchy } from "./resolveAdaptorHierarchy";
 
-// Registers a mode's adaptor set the way `DiLifecycle` does before any service asks for more — which is all a mode
-// has to boot on. Ids are from `local/database-modes/`.
+// Registers a mode's adaptor set as DiLifecycle does before any service plugs more. Ids: `local/database-modes/`.
 const resolveMode = (mode: DatabaseMode) => {
   const adaptors = getPredefinedAdaptor(mode);
   const adaptorMap = new Map<string, AdaptorCls>(

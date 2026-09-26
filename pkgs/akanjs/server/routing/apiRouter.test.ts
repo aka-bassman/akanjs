@@ -120,9 +120,8 @@ describe("ApiRouter.buildWebsocketHandlers", () => {
     }
 
     expect(JSON.parse(sent[0] ?? "{}")).toEqual({ event: "message", data: ["hello"] });
-    // Detailed outside a production build, and generalized inside one — `SignalFailure` owns that split.
+    // Detailed outside production, generalized inside (SignalFailure owns the split); the log keeps the stack.
     expect(JSON.parse(sent[1] ?? "{}").error).toBe('WebSocket route "missing" is not registered');
-    // The log keeps the stack the response no longer carries, which is why generalizing the response loses nothing.
     expect(loggerErrors).toHaveLength(1);
     expect(loggerErrors[0]).toContain('WebSocket route "missing" is not registered');
   });

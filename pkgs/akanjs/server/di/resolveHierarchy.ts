@@ -3,11 +3,6 @@ export interface DependencyNode {
   dependencies: string[];
 }
 
-/**
- * Groups nodes into sequential stages where all nodes within a stage
- * can be initialized concurrently (all their dependencies are satisfied
- * by earlier stages).
- */
 export function topologicalStages<T extends DependencyNode>(graph: Map<string, T>): string[][] {
   const inDegree = new Map<string, number>();
   const dependents = new Map<string, string[]>();
