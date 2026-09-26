@@ -3,18 +3,8 @@ import { Logger } from "akanjs/common";
 import type { BuilderMessage } from "akanjs/server";
 import type { BuildBatchMessage, BuildBatchRequest, BuildBatchResult } from "./buildBatchProtocol";
 
-/**
- * Runs one `BuildBatchRequest` in a fresh process and resolves with what it produced.
- *
- * The watcher serializes every batch through its own work queue, so this deliberately has no pool: one
- * worker exists at a time, and it exits before the next one starts. That is the whole point — the
- * bundler arenas `Bun.build` never frees go back to the OS with the process.
- *
- * A worker that dies without reporting is not fatal. Every need it was given comes back as an error, the
- * watcher reports a red build-status for that generation, and the last-good artifact keeps serving —
- * the same contract a failed in-process build had. It must never take the watcher down with it: the
- * watcher is the dev server's file watcher, so nothing would notice the fix.
- */
+// No pool on purpose: one worker at a time, exiting after its batch, returns the arenas `Bun.build` never frees.
+// A worker that dies without reporting must not take the watcher down; its needs come back as errors.
 export class BuildBatchRunner {
   static readonly #entryCandidates = (workspaceRoot: string) => [
     path.join(workspaceRoot, "pkgs/@akanjs/devkit/incrementalBuilder/buildBatch.proc.ts"),
@@ -42,11 +32,6 @@ export class BuildBatchRunner {
     throw new Error(`[build-batch] worker entry not found; looked in: ${candidates.join(", ")}`);
   }
 
-  /**
-   * `onMessage` receives everything the worker streams as it goes — `pages-updated`, `css-updated`,
-   * `build-status` — so the watcher can relay each one the moment it is produced instead of holding a
-   * page reload until the whole batch is done.
-   */
   async run(
     request: BuildBatchRequest,
     onMessage: (message: BuilderMessage) => void = () => undefined,
@@ -54,8 +39,7 @@ export class BuildBatchRunner {
     const started = Date.now();
     const entry = await this.#resolveEntry();
     let result: BuildBatchResult | null = null;
-    // The request travels in argv rather than over IPC so the worker can start on its first tick
-    // instead of waiting for a handshake it would have to synchronize against.
+    // argv rather than IPC, so the worker starts on its first tick instead of waiting for a handshake.
     const proc = Bun.spawn(["bun", entry, JSON.stringify(request)], {
       cwd: this.#cwd,
       env: process.env,
@@ -74,11 +58,7 @@ export class BuildBatchRunner {
       );
       return result;
     }
-    // A worker the kernel OOM-killed exits with code `null` and `SIGKILL`, which without the signal
-    // reads exactly like an ordinary crash — and the two have opposite fixes: one is a build error to
-    // find, the other is a memory limit to raise. The peak here is the largest transient in the tree
-    // (a boot build measured 548MB on a tenant app, 1.1GB on apps/akan), so on a small sandbox this is
-    // the process the kernel reaches for first.
+    // An OOM kill (code null, SIGKILL) reads like a crash without the signal, and needs the opposite fix.
     const message = proc.signalCode
       ? `build worker was killed by ${proc.signalCode} before reporting a result${
           proc.signalCode === "SIGKILL" ? " — most often the kernel OOM killer; check the sandbox's memory limit" : ""

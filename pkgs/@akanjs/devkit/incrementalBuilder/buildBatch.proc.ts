@@ -1,8 +1,6 @@
 import path from "node:path";
 import type { App } from "@akanjs/devkit/commandDecorators";
-// Subpath imports only, and as few as possible: this process is spawned once per generation, so every
-// eager import is paid on every save. Measured on a 177-route app: `executors` 24ms, `frontendBuild`
-// ~110ms, app config 5ms.
+// Subpath imports only, as few as possible: spawned per generation, this process pays every import on every save.
 import { AppExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
 import {
   CsrArtifactBuilder,
@@ -15,19 +13,7 @@ import { Logger } from "akanjs/common";
 import type { BuilderMessage, BuildPhase } from "akanjs/server";
 import type { BuildBatchRequest, BuildBatchResult, OptimizedFonts, PagesBatchCssAssets } from "./buildBatchProtocol";
 
-/**
- * One generation of frontend build work, in a process that exits when it is done.
- *
- * This exists for one reason: `Bun.build` retains native bundler arenas that the process never returns
- * to the OS — `Bun.gc(true)` reclaims nothing and the JS heap stays flat while RSS climbs ~250MB per
- * save. Exit is the only mechanism that gives that memory back, so the work that scales per save lives
- * here rather than in the long-lived watcher.
- *
- * Nothing is cached here, by design. That costs less than it appears to: `CssCompiler` rebuilds its
- * tailwind compilers on every `compileCss` call, and the watcher always asked for `refresh: true`, so
- * there was no warm state to lose. What genuinely had to be preserved travels in the request — the
- * validated page keys and the previous font optimization.
- */
+// `Bun.build` keeps native bundler arenas that `Bun.gc(true)` cannot reclaim; only exiting returns them.
 class BuildBatch {
   #logger = new Logger("BuildBatch");
   #request: BuildBatchRequest;
@@ -40,29 +26,16 @@ class BuildBatch {
   }
 
   async run(): Promise<BuildBatchResult> {
-    // `base` arrives alone, from a builder that cannot serve anything until it finishes.
     if (this.#request.needs.includes("base")) await this.#buildBase();
-    // Ordered the way the watcher used to run them: csr before pages so a csr failure cannot delay the
-    // pages bundle the browser is waiting on, and css last because it depends on the rebuilt client.
+    // Order kept from the in-process build: csr before pages, css last because it depends on the rebuilt client.
     if (this.#request.needs.includes("csr")) await this.#buildCsr();
     if (this.#request.needs.includes("pages")) await this.#buildPages();
     if (this.#request.needs.includes("css")) await this.#buildCss();
     return this.#result;
   }
 
-  /**
-   * Broadcast as soon as a need finishes rather than when the batch does. The browser is waiting on the
-   * pages bundle; making it wait for the css compile behind it would add latency the in-process version
-   * never had, and it would move every artifact write into the window right before the watcher reports
-   * the generation complete — which is where a save issued immediately afterwards gets dropped by Bun's
-   * recursive `fs.watch` (`local/optimize-resource/06-watcher-dropped-event.md`).
-   *
-   * A bare `process.send` is safe here, unlike in the watcher, for one reason: this process ends by
-   * returning from `main`, and a natural exit flushes a pending ipc write (measured: 1MB delivered
-   * 20/20). It is `process.exit` that discards one — so adding an explicit exit to this file, at the end
-   * of `main` or anywhere after an emit, would silently start dropping `css-updated` payloads. Route
-   * sends through `BuilderChannel` if that ever becomes necessary.
-   */
+  // A bare `process.send` is safe only because this process exits by returning from `main`, which flushes ipc;
+  // an explicit `process.exit` after an emit would silently drop payloads (route through BuilderChannel then).
   #emit(message: BuilderMessage): void {
     process.send?.(message);
   }
@@ -80,11 +53,7 @@ class BuildBatch {
     });
   }
 
-  /**
-   * The boot build. Streams nothing: a builder is not serving yet, so there is no phase board to update
-   * and no browser to reload — the watcher learns the outcome from the batch result, and a failure there
-   * is what puts it into degraded watch mode.
-   */
+  // Streams nothing: the builder is not serving yet, so the watcher reads the outcome from the batch result.
   async #buildBase(): Promise<void> {
     const started = Date.now();
     try {
@@ -181,7 +150,6 @@ class BuildBatch {
     }
   }
 
-  /** Fonts are expensive and rarely change, so the previous result is reused unless this batch touched it. */
   async #optimizeFonts(): Promise<OptimizedFonts> {
     const previous = this.#request.optimizedFonts;
     if (previous && !BuildBatch.#shouldReoptimizeFonts(previous, this.#request.changedFiles)) {
@@ -213,8 +181,7 @@ class BuildBatch {
       repoName: request.repoName,
     });
     const app = AppExecutor.from(workspace, request.appName);
-    // Seeded rather than rediscovered: the watcher already globbed and validated every route source,
-    // and repeating that here would be the single largest cost of spawning this process.
+    // Seeded, not rediscovered: route discovery would be the largest cost of spawning this process.
     if (request.pageKeys) app.setPageKeys(request.pageKeys);
     const result = await new BuildBatch(request, app).run();
     process.send?.({ type: "build-batch-result", data: result });
