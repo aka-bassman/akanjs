@@ -112,14 +112,18 @@ export function getSystemPageErrorDetails(error: unknown): string {
   return String(error);
 }
 
+export function getPathnameLocale(pathname: string, i18n: AkanI18nConfig): string {
+  const [segment] = pathname.split("/").filter(Boolean);
+  return segment && i18n.locales.includes(segment) ? segment : i18n.defaultLocale;
+}
+
 export function getSystemPageHomeHref({
   pathname,
   i18n = DEFAULT_AKAN_I18N,
   basePaths = [],
   headerBasePath,
 }: SystemPageHomeHrefOptions): string {
-  const segments = pathname.split("/").filter(Boolean);
-  const locale = i18n.locales.includes(segments[0] ?? "") ? segments[0] : i18n.defaultLocale;
+  const locale = getPathnameLocale(pathname, i18n);
   const basePath = getBasePathFromPathname(pathname, {
     basePaths,
     i18n,

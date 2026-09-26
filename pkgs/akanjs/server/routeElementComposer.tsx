@@ -26,14 +26,7 @@ export class RouteElementComposer {
     const pageConfigChain = await RouteElementComposer.#resolvePageConfigChain(pathRoute);
     return {
       ...pathRoute,
-      pageState: resolvePageState({
-        configChain: pageConfigChain,
-        path: pathRoute.path,
-        basePath: basePath ?? undefined,
-        platform: "web",
-        deviceSafeArea: { top: 0, bottom: 0 },
-        cssSafeArea: { top: 0, bottom: 0 },
-      }),
+      pageState: RouteElementComposer.#webPageState(pageConfigChain, pathRoute.path, basePath),
       pageConfigChain,
       explicitPageConfigKeys: getExplicitPageConfigKeys(pageConfigChain),
     };
@@ -47,9 +40,13 @@ export class RouteElementComposer {
     basePath?: string | null;
   }) {
     const pageConfigChain = await RouteElementComposer.#resolveLayoutPageConfigChain(route);
+    return RouteElementComposer.#webPageState(pageConfigChain, route.path, basePath);
+  }
+
+  static #webPageState(configChain: PageConfig[], path: string, basePath?: string | null) {
     return resolvePageState({
-      configChain: pageConfigChain,
-      path: route.path,
+      configChain,
+      path,
       basePath: basePath ?? undefined,
       platform: "web",
       deviceSafeArea: { top: 0, bottom: 0 },

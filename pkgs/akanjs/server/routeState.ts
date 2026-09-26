@@ -73,7 +73,8 @@ function encodeBase64Url(value: string): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function decodeBase64Url(value: string): string | null {
+function decodeBase64UrlJson(value: string | null | undefined): unknown {
+  if (!value) return undefined;
   try {
     const padded = value
       .replace(/-/g, "+")
@@ -82,9 +83,9 @@ function decodeBase64Url(value: string): string | null {
     const binary = atob(padded);
     const bytes = new Uint8Array(binary.length);
     for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
-    return new TextDecoder().decode(bytes);
+    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
@@ -150,26 +151,13 @@ export function decodeAkanHeadSnapshot(value: string | null | undefined): AkanHe
   if (new TextEncoder().encode(value).byteLength > AKAN_RSC_HEAD_SNAPSHOT_MAX_HEADER_BYTES) {
     return { status: "too-large" };
   }
-  const json = decodeBase64Url(value);
-  if (!json) return { status: "invalid" };
-  try {
-    const parsed = JSON.parse(json) as unknown;
-    return isAkanHeadSnapshotV1(parsed) ? { status: "ok", snapshot: parsed } : { status: "invalid" };
-  } catch {
-    return { status: "invalid" };
-  }
+  const parsed = decodeBase64UrlJson(value);
+  return isAkanHeadSnapshotV1(parsed) ? { status: "ok", snapshot: parsed } : { status: "invalid" };
 }
 
 export function decodeAkanRouterState(value: string | null | undefined): AkanRouterStateV1 | null {
-  if (!value) return null;
-  const json = decodeBase64Url(value);
-  if (!json) return null;
-  try {
-    const parsed = JSON.parse(json) as unknown;
-    return isAkanRouterStateV1(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
+  const parsed = decodeBase64UrlJson(value);
+  return isAkanRouterStateV1(parsed) ? parsed : null;
 }
 
 export function appendAkanRouterStateRequestHeaders(
@@ -191,15 +179,8 @@ export function encodeAkanRscPatchSegmentPath(segmentPath: string[]): string {
 }
 
 export function decodeAkanRscPatchSegmentPath(value: string | null | undefined): string[] | null {
-  if (!value) return null;
-  const json = decodeBase64Url(value);
-  if (!json) return null;
-  try {
-    const parsed = JSON.parse(json) as unknown;
-    return Array.isArray(parsed) && parsed.every((segment) => typeof segment === "string") ? parsed : null;
-  } catch {
-    return null;
-  }
+  const parsed = decodeBase64UrlJson(value);
+  return Array.isArray(parsed) && parsed.every((segment) => typeof segment === "string") ? parsed : null;
 }
 
 export function readAkanRscPatchMetadataResponseHeaders(headers: Headers): AkanRscPatchMetadata | null {

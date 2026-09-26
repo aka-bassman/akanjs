@@ -54,6 +54,7 @@ import { createDefaultSitemapXml, getSitemapBasePath } from "./sitemap";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
 import type { RscTraceMetadata, SsrManifest } from "./ssrTypes";
 import { resolveStaticPath } from "./staticPath";
+import { getPathnameLocale } from "./systemPageDocument";
 import { createSubRouteIndexResponse, createSystemPageResponse, getSystemPageHomeHref } from "./systemPages";
 import { type BaseBuildArtifact, type HttpRoutes, type RenderState, resolveWebConfig } from "./types";
 
@@ -836,7 +837,7 @@ export class WebRouter {
       kind: "not-found",
       method: req.method,
       pathname: url.pathname,
-      lang: WebRouter.#getLocale(url.pathname, this.#artifact.i18n),
+      lang: getPathnameLocale(url.pathname, this.#artifact.i18n),
       homeHref: this.#getSystemPageHomeHref(req, url.pathname),
       stylesheetHref: this.#getStylesheetHref(req, url.pathname),
     });
@@ -849,7 +850,7 @@ export class WebRouter {
     if (!WebRouter.#isSiteRootPathname(url.pathname, this.#artifact.i18n)) return null;
     return createSubRouteIndexResponse({
       method: req.method,
-      locale: WebRouter.#getLocale(url.pathname, this.#artifact.i18n),
+      locale: getPathnameLocale(url.pathname, this.#artifact.i18n),
       basePaths: this.#artifact.basePaths,
       subRoutes: this.#subRoutes,
     });
@@ -870,7 +871,7 @@ export class WebRouter {
       kind: "error",
       method: req.method,
       pathname: scope,
-      lang: WebRouter.#getLocale(new URL(req.url).pathname, this.#artifact.i18n),
+      lang: getPathnameLocale(new URL(req.url).pathname, this.#artifact.i18n),
       homeHref: this.#getSystemPageHomeHref(req, new URL(req.url).pathname),
       stylesheetHref: this.#getStylesheetHref(req, new URL(req.url).pathname),
       showDetails: !this.#prodMode,
@@ -922,11 +923,6 @@ export class WebRouter {
       headerBasePath: this.#requestBasePath(req),
     });
     return this.renderState.cssAssets[basePath ?? ""]?.cssUrl ?? null;
-  }
-
-  static #getLocale(pathname: string, i18n: AkanI18nConfig): string {
-    const [segment] = pathname.split("/").filter(Boolean);
-    return segment && i18n.locales.includes(segment) ? segment : i18n.defaultLocale;
   }
 
   static #htmlResponseHeaders(status: number): Headers {

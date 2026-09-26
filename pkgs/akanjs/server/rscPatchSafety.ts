@@ -18,40 +18,15 @@ export function resolveAkanRscHeadSafePatchDecision({
   headSnapshot?: AkanHeadSnapshotV1;
 }): AkanRscPatchDecision {
   if (!partialCommitEnabled || patchDecision.status !== "patch" || !patchDecision.patch) return patchDecision;
-  if (pageConfig?.rscPatchHeadSafe !== true) {
-    return {
-      status: "full",
-      reason: "head-unsafe",
-      commonPrefixLength: patchDecision.commonPrefixLength,
-    };
-  }
-  if (!headSnapshot) {
-    return {
-      status: "full",
-      reason: "head-missing",
-      commonPrefixLength: patchDecision.commonPrefixLength,
-    };
-  }
-  if (!isAkanHeadSnapshotV1(headSnapshot)) {
-    return {
-      status: "full",
-      reason: "head-invalid",
-      commonPrefixLength: patchDecision.commonPrefixLength,
-    };
-  }
-  if (!encodeAkanHeadSnapshot(headSnapshot)) {
-    return {
-      status: "full",
-      reason: "head-too-large",
-      commonPrefixLength: patchDecision.commonPrefixLength,
-    };
-  }
-  return {
-    ...patchDecision,
-    patch: {
-      ...patchDecision.patch,
-      headSafe: true,
-      headSnapshot,
-    },
-  };
+  if (pageConfig?.rscPatchHeadSafe !== true) return fullDecision("head-unsafe", patchDecision);
+  if (!headSnapshot) return fullDecision("head-missing", patchDecision);
+  if (!isAkanHeadSnapshotV1(headSnapshot)) return fullDecision("head-invalid", patchDecision);
+  if (!encodeAkanHeadSnapshot(headSnapshot)) return fullDecision("head-too-large", patchDecision);
+  return { ...patchDecision, patch: { ...patchDecision.patch, headSafe: true, headSnapshot } };
 }
+
+const fullDecision = (reason: string, { commonPrefixLength }: AkanRscPatchDecision): AkanRscPatchDecision => ({
+  status: "full",
+  reason,
+  commonPrefixLength,
+});
