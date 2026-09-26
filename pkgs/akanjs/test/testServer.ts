@@ -8,7 +8,6 @@ import { ConformanceEnv } from "./conformance";
 
 const MAX_RETRY = 5;
 const TEST_LISTEN_PORT_BASE = 38080;
-const MIN_ACTIVATION_TIME = 0;
 const MAX_ACTIVATION_TIME = 30000;
 
 type TestStorage = "memory" | "tempFile";
@@ -162,7 +161,6 @@ export class TestServer {
   }
   async terminate() {
     const now = Date.now();
-    const elapsed = now - this.#startAt;
     await sleep(50);
     await this.#server?.stop();
     this.#server = undefined;
@@ -173,10 +171,6 @@ export class TestServer {
       this.#tempDir = undefined;
     }
     this.#restoreProcessEnv();
-    if (elapsed < MIN_ACTIVATION_TIME) {
-      this.#logger.info(`waiting for ${MIN_ACTIVATION_TIME - elapsed}`);
-      await sleep(MIN_ACTIVATION_TIME - elapsed);
-    }
     this.#logger.info(`System Terminated in ${Date.now() - now}ms`);
   }
   // `single` unless `AKAN_TEST_DATABASE_MODE` names another; never the `AKAN_DATABASE_MODE` of a developer's shell.
