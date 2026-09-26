@@ -107,16 +107,20 @@ export class EndpointInfo<
     this.returns = EndpointInfo.getReturnInfo(returnRef, signalOption);
     this.signalOption = signalOption;
   }
+  #addArg(type: ArgType, name: string, arg: ConstantFieldTypeInput, option?: EndpointArgProps<boolean>) {
+    if (this.execFn) throw new Error("Query function is already set");
+    if (type !== "body" && type !== "search" && this.args.at(-1)?.option?.nullable)
+      throw new Error("Last argument is nullable");
+    this.argNames.push(name);
+    this.args.push(EndpointInfo.getArgInfo(type, name, arg, option));
+  }
   param<
     ArgName extends string,
     Arg extends ParamFieldType,
     _ClientArg = FieldToValue<Arg>,
     _ServerArg = DocumentModel<_ClientArg>,
   >(name: string, arg: Arg, option?: Omit<EndpointArgProps, "nullable">) {
-    if (this.execFn) throw new Error("Query function is already set");
-    else if (this.args.at(-1)?.option?.nullable) throw new Error("Last argument is nullable");
-    this.argNames.push(name);
-    this.args.push(EndpointInfo.getArgInfo("param", name, arg, option));
+    this.#addArg("param", name, arg, option);
     return this as unknown as EndpointInfo<
       ReqType,
       Srvs,
@@ -139,9 +143,7 @@ export class EndpointInfo<
     _ClientArg = UploadableClientArg<PurifiedModel<_ArgType>>,
     _ServerArg = DocumentModel<_ArgType>,
   >(name: ArgName, arg: Arg, option?: EndpointArgProps<Optional>) {
-    if (this.execFn) throw new Error("Query function is already set");
-    this.argNames.push(name);
-    this.args.push(EndpointInfo.getArgInfo("body", name, arg, option));
+    this.#addArg("body", name, arg, option);
     return this as unknown as EndpointInfo<
       ReqType,
       Srvs,
@@ -163,10 +165,7 @@ export class EndpointInfo<
     _ClientArg = PurifiedModel<_ArgType>,
     _ServerArg = DocumentModel<_ArgType>,
   >(name: string, arg: Arg, option?: Omit<EndpointArgProps, "nullable">) {
-    if (this.execFn) throw new Error("Query function is already set");
-    else if (this.args.at(-1)?.option?.nullable) throw new Error("Last argument is nullable");
-    this.argNames.push(name);
-    this.args.push(EndpointInfo.getArgInfo("room", name, arg, option));
+    this.#addArg("room", name, arg, option);
     return this as unknown as EndpointInfo<
       ReqType,
       Srvs,
@@ -189,10 +188,7 @@ export class EndpointInfo<
     _ClientArg = PurifiedModel<_ArgType>,
     _ServerArg = DocumentModel<_ArgType>,
   >(name: string, arg: Arg, option?: EndpointArgProps<Optional>) {
-    if (this.execFn) throw new Error("Query function is already set");
-    else if (this.args.at(-1)?.option?.nullable) throw new Error("Last argument is nullable");
-    this.argNames.push(name);
-    this.args.push(EndpointInfo.getArgInfo("msg", name, arg, option));
+    this.#addArg("msg", name, arg, option);
     return this as unknown as EndpointInfo<
       ReqType,
       Srvs,
@@ -214,9 +210,7 @@ export class EndpointInfo<
     _ClientArg = PurifiedModel<_ArgType>,
     _ServerArg = DocumentModel<_ArgType>,
   >(name: string, arg: Arg, option?: Omit<EndpointArgProps, "nullable">) {
-    if (this.execFn) throw new Error("Query function is already set");
-    this.argNames.push(name);
-    this.args.push(EndpointInfo.getArgInfo("search", name, arg, { ...option, nullable: true }));
+    this.#addArg("search", name, arg, { ...option, nullable: true });
     return this as unknown as EndpointInfo<
       ReqType,
       Srvs,
