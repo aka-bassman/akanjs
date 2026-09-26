@@ -20,7 +20,6 @@ import { createOpenApiDocument } from "../signal/openapi";
 import { FetchSerializer } from "../signal/serializer";
 import { SignalContext } from "../signal/signalContext";
 import type { AkanLib, AkanLibProps } from "./akanLib";
-import type { BuilderRpc } from "./artifact";
 import { BinaryPubsub } from "./binaryPubsub";
 import { DevtoolsRouter } from "./devtools";
 import { DiLifecycle } from "./di/diLifecycle";
@@ -111,7 +110,6 @@ interface AkanAppPrepared {
   builtinRoutes: HttpRoutes;
   renderEnvRoutes: HttpRoutes;
   hmrHub: HmrWsHub | null;
-  builderRpc: BuilderRpc | null;
   webRouter: WebRouter | null;
   webProxyRunner: WebProxyRunner | null;
 }
@@ -140,8 +138,9 @@ export class AkanServer {
   readonly env: BackendEnv;
   prefix = getApiPrefix();
   websocketPrefix = getWsPrefix();
-  openapi = AkanServer.#isOpenApiEnvEnabled();
-  mcp = AkanServer.#isEnvOn("AKAN_MCP", "AKAN_PUBLIC_MCP");
+  openapi = AkanServer.#isEnvEnabled("AKAN_OPENAPI", "AKAN_PUBLIC_OPENAPI");
+  // Default-on: MCP exposure follows guards, and an opt-in switch is one most deployments would never find.
+  mcp = !AkanServer.#isEnvOff("AKAN_MCP", "AKAN_PUBLIC_MCP");
   mcpReadOnly = AkanServer.#isEnvEnabled("AKAN_MCP_READONLY", "AKAN_PUBLIC_MCP_READONLY");
   mcpAuth: McpAuthOption = AkanServer.#mcpAuthFromEnv();
   mcpOption: Omit<McpServerOption, "enabled" | "readOnly" | "auth"> = AkanServer.#mcpOptionFromEnv();
@@ -320,7 +319,6 @@ export class AkanServer {
         builtinRoutes: this.#createBuiltinRoutes(null),
         renderEnvRoutes: {},
         hmrHub: null,
-        builderRpc: null,
         webRouter: null,
         webProxyRunner: null,
       };
@@ -345,7 +343,7 @@ export class AkanServer {
     }
     this.web = webRouter.web;
     this.logger.verbose(`web on: ssr=${this.web.ssr} csr=${this.web.csr}`);
-    const { renderEnvRoutes, hmrHub, builderRpc } = await webRouter.initializeRoute();
+    const { renderEnvRoutes, hmrHub } = await webRouter.initializeRoute();
     const webProxyRunner = WebProxyRunner.create(this.#di.webProxies);
     this.#prepared = {
       routes,
@@ -354,7 +352,6 @@ export class AkanServer {
       builtinRoutes: this.#createBuiltinRoutes(webRouter),
       renderEnvRoutes,
       hmrHub,
-      builderRpc,
       webRouter,
       webProxyRunner,
     };
@@ -516,7 +513,8 @@ export class AkanServer {
       const now = Date.now();
       this.logger.info("Shutting down gracefully...");
       this.status = "stopping";
-      this.#stopMetricsReporting();
+      if (this.#metricsTimer) clearInterval(this.#metricsTimer);
+      this.#metricsTimer = null;
       this.#di.getWebsocketAdaptor()?.clearEventHandler();
       this.#server?.stop(true);
       this.#wsServer?.stop(true);
@@ -592,12 +590,6 @@ export class AkanServer {
     if (process.env.AKAN_MEMORY_LOG === "1") {
       this.logger.info(`memory role=${this.serverMode} ${ProcessMetricsCollector.format(metrics)}`);
     }
-  }
-
-  #stopMetricsReporting() {
-    if (!this.#metricsTimer) return;
-    clearInterval(this.#metricsTimer);
-    this.#metricsTimer = null;
   }
 
   #assertCanGet(type = "Dependency", refName?: string) {
@@ -825,17 +817,8 @@ export class AkanServer {
     );
   }
 
-  static #isOpenApiEnvEnabled() {
-    return AkanServer.#isEnvEnabled("AKAN_OPENAPI", "AKAN_PUBLIC_OPENAPI");
-  }
-
   static #isEnvEnabled(...names: string[]) {
     return names.some((name) => process.env[name] === "true" || process.env[name] === "1");
-  }
-
-  // Default-on: MCP exposure follows guards, and an opt-in switch is one most deployments would never find.
-  static #isEnvOn(...names: string[]) {
-    return !names.some((name) => process.env[name] === "false" || process.env[name] === "0");
   }
 
   static #narrowWeb(current: AkanWebConfig, web: AkanWebOption | undefined): AkanWebConfig {

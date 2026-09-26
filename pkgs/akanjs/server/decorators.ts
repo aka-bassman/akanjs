@@ -14,8 +14,7 @@ export const Try = () => {
     const originMethod = descriptor.value as (this: unknown, ...args: unknown[]) => unknown;
     descriptor.value = async function (...args: unknown[]) {
       try {
-        const result = await originMethod.apply(this, args);
-        return result;
+        return await originMethod.apply(this, args);
       } catch (e) {
         (this as DecoratedInstance).logger?.warn?.(`${key} action error return: ${e}`);
       }

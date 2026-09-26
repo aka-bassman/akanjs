@@ -190,9 +190,9 @@ export class AkanApp {
     const configured = value ?? process.env.AKAN_REPLICA;
     const raw = String(configured ?? "0,0,1").trim();
     const [federationRaw, batchRaw, allRaw] = raw.split(",");
-    const federation = AkanApp.#parseReplicaCount(federationRaw, configured == null ? 0 : 0, 0);
-    const batch = AkanApp.#parseReplicaCount(batchRaw, configured == null ? 0 : 0, 0);
-    const all = AkanApp.#parseReplicaCount(allRaw, configured == null ? 1 : 0, 0);
+    const federation = AkanApp.#parseReplicaCount(federationRaw, 0);
+    const batch = AkanApp.#parseReplicaCount(batchRaw, 0);
+    const all = AkanApp.#parseReplicaCount(allRaw, configured == null ? 1 : 0);
     const normalizedAll = federation + batch + all > 0 ? all : 1;
     return {
       federation,
@@ -203,10 +203,9 @@ export class AkanApp {
     };
   }
 
-  static #parseReplicaCount(value: string | undefined, fallback: number, min: number) {
+  static #parseReplicaCount(value: string | undefined, fallback: number) {
     const parsed = Number.parseInt(value ?? "", 10);
-    if (!Number.isFinite(parsed)) return fallback;
-    return Math.max(min, parsed);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
   }
 
   // The command outranks NODE_ENV: a dev child told `production` expects the manifest only `akan build` writes.
@@ -301,25 +300,15 @@ export class AkanApp {
   async stop(signal = "SIGTERM") {
     if (this.#stopping) return;
     this.#stopping = true;
-    if (this.#snapshotTimer) {
-      clearInterval(this.#snapshotTimer);
-      this.#snapshotTimer = null;
-    }
-    if (this.#healthTimer) {
-      clearInterval(this.#healthTimer);
-      this.#healthTimer = null;
-    }
-    if (this.#metricsTimer) {
-      clearInterval(this.#metricsTimer);
-      this.#metricsTimer = null;
-    }
+    for (const timer of [this.#snapshotTimer, this.#healthTimer, this.#metricsTimer]) if (timer) clearInterval(timer);
+    this.#snapshotTimer = null;
+    this.#healthTimer = null;
+    this.#metricsTimer = null;
     this.#server?.stop(true);
     this.#server = null;
     for (const child of this.#children.values()) {
-      if (child.restartTimer) {
-        clearTimeout(child.restartTimer);
-        child.restartTimer = null;
-      }
+      if (child.restartTimer) clearTimeout(child.restartTimer);
+      child.restartTimer = null;
       this.#sendToChild(child, { type: "shutdown", signal } satisfies AkanIpcMessage);
     }
     await Promise.race([
@@ -361,8 +350,7 @@ export class AkanApp {
     const upstream = this.#getChildUpstream(idx, role);
     //? Windows drops an ipc message sent right before `process.exit`; exit from its send callback.
     const childCode = `import(${JSON.stringify(path.resolve(this.#serverPath))}).then((mod)=>{ const server = mod.server ?? mod.app; if (!server?.start) throw new Error("server.ts must export server or app with start()"); return server.start({ listen: process.env.SERVER_MODE !== "batch" }); }).catch((error)=>{ const exit = () => process.exit(1); setTimeout(exit, 2000); if (!process.send) return exit(); process.send({ type: "error", message: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined, pid: process.pid }, undefined, undefined, exit); });`;
-    let proc!: Bun.Subprocess<"ignore", "pipe", "pipe">;
-    proc = Bun.spawn(["bun", "-e", childCode], {
+    const proc: Bun.Subprocess<"ignore", "pipe", "pipe"> = Bun.spawn(["bun", "-e", childCode], {
       cwd: process.cwd(),
       env: {
         ...process.env,
@@ -535,9 +523,7 @@ export class AkanApp {
 
   async #stopChildForRestart(child: ChildState, proc: Bun.Subprocess<"ignore", "pipe", "pipe">, reason: string) {
     if (reason.startsWith("exit:") || proc.killed) return;
-    if (!proc.killed) {
-      this.#sendToChild(child, { type: "shutdown", signal: reason } satisfies AkanIpcMessage);
-    }
+    this.#sendToChild(child, { type: "shutdown", signal: reason } satisfies AkanIpcMessage);
     const result = await Promise.race([
       proc.exited.then(() => "exited" as const).catch(() => "exited" as const),
       new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), AkanApp.#childRestartGraceMs)),
@@ -703,7 +689,7 @@ export class AkanApp {
     if (!child || !upstream) return new Response("No websocket upstream is ready", { status: 503 });
     const url = new URL(req.url);
     const upstreamWs = new WebSocket(`ws://${upstream.host}:${upstream.port}${url.pathname}${url.search}`, {
-      headers: this.#makeProxyHeaders(req, child.idx, server),
+      headers: makeAkanChildProxyHeaders(req, child.idx, server.requestIP(req)),
     } as unknown as string[]);
     // No socket id on this hop: the child mints the one its room bookkeeping and endpoints see.
     const upgraded = server.upgrade(req, { data: { childIdx: child.idx, upstream: upstreamWs } });
@@ -807,7 +793,7 @@ export class AkanApp {
     if (!child?.upstream || child.upstream.type !== "unix") return this.#respondWithUnavailable(req);
     const url = new URL(req.url);
     const upstreamUrl = `http://akan-child${url.pathname}${url.search}`;
-    const headers = this.#makeProxyHeaders(req, child.idx, server);
+    const headers = makeAkanChildProxyHeaders(req, child.idx, server.requestIP(req));
     child.metrics.activeRequests = (child.metrics.activeRequests ?? 0) + 1;
     child.metrics.totalRequests = (child.metrics.totalRequests ?? 0) + 1;
     const traced = isTraceEnabled();
@@ -1039,10 +1025,6 @@ export class AkanApp {
     }
 
     return new Response(Bun.file(filePath).stream(), { headers });
-  }
-
-  #makeProxyHeaders(req: Request, childIdx: number, server?: Bun.Server<GatewayWsData>) {
-    return makeAkanChildProxyHeaders(req, childIdx, server?.requestIP(req));
   }
 
   #invalidateFederationChildCache() {

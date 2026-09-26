@@ -11,7 +11,7 @@ export interface AdaptorOverride {
 }
 
 export class AkanOption<Env extends BackendEnv = BackendEnv> {
-  readonly #getUses: ((env: Env) => Record<string, PromiseOrObject<unknown>>)[];
+  readonly #getUses: ((env: Env) => Record<string, PromiseOrObject<unknown>>)[] = [];
   readonly #middlewares: MiddlewareCls[] = [];
   readonly #adaptorOverrides: AdaptorOverride[] = [];
   readonly #webProxies: WebProxyRegistration[] = [];
@@ -21,9 +21,6 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   #agentUsage: AgentUsageHook | null | undefined;
   #agentQuota: AgentQuotaHook | null | undefined;
   #crossSite: CrossSiteOption | undefined;
-  constructor() {
-    this.#getUses = [];
-  }
   use(fnOrObject: ((env: Env) => Record<string, PromiseOrObject<unknown>>) | Record<string, PromiseOrObject<unknown>>) {
     if (typeof fnOrObject === "function")
       this.#getUses.push(fnOrObject as (env: Env) => Record<string, PromiseOrObject<unknown>>);
