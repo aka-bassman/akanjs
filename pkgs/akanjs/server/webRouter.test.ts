@@ -22,7 +22,6 @@ import {
   createRscRedirectResponse,
   createRscStreamResponse,
   DEFAULT_HTML_RESULT_CACHE_MAX_BODY_BYTES,
-  isHtmlRouteCachePathAllowed,
   normalizeRscTargetUrlForHostBasePath,
   resolveHtmlRouteCacheStoreTtl,
   WebRouter,
@@ -815,22 +814,6 @@ describe("WebRouter HTML cache streaming", () => {
     expect(resolveRouteCacheStoreTtl(120, { cacheable: true, revalidate: 30 })).toBe(30);
     expect(resolveRouteCacheStoreTtl(120, dynamicState)).toBeNull();
     expect(resolveRouteCacheStoreTtl(120, { cacheable: true, revalidate: false })).toBeNull();
-  });
-
-  test("uses shared allow and deny semantics for HTML cache paths", () => {
-    const env = {
-      AKAN_HTML_RESULT_CACHE_PATHS: " /docs, /blog ",
-      AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS: "/docs/private",
-    };
-
-    expect(isHtmlRouteCachePathAllowed("/docs", env)).toBe(true);
-    expect(isHtmlRouteCachePathAllowed("/docs/intro", env)).toBe(true);
-    expect(isHtmlRouteCachePathAllowed("/docs-private", env)).toBe(false);
-    expect(isHtmlRouteCachePathAllowed("/docs/private", env)).toBe(false);
-    expect(isHtmlRouteCachePathAllowed("/docs/private/child", env)).toBe(false);
-    expect(isHtmlRouteCachePathAllowed("/docs/private-ish", env)).toBe(true);
-    expect(isHtmlRouteCachePathAllowed("/other", env)).toBe(false);
-    expect(isHtmlRouteCachePathAllowed("/other", {}, { defaultAllow: true })).toBe(true);
   });
 
   test("passes through the first chunk before caching the completed HTML", async () => {

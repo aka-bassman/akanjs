@@ -16,7 +16,6 @@ import type { AkanMetricsReport } from "akanjs/service";
 import type { PagePromptSource } from "../signal/mcp/pagePrompt";
 import {
   type BuilderRpc,
-  type ClientManifest,
   type MergedManifest,
   RouteClientCache,
   type RouteSeedIndex,
@@ -27,7 +26,6 @@ import { resolveEncodedSidecar } from "./assetEncoding";
 import {
   getClientFacingOrigin,
   hasRouteCacheInvalidationScope,
-  isRouteCachePathAllowed,
   LruTtlCache,
   parsePositiveInt,
   type RouteCacheEntry,
@@ -194,22 +192,6 @@ export function resolveHtmlRouteCacheStoreTtl(input: {
   return resolveRouteCacheStoreTtl(workerTtl, hostCacheState);
 }
 
-export function isHtmlRouteCachePathAllowed(
-  pathname: string,
-  env: {
-    [key: string]: string | undefined;
-    AKAN_HTML_RESULT_CACHE_PATHS?: string;
-    AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS?: string;
-  } = process.env as Record<string, string | undefined>,
-  options: { defaultAllow?: boolean } = {},
-): boolean {
-  return isRouteCachePathAllowed(pathname, {
-    allow: env.AKAN_HTML_RESULT_CACHE_PATHS,
-    deny: env.AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS,
-    defaultAllow: options.defaultAllow,
-  });
-}
-
 export async function createRscNavigationStreamResponse(
   result: Extract<RscRenderResult, { type: "stream" }>,
 ): Promise<Response> {
@@ -246,12 +228,6 @@ export function normalizeRscTargetUrlForHostBasePath(
   }
 
   return { url: targetUrl, basePath: basePath ?? targetBasePath };
-}
-
-export interface SsrRoutesResult {
-  renderEnvRoutes: HttpRoutes;
-  hmrHub: HmrWsHub | null;
-  builderRpc: BuilderRpc | null;
 }
 
 export interface SsrRoutesInputs {
@@ -338,7 +314,13 @@ export class WebRouter {
     this.#seedIndex = seedIndex;
     if (this.#prodMode) {
       this.#builderRpc = null;
-      this.#routeCache = this.#getProductionRouteCache();
+      this.#routeCache = new RouteClientCache({
+        buildRoute: async (routeId) => {
+          throw new Error(
+            `[SSR] route ${routeId} missing from production artifact — rebuild with \`akan build\` to include it`,
+          );
+        },
+      });
     } else {
       this.#devHmr = new DevHmrController({
         renderState: this.renderState,
@@ -366,8 +348,9 @@ export class WebRouter {
 
     const clientServePrefix = `/_akan/client`;
     const clientOutputDir = `${this.#artifactDir}/client`;
-    const csrOutputDir = WebRouter.#resolveCsrDir(this.#artifactDir);
-    const publicDir = path.join(WebRouter.#resolveAppDir(), "public");
+    const localCsrDir = path.join(process.cwd(), "csr");
+    const csrOutputDir = fs.existsSync(localCsrDir) ? localCsrDir : path.join(this.#artifactDir, "csr");
+    const publicDir = path.join(process.env.AKAN_APP_DIR ?? path.dirname(Bun.main), "public");
     const imageCacheDir = path.join(this.#artifactDir, "image-cache");
     const imageOptimizer = new ImageOptimizer({
       publicDir,
@@ -427,10 +410,14 @@ export class WebRouter {
         }
         const cssBytes = this.renderState.cssBytesByUrl[url.pathname];
         if (!cssBytes) return new Response("Not Found", { status: 404 });
-        return WebRouter.#bytesResponse(req, cssBytes, {
+        const headers = WebRouter.#baseAssetHeaders({
           contentType: "text/css; charset=utf-8",
           cacheControl: "no-store",
         });
+        return new Response(
+          cssBytes.buffer.slice(cssBytes.byteOffset, cssBytes.byteOffset + cssBytes.byteLength) as ArrayBuffer,
+          { headers },
+        );
       },
       "/_akan/fonts/*": (req) => {
         this.#requestStats.staticAsset += 1;
@@ -448,9 +435,8 @@ export class WebRouter {
       },
       ...(!this.#prodMode
         ? {
-            "/_akan/hmr": (req: Request) => {
-              return this.#devHmr?.handleWs(req) ?? new Response("HMR unavailable", { status: 404 });
-            },
+            "/_akan/hmr": (req: Request) =>
+              this.#devHmr?.handleWs(req) ?? new Response("HMR unavailable", { status: 404 }),
             "/_akan/hmr/client-refresh": (req: Request) =>
               this.#devHmr?.handleClientRefresh(req) ?? new Response("HMR unavailable", { status: 404 }),
           }
@@ -460,7 +446,7 @@ export class WebRouter {
         try {
           const reqUrl = new URL(req.url);
           // Behind proxies req.url is internal; forwarded headers give the browser's origin for the same-origin check.
-          const clientOrigin = WebRouter.#clientFacingOrigin(req);
+          const clientOrigin = getClientFacingOrigin(req);
           const target = reqUrl.searchParams.get("url");
           const rawTargetUrl = target ? new URL(target, clientOrigin) : reqUrl;
           const requestBasePath = this.#requestBasePath(req);
@@ -486,7 +472,7 @@ export class WebRouter {
           });
           if (result.type === "redirect")
             return createRscRedirectResponse(result.location, result.method, result.status);
-          if (result.type === "not-found") return WebRouter.#rscNotFoundResponse();
+          if (result.type === "not-found") return createRscNotFoundFallbackResponse();
           if (result.status && result.status >= 500)
             return this.#renderRscErrorResponse("__rsc", "Internal Server Error");
           return createRscNavigationStreamResponse(result);
@@ -515,7 +501,7 @@ export class WebRouter {
         }),
       "/*": async (req) => {
         const url = new URL(req.url);
-        if (WebRouter.#isImageOptimizerPath(url.pathname)) {
+        if (url.pathname.endsWith("/_akan/image")) {
           this.#requestStats.image += 1;
           return imageOptimizer.handle(req);
         }
@@ -541,14 +527,12 @@ export class WebRouter {
         }
 
         const filePath = resolveStaticPath(publicDir, url.pathname);
-        if (filePath) {
-          if (await Bun.file(filePath).exists()) {
-            this.#requestStats.staticAsset += 1;
-            return WebRouter.#fileResponse(req, filePath, {
-              contentType: Bun.file(filePath).type || "application/octet-stream",
-              cacheControl: this.#prodMode ? "public, max-age=300" : "no-store",
-            });
-          }
+        if (filePath && (await Bun.file(filePath).exists())) {
+          this.#requestStats.staticAsset += 1;
+          return WebRouter.#fileResponse(req, filePath, {
+            contentType: Bun.file(filePath).type || "application/octet-stream",
+            cacheControl: this.#prodMode ? "public, max-age=300" : "no-store",
+          });
         }
 
         if (url.pathname === "/robots.txt") {
@@ -564,7 +548,7 @@ export class WebRouter {
         if (sitemapBasePath !== undefined) {
           return new Response(
             createDefaultSitemapXml({
-              origin: WebRouter.#clientFacingOrigin(req),
+              origin: getClientFacingOrigin(req),
               basePath: sitemapBasePath,
               entries: this.#seedIndex.entries,
               i18n: parseAkanI18nEnv(),
@@ -664,7 +648,7 @@ export class WebRouter {
               cacheHtmlWhileStreaming(
                 htmlStream,
                 (html) => {
-                  this.#setCachedHtml(htmlCacheEntry.key, html, htmlStoreTtl, htmlCacheMetadata);
+                  this.#htmlCache.set(htmlCacheEntry.key, { html, ...htmlCacheMetadata }, htmlStoreTtl);
                 },
                 {
                   shouldCache: () => shouldCacheHtml,
@@ -761,10 +745,6 @@ export class WebRouter {
     this.#rsc.invalidateRouteResultCache(invalidation);
   }
 
-  static #clientFacingOrigin(req: Request): string {
-    return getClientFacingOrigin(req);
-  }
-
   // `x-base-path` can arrive from the wire, not just HostBasePathWebProxy: trust only a basePath this build serves.
   #requestBasePath(req: Request): string | null {
     const headerBasePath = req.headers.get("x-base-path");
@@ -821,16 +801,8 @@ export class WebRouter {
     return cached.html;
   }
 
-  #setCachedHtml(cacheKey: string, html: string, ttl: number, metadata: Omit<CachedHtmlResult, "html">): void {
-    this.#htmlCache.set(cacheKey, { html, ...metadata }, ttl);
-  }
-
   static #cookieValue(req: Request, name: string): string | undefined {
     return parseCookieHeader(req.headers.get("cookie") ?? "").get(name)?.value;
-  }
-
-  static #isImageOptimizerPath(pathname: string): boolean {
-    return pathname === "/_akan/image" || pathname.endsWith("/_akan/image");
   }
 
   async #ensureRoute(url: URL) {
@@ -852,8 +824,11 @@ export class WebRouter {
     const snapshot = this.#routeCache.snapshot();
     const manifest: MergedManifest = {
       ...snapshot,
-      clientManifest: WebRouter.#mergeClientManifest(this.#artifact.rscRuntimeClientManifest, snapshot.clientManifest),
-      ssrManifest: WebRouter.#mergeSsrManifest(this.#artifact.rscRuntimeSsrManifest, snapshot.ssrManifest),
+      clientManifest: Object.assign({}, this.#artifact.rscRuntimeClientManifest, snapshot.clientManifest),
+      ssrManifest: {
+        moduleLoading: null,
+        moduleMap: Object.assign({}, this.#artifact.rscRuntimeSsrManifest?.moduleMap, snapshot.ssrManifest.moduleMap),
+      },
     };
     this.#runtimeManifest = { revision, manifest };
     return manifest;
@@ -1001,18 +976,6 @@ export class WebRouter {
     if (!last || last.index === undefined) return `${html}\n${snippet}`;
     return `${html.slice(0, last.index)}${snippet}\n${html.slice(last.index)}`;
   }
-  static #rscNotFoundResponse(): Response {
-    return createRscNotFoundFallbackResponse();
-  }
-  #getProductionRouteCache() {
-    return new RouteClientCache({
-      buildRoute: async (routeId) => {
-        throw new Error(
-          `[SSR] route ${routeId} missing from production artifact — rebuild with \`akan build\` to include it`,
-        );
-      },
-    });
-  }
 
   /** `null` when the build has no web artifact (an api-only build, or no `page/`): boot without a web surface. */
   static async create({ web, upgradeHmrWs }: SsrRoutesInputs): Promise<WebRouter | null> {
@@ -1050,10 +1013,6 @@ export class WebRouter {
     return path.join(process.cwd(), "apps", getEnv().appName, ".akan", "artifact");
   }
 
-  static #resolveAppDir() {
-    return process.env.AKAN_APP_DIR ?? path.dirname(Bun.main);
-  }
-
   static #normalizeArtifact(artifact: BaseBuildArtifact, artifactDir: string): BaseBuildArtifact {
     const normalizedArtifactDir = path.resolve(artifactDir);
     const pagesBundlePath = WebRouter.#resolveArtifactPath(artifact.pagesBundlePath, normalizedArtifactDir);
@@ -1065,18 +1024,6 @@ export class WebRouter {
         ? WebRouter.#normalizeSsrManifest(artifact.rscRuntimeSsrManifest, normalizedArtifactDir)
         : undefined,
       i18n: artifact.i18n ?? DEFAULT_AKAN_I18N,
-    };
-  }
-
-  static #mergeClientManifest(...manifests: Array<ClientManifest | undefined>): ClientManifest {
-    return Object.assign({}, ...manifests.filter(Boolean));
-  }
-
-  static #mergeSsrManifest(...manifests: Array<SsrManifest | undefined>): SsrManifest {
-    const definedManifests = manifests.filter((manifest): manifest is SsrManifest => Boolean(manifest));
-    return {
-      moduleLoading: null,
-      moduleMap: Object.assign({}, ...definedManifests.map((manifest) => manifest.moduleMap)),
     };
   }
 
@@ -1130,12 +1077,6 @@ export class WebRouter {
     return path.resolve(artifactDir, "server", path.basename(artifactPath));
   }
 
-  static #resolveCsrDir(artifactDir: string) {
-    const localCsrDir = path.join(process.cwd(), "csr");
-    if (fs.existsSync(localCsrDir)) return localCsrDir;
-    return path.join(artifactDir, "csr");
-  }
-
   static #resolveCsrHtmlPath(csrOutputDir: string, pathname: string, artifact: BaseBuildArtifact): string | null {
     const basePath = getBasePathFromPathname(pathname, {
       basePaths: artifact.basePaths,
@@ -1156,7 +1097,7 @@ export class WebRouter {
     if (!(await file.exists())) return new Response("Not Found", { status: 404 });
     const stat = fs.statSync(filePath);
     const lastModifiedMs = Math.floor(stat.mtimeMs / 1000) * 1000;
-    const etag = WebRouter.#weakEtag(stat.size, lastModifiedMs);
+    const etag = `W/"${stat.size.toString(16)}-${lastModifiedMs.toString(16)}"`;
     headers.set("ETag", etag);
     headers.set("Last-Modified", new Date(lastModifiedMs).toUTCString());
     if (WebRouter.#isNotModified(req, etag, lastModifiedMs)) return new Response(null, { status: 304, headers });
@@ -1177,7 +1118,6 @@ export class WebRouter {
     artifact: BaseBuildArtifact,
     { cacheControl }: { cacheControl: string },
   ) {
-    if (pathname !== APPLE_APP_SITE_ASSOCIATION_PATH && pathname !== ANDROID_ASSET_LINKS_PATH) return null;
     const associations = artifact.deepLinkAssociations ?? [];
     if (pathname === APPLE_APP_SITE_ASSOCIATION_PATH) {
       const details = associations
@@ -1218,19 +1158,6 @@ export class WebRouter {
     });
   }
 
-  static #bytesResponse(
-    _req: Request,
-    bytes: Uint8Array,
-    options: { contentType: string; cacheControl?: string },
-  ): Response {
-    const headers = WebRouter.#baseAssetHeaders(options);
-    return new Response(WebRouter.#toArrayBuffer(bytes), { headers });
-  }
-
-  static #toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-  }
-
   // nosniff: Bun.file().type falls back to octet-stream, and a sniffing browser may run a public/ file as script.
   // Referrer-Policy: paths carry ids. X-Frame-Options (HTML only): stops clickjacking of SameSite=None-cookie pages.
   static #applySecurityHeaders(headers: Headers, { html = false } = {}): Headers {
@@ -1244,10 +1171,6 @@ export class WebRouter {
     const headers = new Headers({ "Content-Type": options.contentType });
     if (options.cacheControl) headers.set("Cache-Control", options.cacheControl);
     return WebRouter.#applySecurityHeaders(headers);
-  }
-
-  static #weakEtag(size: number, mtimeMs: number): string {
-    return `W/"${size.toString(16)}-${mtimeMs.toString(16)}"`;
   }
 
   static #isNotModified(req: Request, etag: string, lastModifiedMs: number): boolean {
