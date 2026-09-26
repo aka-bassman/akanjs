@@ -5,11 +5,7 @@ import type { App } from "../commandDecorators";
 
 const COMPRESSIBLE_EXTS = new Set([".css", ".html", ".js", ".json", ".svg"]);
 const MIN_COMPRESS_BYTES = 1024;
-/**
- * Quality 11 is roughly 100x slower than gzip, so it is spent only where it pays: there is one CSS asset
- * per basePath and it is the largest single file the app ships, worth ~20% over gzip for ~0.2s. Raising the
- * several hundred JS chunks from 9 to 11 costs ~12s of build time to save a few hundred KB, so they stay at 9.
- */
+// Brotli 11 is ~100x slower than gzip: worth it for the one CSS asset per basePath, not for hundreds of JS chunks.
 const BROTLI_QUALITY_BY_EXT = { ".css": 11 } as const;
 const DEFAULT_BROTLI_QUALITY = 9;
 const GZIP_LEVEL = 9;
@@ -22,8 +18,7 @@ export interface PrecompressArtifactsResult {
 }
 
 export async function precompressArtifacts(app: App): Promise<PrecompressArtifactsResult> {
-  //* styles too: WebRouter serves both prefixes through the same sidecar-aware #fileResponse, and the
-  //* one CSS asset per basePath is the largest uncompressed payload the app ships.
+  //* WebRouter serves client/ and styles/ through the same sidecar-aware #fileResponse.
   const roots = [
     path.join(app.dist.cwdPath, ".akan/artifact/client"),
     path.join(app.dist.cwdPath, ".akan/artifact/styles"),

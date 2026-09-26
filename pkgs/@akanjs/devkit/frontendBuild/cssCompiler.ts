@@ -17,7 +17,6 @@ interface CssDiscovery {
   sourcePaths: string[];
 }
 
-/** One `@import` target and the custom properties it declares, which is what proves it arrived downstream. */
 export interface ImportedStylesheet {
   cssPath: string;
   declaredNames: string[];
@@ -32,32 +31,18 @@ export class CssCompiler {
     this.#app = app;
   }
 
-  /**
-   * Beside the sources rather than in `dist`, because the cache is keyed on source mtimes: a build and
-   * the dev server describe the same files, so they should share it rather than each pay the first scan.
-   */
+  // Beside the sources, not in `dist`: the build and the dev server scan the same files, so they share one cache.
   get #candidateCachePath() {
     return path.join(this.#app.cwdPath, ".akan/cache/cssCandidates.json");
   }
 
   #cssText: string | null = null;
   #cssTextByBasePath: Record<string, string> | null = null;
-  /**
-   * Import resolution memoised for the life of one compiler, which is one rebuild.
-   *
-   * The discovery BFS resolves the same specifier from every directory that imports it, and each miss
-   * costs up to 13 sequential `exists()` calls — the bare path, six extensions, six `index.*`. Nothing
-   * here outlives the rebuild, so there is no invalidation to get wrong.
-   */
+  // Memoised for one compiler, i.e. one rebuild: nothing outlives it, so there is nothing to invalidate.
   #fileExistsCache = new Map<string, Promise<boolean>>();
   #resolvedFileCache = new Map<string, Promise<string | null>>();
   #resolvedSpecifierCache = new Map<string, Promise<string | null>>();
-  /** Every stylesheet this compile reached, entry points and `@import` targets alike. */
   #discoveredCssPaths = new Set<string>();
-  /**
-   * `@import` targets per base path, so whoever writes the asset can check the file it actually wrote — the
-   * compiled text and the written artifact are two different places a declaration can go missing.
-   */
   importedStylesheetsByBasePath: Record<string, ImportedStylesheet[]> = {};
 
   #fileExists(absPath: string): Promise<boolean> {
@@ -137,11 +122,6 @@ export class CssCompiler {
     return this.#cssTextByBasePath;
   }
 
-  /**
-   * A stylesheet under `page/` reaches the build only by being imported from a route source. One that nothing
-   * imports compiles to nothing and reports success, which is indistinguishable from an empty theme — so say it
-   * out loud once per compile rather than leaving it to be noticed as unstyled elements in the browser.
-   */
   async #warnUnreachableStylesheets() {
     const pageDir = path.join(this.#app.cwdPath, "page");
     const glob = new Bun.Glob("**/*.css");
@@ -225,11 +205,7 @@ export class CssCompiler {
     return { cssPaths, sourcePaths: [...sourceFiles] };
   }
 
-  /**
-   * `libs/<lib>/ui/tokens.css` of every lib the page graph reached, so a lib can own the fixed colours its own
-   * components need instead of each consuming app re-declaring them. Ordered ahead of the app's stylesheets:
-   * the app is the last word on any variable both declare.
-   */
+  // Lib tokens go ahead of the app's stylesheets, so the app has the last word on a variable both declare.
   async #libTokenStylesheets(sourceFiles: Set<string>): Promise<string[]> {
     const libsRoot = path.join(this.#app.workspace.workspaceRoot, "libs");
     const libNames = new Set<string>();
@@ -252,10 +228,7 @@ export class CssCompiler {
     return css;
   }
 
-  /**
-   * The collector is per compile rather than per compiler instance: `getCssByBasePath` compiles every base path
-   * concurrently, so instance state would mix one base path's imports into another's check.
-   */
+  // A per-compile collector: getCssByBasePath compiles base paths concurrently, so instance state would mix them.
   async #compileWithImports(
     cssPaths: string[],
     sourcePaths: string[],
@@ -317,11 +290,7 @@ export class CssCompiler {
     return { path: p, base: path.dirname(p), content };
   }
 
-  /**
-   * Every specifier is verified here, path-shaped ones included. An `@import` the pipeline cannot resolve is
-   * a build error and never a no-op: the vocabulary closure means a component whose token declaration failed
-   * to load renders unstyled, which nothing downstream can distinguish from a design choice.
-   */
+  // An unresolvable @import throws: under vocabulary closure a missing token file just renders unstyled.
   async #resolveCssImport(id: string, fromBase: string): Promise<string> {
     if (id.startsWith(".") || id.startsWith("/")) {
       const filePath = path.resolve(fromBase, id);
@@ -349,10 +318,7 @@ export class CssCompiler {
     fromBase: string,
     resolvePackage: Awaited<ReturnType<typeof createTsconfigPackageResolver>>,
   ): Promise<string | null> {
-    // Keyed by importer directory even for bare specifiers: the tsconfig resolver is
-    // directory-independent, but the `Bun.resolveSync` / `require.resolve` fallbacks below are not.
-    // The expensive part — the `exists()` probes — is deduplicated by absolute path instead, which is
-    // shared across every importer.
+    // Keyed by importer directory even for bare specifiers: the Bun/require fallbacks are directory-dependent.
     const cacheKey = `${fromBase}\0${id}`;
     let cached = this.#resolvedSpecifierCache.get(cacheKey);
     if (cached) return cached;
@@ -430,10 +396,7 @@ export function isIgnoredNodeModuleSource(filePath: string): boolean {
   return NODE_MODULES_RE.test(filePath) && !AKANJS_NODE_MODULE_RE.test(filePath);
 }
 
-/**
- * `@theme` blocks are stripped first: those variables are emitted only when a utility uses one, so their
- * absence from a build says nothing about whether the stylesheet arrived.
- */
+/** Skips `@theme` blocks: Tailwind emits those variables only when a utility uses one. */
 export function declaredCustomProperties(css: string): string[] {
   const withoutThemeBlocks = css.replace(/@theme[^{]*\{[^}]*\}/g, "");
   return [...new Set([...withoutThemeBlocks.matchAll(/(?:^|[\s;{])(--[\w-]+)\s*:/g)].map(([, name]) => name))].filter(

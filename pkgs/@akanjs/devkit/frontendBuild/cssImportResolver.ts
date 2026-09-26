@@ -111,8 +111,7 @@ export class CssImportResolver {
           ? exportValue
           : exportValue?.style || exportValue?.import || exportValue?.default;
       if (exportedEntry) return await this.#firstExisting(path.resolve(pkgDir, exportedEntry));
-      //* A subpath names a file inside the package, so it resolves literally. Falling back to the package's own
-      //* style entry here would load a different stylesheet than the author asked for and report success.
+      //* A subpath resolves literally: the package's own style entry would silently load a different stylesheet.
       if (subpath !== ".") return await this.#firstExisting(path.resolve(pkgDir, subpath));
       return await this.#firstExisting(path.resolve(pkgDir, pkg.exports?.["."]?.style || pkg.style || "index.css"));
     } catch {

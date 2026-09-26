@@ -21,10 +21,6 @@ export interface OptimizeAppFontsResult {
   files: string[];
 }
 
-/**
- * Lets a boot that changed nothing about its fonts skip re-subsetting them. `files` is stored relative
- * to the artifact root so the `build` and `start` roots keep independent, relocatable caches.
- */
 interface FontOptimizerCache {
   version: number;
   key: string;
@@ -43,8 +39,6 @@ export class FontOptimizer {
   #woff2Ready: Promise<void> | null = null;
 
   static #ksX1001Text: string | null = null;
-  // 2: the key moved to sha256 over a deterministically ordered `auto` text, so v1 entries cannot be
-  // compared against and their subsets were built from `page`/`ui` only.
   static readonly #cacheVersion = 2;
 
   constructor(app: App, command: FontOptimizerCommand = "start") {
@@ -76,10 +70,7 @@ export class FontOptimizer {
     return path.join(this.#artifactRoot, "fontCache.json");
   }
 
-  /**
-   * Null means "do not cache this run": a source we cannot stat is a source whose staleness we cannot
-   * detect, and the uncached path is also the one that warns about it.
-   */
+  // null skips the cache: an unstat-able source's staleness is undetectable, and the uncached path warns about it.
   async #buildCacheKey(fonts: ReactFont[]): Promise<string | null> {
     const sources: unknown[] = [];
     for (const font of fonts) {
@@ -96,18 +87,13 @@ export class FontOptimizer {
         if (!stamp) return null;
         sources.push({ subsetFile: filePath, ...stamp });
       }
-      // `auto` derives the subset from app source text, which no font config hash can capture.
       if (this.#getFontSubsets(font).includes("auto"))
         sources.push({ autoSubsetText: this.#cacheDigest(await this.#collectAutoSubsetText()) });
     }
     return this.#cacheDigest({ version: FontOptimizer.#cacheVersion, fonts, sources });
   }
 
-  /**
-   * Cache keys get a cryptographic digest, not the 32-bit FNV `#hashFontConfig` computes for filenames:
-   * a collision there serves a stale subset as if it were current, while a filename only has to be short
-   * and stable.
-   */
+  // sha256, not #hashFontConfig's 32-bit FNV: a key collision would serve a stale subset as current.
   #cacheDigest(value: unknown) {
     return new Bun.CryptoHasher("sha256").update(this.#stableStringify(value)).digest("hex");
   }
@@ -152,8 +138,6 @@ export class FontOptimizer {
         const file = Bun.file(filePath);
         if (!(await file.exists())) return;
         const source = await file.text();
-        // A `.fonts()` stage or a `fonts` declaration cannot exist in text that never mentions it, and parsing the
-        // route files that never declare one is what a cached optimize() otherwise spends its time on.
         if (!source.includes("fonts")) return;
         fonts.push(...this.#extractFontsExport(source, filePath));
       }),
@@ -186,12 +170,6 @@ export class FontOptimizer {
     if (faceCss.length > 0) this.#cssParts.push(...faceCss, this.#buildRootVariableRule(font));
   }
 
-  /**
-   * The font list of a route file, from the `.fonts([…])` stage of its default-exported `rootLayout()` chain
-   * or from the legacy `export const fonts`. Only an inline literal is readable, because the build enumerates
-   * routes without evaluating them — and a list it cannot read is warned about rather than skipped in silence:
-   * the runtime still emits `/_akan/fonts` preloads for fonts nothing subset, and every one of them 404s.
-   */
   #extractFontsExport(source: string, filePath: string): ReactFont[] {
     const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const declaration = this.#findFontsDeclaration(sourceFile);
@@ -231,7 +209,7 @@ export class FontOptimizer {
     return null;
   }
 
-  /** Walks a `rootLayout()` chain from its outermost call inward, so the stage that wins at runtime is the one read. */
+  // Outermost call first, so `??=` keeps the stage that wins at runtime.
   #findChainStageArgument(expression: ts.Expression, stageName: string): ts.Expression | null {
     let node = this.#unwrapExpression(expression);
     let argument: ts.Expression | null = null;
@@ -393,8 +371,7 @@ export class FontOptimizer {
     return null;
   }
 
-  /** `subset-font`, `fonteditor-core` and `fontaine` are imported here rather than at module scope so a
-   * cache hit — the common case once the cache exists — loads none of them. */
+  // The font libraries are imported lazily so a cache hit loads none of them.
   async #buildFontBuffer(font: ReactFont, sourceBuffer: Buffer, sourcePath: string) {
     if (font.subset === false) return this.#convertToWoff2(sourceBuffer, sourcePath);
     const { default: subsetFont } = await import("subset-font");
@@ -450,18 +427,7 @@ export class FontOptimizer {
     return "";
   }
 
-  /**
-   * Every source that can put a glyph on screen, concatenated in a **stable** order.
-   *
-   * The order is load-bearing even though a glyph set is not: `#buildCacheKey` hashes this string, so
-   * reading the roots concurrently and pushing as each file resolved made the key depend on i/o
-   * scheduling — measured 8 distinct keys over 8 runs against unchanged sources, which means the cache
-   * never hit and every build re-subset the fonts.
-   *
-   * `lib` is in the roots because that is where user-facing text actually lives: a dictionary's
-   * `[en, ko]` pairs are the Korean in the app, and a subset built from `page` and `ui` alone renders
-   * them as tofu — while hashing the same partial text also stopped a new label from invalidating.
-   */
+  // Keep the order stable: #buildCacheKey hashes this text. `lib` counts because dictionaries hold user-visible text.
   async #collectAutoSubsetText() {
     //* Synced lib pages hold app-visible text too, and a glob never crosses the symlink that mounts them.
     const libPageRoots = (await this.#app.getPageRoots()).filter((root) => root.keyPrefix).map((root) => root.dir);
