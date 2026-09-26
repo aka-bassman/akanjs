@@ -47,8 +47,6 @@ afterEach(() => {
 });
 
 describe("client runtime", () => {
-  // The reported bug: a lib built its own FetchClient, only the app runtime got connected, and every subscribe
-  // issued from lib UI sat on a socket that never opened.
   test("app and lib resolve to one fetch client, whichever registered first", async () => {
     Object.assign(globalThis, { window: {} });
     const LibErr = makeErrCls("lib");

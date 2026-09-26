@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
 import { interpolateTranslation } from "../common/interpolateTranslation";
 import { pathGetLoose } from "../common/pathGetLoose";
+import type { RouterInstance } from "./router";
 
 type Side = "server" | "client";
 
@@ -95,6 +96,34 @@ const installClientWindow = (pathname = "/en/admin/current", search = "", hash =
   });
 };
 
+const recordingRouter = (calls: unknown[]): RouterInstance => ({
+  push: (href, options) => {
+    calls.push(["push", href, options]);
+  },
+  replace: (href, options) => {
+    calls.push(["replace", href, options]);
+  },
+  back: (options) => calls.push(["back", options]),
+  refresh: () => calls.push(["refresh"]),
+});
+
+const queueTimeouts = () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((handler: TimerHandler) => {
+    timeoutCallbacks.push(() => {
+      if (typeof handler === "function") handler();
+    });
+    return timeoutCallbacks.length as unknown as ReturnType<typeof setTimeout>;
+  }) as unknown as typeof setTimeout;
+  return () => {
+    globalThis.setTimeout = originalSetTimeout;
+  };
+};
+
+const flushTimeouts = () => {
+  for (const callback of timeoutCallbacks.splice(0)) callback();
+};
+
 afterEach(() => {
   envState.side = "client";
   envState.operationMode = "local";
@@ -144,14 +173,7 @@ describe("router", () => {
     };
     Object.assign(window, { history: historyStub, addEventListener: () => undefined });
     const calls: unknown[] = [];
-    const originalSetTimeout = globalThis.setTimeout;
-    const mockSetTimeout = ((handler: TimerHandler) => {
-      timeoutCallbacks.push(() => {
-        if (typeof handler === "function") handler();
-      });
-      return timeoutCallbacks.length as unknown as ReturnType<typeof setTimeout>;
-    }) as unknown as typeof setTimeout;
-    globalThis.setTimeout = mockSetTimeout;
+    const restoreTimeout = queueTimeouts();
     const { router } = await import("./router");
 
     router.init({
@@ -169,16 +191,7 @@ describe("router", () => {
         "/:lang/profile/self/edit",
       ],
       indexPath: "/explore",
-      router: {
-        push: (href, options) => {
-          calls.push(["push", href, options]);
-        },
-        replace: (href, options) => {
-          calls.push(["replace", href, options]);
-        },
-        back: (options) => calls.push(["back", options]),
-        refresh: () => calls.push(["refresh"]),
-      },
+      router: recordingRouter(calls),
     });
 
     expect(historyState).toEqual({ __akanRouter: { idx: 0 } });
@@ -207,20 +220,13 @@ describe("router", () => {
       ["push", "/en/admin/profile/self/edit", {}],
     ]);
     expect(router.canGoBack()).toBe(true);
-    globalThis.setTimeout = originalSetTimeout;
+    restoreTimeout();
   });
 
   test("client router init wraps push, replace, back, refresh, and path helpers", async () => {
     envState.side = "client";
     installClientWindow();
-    const originalSetTimeout = globalThis.setTimeout;
-    const mockSetTimeout = ((handler: TimerHandler) => {
-      timeoutCallbacks.push(() => {
-        if (typeof handler === "function") handler();
-      });
-      return timeoutCallbacks.length as unknown as ReturnType<typeof setTimeout>;
-    }) as unknown as typeof setTimeout;
-    globalThis.setTimeout = mockSetTimeout;
+    const restoreTimeout = queueTimeouts();
     const calls: unknown[] = [];
     const { router } = await import("./router");
 
@@ -228,24 +234,13 @@ describe("router", () => {
       type: "csr",
       lang: "en",
       prefix: "admin",
-      router: {
-        push: (href, options) => {
-          calls.push(["push", href, options]);
-        },
-        replace: (href, options) => {
-          calls.push(["replace", href, options]);
-        },
-        back: (options) => calls.push(["back", options]),
-        refresh: () => calls.push(["refresh"]),
-      },
+      router: recordingRouter(calls),
     });
 
     router.push("/users", { scrollToTop: true });
     router.replace("/settings");
     expect(calls).toEqual([["push", "/en/admin/users", { scrollToTop: true }]]);
-    timeoutCallbacks.splice(0).forEach((callback) => {
-      callback();
-    });
+    flushTimeouts();
     expect(calls).toEqual([
       ["push", "/en/admin/users", { scrollToTop: true }],
       ["replace", "/en/admin/settings", undefined],
@@ -260,11 +255,9 @@ describe("router", () => {
     expect(router.getPrefixedPath("/next")).toBe("/en/admin/next");
 
     router.setLang("ko");
-    timeoutCallbacks.splice(0).forEach((callback) => {
-      callback();
-    });
+    flushTimeouts();
     expect(calls.at(-1)).toEqual(["replace", "/ko/admin/current", undefined]);
-    globalThis.setTimeout = originalSetTimeout;
+    restoreTimeout();
   });
 
   test("navigation() carries a refused push back to the caller", async () => {
@@ -291,22 +284,14 @@ describe("router", () => {
 
     router.push("/nope");
     await expect(router.navigation()).rejects.toThrow("no route at /nope");
-    // Awaited a second time: the refusal is held inside the router, so nobody's failure to await it turns into an
-    // unhandled rejection, and the one caller that does await it still sees it.
+    // Awaited twice: the router holds the refusal, so an unawaited one is no unhandled rejection, yet it still rejects.
     await expect(router.navigation()).rejects.toThrow("no route at /nope");
   });
 
   test("csr navigation preserves csr runtime search params", async () => {
     envState.side = "client";
     installClientWindow("/en/admin/current", "?csr=true&akanMobileTarget=default&akanMobileBasePath=admin");
-    const originalSetTimeout = globalThis.setTimeout;
-    const mockSetTimeout = ((handler: TimerHandler) => {
-      timeoutCallbacks.push(() => {
-        if (typeof handler === "function") handler();
-      });
-      return timeoutCallbacks.length as unknown as ReturnType<typeof setTimeout>;
-    }) as unknown as typeof setTimeout;
-    globalThis.setTimeout = mockSetTimeout;
+    const restoreTimeout = queueTimeouts();
     const calls: unknown[] = [];
     const { router } = await import("./router");
 
@@ -314,29 +299,18 @@ describe("router", () => {
       type: "csr",
       lang: "en",
       prefix: "admin",
-      router: {
-        push: (href, options) => {
-          calls.push(["push", href, options]);
-        },
-        replace: (href, options) => {
-          calls.push(["replace", href, options]);
-        },
-        back: (options) => calls.push(["back", options]),
-        refresh: () => calls.push(["refresh"]),
-      },
+      router: recordingRouter(calls),
     });
 
     router.push("/users?tab=a#bio");
     router.replace("/settings?csr=false");
-    timeoutCallbacks.splice(0).forEach((callback) => {
-      callback();
-    });
+    flushTimeouts();
 
     expect(calls).toEqual([
       ["push", "/en/admin/users?tab=a&csr=true&akanMobileTarget=default&akanMobileBasePath=admin#bio", undefined],
       ["replace", "/en/admin/settings?csr=false&akanMobileTarget=default&akanMobileBasePath=admin", undefined],
     ]);
-    globalThis.setTimeout = originalSetTimeout;
+    restoreTimeout();
   });
 
   test("ssr client navigation hides base path outside local mode", async () => {
@@ -351,16 +325,7 @@ describe("router", () => {
       side: "client",
       lang: "en",
       prefix: "admin",
-      router: {
-        push: (href, options) => {
-          calls.push(["push", href, options]);
-        },
-        replace: (href, options) => {
-          calls.push(["replace", href, options]);
-        },
-        back: (options) => calls.push(["back", options]),
-        refresh: () => calls.push(["refresh"]),
-      },
+      router: recordingRouter(calls),
     });
 
     router.push("/", { scrollToTop: true });
@@ -385,16 +350,7 @@ describe("router", () => {
       side: "client",
       lang: "en",
       prefix: "akanjs",
-      router: {
-        push: (href, options) => {
-          calls.push(["push", href, options]);
-        },
-        replace: (href, options) => {
-          calls.push(["replace", href, options]);
-        },
-        back: (options) => calls.push(["back", options]),
-        refresh: () => calls.push(["refresh"]),
-      },
+      router: recordingRouter(calls),
     });
 
     router.setLang("ko");
