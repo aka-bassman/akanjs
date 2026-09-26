@@ -5,11 +5,7 @@ type GetContent = (
   dict: { Model: string; model: string; appName: string; clientPath: string },
 ) => { filename: string; content: string };
 
-// The CRUD page scaffolds are `getContent(scanInfo, dict)` factories under templates/. They render the
-// _index.tsx / edit page source a fresh workspace ships with, so their output must itself pass
-// `akan typecheck`/`akan lint` without hand edits. These golden checks guard the two mistakes that are
-// mechanically always avoidable: `await` inside a non-async `render` callback, and app-client imports that skip the
-// `@apps/*` path alias.
+// The CRUD page scaffolds render source a fresh workspace ships with, so it must pass typecheck and lint unedited.
 const templates = [
   { name: "crudPages list", path: "../templates/crudPages/page.tsx" },
   { name: "crudPages new", path: "../templates/crudPages/new/page.tsx" },
@@ -49,8 +45,7 @@ describe("crud page scaffolds", () => {
 
     test(`${name}: no unused named imports`, async () => {
       const content = await renderContent(path);
-      // noUnusedImports is a Biome error in this repo, so a scaffold that imports an unused symbol would
-      // fail `akan lint`. Check every named import is referenced somewhere in the body.
+      // noUnusedImports is a Biome error here, so an unused scaffold import fails `akan lint`.
       for (const [, names] of content.matchAll(/import\s+(?:type\s+)?\{([^}]+)\}\s+from/g)) {
         for (const raw of names.split(",")) {
           const symbol = raw.replace(/^\s*type\s+/, "").trim();
