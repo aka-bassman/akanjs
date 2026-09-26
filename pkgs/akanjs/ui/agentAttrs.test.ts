@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import type { ClientSignal } from "akanjs/fetch";
 import { createElement } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
-import { setTestEnv } from "./testHelpers";
+import { setTestEnv } from "./testHelpers.fixture";
 
 let html: string;
 let plainHtml: string;

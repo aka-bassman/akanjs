@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import type { SerializedArg, SerializedEndpoint } from "akanjs/signal";
-import { makeRef, setTestEnv } from "../testHelpers";
+import { makeRef, setTestEnv } from "../testHelpers.fixture";
 
 let getExampleData: typeof import("./makeExample").getExampleData;
 let makeResponseExample: typeof import("./makeExample").makeResponseExample;

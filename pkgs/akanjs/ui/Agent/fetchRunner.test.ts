@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { registerClientRuntime, Translator } from "akanjs/client";
 import type { RunnerEvent, RunnerRequest } from "use-agentic";
-import { setTestEnv } from "../testHelpers";
+import { setTestEnv } from "../testHelpers.fixture";
 import { fetchRunner } from "./fetchRunner";
 
 setTestEnv("runnertest");

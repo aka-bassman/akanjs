@@ -4,7 +4,7 @@ import type { ServerInit, ServerView } from "akanjs/fetch";
 import { act, type ReactNode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { itemFixtureOf, l, setTestEnv } from "../testHelpers";
+import { itemFixtureOf, l, setTestEnv } from "../testHelpers.fixture";
 
 let Units: typeof import("./Units").default;
 let View: typeof import("./View").default;

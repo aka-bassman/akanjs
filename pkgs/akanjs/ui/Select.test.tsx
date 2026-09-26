@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToReadableStream } from "react-dom/server.browser";
-import { setTestEnv } from "./testHelpers";
+import { setTestEnv } from "./testHelpers.fixture";
 
 let Select: typeof import("./Select").Select;
 

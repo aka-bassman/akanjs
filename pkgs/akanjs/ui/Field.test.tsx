@@ -4,7 +4,7 @@ import type { Dayjs } from "akanjs/base";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { mount, setTestEnv } from "./testHelpers";
+import { mount, setTestEnv } from "./testHelpers.fixture";
 
 let Field: typeof import("./Field").Field;
 let DraggableList: typeof import("./DraggableList").DraggableList;

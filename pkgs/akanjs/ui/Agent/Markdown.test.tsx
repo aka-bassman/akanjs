@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { setTestEnv } from "../testHelpers";
+import { setTestEnv } from "../testHelpers.fixture";
 
 let Markdown: typeof import("./Markdown").default;
 

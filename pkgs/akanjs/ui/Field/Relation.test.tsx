@@ -3,7 +3,7 @@ import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { DataList } from "akanjs/base";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { setTestEnv } from "../testHelpers";
+import { setTestEnv } from "../testHelpers.fixture";
 
 interface Row {
   id: string;

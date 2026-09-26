@@ -2,7 +2,7 @@ import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
-import { setTestEnv } from "../testHelpers";
+import { setTestEnv } from "../testHelpers.fixture";
 
 let SelectLanguage: typeof import("./SelectLanguage").SelectLanguage;
 let lib: typeof import("use-agentic");

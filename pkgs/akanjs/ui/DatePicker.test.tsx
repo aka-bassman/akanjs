@@ -2,7 +2,7 @@ import "../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import type { Dayjs } from "akanjs/base";
 import { act, type ReactNode } from "react";
-import { mountSuspense, setTestEnv } from "./testHelpers";
+import { mountSuspense, setTestEnv } from "./testHelpers.fixture";
 
 let DatePicker: typeof import("./DatePicker").DatePicker;
 let dayjs: typeof import("akanjs/base").dayjs;

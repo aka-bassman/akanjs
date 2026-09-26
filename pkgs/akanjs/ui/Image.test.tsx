@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
 import { CsrImage } from "./CsrImage";
 import { Image } from "./Image";
-import { setTestEnv } from "./testHelpers";
+import { setTestEnv } from "./testHelpers.fixture";
 
 beforeAll(() => {
   setTestEnv("imagetest");

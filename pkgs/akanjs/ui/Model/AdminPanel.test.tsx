@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, mock, test } from "bun:test";
 import { act, type ReactNode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { itemFixtureOf, l, rootSliceArgs, setTestEnv, waitFor } from "../testHelpers";
+import { itemFixtureOf, l, rootSliceArgs, setTestEnv, waitFor } from "../testHelpers.fixture";
 
 let AdminPanel: typeof import("./AdminPanel").default;
 let makeStore: (state?: Record<string, unknown>) => void;

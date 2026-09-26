@@ -2,7 +2,7 @@ import "../../test/registerDom";
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { setTestEnv } from "../testHelpers";
+import { setTestEnv } from "../testHelpers.fixture";
 
 let ThemeToggle: typeof import("./ThemeToggle").ThemeToggle;
 let lib: typeof import("use-agentic");

@@ -1,7 +1,7 @@
 import "../test/registerDom";
 import { describe, expect, test } from "bun:test";
 import { act } from "react";
-import { mountAsync } from "./testHelpers";
+import { mountAsync } from "./testHelpers.fixture";
 import { triggerSlot } from "./triggerSlot";
 
 const click = async (element: Element) => {

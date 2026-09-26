@@ -7,7 +7,7 @@ import {
   type SurfaceSource,
   type SurfaceView,
 } from "use-agentic";
-import { setTestEnv } from "../testHelpers";
+import { setTestEnv } from "../testHelpers.fixture";
 
 let sessionView: typeof import("./agentSessionOf").sessionView;
 let sessionHistoryOf: typeof import("./agentSessionOf").sessionHistoryOf;

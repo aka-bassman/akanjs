@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { act, Component, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToReadableStream } from "react-dom/server.browser";
-import { mount } from "../testHelpers";
+import { mount } from "../testHelpers.fixture";
 import Stream from "./Stream";
 
 /** A suspending first render has to settle inside an awaited `act`, or React warns and commits nothing. */

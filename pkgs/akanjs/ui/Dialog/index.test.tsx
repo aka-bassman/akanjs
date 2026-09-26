@@ -2,7 +2,7 @@ import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import { act } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { l, mountAsync, setTestEnv } from "../testHelpers";
+import { l, mountAsync, setTestEnv } from "../testHelpers.fixture";
 
 let Dialog: typeof import("./index").Dialog;
 

@@ -2,7 +2,7 @@ import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { itemFixtureOf, l, mountSuspense, setTestEnv, waitFor } from "../testHelpers";
+import { itemFixtureOf, l, mountSuspense, setTestEnv, waitFor } from "../testHelpers.fixture";
 
 let New: typeof import("./New").default;
 let makeStore: () => void;

@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import type { ConstantCls } from "akanjs/constant";
 import type { ReactElement } from "react";
-import { makeRef, setTestEnv } from "../testHelpers";
+import { makeRef, setTestEnv } from "../testHelpers.fixture";
 
 let UiObject: typeof import("./Object").default;
 let render: (element: ReactElement) => Promise<string>;

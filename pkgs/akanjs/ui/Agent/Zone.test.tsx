@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { AgentRunner, AgentSession, ChatMessage, RunnerRequest } from "use-agentic";
-import { l, setTestEnv } from "../testHelpers";
+import { l, setTestEnv } from "../testHelpers.fixture";
 
 let Zone: typeof import("./Zone").Zone;
 let History: typeof import("./History").History;

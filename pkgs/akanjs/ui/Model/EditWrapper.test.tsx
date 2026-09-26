@@ -2,7 +2,7 @@ import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import { act } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { itemFixtureOf, l, mountSuspense, setTestEnv } from "../testHelpers";
+import { itemFixtureOf, l, mountSuspense, setTestEnv } from "../testHelpers.fixture";
 
 let EditWrapper: typeof import("./EditWrapper").default;
 let ViewWrapper: typeof import("./ViewWrapper").default;

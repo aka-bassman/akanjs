@@ -1,7 +1,7 @@
 import "../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
-import { mount, setTestEnv } from "./testHelpers";
+import { mount, setTestEnv } from "./testHelpers.fixture";
 
 let RecentTime: typeof import("./RecentTime").RecentTime;
 let dayjs: typeof import("akanjs/base").dayjs;

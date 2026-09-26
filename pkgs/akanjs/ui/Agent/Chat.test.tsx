@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { AgentRunner, AgentSession, ChatMessage, MessageAttachment, ToolCallRequest } from "use-agentic";
-import { l, setTestEnv } from "../testHelpers";
+import { l, setTestEnv } from "../testHelpers.fixture";
 import type { ChatProps } from "./Chat";
 
 let lib: typeof import("use-agentic");

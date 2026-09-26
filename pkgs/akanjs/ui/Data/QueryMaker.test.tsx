@@ -2,7 +2,7 @@ import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import type { SerializedArg } from "akanjs/signal";
 import { act } from "react";
-import { itemFixtureOf, l, mountSuspense, rootSliceArgs, setTestEnv } from "../testHelpers";
+import { itemFixtureOf, l, mountSuspense, rootSliceArgs, setTestEnv } from "../testHelpers.fixture";
 
 let QueryMaker: typeof import("./QueryMaker").default;
 let makeStore: () => void;
