@@ -2,44 +2,28 @@
 import { cn, router } from "akanjs/client";
 import type { ReactNode } from "react";
 
-interface BackProps {
+interface ActionProps {
   className?: string;
   children?: ReactNode;
 }
-export const Back = ({ className, children }: BackProps) => {
-  return (
-    <div className={cn("cursor-pointer", className)} onClick={() => router.back()}>
-      {children}
-    </div>
-  );
-};
 
-interface CloseProps {
-  className?: string;
-  children?: ReactNode;
-}
-export const Close = ({ className, children }: CloseProps) => {
-  return (
-    <div
-      className={cn("cursor-pointer", className)}
-      onClick={() => {
-        window.close();
-      }}
-    >
-      {children}
-    </div>
-  );
-};
+export const Back = ({ className, children }: ActionProps) => (
+  <div className={cn("cursor-pointer", className)} onClick={() => router.back()}>
+    {children}
+  </div>
+);
 
-interface LangProps {
-  className?: string;
+export const Close = ({ className, children }: ActionProps) => (
+  <div className={cn("cursor-pointer", className)} onClick={() => window.close()}>
+    {children}
+  </div>
+);
+
+interface LangProps extends ActionProps {
   lang: "ko" | "en" | (string & {});
-  children?: ReactNode;
 }
-export const Lang = ({ className, lang, children }: LangProps) => {
-  return (
-    <div className={cn("cursor-pointer", className)} onClick={() => router.setLang(lang)}>
-      {children}
-    </div>
-  );
-};
+export const Lang = ({ className, lang, children }: LangProps) => (
+  <div className={cn("cursor-pointer", className)} onClick={() => router.setLang(lang)}>
+    {children}
+  </div>
+);

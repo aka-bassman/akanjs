@@ -4,47 +4,22 @@ import { cn, getPathInfo, router, usePage, usePathCtx } from "akanjs/client";
 import { loadCapacitorBrowser } from "akanjs/client/capacitor";
 import { Logger } from "akanjs/common";
 import { st } from "akanjs/store";
-import type { AnchorHTMLAttributes, ReactNode } from "react";
+import type { AnchorHTMLAttributes } from "react";
 
-type LinkProps = Record<never, never>;
-export type CommonLinkProps = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, keyof LinkProps | "href"> &
-  Omit<LinkProps, "href"> & {
-    /** Omitted, or with `disabled`, Link renders a plain div around the same children. */
-    href?: string | null;
-    children?: ReactNode;
-    disabled?: boolean;
-    scrollToTop?: boolean;
-    /** Replaces the current history entry instead of pushing a new one. */
-    replace?: boolean;
-    /** Applied while the current path starts with `href`, or equals it with `activeExact`. */
-    activeClassName?: string;
-    activeExact?: boolean;
-    /** Bypass route cache for client-side navigation when supported by the renderer. */
-    noCache?: boolean;
-  };
-
-export interface CsrLinkProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
-  href: string;
-  children?: ReactNode;
-  replace?: boolean;
-  activeClassName?: string;
-  activeExact?: boolean;
-  scrollToTop?: boolean;
-  noCache?: boolean;
-}
-
-export interface SsrLinkProps
-  extends Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, keyof LinkProps | "href">,
-    LinkProps {
-  href: string;
-  children?: ReactNode;
+export type CommonLinkProps = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
+  /** Omitted, or with `disabled`, Link renders a plain div around the same children. */
+  href?: string | null;
   disabled?: boolean;
   scrollToTop?: boolean;
+  /** Replaces the current history entry instead of pushing a new one. */
   replace?: boolean;
+  /** Applied while the current path starts with `href`, or equals it with `activeExact`. */
   activeClassName?: string;
   activeExact?: boolean;
+  /** Bypass route cache for client-side navigation when supported by the renderer. */
   noCache?: boolean;
-}
+};
+type AnchorProps = Omit<CommonLinkProps, "href" | "disabled"> & { href: string };
 
 export const CsrLink = ({
   className,
@@ -56,9 +31,8 @@ export const CsrLink = ({
   activeExact,
   noCache,
   ...props
-}: CsrLinkProps) => {
-  const pathCtx = usePathCtx();
-  const prefix = pathCtx.prefix;
+}: AnchorProps) => {
+  const { prefix } = usePathCtx();
   const currentPath = st.use.path({ agent: false });
   const { lang } = usePage();
   const { path, hash } = getPathInfo(href, lang, prefix ?? "");
@@ -67,15 +41,14 @@ export const CsrLink = ({
       className={cn(
         "cursor-pointer",
         className,
-        (activeExact ? currentPath === path : currentPath.startsWith(path)) && (activeClassName ?? ""),
+        (activeExact ? currentPath === path : currentPath.startsWith(path)) && activeClassName,
       )}
       {...props}
       onClick={(event) => {
         props.onClick?.(event);
         if (event.defaultPrevented) return;
         const isExternal = href.startsWith("http") || href.startsWith("mailto:") || href.startsWith("tel:");
-        const isHash = href.startsWith("#");
-        const url = isHash ? `${window.location.pathname}#${hash}` : href;
+        const url = href.startsWith("#") ? `${window.location.pathname}#${hash}` : href;
         if (isExternal)
           void loadCapacitorBrowser()
             .then(({ Browser }) => Browser.open({ url: href, presentationStyle: "popover" }))
@@ -92,7 +65,6 @@ export const CsrLink = ({
 export const SsrLink = ({
   className,
   children,
-  disabled,
   href,
   scrollToTop,
   replace,
@@ -100,40 +72,31 @@ export const SsrLink = ({
   activeExact,
   noCache,
   ...props
-}: SsrLinkProps) => {
+}: AnchorProps) => {
   const pathCtx = usePathCtx();
-  const prefix = pathCtx.prefix;
+  const prefix = pathCtx.prefix ?? "";
   const { lang, path: pagePath } = usePage();
-  const currentPath = pathCtx.location?.pathRoute?.path ?? getPathInfo(pagePath, lang, prefix ?? "").path;
+  const currentPath = pathCtx.location?.pathRoute?.path ?? getPathInfo(pagePath, lang, prefix).path;
   const isExternal = href.startsWith("http") || href.startsWith("mailto:") || href.startsWith("tel:");
-  const internalPathInfo = getPathInfo(href, lang, prefix ?? "");
-  const publicPathInfo = getPathInfo(href, lang, "");
-  const requestHref = getEnv().operationMode === "local" ? internalPathInfo.href : publicPathInfo.href;
+  const internalPathInfo = getPathInfo(href, lang, prefix);
+  const requestHref = getEnv().operationMode === "local" ? internalPathInfo.href : getPathInfo(href, lang, "").href;
   const path = internalPathInfo.path;
-  if (href.startsWith("#")) {
+  if (href.startsWith("#"))
     return (
-      <a className={cn(className, currentPath === path && (activeClassName ?? ""))} href={href}>
+      <a className={cn(className, currentPath === path && activeClassName)} href={href}>
         {children}
       </a>
     );
-  }
   return (
     <a
-      className={cn(
-        className,
-        (activeExact ? currentPath === path : currentPath.startsWith(path)) && (activeClassName ?? ""),
-      )}
-      href={isExternal ? href : href.startsWith("#") ? href : requestHref}
+      className={cn(className, (activeExact ? currentPath === path : currentPath.startsWith(path)) && activeClassName)}
+      href={isExternal ? href : requestHref}
       {...props}
       onClick={(event) => {
         props.onClick?.(event);
         if (event.defaultPrevented) return;
-        if (disabled) {
-          event.preventDefault();
-          return;
-        }
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        if (isExternal || href.startsWith("#")) return;
+        if (isExternal) return;
         const rscNavigationReady =
           typeof (globalThis as typeof globalThis & { __AKAN_RSC_NAVIGATE__?: unknown }).__AKAN_RSC_NAVIGATE__ ===
           "function";
