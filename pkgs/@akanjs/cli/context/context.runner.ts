@@ -267,7 +267,7 @@ export class ContextRunner extends runner("context") {
           format: "json",
           dryRun: !!args.dryRun,
           workspace,
-          registry: this.#workflowStepRegistry(workspace),
+          registry: ContextRunner.workflowStepRegistry(workspace),
         }),
       ) as Record<string, unknown>;
       const validationTarget =
@@ -318,7 +318,7 @@ export class ContextRunner extends runner("context") {
     throw new Error(`Unknown tool: ${name}`);
   }
 
-  #workflowStepRegistry(workspace: Workspace) {
+  static workflowStepRegistry(workspace: Workspace) {
     return createWorkflowStepRegistry({
       workspace,
       createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),

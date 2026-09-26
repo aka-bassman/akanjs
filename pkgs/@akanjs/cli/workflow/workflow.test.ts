@@ -4,19 +4,35 @@ import path from "node:path";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
 import { cleanupCliTempWorkspace, createTempModule, writeText } from "@akanjs/devkit/testHelpers";
 import {
-  createWorkflowStepRegistry,
   type WorkflowApplyReport,
   type WorkflowPlan,
+  type WorkflowPlanInputs,
+  type WorkflowValidationCommandExecutor,
   type WorkflowValidationRunReport,
   workflowStepKey,
 } from "@akanjs/devkit/workflow";
+import { ContextRunner } from "../context/context.runner";
 import { ModuleRunner } from "../module/module.runner";
-import { ModuleScript } from "../module/module.script";
-import { PrimitiveScript } from "../primitive/primitive.script";
-import { ScalarScript } from "../scalar/scalar.script";
 import { WorkflowRunner } from "./workflow.runner";
 
 const tempRoots: string[] = [];
+
+const planTaskWorkflow = async (
+  inputs: WorkflowPlanInputs,
+  { workflow = "add-field", plan = "task-priority", scaffold = true } = {},
+) => {
+  const { root, workspace, module } = await createTempModule("task");
+  tempRoots.push(root);
+  if (scaffold) await new ModuleRunner().createModuleTemplate(module);
+  const planPath = path.join(root, `.akan/workflows/plans/${plan}.json`);
+  const runner = new WorkflowRunner();
+  const output = await runner.plan(
+    workflow,
+    { app: "demo", module: "task", ...inputs },
+    { format: "json", out: planPath },
+  );
+  return { root, workspace, module, planPath, runner, output };
+};
 
 afterEach(async () => {
   CommandContainer.clear();
@@ -54,18 +70,7 @@ describe("WorkflowRunner", () => {
   test("plans add-field as read-only json contract", async () => {
     const output = await new WorkflowRunner().plan(
       "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "priority",
-        type: "enum",
-        values: "low,medium,high",
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
+      { app: "demo", module: "task", field: "priority", type: "enum", values: "low,medium,high" },
       { format: "json" },
     );
     const plan = JSON.parse(output) as WorkflowPlan;
@@ -107,18 +112,7 @@ describe("WorkflowRunner", () => {
   test("plans number field types as unsupported before apply", async () => {
     const output = await new WorkflowRunner().plan(
       "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "budget",
-        type: "number",
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
+      { app: "demo", module: "task", field: "budget", type: "number" },
       { format: "json" },
     );
     const plan = JSON.parse(output) as WorkflowPlan;
@@ -138,18 +132,7 @@ describe("WorkflowRunner", () => {
   test("plans default literal normalization before apply", async () => {
     const output = await new WorkflowRunner().plan(
       "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "budget",
-        type: "Float",
-        values: null,
-        default: "0",
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
+      { app: "demo", module: "task", field: "budget", type: "Float", default: "0" },
       { format: "json" },
     );
     const plan = JSON.parse(output) as WorkflowPlan;
@@ -173,18 +156,7 @@ describe("WorkflowRunner", () => {
   test("plans invalid enum default before apply", async () => {
     const output = await new WorkflowRunner().plan(
       "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "priority",
-        type: "enum",
-        values: "low,high",
-        default: "medium",
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
+      { app: "demo", module: "task", field: "priority", type: "enum", values: "low,high", default: "medium" },
       { format: "json" },
     );
     const plan = JSON.parse(output) as WorkflowPlan;
@@ -195,27 +167,11 @@ describe("WorkflowRunner", () => {
   });
 
   test("writes workflow plan artifact when out is provided", async () => {
-    const { root } = await createTempModule("task");
-    tempRoots.push(root);
-    const out = path.join(root, ".akan/workflows/plans/task-priority.json");
-
-    const output = await new WorkflowRunner().plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "priority",
-        type: "enum",
-        values: "low,medium,high",
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out },
+    const { planPath, output } = await planTaskWorkflow(
+      { field: "priority", type: "enum", values: "low,medium,high" },
+      { scaffold: false },
     );
-    const saved = JSON.parse(await readFile(out, "utf8")) as WorkflowPlan;
+    const saved = JSON.parse(await readFile(planPath, "utf8")) as WorkflowPlan;
 
     expect(saved.workflow).toBe("add-field");
     expect(saved.inputs.values).toEqual(["low", "medium", "high"]);
@@ -223,18 +179,7 @@ describe("WorkflowRunner", () => {
   });
 
   test("returns structured diagnostics for missing required input", async () => {
-    const output = await new WorkflowRunner().plan("add-field", {
-      app: "demo",
-      module: null,
-      field: null,
-      type: null,
-      values: null,
-      default: null,
-      scalar: null,
-      surface: null,
-      mutation: null,
-      slice: null,
-    });
+    const output = await new WorkflowRunner().plan("add-field", { app: "demo" });
 
     expect(output).toContain("[error] workflow-input-missing");
     expect(output).toContain('requires input "module"');
@@ -243,27 +188,7 @@ describe("WorkflowRunner", () => {
   });
 
   test("dry-runs workflow apply from a plan artifact without writing files", async () => {
-    const { root, module } = await createTempModule("task");
-    tempRoots.push(root);
-    await new ModuleRunner().createModuleTemplate(module);
-    const planPath = path.join(root, ".akan/workflows/plans/task-priority.json");
-    const runner = new WorkflowRunner();
-    await runner.plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "priority",
-        type: "String",
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out: planPath },
-    );
+    const { module, planPath, runner } = await planTaskWorkflow({ field: "priority", type: "String" });
 
     const output = await runner.apply(planPath, { dryRun: true, format: "json" });
     const report = JSON.parse(output) as WorkflowApplyReport;
@@ -279,27 +204,7 @@ describe("WorkflowRunner", () => {
   });
 
   test("renders apply reports with user-facing outcome sections", async () => {
-    const { root, module } = await createTempModule("task");
-    tempRoots.push(root);
-    await new ModuleRunner().createModuleTemplate(module);
-    const planPath = path.join(root, ".akan/workflows/plans/task-priority.json");
-    const runner = new WorkflowRunner();
-    await runner.plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "priority",
-        type: "String",
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out: planPath },
-    );
+    const { planPath, runner } = await planTaskWorkflow({ field: "priority", type: "String" });
 
     const output = await runner.apply(planPath, { dryRun: true });
 
@@ -312,41 +217,12 @@ describe("WorkflowRunner", () => {
   });
 
   test("applies add-field workflow through primitive step runners", async () => {
-    const { root, workspace, module } = await createTempModule("task");
-    tempRoots.push(root);
-    await new ModuleRunner().createModuleTemplate(module);
-    const planPath = path.join(root, ".akan/workflows/plans/task-priority.json");
-    const runner = new WorkflowRunner();
-    await runner.plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "priority",
-        type: "String",
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out: planPath },
-    );
+    const { workspace, module, planPath, runner } = await planTaskWorkflow({ field: "priority", type: "String" });
 
     const output = await runner.apply(planPath, {
       format: "json",
       workspace,
-      registry: createWorkflowStepRegistry({
-        workspace,
-        createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
-        createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
-        createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
-        addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
-        addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
-        addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
-        addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
-      }),
+      registry: ContextRunner.workflowStepRegistry(workspace),
     });
     const report = JSON.parse(output) as WorkflowApplyReport;
 
@@ -392,37 +268,11 @@ describe("WorkflowRunner", () => {
   });
 
   test("fails workflow apply when dictionary field is outside the model object", async () => {
-    const { root, workspace, module } = await createTempModule("task");
-    tempRoots.push(root);
-    await new ModuleRunner().createModuleTemplate(module);
-    const planPath = path.join(root, ".akan/workflows/plans/task-status.json");
-    const runner = new WorkflowRunner();
-    await runner.plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "status",
-        type: "String",
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out: planPath },
+    const { workspace, module, planPath, runner } = await planTaskWorkflow(
+      { field: "status", type: "String" },
+      { plan: "task-status" },
     );
-    const registry = createWorkflowStepRegistry({
-      workspace,
-      createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
-      createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
-      createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
-      addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
-      addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
-      addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
-      addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
-    });
+    const registry = ContextRunner.workflowStepRegistry(workspace);
     registry[workflowStepKey("add-field", "update-ui-surfaces")] = async () => {
       await module.writeFile(
         "task.dictionary.ts",
@@ -470,37 +320,11 @@ export const taskDictionary = modelDictionary("task")
   });
 
   test("fails workflow apply when numeric base import is missing after apply", async () => {
-    const { root, workspace, module } = await createTempModule("task");
-    tempRoots.push(root);
-    await new ModuleRunner().createModuleTemplate(module);
-    const planPath = path.join(root, ".akan/workflows/plans/task-budget.json");
-    const runner = new WorkflowRunner();
-    await runner.plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "budget",
-        type: "Int",
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out: planPath },
+    const { workspace, module, planPath, runner } = await planTaskWorkflow(
+      { field: "budget", type: "Int" },
+      { plan: "task-budget" },
     );
-    const registry = createWorkflowStepRegistry({
-      workspace,
-      createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
-      createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
-      createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
-      addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
-      addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
-      addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
-      addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
-    });
+    const registry = ContextRunner.workflowStepRegistry(workspace);
     registry[workflowStepKey("add-field", "update-constant")] = async () => {
       await module.writeFile(
         "task.constant.ts",
@@ -555,27 +379,7 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
   });
 
   test("fails workflow apply when changedFiles path casing is inaccurate", async () => {
-    const { root, workspace, module } = await createTempModule("task");
-    tempRoots.push(root);
-    await new ModuleRunner().createModuleTemplate(module);
-    const planPath = path.join(root, ".akan/workflows/plans/task-priority.json");
-    const runner = new WorkflowRunner();
-    await runner.plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "priority",
-        type: "String",
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out: planPath },
-    );
+    const { workspace, planPath, runner } = await planTaskWorkflow({ field: "priority", type: "String" });
 
     const output = await runner.apply(planPath, {
       format: "json",
@@ -609,43 +413,15 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
   });
 
   test("applies Int default values as numeric literals through workflow apply", async () => {
-    const { root, workspace, module } = await createTempModule("task");
-    tempRoots.push(root);
-    await new ModuleRunner().createModuleTemplate(module);
-    const planPath = path.join(root, ".akan/workflows/plans/task-budget.json");
-    const runner = new WorkflowRunner();
-    await runner.plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "budget",
-        type: "Int",
-        values: null,
-        default: "0",
-        surfaces: "template",
-        includeInLight: "true",
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out: planPath },
+    const { workspace, module, planPath, runner } = await planTaskWorkflow(
+      { field: "budget", type: "Int", default: "0", surfaces: "template", includeInLight: "true" },
+      { plan: "task-budget" },
     );
 
     const output = await runner.apply(planPath, {
       format: "json",
       workspace,
-      registry: createWorkflowStepRegistry({
-        workspace,
-        createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
-        createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
-        createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
-        addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
-        addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
-        addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
-        addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
-      }),
+      registry: ContextRunner.workflowStepRegistry(workspace),
     });
     const report = JSON.parse(output) as WorkflowApplyReport;
 
@@ -658,33 +434,12 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
   });
 
   test("persists apply reports as validation targets when workspace is provided", async () => {
-    const { root, workspace, module } = await createTempModule("task");
-    tempRoots.push(root);
-    await new ModuleRunner().createModuleTemplate(module);
-    const planPath = path.join(root, ".akan/workflows/plans/task-rating.json");
-    const runner = new WorkflowRunner();
-    await runner.plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "rating",
-        type: "Float",
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out: planPath },
+    const { root, workspace, planPath, runner } = await planTaskWorkflow(
+      { field: "rating", type: "Float" },
+      { plan: "task-rating" },
     );
 
-    const output = await runner.apply(planPath, {
-      dryRun: true,
-      format: "json",
-      workspace,
-    });
+    const output = await runner.apply(planPath, { dryRun: true, format: "json", workspace });
     const report = JSON.parse(output) as WorkflowApplyReport;
 
     expect(report.runId?.startsWith("dry-run-")).toBe(true);
@@ -698,41 +453,15 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
   });
 
   test("fails add-field workflow apply for ambiguous number type", async () => {
-    const { root, workspace, module } = await createTempModule("task");
-    tempRoots.push(root);
-    await new ModuleRunner().createModuleTemplate(module);
-    const planPath = path.join(root, ".akan/workflows/plans/task-budget.json");
-    const runner = new WorkflowRunner();
-    await runner.plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "budget",
-        type: "number",
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out: planPath },
+    const { workspace, module, planPath, runner } = await planTaskWorkflow(
+      { field: "budget", type: "number" },
+      { plan: "task-budget" },
     );
 
     const output = await runner.apply(planPath, {
       format: "json",
       workspace,
-      registry: createWorkflowStepRegistry({
-        workspace,
-        createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
-        createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
-        createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
-        addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
-        addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
-        addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
-        addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
-      }),
+      registry: ContextRunner.workflowStepRegistry(workspace),
     });
     const report = JSON.parse(output) as WorkflowApplyReport;
 
@@ -751,33 +480,12 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
   });
 
   test("returns failed report for unsupported workflow steps", async () => {
-    const { root, workspace } = await createTempModule("task");
-    tempRoots.push(root);
-    const planPath = path.join(root, ".akan/workflows/plans/archive-task.json");
-    const runner = new WorkflowRunner();
-    await runner.plan(
-      "add-mutation",
-      {
-        app: "demo",
-        module: "task",
-        field: null,
-        type: null,
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: "archive",
-        slice: null,
-      },
-      { format: "json", out: planPath },
+    const { planPath, runner } = await planTaskWorkflow(
+      { mutation: "archive" },
+      { workflow: "add-mutation", plan: "archive-task", scaffold: false },
     );
 
-    // An empty registry has no runner for any step, so the executor must report the first
-    // step as unsupported rather than crashing.
-    const output = await runner.apply(planPath, {
-      format: "json",
-      registry: {},
-    });
+    const output = await runner.apply(planPath, { format: "json", registry: {} });
     const report = JSON.parse(output) as WorkflowApplyReport;
 
     expect(report.status).toBe("failed");
@@ -790,16 +498,7 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
     tempRoots.push(root);
     await new ModuleRunner().createModuleTemplate(module);
     const runner = new WorkflowRunner();
-    const registry = createWorkflowStepRegistry({
-      workspace,
-      createModule: (sys, name) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, name),
-      createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
-      createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
-      addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
-      addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
-      addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
-      addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
-    });
+    const registry = ContextRunner.workflowStepRegistry(workspace);
     const inputs = {
       app: "demo",
       module: "task",
@@ -841,25 +540,9 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
   });
 
   test("validates a workflow plan and stores a run report", async () => {
-    const { root, workspace } = await createTempModule("task");
-    tempRoots.push(root);
-    const planPath = path.join(root, ".akan/workflows/plans/task-priority.json");
-    const runner = new WorkflowRunner();
-    await runner.plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "priority",
-        type: "String",
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out: planPath },
+    const { root, workspace, planPath, runner } = await planTaskWorkflow(
+      { field: "priority", type: "String" },
+      { scaffold: false },
     );
 
     const output = await runner.validate(planPath, {
@@ -897,40 +580,21 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
   });
 
   test("adds failure scope hints to validation command failures", async () => {
-    const { root, workspace } = await createTempModule("task");
-    tempRoots.push(root);
-    const runner = new WorkflowRunner();
-    const planPath = path.join(root, ".akan/workflows/plans/task-priority.json");
-    await runner.plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "priority",
-        type: "String",
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out: planPath },
+    const { workspace, planPath, runner } = await planTaskWorkflow(
+      { field: "priority", type: "String" },
+      { scaffold: false },
     );
-
-    const output = await runner.validate(planPath, {
-      format: "json",
-      workspace,
-      execute: async (command) => ({
-        command: command.command,
-        reason: command.reason,
-        kind: command.kind,
-        status: command.kind === "lint" ? "failed" : "passed",
-        exitCode: command.kind === "lint" ? 1 : 0,
-        failureScope: command.kind === "lint" ? "workspace-config" : undefined,
-        stderr: command.kind === "lint" ? "Biome configuration file is invalid" : undefined,
-      }),
+    const lintFails: WorkflowValidationCommandExecutor = async (command) => ({
+      command: command.command,
+      reason: command.reason,
+      kind: command.kind,
+      status: command.kind === "lint" ? "failed" : "passed",
+      exitCode: command.kind === "lint" ? 1 : 0,
+      failureScope: command.kind === "lint" ? "workspace-config" : undefined,
+      stderr: command.kind === "lint" ? "Biome configuration file is invalid" : undefined,
     });
+
+    const output = await runner.validate(planPath, { format: "json", workspace, execute: lintFails });
     const report = JSON.parse(output) as WorkflowValidationRunReport;
 
     expect(report).toMatchObject({
@@ -964,19 +628,7 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
       }),
     );
 
-    const secondOutput = await runner.validate(planPath, {
-      format: "json",
-      workspace,
-      execute: async (command) => ({
-        command: command.command,
-        reason: command.reason,
-        kind: command.kind,
-        status: command.kind === "lint" ? "failed" : "passed",
-        exitCode: command.kind === "lint" ? 1 : 0,
-        failureScope: command.kind === "lint" ? "workspace-config" : undefined,
-        stderr: command.kind === "lint" ? "Biome configuration file is invalid" : undefined,
-      }),
-    });
+    const secondOutput = await runner.validate(planPath, { format: "json", workspace, execute: lintFails });
     const secondReport = JSON.parse(secondOutput) as WorkflowValidationRunReport;
 
     expect(secondReport.knownBlockers).toContainEqual(
@@ -990,39 +642,20 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
   });
 
   test("separates passing source validation from baseline workspace blockers", async () => {
-    const { root, workspace } = await createTempModule("task");
-    tempRoots.push(root);
-    await writeText(`${root}/apps/demo/base.ts`, "export const unrelated = true;\n");
-    const runner = new WorkflowRunner();
-    const planPath = path.join(root, ".akan/workflows/plans/task-priority.json");
-    await runner.plan(
-      "add-field",
-      {
-        app: "demo",
-        module: "task",
-        field: "priority",
-        type: "String",
-        values: null,
-        default: null,
-        scalar: null,
-        surface: null,
-        mutation: null,
-        slice: null,
-      },
-      { format: "json", out: planPath },
+    const { root, workspace, planPath, runner } = await planTaskWorkflow(
+      { field: "priority", type: "String" },
+      { scaffold: false },
     );
-
-    const output = await runner.validate(planPath, {
-      format: "json",
-      workspace,
-      execute: async (command) => ({
-        command: command.command,
-        reason: command.reason,
-        kind: command.kind,
-        status: "passed",
-        exitCode: 0,
-      }),
+    await writeText(`${root}/apps/demo/base.ts`, "export const unrelated = true;\n");
+    const passes: WorkflowValidationCommandExecutor = async (command) => ({
+      command: command.command,
+      reason: command.reason,
+      kind: command.kind,
+      status: "passed",
+      exitCode: 0,
     });
+
+    const output = await runner.validate(planPath, { format: "json", workspace, execute: passes });
     const report = JSON.parse(output) as WorkflowValidationRunReport;
 
     expect(report).toMatchObject({
@@ -1048,13 +681,7 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
       format: "json",
       workspace,
       includeBaselineDetails: true,
-      execute: async (command) => ({
-        command: command.command,
-        reason: command.reason,
-        kind: command.kind,
-        status: "passed",
-        exitCode: 0,
-      }),
+      execute: passes,
     });
     const detailedReport = JSON.parse(detailedOutput) as WorkflowValidationRunReport;
 
@@ -1065,38 +692,15 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
   });
 
   test("reads stored workflow run reports", async () => {
-    const { root, workspace } = await createTempModule("task");
-    tempRoots.push(root);
-    const runner = new WorkflowRunner();
-    const planPath = path.join(root, ".akan/workflows/plans/task-priority.json");
-    const validateOutput = await (async () => {
-      await runner.plan(
-        "add-field",
-        {
-          app: "demo",
-          module: "task",
-          field: "priority",
-          type: "String",
-          values: null,
-          default: null,
-          scalar: null,
-          surface: null,
-          mutation: null,
-          slice: null,
-        },
-        { format: "json", out: planPath },
-      );
-      return await runner.validate(planPath, {
-        format: "json",
-        workspace,
-        execute: async (command) => ({
-          command: command.command,
-          reason: command.reason,
-          status: "passed",
-          exitCode: 0,
-        }),
-      });
-    })();
+    const { workspace, planPath, runner } = await planTaskWorkflow(
+      { field: "priority", type: "String" },
+      { scaffold: false },
+    );
+    const validateOutput = await runner.validate(planPath, {
+      format: "json",
+      workspace,
+      execute: async (command) => ({ command: command.command, reason: command.reason, status: "passed", exitCode: 0 }),
+    });
     const run = JSON.parse(validateOutput) as WorkflowValidationRunReport;
 
     const output = await runner.report(run.runId, { format: "json", workspace });
