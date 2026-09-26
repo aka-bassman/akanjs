@@ -23,9 +23,7 @@ export const badgeRecipe = recipe(
         md: "px-2.5 py-0.5 text-xs",
         lg: "px-3 py-1 text-sm",
       },
-      // An outlined *colored* badge cannot be a `variant` value: only one value can be chosen, so it
-      // would silently drop the color. The border follows the text color, so each color only needs to
-      // restate its own foreground in compoundVariants. `variant: "outline"` stays as the neutral outline.
+      // Its own axis, not a `variant` value, which would drop the color; the border follows the text color.
       outline: { true: "border-current bg-transparent" },
     },
     compoundVariants: [
