@@ -869,8 +869,6 @@ export const parseValues = (value: string | null) =>
     .map((item) => item.trim())
     .filter(Boolean) ?? [];
 
-// ---- Service / signal insertion (add-mutation, add-slice) ----
-
 export const hasSourceParseErrors = (content: string, fileName = "source.ts") =>
   hasParseDiagnostics(sourceFileFor(fileName, content));
 
@@ -988,8 +986,7 @@ export const insertSignalFactoryEntry = (
   if (!located) return null;
   const locator = locatedObject(source, located.object);
   if (locator.fields.some((field) => field.name === entryName)) return content;
-  // Compute the param edit first (its offsets precede the object), but apply it last so the
-  // object splice (at a higher offset) does not invalidate the param region positions.
+  // Apply the param edit last: it sits before the object, so applying it first would shift the object's offsets.
   const paramEdit = factoryParamEdit(content, source, located.arrow, param);
   if (paramEdit === null) return null;
   const withEntry = insertOrderedFieldLine(content, locator, entryName, entryLine, {
