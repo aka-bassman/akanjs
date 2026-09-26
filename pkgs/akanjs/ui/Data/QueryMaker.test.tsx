@@ -1,9 +1,8 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
-import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedArg } from "akanjs/signal";
 import { act } from "react";
-import { l, mountSuspense, setTestEnv } from "../testHelpers";
+import { itemFixtureOf, l, mountSuspense, rootSliceArgs, setTestEnv } from "../testHelpers";
 
 let QueryMaker: typeof import("./QueryMaker").default;
 let makeStore: () => void;
@@ -56,27 +55,14 @@ const settleDebounce = async () => {
 
 beforeAll(async () => {
   setTestEnv("querymakertest");
-  const { Int, SLICE_META } = await import("akanjs/base");
+  const { Int } = await import("akanjs/base");
   const { ConstantRegistry, via } = await import("akanjs/constant");
+  const { Insight, storeMaker } = await itemFixtureOf("queryMakerTestItem");
   const { registerClientRuntime } = await import("akanjs/client");
-  const { store, StoreRegistry } = await import("akanjs/store");
-
-  const Input = via((f) => ({ title: f(String) }));
-  const Obj = via(Input, () => ({}));
-  const Light = via(Obj, ["title"] as const, () => ({}));
-  const Full = via(Obj, Light, () => ({}));
-  const Insight = via(Full, (f) => ({ count: f(Int, { default: 0 }) }));
-  const cnst = ConstantRegistry.buildModel("queryMakerTestItem", Input, Obj, Full, Light, Insight, {});
   calls = {
     queryMakerTestItemList: mock(async () => []),
     queryMakerTestItemInsight: mock(async () => new Insight({ count: 0 })),
   };
-  const signalFetch = new Proxy(calls, {
-    get(target, key: string) {
-      target[key] ??= mock(async () => null);
-      return target[key];
-    },
-  });
   const OwnerInput = via((f) => ({ nickname: f(String) }));
   const OwnerObj = via(OwnerInput, () => ({}));
   class OwnerLight extends via(OwnerObj, ["nickname"] as const, () => ({})) {
@@ -102,31 +88,7 @@ beforeAll(async () => {
       queryMakerTestOwnerList: ownerList,
     },
   } as never);
-  const signal = {
-    refName: "queryMakerTestItem",
-    _slice: { [SLICE_META]: {} },
-    cnst,
-    fetch: signalFetch,
-    serializedSignal: {
-      prefix: "queryMakerTestItem",
-      endpoint: {},
-      slice: {
-        "": {
-          args: [
-            { type: "search", name: "queryKey", refName: "String", nullable: true },
-            { type: "search", name: "args", refName: "Any", nullable: true },
-          ],
-        },
-      },
-    },
-    slices: [],
-  } as unknown as ClientSignal<"queryMakerTestItem">;
-  makeStore = () => {
-    for (const call of Object.values(calls)) call.mockClear();
-    class ItemStore extends store(signal, () => ({})) {}
-    StoreRegistry.register(ItemStore);
-    StoreRegistry.build(StoreRegistry.merge("queryMakerRoot", ItemStore));
-  };
+  makeStore = storeMaker({ root: "queryMakerRoot", calls, sliceArgs: rootSliceArgs });
   ({ default: QueryMaker } = await import("./QueryMaker"));
 });
 

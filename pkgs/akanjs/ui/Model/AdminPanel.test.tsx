@@ -1,10 +1,9 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
-import type { ClientSignal } from "akanjs/fetch";
 import { act, type ReactNode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { l, setTestEnv, waitFor } from "../testHelpers";
+import { itemFixtureOf, l, rootSliceArgs, setTestEnv, waitFor } from "../testHelpers";
 
 let AdminPanel: typeof import("./AdminPanel").default;
 let makeStore: (state?: Record<string, unknown>) => void;
@@ -16,17 +15,12 @@ const components = { Template: {}, Unit: {}, View: {} };
 
 beforeAll(async () => {
   setTestEnv("adminpaneltest");
-  const { Int, SLICE_META } = await import("akanjs/base");
+  const { Int } = await import("akanjs/base");
   const { ConstantRegistry, via } = await import("akanjs/constant");
+  const { Light, Insight, storeMaker } = await itemFixtureOf("adminTestItem");
   const { registerClientRuntime } = await import("akanjs/client");
-  const { st, store, StoreRegistry } = await import("akanjs/store");
+  const { st } = await import("akanjs/store");
   setState = (state) => (st as unknown as { set: (state: Record<string, unknown>) => void }).set(state);
-
-  const Input = via((f) => ({ title: f(String) }));
-  const Obj = via(Input, () => ({}));
-  const Light = via(Obj, ["title"] as const, () => ({}));
-  const Full = via(Obj, Light, () => ({}));
-  const Insight = via(Full, (f) => ({ count: f(Int, { default: 0 }) }));
   // A counter names the query it counts, which is where a tile with no `queryMap` entry finds its filter.
   const SummaryInput = via((f) => ({
     pendingItem: f(Int, { default: 0 }).meta({
@@ -46,17 +40,10 @@ beforeAll(async () => {
   const SummaryFull = via(SummaryObj, SummaryLight, () => ({}));
   const SummaryInsight = via(SummaryFull, (f) => ({ count: f(Int, { default: 0 }) }));
   ConstantRegistry.buildModel("summary", SummaryInput, SummaryObj, SummaryFull, SummaryLight, SummaryInsight, {});
-  const cnst = ConstantRegistry.buildModel("adminTestItem", Input, Obj, Full, Light, Insight, {});
   calls = {
     adminTestItemList: mock(async () => [new Light({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada" })]),
     adminTestItemInsight: mock(async () => new Insight({ count: 1 })),
   };
-  const signalFetch = new Proxy(calls, {
-    get(target, key: string) {
-      target[key] ??= mock(async () => null);
-      return target[key];
-    },
-  });
   registerClientRuntime({
     usePage: () => ({ path: "/", lang: "en", l }),
     fetch: {
@@ -73,31 +60,7 @@ beforeAll(async () => {
       ]),
     },
   } as never);
-  const signal = {
-    refName: "adminTestItem",
-    _slice: { [SLICE_META]: {} },
-    cnst,
-    fetch: signalFetch,
-    serializedSignal: {
-      prefix: "adminTestItem",
-      endpoint: {},
-      slice: {
-        "": {
-          args: [
-            { type: "search", name: "queryKey", refName: "String", nullable: true },
-            { type: "search", name: "args", refName: "Any", nullable: true },
-          ],
-        },
-      },
-    },
-    slices: [],
-  } as unknown as ClientSignal<"adminTestItem">;
-  makeStore = (state: Record<string, unknown> = {}) => {
-    for (const call of Object.values(calls)) call.mockClear();
-    class ItemStore extends store(signal, () => state) {}
-    StoreRegistry.register(ItemStore);
-    StoreRegistry.build(StoreRegistry.merge("adminPanelRoot", ItemStore));
-  };
+  makeStore = storeMaker({ root: "adminPanelRoot", calls, sliceArgs: rootSliceArgs });
   ({ default: AdminPanel } = await import("./AdminPanel"));
 });
 

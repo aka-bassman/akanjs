@@ -1,9 +1,8 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
-import type { ClientSignal } from "akanjs/fetch";
 import { act } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { l, mountSuspense, setTestEnv } from "../testHelpers";
+import { itemFixtureOf, l, mountSuspense, setTestEnv } from "../testHelpers";
 
 let EditWrapper: typeof import("./EditWrapper").default;
 let ViewWrapper: typeof import("./ViewWrapper").default;
@@ -16,41 +15,14 @@ const rowIds = ["aaaaaaaaaaaaaaaaaaaaaa01", "aaaaaaaaaaaaaaaaaaaaaa02", "aaaaaaa
 
 beforeAll(async () => {
   setTestEnv("rowwrappertest");
-  const { Int, SLICE_META } = await import("akanjs/base");
-  const { ConstantRegistry, via } = await import("akanjs/constant");
+  const { Full, storeMaker } = await itemFixtureOf("rowTestItem");
   const { registerClientRuntime } = await import("akanjs/client");
-  const { store, StoreRegistry } = await import("akanjs/store");
-
-  const Input = via((f) => ({ title: f(String) }));
-  const Obj = via(Input, () => ({}));
-  const Light = via(Obj, ["title"] as const, () => ({}));
-  const Full = via(Obj, Light, () => ({}));
-  const Insight = via(Full, (f) => ({ count: f(Int, { default: 0 }) }));
-  const cnst = ConstantRegistry.buildModel("rowTestItem", Input, Obj, Full, Light, Insight, {});
   calls = { rowTestItem: mock(async (id: string) => new Full({ id, title: "Ada" })) };
   registerClientRuntime({
     usePage: () => ({ path: "/", lang: "en", l }),
     fetch: { sortKeyMap: new Map([["rowTestItem", ["latest"]]]) },
   } as never);
-  const signal = {
-    refName: "rowTestItem",
-    _slice: { [SLICE_META]: {} },
-    cnst,
-    fetch: new Proxy(calls, {
-      get(target, key: string) {
-        target[key] ??= mock(async () => null);
-        return target[key];
-      },
-    }),
-    serializedSignal: { prefix: "rowTestItem", endpoint: {}, slice: { "": { args: [] } } },
-    slices: [],
-  } as unknown as ClientSignal<"rowTestItem">;
-  makeStore = () => {
-    for (const call of Object.values(calls)) call.mockClear();
-    class ItemStore extends store(signal, () => ({})) {}
-    StoreRegistry.register(ItemStore);
-    StoreRegistry.build(StoreRegistry.merge("rowWrapperRoot", ItemStore));
-  };
+  makeStore = storeMaker({ root: "rowWrapperRoot", calls });
   ({ default: EditWrapper } = await import("./EditWrapper"));
   ({ default: ViewWrapper } = await import("./ViewWrapper"));
   ({ default: RemoveWrapper } = await import("./RemoveWrapper"));

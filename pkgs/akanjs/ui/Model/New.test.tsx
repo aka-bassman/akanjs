@@ -1,9 +1,8 @@
 import "../../test/registerDom";
-import { beforeAll, describe, expect, mock, test } from "bun:test";
-import type { ClientSignal } from "akanjs/fetch";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { l, mountSuspense, setTestEnv, waitFor } from "../testHelpers";
+import { itemFixtureOf, l, mountSuspense, setTestEnv, waitFor } from "../testHelpers";
 
 let New: typeof import("./New").default;
 let makeStore: () => void;
@@ -12,39 +11,13 @@ const slice = { refName: "newTestItem", sliceName: "newTestItem", argLength: 1 }
 
 beforeAll(async () => {
   setTestEnv("newwrappertest");
-  const { Int, SLICE_META } = await import("akanjs/base");
-  const { ConstantRegistry, via } = await import("akanjs/constant");
+  const { storeMaker } = await itemFixtureOf("newTestItem");
   const { registerClientRuntime } = await import("akanjs/client");
-  const { store, StoreRegistry } = await import("akanjs/store");
-
-  const Input = via((f) => ({ title: f(String) }));
-  const Obj = via(Input, () => ({}));
-  const Light = via(Obj, ["title"] as const, () => ({}));
-  const Full = via(Obj, Light, () => ({}));
-  const Insight = via(Full, (f) => ({ count: f(Int, { default: 0 }) }));
-  const cnst = ConstantRegistry.buildModel("newTestItem", Input, Obj, Full, Light, Insight, {});
   registerClientRuntime({
     usePage: () => ({ path: "/", lang: "en", l }),
     fetch: { sortKeyMap: new Map([["newTestItem", ["latest"]]]) },
   } as never);
-  const signal = {
-    refName: "newTestItem",
-    _slice: { [SLICE_META]: {} },
-    cnst,
-    fetch: new Proxy({} as Record<string, unknown>, {
-      get(target, key: string) {
-        target[key] ??= mock(async () => null);
-        return target[key];
-      },
-    }),
-    serializedSignal: { prefix: "newTestItem", endpoint: {}, slice: { "": { args: [] } } },
-    slices: [],
-  } as unknown as ClientSignal<"newTestItem">;
-  makeStore = () => {
-    class ItemStore extends store(signal, () => ({})) {}
-    StoreRegistry.register(ItemStore);
-    StoreRegistry.build(StoreRegistry.merge("newWrapperRoot", ItemStore));
-  };
+  makeStore = storeMaker({ root: "newWrapperRoot" });
   ({ default: New } = await import("./New"));
 });
 

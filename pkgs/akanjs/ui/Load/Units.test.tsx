@@ -1,10 +1,10 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
-import type { ClientSignal, ServerInit, ServerView } from "akanjs/fetch";
+import type { ServerInit, ServerView } from "akanjs/fetch";
 import { act, type ReactNode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-import { l, setTestEnv } from "../testHelpers";
+import { itemFixtureOf, l, setTestEnv } from "../testHelpers";
 
 let Units: typeof import("./Units").default;
 let View: typeof import("./View").default;
@@ -14,47 +14,20 @@ let sliceState: { get: () => Record<string, unknown>; set: (state: Record<string
 
 beforeAll(async () => {
   setTestEnv("loadtest");
-  const { Int, SLICE_META } = await import("akanjs/base");
-  const { ConstantRegistry, via } = await import("akanjs/constant");
+  const { Light, Full, Insight, storeMaker } = await itemFixtureOf("loadTestItem");
   const { registerClientRuntime } = await import("akanjs/client");
-  const { st, store, StoreRegistry } = await import("akanjs/store");
+  const { st } = await import("akanjs/store");
   sliceState = st as unknown as typeof sliceState;
-
-  const Input = via((f) => ({ title: f(String) }));
-  const Obj = via(Input, () => ({}));
-  const Light = via(Obj, ["title"] as const, () => ({}));
-  const Full = via(Obj, Light, () => ({}));
-  const Insight = via(Full, (f) => ({ count: f(Int, { default: 0 }) }));
-  const cnst = ConstantRegistry.buildModel("loadTestItem", Input, Obj, Full, Light, Insight, {});
   calls = {
     loadTestItemList: mock(async () => [new Light({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada" })]),
     loadTestItemInsight: mock(async () => new Insight({ count: 1 })),
     loadTestItem: mock(async (id: string) => new Full({ id, title: "Fresh" })),
   };
-  const signalFetch = new Proxy(calls, {
-    get(target, key: string) {
-      target[key] ??= mock(async () => null);
-      return target[key];
-    },
-  });
   registerClientRuntime({
     usePage: () => ({ path: "/", lang: "en", l }),
     fetch: { sortKeyMap: new Map([["loadTestItem", ["latest"]]]), filterQueryMap: new Map([["loadTestItem", {}]]) },
   } as never);
-  const signal = {
-    refName: "loadTestItem",
-    _slice: { [SLICE_META]: {} },
-    cnst,
-    fetch: signalFetch,
-    serializedSignal: { prefix: "loadTestItem", endpoint: {}, slice: { "": { args: [] } } },
-    slices: [],
-  } as unknown as ClientSignal<"loadTestItem">;
-  makeStore = (state: Record<string, unknown> = {}) => {
-    for (const call of Object.values(calls)) call.mockClear();
-    class ItemStore extends store(signal, () => state) {}
-    StoreRegistry.register(ItemStore);
-    StoreRegistry.build(StoreRegistry.merge("loadRoot", ItemStore));
-  };
+  makeStore = storeMaker({ root: "loadRoot", calls });
   ({ default: Units } = await import("./Units"));
   ({ default: View } = await import("./View"));
 });
