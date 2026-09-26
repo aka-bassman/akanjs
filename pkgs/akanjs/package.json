@@ -130,6 +130,16 @@
       "types": "./server/lifecycle/portInUse.ts",
       "default": "./server/lifecycle/portInUse.ts"
     },
+    "./server/artifact/routeSeedIndexStore": {
+      "import": "./server/artifact/routeSeedIndexStore.ts",
+      "types": "./server/artifact/routeSeedIndexStore.ts",
+      "default": "./server/artifact/routeSeedIndexStore.ts"
+    },
+    "./server/artifact/routesManifestStore": {
+      "import": "./server/artifact/routesManifestStore.ts",
+      "types": "./server/artifact/routesManifestStore.ts",
+      "default": "./server/artifact/routesManifestStore.ts"
+    },
     "./server/logging/logQuery": {
       "import": "./server/logging/logQuery.ts",
       "types": "./server/logging/logQuery.ts",
