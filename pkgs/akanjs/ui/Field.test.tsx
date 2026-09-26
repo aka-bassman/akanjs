@@ -51,13 +51,7 @@ beforeAll(async () => {
 const listWrites: string[][] = [];
 let setAliases: (value: unknown) => void;
 
-/**
- * The `onChange` React is holding for a rendered node.
- *
- * Read off the fiber rather than driven with a synthetic event: React's change plugin does not fire under
- * happy-dom (a dispatched `input` reaches the root container in both phases and React extracts nothing), while
- * `click` does. So a control's own handler is reached directly, which is the composition under test anyway.
- */
+// Read off the fiber: React's change plugin does not fire under happy-dom, while `click` does.
 const handlerOf = (el: Element) => {
   const key = Object.keys(el).find((name) => name.startsWith("__reactProps$"));
   const props = (el as unknown as { [key: string]: { onChange?: (event: unknown) => void } })[key ?? ""];
@@ -187,10 +181,7 @@ describe("Field.DateRange", () => {
   });
 });
 
-/**
- * `Field.TextList` composes `DraggableList`, and both are form controls that would publish the setter they hold.
- * The outer one owns the field (it carries `transform`), so it publishes and hands the inner list a wrapper.
- */
+// The outer control owns the field (it carries `transform`), so it publishes and hands the inner list a wrapper.
 describe("Field.TextList over DraggableList", () => {
   test("publishes the field once, with the reorder tool a drag list adds", async () => {
     const surface = new AgenticSurface();

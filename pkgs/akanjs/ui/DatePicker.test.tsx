@@ -104,8 +104,6 @@ describe("DatePicker", () => {
       <DatePicker value={dayjs("2026-08-30")} disabledDate={(date) => date.day() === 0} onChange={onChange} />,
     );
 
-    // A native field constrains only through min/max, so the predicate is checked after the pick — and the
-    // field has to be restored by hand, since the value React would re-render is the one already there.
     await typeInto(input(), "2026-09-06");
     expect(onChange).not.toHaveBeenCalled();
     expect(warnings).toEqual(["base.selectDateError"]);
