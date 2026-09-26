@@ -16,3 +16,6 @@ export type SnakeCaseObj<T> = {
   [K in keyof T as SnakeCase<K & string>]: T[K] extends object ? SnakeCaseObj<T[K]> : T[K];
 };
 export type SnakeMsg<Msg> = SnakeCaseObj<Msg>;
+
+/** Name-based dispatch over a generated surface: `as DynamicRecord` to index, then cast the read, never `as any`. */
+export type DynamicRecord<Value = unknown> = { [key: string]: Value };

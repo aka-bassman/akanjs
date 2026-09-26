@@ -1,6 +1,4 @@
-type Indexable = Record<string, unknown>;
-
-const isIndexable = (value: unknown): value is Indexable => Object(value) === value;
+import { isIndexable } from "./objectPath";
 
 /** Also tries joined prefixes, for keys whose segments contain the separator (an enum value like `gpt-5.6-terra`). */
 export const pathGetLoose = (
