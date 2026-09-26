@@ -717,7 +717,7 @@ export class AkanServer {
     }
     // An ndjson gateway relays records, not text; the forwarder starts at the stdout level before `log.level` arrives.
     if (Logger.isNdjson) Logger.consoleOutput = false;
-    const forwarder = new LogForwarder((message) => process.send?.(message));
+    const forwarder = new LogForwarder((message, onSent) => process.send?.(message, undefined, undefined, onSent));
     this.#logForwarder = forwarder;
     webRouter?.onLogRecords((records) => forwarder.pushMany(records));
   }
@@ -727,7 +727,7 @@ export class AkanServer {
     this.#logControl = null;
     this.#logHub?.close();
     this.#logHub = null;
-    this.#logForwarder?.close();
+    await this.#logForwarder?.close();
     this.#logForwarder = null;
   }
 

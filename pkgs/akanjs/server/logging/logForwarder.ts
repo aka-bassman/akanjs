@@ -12,12 +12,12 @@ export interface LogForwarderOptions {
 export class LogForwarder {
   static readonly defaultFlushMs = 20;
   static readonly defaultMaxRecords = 64;
-  // Bun IPC drops a large message (and those queued behind it) when the sender exits soon after: keep batches small.
   static readonly defaultMaxBytes = 32 * 1024;
   static readonly defaultMaxQueue = 1_000;
   static readonly defaultMaxMessageChars = 16 * 1024;
+  static readonly #closeTimeoutMs = 1_000;
 
-  readonly #send: (message: AkanIpcMessage) => void;
+  readonly #send: (message: AkanIpcMessage, onSent?: () => void) => void;
   readonly #flushMs: number;
   readonly #maxRecords: number;
   readonly #maxBytes: number;
@@ -32,7 +32,7 @@ export class LogForwarder {
   #removeSink: (() => void) | null = null;
   #minSev: number | null = null;
 
-  constructor(send: (message: AkanIpcMessage) => void, options: LogForwarderOptions = {}) {
+  constructor(send: (message: AkanIpcMessage, onSent?: () => void) => void, options: LogForwarderOptions = {}) {
     this.#send = send;
     this.#flushMs = options.flushMs ?? LogForwarder.defaultFlushMs;
     this.#maxRecords = options.maxRecords ?? LogForwarder.defaultMaxRecords;
@@ -83,9 +83,10 @@ export class LogForwarder {
     for (const record of records) this.push(record);
   }
 
-  flush() {
+  flush(onSent?: () => void) {
     if (this.#timer) clearTimeout(this.#timer);
     this.#timer = null;
+    if (!this.#queue.length) onSent?.();
     while (this.#queue.length) {
       const batch: LogRecord[] = [];
       let bytes = 0;
@@ -99,14 +100,25 @@ export class LogForwarder {
       }
       const dropped = this.#dropped;
       this.#dropped = 0;
-      this.#send({ type: "log.records", records: batch, ...(dropped ? { dropped } : {}), pid: process.pid });
+      this.#send(
+        { type: "log.records", records: batch, ...(dropped ? { dropped } : {}), pid: process.pid },
+        this.#queue.length ? undefined : onSent,
+      );
     }
   }
 
-  close() {
+  // Bun IPC loses a large message, and every one queued behind it, when the process exits right after sending it.
+  close(): Promise<void> {
     this.#removeSink?.();
     this.#removeSink = null;
-    this.flush();
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, LogForwarder.#closeTimeoutMs);
+      timer.unref?.();
+      this.flush(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
   }
 
   #clip(record: LogRecord): LogRecord {
