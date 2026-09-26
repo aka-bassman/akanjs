@@ -2,7 +2,9 @@ import {
   Any,
   Binary,
   type Cls,
+  type Dayjs,
   DEFAULT_VALUE,
+  dayjs,
   EXAMPLE_VALUE,
   FIELD_META,
   Float,
@@ -12,7 +14,7 @@ import {
   type PrimitiveScalar,
   Upload,
 } from "akanjs/base";
-import { randomPick } from "akanjs/common";
+import { randomPick, randomPicks } from "akanjs/common";
 import {
   type BaseObject,
   type ConstantCls,
@@ -22,8 +24,23 @@ import {
   type FieldPreset,
   freshPrimitiveValue,
 } from "akanjs/constant";
+import Chance from "chance";
 
-import { sample } from "./sample";
+const chance = new Chance();
+
+export const sample = Object.assign(chance, {
+  dayjs: (opt?: {
+    string?: boolean | undefined;
+    american?: boolean | undefined;
+    year?: number | undefined;
+    month?: number | undefined;
+    day?: number | undefined;
+    min?: Dayjs | undefined;
+    max?: Dayjs | undefined;
+  }) => dayjs(chance.date({ ...opt, min: opt?.min?.toDate(), max: opt?.max?.toDate() })),
+  pick: randomPick,
+  picks: randomPicks,
+});
 
 const getFieldTypeExample: { [key in FieldPreset]: () => any } = {
   email: () => sample.email(),
