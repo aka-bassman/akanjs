@@ -1,7 +1,6 @@
 import type { DocumentUpdateOperator } from "akanjs/document";
-import { jsonPath, quoteIdent } from "../../sqlDescriptor";
 import type { CreateIndexProps, SqlDialect, SqlFrag } from "../types";
-import { encodeSqlValue, jsonStr, likePattern } from "../values";
+import { encodeSqlValue, jsonPath, jsonStr, likePattern, quoteIdent } from "../values";
 
 export class SqliteDialect implements SqlDialect {
   readonly name = "sqlite" as const;

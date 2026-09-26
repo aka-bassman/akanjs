@@ -1,6 +1,6 @@
 import type { Options, PostgresType, Sql, UnsafeQueryOptions } from "postgres";
-import { quoteIdent } from "../sqlDescriptor";
 import type { InsightSession } from "./types";
+import { quoteIdent } from "./values";
 
 interface PostgresInsightSessionProps {
   url: string;

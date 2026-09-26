@@ -3,8 +3,8 @@ import { randomBytes } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { quoteIdent } from "../sqlDescriptor";
 import type { InsightSession } from "./types";
+import { quoteIdent } from "./values";
 
 /**
  * Attached to a fresh in-memory connection under a random schema, every `_doc` table shadowed by a TEMP view omitting

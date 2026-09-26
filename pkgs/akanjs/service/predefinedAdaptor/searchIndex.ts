@@ -10,7 +10,7 @@ import {
   type SearchIndexOwner,
   type SearchQuery,
 } from "./sql/search/types";
-import { descriptorHash, quoteIdent } from "./sqlDescriptor";
+import { descriptorHash, quoteIdent } from "./sql/values";
 
 export { Fts5SearchEngine } from "./sql/search/fts5";
 export { PostgresSearchEngine } from "./sql/search/postgres";

@@ -1,7 +1,7 @@
 import { type ConstantModel, textFieldRoles } from "akanjs/constant";
 import { type DatabaseModel, type SearchColumn, searchColumns } from "akanjs/document";
-import { descriptorHash, jsonPath, quoteIdent } from "../../sqlDescriptor";
 import type { SqlFrag } from "../types";
+import { descriptorHash, jsonPath, quoteIdent } from "../values";
 import { type MirrorSegment, SearchMirror } from "./mirror";
 import {
   DOC_TABLE,

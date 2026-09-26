@@ -4,9 +4,8 @@ import {
   type DocumentUpdateOperator,
   isDocumentUpdateNode,
 } from "akanjs/document";
-import { quoteIdent } from "../sqlDescriptor";
 import { BASE_COLUMNS, type FieldMap, type SqlDialect } from "./types";
-import { encodeSqlValue } from "./values";
+import { encodeSqlValue, quoteIdent } from "./values";
 
 export class UpdateCompiler {
   constructor(

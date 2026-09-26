@@ -39,7 +39,7 @@ import {
   type SqliteEnv,
   type TransactionContext,
 } from "./sql/types";
-import { quoteIdent } from "./sqlDescriptor";
+import { quoteIdent } from "./sql/values";
 import { defaultSqliteFile } from "./sqlitePath";
 
 export { PostgresDialect } from "./sql/dialect/postgres";

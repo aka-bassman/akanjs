@@ -1,7 +1,6 @@
 import { FIELD_META, ID } from "akanjs/base";
 import { type DocumentQuery, type DocumentQueryNode, searchColumns } from "akanjs/document";
 import { DEFAULT_SEARCH_WEIGHTS, type SearchIndex } from "../searchIndex";
-import { quoteIdent } from "../sqlDescriptor";
 import {
   BASE_COLUMNS,
   type CompileContext,
@@ -14,7 +13,7 @@ import {
   type SearchJoin,
   type SqlDialect,
 } from "./types";
-import { BASE_COLUMN_LEAF } from "./values";
+import { BASE_COLUMN_LEAF, quoteIdent } from "./values";
 
 export class QueryCompiler {
   constructor(

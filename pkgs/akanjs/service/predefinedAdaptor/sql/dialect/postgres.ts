@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
 import type { DocumentUpdateOperator } from "akanjs/document";
-import { quoteIdent } from "../../sqlDescriptor";
 import type { CreateIndexProps, PathKind, SqlDialect, SqlFrag } from "../types";
-import { jsonStr, likePattern } from "../values";
+import { jsonStr, likePattern, quoteIdent } from "../values";
 
 export class PostgresDialect implements SqlDialect {
   readonly name = "postgres" as const;

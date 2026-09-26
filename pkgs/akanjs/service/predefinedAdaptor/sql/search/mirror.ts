@@ -1,7 +1,7 @@
 import { FIELD_META } from "akanjs/base";
 import { type ConstantField, type ConstantModel, type FieldObject, textFieldRoles } from "akanjs/constant";
 import type { DatabaseModel } from "akanjs/document";
-import { quoteIdent } from "../../sqlDescriptor";
+import { quoteIdent } from "../values";
 import type { SearchColumns } from "./types";
 
 export interface MirrorSegment {

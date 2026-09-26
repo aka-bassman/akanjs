@@ -17,7 +17,6 @@ import {
   resolveDocumentUpdate,
   sanitizeJson,
 } from "akanjs/document";
-import { descriptorHash, quoteIdent, stableJson } from "../sqlDescriptor";
 import { SqliteDialect } from "./dialect/sqlite";
 import { QueryCompiler } from "./QueryCompiler";
 import {
@@ -45,7 +44,15 @@ import {
   type WriteHookOptions,
 } from "./types";
 import { UpdateCompiler } from "./UpdateCompiler";
-import { assertStorableJson, decodeDateValue, encodeSqlValue, jsonStr } from "./values";
+import {
+  assertStorableJson,
+  decodeDateValue,
+  descriptorHash,
+  encodeSqlValue,
+  jsonStr,
+  quoteIdent,
+  stableJson,
+} from "./values";
 
 interface DeclaredIndex {
   name: string;

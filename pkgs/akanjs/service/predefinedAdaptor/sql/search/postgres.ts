@@ -1,10 +1,9 @@
 import { Logger } from "akanjs/common";
 import { type ConstantModel, textFieldRoles } from "akanjs/constant";
 import { type DatabaseModel, type SearchColumn, searchColumns } from "akanjs/document";
-import { quoteIdent } from "../../sqlDescriptor";
 import { PostgresDialect } from "../dialect/postgres";
 import type { SqlFrag } from "../types";
-import { likePattern } from "../values";
+import { likePattern, quoteIdent } from "../values";
 import { type MirrorSegment, SearchMirror } from "./mirror";
 import {
   DOC_TABLE,
