@@ -24,7 +24,7 @@ export class AsyncDefaultExportDetector {
         source,
         typescript.ScriptTarget.Latest,
         true,
-        AsyncDefaultExportDetector.#scriptKind(typescript, moduleAbsPath),
+        /\.[tj]sx$/.test(moduleAbsPath) ? typescript.ScriptKind.TSX : typescript.ScriptKind.TS,
       );
       return new AsyncDefaultExportDetector(typescript).detectInSourceFile(sourceFile);
     } catch {
@@ -71,8 +71,7 @@ export class AsyncDefaultExportDetector {
       }
 
       if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
-        const exportClause = statement.exportClause;
-        for (const specifier of exportClause.elements) {
+        for (const specifier of statement.exportClause.elements) {
           if (specifier.name.text !== "default") continue;
           defaultIdentifier = specifier.propertyName?.text ?? specifier.name.text;
         }
@@ -94,11 +93,5 @@ export class AsyncDefaultExportDetector {
         (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
         this.#hasModifier(node, ts.SyntaxKind.AsyncKeyword),
     );
-  }
-
-  static #scriptKind(typescript: TypeScript, moduleAbsPath: string): ts.ScriptKind {
-    return moduleAbsPath.endsWith(".tsx") || moduleAbsPath.endsWith(".jsx")
-      ? typescript.ScriptKind.TSX
-      : typescript.ScriptKind.TS;
   }
 }
