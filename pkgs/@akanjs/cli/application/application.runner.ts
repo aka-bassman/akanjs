@@ -27,10 +27,7 @@ export interface LogsOptions {
   runtimeDir?: string | null;
 }
 
-// `akan start` is the hot path and must not pay for the build, mobile, release and AI stacks:
-// `applicationBuildRunner` pulls tailwind + fonteditor + typescript (~140MB), `capacitorApp` pulls
-// @trapezedev/project (~76MB) and @inquirer ~24MB. Import them inside the
-// methods that use them so only those commands pay.
+// Lazy, so the `akan start` hot path never loads the build, mobile and prompt stacks.
 const loadBuildRunner = async () => (await import("@akanjs/devkit/applicationBuildRunner")).ApplicationBuildRunner;
 const loadReleasePackager = async () =>
   (await import("@akanjs/devkit/applicationReleasePackager")).ApplicationReleasePackager;
@@ -81,7 +78,7 @@ export class ApplicationRunner extends runner("application") {
       stdio: "inherit",
     });
   }
-  /** Where the gateway (or solo replica) of this app keeps its sockets and logs: the same answer `resolveRuntimeDir` gives from the workspace root. */
+  // Must match what `resolveRuntimeDir` answers from the workspace root.
   #runtimeDirOf(app: App, override?: string | null) {
     return path.resolve(
       override ??
@@ -180,10 +177,7 @@ try {
       stdio: "inherit",
     });
   }
-  /**
-   * Boots the app as a script — no listener, no cron, no init job, so nothing writes beside the import — in the
-   * database mode the shell names, and copies its model tables to or from `dir`.
-   */
+  // Booted as a script (no listener, cron or init job), so nothing writes beside the import.
   async transferDatabase(app: App, direction: "export" | "import", dir: string) {
     const serverPath = `${app.cwdPath}/server.ts`;
     if (!(await app.exists("server.ts"))) throw new Error(`Server file not found: apps/${app.name}/server.ts`);
@@ -289,7 +283,6 @@ try {
   ) {
     const targets = await resolveMobileTargets(app, target);
     if (operation === "release") await this.#buildMobileCsr(app, env);
-    // else await this.start(app);
     await this.#runMobileTargets(targets, async (mobileTarget) => {
       const capacitorApp = new (await loadCapacitorApp())(app, mobileTarget.config);
       await capacitorApp.runIos({ operation, env, regenerate, noAllowProvisioningUpdates, iosDeviceId: device });
@@ -336,7 +329,6 @@ try {
   ) {
     const targets = await resolveMobileTargets(app, target);
     if (operation === "release") await this.#buildMobileCsr(app, env);
-    // else await this.start(app);
     await this.#runMobileTargets(targets, async (mobileTarget) => {
       const capacitorApp = new (await loadCapacitorApp())(app, mobileTarget.config);
       await capacitorApp.runAndroid({ operation, env, regenerate });
@@ -402,8 +394,6 @@ try {
     if (!target) throw new Error(`No mobile target configured for ${app.name}`);
     const capacitorApp = new (await loadCapacitorApp())(app, target.config);
     await capacitorApp.init();
-
-    // await this.release;
   }
 
   // multiple keeps its data in the SQLite file single uses, so only Redis joins it; cluster adds Postgres.
@@ -412,8 +402,7 @@ try {
     if (mode === "multiple") return ["redis"];
     return ["redis", "postgres"];
   }
-  // `local/docker-compose.yaml` is written once and then left to the developer, so a workspace older than a service
-  // would otherwise fail inside `docker compose` with "no such service".
+  // docker-compose.yaml is written once and left to the developer, so an older one may lack a service.
   async #assertComposeHas(workspace: Workspace, services: string[]) {
     const compose = Bun.YAML.parse(await Bun.file(`${workspace.workspaceRoot}/local/docker-compose.yaml`).text()) as {
       services?: Record<string, unknown>;
