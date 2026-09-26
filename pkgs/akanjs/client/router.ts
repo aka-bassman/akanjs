@@ -192,13 +192,9 @@ class Router {
     }
     this.#ensureHistoryState();
     if (options.type === "csr") this.#initCsrClientRouter(options);
-    else if (options.side === "server") this.#initSsrServerRouter(options);
-    else this.#initSsrClientRouter(options);
+    else if (options.side === "client") this.#initSsrClientRouter(options);
     this.isInitialized = true;
     Logger.verbose("Router initialized");
-  }
-  #initSsrServerRouter(options: SsrServerRouterOption) {
-    // already initialized in next server
   }
   #initSsrClientRouter(options: SsrClientRouterOption) {
     const navigate = (method: "push" | "replace") => (href: string, routeOptions?: RouteOptions) => {
