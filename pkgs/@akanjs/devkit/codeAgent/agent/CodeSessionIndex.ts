@@ -1,5 +1,6 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { parseJsonLine, readJsonLines } from "./jsonLines";
 
 export interface CodeSessionEntry {
   id: string;
@@ -45,11 +46,11 @@ export class CodeSessionIndex {
   }
 
   static #read(file: string, updatedAt: number): CodeSessionEntry | undefined {
-    const lines = CodeSessionIndex.#lines(file);
+    const lines = readJsonLines(file, CodeSessionIndex.readLimit);
     if (!lines.length) return undefined;
     const entry: CodeSessionEntry = { id: "", file, name: undefined, opening: "", updatedAt, turns: 0 };
     for (const line of lines) {
-      const record = CodeSessionIndex.#parse(line);
+      const record = parseJsonLine<{ [key: string]: unknown; type?: string }>(line);
       if (!record) continue;
       if (record.type === "session" && typeof record.id === "string") entry.id = record.id;
       // A rename appends a second entry rather than editing the first, so the last one on the file wins.
@@ -61,25 +62,6 @@ export class CodeSessionIndex {
       if (!entry.opening) entry.opening = CodeSessionIndex.#text(message.content);
     }
     return entry.id ? entry : undefined;
-  }
-
-  static #lines(file: string) {
-    try {
-      if (statSync(file).size > CodeSessionIndex.readLimit) return [];
-      return readFileSync(file, "utf8")
-        .split("\n")
-        .filter((line) => !!line.trim());
-    } catch {
-      return [];
-    }
-  }
-
-  static #parse(line: string): { [key: string]: unknown; type?: string } | undefined {
-    try {
-      return JSON.parse(line) as { type?: string };
-    } catch {
-      return undefined;
-    }
   }
 
   static #text(content: unknown) {

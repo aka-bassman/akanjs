@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { codeAgentSessionName } from "akanjs/common";
 import { CodeSessionIndex } from "./CodeSessionIndex";
+import { parseJsonLine } from "./jsonLines";
 
 interface CodeSessionRecord {
   [key: string]: unknown;
@@ -22,7 +23,7 @@ export class CodeSessionFork {
     const at = new Date();
     const forked = Bun.randomUUIDv7();
     const records = lines
-      .map((line) => CodeSessionFork.#parse(line))
+      .map((line) => parseJsonLine<CodeSessionRecord>(line))
       .filter((record): record is CodeSessionRecord => !!record);
     const first = records.find((record) => record.type === "session");
     if (!first) throw new Error(`Session ${id} carries no session record`);
@@ -51,13 +52,5 @@ export class CodeSessionFork {
     const named = records.filter((record) => record.type === "session_info").at(-1);
     const current = typeof named?.name === "string" ? named.name : "";
     return codeAgentSessionName(current ? `${current} fork` : "fork");
-  }
-
-  static #parse(line: string) {
-    try {
-      return JSON.parse(line) as CodeSessionRecord;
-    } catch {
-      return undefined;
-    }
   }
 }
