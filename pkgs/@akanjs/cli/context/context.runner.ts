@@ -30,12 +30,7 @@ import { CommandContainer, runner, type Workspace } from "@akanjs/devkit/command
 import { AppExecutor } from "@akanjs/devkit/executors";
 import { getMobileTargets } from "@akanjs/devkit/mobile";
 import { Prompter } from "@akanjs/devkit/prompter";
-import {
-  createWorkflowBaselineSummary,
-  createWorkflowStepRegistry,
-  jsonText,
-  type WorkflowDiagnostic,
-} from "@akanjs/devkit/workflow";
+import { createWorkflowBaselineSummary, createWorkflowStepRegistry, jsonText } from "@akanjs/devkit/workflow";
 import { ModuleScript } from "../module/module.script";
 import { PrimitiveScript } from "../primitive/primitive.script";
 import { RepairRunner } from "../repair/repair.runner";
@@ -48,34 +43,22 @@ const toolErrorText = (error: unknown): string => {
   return message.replace(/\/(?:[^\s"'/]+\/)*(?=(?:pkgs|apps|libs|infra)\/)/g, "<workspace>/");
 };
 
-const workflowDiagnosticFromContext = (diagnostic: {
-  severity: "warning" | "error";
-  code: string;
-  message: string;
-  scope?: "baseline" | "workflow" | "unknown";
-  context?: WorkflowDiagnostic["context"];
-}): WorkflowDiagnostic => ({
-  severity: diagnostic.severity,
-  code: diagnostic.code,
-  message: diagnostic.message,
-  scope: diagnostic.scope,
-  context: diagnostic.context,
-});
-
 const compactDoctorWorkspaceResult = (
   result: Awaited<ReturnType<typeof AkanContextAnalyzer.doctor>>,
   includeBaselineDetails: boolean,
 ) => {
   const baselineDiagnostics = result.baselineDiagnostics ?? [];
-  if (baselineDiagnostics.length === 0) {
-    return {
-      ...result,
-      baselineSummary: createWorkflowBaselineSummary([], { detailsIncluded: includeBaselineDetails }),
-    };
-  }
-  const baselineSummary = createWorkflowBaselineSummary(baselineDiagnostics.map(workflowDiagnosticFromContext), {
-    detailsIncluded: includeBaselineDetails,
-  });
+  const baselineSummary = createWorkflowBaselineSummary(
+    baselineDiagnostics.map(({ severity, code, message, scope, context }) => ({
+      severity,
+      code,
+      message,
+      scope,
+      context,
+    })),
+    { detailsIncluded: includeBaselineDetails },
+  );
+  if (baselineDiagnostics.length === 0) return { ...result, baselineSummary };
   return {
     ...result,
     baselineSummary,
@@ -95,11 +78,7 @@ export class ContextRunner extends runner("context") {
       module = null,
     }: { format?: AkanContextFormat; app?: string | null; module?: string | null } = {},
   ) {
-    const context = await AkanContextAnalyzer.analyze(workspace, {
-      app,
-      module,
-      includeAbstractContent: !!module,
-    });
+    const context = await AkanContextAnalyzer.analyze(workspace, { app, module, includeAbstractContent: !!module });
     return format === "json" ? jsonText(context) : AkanContextAnalyzer.renderMarkdown(context, { module });
   }
 
@@ -175,13 +154,7 @@ export class ContextRunner extends runner("context") {
     if (currentAkanServer && !force && JSON.stringify(currentAkanServer) !== JSON.stringify(nextAkanServer)) {
       throw new Error(`${configPath} already has an "akan" MCP server. Re-run with --force to overwrite it.`);
     }
-    const nextConfig: CursorMcpConfig = {
-      ...existing,
-      mcpServers: {
-        ...mcpServers,
-        akan: nextAkanServer,
-      },
-    };
+    const nextConfig: CursorMcpConfig = { ...existing, mcpServers: { ...mcpServers, akan: nextAkanServer } };
     await workspace.writeFile(configPath, `${JSON.stringify(nextConfig, null, 2)}\n`);
     return configPath;
   }
@@ -416,30 +389,14 @@ export class ContextRunner extends runner("context") {
           framing,
         );
       } else if (request.method === "tools/list") {
-        respond(
-          request.id,
-          {
-            tools: this.listMcpTools(mode, { guidelineNames }),
-          },
-          framing,
-        );
+        respond(request.id, { tools: this.listMcpTools(mode, { guidelineNames }) }, framing);
       } else if (request.method === "tools/call") {
         const name = params.name as string;
         const args = (params.arguments ?? {}) as Record<string, unknown>;
         try {
           const result = await this.callMcpTool(workspace, name, args, { mode });
-          respond(
-            request.id,
-            {
-              content: [
-                {
-                  type: "text",
-                  text: typeof result === "string" ? result : jsonText(result, { trailingNewline: false }),
-                },
-              ],
-            },
-            framing,
-          );
+          const text = typeof result === "string" ? result : jsonText(result, { trailingNewline: false });
+          respond(request.id, { content: [{ type: "text", text }] }, framing);
         } catch (error) {
           // `isError` in the result, not a JSON-RPC error: a protocol error never reaches the model, which then retries.
           respond(request.id, { content: [{ type: "text", text: toolErrorText(error) }], isError: true }, framing);
