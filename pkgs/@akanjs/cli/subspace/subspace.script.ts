@@ -43,10 +43,7 @@ export class SubspaceScript extends script("subspace", [SubspaceRunner]) {
     Logger.rawLog(format === "json" ? JSON.stringify(result, null, 2) : formatSubspaceDiff(result));
   }
 
-  /**
-   * No spinner: the confirmation, and the device login the first upload of a session triggers, both draw
-   * over one.
-   */
+  // No spinner: the confirmation and the first upload's device login both draw over one.
   async uploadEnv(
     workspace: Workspace,
     name: string,
