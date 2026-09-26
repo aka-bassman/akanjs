@@ -1,4 +1,4 @@
-import { Logger } from "akanjs/common";
+import { Logger, logSeverity } from "akanjs/common";
 import type { LogHub, LogHubEntry } from "./logHub";
 import { LogStdoutWriter } from "./logStdoutWriter";
 import type { RotatingLogWriter } from "./rotatingLogWriter";
@@ -20,6 +20,15 @@ export class HubFileSink {
         json ? LogStdoutWriter.line(entry) : Logger.stripAnsi(Logger.render(entry.record)),
       );
     });
+  }
+
+  static attach(writer: RotatingLogWriter, hub: LogHub | null, label: string): () => void {
+    if (!hub || !Logger.isNdjson) return Logger.addSink((entry) => void writer.write(label, entry.plainMessage));
+    const sink = new HubFileSink(hub, writer, {
+      minSev: logSeverity[Logger.fileLevel],
+      json: Logger.format === "ndjson-only",
+    });
+    return () => sink.close();
   }
 
   static processKey({ record }: LogHubEntry): string {

@@ -47,6 +47,19 @@ export class LogControlSocket {
     this.path = LogControlSocket.pathIn(runtimeDir);
   }
 
+  static async open(hub: LogHub, runtimeDir: string, logger: Logger): Promise<LogControlSocket | null> {
+    const control = new LogControlSocket(hub, runtimeDir);
+    try {
+      await control.start();
+      return control;
+    } catch (error) {
+      logger.warn(
+        `Log control socket unavailable at ${control.path}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
   async start() {
     await mkdir(path.dirname(this.path), { recursive: true });
     await rm(this.path, { force: true });

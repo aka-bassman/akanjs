@@ -1,6 +1,6 @@
 import type { AkanWebConfig, AkanWebOption } from "akanjs";
 import { type BackendEnv, type BaseEnv, getApiPrefix, getEnv, getWsPrefix, normalizeRoutePrefix } from "akanjs/base";
-import { Logger, logSeverity, parseBasePaths, websocketBinaryFrameContract } from "akanjs/common";
+import { Logger, parseBasePaths, websocketBinaryFrameContract } from "akanjs/common";
 import { DictionaryLookup, DictionaryRegistry } from "akanjs/dictionary";
 import type {
   Adaptor,
@@ -40,7 +40,7 @@ import { SqliteFiles } from "./ops/sqliteFiles";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { WebProxyRunner } from "./proxy";
 import { SignalResolver } from "./resolver";
-import { ApiRouter } from "./routing/apiRouter";
+import { type ApiRouteInputs, ApiRouter } from "./routing/apiRouter";
 import type { AppWsData } from "./routing/appWsData";
 import { createSoloAppRoutes } from "./routing/soloAppRoutes";
 import {
@@ -159,11 +159,10 @@ export class AkanServer {
   // No gateway socket: this process owns `/_akan/app/*` and the rotating log the gateway would have handled.
   readonly #solo = !process.env.AKAN_CHILD_SOCKET;
   #logWriter: RotatingLogWriter | null = null;
-  #removeLogSink: (() => void) | null = null;
+  #detachFileLog: (() => void) | null = null;
   #logHub: LogHub | null = null;
   #logControl: LogControlSocket | null = null;
   #logForwarder: LogForwarder | null = null;
-  #hubFileSink: HubFileSink | null = null;
   #logStream: LogStreamRoute | null = null;
   #ops: OpsRoute | null | undefined;
   #lastMetrics: AkanMetricsReport = {};
@@ -386,19 +385,21 @@ export class AkanServer {
       }),
       data: {},
     } as Bun.WebSocketHandler<AppWsData | HmrWsData>;
-    this.#server = Bun.serve({
-      idleTimeout: 0,
-      ...(unix ? { unix } : { port }),
-      routes: ApiRouter.buildRoutes({
+    const buildRoutes = (upgradeAppWs: ApiRouteInputs["upgradeAppWs"]) =>
+      ApiRouter.buildRoutes({
         prefix: this.prefix,
         websocketPrefix: this.websocketPrefix,
         routes,
         builtinRoutes,
         routeOptions,
         renderEnvRoutes,
-        upgradeAppWs: (req, data) => this.#server?.upgrade(req, { data }) ?? false,
+        upgradeAppWs,
         webProxyRunner,
-      }),
+      });
+    this.#server = Bun.serve({
+      idleTimeout: 0,
+      ...(unix ? { unix } : { port }),
+      routes: buildRoutes((req, data) => this.#server?.upgrade(req, { data }) ?? false),
       websocket: websocketHandlers,
     } as Parameters<typeof Bun.serve>[0]);
     if (unix && process.env.AKAN_CHILD_WS_PORT) {
@@ -406,16 +407,7 @@ export class AkanServer {
       const wsServeOptions = (port: number) => ({
         idleTimeout: 0,
         port,
-        routes: ApiRouter.buildRoutes({
-          prefix: this.prefix,
-          websocketPrefix: this.websocketPrefix,
-          routes,
-          builtinRoutes,
-          routeOptions,
-          renderEnvRoutes,
-          upgradeAppWs: (req: Request, data: AppWsData) => this.#wsServer?.upgrade(req, { data }) ?? false,
-          webProxyRunner,
-        }),
+        routes: buildRoutes((req, data) => this.#wsServer?.upgrade(req, { data }) ?? false),
         websocket: websocketHandlers,
       });
       try {
@@ -707,24 +699,12 @@ export class AkanServer {
   #startFileLogging() {
     if (!this.#solo || this.#logWriter) return;
     this.#logWriter = RotatingLogWriter.fromRuntimeDir(resolveRuntimeDir());
-    if (!this.#logWriter) return;
-    if (this.#logHub && Logger.isNdjson) {
-      this.#hubFileSink = new HubFileSink(this.#logHub, this.#logWriter, {
-        minSev: logSeverity[Logger.fileLevel],
-        json: Logger.format === "ndjson-only",
-      });
-      return;
-    }
-    this.#removeLogSink = Logger.addSink((entry) => {
-      this.#logWriter?.write(this.serverMode, entry.plainMessage);
-    });
+    if (this.#logWriter) this.#detachFileLog = HubFileSink.attach(this.#logWriter, this.#logHub, this.serverMode);
   }
 
   async #stopFileLogging() {
-    this.#removeLogSink?.();
-    this.#removeLogSink = null;
-    this.#hubFileSink?.close();
-    this.#hubFileSink = null;
+    this.#detachFileLog?.();
+    this.#detachFileLog = null;
     const writer = this.#logWriter;
     this.#logWriter = null;
     await writer?.close();
@@ -741,15 +721,7 @@ export class AkanServer {
         hub.ingestMany(records);
         if (dropped) this.logger.warn(`RSC worker dropped ${dropped} log records (ipc backpressure)`);
       });
-      const control = new LogControlSocket(hub, resolveRuntimeDir());
-      try {
-        await control.start();
-        this.#logControl = control;
-      } catch (error) {
-        this.logger.warn(
-          `Log control socket unavailable at ${control.path}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
+      this.#logControl = await LogControlSocket.open(hub, resolveRuntimeDir(), this.logger);
       return;
     }
     // An ndjson gateway relays records, not text; the forwarder starts at the stdout level before `log.level` arrives.

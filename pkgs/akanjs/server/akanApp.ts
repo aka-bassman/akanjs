@@ -1,7 +1,7 @@
 // styleguard-disable inline-color — the standalone status page renders before any theme CSS exists.
 import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { Logger, logSeverity } from "akanjs/common";
+import { Logger } from "akanjs/common";
 import type { AkanChildRole, AkanChildStatus, AkanIpcMessage, AkanMetricsReport, AkanUpstream } from "akanjs/service";
 import { getApiPrefix, getWsPrefix, normalizeRoutePrefix, resetEnvCache } from "../base/baseEnv";
 import { isTraceEnabled } from "../signal/trace";
@@ -136,10 +136,9 @@ export class AkanApp {
   #healthTimer: Timer | null = null;
   #metricsTimer: Timer | null = null;
   #logWriter: RotatingLogWriter | null = null;
-  #removeLogSink: (() => void) | null = null;
+  #detachFileLog: (() => void) | null = null;
   #logHub: LogHub | null = null;
   #logControl: LogControlSocket | null = null;
-  #hubFileSink: HubFileSink | null = null;
   #logStream: LogStreamRoute | null = null;
   #ops: OpsRoute | null = null;
   static readonly #ansiPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
@@ -274,20 +273,7 @@ export class AkanApp {
   async #startSolo() {
     const role = this.#getRole(0);
     // A child's env minus `AKAN_CHILD_SOCKET`, whose absence makes `AkanServer` bind `PORT` and own `/_akan/app/*`.
-    Object.assign(process.env, {
-      PORT: String(this.#port),
-      NODE_ENV: AkanApp.#defaultChildNodeEnv(),
-      AKAN_REPLICA: this.#replica.value,
-      AKAN_REPLICA_IDX: "0",
-      AKAN_APP_DIR: path.dirname(this.#serverPath),
-      SERVER_MODE: role,
-      AKAN_API_PREFIX: this.#prefix,
-      AKAN_WS_PREFIX: this.#websocketPrefix,
-      ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
-      ...(this.#modules.length ? { AKAN_MODULES: this.#modules.join(",") } : {}),
-      ...(this.#disableModules.length ? { AKAN_DISABLE_MODULES: this.#disableModules.join(",") } : {}),
-      ...(this.#disableLibs.length ? { AKAN_DISABLE_LIBS: this.#disableLibs.join(",") } : {}),
-    });
+    Object.assign(process.env, this.#childEnv(0, role));
     // Anything that read the env before the assignment above cached the prefix it just changed.
     resetEnvCache();
     this.logger.info(`Starting ${role} replica in this process (solo); set AKAN_SOLO=false for the gateway`);
@@ -354,21 +340,10 @@ export class AkanApp {
       cwd: process.cwd(),
       env: {
         ...process.env,
-        // Its loopback fetches (SSR, its RSC worker) come back through this gateway, so pass the resolved port.
-        PORT: String(this.#port),
-        NODE_ENV: AkanApp.#defaultChildNodeEnv(),
-        AKAN_REPLICA: this.#replica.value,
-        AKAN_REPLICA_IDX: String(idx),
-        AKAN_APP_DIR: path.dirname(this.#serverPath),
-        SERVER_MODE: role,
+        // PORT included: its loopback fetches (SSR, its RSC worker) come back through this gateway.
+        ...this.#childEnv(idx, role),
         AKAN_CHILD_SOCKET: upstream.http.socketPath,
         AKAN_CHILD_WS_PORT: upstream.ws ? String(upstream.ws.port) : "",
-        AKAN_API_PREFIX: this.#prefix,
-        AKAN_WS_PREFIX: this.#websocketPrefix,
-        ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
-        ...(this.#modules.length ? { AKAN_MODULES: this.#modules.join(",") } : {}),
-        ...(this.#disableModules.length ? { AKAN_DISABLE_MODULES: this.#disableModules.join(",") } : {}),
-        ...(this.#disableLibs.length ? { AKAN_DISABLE_LIBS: this.#disableLibs.join(",") } : {}),
       },
       ipc: (message) => this.#handleMessage(idx, message as AkanIpcMessage, proc),
       stdout: "pipe",
@@ -391,7 +366,7 @@ export class AkanApp {
       lastRestartAt: previous?.lastRestartAt,
       lastRestartReason: previous?.lastRestartReason,
     });
-    this.#invalidateFederationChildCache();
+    this.#federationChildCache = null;
     const output = new ChildOutputReader({
       onLine: (line) => this.#writeChildLine(idx, role, proc.pid, "stdout", line),
       onBlock: (lines) => this.#writeChildStderrBlock(idx, role, proc.pid, lines),
@@ -401,13 +376,30 @@ export class AkanApp {
     proc.exited.then((code) => this.#handleChildExit(idx, proc, code));
   }
 
+  #childEnv(idx: number, role: AkanChildRole) {
+    return {
+      PORT: String(this.#port),
+      NODE_ENV: AkanApp.#defaultChildNodeEnv(),
+      AKAN_REPLICA: this.#replica.value,
+      AKAN_REPLICA_IDX: String(idx),
+      AKAN_APP_DIR: path.dirname(this.#serverPath),
+      SERVER_MODE: role,
+      AKAN_API_PREFIX: this.#prefix,
+      AKAN_WS_PREFIX: this.#websocketPrefix,
+      ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
+      ...(this.#modules.length ? { AKAN_MODULES: this.#modules.join(",") } : {}),
+      ...(this.#disableModules.length ? { AKAN_DISABLE_MODULES: this.#disableModules.join(",") } : {}),
+      ...(this.#disableLibs.length ? { AKAN_DISABLE_LIBS: this.#disableLibs.join(",") } : {}),
+    };
+  }
+
   #handleChildExit(idx: number, proc: Bun.Subprocess<"ignore", "pipe", "pipe">, code: number | null) {
     const child = this.#children.get(idx);
     if (!child || child.proc !== proc) return;
     if (child.status === "crashed") return;
     child.status = "exited";
     child.lastExitCode = code;
-    this.#invalidateFederationChildCache();
+    this.#federationChildCache = null;
     this.#removeChildRooms(idx);
     if (this.#stopping) return;
     void this.#scheduleChildRestart(child, proc, `exit:${code ?? "unknown"}`);
@@ -431,7 +423,7 @@ export class AkanApp {
     child.upstream = undefined;
     child.wsUpstream = undefined;
     child.healthPath = undefined;
-    this.#invalidateFederationChildCache();
+    this.#federationChildCache = null;
     child.lastRestartReason = reason;
     child.lastRestartAt = Date.now();
     this.#removeChildRooms(child.idx);
@@ -501,7 +493,7 @@ export class AkanApp {
     child.wsUpstream = undefined;
     child.healthPath = undefined;
     child.lastRestartReason = reason;
-    this.#invalidateFederationChildCache();
+    this.#federationChildCache = null;
     this.#removeChildRooms(child.idx);
     const attempts = child.restartAttempts + 1;
     const detail = child.lastErrorMessage ?? reason;
@@ -557,24 +549,12 @@ export class AkanApp {
 
   #startFileLogging() {
     this.#logWriter = RotatingLogWriter.fromRuntimeDir(this.#runtimeDir);
-    if (!this.#logWriter) return;
-    if (this.#logHub && Logger.isNdjson) {
-      this.#hubFileSink = new HubFileSink(this.#logHub, this.#logWriter, {
-        minSev: logSeverity[Logger.fileLevel],
-        json: Logger.format === "ndjson-only",
-      });
-      return;
-    }
-    this.#removeLogSink = Logger.addSink((entry) => {
-      this.#logWriter?.write("gateway", entry.plainMessage);
-    });
+    if (this.#logWriter) this.#detachFileLog = HubFileSink.attach(this.#logWriter, this.#logHub, "gateway");
   }
 
   async #stopFileLogging() {
-    this.#removeLogSink?.();
-    this.#removeLogSink = null;
-    this.#hubFileSink?.close();
-    this.#hubFileSink = null;
+    this.#detachFileLog?.();
+    this.#detachFileLog = null;
     const writer = this.#logWriter;
     this.#logWriter = null;
     await writer?.close();
@@ -585,15 +565,7 @@ export class AkanApp {
     this.#logHub = hub;
     hub.onFloorChange((minSev) => this.#fanoutToAll({ type: "log.level", minSev }));
     this.#logStream = LogStreamRoute.fromEnv(() => this.#logHub);
-    const control = new LogControlSocket(hub, this.#runtimeDir);
-    try {
-      await control.start();
-      this.#logControl = control;
-    } catch (error) {
-      this.logger.warn(
-        `Log control socket unavailable at ${control.path}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    this.#logControl = await LogControlSocket.open(hub, this.#runtimeDir, this.logger);
   }
 
   //* Loaded only when the key is set, so a gateway without an ops channel never evaluates the snapshot code.
@@ -650,36 +622,24 @@ export class AkanApp {
     return pathname === `${this.#prefix}${this.#websocketPrefix}` || pathname === "/_akan/hmr";
   }
 
+  static readonly #immutableArtifacts = [
+    { prefix: "/_akan/client/", root: "client", strip: "/_akan/client/".length, type: "application/javascript" },
+    { prefix: "/_akan/styles/", root: "", strip: "/_akan/".length, type: "text/css; charset=utf-8" },
+    { prefix: "/_akan/fonts/", root: "", strip: "/_akan/".length, type: "font/woff2" },
+  ] as const;
+
   async #serveImmutableArtifact(req: Request, url: URL): Promise<Response | null> {
     if (!this.#web.ssr) return null;
-    const clientPrefix = "/_akan/client/";
-    if (url.pathname.startsWith(clientPrefix)) {
-      const filePath = resolveStaticPath(
-        path.join(this.#artifactDir, "client"),
-        url.pathname.slice(clientPrefix.length),
-      );
-      if (!filePath) return new Response("Not Found", { status: 404 });
-      const file = Bun.file(filePath);
-      if (!(await file.exists())) return new Response("Not Found", { status: 404 });
-      return this.#fileResponse(req, filePath, {
-        contentType: file.type || "application/javascript",
-        cacheControl: "public, max-age=31536000, immutable",
-      });
-    }
-
-    for (const prefix of ["/_akan/styles/", "/_akan/fonts/"]) {
-      if (!url.pathname.startsWith(prefix)) continue;
-      const filePath = resolveStaticPath(this.#artifactDir, url.pathname.slice("/_akan/".length));
-      if (!filePath) return new Response("Not Found", { status: 404 });
-      const file = Bun.file(filePath);
-      if (!(await file.exists())) return new Response("Not Found", { status: 404 });
-      return this.#fileResponse(req, filePath, {
-        contentType: file.type || (prefix === "/_akan/styles/" ? "text/css; charset=utf-8" : "font/woff2"),
-        cacheControl: "public, max-age=31536000, immutable",
-      });
-    }
-
-    return null;
+    const artifact = AkanApp.#immutableArtifacts.find(({ prefix }) => url.pathname.startsWith(prefix));
+    if (!artifact) return null;
+    const filePath = resolveStaticPath(path.join(this.#artifactDir, artifact.root), url.pathname.slice(artifact.strip));
+    if (!filePath) return new Response("Not Found", { status: 404 });
+    const file = Bun.file(filePath);
+    if (!(await file.exists())) return new Response("Not Found", { status: 404 });
+    return this.#fileResponse(req, filePath, {
+      contentType: file.type || artifact.type,
+      cacheControl: "public, max-age=31536000, immutable",
+    });
   }
 
   #upgradeWebSocket(req: Request, server: Bun.Server<GatewayWsData>): Response | undefined {
@@ -1027,10 +987,6 @@ export class AkanApp {
     return new Response(Bun.file(filePath).stream(), { headers });
   }
 
-  #invalidateFederationChildCache() {
-    this.#federationChildCache = null;
-  }
-
   #pickFederationChild() {
     const candidates =
       this.#federationChildCache ??
@@ -1146,7 +1102,7 @@ export class AkanApp {
       this.#sendToChild(child, { type: "log.level", minSev: this.#logHub.floor });
     child.restartPending = false;
     child.lastErrorMessage = undefined;
-    this.#invalidateFederationChildCache();
+    this.#federationChildCache = null;
     // Batch children serve no HTTP/HMR traffic, so they must not gate frontend readiness.
     const trafficChildren = [...this.#children.values()].filter((item) => item.role !== "batch");
     if (child.role !== "batch" && trafficChildren.every((item) => item.ready)) {
@@ -1162,7 +1118,7 @@ export class AkanApp {
     if (!child) return;
     child.status = "healthy";
     child.lastPongAtMono = performance.now();
-    this.#invalidateFederationChildCache();
+    this.#federationChildCache = null;
   }
 
   #deliverPubsub(originIdx: number, message: Extract<AkanIpcMessage, { type: "pubsub.publish" }>) {
@@ -1206,10 +1162,14 @@ export class AkanApp {
     }
   }
 
-  #removeRoomMembership(childIdx: number, roomId: string, socketId?: string) {
+  #leaveRoom(childIdx: number, roomId: string) {
     const roomChildren = this.#roomChildren.get(roomId);
     roomChildren?.delete(childIdx);
     if (roomChildren?.size === 0) this.#roomChildren.delete(roomId);
+  }
+
+  #removeRoomMembership(childIdx: number, roomId: string, socketId?: string) {
+    this.#leaveRoom(childIdx, roomId);
 
     const childRooms = this.#childRooms.get(childIdx);
     childRooms?.delete(roomId);
@@ -1223,21 +1183,13 @@ export class AkanApp {
   }
 
   #replaceRoomSnapshot(childIdx: number, rooms: string[]) {
-    for (const roomId of this.#childRooms.get(childIdx) ?? []) {
-      const roomChildren = this.#roomChildren.get(roomId);
-      roomChildren?.delete(childIdx);
-      if (roomChildren?.size === 0) this.#roomChildren.delete(roomId);
-    }
+    for (const roomId of this.#childRooms.get(childIdx) ?? []) this.#leaveRoom(childIdx, roomId);
     this.#childRooms.set(childIdx, new Set());
     for (const roomId of rooms) this.#addRoomMembership(childIdx, roomId);
   }
 
   #removeChildRooms(childIdx: number) {
-    for (const roomId of this.#childRooms.get(childIdx) ?? []) {
-      const roomChildren = this.#roomChildren.get(roomId);
-      roomChildren?.delete(childIdx);
-      if (roomChildren?.size === 0) this.#roomChildren.delete(roomId);
-    }
+    for (const roomId of this.#childRooms.get(childIdx) ?? []) this.#leaveRoom(childIdx, roomId);
     this.#childRooms.delete(childIdx);
     for (const [socketId, socket] of this.#socketRooms.entries()) {
       if (socket.childIdx === childIdx) this.#socketRooms.delete(socketId);
@@ -1294,7 +1246,7 @@ export class AkanApp {
       if (this.#isChildUnavailable(child)) continue;
       if (child.lastPongAtMono && nowMono - child.lastPongAtMono > this.#healthTimeoutMs) {
         child.status = "unhealthy";
-        this.#invalidateFederationChildCache();
+        this.#federationChildCache = null;
         void this.#scheduleChildRestart(child, child.proc, "health-timeout");
         continue;
       }
@@ -1305,7 +1257,7 @@ export class AkanApp {
       } satisfies AkanIpcMessage);
       if (!sent) {
         child.status = "unhealthy";
-        this.#invalidateFederationChildCache();
+        this.#federationChildCache = null;
         void this.#scheduleChildRestart(child, child.proc, "health-send-failed");
       }
     }
