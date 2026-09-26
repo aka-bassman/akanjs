@@ -63,8 +63,7 @@ export class CsrArtifactBuilder {
       env: "AKAN_PUBLIC_*",
       define: this.#define(),
       optimizeImports: akanConfig.optimizeImports,
-      // The base artifact's compiled sheet is the only stylesheet, as it is for SSR: a raw `.css` reached through
-      // the route graph is Tailwind source, and every root layout stylesheet in the graph would land in every HTML.
+      // A raw `.css` in the route graph is Tailwind source; the base artifact's compiled sheet is the only stylesheet.
       plugins: [PagesBundleBuilder.createCssStubPlugin()],
     });
 
@@ -223,12 +222,8 @@ void bootCsr(pages);
     return files.sort();
   }
 
-  /**
-   * Bun's HTML bundler hoists the module script into `<head>`, so once that script is inline its source is part
-   * of the text being searched — and a React bundle contains `<body` and `</head>` as strings. Positions are
-   * taken on a copy with script, style and comment bodies blanked, and the snippet always lands after whatever
-   * was injected before it: prepending would reverse the cascade order the caller chose.
-   */
+  // Bun hoists the module script into <head> and a React bundle contains "</head>" as text, so positions come from a
+  // copy with script/style/comment bodies blanked. Never prepends: that would reverse the caller's cascade order.
   static injectBeforeHeadEnd(html: string, snippet: string): string {
     const scannable = CsrArtifactBuilder.blankEmbeddedContent(html);
     const headEnd = scannable.search(/<\/head\s*>/i);

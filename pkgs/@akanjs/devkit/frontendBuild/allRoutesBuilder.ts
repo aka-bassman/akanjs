@@ -14,11 +14,6 @@ export interface BuildAllRoutesResult {
   seedIndex: RouteSeedIndex;
 }
 
-/**
- * Walk every route in `pages` and produce its client bundle up-front.
- * Intended to run under `akan build` (production) so the serve path
- * never needs to compile.
- */
 export class AllRoutesBuilder {
   #app: App;
   #artifact: BaseBuildArtifact;
@@ -47,9 +42,7 @@ export class AllRoutesBuilder {
     this.#app.verbose(`[build-all] discovered ${seedIndex.entries.length} routes`);
     this.#discovery = await GraphClientEntryDiscovery.create(this.#app);
 
-    // Discovery first, bundling second. Chunk splitting only dedupes within one `Bun.build`, so a
-    // dependency shared by entries from different routes was emitted once per route that reached it.
-    // Discovery is cached and does no bundling, so collecting every entry up front costs almost nothing.
+    // Every route's entries go into one Bun.build: chunk splitting only dedupes within a single build.
     const allEntries: string[] = [];
     const seen = new Set<string>();
     for (const entry of seedIndex.entries) {

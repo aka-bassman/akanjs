@@ -13,11 +13,6 @@ import {
   type OpaqueEntryAliases,
 } from "./clientBuildTypes";
 
-/**
- * Low-level primitive shared by the eager base build and the lazy per-route
- * builds. Takes a flat entrypoints list, runs `Bun.build`, and extracts a
- * `ClientManifest` / `SsrManifest` covering only those entries.
- */
 export class ClientEntriesBundler {
   #app: BundleClientEntriesInternalOptions["app"];
   #entries: string[];
@@ -153,10 +148,7 @@ export class ClientEntriesBundler {
     return "js";
   }
 
-  /**
-   * Build a BunPlugin that marks a fixed set of bare specifiers as external via `onResolve`,
-   * as opposed to `Bun.build({ external })`, so macro-time imports still resolve normally.
-   */
+  // `onResolve` rather than `Bun.build({ external })`, so macro-time imports still resolve normally.
   #createExternalSpecifiersPlugin(): BunPlugin {
     const set = new Set(this.#external);
     const subpathSet = new Set(this.#externalSubpaths);
