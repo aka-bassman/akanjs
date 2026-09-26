@@ -22,26 +22,22 @@ export interface PostgresSearchOwner extends SearchIndexOwner {
 }
 
 /**
- * The Postgres index: a weighted `tsvector` generated from `search_doc` under a GIN index, or — for the `trigram`
- * tokenizer — pg_trgm GIN over the mirror columns. SQLite's fts5 is the contract; the two match the same rows for the
- * same text, and only the ranking differs, since `ts_rank` has no document-frequency term.
+ * A weighted `tsvector` under GIN, or pg_trgm GIN for `trigram`. Matches the rows fts5 matches for the same text; only
+ * the ranking differs, as `ts_rank` has no document-frequency term.
  */
 export class PostgresSearchEngine implements SearchEngine {
   readonly merges = false;
-  // Without the row lock a write that commits between the backfill's snapshot and its upsert is overwritten by the
-  // older value, since the trigger's own upsert landed first; with it the backfill reads the row the writer left.
+  // Without it, a write committing between the backfill's snapshot and upsert is overwritten by the older value.
   readonly backfillLock = "FOR SHARE OF NEW";
   static readonly #config = "akan_search";
   static readonly #purge = "akan_search_purge";
   static readonly #vectorIndex = `${DOC_TABLE}_tsv`;
   static readonly #trigramIndex = `${DOC_TABLE}_trgm`;
-  // ASCII punctuation joins a word in the default parser — `hello@naver.com`, `3.14` and `/usr/local` each come out
-  // as one lexeme — where unicode61 splits all of them. Spaced out first, the parser sees what fts5 sees.
+  // The default parser keeps `a@b.com`, `3.14` and `/usr/local` as one lexeme where unicode61 splits; spaced out first.
   static readonly #punctuation = `!"#$%&'()*+,-./:;<=>?@[\\]^_\`{|}~`;
   static readonly #asciiSeparators = /[^A-Za-z0-9\u0080-\u{10FFFF}]/gu;
-  // A tsvector refuses more than 1MB of lexemes and positions, and the refusal would fail the model write the trigger
-  // runs in. Unique two-syllable Hangul words — the densest input — reach it near 314,000 characters, so the four
-  // columns stay under that together; `desc`, the one that holds prose, goes last and keeps most of the room.
+  // A tsvector over 1MB fails the model write; unique two-syllable Hangul (the densest input) reaches it near 314,000
+  // characters, so the columns stay under that together and prose `desc` keeps most of the room.
   static readonly #indexedChars: { [column in SearchColumn]: number } = {
     title: 20_000,
     tag: 20_000,
@@ -113,8 +109,8 @@ export class PostgresSearchEngine implements SearchEngine {
   }
 
   /**
-   * One quoted operand per word piece, `<->` inside a term and `&` between terms — what fts5 makes of a quoted term.
-   * Removing ASCII punctuation also removes every character tsquery syntax is made of, so a piece needs no escaping.
+   * `<->` inside a term and `&` between terms, as fts5 reads a quoted term. Stripping ASCII punctuation removes every
+   * tsquery syntax character, so a piece needs no escaping.
    */
   static tsquery(text: string, { prefix = false, columns }: { prefix?: boolean; columns?: readonly SearchColumn[] }) {
     const weights = columns?.map((column) => PostgresSearchEngine.#weightOf[column]).join("") ?? "";
@@ -220,8 +216,7 @@ export class PostgresSearchEngine implements SearchEngine {
     const upsert = this.#qualified(`akan_search_${ref}`);
     const purge = `${this.#schemaIdent}.${quoteIdent(PostgresSearchEngine.#purge)}('${ref}')`;
     const values = (columns: SearchColumns) => `ARRAY[${SearchMirror.columnList(columns)}]`;
-    // A trigger's WHEN cannot hold a subquery, which an array role needs, so the function compares the mirrored values
-    // itself; the WHEN still skips a write that left `_doc` alone — an `updatedAt` bump.
+    // A WHEN cannot hold the subquery an array role needs, so the function compares; WHEN skips `updatedAt` bumps.
     const unchanged = prev
       ? `IF TG_OP = 'UPDATE' AND OLD."removedAt" IS NULL THEN
     IF next_values IS NOT DISTINCT FROM ${values(prev)} THEN
@@ -263,8 +258,7 @@ $akan$`,
     ];
   }
 
-  // `CREATE OR REPLACE TRIGGER` waits for every write in flight on its table, so a boot that finds them in place does
-  // not issue it.
+  // `CREATE OR REPLACE TRIGGER` waits for every write in flight on its table, so an intact set is left alone.
   async createModelTriggers(ref: string, triggers: ModelTriggers, replace: boolean) {
     if (!replace && (await this.#hasTriggers(ref, triggers))) return;
     await this.#owner.lockSchema(async () => {
@@ -272,8 +266,7 @@ $akan$`,
     });
   }
 
-  // Every boot drops the triggers of every model without a text role; reading the catalog first spares each of them a
-  // schema-lock turn.
+  // Every boot drops triggers for each model without a text role; reading the catalog first spares a schema-lock turn.
   async dropModelTriggers(ref: string) {
     const table = `${this.#schemaIdent}.${quoteIdent(ref)}`;
     const upsert = this.#qualified(`akan_search_${ref}`);
@@ -459,8 +452,7 @@ $akan$`;
       const textPath = `{${segments.map((segment) => segment.name).join(",")}}`;
       return `COALESCE(${wrap(`(${doc} #>> '${SearchMirror.sqlString(textPath)}')`)}, '')`;
     }
-    // SQLite walks an array of objects with json_tree, which also matches the leaf key deeper down; the path here is
-    // the declared one exactly.
+    // The declared path exactly, where SQLite's json_tree also matches the leaf key deeper down.
     const jsonPath = `$${segments
       .map(({ name, arrDepth }) => `."${name.replace(/["\\]/g, (char) => `\\${char}`)}"${"[*]".repeat(arrDepth)}`)
       .join("")}`;

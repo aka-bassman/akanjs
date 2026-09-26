@@ -16,16 +16,12 @@ interface InsightRole {
 }
 
 /**
- * A connection of its own, logged in as a role that holds SELECT on base columns and nothing else, so Postgres itself
- * refuses `_doc` however a statement reaches it — `*`, a whole-row value, `query_to_xml`.
- *
- * A separate login rather than `SET ROLE` on the app's connection: `SET ROLE` is checked against the session user,
- * so a statement run under it can `set_config('role', 'none', true)` back to the app's role and read on from there.
- * The role is checked on every open, and one that could read `_doc` anywhere in the database is refused, not trusted.
+ * Its own login as a role with SELECT on base columns only, so Postgres refuses `_doc` however it is reached (`*`, a
+ * whole-row value, `query_to_xml`). Not `SET ROLE`: a statement could `set_config('role', 'none', true)` its way back
+ * to the app's role. A role that can read `_doc` anywhere is refused on open.
  */
 export class PostgresInsightSession implements InsightSession {
-  // postgres.js sends an `unsafe()` without parameters over the simple protocol, which runs every statement it is
-  // handed; its types omit the `simple` switch the runtime reads.
+  // postgres.js runs a parameterless `unsafe()` over the simple protocol, every statement in it; types omit `simple`.
   static readonly #extendedProtocol = { simple: false } as unknown as UnsafeQueryOptions;
   readonly #sql: Sql;
   readonly #schema: string;

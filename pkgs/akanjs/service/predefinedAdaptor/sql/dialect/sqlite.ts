@@ -23,10 +23,8 @@ export class SqliteDialect implements SqlDialect {
   extract(path: string) {
     return `json_extract(${this.docColumn()}, ${this.#path(path)})`;
   }
-  // A projected column is read back as a value, not compared, so it must keep its JSON type. `json_extract`
-  // unwraps a scalar into a SQL value — a string field holding '{"a":1}' comes back indistinguishable from an
-  // object, and a boolean comes back as 0/1 — while `->` yields the value's JSON text, which `decodeProjected`
-  // parses back into exactly what was stored.
+  // `json_extract` would unwrap a string holding '{"a":1}' into an object and a boolean into 0/1; `->` keeps the JSON
+  // text, which `decodeProjected` parses back exactly.
   projectExpr(path: string) {
     return `${this.docColumn()} -> ${this.#path(path)}`;
   }
@@ -95,8 +93,7 @@ export class SqliteDialect implements SqlDialect {
   }
   applyUpdate(acc: string, op: DocumentUpdateOperator, path: string, value: unknown): SqlFrag {
     const p = this.#path(path);
-    // Current values are read from the original `_doc` column (param-free), never from the accumulator, so folding
-    // never duplicates prior placeholders. All operators in one update therefore observe the pre-update document.
+    // Reads target the param-free original `_doc`, so every operator of one update sees the pre-update document.
     const cur = `json_extract(${this.docColumn()}, ${p})`;
     const arr = `COALESCE(${cur}, json('[]'))`;
     // biome-ignore lint/suspicious/noUnnecessaryConditions: exhaustive switch over a string-literal union, not a truthiness check

@@ -25,17 +25,13 @@ export interface SearchQuery {
   weights: readonly number[];
 }
 
-/**
- * What differs between the fts5 index and the Postgres one. `SearchIndex` keeps everything else — the disabled marker,
- * the per-ref hashes, the cross-process claims and the chunked backfill — so both engines share one set of rules.
- */
+/** What differs between fts5 and Postgres; `SearchIndex` owns the rest (disabled marker, hashes, claims, backfill). */
 export interface SearchEngine {
   /** What the index structure is built from; a change rebuilds it from `search_doc`. */
   schemaDescriptor(): unknown;
   /**
-   * Creates `search_doc` and the index over it, under the owner's schema lock or write transaction. `current` means the
-   * stored descriptor matches, so only a missing index is rebuilt. Returns the `search_doc` columns it had to add,
-   * which nothing has ever written.
+   * Runs under the owner's schema lock or write transaction. `current` means the stored descriptor matches, so only a
+   * missing index is rebuilt. Returns the `search_doc` columns it had to add.
    */
   ensureSchema(current: boolean): Promise<string[]>;
   /** One SQL expression per role over the `alias` row, or null when the model declares no text role. */
