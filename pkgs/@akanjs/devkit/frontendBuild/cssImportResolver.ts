@@ -25,8 +25,8 @@ export class CssImportResolver {
   async resolve(id: string, fromBase: string): Promise<string | null> {
     for (const resolve of [
       () => this.#resolveWithTsconfig(id),
-      () => this.#resolveWithBun(id, fromBase),
-      () => this.#resolveWithRequire(id, fromBase),
+      () => this.#resolveCssWith(fromBase, (base) => Bun.resolveSync(id, base)),
+      () => this.#resolveCssWith(fromBase, (base) => require.resolve(id, { paths: [base] })),
       () => this.#resolvePackageStyle(id, fromBase),
     ]) {
       const resolved = await resolve();
@@ -35,22 +35,10 @@ export class CssImportResolver {
     return null;
   }
 
-  #resolveWithBun(id: string, fromBase: string): string | null {
+  #resolveCssWith(fromBase: string, resolveFrom: (base: string) => string): string | null {
     for (const base of this.#resolutionBases(fromBase)) {
       try {
-        const resolved = Bun.resolveSync(id, base);
-        if (CssImportResolver.isCssFile(resolved)) return resolved;
-      } catch {
-        // Try the next known package resolution root.
-      }
-    }
-    return null;
-  }
-
-  #resolveWithRequire(id: string, fromBase: string): string | null {
-    for (const base of this.#resolutionBases(fromBase)) {
-      try {
-        const resolved = require.resolve(id, { paths: [base] });
+        const resolved = resolveFrom(base);
         if (CssImportResolver.isCssFile(resolved)) return resolved;
       } catch {
         // Try the next known package resolution root.

@@ -92,30 +92,25 @@ export class CssCompiler {
     const pageKeys = await this.#app.getPageKeys({ refresh });
     const basePaths = [...akanConfig.basePaths];
     const rootPageKeys = pageKeys.filter((pageKey) => getPageKeyBasePath(pageKey, basePaths) === null);
+    const compileBasePath = async (basePath: string, basePathPageKeys: string[], label = basePath) => {
+      if (basePathPageKeys.length === 0) return [basePath, ""] as const;
+      const started = Date.now();
+      const { cssPaths, sourcePaths } = await this.discoverCssAndSources({ refresh, pageKeys: basePathPageKeys });
+      const { css, imported } = await this.#compileWithImports(cssPaths, sourcePaths);
+      this.importedStylesheetsByBasePath[basePath] = imported;
+      this.#logger.verbose(
+        `css base=${label} paths=${cssPaths.length} sources=${sourcePaths.length} in ${Date.now() - started}ms`,
+      );
+      return [basePath, css] as const;
+    };
     const cssEntries = await Promise.all([
-      (async () => {
-        if (rootPageKeys.length === 0) return ["", ""] as const;
-        const started = Date.now();
-        const { cssPaths, sourcePaths } = await this.discoverCssAndSources({ refresh, pageKeys: rootPageKeys });
-        const { css, imported } = await this.#compileWithImports(cssPaths, sourcePaths);
-        this.importedStylesheetsByBasePath[""] = imported;
-        this.#logger.verbose(
-          `css base=root paths=${cssPaths.length} sources=${sourcePaths.length} in ${Date.now() - started}ms`,
-        );
-        return ["", css] as const;
-      })(),
-      ...basePaths.map(async (basePath) => {
-        const basePathPageKeys = pageKeys.filter((pageKey) => getPageKeyBasePath(pageKey, basePaths) === basePath);
-        if (basePathPageKeys.length === 0) return [basePath, ""] as const;
-        const started = Date.now();
-        const { cssPaths, sourcePaths } = await this.discoverCssAndSources({ refresh, pageKeys: basePathPageKeys });
-        const { css, imported } = await this.#compileWithImports(cssPaths, sourcePaths);
-        this.importedStylesheetsByBasePath[basePath] = imported;
-        this.#logger.verbose(
-          `css base=${basePath} paths=${cssPaths.length} sources=${sourcePaths.length} in ${Date.now() - started}ms`,
-        );
-        return [basePath, css] as const;
-      }),
+      compileBasePath("", rootPageKeys, "root"),
+      ...basePaths.map((basePath) =>
+        compileBasePath(
+          basePath,
+          pageKeys.filter((pageKey) => getPageKeyBasePath(pageKey, basePaths) === basePath),
+        ),
+      ),
     ]);
     this.#cssTextByBasePath = Object.fromEntries(cssEntries);
     await this.#warnUnreachableStylesheets();
