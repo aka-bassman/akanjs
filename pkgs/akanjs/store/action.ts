@@ -318,8 +318,6 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
   const fileUploadRefName = resolveFileUploadCapability(fetch.serializedSignal)?.refName;
 
   const names = {
-    model: fieldName,
-    Model: className,
     modelForm: `${fieldName}Form`,
     writeOnModel: `writeOn${className}`,
     addModelFiles: `add${className}Files`,
@@ -678,7 +676,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       this: SetGet,
       id: string,
       data: GetStateObject<Input>,
-      { path, modal, sliceName = names.model, onError, onSuccess }: CreateOption<Full> = {},
+      { path, modal, onError, onSuccess }: CreateOption<Full> = {},
     ) {
       const currentState = this.get() as { [key: string]: any };
       const model = currentState[names.model] as Full | null;
