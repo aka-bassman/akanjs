@@ -43,10 +43,7 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
     this.#webProxies.push(...proxies);
     return this;
   }
-  /**
-   * Merged over the `AKAN_MCP_*` env and under the server constructor's option; the app's own `option.ts` wins over
-   * its libs'. The function form receives the server env.
-   */
+  /** Merged over the `AKAN_MCP_*` env and under the constructor option; the app's `option.ts` wins over its libs'. */
   setMcp(mcpOrFn: boolean | McpServerOption | ((env: Env) => boolean | McpServerOption) = true) {
     this.#getMcp = typeof mcpOrFn === "function" ? mcpOrFn : () => mcpOrFn;
     return this;

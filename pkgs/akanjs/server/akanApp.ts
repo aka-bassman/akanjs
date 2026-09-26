@@ -60,8 +60,7 @@ type GatewayUpstream = {
   ws?: Extract<AkanUpstream, { type: "tcp" }>;
 };
 
-// Receive-only close codes (1004-1006) cannot be sent: Bun's client `WebSocket.close()` throws InvalidAccessError on
-// them, so both relay directions map every unsendable code to 1001.
+// Bun's `WebSocket.close()` throws on receive-only codes (1004-1006), so every unsendable code is relayed as 1001.
 const relayableCloseCode = (code: number): number => {
   if (code >= 3000 && code <= 4999) return code;
   if (code >= 1000 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006) return code;
@@ -85,10 +84,7 @@ export interface AkanAppOptions {
   disableModules?: string[];
   /** Like `disableModules`, by owning lib. `AKAN_DISABLE_LIBS`. */
   disableLibs?: string[];
-  /**
-   * Run the lone replica in this process. Default: on for one env-configured traffic replica, off when `replica` is
-   * passed; `AKAN_SOLO=false` can only turn it off.
-   */
+  /** In-process replica; default on for one env-set traffic replica, off if `replica` is passed or AKAN_SOLO=false. */
   solo?: boolean;
 }
 
@@ -174,8 +170,7 @@ export class AkanApp {
     this.#logHub = LogHub.attach();
   }
 
-  // A batch-only replica never listens, so the gateway stays to answer `/_akan/app/health`; under `akan start` the
-  // gateway is also the builder relay, the crash page, and what holds the port across a child restart.
+  // Batch-only never listens (the gateway answers health); `akan start` needs the gateway as builder relay and port holder.
   static #resolveSolo(options: AkanAppOptions, replica: AkanReplicaConfig) {
     if (options.solo !== undefined) return options.solo;
     if (process.env.AKAN_SOLO === "false" || process.env.AKAN_SOLO === "0") return false;
@@ -214,8 +209,7 @@ export class AkanApp {
     return Math.max(min, parsed);
   }
 
-  // The command outranks an inherited NODE_ENV: a dev child told `production` reads the routes manifest only
-  // `akan build` writes, and throws on every route.
+  // The command outranks NODE_ENV: a dev child told `production` expects the manifest only `akan build` writes.
   static #defaultChildNodeEnv() {
     if (process.env.AKAN_COMMAND_TYPE === "start") return "development";
     if (process.env.AKAN_COMMAND_TYPE === "build") return "production";
@@ -230,7 +224,6 @@ export class AkanApp {
     return process.env.AKAN_COMMAND_TYPE === "start" ? 15_000 : 5_000;
   }
 
-  // How long a request waits for a booting or restarting replica before a 503; `0` fails immediately.
   static #parseUpstreamWaitMs() {
     const configured = Number(process.env.AKAN_UPSTREAM_WAIT_MS);
     if (Number.isFinite(configured) && configured >= 0) return configured;
@@ -366,7 +359,7 @@ export class AkanApp {
   #spawn(idx: number) {
     const role = this.#getRole(idx);
     const upstream = this.#getChildUpstream(idx, role);
-    //? Windows drops an ipc message sent right before `process.exit` (0/10 delivered); exit from its send callback.
+    //? Windows drops an ipc message sent right before `process.exit`; exit from its send callback.
     const childCode = `import(${JSON.stringify(path.resolve(this.#serverPath))}).then((mod)=>{ const server = mod.server ?? mod.app; if (!server?.start) throw new Error("server.ts must export server or app with start()"); return server.start({ listen: process.env.SERVER_MODE !== "batch" }); }).catch((error)=>{ const exit = () => process.exit(1); setTimeout(exit, 2000); if (!process.send) return exit(); process.send({ type: "error", message: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined, pid: process.pid }, undefined, undefined, exit); });`;
     let proc!: Bun.Subprocess<"ignore", "pipe", "pipe">;
     proc = Bun.spawn(["bun", "-e", childCode], {
@@ -857,8 +850,7 @@ export class AkanApp {
     return candidate.code === "FailedToOpenSocket" || String(candidate.message ?? "").includes("FailedToOpenSocket");
   }
 
-  // The child died mid-response. Unlike `FailedToOpenSocket` it needs no restart from here, and rethrowing would
-  // answer a raw 500 `TypeError` blamed on whatever URL was in flight.
+  // Child died mid-response: no restart from here, and a rethrow would be a raw 500 blamed on the in-flight URL.
   static #isUpstreamMidFlightClose(error: unknown): boolean {
     if (!error || typeof error !== "object") return false;
     const candidate = error as { code?: unknown; message?: unknown };

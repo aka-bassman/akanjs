@@ -302,7 +302,6 @@ describe("makeAkanChildProxyHeaders", () => {
 
     const headers = makeAkanChildProxyHeaders(req, 0);
 
-    // Not `127.0.0.1`: a loopback-looking address for an unknown caller cannot be told from a real local one.
     expect(headers.get("x-real-ip")).toBeNull();
     expect(headers.get("x-forwarded-for")).toBeNull();
   });
@@ -1028,7 +1027,7 @@ describe("AkanApp", () => {
 describe("AkanApp solo", () => {
   const soloEnvKeys = ["AKAN_SOLO", "SERVER_MODE", "AKAN_REPLICA", "AKAN_REPLICA_IDX", "AKAN_APP_DIR", "PORT"] as const;
 
-  /** `#startSolo` writes the child env onto this process, so every case restores what it found. */
+  // `#startSolo` writes the child env onto this process, so every case restores what it found.
   const withSoloEnv = async (env: { [key: string]: string | undefined }, fn: () => Promise<void>) => {
     const saved = new Map(soloEnvKeys.map((key) => [key, process.env[key]]));
     Object.entries(env).forEach(([key, value]) => {
