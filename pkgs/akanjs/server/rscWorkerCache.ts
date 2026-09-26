@@ -1,3 +1,4 @@
+import type { PageConfig } from "akanjs/client";
 import {
   hasRouteCacheInvalidationScope,
   type LruTtlCache,
@@ -6,7 +7,15 @@ import {
   type RouteCacheRenderState,
   shouldInvalidateRouteCacheEntry,
 } from "./cachePolicy";
-import type { AkanRouterStateV1, AkanRscPatchDecision, AkanRscPatchMetadata } from "./routeState";
+import {
+  type AkanHeadSnapshotV1,
+  type AkanRouterStateV1,
+  type AkanRscPatchDecision,
+  type AkanRscPatchMetadata,
+  encodeAkanHeadSnapshot,
+  isAkanHeadSnapshotV1,
+} from "./routeState";
+import type { RscTraceMetadata } from "./ssrTypes";
 
 export interface CachedRscResult {
   chunks: Uint8Array[];
@@ -176,3 +185,64 @@ export function invalidateCachedRscResults(
     ),
   );
 }
+
+export type CachedRscReplayMessage =
+  | { type: "meta"; requestId: string; theme?: string; status?: number; trace?: RscTraceMetadata }
+  | { type: "cache-state"; requestId: string; state: RouteCacheRenderState }
+  | { type: "chunk"; requestId: string; data: Uint8Array }
+  | { type: "end"; requestId: string };
+
+function yieldToHostEventLoop(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+export async function replayCachedRscResult(input: {
+  requestId: string;
+  chunks: readonly Uint8Array[];
+  theme?: string;
+  trace?: RscTraceMetadata;
+  cacheState?: RouteCacheRenderState;
+  send: (message: CachedRscReplayMessage) => void;
+  isCancelled: () => boolean;
+  yieldToHost?: () => Promise<void>;
+}): Promise<boolean> {
+  const yieldToHost = input.yieldToHost ?? yieldToHostEventLoop;
+  if (input.isCancelled()) return false;
+  const metaMessage: CachedRscReplayMessage = { type: "meta", requestId: input.requestId, theme: input.theme };
+  if (input.trace) metaMessage.trace = input.trace;
+  input.send(metaMessage);
+  input.send({ type: "cache-state", requestId: input.requestId, state: input.cacheState ?? { cacheable: true } });
+  for (let index = 0; index < input.chunks.length; index += 1) {
+    if (input.isCancelled()) return false;
+    input.send({ type: "chunk", requestId: input.requestId, data: input.chunks[index] });
+    await yieldToHost();
+  }
+  if (input.isCancelled()) return false;
+  input.send({ type: "end", requestId: input.requestId });
+  return true;
+}
+
+export function resolveAkanRscHeadSafePatchDecision({
+  partialCommitEnabled,
+  patchDecision,
+  pageConfig,
+  headSnapshot,
+}: {
+  partialCommitEnabled: boolean;
+  patchDecision: AkanRscPatchDecision;
+  pageConfig?: PageConfig;
+  headSnapshot?: AkanHeadSnapshotV1;
+}): AkanRscPatchDecision {
+  if (!partialCommitEnabled || patchDecision.status !== "patch" || !patchDecision.patch) return patchDecision;
+  if (pageConfig?.rscPatchHeadSafe !== true) return fullDecision("head-unsafe", patchDecision);
+  if (!headSnapshot) return fullDecision("head-missing", patchDecision);
+  if (!isAkanHeadSnapshotV1(headSnapshot)) return fullDecision("head-invalid", patchDecision);
+  if (!encodeAkanHeadSnapshot(headSnapshot)) return fullDecision("head-too-large", patchDecision);
+  return { ...patchDecision, patch: { ...patchDecision.patch, headSafe: true, headSnapshot } };
+}
+
+const fullDecision = (reason: string, { commonPrefixLength }: AkanRscPatchDecision): AkanRscPatchDecision => ({
+  status: "full",
+  reason,
+  commonPrefixLength,
+});

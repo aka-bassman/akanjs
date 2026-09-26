@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
-import { createSubRouteIndexDocument, getSubRouteIndexHref, type SubRouteIndexOptions } from "./subRouteIndexDocument";
 import {
+  createSubRouteIndexDocument,
   createSystemPageDocument,
+  getSubRouteIndexHref,
+  type SubRouteIndexOptions,
   SYSTEM_PAGE_STATUS_COPY,
   type SystemPageKind,
   type SystemPageOptions,

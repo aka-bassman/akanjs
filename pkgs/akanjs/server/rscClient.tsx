@@ -6,6 +6,7 @@ import {
   type AkanRouterStateV1,
   type AkanRscPatchMetadata,
   decodeAkanRouterState,
+  isAkanRscPartialCommitEnabled,
   readAkanRouterStateResponseHeader,
 } from "./routeState";
 import { fetchRscNavigationResponse } from "./rscClientFetch";
@@ -30,7 +31,6 @@ import {
   rememberRscCacheNode,
   resolveCachedRscPatchNavigation,
 } from "./rscNavigationState";
-import { isAkanRscPartialCommitEnabled } from "./rscPartialCommit";
 import { commitAkanSegmentOutletPatch, resetAkanSegmentOutletPatches } from "./rscSegmentOutlet";
 
 type InlineRscChunk = [1, string] | [3, string];

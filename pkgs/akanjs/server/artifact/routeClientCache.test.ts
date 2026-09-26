@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { BuildRouteClientResult } from "./manifestTypes";
+import type { BuildRouteClientResult } from "./ipcTypes";
 import { RouteClientCache } from "./routeClientCache";
 import type { RoutesManifest } from "./routesManifestStore";
 

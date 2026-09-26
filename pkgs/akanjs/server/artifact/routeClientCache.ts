@@ -1,6 +1,6 @@
 import { Logger } from "akanjs/common";
 import type { SsrManifest } from "../ssrTypes";
-import type { BuildRouteClientResult, ClientManifest } from "./manifestTypes";
+import type { BuildRouteClientResult, ClientManifest } from "./ipcTypes";
 import type { RoutesManifest } from "./routesManifestStore";
 
 /** One HMR generation's merged route builds; render from a `snapshot()`, which an invalidate cannot mutate. */

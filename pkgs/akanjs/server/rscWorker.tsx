@@ -50,6 +50,7 @@ import {
   encodeAkanHeadSnapshot,
   encodeAkanRouterState,
   encodeAkanRscPatchSegmentPath,
+  isAkanRscPartialCommitEnabled,
   readAkanRouterStateRequest,
   resolveAkanRscPartialDecision,
   resolveAkanRscPatchDecision,
@@ -57,20 +58,19 @@ import {
 import { type PagesContext, RouteTreeBuilder } from "./routeTreeBuilder";
 import { encodeAkanRedirectDigest } from "./rscHttp";
 import { RscPagePrompts } from "./rscPagePrompts";
-import { isAkanRscPartialCommitEnabled } from "./rscPartialCommit";
-import { resolveAkanRscHeadSafePatchDecision } from "./rscPatchSafety";
 import {
   type CachedRscResult,
   createCachedRscPatchMetadata,
   createRscWorkerCachedPatchReplayDecision,
   invalidateCachedRscResults,
   isCachedRscPatchMetadataCompatible,
+  replayCachedRscResult,
+  resolveAkanRscHeadSafePatchDecision,
   resolveRscWorkerPatchCacheEntry,
   shouldCollectRscWorkerRenderChunks,
   shouldStoreRscWorkerPatchResult,
   shouldUseRscWorkerFullResultCache,
 } from "./rscWorkerCache";
-import { replayCachedRscResult } from "./rscWorkerReplay";
 import type { RscTraceMetadata } from "./ssrTypes";
 import { createSystemPageDocument, getPathnameLocale, getSystemPageHomeHref } from "./systemPageDocument";
 

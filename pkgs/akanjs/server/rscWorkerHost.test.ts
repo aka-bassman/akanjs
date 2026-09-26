@@ -4,6 +4,7 @@ import { LruTtlCache } from "./cachePolicy";
 import { shouldRenderLocaleAlternates } from "./head";
 import type { AkanRouterStateV1, AkanRscPatchMetadata } from "./routeState";
 import {
+  type CachedRscReplayMessage,
   type CachedRscResult,
   createCachedRscPatchMetadata,
   createRscPatchCacheEntry,
@@ -11,6 +12,7 @@ import {
   invalidateCachedRscResults,
   isCachedRscPatchMetadataCompatible,
   isRscPatchResultCacheEligible,
+  replayCachedRscResult,
   resolveRscWorkerPatchCacheEntry,
   shouldCollectRscWorkerRenderChunks,
   shouldStoreRscWorkerPatchResult,
@@ -26,7 +28,6 @@ import {
   projectRscWorkerProcessMetrics,
   type RscPending,
 } from "./rscWorkerHost";
-import { type CachedRscReplayMessage, replayCachedRscResult } from "./rscWorkerReplay";
 
 const decoder = new TextDecoder();
 

@@ -35,8 +35,8 @@ import {
   shouldInvalidateRouteCacheEntry,
   shouldStoreRouteCache,
 } from "./cachePolicy";
-import { DevHmrController } from "./hmr";
 import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
+import { DevHmrController } from "./hmr/devHmrController";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { ImageOptimizer } from "./imageOptimizer";
 import { normalizeHost, resolveArtifactDir } from "./proxy/hostBasePathWebProxy";

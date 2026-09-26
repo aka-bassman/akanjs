@@ -11,8 +11,12 @@ import type {
 import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode, Suspense } from "react";
 import { getExplicitPageConfigKeys, resolvePageState } from "../client/frameConfig";
 import { resolveHeadResult } from "./head";
-import { type AkanRouteSegmentState, createAkanRouteSegments, createAkanSegmentOutletKey } from "./routeState";
-import { isAkanRscPartialCommitEnabled } from "./rscPartialCommit";
+import {
+  type AkanRouteSegmentState,
+  createAkanRouteSegments,
+  createAkanSegmentOutletKey,
+  isAkanRscPartialCommitEnabled,
+} from "./routeState";
 import { AkanSegmentOutletReference } from "./rscSegmentOutletReference";
 
 export class RouteElementComposer {

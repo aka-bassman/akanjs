@@ -16,7 +16,7 @@ import {
   resolveAkanRscPartialDecision,
   resolveAkanRscPatchDecision,
 } from "./routeState";
-import { resolveAkanRscHeadSafePatchDecision } from "./rscPatchSafety";
+import { resolveAkanRscHeadSafePatchDecision } from "./rscWorkerCache";
 
 function makeRoute(path: string, pathSegments: string[], rootLayouts = 1, layouts = 0): PathRoute {
   return {

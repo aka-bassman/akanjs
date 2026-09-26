@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { SsrManifest, SsrManifestEntry } from "../ssrTypes";
-import type { ClientManifest } from "./manifestTypes";
+import type { ClientManifest } from "./ipcTypes";
 
 export interface RoutesManifest {
   routeIds: string[];

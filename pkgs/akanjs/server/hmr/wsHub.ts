@@ -1,6 +1,14 @@
 import { Logger } from "akanjs/common";
 import type { BuildPhase } from "../artifact";
 
+// Sent over IPC by devkit's fs watcher.
+export type ChangeKind = "code" | "css" | "config" | "ignore";
+
+export interface ChangeBatch {
+  files: string[];
+  kinds: Set<Exclude<ChangeKind, "ignore">>;
+}
+
 export interface HmrWsData {
   kind: "akan-hmr";
   openedAt: number;

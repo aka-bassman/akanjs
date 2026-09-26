@@ -10,8 +10,7 @@ import {
 } from "../artifact";
 import type { RscWorker } from "../rscWorkerHost";
 import type { RenderState } from "../types";
-import type { ChangeKind } from "./changeBatch";
-import { type HmrMessage, type HmrWsData, HmrWsHub } from "./wsHub";
+import { type ChangeKind, type HmrMessage, type HmrWsData, HmrWsHub } from "./wsHub";
 
 const APP_RUNTIME_METADATA_BASENAMES = new Set(["dict.ts", "sig.ts", "useClient.ts"]);
 

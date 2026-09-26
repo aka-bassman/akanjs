@@ -1,3 +1,5 @@
+import type { SsrManifest } from "../ssrTypes";
+
 export interface BuildRouteResultPayload {
   manifestDelta: Record<string, { id: string; chunks: string[]; name: string; async: boolean }>;
   ssrManifestDelta: Record<string, Record<string, { id: string; chunks: string[]; name: string; async: boolean }>>;
@@ -109,3 +111,21 @@ export type BuilderEvent =
   | { type: "builder-metrics"; data: BuilderMetrics };
 
 export type BuilderMessage = BuilderReq | BuilderRes | BuilderCsrReq | BuilderCsrRes | BuilderControl | BuilderEvent;
+
+export interface ClientManifestEntry {
+  id: string;
+  chunks: string[];
+  name: string;
+  async?: boolean;
+}
+
+export type ClientManifest = Record<string, ClientManifestEntry>;
+
+export interface BuildRouteClientResult {
+  manifestDelta: ClientManifest;
+  ssrManifestDelta: SsrManifest;
+  newEntries: string[];
+  discoveredEntries?: string[];
+  clientDeps: string[];
+  clientDepsByEntry?: Record<string, string[]>;
+}

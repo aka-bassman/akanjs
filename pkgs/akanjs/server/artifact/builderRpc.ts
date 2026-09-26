@@ -6,12 +6,12 @@ import type {
   BuilderMessage,
   BuilderReq,
   BuilderRes,
+  BuildRouteClientResult,
   BuildRouteResultPayload,
   CssPayload,
   DevBuildStatus,
   PagesBundlePayload,
 } from "./ipcTypes";
-import type { BuildRouteClientResult } from "./manifestTypes";
 
 export interface BuilderRpcEventHandlers {
   /** A watcher batch changed files: clear the route cache and broadcast a dev reload. */
