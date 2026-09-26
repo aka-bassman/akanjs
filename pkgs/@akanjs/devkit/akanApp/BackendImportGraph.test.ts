@@ -11,8 +11,7 @@ describe("BackendImportGraph", () => {
   const tempRoots: string[] = [];
 
   const makeGraph = async (files: Record<string, string>) => {
-    // Realpath, not the mkdtemp path: `Bun.resolveSync` returns real paths, and on macOS `/var/folders`
-    // is a symlink, so an unresolved root makes every resolved import look like it escapes the workspace.
+    // Realpath: `Bun.resolveSync` returns real paths, and macOS `/var/folders` is a symlink.
     const workspaceRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "akan-devkit-graph-")));
     tempRoots.push(workspaceRoot);
     const cwdPath = path.join(workspaceRoot, "apps/demo");
@@ -51,7 +50,6 @@ describe("BackendImportGraph", () => {
     await graph.refresh();
     expect(graph.has(path.join(cwdPath, "lib/added.ts"))).toBe(false);
 
-    // The scan cache is keyed on (mtimeMs, size), so the rewrite must invalidate it.
     await writeFile(path.join(cwdPath, "server.ts"), 'import "./lib/added";\nexport default 1;\n');
 
     await graph.refresh();
@@ -81,8 +79,7 @@ describe("BackendImportGraph", () => {
     await graph.refresh();
     const before = await graph.fingerprint();
 
-    // The builder is gone here, so no watcher event exists for this save — which is the whole reason
-    // the stamps are taken. `mtimeMs` has a coarse clock on Linux, so the size has to move too.
+    // `mtimeMs` has a coarse clock on Linux, so the size has to move too.
     await writeFile(path.join(cwdPath, "lib/handler.ts"), "export const handler = () => 'changed';\n");
 
     expect(filesChangedSince(before, await graph.fingerprint())).toEqual([path.join(cwdPath, "lib/handler.ts")]);
@@ -96,11 +93,9 @@ describe("BackendImportGraph", () => {
     });
     await graph.refresh();
     const before = await graph.fingerprint();
-    // A recycle with no edit in it is the common case, and it must not cost a backend restart.
     expect(filesChangedSince(before, await graph.fingerprint())).toEqual([]);
 
     await rm(path.join(cwdPath, "lib/handler.ts"));
-    // Deleted counts as changed: the backend is still running what used to be there.
     expect(filesChangedSince(before, await graph.fingerprint())).toEqual([path.join(cwdPath, "lib/handler.ts")]);
   });
 

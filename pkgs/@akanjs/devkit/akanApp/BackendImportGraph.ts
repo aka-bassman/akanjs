@@ -22,14 +22,7 @@ export class BackendImportGraph {
   readonly #jsTranspiler = new Bun.Transpiler({ loader: "js" });
   readonly #jsxTranspiler = new Bun.Transpiler({ loader: "jsx" });
   #files = new Set<string>();
-  /**
-   * `refresh()` runs on every server-side save and on every dev-host recycle, and re-reading plus
-   * re-parsing files that did not change is the whole cost of it. Keyed on (mtimeMs, size).
-   *
-   * Specifiers are cached, not resolved paths: creating a file can change what an *unchanged* importer's
-   * specifier resolves to, and `Bun.resolveSync` is cheap next to a read plus a transpiler scan. Only
-   * the scan result is retained — never the source text.
-   */
+  // Specifiers, not resolved paths: a new file can change what an unchanged importer's specifier resolves to.
   #scanCache = new Map<string, { mtimeMs: number; size: number; specifiers: Bun.Import[] }>();
   #ready = false;
   #lastRefreshSucceeded = false;
@@ -51,17 +44,6 @@ export class BackendImportGraph {
     return this.#files.has(path.resolve(file));
   }
 
-  /**
-   * Stamp every file the backend runs, so a caller can ask later what moved.
-   *
-   * Taken when the builder goes away and compared when its replacement is up, because nothing watches
-   * the tree in between: the departing builder's watcher left with it, and the replacement's index
-   * primes from the disk it finds, so an edit that lands in the gap is *baseline* to it and is never
-   * reported at all. The client half of such an edit is rescued by the replacement's boot build; the
-   * backend half is a server left running code that no longer exists, with nothing on screen to say so.
-   *
-   * One `stat` per graph file, against a gap that costs a whole boot build anyway.
-   */
   async fingerprint(): Promise<SourceFingerprints> {
     const stamps = await Promise.all(
       [...this.#files].map(async (file) => {
@@ -117,7 +99,6 @@ export class BackendImportGraph {
     return files;
   }
 
-  /** Null when the file is gone, which is the existence check the walk used to make separately. */
   async #importsOf(file: string): Promise<Bun.Import[] | null> {
     const stats = await stat(file).catch(() => null);
     if (!stats?.isFile()) return null;

@@ -158,8 +158,6 @@ describe("holding requests for a returning builder", () => {
   });
 
   test("holds through the drain too, not only after the process is gone", () => {
-    // The window this decision originally missed: the builder is still alive and refusing, which is
-    // the same gap as a restart from anyone waiting on a page.
     expect(shouldHoldForReturningBuilder({ status: "recycling", heldCount: 0 })).toBe(true);
   });
 
@@ -196,8 +194,6 @@ describe("builder rss recycle", () => {
     expect(decide({ ceilingBytes: null })).toBe("unbounded");
   });
 
-  // Rebooting on a generation whose build failed strands the dev server: the replacement hits the
-  // same compile error and exits before builder-ready.
   test("defers while the current generation has a failing build", () => {
     expect(decide({ buildFailed: true })).toBe("build-failed");
   });
@@ -208,34 +204,25 @@ describe("builder rss recycle", () => {
     expect(decide({ msSinceLastRecycle: 5_000, minIntervalMs: 1_000 })).toBe("recycle");
   });
 
-  // Says so, and keeps enforcing: a page load is two route builds, so an app whose builds sit over the
-  // ceiling reaches this on its first navigation — which is normal work, not a reason to drop the only
-  // bound the builder has.
   test("mentions a tight ceiling rather than acting on it", () => {
     expect(shouldWarnBuilderRssCeilingTight(1)).toBe(false);
     expect(shouldWarnBuilderRssCeilingTight(2)).toBe(true);
     expect(shouldWarnBuilderRssCeilingTight(1, 1)).toBe(true);
   });
 
-  // The one case recycling cannot fix, measured on the replacement before it has built anything: every
-  // future replacement lands on the same floor, so the loop would only ever cost boot builds.
   test("gives up only when a fresh builder is already over the ceiling", () => {
     expect(isRssCeilingUnreachable(ceiling + 1, ceiling)).toBe(true);
     expect(isRssCeilingUnreachable(ceiling - 1, ceiling)).toBe(false);
-    // An unreadable rss is no information, and no ceiling is nothing to be unreachable.
     expect(isRssCeilingUnreachable(null, ceiling)).toBe(false);
     expect(isRssCeilingUnreachable(ceiling + 1, null)).toBe(false);
   });
 
-  // Measured on Linux: the builder peaked at 522MiB and settled at 214MiB with no help, so a 400MiB
-  // ceiling recycled a process that was already back under it. The armed sample is always the peak.
   describe("settle check before committing", () => {
     test("waits when the builder is only modestly over the ceiling", () => {
       expect(decideBuilderRssSettle({ rssBytes: 522, ceilingBytes: 400 })).toBe("wait-and-recheck");
       expect(decideBuilderRssSettle({ rssBytes: 401, ceilingBytes: 400 })).toBe("wait-and-recheck");
     });
 
-    // No purge is going to rescue a builder this far over, so waiting only delays the inevitable.
     test("recycles immediately once far enough past the ceiling", () => {
       expect(decideBuilderRssSettle({ rssBytes: 600, ceilingBytes: 400 })).toBe("recycle-now");
       expect(decideBuilderRssSettle({ rssBytes: 900, ceilingBytes: 400 })).toBe("recycle-now");
@@ -268,7 +255,6 @@ describe("dev idle suspend", () => {
     expect(decide({ restartPending: true })).toBe("restart-pending");
   });
 
-  // A wake would boot straight back into the same compile error, and the developer is mid-fix anyway.
   test("never suspends on a red build", () => {
     expect(decide({ buildFailed: true })).toBe("build-failed");
   });
@@ -332,8 +318,6 @@ describe("recycled builder state announcements", () => {
     },
   });
 
-  // Both identities are content hashes, so a recycle with no concurrent edit reproduces them exactly
-  // and must not reload the backend — that would refresh every browser on a memory recycle.
   test("suppresses an unchanged pages announcement and relays a moved one", () => {
     expect(shouldRelayRecycledFrontendState(pages("/a/pages-abc.js"), pages("/a/pages-abc.js"))).toBe(false);
     expect(shouldRelayRecycledFrontendState(pages("/a/pages-abc.js"), pages("/a/pages-def.js"))).toBe(true);
