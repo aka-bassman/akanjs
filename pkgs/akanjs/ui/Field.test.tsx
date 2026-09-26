@@ -4,6 +4,7 @@ import type { Dayjs } from "akanjs/base";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
+import { mount, setTestEnv } from "./testHelpers";
 
 let Field: typeof import("./Field").Field;
 let DraggableList: typeof import("./DraggableList").DraggableList;
@@ -11,12 +12,8 @@ let dayjs: typeof import("akanjs/base").dayjs;
 let actionTagOf: typeof import("akanjs/store").actionTagOf;
 let tagAction: typeof import("akanjs/store").tagAction;
 
-/** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "fieldtest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "fieldtest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("fieldtest");
   ({ dayjs } = await import("akanjs/base"));
   ({ actionTagOf, tagAction } = await import("akanjs/store"));
   ({ Field } = await import("./Field"));
@@ -51,13 +48,7 @@ beforeAll(async () => {
 const listWrites: string[][] = [];
 let setAliases: (value: unknown) => void;
 
-/**
- * The `onChange` React is holding for a rendered node.
- *
- * Read off the fiber rather than driven with a synthetic event: React's change plugin does not fire under
- * happy-dom (a dispatched `input` reaches the root container in both phases and React extracts nothing), while
- * `click` does. So a control's own handler is reached directly, which is the composition under test anyway.
- */
+// Read off the fiber: React's change plugin does not fire under happy-dom, while `click` does.
 const handlerOf = (el: Element) => {
   const key = Object.keys(el).find((name) => name.startsWith("__reactProps$"));
   const props = (el as unknown as { [key: string]: { onChange?: (event: unknown) => void } })[key ?? ""];
@@ -65,10 +56,7 @@ const handlerOf = (el: Element) => {
 };
 
 const render = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
+  const { container, unmount } = mount(node);
   const inputs = [...container.querySelectorAll("input")];
   return {
     changeFrom: handlerOf(inputs[0]),
@@ -78,10 +66,7 @@ const render = (node: ReactNode) => {
         el.getAttribute("data-akan-action"),
         el.getAttribute("data-akan-state"),
       ]),
-    unmount: () => {
-      act(() => root.unmount());
-      container.remove();
-    },
+    unmount,
   };
 };
 
@@ -187,10 +172,7 @@ describe("Field.DateRange", () => {
   });
 });
 
-/**
- * `Field.TextList` composes `DraggableList`, and both are form controls that would publish the setter they hold.
- * The outer one owns the field (it carries `transform`), so it publishes and hands the inner list a wrapper.
- */
+// The outer control owns the field (it carries `transform`), so it publishes and hands the inner list a wrapper.
 describe("Field.TextList over DraggableList", () => {
   test("publishes the field once, with the reorder tool a drag list adds", async () => {
     const surface = new AgenticSurface();

@@ -2,18 +2,15 @@ import "../../test/registerDom";
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { setTestEnv } from "../testHelpers";
 
 let ThemeToggle: typeof import("./ThemeToggle").ThemeToggle;
 let lib: typeof import("use-agentic");
 let AgentBridge: typeof import("akanjs/store").AgentBridge;
 let StoreRegistry: typeof import("akanjs/store").StoreRegistry;
 
-/** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "themetest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "themetest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("themetest");
   ({ ThemeToggle } = await import("./ThemeToggle"));
   ({ AgentBridge, StoreRegistry } = await import("akanjs/store"));
   lib = await import("use-agentic");

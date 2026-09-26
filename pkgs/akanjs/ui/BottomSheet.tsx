@@ -10,20 +10,17 @@ import { config, useSpring } from "react-spring";
 import { buttonRecipe } from "./Button";
 
 interface BottomSheetProps {
-  /** Additional classes for the sheet surface. */
   className?: string;
-  /** Additional classes for the scrolling body. */
   bodyClassName?: string;
-  /** Controlled open state. Left out, the sheet opens from its own trigger and handle. */
+  /** Left out, the sheet opens from its own trigger and handle. */
   open?: boolean;
   onCancel?: () => void;
-  /** Element that opens the sheet. */
   trigger?: ReactNode;
   /** Whole top row of the sheet, replacing the drag handle or the close row. */
   header?: ReactNode;
   /** The grab handle a `half` sheet draws. */
   handle?: ReactNode;
-  /** Element that closes a `full` sheet, inside the default header row. */
+  /** Closes a `full` sheet, inside the default header row. */
   close?: ReactNode;
   children: ReactNode;
   type: "full" | "half";
@@ -34,8 +31,7 @@ export interface BottomSheetRef {
   close: () => void;
 }
 
-// Seeded off-screen by a constant rather than by `window.innerHeight`: this component renders on the server
-// for SSR, where reading the global throws before the first spring frame ever runs.
+// A constant, not `window.innerHeight`: this renders on the server, where the global throws.
 const OFFSCREEN = 2000;
 
 export const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(

@@ -3,9 +3,9 @@ import { cn, usePage } from "akanjs/client";
 import { type ComponentType, createElement, Fragment, type ReactNode } from "react";
 
 import { buttonRecipe } from "./Button";
+import { InvalidMessage, invalidMessageOf } from "./Input";
 import { createOverridable, useUiOverride, useUiRecipe } from "./UiOverride";
 
-/** Toggle-select cell: outline button (recipe slot), filled primary when selected. */
 const selectedCls = "border-transparent bg-primary text-primary-foreground hover:bg-primary/90";
 
 export interface ToggleSelectProps<I extends string | number | boolean | null> {
@@ -39,12 +39,11 @@ const DefaultToggleSelect = <I extends string | number | boolean | null>({
   const { l } = usePage();
   const toggleBtn = (useUiRecipe("button") ?? buttonRecipe)({ variant: "outline", size: "sm" });
   const validateResult = value !== null ? validate(value) : false;
-  const invalidMessage =
-    value === null || (typeof value === "string" && !value.length) || validateResult === true
-      ? null
-      : validateResult === false
-        ? l("base.invalidValueError")
-        : validateResult;
+  const invalidMessage = invalidMessageOf(
+    value === null || (typeof value === "string" && !value.length),
+    validateResult,
+    l,
+  );
   const options = items.map(
     (item) =>
       (typeof item === "string" || typeof item === "number" ? { label: item.toString(), value: item } : item) as {
@@ -80,9 +79,7 @@ const DefaultToggleSelect = <I extends string | number | boolean | null>({
           </button>
         );
       })}
-      {invalidMessage ? (
-        <div className="absolute -bottom-4 animate-fadeIn text-destructive text-xs">{invalidMessage}</div>
-      ) : null}
+      <InvalidMessage message={invalidMessage} />
     </div>
   );
 };
@@ -110,12 +107,7 @@ const DefaultMulti = ({
   const { l } = usePage();
   const toggleBtn = (useUiRecipe("button") ?? buttonRecipe)({ variant: "outline", size: "sm" });
   const validateResult = validate(value);
-  const invalidMessage =
-    !value.length || validateResult === true
-      ? null
-      : validateResult === false
-        ? l("base.invalidValueError")
-        : validateResult;
+  const invalidMessage = invalidMessageOf(!value.length, validateResult, l);
   const options = items.map(
     (item) =>
       (typeof item === "string" || typeof item === "number" ? { label: item.toString(), value: item } : item) as {
@@ -155,23 +147,17 @@ const DefaultMulti = ({
           </button>
         );
       })}
-      {invalidMessage ? (
-        <div className="absolute -bottom-4 animate-fadeIn text-destructive text-xs">{invalidMessage}</div>
-      ) : null}
+      <InvalidMessage message={invalidMessage} />
     </div>
   );
 };
+// Written out rather than `createOverridable`, so `<ToggleSelect<Status> …/>` still infers.
 const ToggleSelectBase = <I extends string | number | boolean | null>(props: ToggleSelectProps<I>) => {
   const Override = useUiOverride("ToggleSelect");
   const Impl = (Override ?? DefaultToggleSelect) as unknown as ComponentType<ToggleSelectProps<I>>;
   return createElement(Impl, props);
 };
 
-/**
- * Toggle-select. `ToggleSelect` keeps its generic signature (so `<ToggleSelect<Status> …/>` still
- * infers), and both it and `ToggleSelect.Multi` resolve to a route-scoped override when a
- * `page/**\/_overrides.tsx` in the route's ancestry declares one (slots `ToggleSelect`, `ToggleSelectMulti`).
- */
 export const ToggleSelect = Object.assign(ToggleSelectBase, {
   Multi: createOverridable("ToggleSelectMulti", DefaultMulti),
 });

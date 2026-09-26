@@ -6,15 +6,13 @@ import { AiOutlineInbox } from "react-icons/ai";
 import { createOverridable } from "./UiOverride";
 
 export interface EmptyProps {
-  /** Additional classes for the empty-state body. */
   className?: string;
-  /** The mark above the description. */
   icon?: ReactNode;
-  /** Custom description. Defaults to the localized base.noData label. */
+  /** Defaults to the localized `base.noData` label. */
   description?: ReactNode;
-  /** Optional content rendered below the empty-state body. */
+  /** Rendered below the empty-state body. */
   children?: ReactNode;
-  /** Minimum empty-state height in pixels. */
+  /** In pixels. */
   minHeight?: number;
 }
 
@@ -22,8 +20,7 @@ export const DefaultEmpty = ({ className = "", icon, description, children, minH
   const { l } = usePage();
   return (
     <div>
-      {/* minHeight is a runtime number, so it has to be a style prop: Tailwind extracts arbitrary values
-          from source text, so `min-h-[${minHeight}px]` compiles to no CSS and the prop is silently ignored. */}
+      {/* A style, not a class: Tailwind compiles no CSS for an interpolated arbitrary value. */}
       <div
         style={{ minHeight }}
         className={cn("flex w-full flex-col items-center justify-center gap-3 px-6 py-8 text-center", className)}
@@ -38,9 +35,4 @@ export const DefaultEmpty = ({ className = "", icon, description, children, minH
   );
 };
 
-/**
- * Empty-state placeholder. Resolves to a route-scoped override when a
- * `page/**\/_overrides.tsx` in the route's ancestry declares one, otherwise
- * renders {@link DefaultEmpty}.
- */
 export const Empty = createOverridable("Empty", DefaultEmpty);

@@ -1,12 +1,7 @@
 import { DraftStore } from "akanjs/store";
 
-/**
- * How an edit shell's `draft` prop becomes a scope, or nothing.
- *
- * The scope is built here rather than in the store action because this is where the *raw* seed is: `new<Model>`
- * merges its argument into `default<Model>` first, and a `default: () => dayjs()` in that merge would give the
- * same form a different key every time it opened.
- */
+// Scoped here, off the raw seed, not in the store action: `new<Model>` merges into `default<Model>` first, where a
+// `default: () => dayjs()` would key the same form differently on every open.
 export type DraftProp = boolean | string;
 
 export const editDraftScope = (draft: DraftProp | undefined, modelId: string | undefined): string | undefined => {

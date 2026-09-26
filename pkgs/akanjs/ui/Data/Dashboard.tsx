@@ -12,10 +12,7 @@ export interface DashboardProps<T extends string, State> {
   summary: Record<string, unknown>;
   /** The listing these tiles belong to. Kept so a caller names its target; the labels are app-level keys. */
   slice: SliceMeta;
-  /**
-   * Overrides the filter a column applies. A column left out still narrows the listing when its own field
-   * declares a query with `.meta(...)`; one with neither renders as a plain tile.
-   */
+  /** Overrides a column's filter; a column left out filters through its field's `.meta(...)`, else is a plain tile. */
   queryMap?: { [column: string]: QuerySetting };
   /** Model whose fields the columns name. Its `.meta(...)` declarations are where a tile's filter comes from. */
   summaryRefName?: string;
@@ -45,12 +42,10 @@ export default function Dashboard<T extends string, State>({
   const { l } = usePage();
   const searchParams = st.use.searchParams({ agent: false });
   const filter = Array.isArray(searchParams.filter) ? searchParams.filter[0] : searchParams.filter;
-  // Seeded from `?filter=`, which is how a link from elsewhere opens this listing already narrowed. A click
-  // moves it from here on, because applying the filter in place is one request and a navigation is a reload.
+  // Seeded from `?filter=` (a link that opens the listing narrowed); clicks then filter in place, not by navigation.
   const [selected, setSelected] = useState(typeof filter === "string" ? filter : undefined);
-  // The tile's filter: the caller's explicit map first, then the column's own field, because a counter already
-  // knows which listing it counts and the page should not have to restate it. A meta naming another model counts
-  // rows of another listing, and applying it to this one would filter the wrong thing.
+  // The caller's map first, then the column's own field; a meta naming another model counts another listing, so it
+  // cannot filter this one.
   const settingOf = (column: string): QuerySetting | undefined => {
     // A mapped column whose key is empty named no filter, so it falls through rather than applying nothing.
     if (queryMap?.[column]?.queryKey) return queryMap[column];

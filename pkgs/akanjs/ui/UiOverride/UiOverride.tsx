@@ -1,5 +1,5 @@
 "use client";
-import type { ComponentType } from "react";
+import { type ComponentType, createElement, type ReactNode, useContext, useMemo } from "react";
 import type { ClassNameValue as ClassValue } from "tailwind-merge";
 import { sharedContext } from "../../client/sharedContext";
 import type { ApprovalProps as AgentApprovalProps } from "../Agent/Approval";
@@ -19,8 +19,6 @@ import type { DatePickerProps, RangePickerProps, TimePickerProps } from "../Date
 import type { DropdownProps } from "../Dropdown";
 import type { EmptyProps } from "../Empty";
 import type { CheckboxProps, EmailProps, InputProps, NumberProps, PasswordProps, TextAreaProps } from "../Input";
-import type { LoadingProps as LoadingButtonProps } from "../Loading/Button";
-import type { LoadingProps as LoadingInputProps } from "../Loading/Input";
 import type { ProgressBarProps } from "../Loading/ProgressBar";
 import type { SkeletonProps } from "../Loading/Skeleton";
 import type { SpinProps } from "../Loading/Spin";
@@ -38,20 +36,8 @@ import type { MultiProps as ToggleSelectMultiProps, ToggleSelectProps } from "..
 import type { TooltipProps } from "../Tooltip";
 import type { UnauthorizedProps } from "../Unauthorized";
 
-/**
- * Registry of framework UI components an app may replace per-route through a
- * `page/**\/_overrides.tsx` manifest. Each entry is keyed by the framework
- * component name and typed to that component's public prop contract, so an
- * override is checked as a drop-in replacement.
- *
- * Extend this interface (and add a matching `createOverridable(...)` call in the
- * component file) to make another component overridable. Generic components
- * (e.g. `Button`, `Select`) and compound components that carry static
- * sub-components (e.g. `Tab`, `Field`, `Input`) need dedicated slot support
- * before they can be listed here without losing call-site typing.
- */
+/** Components a `page/**\/_overrides.tsx` manifest may replace, each typed to its public prop contract. */
 export interface AkanUiOverrides {
-  // Leaf primitives — plain drop-in components.
   Badge: ComponentType<BadgeProps>;
   Modal: ComponentType<ModalProps>;
   Empty: ComponentType<EmptyProps>;
@@ -62,16 +48,10 @@ export interface AkanUiOverrides {
   Menu: ComponentType<MenuProps>;
   Tooltip: ComponentType<TooltipProps>;
   Unauthorized: ComponentType<UnauthorizedProps>;
-  // The recovered-form banner an edit shell draws. The shell keeps the draft state and publishes the restore and
-  // discard tools, so a replacement re-skins the notice without reaching into the store or re-declaring those.
   DraftBar: ComponentType<DraftBarViewProps>;
   AgentChat: ComponentType<AgentChatProps>;
 
-  // In-page chat, one slot per part. `AgentChat` replaces the whole panel; these replace what it renders, so an
-  // app re-skins the transcript or the composer without re-implementing the loop, the slash commands, or the
-  // approval gate. `AgentSteps` is one agent turn — everything between two user messages — which is the grain a
-  // folded scaffold needs and the one thing a per-message slot cannot see. `AgentCode` is the seam a syntax
-  // highlighter binds to — the fence's language reaches it.
+  // `AgentChat` replaces the panel, these what it renders; `AgentSteps` is one turn (between two user messages).
   AgentLauncher: ComponentType<AgentLauncherProps>;
   AgentBubble: ComponentType<AgentBubbleProps>;
   AgentSteps: ComponentType<AgentStepsProps>;
@@ -84,12 +64,10 @@ export interface AkanUiOverrides {
   AgentToolCard: ComponentType<AgentToolCardProps>;
   AgentCode: ComponentType<AgentCodeProps>;
 
-  // Generic components. The public export keeps its full generic signature; the slot stores the widest
-  // instantiation, so an override is authored against that erased prop type without touching generics.
+  // Generic components: the slot stores the widest instantiation; the public export keeps its generics.
   Button: ComponentType<ButtonProps<unknown>>;
   Select: ComponentType<SelectProps<string | number | boolean | null | undefined>>;
 
-  // Compound `Input` — one slot per leaf (base + statics), reassembled with Object.assign in Input.tsx.
   Input: ComponentType<InputProps>;
   InputTextArea: ComponentType<TextAreaProps>;
   InputPassword: ComponentType<PasswordProps>;
@@ -97,31 +75,24 @@ export interface AkanUiOverrides {
   InputNumber: ComponentType<NumberProps>;
   InputCheckbox: ComponentType<CheckboxProps>;
 
-  // Compound `Radio`.
   Radio: ComponentType<RadioProps>;
   RadioItem: ComponentType<RadioItemProps>;
 
-  // Compound `DatePicker`.
   DatePicker: ComponentType<DatePickerProps>;
   DatePickerRangePicker: ComponentType<RangePickerProps>;
   DatePickerTimePicker: ComponentType<TimePickerProps>;
 
-  // Compound `Toast` — the stack and one card. `System`'s `Messages` is not a slot: it keeps the `msg.*`
-  // wiring, the store read, the body-level portal and the dismiss timers, so a replacement re-skins the
-  // surface without re-implementing when a toast appears and goes away.
   Toast: ComponentType<ToastProps>;
   ToastItem: ComponentType<ToastItemProps>;
 
-  // `ToggleSelect` — generic base (widest instantiation) plus the `.Multi` leaf.
   ToggleSelect: ComponentType<ToggleSelectProps<string | number | boolean | null>>;
   ToggleSelectMulti: ComponentType<ToggleSelectMultiProps>;
 
-  // `Loading` — a namespace object of independent members, each its own slot.
   LoadingSpin: ComponentType<SpinProps>;
   LoadingSkeleton: ComponentType<SkeletonProps>;
   LoadingProgressBar: ComponentType<ProgressBarProps>;
-  LoadingButton: ComponentType<LoadingButtonProps>;
-  LoadingInput: ComponentType<LoadingInputProps>;
+  LoadingButton: ComponentType<SkeletonProps>;
+  LoadingInput: ComponentType<SkeletonProps>;
   LoadingArea: ComponentType<Record<string, never>>;
 }
 
@@ -130,22 +101,8 @@ export type AkanUiOverrideName = keyof AkanUiOverrides;
 /** Prop contract an app-authored Modal override must satisfy. */
 export type AkanModalComponent = AkanUiOverrides["Modal"];
 
-/**
- * Registry of framework recipe slots an app may swap through the same `_overrides.tsx`
- * manifest: `override({ recipes: { button: neonButtonRecipe } })`. A recipe swap changes
- * only the className factory — the component's structure/behavior (async states, focus,
- * a11y) is untouched. Each replacement must accept the framework recipe's full variant
- * contract, so every call site keeps working (a replacement with *extra* optional axes is
- * assignable — contravariance — but those axes are only reachable from code that knows the
- * replacement's own type).
- *
- * Scope: a recipe slot is a **client-side, route-scoped restyle**. It reaches framework
- * client components, which resolve through `useUiRecipe(...)`. It never reaches a raw
- * `xRecipe(...)` call in app JSX (statically imported — no context), nor server components
- * (`Unit`/`View`), which intentionally render the canonical framework recipe. Extending the
- * *vocabulary* is not this slot's job: add the axis to the framework recipe, or author an
- * app recipe in `apps/<app>/ui/Recipe/`.
- */
+/** Recipe slots `override({ recipes })` may swap: a client-side, route-scoped restyle that reaches framework client
+ *  components only, never a raw `xRecipe()` call or a server component. */
 export interface AkanUiRecipes {
   button: (variants?: ButtonVariants, className?: ClassValue) => string;
   badge: (variants?: BadgeVariants, className?: ClassValue) => string;
@@ -155,9 +112,46 @@ export interface AkanUiRecipes {
 /** Shape of an `_overrides.tsx` manifest: component slots plus an optional recipe-slot map. */
 export type AkanUiOverrideManifest = Partial<AkanUiOverrides> & { recipes?: Partial<AkanUiRecipes> };
 
-/**
- * Holds the override map for the current route subtree. Empty at the root, then
- * merged (child wins) by each nested `UiOverrideProvider`, mirroring how nested
- * `_layout.tsx` / `_overrides.tsx` stack down the route tree.
- */
 export const UiOverrideContext = sharedContext<AkanUiOverrideManifest>("uiOverride", {});
+
+/** The active override for `name` in this route subtree, or `undefined`. */
+export const useUiOverride = <K extends keyof AkanUiOverrides>(name: K): AkanUiOverrides[K] | undefined => {
+  // Untyped read: materializing `Partial<AkanUiOverrides>[K]` over the generic slots trips TS2590.
+  const overrides = useContext(UiOverrideContext) as Record<string, unknown>;
+  return overrides[name] as AkanUiOverrides[K] | undefined;
+};
+
+/** The active recipe swap for `name` in this route subtree, or `undefined`. */
+export const useUiRecipe = <K extends keyof AkanUiRecipes>(name: K): AkanUiRecipes[K] | undefined => {
+  const { recipes } = useContext(UiOverrideContext);
+  return recipes?.[name];
+};
+
+/** Renders the nearest `_overrides.tsx` entry for `name`, else `Default`. */
+export const createOverridable = <K extends keyof AkanUiOverrides>(
+  name: K,
+  Default: AkanUiOverrides[K],
+): AkanUiOverrides[K] => {
+  // Narrowed before `??`: the deferred union `AkanUiOverrides[K]` would otherwise trip TS2590.
+  const Fallback = Default as unknown as ComponentType<Record<string, unknown>>;
+  const Overridable = (props: Record<string, unknown>): ReactNode => {
+    const Override = useUiOverride(name) as unknown as ComponentType<Record<string, unknown>> | undefined;
+    return createElement(Override ?? Fallback, props);
+  };
+  return Overridable as unknown as AkanUiOverrides[K];
+};
+
+export interface UiOverrideProviderProps {
+  value?: AkanUiOverrideManifest;
+  children?: ReactNode;
+}
+
+/** Merges `value` over the inherited overrides (closest wins; `recipes` merges per slot). */
+export const UiOverrideProvider = ({ value, children }: UiOverrideProviderProps) => {
+  const parent = useContext(UiOverrideContext);
+  const merged = useMemo(
+    () => ({ ...parent, ...value, recipes: { ...parent.recipes, ...value?.recipes } }),
+    [parent, value],
+  );
+  return <UiOverrideContext.Provider value={merged}>{children}</UiOverrideContext.Provider>;
+};

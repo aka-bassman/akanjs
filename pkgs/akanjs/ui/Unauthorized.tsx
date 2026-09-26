@@ -7,7 +7,6 @@ import { createOverridable } from "./UiOverride";
 
 export interface UnauthorizedProps {
   className?: string;
-  /** The mark above the description. */
   icon?: ReactNode;
   description?: ReactNode;
   children?: ReactNode;
@@ -24,8 +23,7 @@ export const DefaultUnauthorized = ({
   const { l } = usePage();
   return (
     <div>
-      {/* minHeight is a runtime number, so it has to be a style prop — see Empty.tsx. The interpolated form
-          also had `w-full` typo'd inside the brackets, which broke that class too. */}
+      {/* A style, not a class: Tailwind compiles no CSS for an interpolated arbitrary value. */}
       <div
         style={{ minHeight }}
         className={cn("flex w-full flex-col items-center justify-center gap-3 px-6 py-8 text-center", className)}
@@ -40,9 +38,4 @@ export const DefaultUnauthorized = ({
   );
 };
 
-/**
- * Unauthorized-state placeholder. Resolves to a route-scoped override when a
- * `page/**\/_overrides.tsx` in the route's ancestry declares one, otherwise
- * renders {@link DefaultUnauthorized}.
- */
 export const Unauthorized = createOverridable("Unauthorized", DefaultUnauthorized);

@@ -40,13 +40,12 @@ export const Attach = ({ className, label, onPick }: AttachProps) => {
 
 export interface ChipsProps {
   className?: string;
-  // Rendered straight from what a host handed `session.send`, so the preview is guarded rather than typed: a chip
-  // that throws takes the whole transcript down, and the name beside it is the part worth keeping either way.
+  // Host-supplied, so the preview is read defensively: a chip that throws takes the whole transcript down.
   attachments: readonly MessageAttachment[];
   /** Omitted for a sent message: what is already on the wire cannot be taken back. */
   onRemove?: (index: number) => void;
   removeLabel?: string;
-  /** Files still being read, standing beside the ones that are staged so the panel is never blank mid-drop. */
+  /** Files still being read, drawn as placeholders beside the staged ones. */
   pending?: number;
   pendingLabel?: string;
 }

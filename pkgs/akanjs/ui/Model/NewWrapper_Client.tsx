@@ -45,8 +45,7 @@ export const NewWrapper_Client = <Full,>({
   const storeUse = st.use as { [key: string]: () => unknown };
   const modelModal = storeUse[names.modelModal]() as string | null;
   const disabled = modelModal === "edit";
-  // The slice is the natural key, so the first trigger for a slice needs no namespace; a second one on the same
-  // screen creates something different (its own `partial`) and takes one to say so.
+  // The slice is the natural key; only a second trigger on the same screen (its own `partial`) needs a namespace.
   const newModel = st
     .tool(`${sliceName.replace(modelName, names.newModel)}${namespace ? `In${capitalize(namespace)}` : ""}`, {
       guard: () => (disabled ? `A ${modelName} form is already open.` : true),

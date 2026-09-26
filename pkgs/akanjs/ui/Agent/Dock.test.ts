@@ -2,20 +2,14 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import type { ClientSignal } from "akanjs/fetch";
 import { createElement } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
+import { setTestEnv } from "../testHelpers";
 
 let html: string;
 let bridge: InstanceType<typeof import("akanjs/store")["AgentBridge"]>;
 let Dock: typeof import("./Dock")["Dock"];
 
-/**
- * Imported after the environment is set, not before: the `akanjs/store` barrel reaches `baseSt`, which calls
- * `getEnv()` while the module is still evaluating. Static imports all run before any test body could set it.
- */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "docktest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "docktest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("docktest");
 
   const [{ Int, SLICE_META }, { ConstantRegistry, via }, storeFacet, dockFacet] = await Promise.all([
     import("akanjs/base"),
@@ -78,13 +72,11 @@ describe("Agent.Dock", () => {
   });
 
   test("the withheld section is empty once the catalogue refuses nothing", () => {
-    // Base keys used to land here as a catalogue refusal; opt-out is now `{ agent: false }` at each `st.use`.
     const count = html.match(/Withheld<\/span><span[^>]*>(\d+)</)?.[1];
     expect(count).toBe("0");
   });
 
   test("offers no tool the page did not declare", () => {
-    // Tools come from the surface, so a store method and a generated setter appear nowhere in the dock.
     expect(html).not.toContain("wipeDesk");
     expect(html).not.toContain("setLabelOnDockDesk");
   });

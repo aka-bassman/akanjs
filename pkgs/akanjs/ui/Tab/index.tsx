@@ -1,7 +1,4 @@
-import { Menu } from "./Menu";
-import { Menus } from "./Menus";
-import { Panel } from "./Panel";
-import { Provider, type ProviderProps } from "./Provider";
+import { Menu, Menus, Panel, Provider, type ProviderProps } from "./Provider";
 
 export const Tab = (props: ProviderProps) => {
   return <Provider {...props} />;

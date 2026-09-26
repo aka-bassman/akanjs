@@ -10,7 +10,7 @@ export interface SwitchProps {
   disabled?: boolean;
   onChange?: (checked: boolean) => void;
   className?: string;
-  /** 켜짐 상태 색. daisyui `toggle-accent/toggle-primary` 대체. */
+  /** The checked-state fill. */
   variant?: "primary" | "accent" | "success";
 }
 
@@ -20,10 +20,6 @@ const onClass = {
   success: "data-[state=checked]:bg-success",
 };
 
-/**
- * 순수 Tailwind 스위치 (`<button role="switch">`). daisyui `toggle`/`swap` 대체.
- * `<button>` 이라 포커스·Space/Enter 토글이 네이티브로 제공된다. controlled/uncontrolled 모두 지원.
- */
 export const Switch = ({
   checked,
   defaultChecked,

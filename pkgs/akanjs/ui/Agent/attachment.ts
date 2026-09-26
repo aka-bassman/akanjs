@@ -1,34 +1,19 @@
 import type { MessageAttachment } from "use-agentic";
 
-/** Turns one picked file into an attachment, or `null` to say this reader does not handle that file. */
+/** `null` leaves the file to the built-in reader. */
 export type AttachReader = (file: File) => Promise<MessageAttachment | null>;
 
-/**
- * Per-file ceiling for the composer. The bytes ride inside one turn's JSON request, so a file past this is not a
- * slow attachment — it is a request the relay and the provider both refuse, and refusing it here is the only place
- * the user learns which file it was.
- */
+/** The bytes ride inside one turn's JSON request, which the relay and the provider both refuse past this. */
 export const maxAttachmentBytes = 4 * 1024 * 1024;
 
-/**
- * Ceilings for one message rather than one file. The bytes ride inside a single turn's JSON, so what a provider
- * refuses is the sum — and a count cap keeps a whole folder dropped onto the panel from becoming one request that
- * cannot be sent and cannot be edited down without starting over.
- */
+/** A provider refuses the sum of one turn's attachments, not each file. */
 export const maxMessageAttachmentBytes = 8 * 1024 * 1024;
 export const maxMessageAttachments = 5;
 
-/**
- * What the three ceilings above are for an app that knows better. They are a property of the provider the relay is
- * configured with — a larger request limit, or a reader that attaches by `url` and pays none of it — so the
- * defaults are the conservative answer rather than the only one.
- */
 export interface AttachLimits {
-  /** What one attachment may cost the request, measured on what the reader produced. */
+  /** Measured on what the reader produced, not on the source file. */
   perFileBytes?: number;
-  /** What every attachment on one message may cost together. */
   perMessageBytes?: number;
-  /** How many attachments one message may carry. */
   perMessageCount?: number;
 }
 
@@ -37,18 +22,7 @@ export type AttachFailure = "tooLarge" | "unsupported";
 const textMimes = new Set(["application/json", "application/xml", "application/x-yaml", "application/yaml"]);
 
 export class Attachment {
-  /**
-   * Reads what a browser can read on its own — an image as bytes, a text-ish file as text — and hands everything
-   * else to the app's own reader. That split is the layer boundary: a PDF needs a parser, so extracting one is the
-   * app's business (`attach`), while carrying the result is the framework's.
-   *
-   * The app's reader runs first so it can also replace the built-in handling, which is what downscaling an image
-   * before it costs a megabyte of prompt looks like — and it runs before the ceiling too, because the ceiling is
-   * what the attachment costs the request, which is what the reader decides. A reader that answers a `url` has
-   * already paid it; refusing its file on the source size would refuse it for a cost it does not incur. The
-   * built-in carriers are the file itself, so there the source size *is* the cost, and checking it up front is
-   * also what keeps a huge `arrayBuffer` from being read in order to be refused.
-   */
+  // The app's reader runs before the ceiling, which measures what it produced: a `url` answer pays no source size.
   static async read(
     file: File,
     attach?: AttachReader,
@@ -70,34 +44,26 @@ export class Attachment {
     return typeof value === "string";
   }
 
-  /** What this attachment costs the request: base64 carries three bytes per four characters, less its padding. */
+  // base64 carries three bytes per four characters, less its padding.
   static bytesOf(attachment: MessageAttachment): number {
     const data = attachment.data ?? "";
     const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
     return Math.max(0, Math.floor((data.length * 3) / 4) - padding) + (attachment.text?.length ?? 0);
   }
 
-  /** Which message ceiling these would pass together, or null when one message can carry them all. */
   static overflow(attachments: readonly MessageAttachment[], limits: AttachLimits = {}): "tooMany" | "tooMuch" | null {
     if (attachments.length > (limits.perMessageCount ?? maxMessageAttachments)) return "tooMany";
     const bytes = attachments.reduce((sum, one) => sum + Attachment.bytesOf(one), 0);
     return bytes > (limits.perMessageBytes ?? maxMessageAttachmentBytes) ? "tooMuch" : null;
   }
 
-  /**
-   * Same name and same size is the same file picked twice — the shape a re-drop or a double paste produces. A
-   * host that can name a file says so with `ref`, and then that is the answer: name and size collide for two
-   * crops of one export, which is a wrong `true` the heuristic cannot avoid and an id never reaches.
-   */
+  // A `ref` decides when present: name and size also collide for two crops of one export.
   static same(one: MessageAttachment, other: MessageAttachment): boolean {
     if (one.ref || other.ref) return one.ref === other.ref;
     return one.name === other.name && Attachment.bytesOf(one) === Attachment.bytesOf(other);
   }
 
-  /**
-   * Chunked because `String.fromCharCode(...bytes)` spreads one argument per byte, and a megabyte of them is a
-   * RangeError rather than a slow call.
-   */
+  // Chunked: `String.fromCharCode(...bytes)` spreads one argument per byte, and a megabyte of them is a RangeError.
   static async #base64(file: File): Promise<string> {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const chunk = 0x8000;

@@ -13,15 +13,10 @@ import { createOverridable } from "../UiOverride";
 
 export interface DraftBarViewProps {
   className?: string;
-  /** The model the recovered form belongs to. */
   refName: string;
-  /**
-   * `conflict` is a decision the user has to settle — the record moved since the draft was taken, so the form
-   * shows the server's value and the bar offers the older one. `applied` is a notice: the draft is what is on
-   * screen, and the bar is the way back.
-   */
+  /** `conflict`: the record moved, the form shows the server's value and the bar offers the draft. `applied`: the
+   *  draft is on screen and the bar is the way back. */
   state: "conflict" | "applied";
-  /** When the draft was taken. */
   savedAt: Date;
   /** Puts the offered draft into the form. Passed in the `conflict` state only. */
   onRestore?: () => void;
@@ -64,12 +59,7 @@ const DefaultDraftBar = ({ className, state, savedAt, onRestore, onDiscard }: Dr
   );
 };
 
-/**
- * The banner itself, route-overridable through `page/**\/_overrides.tsx` (slot `DraftBar`).
- *
- * The shell below keeps the draft state and publishes the two agent tools, so a replacement re-skins the notice
- * without reaching into the store under string keys or re-declaring what an agent may pull.
- */
+// The shell below keeps the draft state and the agent tools, so a `DraftBar` override only re-skins the notice.
 const DraftBarView = createOverridable("DraftBar", DefaultDraftBar);
 
 interface DraftBarProps {
@@ -90,8 +80,7 @@ export default function DraftBar({ className, slice }: DraftBarProps) {
   );
   const storeUse = st.use as { [key: string]: (option?: { agent?: boolean }) => unknown };
   const storeDo = st.do as unknown as { [key: string]: () => void };
-  // `agent: false`: the two tools below are the whole agent surface here. The value itself carries the user's
-  // form — a `field.visual` body included — and a read would ride every later turn of the transcript.
+  // `agent: false`: the value is the whole form, which would ride every later turn; the tools below are the surface.
   const draft = storeUse[names.modelDraft]({ agent: false }) as DraftState | null;
 
   const restoreDraft = st

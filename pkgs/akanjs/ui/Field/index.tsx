@@ -12,16 +12,12 @@ import { Email, Password, Phone, Text, TextArea } from "./Text";
 
 export interface FieldProps {
   className?: string;
-  /** Wrapper around the field controls. */
   containerClassName?: string;
   labelClassName?: string;
-  /** Section label shown above the controls. */
   label?: ReactNode;
-  /** Optional help text shown in the label tooltip. */
   desc?: ReactNode;
   /** Marks the field as optional in the label. */
   nullable?: boolean;
-  /** Field control content. */
   children?: ReactNode;
 }
 const FieldSection = ({
@@ -41,11 +37,6 @@ const FieldSection = ({
   );
 };
 
-/**
- * The form-field namespace. `Object.assign` rather than `Field.X = X` per file, because the members now live
- * beside each other by kind — the assignment form only works where the function and every member are one file,
- * which is how this reached 1600 lines.
- */
 export const Field = Object.assign(FieldSection, {
   Label,
   List,

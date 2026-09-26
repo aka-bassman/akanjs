@@ -20,10 +20,7 @@ interface ListenerResultProps {
   status: "ready" | "loading" | "error" | "listening";
   data: unknown;
 }
-/**
- * A byte payload has no useful JSON form: `JSON.stringify` spells a `Uint8Array` as `{"0":2,"1":148,…}`, which
- * is unreadable and, for one video chunk, megabytes of DOM. The head is enough to tell a stream apart.
- */
+// `JSON.stringify` spells a `Uint8Array` as `{"0":2,"1":148,…}`, megabytes of DOM per video chunk, so the head shows.
 const previewBytes = (bytes: Uint8Array) => {
   const head = [...bytes.subarray(0, 32)].map((byte) => byte.toString(16).padStart(2, "0")).join(" ");
   return `Uint8Array(${bytes.length}) ${head}${bytes.length > 32 ? " …" : ""}`;

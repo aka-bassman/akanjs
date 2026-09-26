@@ -6,14 +6,7 @@ export interface SerializedMentionNode extends SerializedTextNode {
   reference: MessageReference;
 }
 
-/**
- * One `@` pointer inside the composer: the label is what the node draws, and `getTextContent()` is the
- * `@[label](mention:…)` token — so the editor's own text is the draft string the rest of the chat already reads,
- * pointers and all, while the person sees a name.
- *
- * `token` mode is what makes it one thing: the caret never lands inside it, a backspace takes the whole pointer
- * rather than a character of a label that would then name nothing, and a paste over it replaces it entirely.
- */
+// Draws the label, reads as the `@[label](mention:…)` token; `token` mode makes backspace take the whole pointer.
 export class MentionNode extends TextNode {
   #reference: MessageReference;
 
@@ -25,9 +18,7 @@ export class MentionNode extends TextNode {
     return new MentionNode(node.#reference, node.__key);
   }
 
-  // Required by Lexical 0.51 for any node whose constructor takes an argument, though a composer's content is
-  // never serialized through the editor — the draft string is what this chat persists. The parameter is the base
-  // class's own, widened shape, because a narrower one fails the static-side check against it.
+  // Lexical requires it once a constructor takes an argument; a narrower parameter fails the static-side check.
   static override importJSON(json: Parameters<typeof TextNode.importJSON>[0]): MentionNode {
     return new MentionNode((json as Partial<SerializedMentionNode>).reference);
   }

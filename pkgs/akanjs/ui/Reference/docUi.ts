@@ -20,7 +20,6 @@ const toneBorder: { [key in Tone]: string } = {
 
 const pill = "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium text-xs ring-1 ring-inset";
 
-/** Shared vocabulary for the generated reference surfaces — Constant schema docs and Signal API docs. */
 export const docUi = {
   card: "rounded-box border border-border bg-card",
   panel: "rounded-box border border-border bg-background",
@@ -41,5 +40,14 @@ export const docPill = (tone: Tone, className?: string) => cn(pill, toneFill[ton
 
 export const docBorder = (tone: Tone) => toneBorder[tone];
 
-/** Absent optional cell. One glyph everywhere, so an empty column reads as empty rather than as data. */
 export const docDash = "text-foreground/25";
+
+interface Translator {
+  _: (key: string) => string;
+}
+
+/** `l._` echoes an absent key back, and a raw `user.signal.x.desc` reads as prose on a document surface. */
+export const dictText = (l: Translator, key: string) => {
+  const text = l._(key);
+  return text === key ? "" : text;
+};

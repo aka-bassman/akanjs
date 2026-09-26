@@ -60,11 +60,7 @@ const isFilledArg = (value: unknown) =>
 export const isReadyQuery = (args: SerializedArg[], values: unknown[]) =>
   args.every((arg, idx) => arg.nullable || isFilledArg(values[idx]));
 
-/**
- * The filter a listing is showing, and the one write that applies it. Held in a hook rather than a component
- * because the key select rides the toolbar while the args that key takes render under it — two places in the
- * tree, one selection.
- */
+// A hook, not a component: the key select rides the toolbar while its args render under it — two places, one state.
 export const useQueryMaker = ({ slice, query, onApply }: QueryMakerProps): QueryMakerState => {
   const { refName, sliceName } = slice;
   const storeDo = st.do as unknown as { [key: string]: (...args: unknown[]) => Promise<void> };
@@ -88,8 +84,7 @@ export const useQueryMaker = ({ slice, query, onApply }: QueryMakerProps): Query
   }, []);
   const update = (setting: ResolvedQuerySetting) => {
     setSetting(setting);
-    // Picking a filter that takes a required arg leaves the query incomplete until the arg is typed, and the
-    // server refuses an incomplete one. Hold it here rather than firing a request that can only fail.
+    // A required arg not typed yet makes a query the server refuses, so it is held here instead of sent.
     if (isReadyQuery(filterQuery[setting.queryKey] ?? [], setting.args)) applyQuery(setting);
   };
   const args = filterQuery[setting.queryKey] ?? [];
@@ -109,7 +104,6 @@ export const useQueryMaker = ({ slice, query, onApply }: QueryMakerProps): Query
   };
 };
 
-/** The filter picker. Sized for a toolbar, beside the sort and page-size selects. */
 export const QueryMakerKey = ({ className, selectClassName, slice, state }: QueryMakerKeyProps) => {
   const { l } = usePage();
   const { queryKeys, setting, selectKey } = state;
@@ -128,7 +122,6 @@ export const QueryMakerKey = ({ className, selectClassName, slice, state }: Quer
   );
 };
 
-/** What the picked filter asks for. Renders nothing for a filter that takes no arguments. */
 export const QueryMakerArgs = ({ className, slice, state }: QueryMakerArgsProps) => {
   const { l } = usePage();
   const { args, setting, setArg } = state;

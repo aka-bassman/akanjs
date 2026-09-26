@@ -1,33 +1,15 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
-import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
+import { act } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
+import { mount, setTestEnv } from "../testHelpers";
 
 let Tab: typeof import("./index").Tab;
 
-/** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "tabtest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "tabtest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("tabtest");
   ({ Tab } = await import("./index"));
 });
-
-const mount = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
-  return {
-    container,
-    unmount: () => {
-      act(() => root.unmount());
-      container.remove();
-    },
-  };
-};
 
 /** happy-dom's dispatch never reaches a React synthetic handler; the fiber props are where the click actually is. */
 const clickReact = (container: HTMLElement, text: string) => {

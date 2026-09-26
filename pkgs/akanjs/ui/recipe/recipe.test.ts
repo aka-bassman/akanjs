@@ -9,8 +9,8 @@ const tokens = (s: string) => s.split(/\s+/).filter(Boolean);
 describe("recipe factory — buttonRecipe", () => {
   test("applies default variants when called bare", () => {
     const t = tokens(buttonRecipe());
-    expect(t).toContain("bg-primary"); // default variant: primary
-    expect(t).toContain("h-10"); // default size: md
+    expect(t).toContain("bg-primary");
+    expect(t).toContain("h-10");
   });
 
   test("applies the chosen variant and size", () => {
@@ -29,7 +29,6 @@ describe("recipe factory — buttonRecipe", () => {
   test("second arg overrides a base token via tailwind-merge (semantic tokens)", () => {
     const t = tokens(buttonRecipe({ variant: "primary" }, "bg-open"));
     expect(t).toContain("bg-open");
-    // base `bg-primary` is dropped; `hover:bg-primary/90` is a different token and stays.
     expect(t).not.toContain("bg-primary");
   });
 
@@ -38,7 +37,7 @@ describe("recipe factory — buttonRecipe", () => {
     expect(t).toContain("border-warning");
     expect(t).toContain("text-warning");
     expect(t).toContain("bg-transparent");
-    expect(t).not.toContain("bg-warning"); // solid fill is dropped, hover:bg-warning remains
+    expect(t).not.toContain("bg-warning");
     expect(t).toContain("hover:bg-warning");
   });
 
@@ -51,7 +50,7 @@ describe("recipe factory — buttonRecipe", () => {
   test("shape squares the size box and circle rounds it", () => {
     const square = tokens(buttonRecipe({ shape: "square" }));
     expect(square).toContain("aspect-square");
-    expect(square).not.toContain("px-4"); // size padding is dropped by px-0
+    expect(square).not.toContain("px-4");
     const circle = tokens(buttonRecipe({ shape: "circle" }));
     expect(circle).toContain("rounded-full");
     expect(circle).not.toContain("rounded-field");
@@ -61,8 +60,6 @@ describe("recipe factory — buttonRecipe", () => {
     expect(tokens(buttonRecipe({ variant: "neutral" }))).toContain("bg-neutral");
   });
 
-  // daisyUI's bare `.btn` resolved to base-200 while `.btn-neutral` resolved to --color-neutral, and
-  // both were used side by side, so the muted surface and the neutral token must stay separate fills.
   test("default is the muted surface, distinct from the neutral token", () => {
     const d = tokens(buttonRecipe({ variant: "default" }));
     expect(d).toContain("bg-muted");
@@ -97,7 +94,7 @@ describe("recipe factory — badgeRecipe", () => {
     expect(t).toContain("text-warning");
     expect(t).toContain("border-current");
     expect(t).toContain("bg-transparent");
-    expect(t).not.toContain("bg-warning"); // the solid fill is dropped, the color survives
+    expect(t).not.toContain("bg-warning");
   });
 
   test("error + outline maps onto the destructive token", () => {

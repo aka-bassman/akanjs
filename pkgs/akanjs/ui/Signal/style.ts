@@ -14,8 +14,7 @@ const methodTone: { [key: string]: Tone } = {
   pubsub: "warning",
 };
 
-/** Only a mutation is a POST — enumerating that side leaves a `prompt` a GET beside the queries, and lets a
- *  read-shaped type added later inherit the right verb rather than be mislabelled. */
+/** Only a mutation is a POST, so `prompt` and any read-shaped type added later stay GETs. */
 export const getMethodLabel = (type: string) => (type === "mutation" ? "POST" : type === "query" ? "GET" : type);
 
 export const getMethodBadgeClassName = (type: string) =>

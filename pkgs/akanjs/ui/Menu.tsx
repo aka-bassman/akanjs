@@ -51,12 +51,11 @@ export const DefaultMenu = ({
   onMouseLeave,
   renderItem,
 }: MenuProps) => {
-  const [expandedKey, setExpandedKey] = useState<string>(); // 서브메뉴
-  const [currentKey, setCurrentKey] = useState<string | null>(defaultSelectedKeys?.[0] ?? null); // 선택된 메뉴
+  const [expandedKey, setExpandedKey] = useState<string>();
+  const [currentKey, setCurrentKey] = useState<string | null>(defaultSelectedKeys?.[0] ?? null);
   const modeClassName = mode === "horizontal" ? "flex-row " : "bg-muted";
   const menuRef = useRef<HTMLDivElement | null>(null);
   const LiRefs = useRef<HTMLLIElement[]>([]);
-  const overflowLiRef = useRef<HTMLLIElement | null>(null);
   const itemWidthsRef = useRef<number[]>([]);
   const innerWidth = st.use.innerWidth({ agent: false });
 
@@ -73,7 +72,6 @@ export const DefaultMenu = ({
 
   const [overflowMenuItems, setOverflowMenuItems] = useState<MenuItem[]>([]);
 
-  // 초기화. 각각 아이템의 너비를 구함
   useLayoutEffect(() => {
     if (mode !== "horizontal") return;
     const menu = menuRef.current;
@@ -87,7 +85,6 @@ export const DefaultMenu = ({
     checkOverflow();
   }, []);
 
-  // 브라우저 너비가 줄어들면, overflowMenuItems에 추가
   useEffect(() => {
     checkOverflow();
   }, [innerWidth]);
@@ -96,7 +93,6 @@ export const DefaultMenu = ({
     if (mode !== "horizontal" || !itemWidthsRef.current.length) return;
     const menu = menuRef.current;
     if (!menu) return;
-    // const overflowLiWidth = overflowLiRef?.current?.getBoundingClientRect().width || 0;
     const totalWidth = menu.getBoundingClientRect().width;
     const widths = itemWidthsRef.current;
     const overflowItems: MenuItem[] = [];
@@ -171,16 +167,6 @@ export const DefaultMenu = ({
                       {item.icon}
 
                       {!inlineCollapsed && <div className="whitespace-nowrap text-foreground">{item.label}</div>}
-                      {/* <div
-                      className={cn(
-                        "whitespace-nowrap  truncate ",
-                        mode === "horizontal" && !isOverflowItem && item.children
-                          ? "flex justify-start animate-menuOpen"
-                          : "flex justify-start animate-menuClose"
-                      )}
-                    >
-                      {item.label}
-                    </div> */}
                     </div>
                     {item.children && mode === "inline" && (
                       <AiFillCaretDown
@@ -192,7 +178,6 @@ export const DefaultMenu = ({
                     )}
                   </div>
                 )}
-                {/* 서브메뉴 */}
                 {item.children && expandedKey === item.key && (
                   <div className={subMenuClassName}>
                     {item.children.map((child) => (
@@ -228,7 +213,7 @@ interface OverflowMenuProps {
 
 const OverflowMenu = ({ overflowItems, onClick }: OverflowMenuProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [expandedKey, setExpandedKey] = useState<string>(); // 서브메뉴
+  const [expandedKey, setExpandedKey] = useState<string>();
   const recipe = useUiRecipe("button") ?? buttonRecipe;
   const handleMouseEnter = () => {
     setIsOpen(true);
@@ -284,9 +269,4 @@ const OverflowMenu = ({ overflowItems, onClick }: OverflowMenuProps) => {
   );
 };
 
-/**
- * Navigation menu. Resolves to a route-scoped override when a
- * `page/**\/_overrides.tsx` in the route's ancestry declares one, otherwise
- * renders {@link DefaultMenu}.
- */
 export const Menu = createOverridable("Menu", DefaultMenu);

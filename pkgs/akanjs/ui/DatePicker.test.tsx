@@ -1,8 +1,8 @@
 import "../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import type { Dayjs } from "akanjs/base";
-import { act, type ReactNode, Suspense } from "react";
-import { createRoot } from "react-dom/client";
+import { act, type ReactNode } from "react";
+import { mountSuspense, setTestEnv } from "./testHelpers";
 
 let DatePicker: typeof import("./DatePicker").DatePicker;
 let dayjs: typeof import("akanjs/base").dayjs;
@@ -19,10 +19,7 @@ const typeInto = async (input: HTMLInputElement, value: string) => {
 };
 
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "datepickertest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "datepickertest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("datepickertest");
   const { registerClientRuntime } = await import("akanjs/client");
   registerClientRuntime({
     usePage: () => ({ path: "/", lang: "en", l: Object.assign((key: string) => key, { _: (key: string) => key }) }),
@@ -44,14 +41,9 @@ const changedTo = <T,>(onChange: { mock: { calls: unknown[][] } }): T => {
 };
 
 const mount = async (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => {
-    root.render(<Suspense>{node}</Suspense>);
-  });
+  const { container, unmount } = await mountSuspense(node);
   const input = (index = 0) => [...container.querySelectorAll("input")][index] as HTMLInputElement;
-  return { input, unmount: () => act(() => root.unmount()) };
+  return { input, unmount };
 };
 
 describe("DatePicker", () => {
@@ -104,8 +96,6 @@ describe("DatePicker", () => {
       <DatePicker value={dayjs("2026-08-30")} disabledDate={(date) => date.day() === 0} onChange={onChange} />,
     );
 
-    // A native field constrains only through min/max, so the predicate is checked after the pick — and the
-    // field has to be restored by hand, since the value React would re-render is the one already there.
     await typeInto(input(), "2026-09-06");
     expect(onChange).not.toHaveBeenCalled();
     expect(warnings).toEqual(["base.selectDateError"]);

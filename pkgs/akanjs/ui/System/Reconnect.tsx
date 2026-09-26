@@ -1,7 +1,6 @@
 "use client";
 import { cn, fetch, usePage } from "akanjs/client";
 import { useInterval } from "akanjs/webkit";
-// import { client } from "akanjs/signal";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TbPlugConnected, TbPlugConnectedX } from "react-icons/tb";
 
@@ -22,7 +21,6 @@ export const Reconnect = () => {
   }, []);
 
   const handleDisconnect = async () => {
-    // 페이지가 백그라운드 상태에서 disconnect가 발생하면 무시
     if (document.hidden) {
       wasHiddenOnDisconnect.current = true;
       return;
@@ -39,14 +37,11 @@ export const Reconnect = () => {
   };
 
   const handleVisibilityChange = useCallback(() => {
-    // 페이지가 다시 보이게 될 때
     if (!document.hidden && wasHiddenOnDisconnect.current) {
-      // socket이 연결되어 있으면 문제없음
       if (fetch.ws.connected) {
         wasHiddenOnDisconnect.current = false;
         setConnectStatus("normal");
       } else {
-        // socket이 끊어져 있으면 실제 서버 문제인지 확인
         void handleDisconnect();
       }
     }
@@ -56,7 +51,6 @@ export const Reconnect = () => {
     fetch.ws.on("connect", handleConnect);
     fetch.ws.on("disconnect", () => handleDisconnect());
 
-    // Page Visibility API 이벤트 리스너 추가
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     setTimeout(() => {

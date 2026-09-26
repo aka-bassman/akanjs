@@ -41,10 +41,7 @@ const SUBTITLE_CHAR = 6.2;
 const TEXT_LEFT = 32;
 const TEXT_RIGHT = 16;
 
-/**
- * Layered left-to-right placement (longest-path layering + barycenter ordering), the same shape a `flowchart LR`
- * produces without the renderer. Pure geometry so it is unit-testable and runs identically on the server.
- */
+// Longest-path layering plus barycenter ordering: the shape a `flowchart LR` produces, as pure geometry.
 export class SchemaGraphLayout {
   readonly nodes: PlacedNode[];
   readonly edges: PlacedEdge[];
@@ -68,11 +65,8 @@ export class SchemaGraphLayout {
     this.height = bottom + PAD + (links.some((edge) => this.#isBack(byId, edge)) ? BACK_EDGE_SAG + 24 : 0);
   }
 
-  /**
-   * Depth-first feedback-arc removal. A schema legally holds reference cycles (`user.org` / `org.owner`), and
-   * layering one directly pushes both ends apart once per pass — the graph came out with a dozen empty columns
-   * between them. The cycle's edges are still drawn, just not allowed to decide a column.
-   */
+  // Feedback-arc removal: layering a reference cycle (`user.org` / `org.owner`) directly pushes both ends apart once
+  // per pass, so a cycle's edges are drawn but never decide a column.
   #feedForward(nodes: SchemaGraphNode[], links: SchemaGraphEdge[]) {
     const outgoing = new Map<string, SchemaGraphEdge[]>();
     for (const edge of links) {

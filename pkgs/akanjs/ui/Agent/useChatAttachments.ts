@@ -16,20 +16,13 @@ interface ChatAttachmentsSetup {
   l: (key: string, param?: Record<string, string | number>) => string;
 }
 
-/**
- * What the composer is holding, and the ceilings it holds it under. Staged files are mirrored in a ref because a
- * multi-file drop reads them one at a time: the cap has to see what the previous file of the same drop added, and
- * React state inside that loop is still the value the render started with.
- */
 export const useChatAttachments = ({ session, attach, limits = {}, l }: ChatAttachmentsSetup) => {
   const count = limits.perMessageCount ?? maxMessageAttachments;
   const messageBytes = limits.perMessageBytes ?? maxMessageAttachmentBytes;
   const [attached, setAttached] = useState<MessageAttachment[]>([]);
-  // How many files are being read right now. The built-in readers resolve in a tick, but `attach` is where an app
-  // uploads — so since the ceiling moved behind the reader, a large photo is seconds between the drop and the
-  // chip, with nothing on screen to say the panel took it.
   const [pending, setPending] = useState(0);
   const [dragging, setDragging] = useState(false);
+  // A multi-file drop reads one file at a time, and state inside that loop is still the render's value.
   const staged = useRef<MessageAttachment[]>([]);
   // Counted, not a boolean: dragging over a child fires leave on the parent, and one flag flickers the highlight.
   const depth = useRef(0);
@@ -42,7 +35,6 @@ export const useChatAttachments = ({ session, attach, limits = {}, l }: ChatAtta
     depth.current = 0;
     setDragging(false);
   };
-  /** Staged one at a time so one unreadable file names itself instead of failing the whole drop silently. */
   const add = async (files: File[]) => {
     for (const file of files) {
       if (staged.current.length >= count) {
@@ -83,14 +75,12 @@ export const useChatAttachments = ({ session, attach, limits = {}, l }: ChatAtta
     onDrop: (event) => {
       const files = [...event.dataTransfer.files];
       rest();
-      // A text drop is left alone: the drop's default action is the insertion into whatever it landed on, and
-      // preventing it here — one ancestor up — is what used to stop text being dropped into the composer.
+      // A text drop keeps its default insertion; preventing it here stops text dropping into the composer.
       if (!files.length) return;
       event.preventDefault();
       void add(files);
     },
   };
-  /** Stages files taken back from a parked message, ahead of what was picked since. False, noted, when they do not fit. */
   const restore = (list: MessageAttachment[]): boolean => {
     const next = [...list, ...staged.current];
     const overflow = Attachment.overflow(next, limits);

@@ -24,10 +24,7 @@ interface FakeScroller {
 const originalDocument = (globalThis as { document?: unknown }).document;
 const originalGetComputedStyle = (globalThis as { getComputedStyle?: unknown }).getComputedStyle;
 
-/**
- * The walk reads `parentElement`, `scrollHeight`/`clientHeight` and the computed `overflow-y`, so a chain of
- * plain objects plus a `getComputedStyle` that reads the one back off them is the whole DOM this needs.
- */
+// The walk reads only `parentElement`, the scroll/client heights and the computed `overflow-y`.
 const stubDom = (chain: FakeScroller[], scrollingElement: unknown = null) => {
   let parent: FakeScroller | null = null;
   for (const link of chain) {

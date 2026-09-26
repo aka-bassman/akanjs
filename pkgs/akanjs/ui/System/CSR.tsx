@@ -22,8 +22,7 @@ import { createPortal } from "react-dom";
 import { FontFace } from "../FontFace";
 import { Load } from "../Load";
 import { Client, ClientPathWrapper } from "./Client";
-import { ManifestLink, type ProviderProps } from "./Common";
-import { getFrameCssVars } from "./frameCssVars";
+import { getFrameCssVars, ManifestLink, type ProviderProps } from "./Common";
 
 export const CSR = ({ children }: { children: ReactNode }) => {
   return <div></div>;
@@ -294,31 +293,27 @@ const KeyboardLayer = ({
 
 type FrameSlotTarget = "topInset" | "topLeftAction" | "bottomInset" | "keyboardInset";
 
+const pageTypeOf = (
+  { location, prevLocation, pendingLocation, phase, history }: ReturnType<typeof useCsr>,
+  pathRoute: PathRoute,
+): "current" | "prev" | "cached" | "pending" | null =>
+  pathRoute === location.pathRoute
+    ? "current"
+    : pathRoute === prevLocation?.pathRoute
+      ? "prev"
+      : pathRoute === pendingLocation?.pathRoute && phase === "preparing"
+        ? "pending"
+        : pathRoute.pageState.cache && history.current.cachedLocationMap.has(pathRoute.path)
+          ? "cached"
+          : null;
+
 const CSRFrameSlotTargets = ({ slot }: { slot: FrameSlotTarget }) => {
-  const {
-    history,
-    location: currentLocation,
-    prevLocation,
-    pendingLocation,
-    phase,
-    pathRoutes,
-    topInset,
-    topLeftAction,
-    bottomInset,
-  } = useCsr();
+  const csr = useCsr();
+  const { history, prevLocation, pathRoutes, topInset, topLeftAction, bottomInset } = csr;
   return (
     <>
       {pathRoutes.map((pathRoute) => {
-        const pageType: "current" | "prev" | "cached" | "pending" | null =
-          pathRoute === currentLocation.pathRoute
-            ? "current"
-            : pathRoute === prevLocation?.pathRoute
-              ? "prev"
-              : pathRoute === pendingLocation?.pathRoute && phase === "preparing"
-                ? "pending"
-                : pathRoute.pageState.cache && history.current.cachedLocationMap.has(pathRoute.path)
-                  ? "cached"
-                  : null;
+        const pageType = pageTypeOf(csr, pathRoute);
         const zIndex =
           pageType === "current"
             ? history.current.idx
@@ -327,32 +322,14 @@ const CSRFrameSlotTargets = ({ slot }: { slot: FrameSlotTarget }) => {
               : pageType === "pending"
                 ? history.current.idx + 1
                 : 0;
+        const slotInset = slot === "topInset" ? topInset : slot === "topLeftAction" ? topLeftAction : bottomInset;
         const style =
           pageType === "current"
-            ? slot === "topInset"
-              ? topInset?.contentStyle
-              : slot === "topLeftAction"
-                ? topLeftAction?.contentStyle
-                : slot === "bottomInset"
-                  ? bottomInset?.contentStyle
-                  : bottomInset?.contentStyle
+            ? slotInset?.contentStyle
             : pageType === "prev"
-              ? slot === "topInset"
-                ? topInset?.prevContentStyle
-                : slot === "topLeftAction"
-                  ? topLeftAction?.prevContentStyle
-                  : slot === "bottomInset"
-                    ? bottomInset?.prevContentStyle
-                    : bottomInset?.prevContentStyle
+              ? slotInset?.prevContentStyle
               : undefined;
-        const id =
-          slot === "topInset"
-            ? `topInsetContent-${pathRoute.path}`
-            : slot === "topLeftAction"
-              ? `topLeftActionContent-${pathRoute.path}`
-              : slot === "bottomInset"
-                ? `bottomInsetContent-${pathRoute.path}`
-                : `keyboardInsetContent-${pathRoute.path}`;
+        const id = `${slot}Content-${pathRoute.path}`;
         return (
           <animated.div
             key={id}
@@ -422,6 +399,7 @@ interface CSRPageContainerProps {
   layoutStyle?: "mobile" | "web";
 }
 const CSRPageContainer = ({ pathRoute, prefix, layoutStyle }: CSRPageContainerProps) => {
+  const csr = useCsr();
   const {
     history,
     location: currentLocation,
@@ -431,20 +409,10 @@ const CSRPageContainer = ({ pathRoute, prefix, layoutStyle }: CSRPageContainerPr
     pageBind: currentPageBind,
     prevLocation,
     pendingLocation,
-    phase,
     prevPage,
     prevPageContentRef,
-  } = useCsr();
-  const pageType: "current" | "prev" | "cached" | "pending" | null =
-    pathRoute === currentLocation.pathRoute
-      ? "current"
-      : pathRoute === prevLocation?.pathRoute
-        ? "prev"
-        : pathRoute === pendingLocation?.pathRoute && phase === "preparing"
-          ? "pending"
-          : pathRoute.pageState.cache && history.current.cachedLocationMap.has(pathRoute.path)
-            ? "cached"
-            : null;
+  } = csr;
+  const pageType = pageTypeOf(csr, pathRoute);
   if (!pageType) return null;
   const pageContainers = document.getElementById("pageContainers");
   if (!pageContainers) return null;

@@ -5,11 +5,7 @@ export interface GuideProps {
   instructions: string;
 }
 
-/**
- * Standing agent guidance scoped to a route subtree: render it from a `_layout.tsx` or a page and the text joins
- * the turn's instructions while that subtree is mounted. Nesting layers naturally — each mounted Guide contributes
- * its block, and navigating away withdraws it. Renders nothing.
- */
+/** Joins the turn's instructions while mounted; renders nothing. */
 export const Guide = ({ instructions }: GuideProps) => {
   useAgentGuide(instructions);
   return null;

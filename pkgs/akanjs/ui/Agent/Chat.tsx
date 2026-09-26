@@ -24,7 +24,7 @@ import {
 } from "use-agentic";
 import { createOverridable } from "../UiOverride";
 import Approval from "./Approval";
-import { agentSessionOf } from "./agentSessionOf";
+import { agentSessionOf, type BuiltinOption, type PersistOption } from "./agentSessionOf";
 import type { AttachLimits, AttachReader } from "./attachment";
 import Bubble from "./Bubble";
 import { type ChatCommand, ChatCommands } from "./ChatCommands";
@@ -34,8 +34,6 @@ import Menu from "./Menu";
 import Question from "./Question";
 import Queued from "./Queued";
 import Steps from "./Steps";
-import type { PersistOption } from "./sessionHistory";
-import type { BuiltinOption } from "./sessionView";
 import ToolCard from "./ToolCard";
 import { tokenCount } from "./tokenCount";
 import { useChatAttachments } from "./useChatAttachments";
@@ -49,147 +47,76 @@ import { useSlashMenu } from "./useSlashMenu";
 import type { VoiceEngine } from "./voice";
 
 export interface ChatProps {
-  /** Reaches whichever surface is showing — the launcher while closed, the panel while open. */
+  /** Applied to the launcher while closed and to the panel while open. */
   className?: string;
   title?: string;
-  /** App-global framing. Route-scoped guidance layers on it through mounted `Agent.Guide`s. */
+  /** App-global framing; route-scoped `Agent.Guide`s layer on it. */
   instructions?: string;
-  /** Swap the transport; the default drives the app's `runAgentTurn` endpoint. */
+  /** Defaults to the app's `runAgentTurn` endpoint. */
   runner?: AgentRunner;
   maxTurns?: number;
-  /**
-   * When the conversation summarizes itself — past `at` estimated transcript tokens, a ceiling on what each turn
-   * costs, or once the prompt nears the window the server reports (`option.setLlm({ contextWindow })`), keeping
-   * `buffer` free on top of the answer. `keep` messages stay verbatim below the summary. `{ at: Infinity }` leaves
-   * only the window guard; `{ at: 0 }` turns all of it off.
-   */
+  /** Summarizes past `at` estimated tokens or near the server's context window, keeping `keep` messages verbatim;
+   *  `{ at: Infinity }` leaves only the window guard, `{ at: 0 }` turns it all off. */
   compact?: CompactOptions;
-  /**
-   * Which of the runtime's own tools this chat's agent gets — all of them by default, `false` none, an array
-   * exactly the ones it names. A chat that must not leave the screen it is on drops `navigate` and `goBack`.
-   */
+  /** Every runtime tool by default, `false` none, an array exactly the ones it names. */
   builtins?: BuiltinOption;
-  /** Called after a compaction replaced messages with one summary — where a host syncs its own watermark. */
+  /** Called after a compaction replaced messages with one summary. */
   onCompact?: AgentSessionOptions["onCompact"];
   defaultOpen?: boolean;
-  /**
-   * Controlled open state. Pass it with `onOpenChange` to drive the panel from the app's own control — a header
-   * button, a menu item — instead of the built-in launcher. Left off, the panel owns the state as before.
-   */
+  /** Controlled open state, paired with `onOpenChange`; left off, the panel owns it. */
   open?: boolean;
-  /**
-   * Left off while `open` is controlled, the panel cannot close itself — so it draws **no close button** rather
-   * than an inert one. That is the shape of a fixed panel with nowhere to close to, and it is also what keeps a
-   * controlled chat assemblable by a server component, since this is the only prop here that is a function.
-   */
+  /** Left off while `open` is controlled, the panel draws no close button. */
   onOpenChange?: (open: boolean) => void;
-  /**
-   * What the page itself draws while this agent drives it: the control a call was published from is ringed where
-   * it stands, and a pointer presses it, waits out the model's turn as a spinner where it landed, and goes when
-   * the turn ends. On by default — the chat panel is closed as often as it is open, and a change nothing
-   * attributes is one the user watches happen for no reason they can see. `false` draws nothing, and an object
-   * turns one effect off (`visual={{ cursor: false }}` keeps the ring, `{ reveal: false }` keeps the pointer).
-   */
+  /** On by default; `false` draws nothing, `{ cursor: false }` / `{ reveal: false }` turn one effect off. */
   visual?: boolean | AgentVisualOption;
-  /** `false` draws no launcher, for an app that opens the panel from a control of its own. */
+  /** `false` draws no launcher. */
   launcher?: boolean;
-  /**
-   * Keeps the transcript across reloads — sessionStorage by default, `{ storage: "local" }` to outlive the tab, or
-   * a `SessionHistory` of the app's own to keep it anywhere else, a server included.
-   *
-   * Ignored, like every session option above it, when an enclosing `Agent.Zone` or `AgentProvider` already holds a
-   * session: this chat then binds to that one, and the options belong to whoever built it.
-   */
+  /** sessionStorage by default, `{ storage: "local" }` to outlive the tab, or an app `SessionHistory`. Ignored, like
+   *  every session option above, when an enclosing `Agent.Zone` or `AgentProvider` already holds a session. */
   persist?: PersistOption | SessionHistory;
-  /** Renders in the page flow instead of floating above it — a zone chat that lives inside its own section. */
+  /** Renders in the page flow instead of floating above it. */
   inline?: boolean;
-  /** `false` gives the browser its own Cmd/Ctrl+L back, for an app whose shell already spends that chord. */
+  /** `false` leaves Cmd/Ctrl+L to the browser. */
   shortcut?: boolean;
-  /** One surface each, where `className` reaches both. */
   launcherClassName?: string;
   panelClassName?: string;
-  /** Shown in place of the intro line while the transcript is empty — where starter questions go. */
+  /** Shown in place of the intro line while the transcript is empty. */
   intro?: ReactNode;
   /** Extra header controls, left of the built-in clear and close buttons. */
   header?: ReactNode;
-  /**
-   * `false` draws no header bar at all — for an `inline` chat inside a panel the app already titles. The extra
-   * `header` controls go with it, and the clear action stays reachable as the `/new` command.
-   */
+  /** `false` draws no header bar, `header` included; clearing stays reachable as `/new`. */
   chrome?: boolean;
-  /** The composer's opening text, read once at mount — where a `?prompt=` lands without sending it. */
+  /** The composer's opening text, read once at mount. */
   defaultDraft?: string;
-  /**
-   * Reads a file the user attached into an attachment, or answers `null` to leave it to the built-in reader
-   * (images as bytes, text as text). This is where an app puts what needs a parser — a PDF's text, a spreadsheet's
-   * cells — since the framework carries attachments but depends on nothing that can extract one. It runs before
-   * the built-in, so it can also replace how an image is prepared.
-   *
-   * **A `url` is handed to the provider as the address it will fetch**, so answer `data` whenever the provider
-   * cannot reach it — the default storage backend serves a path only this app can resolve, and a model handed one
-   * answers about a picture it never saw with nothing anywhere reporting a failure. Answering **both** is the
-   * shape for that case: bytes are what the provider is given, and the address is what the chip draws, so an
-   * uploading reader gets a thumbnail without betting the answer on who can reach its storage.
-   */
+  /** Runs before the built-in reader, which `null` falls back to. The provider fetches a `url` itself, so answer
+   *  `data` too when it cannot reach it — `data` is then what is sent and `url` only draws the chip. */
   attach?: AttachReader;
-  /**
-   * What the composer's `@` menu can point at — one entry per kind of document a user may name while asking.
-   *
-   * Which documents those are is the app's answer, so the source carries its own `search`; the framework carries
-   * the token, the masking and the snapshot. Whole documents only: a field inside one is pointed at from the
-   * component that draws it, with `useAgentReference`, because that component is the thing that knows a rich-text
-   * field reads as a paragraph rather than as the editor document it is stored as.
-   */
+  /** What the composer's `@` menu can point at, one entry per document kind. */
   reference?: readonly ReferenceSource[];
-  /**
-   * Draws each pointer in the composer as the name it points at rather than as the `@[…](mention:…)` token that
-   * carries it. On wherever `reference` sources are declared, and `false` keeps the plain textarea — for an app
-   * that overrides the composer, or one that would rather see the tokens it is sending.
-   */
+  /** Draws `@` pointers as names; on when `reference` is set, `false` keeps the plain textarea. */
   mentions?: boolean;
-  /**
-   * Raises or lowers what the composer accepts — per file, per message, and how many. The defaults are what one
-   * turn's JSON safely carries to a conservative provider; an app pointed at a larger request limit, or one whose
-   * `attach` uploads and answers a `url`, has no reason to inherit them.
-   */
+  /** Overrides the per-file, per-message and count ceilings on attachments. */
   attachLimits?: AttachLimits;
-  /**
-   * Speech in and out. The engine listens and speaks; this component decides when — a press-to-talk microphone
-   * whose transcript lands in the composer for the user to correct, and a reply read aloud **only when the ask
-   * itself came in by voice**, so a typed question never turns the speakers on.
-   */
+  /** Speech in and out; a reply is read aloud only when the ask came in by voice. */
   voice?: VoiceEngine;
 }
 
-// `userAgentData` is the supported spelling and `platform` the deprecated one that is still the only answer in
-// Safari and in a WebView; the user agent string is the last resort.
+// `platform` is deprecated but still the only answer in Safari and WebViews; the user agent is the last resort.
 const isApplePlatform = () => {
   const data = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
   return /Mac|iPhone|iPad|iPod/i.test(data?.platform || navigator.platform || navigator.userAgent);
 };
 
-// Portalled to the body like Dialog's modal and the toast layer: the page tree sits under `#pageContainers`,
-// which is `isolation: isolate`, so a z-index declared inside it can never rise above a body-level overlay.
-// The layer sits above every dismissable surface (modal 10, dropdown/toast 100, sheet 101) so the agent can
-// still drive a form inside an open modal, and below Reconnect (200), which blocks the app on purpose.
+// Portalled to the body: `#pageContainers` is `isolation: isolate`, so a z-index inside it never tops a body overlay.
+// z-150 sits above modal 10, dropdown/toast 100 and sheet 101, and below Reconnect 200, which blocks on purpose.
 const launcherLayer = "fixed right-4 bottom-4 z-[150]";
 
-// A phone gets the whole screen: a 24rem card inset by a rem on a 360px viewport is the same full screen with
-// the corners cut off, and the composer would sit on the edge either way.
 const panelLayer = "fixed inset-0 z-[150] sm:inset-auto sm:right-4 sm:bottom-4";
 const panelSize =
   "h-dvh w-screen rounded-none sm:h-[min(600px,calc(100dvh-2rem))] sm:w-[min(24rem,calc(100vw-2rem))] sm:rounded-box";
 
-/** Distance from the bottom within which the transcript keeps following new messages. */
 const stickyEdge = 80;
 
-/**
- * The user-facing half of the in-page agent: one floating chat wired to the same surface the dock inspects.
- * The conversation loop runs in this browser session — every tool call executes here, gated by the approval
- * card — and the session lives in a ref, so it survives reopening the panel and dies with the page unless
- * `persist` keeps it. An enclosing AgentProvider's session wins, which is how an app isolates a surface or swaps
- * the loop while keeping this UI.
- */
 export const DefaultChat = ({
   className,
   title,
@@ -245,8 +172,6 @@ export const DefaultChat = ({
     () => session.version,
   );
   const [ownOpen, setOwnOpen] = useState(defaultOpen);
-  // Controlled when the prop is given, uncontrolled otherwise — the same pair `Dialog` takes, so an app can drive
-  // the panel from its own control without giving up the launcher's behaviour.
   const open = openProp ?? ownOpen;
   const setOpen = (next: boolean) => {
     if (openProp === undefined) setOwnOpen(next);
@@ -269,14 +194,12 @@ export const DefaultChat = ({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const handleRef = useRef<ComposerHandle | null>(null);
-  // Filled by whichever input the composer drew. An override that draws a textarea of its own fills no handle,
-  // and the ref it was handed answers instead.
+  // An override composer drawing its own textarea fills no handle, so the input ref answers instead.
   const focusComposer = () => {
     if (handleRef.current) handleRef.current.focus();
     else inputRef.current?.focus();
   };
   const refs = useChatReferences({ session, draft, version, handleRef, onDraft: setDraft });
-  // Only what the panel is following: a user who scrolled up to read is not dragged back down by the next delta.
   const sticky = useRef(true);
   const returning = useRef(false);
   const read = useRef(session.messages.length);
@@ -308,7 +231,6 @@ export const DefaultChat = ({
   }, [shortcut]);
   useEffect(() => {
     if (!open) {
-      // Focus goes back to the launcher only when the user dismissed the panel, never when it opened closed.
       if (returning.current) launcherRef.current?.focus();
       returning.current = false;
       return;
@@ -317,8 +239,7 @@ export const DefaultChat = ({
   }, [open, session.pendingQuestion?.callId]);
   useEffect(
     () => () => {
-      // A session this chat made dies with it: unmounted, nothing renders its approvals, and a turn left running
-      // would go on driving a screen the user has navigated away from. A provided one belongs to its provider.
+      // Unmounted, nothing renders an owned session's approvals; a provided one belongs to its provider.
       if (!provided) session.abort();
     },
     [],
@@ -328,8 +249,6 @@ export const DefaultChat = ({
     menu.reopen();
     mentionMenu.reopen();
   };
-  // A panel driven by a controlled `open` with no `onOpenChange` cannot close itself, so it draws no close button
-  // rather than one that does nothing — the case an `inline` chat inside an app's own frame lands in.
   const closable = openProp === undefined || !!onOpenChange;
   const dismiss = () => {
     returning.current = true;
@@ -338,8 +257,7 @@ export const DefaultChat = ({
   const runCommand = (command: ChatCommand) => {
     write("");
     recall.remember(`/${command.name}`);
-    // A staged file and a parked message belong to the conversation being cleared, so they leave with it — and
-    // the slot empties before the abort, or the dying turn's last notify would send what was just cleared.
+    // The slot empties before the abort, or the dying turn's last notify would send what was just cleared.
     if (command.name === "new") {
       files.clear();
       session.clearStaged();
@@ -347,10 +265,6 @@ export const DefaultChat = ({
     }
     void ChatCommands.run(command, { session, l });
   };
-  /**
-   * Opens a turn with what the composer held, or parks it behind the turn that is running so it opens the next.
-   * False only when parking refused it — the files would not fit beside what is already waiting.
-   */
   const dispatch = (message: QueuedMessage): boolean => {
     if (session.isRunning) return queue.push(message);
     sticky.current = true;
@@ -367,34 +281,28 @@ export const DefaultChat = ({
       ]);
     return true;
   };
-  /** Hands the parked message back to the composer, ahead of whatever was typed since it was parked. */
   const unpark = () => {
     const message = queue.queued;
     if (!message || !files.restore(message.attachments)) return;
     queue.take();
-    // Only the values: the tokens are inside the text being put back, and they are what names the references.
     session.restoreStaged(message.references);
     write([message.text, draft].filter(Boolean).join("\n"));
     speech.hold(message.byVoice);
   };
   const menu = useSlashMenu({ draft, l, onCommand: runCommand });
   const mentionMenu = useReferenceMenu({ draft, sources: reference ?? [], session, l, onWrite: write });
-  // At most one list is ever open — a slash command is the whole draft and a mention is a word at the end of one
-  // — so the keys and the panel address whichever has rows rather than choosing between two of them.
+  // A slash command is the whole draft and a mention ends one, so at most one list ever has rows.
   const list = menu.at() ? menu : mentionMenu;
   const send = () => {
     const text = draft.trim();
     if (!text && !files.attached.length) return;
     const command = AgentPrompts.parseCommand(text);
     const builtin = command ? ChatCommands.find(command.name, l) : null;
-    // Ahead of both the question card and the running check: /new and /copy are exactly what a user reaches for
-    // while a turn is in flight, and a question the agent asked is the middle of a turn like any other.
+    // Ahead of the question and running checks: /new and /copy are what a user reaches for mid-turn.
     if (builtin) {
       runCommand(builtin);
       return;
     }
-    // The composer is the free-text answer to a pending question: the card holds the picks, and a user who types
-    // instead of picking would otherwise be typing into a dead input while the turn waits on them.
     const question = session.pendingQuestion;
     if (question) {
       if (!text) {
@@ -418,14 +326,11 @@ export const DefaultChat = ({
   };
   const onKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     const area = event.currentTarget;
-    // A caret with a line above it (or below it) is one the arrow belongs to: the composer is multi-line now, so
-    // recall may only take the key where the textarea itself would do nothing with it.
     const onEdgeLine = (up: boolean) =>
       area.selectionStart === area.selectionEnd &&
       !(up ? area.value.slice(0, area.selectionStart) : area.value.slice(area.selectionEnd)).includes("\n");
     const row = list.at();
     if (row) {
-      // The menu takes the keys the recall would otherwise walk: it is the thing on screen the arrows point at.
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
         list.move(event.key === "ArrowDown" ? 1 : -1);
@@ -433,7 +338,6 @@ export const DefaultChat = ({
       }
       if (event.key === "Tab") {
         event.preventDefault();
-        // A command completes to its name and waits for arguments; a mention has none, so Tab finishes it.
         if (list === menu) write(`/${row.name} `);
         else row.pick();
         return;
@@ -465,16 +369,8 @@ export const DefaultChat = ({
     event.preventDefault();
     send();
   };
-  // Rebuilt per transcript change rather than per render — a keystroke in the composer changes no message, and
-  // the bubbles are memoized on identity, so the maps handed to them have to be the same ones.
-  //
-  // A call and its result are two wire messages because the model needs both, but they are one thing that
-  // happened: the call's row resolves in place, and the result message renders only what no call claimed —
-  // a persisted transcript is capped, so a result can outlive the assistant message that made it.
-  //
-  // Emitted per turn rather than per message: a user message stands alone, and everything after it up to the next
-  // one goes to one `Steps`. Where a turn starts and ends is the one thing no per-message slot can see, so an app
-  // folding a turn into a scaffold has to be handed the group — the default draws the same flat bubbles.
+  // Per transcript change, not per render: the bubbles are memoized on identity, so the maps must stay the same.
+  // A result renders only what no call claimed — a capped transcript can outlive the message that made the call.
   const bubbles = useMemo(() => {
     const resultOf = new Map(session.messages.flatMap((message) => message.toolResults ?? []).map((r) => [r.id, r]));
     const claimed = new Set(session.messages.flatMap((message) => message.toolCalls?.map((call) => call.id) ?? []));
@@ -506,8 +402,7 @@ export const DefaultChat = ({
       ),
     );
   }, [version]);
-  // Recomputed per transcript change, never per render: the estimate walks every message, and the composer
-  // re-renders on every keystroke.
+  // The estimate walks every message, and the composer re-renders on every keystroke.
   const context = useMemo(() => session.context, [version]);
   const unread = open ? 0 : Math.max(0, session.messages.length - read.current);
   const layer = (surface: ReactNode) => (inline ? surface : overlay ? createPortal(surface, overlay) : null);
@@ -631,7 +526,6 @@ export const DefaultChat = ({
         references={refs.references}
         onStop={() => {
           speech.silence();
-          // Stop means stop: what was parked comes back to the composer instead of opening the next turn at once.
           unpark();
           session.abort();
         }}

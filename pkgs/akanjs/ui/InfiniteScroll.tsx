@@ -6,25 +6,14 @@ export interface InfiniteScrollProps {
   hasMore: boolean;
   onLoadMore: () => Promise<void>;
   children: React.ReactNode;
-  /**
-   * Load earlier rows above the ones in hand, preserving the reading position across the prepend. Assumes
-   * normal column flow. It does not scroll anywhere at mount, so a list meant to open at its newest row scrolls
-   * itself — and until it does, the sentinel is on screen and loads one window unasked.
-   */
+  /** Loads earlier rows above, keeping the reading position. It never scrolls at mount, so until the list scrolls
+   *  itself to its newest row the sentinel is on screen and loads one window unasked. */
   reverse?: boolean;
-  /** The mark shown while the next window is loading. */
   loading?: ReactNode;
 }
 
 let warnedColumnReverse = false;
 
-/**
- * The sentinel is positioned by DOM order alone — first child to load earlier, last child to load more — so a
- * `column-reverse` parent paints it at the opposite end from the rows it controls, and `scrollTop: 0` is then
- * that same end, so it also fires at mount. `flex-col-reverse` is the usual no-JS way to pin a chat to the
- * bottom, so a caller reaching for `reverse` may well already have it; the result reads as a control placed
- * wrongly rather than as an error, which is why it is worth saying out loud once.
- */
 const warnColumnReverse = (sentinel: Element | null) => {
   if (warnedColumnReverse || process.env.AKAN_PUBLIC_ENV !== "local") return;
   const parent = sentinel?.parentElement;
@@ -37,19 +26,12 @@ const warnColumnReverse = (sentinel: Element | null) => {
 
 const scrollableOverflows = new Set(["auto", "scroll", "overlay"]);
 
-/**
- * The element that actually scrolls the sentinel — the document only once no ancestor has taken the job.
- *
- * A chat timeline or a log tail scrolls inside its own `overflow-y-auto` box, and there the document does not
- * move at all, so anchoring `document.scrollingElement` restores a position nothing changed. Resolved per load
- * rather than once, because the box that scrolls is a layout outcome and a caller cannot be asked to name it.
- */
+// Resolved per call, not once: which box scrolls is a layout outcome the caller cannot name.
 const scrollerOf = (sentinel: Element | null) => {
   if (typeof document === "undefined") return null;
   let el = sentinel?.parentElement ?? null;
   while (el && el !== document.body && el !== document.documentElement) {
-    // Overflow alone is not enough: an `auto` box that fits its content scrolls nothing, and the page is what
-    // moves instead.
+    // Overflow alone is not enough: an `auto` box that fits its content scrolls nothing.
     if (el.scrollHeight > el.clientHeight && scrollableOverflows.has(getComputedStyle(el).overflowY)) return el;
     el = el.parentElement;
   }
@@ -62,16 +44,8 @@ export const InfiniteScroll = ({ hasMore, onLoadMore, children, reverse, loading
   const target = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Scope the trigger to the box that scrolls. Against the implicit viewport root, a sentinel sitting at the
-    // top of its own scroll box can be off the page entirely, so whether it ever fires depends on where the
-    // container happens to be laid out. Left implicit when the document is the scroller: the viewport root and
-    // `document.scrollingElement`'s own box are not quite the same rect, and that case already works.
-    //
-    // Resolved at install rather than per render, which `scrollerOf` needs an overflowing container for: the
-    // sentinel renders only while `hasMore`, and that holds only when a full window came back, so by the time
-    // there is anything to observe the container is overflowing. A container tall enough to fit a whole window
-    // is the exception and keeps the viewport root for the session, since `hasMore` staying true never re-runs
-    // this — the behaviour it had before, and only the trigger; anchoring re-resolves on every load.
+    // Rooted at the box that scrolls, or a sentinel atop its own scroll box may sit off the page and never fire.
+    // Resolved at install: the sentinel renders only while `hasMore`, when the container already overflows.
     warnColumnReverse(target.current);
     const scroller = scrollerOf(target.current);
     const root = scroller && scroller !== document.scrollingElement ? scroller : null;
@@ -91,8 +65,7 @@ export const InfiniteScroll = ({ hasMore, onLoadMore, children, reverse, loading
   const fetchMoreItems = async () => {
     if (isFetchingRef.current) return;
 
-    // Prepending rows above the viewport pushes everything down by however tall they turn out to be, so the
-    // offset from the bottom is what has to survive the load — the reading position, in a chat or a log tail.
+    // A prepend pushes everything down, so the offset from the bottom is what has to survive the load.
     const scroller = reverse ? scrollerOf(target.current) : null;
     const prevScrollHeight = scroller?.scrollHeight ?? 0;
     const prevScrollTop = scroller?.scrollTop ?? 0;

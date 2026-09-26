@@ -12,6 +12,7 @@ import { Modal } from "../Modal";
 import {
   Code,
   Collapse,
+  DocTable,
   dictText,
   docDash,
   docPill,
@@ -90,6 +91,11 @@ const typeLabelOf = (field: FieldSchema) => `${field.typeLabel}${field.required 
 
 /** A declared `null` default is the same as none, and a column of them reads as data the field does not carry. */
 const defaultLabelOf = (field: FieldSchema) => (field.defaultLabel === "null" ? undefined : field.defaultLabel);
+
+const headsOf = (l: ReturnType<typeof usePage>["l"], keys: (keyof typeof docText)[]) =>
+  keys.map((key) => <th key={key}>{l.trans(docText[key])}</th>);
+
+const printTable = "print:overflow-visible print:rounded-none print:border-0";
 
 interface ZoneProps {
   models?: string[];
@@ -293,60 +299,48 @@ interface EnumProps {
 const EnumList = ({ enums = getConstantSchemaDoc().enums }: EnumProps) => {
   const { l } = usePage();
   return (
-    <div className={docUi.tablePanel}>
-      <table className={docUi.tableClass}>
-        <thead>
-          <tr>
-            <th>{l.trans(docText.enum)}</th>
-            <th>{l.trans(docText.type)}</th>
-            <th>{l.trans(docText.values)}</th>
-            <th>{l.trans(docText.usedBy)}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {enums.map((enumSchema) => (
-            <tr key={enumSchema.key}>
-              <td>
-                <div className={docUi.key}>{enumSchema.key}</div>
-                <div className={docUi.subLabel}>{enumSchema.refName}</div>
-              </td>
-              <td>
-                <span className={docPill("muted", "font-mono")}>{enumSchema.typeName}</span>
-              </td>
-              <td>
-                <div className="flex max-w-72 flex-wrap gap-1">
-                  {enumSchema.values.map((value) => (
-                    <span
-                      className={buttonRecipe({ variant: "outline", size: "xs" }, "font-mono")}
-                      key={String(value)}
-                      title={l._(`${enumSchema.refName}.${value}`)}
-                    >
-                      {String(value)}
-                    </span>
-                  ))}
-                </div>
-              </td>
-              <td>
-                <div className="flex flex-wrap gap-1">
-                  {enumSchema.usedBy.length ? (
-                    enumSchema.usedBy.map((usage) => (
-                      <span
-                        className={docPill("muted", "font-mono")}
-                        key={`${usage.refName}-${usage.variant}-${usage.fieldKey}`}
-                      >
-                        {usage.refName}.{usage.fieldKey}
-                      </span>
-                    ))
-                  ) : (
-                    <span className={docDash}>—</span>
-                  )}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DocTable head={headsOf(l, ["enum", "type", "values", "usedBy"])}>
+      {enums.map((enumSchema) => (
+        <tr key={enumSchema.key}>
+          <td>
+            <div className={docUi.key}>{enumSchema.key}</div>
+            <div className={docUi.subLabel}>{enumSchema.refName}</div>
+          </td>
+          <td>
+            <span className={docPill("muted", "font-mono")}>{enumSchema.typeName}</span>
+          </td>
+          <td>
+            <div className="flex max-w-72 flex-wrap gap-1">
+              {enumSchema.values.map((value) => (
+                <span
+                  className={buttonRecipe({ variant: "outline", size: "xs" }, "font-mono")}
+                  key={String(value)}
+                  title={l._(`${enumSchema.refName}.${value}`)}
+                >
+                  {String(value)}
+                </span>
+              ))}
+            </div>
+          </td>
+          <td>
+            <div className="flex flex-wrap gap-1">
+              {enumSchema.usedBy.length ? (
+                enumSchema.usedBy.map((usage) => (
+                  <span
+                    className={docPill("muted", "font-mono")}
+                    key={`${usage.refName}-${usage.variant}-${usage.fieldKey}`}
+                  >
+                    {usage.refName}.{usage.fieldKey}
+                  </span>
+                ))
+              ) : (
+                <span className={docDash}>—</span>
+              )}
+            </div>
+          </td>
+        </tr>
+      ))}
+    </DocTable>
   );
 };
 Doc.Enum = EnumList;
@@ -433,87 +427,76 @@ const FieldTable = ({ refName, fields }: { refName: string; fields: FieldSchema[
   const [selectedField, setSelectedField] = useState<FieldSchema | null>(null);
   return (
     <>
-      <div className={docUi.tablePanel}>
-        <table className={docUi.tableClass}>
-          <thead>
-            <tr>
-              <th>{l.trans(docText.field)}</th>
-              <th>{l.trans(docText.type)}</th>
-              <th>{l.trans(docText.kind)}</th>
-              <th>{l.trans(docText.default)}</th>
-              <th>{l.trans(docText.constraints)}</th>
-              <th>{l.trans(docText.values)}</th>
-              <th className="w-1/4">{l.trans(docText.description)}</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {fields.map((field) => (
-              <tr key={field.key}>
-                <td>
-                  <div className={docUi.key}>{field.key}</div>
-                  <div className={docUi.subLabel}>{l._(`${refName}.${field.key}`)}</div>
-                </td>
-                <td>
-                  <div className="flex flex-col items-start gap-1">
-                    <span className={docPill(typeTone(field), "font-mono")}>{typeLabelOf(field)}</span>
-                    {field.relationLabel ? <span className={docUi.subLabel}>{field.relationLabel}</span> : null}
-                  </div>
-                </td>
-                <td>
-                  <div className="flex flex-col items-start gap-1">
-                    <span className={docPill("muted")}>{field.fieldType}</span>
-                    {field.select ? null : <span className={docPill("warning")}>select:false</span>}
-                    {field.immutable ? <span className={docPill("muted")}>immutable</span> : null}
-                  </div>
-                </td>
-                <td className="max-w-40 truncate font-mono text-xs">
-                  {defaultLabelOf(field) ?? <span className={docDash}>—</span>}
-                </td>
-                <td>
-                  <div className="flex flex-wrap gap-1">
-                    {field.constraints.length ? (
-                      field.constraints.map((constraint) => (
-                        <span className={docPill("muted", "font-mono")} key={constraint}>
-                          {constraint}
-                        </span>
-                      ))
-                    ) : (
-                      <span className={docDash}>—</span>
-                    )}
-                  </div>
-                </td>
-                <td>
-                  <div className="flex max-w-56 flex-wrap gap-1">
-                    {field.enumValues ? (
-                      field.enumValues.map((value) => (
-                        <span
-                          className={buttonRecipe({ variant: "outline", size: "xs" }, "font-mono")}
-                          key={String(value)}
-                        >
-                          {String(value)}
-                        </span>
-                      ))
-                    ) : (
-                      <span className={docDash}>—</span>
-                    )}
-                  </div>
-                </td>
-                <td className="text-foreground/70">{l._(`${refName}.${field.key}.desc`)}</td>
-                <td>
-                  <button
-                    className={buttonRecipe({ variant: "ghost", size: "xs" }, "text-foreground/50")}
-                    onClick={() => setSelectedField(field)}
-                    type="button"
-                  >
-                    <AiOutlineInfoCircle /> {l.trans(docText.detail)}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DocTable
+        head={
+          <>
+            {headsOf(l, ["field", "type", "kind", "default", "constraints", "values"])}
+            <th className="w-1/4">{l.trans(docText.description)}</th>
+            <th />
+          </>
+        }
+      >
+        {fields.map((field) => (
+          <tr key={field.key}>
+            <td>
+              <div className={docUi.key}>{field.key}</div>
+              <div className={docUi.subLabel}>{l._(`${refName}.${field.key}`)}</div>
+            </td>
+            <td>
+              <div className="flex flex-col items-start gap-1">
+                <span className={docPill(typeTone(field), "font-mono")}>{typeLabelOf(field)}</span>
+                {field.relationLabel ? <span className={docUi.subLabel}>{field.relationLabel}</span> : null}
+              </div>
+            </td>
+            <td>
+              <div className="flex flex-col items-start gap-1">
+                <span className={docPill("muted")}>{field.fieldType}</span>
+                {field.select ? null : <span className={docPill("warning")}>select:false</span>}
+                {field.immutable ? <span className={docPill("muted")}>immutable</span> : null}
+              </div>
+            </td>
+            <td className="max-w-40 truncate font-mono text-xs">
+              {defaultLabelOf(field) ?? <span className={docDash}>—</span>}
+            </td>
+            <td>
+              <div className="flex flex-wrap gap-1">
+                {field.constraints.length ? (
+                  field.constraints.map((constraint) => (
+                    <span className={docPill("muted", "font-mono")} key={constraint}>
+                      {constraint}
+                    </span>
+                  ))
+                ) : (
+                  <span className={docDash}>—</span>
+                )}
+              </div>
+            </td>
+            <td>
+              <div className="flex max-w-56 flex-wrap gap-1">
+                {field.enumValues ? (
+                  field.enumValues.map((value) => (
+                    <span className={buttonRecipe({ variant: "outline", size: "xs" }, "font-mono")} key={String(value)}>
+                      {String(value)}
+                    </span>
+                  ))
+                ) : (
+                  <span className={docDash}>—</span>
+                )}
+              </div>
+            </td>
+            <td className="text-foreground/70">{l._(`${refName}.${field.key}.desc`)}</td>
+            <td>
+              <button
+                className={buttonRecipe({ variant: "ghost", size: "xs" }, "text-foreground/50")}
+                onClick={() => setSelectedField(field)}
+                type="button"
+              >
+                <AiOutlineInfoCircle /> {l.trans(docText.detail)}
+              </button>
+            </td>
+          </tr>
+        ))}
+      </DocTable>
       <FieldDetailModal refName={refName} field={selectedField} onClose={() => setSelectedField(null)} />
     </>
   );
@@ -522,49 +505,45 @@ const FieldTable = ({ refName, fields }: { refName: string; fields: FieldSchema[
 const PrintFieldTable = ({ refName, fields }: { refName: string; fields: FieldSchema[] }) => {
   const { l } = usePage();
   return (
-    <div className="overflow-x-auto rounded-box border border-border bg-background print:overflow-visible print:rounded-none print:border-0">
-      <table className={docUi.tableClass}>
-        <thead>
-          <tr>
-            <th>{l.trans(docText.key)}</th>
-            <th>{l.trans(docText.type)}</th>
-            <th>{l.trans(docText.required)}</th>
-            <th>{l.trans(docText.fieldType)}</th>
-            <th>{l.trans(docText.relation)}</th>
-            <th>{l.trans(docText.default)}</th>
-            <th>{l.trans(docText.constraints)}</th>
-            <th>{l.trans(docText.enum)}</th>
-            <th>{l.trans(docText.description)}</th>
-            <th>{l.trans(docText.detail)}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {fields.map((field) => (
-            <tr key={field.key} className="break-inside-avoid">
-              <td>
-                <div className="font-bold">{field.key}</div>
-                <div className="text-foreground/60 text-xs print:text-black">{l._(`${refName}.${field.key}`)}</div>
-              </td>
-              <td>{field.typeLabel}</td>
-              <td>{l.trans(field.required ? docText.required : docText.optional)}</td>
-              <td>
-                <div>{field.fieldType}</div>
-                {!field.select ? <div>select:false</div> : null}
-                {field.immutable ? <div>immutable</div> : null}
-              </td>
-              <td>{getPrintRelation(field)}</td>
-              <td>{field.defaultLabel ?? "-"}</td>
-              <td>{field.constraints.length ? field.constraints.join(", ") : "-"}</td>
-              <td>{field.enumValues ? `${field.enumRefName ?? "enum"}: ${field.enumValues.join(", ")}` : "-"}</td>
-              <td>{l._(`${refName}.${field.key}.desc`)}</td>
-              <td>
-                <PrintFieldDetail field={field} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DocTable
+      className={printTable}
+      head={headsOf(l, [
+        "key",
+        "type",
+        "required",
+        "fieldType",
+        "relation",
+        "default",
+        "constraints",
+        "enum",
+        "description",
+        "detail",
+      ])}
+    >
+      {fields.map((field) => (
+        <tr key={field.key} className="break-inside-avoid">
+          <td>
+            <div className="font-bold">{field.key}</div>
+            <div className="text-foreground/60 text-xs print:text-black">{l._(`${refName}.${field.key}`)}</div>
+          </td>
+          <td>{field.typeLabel}</td>
+          <td>{l.trans(field.required ? docText.required : docText.optional)}</td>
+          <td>
+            <div>{field.fieldType}</div>
+            {!field.select ? <div>select:false</div> : null}
+            {field.immutable ? <div>immutable</div> : null}
+          </td>
+          <td>{getPrintRelation(field)}</td>
+          <td>{field.defaultLabel ?? "-"}</td>
+          <td>{field.constraints.length ? field.constraints.join(", ") : "-"}</td>
+          <td>{field.enumValues ? `${field.enumRefName ?? "enum"}: ${field.enumValues.join(", ")}` : "-"}</td>
+          <td>{l._(`${refName}.${field.key}.desc`)}</td>
+          <td>
+            <PrintFieldDetail field={field} />
+          </td>
+        </tr>
+      ))}
+    </DocTable>
   );
 };
 
@@ -582,44 +561,30 @@ const PrintFieldDetail = ({ field }: { field: FieldSchema }) => {
 const PrintEnumTable = ({ enums }: { enums: ReturnType<typeof getConstantSchemaDoc>["enums"] }) => {
   const { l } = usePage();
   return (
-    <div className="overflow-x-auto rounded-box border border-border bg-background print:overflow-visible print:rounded-none print:border-0">
-      <table className={docUi.tableClass}>
-        <thead>
-          <tr>
-            <th>{l.trans(docText.key)}</th>
-            <th>{l.trans(docText.refName)}</th>
-            <th>{l.trans(docText.type)}</th>
-            <th>{l.trans(docText.values)}</th>
-            <th>{l.trans(docText.descriptions)}</th>
-            <th>{l.trans(docText.usedBy)}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {enums.map((enumSchema) => (
-            <tr key={enumSchema.key} className="break-inside-avoid">
-              <td>{enumSchema.key}</td>
-              <td>{enumSchema.refName}</td>
-              <td>{enumSchema.typeName}</td>
-              <td>{enumSchema.values.join(", ")}</td>
-              <td>
-                {enumSchema.values.map((value) => (
-                  <div key={String(value)}>
-                    {String(value)}: {l._(`${enumSchema.refName}.${value}`)}
-                  </div>
-                ))}
-              </td>
-              <td>
-                {enumSchema.usedBy.length
-                  ? enumSchema.usedBy
-                      .map((usage) => `${usage.refName}.${usage.fieldKey} (${getVariantTitle(usage.variant)})`)
-                      .join(", ")
-                  : "-"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DocTable className={printTable} head={headsOf(l, ["key", "refName", "type", "values", "descriptions", "usedBy"])}>
+      {enums.map((enumSchema) => (
+        <tr key={enumSchema.key} className="break-inside-avoid">
+          <td>{enumSchema.key}</td>
+          <td>{enumSchema.refName}</td>
+          <td>{enumSchema.typeName}</td>
+          <td>{enumSchema.values.join(", ")}</td>
+          <td>
+            {enumSchema.values.map((value) => (
+              <div key={String(value)}>
+                {String(value)}: {l._(`${enumSchema.refName}.${value}`)}
+              </div>
+            ))}
+          </td>
+          <td>
+            {enumSchema.usedBy.length
+              ? enumSchema.usedBy
+                  .map((usage) => `${usage.refName}.${usage.fieldKey} (${getVariantTitle(usage.variant)})`)
+                  .join(", ")
+              : "-"}
+          </td>
+        </tr>
+      ))}
+    </DocTable>
   );
 };
 
@@ -777,8 +742,7 @@ const makeSchemaGraph = (databases: DatabaseSchema[], scalars: ScalarSchema[]) =
     const from = toNodeId(relation.sourceRefName);
     const to = toNodeId(relation.targetRefName);
     const existing = edges.get(`${from}>${to}`);
-    // One arrow per pair: a model reaching the same target through several fields drew a bundle of identical
-    // arrows, and the field names read better joined into that one arrow's label.
+    // One arrow per pair, its label joining every field that reaches the same target.
     edges.set(
       `${from}>${to}`,
       existing

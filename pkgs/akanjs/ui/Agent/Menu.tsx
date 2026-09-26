@@ -5,7 +5,7 @@ import { createOverridable } from "../UiOverride";
 export interface MenuRow {
   name: string;
   description?: string;
-  /** The argument names a row takes, shown so a user knows what to type after the name. */
+  /** The argument names a row takes. */
   hint?: string;
   pick: () => void;
 }
@@ -13,14 +13,12 @@ export interface MenuRow {
 export interface MenuProps {
   className?: string;
   rows: MenuRow[];
-  /** Index the arrows are on. Enter picks it and Tab completes its name, so it has to be visible. */
   selected: number;
-  /** What the rows are being typed after, so a name reads as the thing the user is completing. */
+  /** Drawn before each row name; `/` by default. */
   prefix?: string;
   onPick: (row: MenuRow) => void;
 }
 
-/** The composer's completion list: the chat's own `/` commands, or the `@` menu's reference rows. */
 export const DefaultAgentMenu = ({ className, rows, selected, prefix = "/", onPick }: MenuProps) => {
   if (!rows.length) return null;
   return (

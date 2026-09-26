@@ -1,13 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-/**
- * How much of the layout viewport the on-screen keyboard is covering.
- *
- * `visualViewport` is the only thing that reports it — `dvh` tracks the browser's own chrome and not the
- * keyboard — and a full-screen chat whose composer sits under the keyboard is one nobody can type into. Answers
- * 0 wherever the API is absent, which is every desktop case and the server.
- */
+// Only `visualViewport` reports the on-screen keyboard: `dvh` tracks the browser's own chrome, not the keyboard.
 export const useKeyboardInset = () => {
   const [inset, setInset] = useState(0);
   useEffect(() => {

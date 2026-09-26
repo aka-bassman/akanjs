@@ -11,46 +11,34 @@ import { Pagination, type PaginationProps } from "./Pagination";
 import { createOverridable } from "./UiOverride";
 
 export interface Column {
-  /** Stable column key. Defaults to index when omitted. */
+  /** Defaults to the index. */
   key?: string;
-  /** Header label. */
   title: ReactNode;
-  /** Field name read from each row object. */
+  /** The field read from each row. */
   dataIndex: string;
-  /** Custom cell renderer. */
   render?: (text: any, record: any, idx: number) => React.ReactNode;
-  /** Responsive breakpoints where this column should be visible. */
+  /** Breakpoints the column shows at. */
   responsive?: Responsive["value"][];
 }
 
 export interface TableProps {
-  /** Column definitions. */
   columns: Column[];
-  /** Rows rendered by the table. */
   dataSource: any[];
-  /** Show a centered loading spinner and dim rows. */
+  /** Dims the rows under a centered spinner. */
   loading?: boolean;
-  /** Table density. */
   size?: "small" | "middle";
-  /** Add a border around the table wrapper. */
   bordered?: boolean;
-  /** Pagination config, or false to hide pagination. */
+  /** `false` hides the pager. */
   pagination?: PaginationProps | false;
-  /** Show header always, never, or only at selected responsive breakpoints. */
+  /** An array shows the header only at those breakpoints. */
   showHeader?: boolean | Responsive["value"][];
-  /** Row event factory. */
   onRow?: (record: any, index: number) => { onClick: (() => void) | (() => Promise<boolean>) };
-  /** Row class or class factory. */
   rowClassName?: string | ((record: any, index: number) => string) | undefined;
-  /** Custom row key resolver. */
   rowKey?: (model: any) => string;
-  /** Content drawn above the table. */
   header?: ReactNode;
-  /** Content drawn below the table, under the pager. */
+  /** Drawn under the pager. */
   footer?: ReactNode;
-  /** Placeholder for a table with no rows. */
   empty?: ReactNode;
-  /** The mark shown over the rows while `loading`. */
   loadingIndicator?: ReactNode;
 }
 
@@ -154,8 +142,4 @@ export const DefaultTable = ({
   );
 };
 
-/**
- * Data table. Resolves to a route-scoped override when a `page/**\/_overrides.tsx`
- * in the route's ancestry declares one, otherwise renders {@link DefaultTable}.
- */
 export const Table = createOverridable("Table", DefaultTable);

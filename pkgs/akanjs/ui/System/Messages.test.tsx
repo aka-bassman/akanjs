@@ -2,24 +2,14 @@ import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-
-import type { AkanUiOverrides } from "../UiOverride/context";
-import { UiOverrideProvider } from "../UiOverride/Provider";
+import { l, setTestEnv } from "../testHelpers";
+import { type AkanUiOverrides, UiOverrideProvider } from "../UiOverride";
 
 let Messages: typeof import("./Messages").Messages;
 let st: typeof import("akanjs/store").st;
 
-const l = Object.assign((key: string) => key, {
-  _: (key: string) => key,
-  rich: (key: string) => key,
-  trans: (translation: Record<string, string>) => translation.en,
-});
-
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "messagestest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "messagestest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("messagestest");
   const { registerClientRuntime } = await import("akanjs/client");
   // `msg` is a proxy over the runtime: the shell assigns the real `msg.*` onto it, so the stub needs the target.
   registerClientRuntime({ usePage: () => ({ path: "/", lang: "en", l }), fetch: {}, msg: {} } as never);

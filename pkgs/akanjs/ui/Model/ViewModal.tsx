@@ -12,10 +12,7 @@ interface ViewToolsProps {
   closeView: () => void;
 }
 
-/**
- * Mounted only by the modal that is actually open. A list renders one `ViewModal` per row, and only the row
- * whose id matches opens, so the close verb reaches the surface once instead of once per row.
- */
+// Mounted only by the open modal, so a list of per-row `ViewModal`s publishes the close verb once.
 const ViewTools = ({ modelName, closeView }: ViewToolsProps) => {
   st.tool(`closeViewOf${capitalize(modelName)}`)
     .desc(`Close the ${modelName} detail view.`)
@@ -45,7 +42,7 @@ export default function ViewModal({
 }: ViewModalProps) {
   const storeUse = st.use as unknown as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => void };
-  const { refName, sliceName } = slice;
+  const { refName } = slice;
   const [modelName, ModelName] = [refName, capitalize(refName)];
   const names = {
     model: modelName,

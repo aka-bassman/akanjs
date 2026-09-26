@@ -3,22 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { act, Component, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToReadableStream } from "react-dom/server.browser";
-
+import { mount } from "../testHelpers";
 import Stream from "./Stream";
-
-const mount = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
-  return {
-    container,
-    unmount: () => {
-      act(() => root.unmount());
-      container.remove();
-    },
-  };
-};
 
 /** A suspending first render has to settle inside an awaited `act`, or React warns and commits nothing. */
 const mountAsync = async (node: ReactNode) => {
@@ -149,12 +135,7 @@ describe("Load.Stream", () => {
     expect(rest).toContain("streamed-later");
   });
 
-  /**
-   * The shape the bug report hit: the page's own queries succeed, the shell goes out with the fallback, and the
-   * boundary's data fails afterwards. React can no longer turn that into a status code, so the contract is that
-   * the boundary degrades to a client render and the stream still closes — nothing may escape as a rejection
-   * the process has to answer for.
-   */
+  // Past the shell React cannot turn a failure into a status code: the boundary must degrade and the stream close.
   test("a thenable that rejects after the shell degrades the boundary, not the stream", async () => {
     const seen: unknown[] = [];
     const collect = (reason: unknown) => seen.push(reason);

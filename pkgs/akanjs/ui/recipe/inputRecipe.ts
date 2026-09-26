@@ -13,8 +13,7 @@ export const inputRecipe = recipe(
         error: "border-destructive focus:border-destructive",
       },
     },
-    // Height belongs to `kind: "field"` only — a textarea sizes itself from its content and its own
-    // min-h-*, so size cannot be a flat h-* per value.
+    // Height is `kind: "field"` only: a textarea sizes itself from its content and its own min-h-*.
     compoundVariants: [
       { kind: "field", size: "xs", class: "h-6" },
       { kind: "field", size: "sm", class: "h-8" },
