@@ -9,10 +9,8 @@ export interface TransferReport {
 }
 
 /**
- * Copies an app's model tables to one NDJSON file each and back, every row as it is stored — how a single-mode app's
- * data moves onto cluster. `_akan_meta` and the search mirror stay behind: the target's boot writes its own meta, and
- * the mirror is rebuilt from the imported rows. The cache and the queue are not model tables, so refresh sessions and
- * pending jobs do not move.
+ * Model tables to one NDJSON file each and back, rows as stored. `_akan_meta`, the search mirror, the cache and the
+ * queue stay behind: the target writes its own meta and rebuilds the mirror; sessions and pending jobs do not move.
  */
 export class DocumentTransfer {
   static readonly #chunk = 1000;

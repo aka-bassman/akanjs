@@ -3,8 +3,7 @@ import { SqlDocumentStore, SqliteDatabase } from "./database.adaptor";
 import { Scheduler } from "./schedule.adaptor";
 import { searchConfConstant, searchConfDatabase } from "./search.conformance.fixture";
 
-// One process of a fleet booting on one SQLite file. It sleeps until the start time the test gave every process, so all
-// of them reach the search schema together, then ensures the fixture model and exits.
+// One fleet process on a shared SQLite file: sleeps until the test's common start time, ensures the fixture, exits.
 const config = JSON.parse(process.env.AKAN_TEST_SQLITE_CONFIG ?? "{}") as object;
 await Bun.sleep(Math.max(0, Number(process.env.AKAN_TEST_START_AT ?? 0) - Date.now()));
 const scheduler = new Scheduler();

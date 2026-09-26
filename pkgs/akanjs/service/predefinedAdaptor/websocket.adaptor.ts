@@ -24,35 +24,19 @@ export interface WebsocketPublishOption {
 }
 
 export interface WebsocketAdaptor {
-  /** Publish data to a room across all server instances */
+  /** Across every server instance. */
   publish(roomId: string, data: unknown, option?: WebsocketPublishOption): void;
-  /** Register an event handler for incoming cross-server messages */
   setEventHandler(handler: WsRedisEventHandler): void;
-  /** Unregister the event handler */
   clearEventHandler(): void;
-  /**
-   * Called after the cross-server channel has been down and come back, if this transport can lose one.
-   *
-   * A dropped subscription is the one message loss nothing else notices: the client's own socket stays open the
-   * whole time, so it has no reason to suspect its list is behind. A transport with no channel to lose — the
-   * single-node one, which delivers through the gateway's own IPC — leaves this out.
-   */
+  /** After a lost cross-server channel returns — a loss the still-open client socket never notices. Optional. */
   onRecovered?(handler: () => void): void;
-  /**
-   * Hands a committed write to every other server of the app, each of which routes it to the live rooms it holds —
-   * the writer only knows its own rooms, and a batch process holds none.
-   */
+  /** To every other server of the app: the writer only knows its own rooms, and a batch process holds none. */
   publishChange?(change: LiveChange): void;
   onChange?(handler: LiveChangeHandler): void;
-  /** Register a socket on this server joining a room */
   joinRoom(ws: Bun.ServerWebSocket<unknown>, room: string): Promise<void>;
-  /** Remove a socket from a room */
   leaveRoom(ws: Bun.ServerWebSocket<unknown>, room: string): Promise<void>;
-  /** Remove a socket from all rooms */
   leaveAllRooms(ws: Bun.ServerWebSocket<unknown>): Promise<void>;
-  /** Register a socket connection on this server */
   registerSocket(ws: Bun.ServerWebSocket<unknown>, meta?: Record<string, string>): Promise<void>;
-  /** Unregister a socket connection */
   unregisterSocket(ws: Bun.ServerWebSocket<unknown>): Promise<void>;
 }
 
@@ -79,10 +63,8 @@ export class WebSocketRedisAdaptor
   }))
   implements WebsocketAdaptor
 {
-  //* A message is `[version][kind][origin length][origin][room length][room][payload]`, and the payload is what the
-  //* publishing server hands its own sockets — JSON text or a Binary frame's bytes — so a server receiving it needs
-  //* no model to read it, and two releases side by side in a rolling deploy read each other's events. A `change`
-  //* carries a committed write and no room; a release that predates it finds no room of that name and drops it.
+  //* `[version][kind][origin length][origin][room length][room][payload]`; the payload is what the publisher hands its
+  //* own sockets, so a receiver needs no model and releases interoperate mid-deploy. Old ones drop a roomless `change`.
   static readonly #version = 1;
   static readonly #kind = { json: 0x6a, bytes: 0x62, change: 0x63 } as const;
   readonly #buffer: BufferedMessage[] = [];
@@ -116,9 +98,7 @@ export class WebSocketRedisAdaptor
       this.logger.warn(`Publisher error: ${err.message}`);
     });
 
-    // Subscriber lifecycle. Without the pair below, a dropped subscription is invisible: ioredis reconnects and
-    // resubscribes on its own, the messages published in between are gone for good, and every socket this server
-    // holds stays open — so nothing anywhere knows a list is now behind.
+    // ioredis resubscribes on its own, but what was published in between is lost while every socket stays open.
     this.subscriber.on("error", (err: Error) => {
       this.logger.warn(`Subscriber error: ${err.message}`);
     });
@@ -231,10 +211,7 @@ export class WebSocketRedisAdaptor
     this.#socketRooms.delete(socketId);
   }
 
-  /**
-   * `AppWsData` mints the id at the handshake, so this reads it; the fallback only covers a socket that
-   * was upgraded outside the app router.
-   */
+  /** `AppWsData` mints the id at the handshake; the fallback covers a socket upgraded outside the app router. */
   #getSocketId(ws: Bun.ServerWebSocket<unknown>): string {
     const data = ws.data as WsSocketData;
     data.socketId ??= Bun.randomUUIDv7();

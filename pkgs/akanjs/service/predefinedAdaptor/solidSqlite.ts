@@ -24,8 +24,7 @@ export type SolidValueType = "string" | "number" | "buffer" | "json";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Kept behind a thunk: `getEnv()` throws when the runtime identity is unset, and a caller that names a
-// `filePath` must not need one.
+// A thunk: `getEnv()` throws without a runtime identity, which a caller naming `filePath` must not need.
 const defaultSolidFile = (workspaceRoot?: string) => {
   const { appName, environment, operationMode } = getEnv();
   return resolveDefaultSqliteFile({
@@ -77,8 +76,6 @@ export const encodeSolidValue = (value: unknown): { type: SolidValueType; value:
     return { type: "buffer", value: Buffer.from(value.buffer, value.byteOffset, value.byteLength) };
   if (typeof value === "number") return { type: "number", value: String(value) };
   if (typeof value === "string") return { type: "string", value };
-  // Objects, arrays, booleans, null: stored as JSON so callers can round-trip
-  // structured values (e.g. refresh sessions) through the SQLite-backed cache.
   return { type: "json", value: JSON.stringify(value ?? null) };
 };
 

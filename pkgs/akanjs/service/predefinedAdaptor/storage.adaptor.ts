@@ -66,19 +66,14 @@ export class BlobStorage
       ({ blobStorage = { privateBaseDir: "local" } }: BlobStorageOptions) =>
         `${process.env.AKAN_WORKSPACE_ROOT ?? "."}/${blobStorage.privateBaseDir ?? "local"}/${getEnv().appName}/server-private`,
     ),
-    // Only what is written from here on follows a moved prefix: a blob URL is stored on the row that
-    // references it, so rows written under the old one keep pointing at it.
+    // A moved prefix applies to new writes only: a blob URL is stored on the row that references it.
     urlPrefix: env(
       ({ blobStorage }: BlobStorageOptions) => blobStorage?.urlPrefix ?? `${getApiPrefix()}/localFile/getBlob`,
     ),
   }))
   implements StorageAdaptor
 {
-  /**
-   * Throws where files kept on this machine's disk would be invisible to the app's other instances: a deployed
-   * `multiple` or `cluster` app whose operator has not declared, with `AKAN_STORAGE_SHARED=true`, that the directory
-   * is one volume mounted on every instance. A development machine runs every process on one disk.
-   */
+  /** Throws for a deployed `multiple`/`cluster` app on local disk unless `AKAN_STORAGE_SHARED=true` marks it shared. */
   static assertShared(storage: string) {
     const { databaseMode, environment, operationMode } = getEnv();
     if (!databaseMode || databaseMode === "single" || environment === "local" || operationMode === "local") return;

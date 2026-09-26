@@ -2,7 +2,7 @@ import { Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { by, type DatabaseCls, DatabaseRegistry, from, into } from "akanjs/document";
 
-// The models `search.conformance.test.ts` searches, shared with the processes it boots in `search.conformance.instance.ts`.
+// Shared with the processes `search.conformance.test.ts` boots.
 class SearchConfHistory extends via((f) => ({
   action: f(String, { text: "tag" }),
   labels: f([String], { text: "tag" }),

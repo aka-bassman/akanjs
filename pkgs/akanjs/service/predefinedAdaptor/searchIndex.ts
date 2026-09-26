@@ -22,8 +22,7 @@ const SCHEMA_META_KEY = "search:schema";
 const DISABLED_META_KEY = "search:disabled";
 const REF_META_PREFIX = "search:ref:";
 const LOCK_META_PREFIX = "search:lock:";
-// A crashed process must not wedge a ref forever; a stale claim is reclaimed after this long. A backfill that runs
-// longer than this renews its own claim, so the window only ever expires on a process that stopped working.
+// A crashed process's claim is reclaimed after this; a live backfill renews its own.
 const LOCK_TTL_MS = 10 * 60 * 1000;
 const BACKFILL_CHUNK = 5000;
 const OPTIMIZE_LOCK_REF = "__optimize";
@@ -31,11 +30,9 @@ export const OPTIMIZE_CRON_KEY = "searchIndexOptimize";
 // Off-peak and not on the hour, so it does not pile onto every other cron in the fleet.
 export const OPTIMIZE_CRON = "17 4 * * *";
 export const RETRY_INTERVAL_KEY = "searchIndexRetry";
-// Comfortably inside `LOCK_TTL_MS`, so a ref another process was rebuilding comes back within a few minutes of
-// that finishing rather than waiting for the next boot. A tick with nothing pending costs nothing.
+// Inside `LOCK_TTL_MS`, so a ref another process rebuilt returns within minutes, not at the next boot.
 export const RETRY_INTERVAL_MS = 60_000;
-// Positional over `searchColumns`. `filter` is weighted 0 so a scoping token never outranks a real title hit — it is
-// indexed to be matchable, not to be relevant.
+// Positional over `searchColumns`; `filter` weighs 0 — matchable, but never outranking a real title hit.
 export const DEFAULT_SEARCH_WEIGHTS = [10, 1, 3, 0];
 
 export interface SearchIndexOptions {
@@ -43,10 +40,7 @@ export interface SearchIndexOptions {
   tokenizer: string;
 }
 
-/**
- * Reads `AKAN_SEARCH_ENABLED`. Unset means enabled; an unrecognised value fails the boot rather than
- * silently falling back, because a typo like `ture` would otherwise look identical to the default.
- */
+/** Unset means enabled; an unrecognised value fails the boot, since a typo like `ture` would look like the default. */
 export const parseSearchEnabled = (value: string | undefined) => {
   if (value === undefined || value.trim() === "") return true;
   const normalized = value.trim().toLowerCase();
@@ -55,22 +49,14 @@ export const parseSearchEnabled = (value: string | undefined) => {
   throw new Error(`Invalid AKAN_SEARCH_ENABLED value: "${value}". Use 1/true or 0/false.`);
 };
 
-/**
- * Owns the `search_doc` mirror and the index an engine builds over it.
- *
- * The mirror is maintained by SQL triggers rather than document hooks because `updateOneByQuery` and friends
- * deliberately fire no hooks — most searchable-field mutations go through exactly that path, so an app-level
- * hook would miss them silently.
- */
+/** The `search_doc` mirror is trigger-maintained, not hook-maintained: `updateOneByQuery` and friends fire no hooks. */
 export class SearchIndex {
   readonly #owner: SearchIndexOwner;
   readonly #engine: SearchEngine;
   readonly #enabled: boolean;
   readonly #logger = new Logger("SearchIndex");
-  // The token this process last wrote for each held claim, so renew and release can match on it.
   readonly #claims = new Map<string, string>();
-  // Refs whose rebuild another process was holding. A boot must not block on someone else's 10-minute claim, but
-  // it must not forget the ref either: nothing else would ever come back to it.
+  // Refs another process held at boot: not waited on, but retried, since nothing else would return to them.
   readonly #pending = new Map<string, [ConstantModel, DatabaseModel]>();
 
   constructor(
@@ -109,8 +95,7 @@ export class SearchIndex {
       }
       if (!current) await this.#owner.setMeta(SCHEMA_META_KEY, hash);
     };
-    // One turn reads the hash and writes it, so of a fleet booting at once only the first rebuilds, and no two processes
-    // drop and create the index over each other. SQLite's write transaction is that turn across processes.
+    // One locked turn reads and writes the hash (SQLite's write transaction spans processes): only the first rebuilds.
     const owner = this.#owner;
     if (owner.lockSchema) await owner.lockSchema(ensure);
     else if (owner.transaction) await owner.transaction(ensure);
@@ -126,30 +111,25 @@ export class SearchIndex {
       return true;
     }
     const triggers = this.#engine.modelTriggers(ref, columns, this.#engine.columns(constant, database, "OLD"));
-    // The hash covers the generated trigger SQL, not just the columns, so a framework upgrade that changes the
-    // trigger template invalidates it on its own. Hashing the columns alone would leave old triggers in place.
+    // Hashing the trigger SQL, not just the columns, lets a changed trigger template invalidate it.
     const hash = await descriptorHash(triggers);
     if ((await this.#owner.getMeta(`${REF_META_PREFIX}${ref}`)) === hash) {
-      // Deliberately no replace here. Replacing a live trigger opens a window where another process's write misses
-      // the mirror, and a matching hash means nothing would ever reconcile it back.
+      // No replace: swapping a live trigger opens a window of missed writes that a matching hash never reconciles.
       await this.#engine.createModelTriggers(ref, triggers, false);
       this.#pending.delete(ref);
       return true;
     }
     if (!(await this.#claimLock(ref))) {
-      // Whoever holds the claim rebuilds the whole table, so leaving the existing triggers alone is safer than
-      // replacing them here. `retryPending` picks this up once the claim clears.
+      // The claim holder rebuilds the whole table, so the triggers stay; `retryPending` returns once it clears.
       this.#pending.set(ref, [constant, database]);
       this.#logger.warn(`Search index for ${ref} is held by another process; will retry`);
       return false;
     }
     try {
-      // Safe to replace them now: the backfill below re-reads the model table, so a write that slips through the
-      // window is picked up anyway.
+      // Safe to replace now: the backfill re-reads the model table, catching a write that slips through the window.
       await this.#engine.createModelTriggers(ref, triggers, true);
       const reconciled = await this.reconcileRef(ref, columns, () => this.#renewLock(ref));
-      // Only a completed pass may write the hash. A half-written mirror that claims to be current would stay
-      // wrong until the descriptor changes again.
+      // Only a completed pass writes the hash, or a half-written mirror stays wrong until the descriptor changes.
       if (reconciled) await this.#owner.setMeta(`${REF_META_PREFIX}${ref}`, hash);
       if (reconciled) this.#pending.delete(ref);
       else this.#pending.set(ref, [constant, database]);
@@ -159,7 +139,7 @@ export class SearchIndex {
     }
   }
 
-  /** Re-runs the refs another process was holding. Returns how many are still outstanding. */
+  /** Returns how many held refs are still outstanding. */
   async retryPending() {
     for (const [ref, [constant, database]] of [...this.#pending]) {
       if (await this.ensureRef(constant, database)) this.#logger.info(`Search index for ${ref} is current again`);
@@ -168,10 +148,8 @@ export class SearchIndex {
   }
 
   /**
-   * Rebuilds one ref's mirror rows in id-ordered chunks so a large table does not block the boot. `onChunk` runs
-   * between chunks and reports whether this process still holds the claim: a backfill that outlives the lock TTL
-   * would otherwise keep writing rows underneath the `DELETE` of the process that took over. Returns whether the
-   * whole table was covered.
+   * `onChunk` reports whether this process still holds the claim, or an outlived backfill writes under the new holder's
+   * `DELETE`. Returns whether the whole table was covered.
    */
   async reconcileRef(ref: string, columns: SearchColumns, onChunk?: () => Promise<boolean>) {
     const conn = this.#owner.getConnection();
@@ -202,7 +180,7 @@ export class SearchIndex {
     }
   }
 
-  /** Merges accumulated index segments. Returns whether this process was the one that did the work. */
+  /** Returns whether this process was the one that merged. */
   async optimize() {
     if (!this.#enabled || !this.#engine.merges) return false;
     // The scheduler's lock is per-process, so without a shared claim every process on one database merges at once.
@@ -219,13 +197,7 @@ export class SearchIndex {
     }
   }
 
-  /**
-   * Drops a ref's triggers so a bulk import skips the per-row mirror write. Pair with `resume`.
-   *
-   * The hash is cleared here rather than in `resume` alone: a process that dies mid-import never reaches `resume`,
-   * and a boot that finds the hash intact recreates the triggers and skips the backfill, leaving everything
-   * written in between missing from the mirror for good.
-   */
+  /** Pair with `resume`. The hash is cleared here too: a process dying mid-import must not skip the backfill. */
   async suspend(database: DatabaseModel) {
     await this.#owner.setMeta(`${REF_META_PREFIX}${database.refName}`, "");
     await this.#engine.dropModelTriggers(database.refName);
@@ -247,10 +219,8 @@ export class SearchIndex {
   }
 
   /**
-   * One conditional upsert rather than read-then-write inside `transaction()`: that helper detects nesting through
-   * AsyncLocalStorage, so a claim raised from an unrelated async context opens a second `BEGIN IMMEDIATE` on the
-   * same connection and one of the two dies. A single statement is atomic in SQLite and in Postgres, which is all a
-   * claim needs. The token is epoch milliseconds, past what a 32-bit integer holds.
+   * One conditional upsert, not read-then-write in `transaction()`: its AsyncLocalStorage nesting check would open a
+   * second `BEGIN IMMEDIATE` from an unrelated context. The token is epoch ms, past a 32-bit integer.
    */
   async #claimLock(ref: string) {
     const now = Date.now();
@@ -269,11 +239,7 @@ export class SearchIndex {
     return true;
   }
 
-  /**
-   * Extends this process's claim, and reports `false` once someone else holds it. Renew and release both match on
-   * the stored token: an unconditional write would let a process that stalled past the TTL take the claim back
-   * from whoever legitimately replaced it, and then both would reconcile the same ref over each other.
-   */
+  /** Renew and release match the stored token, or a process stalled past the TTL would steal back a replaced claim. */
   async #renewLock(ref: string) {
     const held = this.#claims.get(ref);
     if (!held) return false;
