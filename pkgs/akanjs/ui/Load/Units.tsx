@@ -131,8 +131,7 @@ function Render<RefName extends string, Light extends { id: string }>({
     isQueryEqual(storeGet<object[]>()[namesOfSlice.queryArgsOfModel], initQueryArgs) &&
     storeGet<Date>()[namesOfSlice.modelInitAt].getTime() >= initModelInitAt.getTime();
   if (useCache) loadedQueryArgs.current = initQueryArgs;
-  // Hydration identity is the args, not the mount: one slice store is shared by every route that reads it, and a
-  // route change swaps `init` on the same instance, so a boolean latch would keep rendering the previous args' rows.
+  // Keyed on the args, not the mount: one slice store serves every route, and a route change swaps `init` in place.
   const loaded = !!loadedQueryArgs.current && isQueryEqual(loadedQueryArgs.current, initQueryArgs);
 
   const modelInitList = useMemo<DataList<Light>>(() => {
@@ -164,8 +163,7 @@ function Render<RefName extends string, Light extends { id: string }>({
       [namesOfSlice.pageOfModel]: initPageOfModel,
       [namesOfSlice.lastPageOfModel]: initLastPageOfModel,
       [namesOfSlice.limitOfModel]: initLimitOfModel,
-      // The route rendered one window, so whatever this store accumulated under previous args is not what is
-      // on screen any more.
+      // The route rendered one window, so what the store accumulated under previous args is off screen.
       [namesOfSlice.hasMoreOfModel]: initHasMoreOfModel,
       [namesOfSlice.isCumulativeOfModel]: false,
       [namesOfSlice.queryArgsOfModel]: initQueryArgsOfModel,
@@ -174,13 +172,8 @@ function Render<RefName extends string, Light extends { id: string }>({
     loadedQueryArgs.current = initQueryArgs;
   }, [initSignature]);
 
-  // A no-op on a slice that did not declare `.live()`, which is why it is called without asking first.
-  //
-  // The room follows the store's arguments rather than the ones this route hydrated with: a filter applied
-  // in the browser writes `queryArgsOf<Model><Slice>` and leaves `init` exactly as it was, so keying on `init`
-  // alone left the room subscribed to the unfiltered list while the screen showed a filtered one. Read inside
-  // the effect, because the hydration effect above runs first in the same commit and this render's value is
-  // still the pre-hydration default.
+  // A no-op without `.live()`. Follows the store's args, not `init` (a browser filter changes only the store), read
+  // inside the effect because the hydration effect above runs first in the same commit.
   const queryArgsSignature = JSON.stringify(storeUse[namesOfSlice.queryArgsOfModel]());
   useEffect(() => {
     void storeDo[namesOfSlice.watchLiveModel](storeGet<object[]>()[namesOfSlice.queryArgsOfModel] ?? initQueryArgs);
@@ -215,12 +208,10 @@ function Render<RefName extends string, Light extends { id: string }>({
     },
     onPageSelect: (page: number, option?: { scrollToTop?: boolean }) => {
       void storeDo[namesOfSlice.setPageOfModel](page);
-      // if (scrollToTop) {
       if (option?.scrollToTop !== false) {
         window.parent.postMessage({ type: "pathChange", page }, "*");
         window.scrollTo({ top: 0, behavior: "instant" });
       }
-      // }
     },
     reverse,
   };
