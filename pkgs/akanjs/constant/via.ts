@@ -57,12 +57,11 @@ type ResolvedSchema<ResolveField extends (resolve: FieldResolver) => FieldInfoOb
 type ResolvedFieldObject<ResolveField extends (resolve: FieldResolver) => FieldInfoObject> =
   FieldInfoObjectToFieldObject<ReturnType<ResolveField>>;
 
-const objectModelOf = <T>(
-  inputRef: ConstantCls<T>,
-  fieldMap: FieldInfoObject,
-): ConstantCls<WithBase<T>, FieldObject, WithBase<T>, FieldObject, "object"> => {
-  const fieldObject = Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()]));
-  const applyFieldObject = { ...inputRef[FIELD_META], ...fieldObject };
+const toFieldObject = (fieldMap: FieldInfoObject): FieldObject =>
+  Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()]));
+
+const objectModelOf = <T>(inputRef: ConstantCls<T>, fieldMap: FieldInfoObject) => {
+  const applyFieldObject = { ...inputRef[FIELD_META], ...toFieldObject(fieldMap) };
   const field = Object.assign(ConstantField.getBaseModelField(), applyFieldObject);
   const baseObjectModelRef = getBaseConstantClass(field);
   applyConstantStatics(baseObjectModelRef, applyFieldObject);
@@ -75,16 +74,10 @@ const lightModelOf = <T, F extends keyof OmitBase<T>>(
   fields: readonly F[],
   fieldMap: FieldInfoObject,
   ...libLightModelRefs: ConstantCls[]
-): ConstantCls<
-  Pick<OmitBase<T>, F> & BaseObject,
-  FieldObject,
-  Pick<OmitBase<T>, F> & BaseObject,
-  FieldObject,
-  "light"
-> => {
+) => {
   const libLightModelRef = libLightModelRefs.at(0);
   const applyFieldObject = {
-    ...Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()])),
+    ...toFieldObject(fieldMap),
     ...Object.fromEntries(fields.map((field) => [field, objectRef[FIELD_META][field as string] as ConstantField])),
   };
   const field = Object.assign(libLightModelRef?.[FIELD_META] ?? ConstantField.getBaseModelField(), applyFieldObject);
@@ -106,30 +99,20 @@ const fullModelOf = <A, B = undefined>(
   lightRef: ConstantCls<B>,
   fieldMap: FieldInfoObject,
   ...libFullModelRefs: ConstantCls[]
-): ConstantCls<Merge<A, B>, FieldObject, Merge<A, B>, FieldObject, "full"> => {
+) => {
   const fullRef = libFullModelRefs.at(0) ?? getBaseConstantClass(ConstantField.getBaseModelField());
-  const applyFieldObject = {
-    ...objectRef[FIELD_META],
-    ...lightRef[FIELD_META],
-    ...Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()])),
-  };
+  const applyFieldObject = { ...objectRef[FIELD_META], ...lightRef[FIELD_META], ...toFieldObject(fieldMap) };
   Object.assign(fullRef[FIELD_META], applyFieldObject);
   applyMixins(fullRef, [objectRef, lightRef, ...libFullModelRefs]);
-  libFullModelRefs.forEach((libFullModelRef) => {
-    applyMixins(libFullModelRef, [objectRef, lightRef]);
-  });
-
+  for (const libFullModelRef of libFullModelRefs) applyMixins(libFullModelRef, [objectRef, lightRef]);
   applyConstantStatics(fullRef, applyFieldObject);
   fullRef.modelType = "full";
   return fullRef as unknown as ConstantCls<Merge<A, B>, FieldObject, Merge<A, B>, FieldObject, "full">;
 };
 
-const extendModelInputs = <T extends ConstantCls[]>(
-  fieldMap: FieldInfoObject,
-  ...libInputModelRefs: T
-): ConstantCls<MergeOwnSchemas<T>, FieldObject, MergeOwnSchemas<T>, FieldObject, "input"> => {
+const extendModelInputs = <T extends ConstantCls[]>(fieldMap: FieldInfoObject, ...libInputModelRefs: T) => {
   const baseInputModelRef = libInputModelRefs.at(0);
-  const applyFieldObject = Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()]));
+  const applyFieldObject = toFieldObject(fieldMap);
   const fieldObject = Object.assign(baseInputModelRef?.[FIELD_META] ?? {}, applyFieldObject);
   const baseInputRef = getBaseConstantClass(fieldObject);
   applyConstantStatics(baseInputRef, applyFieldObject);
@@ -146,18 +129,9 @@ const extendModelObjects = <Input, ObjectModels extends ConstantCls[]>(
   inputRef: ConstantCls<Input>,
   fieldMap: FieldInfoObject,
   ...libObjectModelRefs: ObjectModels
-): ConstantCls<
-  MergeWithOwnSchemas<ObjectModels, Input & object>,
-  FieldObject,
-  MergeWithOwnSchemas<ObjectModels, Input & object>,
-  FieldObject,
-  "object"
-> => {
+) => {
   const baseObjectModelRef = libObjectModelRefs.at(0);
-  const applyFieldObject = {
-    ...inputRef[FIELD_META],
-    ...Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()])),
-  };
+  const applyFieldObject = { ...inputRef[FIELD_META], ...toFieldObject(fieldMap) };
   const field = Object.assign(baseObjectModelRef?.[FIELD_META] ?? {}, applyFieldObject);
   const baseInputRef = getBaseConstantClass(field, "object");
   applyConstantStatics(baseInputRef, applyFieldObject);
@@ -173,15 +147,14 @@ const extendModelObjects = <Input, ObjectModels extends ConstantCls[]>(
 const extendModelInsights = <InsightModels extends ConstantCls[]>(
   fieldMap: FieldInfoObject,
   ...insightModelRefs: InsightModels
-): ConstantCls<MergeOwnSchemas<InsightModels>, FieldObject, MergeOwnSchemas<InsightModels>, FieldObject, "insight"> => {
+) => {
   const baseInsightModelRef = insightModelRefs.at(0);
-  const applyFieldObject = Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()]));
+  const applyFieldObject = toFieldObject(fieldMap);
   const field = Object.assign(
     baseInsightModelRef?.[FIELD_META] ?? ConstantField.getBaseInsightField(),
     applyFieldObject,
   );
   const baseInsightRef = getBaseConstantClass(field, "insight");
-
   applyConstantStatics(baseInsightRef, applyFieldObject);
   return baseInsightRef as unknown as ConstantCls<
     MergeOwnSchemas<InsightModels>,
@@ -217,16 +190,8 @@ const getBaseConstantClass = (field: FieldObject, modelType: ConstantType = "sca
   return BaseConstant as unknown as ConstantCls;
 };
 
-const makeBaseScalar = <FieldMap extends FieldInfoObject>(
-  fieldMap: FieldMap,
-): ConstantCls<
-  ExtractFieldInfoObject<FieldMap>,
-  FieldObject,
-  ExtractFieldInfoObject<FieldMap>,
-  FieldObject,
-  "scalar"
-> => {
-  const fieldObject = Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()]));
+const makeBaseScalar = <FieldMap extends FieldInfoObject>(fieldMap: FieldMap) => {
+  const fieldObject = toFieldObject(fieldMap);
   const baseScalarRef = getBaseConstantClass(fieldObject, "scalar");
   applyConstantStatics(baseScalarRef, fieldObject);
   return baseScalarRef as unknown as ConstantCls<
@@ -419,7 +384,7 @@ export type ConstantCls<
   >;
 
 declare global {
-  // dummy type matching for Date, String, Boolean, Map constructors
+  // Lets `Date`, `String`, `Boolean` and `Map` type-check where a constant model class is expected.
   interface DateConstructor extends DatabaseConstantStatics<unknown> {}
   interface StringConstructor extends DatabaseConstantStatics<unknown> {}
   interface BooleanConstructor extends DatabaseConstantStatics<unknown> {}
@@ -427,8 +392,7 @@ declare global {
 }
 
 const applyConstantStatics = <Model>(model: ConstantCls<Model>, fieldMap: FieldObject): ConstantCls<Model> => {
-  // Built on first call, not at class declaration: a `default: () => getEnv()...` thunk needs runtime env, and
-  // `akan build` only imports the module, where that env is not injected yet.
+  // Lazy: a `default: () => getEnv()...` thunk needs the runtime env, which `akan build` has not injected.
   let defaultValue: DefaultOf<Model> | undefined;
   Object.assign(model, {
     purify: makePurify(model),
@@ -450,16 +414,13 @@ const applyConstantStatics = <Model>(model: ConstantCls<Model>, fieldMap: FieldO
   });
   model.text.collect(fieldMap);
   model.cascade.collect(fieldMap);
-  // Over the whole `FIELD_META`, not `fieldMap`: `fullModelOf` extends a lib model's map in place, and a plan or
-  // accessor built from the earlier map would miss the fields the app added.
+  // All of `FIELD_META`, not `fieldMap`: `fullModelOf` extends a lib model's map in place with the app's fields.
   for (const [key, field] of Object.entries(model[FIELD_META]))
     if (isDateSlotField(field.getProps())) Object.defineProperty(model.prototype, key, dateAccessorOf(key));
   HydrationPlan.reset(model);
   return model as unknown as ConstantCls<Model>;
 };
 
-// light via
-/** Builds Akan constant models such as scalar, input, object, light, full, and insight classes. */
 export function via<
   Obj extends BaseObject,
   ObjFieldObj extends FieldObject,
@@ -479,7 +440,6 @@ export function via<
   ...lightModelRefs: LightModels
 ): ConstantCls<_Schema, _FieldObj, _Schema, _FieldObj, "light">;
 
-// base input or scalar via
 export function via<
   BuildField extends (builder: FieldBuilder) => FieldInfoObject,
   _DirectSchema extends object = BuiltSchema<BuildField>,
@@ -488,7 +448,6 @@ export function via<
   buildField: BuildField,
 ): ConstantCls<_DirectSchema, _DirectFieldObj, _DirectSchema, _DirectFieldObj, "input" | "scalar">;
 
-// input via
 export function via<
   BuildField extends (builder: FieldBuilder) => FieldInfoObject,
   FirstInput extends Cls,
@@ -504,7 +463,6 @@ export function via<
   ...extendInputRefs: Inputs
 ): ConstantCls<_Schema, _FieldObj, _Schema, _FieldObj, "input">;
 
-// insight via
 export function via<
   Full extends BaseObject,
   BuildField extends (builder: FieldBuilder) => FieldInfoObject,
@@ -519,7 +477,6 @@ export function via<
   ...extendInsightRefs: Insights
 ): ConstantCls<_Schema, _FieldObj, _Schema, _FieldObj, "insight">;
 
-// object via
 export function via<
   Input,
   InputFieldObj extends FieldObject,
@@ -535,7 +492,6 @@ export function via<
   ...extendObjectRefs: ObjectModels
 ): ConstantCls<_Schema, _FieldObj, _Schema, _FieldObj, "object">;
 
-// full via
 export function via<
   Obj,
   ObjFieldObj extends FieldObject,
@@ -560,7 +516,6 @@ export function via(
   thirdRefOrResolveField?: Cls | ((resolve: FieldResolver) => FieldInfoObject),
   ...extendRefs: Cls[]
 ): any {
-  // input via
   if (
     !firstRefOrBuildField.prototype ||
     !(firstRefOrBuildField as Cls<unknown, { modelType?: ConstantType }>).modelType
@@ -575,7 +530,6 @@ export function via(
     if (!secondRefOrFieldsOrBuildField) return makeBaseScalar(fieldMap);
     else return extendModelInputs(fieldMap, ...extendInputRefs);
   }
-  // light via
   if (Array.isArray(secondRefOrFieldsOrBuildField)) {
     const resolveField = thirdRefOrResolveField as (resolve: FieldResolver) => FieldInfoObject;
     const fieldMap = resolveField(resolve);
@@ -587,14 +541,12 @@ export function via(
     );
   }
 
-  // insight or object via
   if (
     !(secondRefOrFieldsOrBuildField as Cls).prototype ||
     !(secondRefOrFieldsOrBuildField as Cls<unknown, { modelType?: ConstantType }>).modelType
   ) {
     const buildField = secondRefOrFieldsOrBuildField as (builder: FieldBuilder) => FieldInfoObject;
     const fieldMap = buildField(field);
-    // object via
     if (ConstantRegistry.isScalar(firstRefOrBuildField as Cls<unknown, { modelType: ConstantType }>)) {
       if (!thirdRefOrResolveField) return objectModelOf(firstRefOrBuildField as ConstantCls, fieldMap);
       else
@@ -605,7 +557,6 @@ export function via(
           ...(extendRefs as ConstantCls[]),
         );
     }
-    // insight via
     if (ConstantRegistry.isFull(firstRefOrBuildField as Cls<unknown, { modelType: ConstantType }>)) {
       const extendInsightRefs = [
         ...(thirdRefOrResolveField ? [thirdRefOrResolveField as Cls] : []),

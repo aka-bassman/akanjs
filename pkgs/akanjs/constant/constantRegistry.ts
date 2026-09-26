@@ -18,7 +18,6 @@ import {
 } from ".";
 import type { ConstantType, DefaultOf, DocumentModel, QueryOf } from "./types";
 
-/** Runtime registry for Akan constant model metadata, refs, enums, and generated model contracts. */
 export class ConstantRegistry {
   static database = new Map<string, ConstantModel>();
   static scalar = new Map<string, ScalarConstantModel>();
@@ -124,38 +123,14 @@ export class ConstantRegistry {
     lightRef: LightRef,
     insightRef: InsightRef,
     constExports: Record<string, unknown>,
-  ): ConstantModel<
-    T,
-    Input,
-    Obj,
-    Full,
-    Light,
-    Insight,
-    FullFieldObj,
-    Capitalize<T>,
-    DefaultOf<Full>,
-    DefaultOf<Input>,
-    GetStateObject<Full>,
-    GetStateObject<Input>,
-    DefaultOf<Insight>,
-    PurifiedModel<Input>,
-    DocumentModel<Full>,
-    DocumentModel<Input>,
-    QueryOf<DocumentModel<Full>>,
-    GetStateObject<Light>,
-    GetStateObject<Insight>
-  > {
+  ) {
     const modelRefSet = new Set([inputRef, objectRef, fullRef, lightRef, insightRef]);
-    modelRefSet.forEach((modelRef) => {
-      ConstantRegistry.modelRefNameMap.set(modelRef, refName);
-    });
+    for (const modelRef of modelRefSet) ConstantRegistry.modelRefNameMap.set(modelRef, refName);
     inputRef.modelType = "input";
     objectRef.modelType = "object";
     fullRef.modelType = "full";
     lightRef.modelType = "light";
     insightRef.modelType = "insight";
-    type Doc = DocumentModel<Full>;
-    type DocInput = DocumentModel<Input>;
     const cnst: ConstantModel<
       T,
       Input,
@@ -171,8 +146,8 @@ export class ConstantRegistry {
       GetStateObject<Input>,
       DefaultOf<Insight>,
       PurifiedModel<Input>,
-      Doc,
-      DocInput,
+      DocumentModel<Full>,
+      DocumentModel<Input>,
       QueryOf<any>,
       GetStateObject<Light>,
       GetStateObject<Insight>
@@ -202,12 +177,7 @@ export class ConstantRegistry {
       _StateInsight: null as unknown as GetStateObject<Insight>,
     };
     ConstantRegistry.setDatabase(refName, cnst as unknown as ConstantModel);
-    Object.entries(constExports).forEach(([key, value]) => {
-      if ((modelRefSet as Set<unknown>).has(value)) return;
-      else if (typeof value === "function" && isEnum(value as Cls))
-        ConstantRegistry.enum.set(lowerlize(key), value as EnumInstance);
-      else ConstantRegistry.value.set(key, value);
-    });
+    ConstantRegistry.#registerExports(constExports, modelRefSet);
     return cnst;
   }
   static buildScalar<T extends string, Model>(
@@ -224,19 +194,16 @@ export class ConstantRegistry {
       _PurifiedInput: null as unknown as PurifiedModel<Model>,
     };
     ConstantRegistry.setScalar(refName, cnst as unknown as ScalarConstantModel);
-    Object.entries(constExports).forEach(([key, value]) => {
-      if (value === Model) return;
-      else if (typeof value === "function" && isEnum(value as Cls))
+    ConstantRegistry.#registerExports(constExports, new Set([Model]));
+    return cnst;
+  }
+  static #registerExports(constExports: Record<string, unknown>, modelRefs: Set<unknown>) {
+    for (const [key, value] of Object.entries(constExports)) {
+      if (modelRefs.has(value)) continue;
+      if (typeof value === "function" && isEnum(value as Cls))
         ConstantRegistry.enum.set(lowerlize(key), value as EnumInstance);
       else ConstantRegistry.value.set(key, value);
-    });
-    return cnst as unknown as ScalarConstantModel<
-      T,
-      Model,
-      DefaultOf<Model>,
-      DocumentModel<Model>,
-      PurifiedModel<Model>
-    >;
+    }
   }
   static serialize<Value>(modelRef: Cls | Cls[], value: Value, nullable: boolean = false, of?: Cls | Cls[]): Value {
     if (Array.isArray(value) && Array.isArray(modelRef)) {

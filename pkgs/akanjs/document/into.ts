@@ -143,10 +143,7 @@ export const into = <
   cnst: IntoConstantModel<T, _CapitalizedRefName, Raw, Insight>,
   loaderBuilder: _LoaderBuilder,
   ...addMdls: [...AddDbModels]
-): ModelCls<
-  IntoModelActions<T, _CapitalizedRefName, Doc, Raw, Insight, _Query, _Sort, _QueryOfDoc>,
-  ReturnType<_LoaderBuilder>
-> => {
+) => {
   const loaderInfoMap = loaderBuilder(makeLoaderBuilder<Doc>());
   const libsOnSchemaFns = addMdls.map((mdl) => mdl._onSchema);
   const DefaultModel = Object.assign(class DefaultModel {}, {
@@ -159,12 +156,10 @@ export const into = <
     },
   });
   applyMixins(DefaultModel, addMdls);
-  addMdls.forEach((mdl) => {
-    Object.entries(Object.getOwnPropertyDescriptors(mdl)).forEach(([name, descriptor]) => {
-      if (["length", "name", "prototype"].includes(name)) return;
-      Object.defineProperty(DefaultModel, name, { ...descriptor, configurable: true });
-    });
-  });
+  for (const mdl of addMdls)
+    for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(mdl)))
+      if (!["length", "name", "prototype"].includes(name))
+        Object.defineProperty(DefaultModel, name, { ...descriptor, configurable: true });
   return DefaultModel as unknown as ModelCls<
     IntoModelActions<T, _CapitalizedRefName, Doc, Raw, Insight, _Query, _Sort, _QueryOfDoc>,
     ReturnType<_LoaderBuilder>

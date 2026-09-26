@@ -4,10 +4,8 @@ import type { Cls } from "./types";
 
 export type { Dayjs };
 
-/** Shared dayjs factory re-export used by Akan documents, services, stores, and UI. */
 export const dayjs = dayjsLib;
 
-/** Registry that maps Akan primitive scalar names to their runtime scalar classes. */
 export class PrimitiveRegistry {
   static readonly #namePrimitiveMap = new Map<string, typeof PrimitiveScalar>();
   static readonly #primitiveNameMap = new Map<typeof PrimitiveScalar, string>();
@@ -51,10 +49,8 @@ export interface PrimitiveJsonSchema {
 }
 
 /**
- * How an agent — an MCP client or the in-page one — sees a primitive whose stored shape is not the one a model
- * should read or write: `schema` is what it is published as on both sides of a call, and `read` turns a stored or
- * wire value into that shape. There is no `write`, because every argument and every input field already runs
- * through `parseValue`; a primitive that accepts the agent's shape there has taken the write.
+ * How an agent sees a primitive whose stored shape is not the one a model should read: `schema` is its published shape
+ * and `read` maps a stored or wire value into it. No `write`: every input already runs through `parseValue`.
  */
 export interface PrimitiveAgentFace<Value = unknown> {
   schema: PrimitiveJsonSchema;
@@ -71,7 +67,7 @@ export class PrimitiveScalar {
   static [EXAMPLE_VALUE]: unknown = null;
   /** The wire shape, for a primitive the built-in schema table cannot know. Absent, it is published as a string. */
   static jsonSchema?: PrimitiveJsonSchema;
-  /** Absent, an agent sees the wire shape. See `PrimitiveAgentFace`. */
+  /** Absent, an agent sees the wire shape. */
   static agent?: PrimitiveAgentFace;
 
   static validate(value: PrimitiveValue): boolean {
@@ -121,7 +117,7 @@ export class PrimitiveScalar {
   }
 }
 
-/** Integer primitive scalar. Accepts safe integer numbers after parsing. */
+/** Safe integers only. */
 export class Int extends PrimitiveScalar {
   static override refName: "Int" = "Int";
   static override [SERVER_VALUE]: number;
@@ -142,7 +138,7 @@ export class Int extends PrimitiveScalar {
 }
 PrimitiveRegistry.register(Int);
 
-/** Floating point primitive scalar. Accepts finite numbers after parsing. */
+/** Finite numbers only. */
 export class Float extends PrimitiveScalar {
   static override refName: "Float" = "Float";
   static override [SERVER_VALUE]: number;
@@ -163,7 +159,7 @@ export class Float extends PrimitiveScalar {
 }
 PrimitiveRegistry.register(Float);
 
-/** 24-character hexadecimal id primitive used by Akan document and signal models. */
+/** 24 hexadecimal characters. */
 export class ID extends PrimitiveScalar {
   static override refName: "ID" = "ID";
   static override [SERVER_VALUE]: string;
@@ -190,7 +186,7 @@ export class ID extends PrimitiveScalar {
 }
 PrimitiveRegistry.register(ID);
 
-/** Open object primitive for intentionally flexible payloads or metadata blobs. */
+/** An intentionally open payload. */
 export class Any extends PrimitiveScalar {
   static override refName: "Any" = "Any";
   static override [DEFAULT_VALUE]: object | null = null;
@@ -297,34 +293,20 @@ declare global {
   }
 }
 
+const isBlankOrInvalid = (refName: string, value: PrimitiveValue) =>
+  value === "" ||
+  (refName === "Date" && typeof value === "string" && Number.isNaN(new Date(value).getTime())) ||
+  (refName === "Date" && value instanceof Date && Number.isNaN(value.getTime())) ||
+  (!!value && typeof value === "object" && "isValid" in value && !(value as { isValid: () => boolean }).isValid());
+
 const scalarPrimitiveStatics = {
-  _parse(
-    this: typeof PrimitiveScalar,
-    input: PrimitiveValue,
-    { optional = false }: { optional?: boolean } = {},
-  ): PrimitiveValue {
-    if (optional && (input === null || input === undefined)) return undefined;
-    const value = this.parseValue(input);
-    this._checkValue(value, { optional });
-    return value;
-  },
+  _parse: PrimitiveScalar._parse,
   _serialize(
     this: typeof PrimitiveScalar,
     value: PrimitiveValue,
     { optional = false }: { optional?: boolean } = {},
   ): PrimitiveValue {
-    if (optional && value === "") return undefined;
-    if (this.refName === "Date" && optional && typeof value === "string" && Number.isNaN(new Date(value).getTime()))
-      return undefined;
-    if (this.refName === "Date" && optional && value instanceof Date && Number.isNaN(value.getTime())) return undefined;
-    if (
-      optional &&
-      value &&
-      typeof value === "object" &&
-      "isValid" in value &&
-      !(value as { isValid: () => boolean }).isValid()
-    )
-      return undefined;
+    if (optional && isBlankOrInvalid(this.refName, value)) return undefined;
     this._checkValue(value, { optional });
     if (value === null || value === undefined) return undefined;
     return this.serializeValue(value);
@@ -338,23 +320,11 @@ const scalarPrimitiveStatics = {
       if (optional) return;
       else throw new Error(`Required ${this.refName} value: ${value}`);
     }
-    if (optional && value === "") return;
-    if (this.refName === "Date" && optional && typeof value === "string" && Number.isNaN(new Date(value).getTime()))
-      return;
-    if (this.refName === "Date" && optional && value instanceof Date && Number.isNaN(value.getTime())) return;
-    if (
-      optional &&
-      value &&
-      typeof value === "object" &&
-      "isValid" in value &&
-      !(value as { isValid: () => boolean }).isValid()
-    )
-      return;
+    if (optional && isBlankOrInvalid(this.refName, value)) return;
     if (!this.validate(value)) throw new Error(`Invalid ${this.refName} value: ${value}`);
   },
 };
 
-// String
 Object.assign(String, scalarPrimitiveStatics, {
   refName: "String",
   [DEFAULT_VALUE]: "",
@@ -371,7 +341,6 @@ Object.assign(String, scalarPrimitiveStatics, {
 });
 PrimitiveRegistry.register(String);
 
-// Boolean
 // Query strings, path params, and FormData fields arrive as text, so the wire spellings normalize here.
 const normalizeBooleanPrimitiveValue = (value: boolean | number | string): boolean | null => {
   if (typeof value === "boolean") return value;
@@ -401,7 +370,6 @@ Object.assign(Boolean, {
 });
 PrimitiveRegistry.register(Boolean);
 
-// Date
 Object.assign(Date, {
   ...scalarPrimitiveStatics,
   refName: "Date",

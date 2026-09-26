@@ -4,11 +4,7 @@ export interface EventStreamOptions {
   keepAliveChunk?: string;
 }
 
-/**
- * One `text/event-stream` response. `write` frames a JSON `data:` event, with an `id:` when the caller has one
- * so a client can resume with `Last-Event-ID`; `retry` tells it how long to wait before doing so. A keep-alive
- * comment goes out on an interval below common proxy idle timeouts, so a quiet stream is not reaped mid-life.
- */
+// The keep-alive interval stays below common proxy idle timeouts so a quiet stream is not reaped.
 export class EventStream {
   static readonly defaultKeepAliveMs = 15_000;
 
@@ -44,8 +40,7 @@ export class EventStream {
     return new Response(this.#stream, {
       headers: {
         "content-type": "text/event-stream",
-        // `no-transform` and the nginx hint together stop an intermediary from buffering the stream into one
-        // response, which would deliver every event at the moment the work already finished.
+        // `no-transform` and the nginx hint stop an intermediary from buffering the stream into one response.
         "cache-control": "no-cache, no-transform",
         connection: "keep-alive",
         "x-accel-buffering": "no",
@@ -73,8 +68,7 @@ export class EventStream {
     try {
       controller?.close();
     } catch {
-      // The same race `#enqueue` guards, and closing loses it the same way: the client went away between the
-      // cancel callback and this call. Nothing is left to close, and nobody is left to tell.
+      // The client went away between the cancel callback and this call.
     }
   }
 
@@ -83,7 +77,7 @@ export class EventStream {
     try {
       this.#controller.enqueue(this.#encoder.encode(chunk));
     } catch {
-      // The client went away between the cancel callback and this write. There is nobody left to tell.
+      // The client went away between the cancel callback and this write.
       this.#stopKeepAlive();
       this.#controller = null;
     }

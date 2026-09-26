@@ -81,7 +81,7 @@ type RoutePrefixOverride = { api?: string; ws?: string };
 
 const globalWithPrefix = globalThis as typeof globalThis & { __AKAN_PREFIX__?: RoutePrefixOverride };
 
-/** Leading slash, no trailing slash. A blank value — or a bare `/`, which would swallow every page route — is no prefix at all and falls through to the next source. */
+/** Leading slash, no trailing slash; a blank value or a bare `/` (it would swallow every page route) is no prefix. */
 export const normalizeRoutePrefix = (value: string | undefined | null): string | undefined => {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
@@ -90,12 +90,9 @@ export const normalizeRoutePrefix = (value: string | undefined | null): string |
 };
 
 /**
- * Three sources, narrowest first. The global is what a server-rendered page's bootstrap script writes, so the
- * browser follows the process that rendered it. `AKAN_API_PREFIX` is deliberately outside the `AKAN_PUBLIC_*`
- * namespace: only that namespace is inlined into client bundles at build time, so a name inside it could never
- * act as a runtime override. `AKAN_PUBLIC_API_PREFIX` is the build-time default, and the only one a prebuilt CSR
- * or mobile bundle can read. Written out rather than looked up by key — a computed `process.env[...]` is opaque
- * to the bundler's define pass, and the public value would stop being inlined.
+ * Narrowest first: the SSR bootstrap global, then `AKAN_API_PREFIX` (outside `AKAN_PUBLIC_*`, which is inlined at build
+ * time, so it can override at runtime), then the build-time default. Written out: a computed `process.env[...]` escapes
+ * the bundler's define pass.
  */
 export const getApiPrefix = (): string =>
   normalizeRoutePrefix(globalWithPrefix.__AKAN_PREFIX__?.api) ??
@@ -117,7 +114,7 @@ export const resetEnvCache = () => {
 const missingPublicEnv = (key: string) =>
   `getEnv() cannot run at build time: akan build does not inject ${key}. Call it from a runtime function instead of at module scope (e.g. env(() => getEnv()) in adapt(), a method body, or a default thunk).`;
 
-/** Reads and caches Akan runtime environment values from process/browser environment settings. */
+/** Cached after the first call. */
 export const getEnv = (): ClientEnv => {
   if (cachedEnv) return cachedEnv;
   const appName = process.env.AKAN_PUBLIC_APP_NAME ?? "unknown";
@@ -173,10 +170,8 @@ export const getEnv = (): ClientEnv => {
           ? (window.location.host.split(":")[0] ?? "unknown")
           : "localhost");
 
-  // A server-side origin that resolved to `localhost` is this process calling itself over the loopback, so the
-  // port has to be the one it actually bound: `AkanApp` binds `PORT`, and a container run with `PORT=80` left the
-  // 8282 default pointing at nothing — every SSR/RSC fetch then failed with `base.error.serverUnreachable`. A
-  // `SERVER_HOST` naming another host is not a self-call, so it keeps the explicit port.
+  // A `localhost` server origin is this process calling itself, so it must use the port `AkanApp` bound (`PORT`); a
+  // `SERVER_HOST` naming another host is not a self-call and keeps the explicit port.
   const selfServerPort = serverHost === "localhost" ? process.env.PORT : undefined;
   const serverPort =
     side === "server"

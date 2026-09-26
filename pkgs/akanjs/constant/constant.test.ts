@@ -198,6 +198,16 @@ type _UnknownModelAssertions = [
 const validUserId = "1234567890abcdef12345678";
 const validChildId = "abcdefabcdefabcdefabcdef";
 const complexInput = (input: Record<string, unknown>) => input as never;
+const complexOf = (cube: number[][][][]) =>
+  new ComplexInput(
+    complexInput({
+      settings: { theme: "dark" },
+      cube,
+      addressCube: [[[{ city: "Seoul", coordinate: { lat: 37, lng: 127 } }]]],
+      primaryAddress: { city: "Jeju", coordinate: { lat: 33, lng: 126 } },
+      addressBook: { home: { city: "Seoul", coordinate: { lat: 37, lng: 127 } } },
+    }),
+  );
 
 const createUser = () =>
   new UserFull({
@@ -479,17 +489,7 @@ describe("serialize, deserialize, purify, and immerify", () => {
   });
 
   test("serializes and deserializes complex schema shapes", () => {
-    const complex = new ComplexInput(
-      complexInput({
-        settings: { theme: "dark" } as never,
-        cube: [[[[1, 2, 3]]]],
-        addressCube: [[[{ city: "Seoul", coordinate: { lat: 37, lng: 127 } }]]],
-        primaryAddress: { city: "Jeju", coordinate: { lat: 33, lng: 126 } },
-        addressBook: {
-          home: { city: "Seoul", coordinate: { lat: 37, lng: 127 } },
-        } as never,
-      }),
-    );
+    const complex = complexOf([[[[1, 2, 3]]]]);
 
     const serialized = serialize(ComplexInput, 0, complex, "object", {});
 
@@ -589,17 +589,7 @@ describe("serialize, deserialize, purify, and immerify", () => {
   });
 
   test("purifies complex schema shapes", () => {
-    const complex = new ComplexInput(
-      complexInput({
-        settings: { theme: "dark" } as never,
-        cube: [[[[1]]]],
-        addressCube: [[[{ city: "Seoul", coordinate: { lat: 37, lng: 127 } }]]],
-        primaryAddress: { city: "Jeju", coordinate: { lat: 33, lng: 126 } },
-        addressBook: {
-          home: { city: "Seoul", coordinate: { lat: 37, lng: 127 } },
-        } as never,
-      }),
-    );
+    const complex = complexOf([[[[1]]]]);
 
     expect(ComplexInput.purify(complex)).toMatchObject({
       settings: { theme: "dark" },

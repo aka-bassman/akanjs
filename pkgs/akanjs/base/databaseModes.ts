@@ -9,7 +9,7 @@ export interface DatabaseModeRequest {
   local: boolean;
 }
 
-/** The database modes, what each runs on, and how a process settles on one. The CLI and the server share it. */
+/** Shared by the CLI and the server. */
 export class DatabaseModes {
   static readonly all = ["single", "multiple", "cluster"] as const satisfies readonly DatabaseMode[];
   /** Packages a mode imports at runtime. A build carries them for every mode the app declares. */
@@ -44,9 +44,8 @@ export class DatabaseModes {
   }
 
   /**
-   * The mode this process runs in, or the reason it cannot pick one. A deployment that names no mode when the build
-   * carries several fails rather than falling back: the fallback would be a SQLite file inside each container, which a
-   * cluster deployment would find out about only once its instances disagreed.
+   * Throws when a build carrying several modes names none: the fallback would be a SQLite file in each container,
+   * which a cluster deployment would discover only once its instances disagreed.
    */
   static resolve({ requested, declared, local }: DatabaseModeRequest): DatabaseMode {
     const modes = declared?.trim() ? DatabaseModes.parseList(declared, "AKAN_DATABASE_MODES") : null;

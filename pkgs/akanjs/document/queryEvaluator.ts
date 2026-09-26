@@ -9,11 +9,8 @@ import {
 } from "./documentQuery";
 
 /**
- * A document as the database stores it: base columns as written, everything else inside one JSON payload.
- *
- * Membership is evaluated against this rather than against a hydrated model because that is what the SQL the
- * evaluator has to agree with actually reads. A hydrated instance has already had defaults filled, dates turned
- * back into `Dayjs`, and absent optional keys materialized as `undefined` — every one of which changes an answer.
+ * A document as stored: base columns plus one JSON payload. Evaluated against this, not a hydrated model, whose filled
+ * defaults, `Dayjs` dates and materialized `undefined` keys would each change an answer the SQL gives.
  */
 export interface DocumentRowView {
   id: unknown;
@@ -36,13 +33,8 @@ interface PathValue {
 }
 
 /**
- * Answers "does this document match this query" in memory, reproducing what the SQL compiler would have asked the
- * database. Live sync routes a change to the rooms whose query it belongs to, and asking the database once per room
- * is not a thing that can be afforded on a write path.
- *
- * Every rule here mirrors a specific SQLite behaviour rather than a reasonable JavaScript reading of the same
- * operator, because the only property that matters is agreeing with `QueryCompiler` — a disagreement shows up as a
- * list that is quietly wrong, never as an error. `queryEvaluator.parity.test.ts` asks both and compares.
+ * Answers "does this document match this query" in memory for live sync, mirroring SQLite rather than JavaScript: a
+ * disagreement with `QueryCompiler` is a quietly wrong list, never an error (`queryEvaluator.parity.test.ts`).
  */
 export class DocumentQueryEvaluator {
   readonly #fields: QueryFieldMap;
@@ -52,17 +44,8 @@ export class DocumentQueryEvaluator {
   }
 
   /**
-   * Why this query cannot be evaluated in memory, or null when it can.
-   *
-   * Three things are genuinely out of reach. `raw` carries SQL only the database can run, and `search` compiles to
-   * an fts5 JOIN whose bm25 ranking has no in-memory equivalent. `exists`/`missing` on a `_doc` field ask whether
-   * the key is in the stored JSON at all, and a document read back has already had every declared nullable field
-   * materialized as `null` (`SqlDocumentStore.decodeDocumentPayload`) — so a value in hand cannot tell an absent
-   * key from a stored null, and answering anyway would be wrong for exactly the rows the operator exists to find.
-   * `empty` covers both cases and is evaluable, which is the operator the guide already directs callers to.
-   *
-   * Callers decide what to do about it — this reports, it does not throw, because refusing a boot is a policy the
-   * signal layer owns.
+   * Why a query cannot be evaluated in memory, or null: `raw` SQL, an fts5 `search`, or `exists`/`missing` on a
+   * `_doc` field (a read-back document has its nullable fields materialized as `null`). Refusing is the signal's call.
    */
   static unevaluableReason(query: DocumentQuery | undefined): string | null {
     if (!query || typeof query !== "object") return null;
@@ -99,17 +82,12 @@ export class DocumentQueryEvaluator {
   }
 
   /** Splits a saved document into the row shape above, mirroring `SqlDocumentStore.toRow`. */
-  static rowViewOf(doc: Record<string, unknown>): DocumentRowView {
-    const payload = { ...doc };
-    delete payload.id;
-    delete payload.createdAt;
-    delete payload.updatedAt;
-    delete payload.removedAt;
+  static rowViewOf({ id, createdAt, updatedAt, removedAt, ...payload }: Record<string, unknown>): DocumentRowView {
     return {
-      id: doc.id ?? null,
-      createdAt: doc.createdAt === undefined ? null : Number(encodeDocumentValue(doc.createdAt)),
-      updatedAt: doc.updatedAt === undefined ? null : Number(encodeDocumentValue(doc.updatedAt)),
-      removedAt: doc.removedAt ? Number(encodeDocumentValue(doc.removedAt)) : null,
+      id: id ?? null,
+      createdAt: createdAt === undefined ? null : Number(encodeDocumentValue(createdAt)),
+      updatedAt: updatedAt === undefined ? null : Number(encodeDocumentValue(updatedAt)),
+      removedAt: removedAt ? Number(encodeDocumentValue(removedAt)) : null,
       doc: (sanitizeJson(payload) ?? {}) as Record<string, unknown>,
     };
   }
@@ -283,11 +261,8 @@ export class DocumentQueryEvaluator {
     return DocumentQueryEvaluator.#compare(value, DocumentQueryEvaluator.#encode(operand)) === 0;
   }
 
-  /**
-   * SQLite's ordering: NULL sorts below every number, which sorts below every text. Comparing across those classes
-   * is never equal, so a query on a field holding the wrong type matches nothing rather than coercing its way to a
-   * match the way JavaScript's `<` would.
-   */
+  // SQLite's ordering: NULL < every number < every text, and classes never compare equal, so a wrong type matches
+  // nothing rather than coercing its way to a match like JavaScript's `<`.
   static #compare(left: unknown, right: unknown): number | null {
     const leftClass = DocumentQueryEvaluator.#classOf(left);
     const rightClass = DocumentQueryEvaluator.#classOf(right);
@@ -304,10 +279,8 @@ export class DocumentQueryEvaluator {
     return 2;
   }
 
-  /**
-   * By code point, which is exactly UTF-8 byte order and therefore SQLite's BINARY collation. JavaScript's own `<`
-   * compares UTF-16 code units, which puts supplementary-plane characters below U+E000 instead of above it.
-   */
+  // By code point, i.e. UTF-8 byte order and SQLite's BINARY collation; JavaScript's `<` compares UTF-16 code units,
+  // which puts supplementary-plane characters below U+E000.
   static #compareText(left: string, right: string): number {
     const leftPoints = [...left];
     const rightPoints = [...right];

@@ -1,14 +1,6 @@
-type Indexable = Record<string, unknown>;
+import { isIndexable } from "./objectPath";
 
-const isIndexable = (value: unknown): value is Indexable => Object(value) === value;
-
-/**
- * Reads a dotted path whose segments may themselves contain the separator.
- *
- * Dictionary keys are built as `<refName>.<value>` and an enum value is a real-world identifier — `gpt-5.6-terra`,
- * `v1.2` — so the key is not a clean dotted path and `pathGet` splits it into segments that were never nodes.
- * The tree stores such a key literally, so resolution has to try joined prefixes too.
- */
+/** Also tries joined prefixes, for keys whose segments contain the separator (an enum value like `gpt-5.6-terra`). */
 export const pathGetLoose = (
   path: string | readonly string[],
   obj: unknown,

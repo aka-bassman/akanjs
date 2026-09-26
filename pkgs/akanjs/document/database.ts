@@ -62,11 +62,7 @@ export class CacheDatabase<T = unknown> {
     return await this.cache.hincr(this.refName, `${topic}:${key}`, subKey, by, option);
   }
 }
-/**
- * What `update<Filter>` returns. The patch cannot be a trailing parameter — a filter's own args may be optional,
- * and no tuple type puts a required element after those — and leading it reads backwards. So it lands here, on a
- * terminal `.set()` that mirrors the `UPDATE … SET …` it compiles to.
- */
+/** What `update<Filter>` returns: the patch cannot trail a filter's optional args, so it lands on `.set()`. */
 export interface UpdateChain<Doc = any> {
   set(update: DocumentUpdateInput<Doc>): Promise<UpdateResult>;
 }
@@ -135,14 +131,14 @@ export type QueryMethodPart<
   _ListQueryOption = ListQueryOption<Sort, Obj>,
   _QueryOfDoc = QueryOf<Doc>,
 > = MergedValues<QueryMethodMap<Query, Doc, Insight, _FindQueryOption, _ListQueryOption, _QueryOfDoc>>;
-type DatabaseModelWithQuerySort<
-  T extends string,
-  Input,
-  Doc,
-  Obj,
-  Insight,
-  Query,
-  Sort,
+export type DatabaseInstanceWithQuerySort<
+  T extends string = string,
+  Input = any,
+  Doc = any,
+  Obj = any,
+  Insight = any,
+  Query = ExtractQuery<FilterInstance>,
+  Sort = ExtractSort<FilterInstance>,
   _CapitalizedRefName extends string = Capitalize<T>,
   _QueryOfDoc = QueryOf<Doc>,
   _DocumentObj = DocumentModel<Obj>,
@@ -201,36 +197,6 @@ type DatabaseModelWithQuerySort<
 } & {
   [K in `remove${_CapitalizedRefName}`]: (id: string) => Promise<Doc>;
 } & QueryMethodPart<Query, Sort, Obj, Doc, Insight, _FindQueryOption, _ListQueryOption, _QueryOfDoc>;
-
-export type DatabaseInstanceWithQuerySort<
-  T extends string = string,
-  Input = any,
-  Doc = any,
-  Obj = any,
-  Insight = any,
-  Query = ExtractQuery<FilterInstance>,
-  Sort = ExtractSort<FilterInstance>,
-  _CapitalizedRefName extends string = Capitalize<T>,
-  _QueryOfDoc = QueryOf<Doc>,
-  _DocumentObj = DocumentModel<Obj>,
-  _DataInput = DataInputOf<Input, _DocumentObj>,
-  _FindQueryOption = FindQueryOption<Sort, Obj>,
-  _ListQueryOption = ListQueryOption<Sort, Obj>,
-> = DatabaseModelWithQuerySort<
-  T,
-  Input,
-  Doc,
-  Obj,
-  Insight,
-  Query,
-  Sort,
-  _CapitalizedRefName,
-  _QueryOfDoc,
-  _DocumentObj,
-  _DataInput,
-  _FindQueryOption,
-  _ListQueryOption
->;
 
 export type DatabaseInstance<
   T extends string = string,

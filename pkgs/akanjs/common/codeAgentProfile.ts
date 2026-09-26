@@ -1,35 +1,21 @@
-/**
- * What a code agent is allowed to be, as one value.
- *
- * The profile is read by both the host and the core, so it lives here rather than in the CLI. Most of it is
- * applied at **assembly time** — a tool outside `tools` is never constructed, so the model cannot call it and
- * it costs no prompt tokens either. The runtime hooks (`approval`, `paths`, `limits`) are the second gate, for
- * the things assembly cannot decide in advance.
- */
+// `tools` applies at assembly time (an unlisted tool is never built); `approval`, `paths`, `limits` gate at runtime.
 
 export type CodeAgentBuiltinTool = "read" | "write" | "edit" | "ls" | "grep" | "find" | "bash";
 
-/** `never` trusts the environment, `all` trusts nothing. The middle two are the useful ones. */
+/** `never` trusts the environment, `all` trusts nothing. */
 export type CodeAgentApprovalPolicy = "never" | "writes" | "commands" | "all";
 
-/**
- * How the core behaves while a human is being asked something.
- *
- * `await` holds the turn open until the answer arrives. `suspend` resolves the request with a sentinel, ends the
- * turn, and expects the host to reopen one carrying the answer — which is the only form that survives a process
- * restart and does not hold a shared workspace for the minutes or days a person may take to answer.
- */
+/** `await` holds the turn open; `suspend` ends it and the host reopens one carrying the answer (survives a restart). */
 export type CodeAgentInteractionMode = "await" | "suspend";
 
 export interface CodeAgentModelInfo {
   id: string;
   name: string;
   contextWindow?: number;
-  /** Whether this is the one the session is running on, which a listing has to mark rather than repeat. */
+  /** The model the session is running on. */
   current: boolean;
 }
 
-/** One provider of the model catalogue, and whether a credential for it has been configured. */
 export interface CodeAgentProviderInfo {
   id: string;
   name: string;
@@ -45,43 +31,24 @@ export interface CodeAgentMcpServerRef {
   args?: string[];
   url?: string;
   env?: Record<string, string>;
-  /** Sent on every http request. A server behind a static token needs nothing else. */
   headers?: Record<string, string>;
-  /**
-   * What to use when the server answers `401` and asks for OAuth.
-   *
-   * Everything here is optional because the spec is discoverable: the challenge names the resource metadata,
-   * that names the authorization server, and most hosted servers register a client on demand. It is for the
-   * ones that do not — a provider issuing client ids by hand, or one whose scopes cannot be guessed.
-   */
+  /** For a server that answers `401` and whose OAuth client or scopes cannot be discovered. */
   oauth?: { clientId?: string; clientSecret?: string; scope?: string };
 }
 
-/**
- * Where a server stands with its credential.
- *
- * `required` is not a failure: it is a server that answered correctly and said who may talk to it. Reporting
- * it as unreachable would send someone to debug a server that is working exactly as designed.
- */
+/** `required` is not a failure: the server answered correctly and said who may talk to it. */
 export type CodeAgentMcpAuthState = "none" | "authorized" | "required";
 
-/**
- * One declared MCP server, as the session found it.
- *
- * A server that answered and one that was never reachable are both here: an integration that is silently
- * absent is indistinguishable from one the model simply chose not to use, and the tool names are the only
- * evidence of which of the two happened.
- */
+/** One declared MCP server; one that was never reachable is listed too, with its `error`. */
 export interface CodeAgentMcpStatus {
   name: string;
   transport: "stdio" | "http";
-  /** The command line or the url — what tells two entries of the same shape apart without opening the file. */
+  /** The command line or the url. */
   target: string;
   /** Published tool names, already prefixed with the server the way the model sees them. */
   tools: string[];
   /** Why it published none, when it published none. */
   error?: string;
-  /** Whether a credential was needed, and whether one was held. */
   auth?: CodeAgentMcpAuthState;
 }
 
@@ -98,10 +65,7 @@ export interface CodeAgentProfile {
     builtin: CodeAgentBuiltinTool[];
     /** Workflow, context and self-verification tools built on devkit. */
     akan: boolean;
-    /**
-     * `"off"` reaches no server at all. An array turns discovery on: the workspace's `.akan/code/mcp.json`
-     * plus whatever the array names, so the common case is an empty array.
-     */
+    /** `"off"` reaches no server; an array discovers `.akan/code/mcp.json` plus the servers it names. */
     mcp: "off" | CodeAgentMcpServerRef[];
     subagent: false | CodeAgentSubagentBudget;
     web: { fetch: boolean; search: boolean };
@@ -111,7 +75,6 @@ export interface CodeAgentProfile {
   session: { store: "file" | "memory" | "remote"; crossSession: boolean };
   interaction: { question: CodeAgentInteractionMode; approval: CodeAgentInteractionMode };
   network: { allowHosts?: string[]; proxyBaseUrl?: string };
-  /** Whether the host can answer a question at all. A pod has nobody in front of it. */
   ui: { canPrompt: boolean };
   limits: {
     turnMs: number;
@@ -121,20 +84,14 @@ export interface CodeAgentProfile {
     feedback: number;
   };
   context: {
-    /** The repo's `AGENTS.md` is ~26k tokens; a read-only reviewer does not need it. */
+    /** Whether the repo's `AGENTS.md` is loaded. */
     projectFiles: boolean;
-    /**
-     * The akan skill set — the scaffolding chain, the store surface, the validation loop.
-     *
-     * Only each skill's one-line description sits in the window; the body is read when a task matches. That
-     * makes it the cheapest context of the three, and the most valuable to a profile carrying no `AGENTS.md`.
-     */
+    /** The akan skill set: only each skill's one-line description sits in the window until a task matches. */
     skills: boolean;
   };
 }
 
 const allBuiltins: CodeAgentBuiltinTool[] = ["read", "write", "edit", "ls", "grep", "find", "bash"];
-/** The builtins that cannot change anything, which is what a profile is narrowed to when it must not. */
 export const codeAgentReadOnlyBuiltins: CodeAgentBuiltinTool[] = ["read", "ls", "grep", "find"];
 
 const baseLimits = { turnMs: 900_000, toolOutputBytes: 200_000, contextTokens: 0, feedback: 2 };
@@ -161,11 +118,7 @@ export const codeAgentPresets = {
     limits: baseLimits,
     context: { projectFiles: true, skills: true },
   }),
-  /**
-   * An isolated container. Everything is on because the container is the boundary, but nobody is watching it:
-   * a question that waits for an answer would hang the pod, so both interactions suspend. MCP is off because
-   * a pod's egress goes through a proxy and a stdio server started inside it is a process nobody vetted.
-   */
+  // Nobody watches a pod, so both interactions suspend; MCP is off because a stdio server started inside is unvetted.
   pod: (root: string): CodeAgentProfile => ({
     name: "pod",
     tools: {
@@ -184,7 +137,6 @@ export const codeAgentPresets = {
     limits: baseLimits,
     context: { projectFiles: true, skills: true },
   }),
-  /** A reviewer reads the repo and nothing else, so it reaches no external service. */
   review: (root: string): CodeAgentProfile => ({
     name: "review",
     tools: {
@@ -203,7 +155,6 @@ export const codeAgentPresets = {
     limits: baseLimits,
     context: { projectFiles: false, skills: true },
   }),
-  /** Isolation and approval are different axes: a pod is safe and its user may still want to be asked. */
   web: (root: string): CodeAgentProfile => ({
     name: "web",
     tools: {

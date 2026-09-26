@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { websocketBinaryFrameContract } from "./websocketBinaryFrame";
+import { websocketBinaryFrameContract } from "./websocketContract";
 
 describe("websocketBinaryFrameContract", () => {
   test("round-trips a room and its payload", () => {
