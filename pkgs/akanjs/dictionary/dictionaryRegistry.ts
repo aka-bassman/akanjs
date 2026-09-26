@@ -1,6 +1,6 @@
 import { parseAkanI18nEnv } from "akanjs/common";
 
-import { ModelDictInfo, ScalarDictInfo, ServiceDictInfo } from "./dictInfo";
+import { ModelDictInfo, ScalarDictInfo } from "./dictInfo";
 import type { DictModule } from "./locale";
 import type { DictionaryNode, RootDictionary } from "./trans";
 
@@ -26,21 +26,18 @@ export class DictionaryRegistry {
   /** Registration order is base → libs → app, matching `makeDictionary`, so a later root wins on conflict. */
   static register(root: RootDictionary, transMap: Record<string, DictModule<string, string>>) {
     DictionaryRegistry.#roots.push(root);
-    Object.entries(transMap).forEach(([refName, trans]) => {
+    for (const [refName, trans] of Object.entries(transMap))
       DictionaryRegistry.#modules.set(refName, {
         kind: DictionaryRegistry.#resolveKind(trans),
         languages: [...((trans.dict as { languages?: string[] }).languages ?? [])],
       });
-    });
   }
 
   static getRoot(): RootDictionary {
     const merged = {} as RootDictionary;
-    DictionaryRegistry.#roots.forEach((root) => {
-      Object.entries(root).forEach(([language, models]) => {
+    for (const root of DictionaryRegistry.#roots)
+      for (const [language, models] of Object.entries(root))
         merged[language] = { ...(merged[language] ?? {}), ...models };
-      });
-    });
     return merged;
   }
 
@@ -67,11 +64,8 @@ export class DictionaryRegistry {
   /** Flattened dotted paths of every leaf translation, e.g. `"user.signal.createUser.arg.data"`. */
   static getKeys(root: RootDictionary = DictionaryRegistry.getRoot()): string[] {
     const keys = new Set<string>();
-    Object.values(root).forEach((models) => {
-      Object.entries(models).forEach(([refName, node]) => {
-        DictionaryRegistry.#collectKeys(refName, node, keys);
-      });
-    });
+    for (const models of Object.values(root))
+      for (const [refName, node] of Object.entries(models)) DictionaryRegistry.#collectKeys(refName, node, keys);
     return [...keys].sort();
   }
 
@@ -96,7 +90,6 @@ export class DictionaryRegistry {
   static #resolveKind(trans: DictModule<string, string>): DictionaryModuleKind {
     if (trans.dict instanceof ModelDictInfo) return "model";
     if (trans.dict instanceof ScalarDictInfo) return "scalar";
-    if (trans.dict instanceof ServiceDictInfo) return "service";
     return "service";
   }
 }

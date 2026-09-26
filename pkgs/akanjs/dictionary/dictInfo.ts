@@ -232,11 +232,7 @@ export class ModelDictInfo<
       [K in Exclude<keyof GetStateObject<Model>, ModelKey>]: FieldTranslation<Languages>;
     },
   ) {
-    Object.assign(
-      this.modelDictionary,
-      translate(FieldTranslation.translate),
-      ModelDictInfo.baseModelDictionary,
-    ) as unknown as { [K in ModelKey]: FieldTranslation<Languages> };
+    Object.assign(this.modelDictionary, translate(FieldTranslation.translate), ModelDictInfo.baseModelDictionary);
     return this as unknown as ModelDictInfo<
       Languages,
       keyof GetStateObject<Model> & string,
@@ -256,11 +252,7 @@ export class ModelDictInfo<
       [K in Exclude<keyof GetStateObject<Insight>, InsightKey>]: FieldTranslation<Languages>;
     },
   ) {
-    Object.assign(
-      this.insightDictionary,
-      translate(FieldTranslation.translate),
-      ModelDictInfo.baseInsightDictionary,
-    ) as unknown as { [K in InsightKey]: FieldTranslation<Languages> };
+    Object.assign(this.insightDictionary, translate(FieldTranslation.translate), ModelDictInfo.baseInsightDictionary);
     return this as unknown as ModelDictInfo<
       Languages,
       ModelKey,
@@ -283,9 +275,7 @@ export class ModelDictInfo<
       >;
     },
   ) {
-    Object.assign(this.queryDictionary, translate(fn), ModelDictInfo.baseQueryDictionary) as unknown as {
-      [K in keyof DictFilterQuery<Filter>]: FunctionTranslation<Languages, DictArgNames<DictFilterQuery<Filter>[K]>>;
-    };
+    Object.assign(this.queryDictionary, translate(fn), ModelDictInfo.baseQueryDictionary);
     return this as unknown as ModelDictInfo<
       Languages,
       ModelKey,
@@ -305,11 +295,7 @@ export class ModelDictInfo<
       [K in Exclude<keyof DictFilterSort<Filter>, SortKey>]: FieldTranslation<Languages>;
     },
   ) {
-    Object.assign(
-      this.sortDictionary,
-      translate(FieldTranslation.translate),
-      ModelDictInfo.baseSortDictionary,
-    ) as unknown as { [K in SortKey]: FieldTranslation<Languages> };
+    Object.assign(this.sortDictionary, translate(FieldTranslation.translate), ModelDictInfo.baseSortDictionary);
     return this as unknown as ModelDictInfo<
       Languages,
       ModelKey,
@@ -356,9 +342,7 @@ export class ModelDictInfo<
       >;
     },
   ) {
-    Object.assign(this.sliceDictionary, translate(fn), ModelDictInfo.baseSliceDictionary) as unknown as {
-      [K in keyof DictSliceShape<Slice>]: FunctionTranslation<Languages>;
-    };
+    Object.assign(this.sliceDictionary, translate(fn), ModelDictInfo.baseSliceDictionary);
     return this as unknown as ModelDictInfo<
       Languages,
       ModelKey,
@@ -381,9 +365,7 @@ export class ModelDictInfo<
       >;
     },
   ) {
-    Object.assign(this.endpointDictionary, translate(fn)) as unknown as {
-      [K in EndpointKey]: FunctionTranslation<Languages>;
-    };
+    Object.assign(this.endpointDictionary, translate(fn));
     return this as unknown as ModelDictInfo<
       Languages,
       ModelKey,
@@ -544,11 +526,10 @@ export const modelDictionary = <
 >(
   languages: Languages = ["en"] as unknown as Languages,
   ...extendModelDicts: ExtendModelDicts
-): MergeModelDicts<[ModelDictInfo<Languages>, ...ExtendModelDicts]> => {
-  const modelDictionary = extendModelDicts.at(0) ?? new ModelDictInfo(languages);
-
-  return modelDictionary as unknown as MergeModelDicts<[ModelDictInfo<Languages>, ...ExtendModelDicts]>;
-};
+) =>
+  (extendModelDicts.at(0) ?? new ModelDictInfo(languages)) as unknown as MergeModelDicts<
+    [ModelDictInfo<Languages>, ...ExtendModelDicts]
+  >;
 
 export class ScalarDictInfo<
   Languages extends [string, ...string[]] = [string],
@@ -575,11 +556,7 @@ export class ScalarDictInfo<
       [K in keyof GetStateObject<Model>]: FieldTranslation<Languages>;
     },
   ) {
-    Object.assign(
-      this.modelDictionary,
-      translate(FieldTranslation.translate),
-      ModelDictInfo.baseModelDictionary,
-    ) as unknown as { [K in ModelKey]: FieldTranslation<Languages> };
+    Object.assign(this.modelDictionary, translate(FieldTranslation.translate), ModelDictInfo.baseModelDictionary);
     return this as unknown as ScalarDictInfo<
       Languages,
       keyof GetStateObject<Model> & string,
@@ -643,9 +620,7 @@ export class ServiceDictInfo<
       >;
     },
   ) {
-    Object.assign(this.endpointDictionary, translate(fn)) as unknown as {
-      [K in EndpointKey]: FunctionTranslation<Languages>;
-    };
+    Object.assign(this.endpointDictionary, translate(fn));
     return this as unknown as ServiceDictInfo<Languages, keyof DictEndpointShape<Endpoint> & string, ErrorKey, EtcKey>;
   }
   error<ErrorDict extends { [key: string]: Languages }>(errorDictionary: ErrorDict) {
