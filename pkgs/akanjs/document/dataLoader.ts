@@ -1,3 +1,4 @@
+import { toError } from "akanjs/common";
 import type { QueryOf } from "akanjs/constant";
 
 type LoaderItem = Record<string, unknown>;
@@ -146,8 +147,6 @@ export class DataLoader<Key, Value, CacheKey = Key> {
     );
   }
 }
-
-const toError = (reason: unknown): Error => (reason instanceof Error ? reason : new Error(String(reason)));
 
 const keyBy = <T>(items: T[], keyOrGetter: keyof T | ((item: T) => unknown)): Record<string, T> =>
   Object.fromEntries(

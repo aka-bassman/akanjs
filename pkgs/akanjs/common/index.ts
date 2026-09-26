@@ -80,6 +80,7 @@ export { interpolateTranslation } from "./interpolateTranslation";
 export { isDayjs } from "./isDayjs";
 export { isEmail } from "./isEmail";
 export { isQueryEqual } from "./isQueryEqual";
+export { isRecord } from "./isRecord";
 export { isThenable } from "./isThenable";
 export { isValidDate } from "./isValidDate";
 export { decodeJwtPayload } from "./jwtDecode";
@@ -130,6 +131,7 @@ export { formatPhone, isPhoneNumber } from "./phone";
 export { randomPick, randomPicks } from "./randomPick";
 export { hostFromRequest, isJsonContentType, originFromRequest } from "./requestOrigin";
 export { RestClient, type RestClientOptions, type RestRequestOptions } from "./restClient";
+export { round } from "./round";
 export {
   assertUniqueRoutePatterns,
   compareRouteSpecificity,
@@ -157,6 +159,7 @@ export {
 export { sleep } from "./sleep";
 export { getBasePathFromPathname, parseBasePaths, parseSubRouteHosts, resolveSubRouteHosts } from "./subRoute";
 export { TrustedProxy } from "./TrustedProxy";
+export { toError } from "./toError";
 export {
   type TunnelAgentIdentity,
   type TunnelAttachedFrame,

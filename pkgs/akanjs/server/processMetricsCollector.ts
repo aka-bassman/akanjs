@@ -1,3 +1,4 @@
+import { round } from "akanjs/common";
 import type { AkanMetricsReport } from "akanjs/service";
 import { getTraceSnapshot, isTraceEnabled } from "../signal/trace";
 
@@ -48,11 +49,6 @@ class EventLoopLagMonitor {
     return result;
   }
 }
-
-const round = (value: number, digits = 3): number => {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
-};
 
 export class ProcessMetricsCollector {
   static readonly #defaultMemoryLogIntervalMs = 60_000;

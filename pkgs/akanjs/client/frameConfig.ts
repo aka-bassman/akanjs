@@ -1,3 +1,4 @@
+import { isRecord } from "akanjs/common";
 import type { PageConfig, PageSafeAreaConfig, PageState, SsrRenderMode, TransitionType } from "./csrTypes";
 
 export type DevicePlatform = "ios" | "android" | "web" | (string & {});
@@ -30,9 +31,6 @@ const buildPageConfigKeys = new Set<keyof PageConfig>(["devOnly"]);
 const transitionTypes = new Set<TransitionType>(["none", "fade", "bottomUp", "stack", "scaleOut"]);
 const ssrRenderModes = new Set<SsrRenderMode>(["stream", "block"]);
 const DEFAULT_BOOLEAN_INSET = 48;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const hasOwn = <Key extends PropertyKey>(value: object, key: Key) => Object.hasOwn(value, key);
 
