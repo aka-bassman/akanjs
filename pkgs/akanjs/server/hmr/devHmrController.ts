@@ -123,13 +123,8 @@ export class DevHmrController {
     this.#builderRpc.dispose();
   }
 
-  broadcastError(message: string): void {
-    this.#hub.broadcast({ type: "error", message });
-  }
-
   handleWs(req: Request): Response | undefined {
-    const upgraded = this.#upgradeHmrWs(req, { kind: "akan-hmr", openedAt: Date.now() });
-    if (upgraded) return;
+    if (this.#upgradeHmrWs(req, { kind: "akan-hmr", openedAt: Date.now() })) return;
     return new Response("Failed to upgrade HMR WebSocket", { status: 500 });
   }
 
@@ -144,14 +139,15 @@ export class DevHmrController {
       if (!DevHmrController.#isTrustedRscTarget(clientOrigin, targetUrl))
         return new Response("Bad Request", { status: 400 });
       const manifest = await this.ensureRoute(targetUrl);
+      const chunks = DevHmrController.clientChunkUrls(manifest.clientManifest);
       this.#logger.verbose(
-        `[hmr] client-refresh metadata route=${targetUrl.pathname} chunks=${DevHmrController.clientChunkUrls(manifest.clientManifest).length} in ${Date.now() - started}ms`,
+        `[hmr] client-refresh metadata route=${targetUrl.pathname} chunks=${chunks.length} in ${Date.now() - started}ms`,
       );
       return new Response(
         JSON.stringify({
           buildId: this.#renderState.buildId,
           generation: manifest.generation,
-          chunks: DevHmrController.clientChunkUrls(manifest.clientManifest),
+          chunks,
           routeIds: this.routeIdsForPath(targetUrl.pathname),
         }),
         { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } },
@@ -189,10 +185,6 @@ export class DevHmrController {
     return [...urls];
   }
 
-  static shouldFullReloadForRuntimeMetadata(files: string[]): boolean {
-    return files.some(isAkanRuntimeMetadataFile);
-  }
-
   #createBuilderRpc() {
     return new BuilderRpc({
       onInvalidate: (ev) => {
@@ -220,7 +212,7 @@ export class DevHmrController {
       onPagesUpdated: async ({ bundlePath, buildId, generation, changedFiles }) => {
         const started = Date.now();
         const files = changedFiles ?? [];
-        const runtimeMetadataChanged = DevHmrController.shouldFullReloadForRuntimeMetadata(files);
+        const runtimeMetadataChanged = files.some(isAkanRuntimeMetadataFile);
         const staleClientEntries = runtimeMetadataChanged ? new Set<string>() : this.#staleClientEntriesForFiles(files);
         const routeIds = runtimeMetadataChanged ? undefined : this.#routeIdsForFiles(files, staleClientEntries);
         const fastRefreshCandidate = !runtimeMetadataChanged && this.#isFastRefreshCandidate(files);

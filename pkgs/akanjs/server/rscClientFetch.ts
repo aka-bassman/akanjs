@@ -5,8 +5,6 @@ import {
   readAkanRscPatchMetadataResponseHeaders,
 } from "./routeState";
 
-type RscNavigate = (href: string, options?: { replace?: boolean; scrollToTop?: boolean }) => Promise<void> | void;
-
 export type RscClientFetchResponseResult =
   | { type: "response"; response: Response }
   | { type: "patch"; response: Response; patch: AkanRscPatchMetadata }
@@ -18,7 +16,7 @@ export async function fetchRscNavigationResponse(
   options: {
     buildId?: number;
     currentRouterState: AkanRouterStateV1 | null;
-    navigate?: RscNavigate;
+    navigate?: (href: string, options?: { replace?: boolean; scrollToTop?: boolean }) => Promise<void> | void;
     sendRouterState?: boolean;
     shouldApplyNavigation?: () => boolean;
   },

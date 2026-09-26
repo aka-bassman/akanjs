@@ -53,16 +53,12 @@ declare global {
   var __AKAN_GET_SYNC_ROUTE_HREF__: ((href: string) => string) | undefined;
 }
 
-function decodeBase64(b64: string): Uint8Array {
-  const binary = atob(b64);
+function decodeInlineRscChunk([type, data]: InlineRscChunk): Uint8Array {
+  if (type === 1) return new TextEncoder().encode(data);
+  const binary = atob(data);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
-}
-
-function decodeInlineRscChunk([type, data]: InlineRscChunk): Uint8Array {
-  if (type === 1) return new TextEncoder().encode(data);
-  return decodeBase64(data);
 }
 
 type RscThenable = Promise<ReactNode> & {
@@ -190,9 +186,7 @@ function commitRscPatchNavigation({
   startTransition(() => {
     try {
       headApplied = commitPreparedAkanHeadSnapshotPatch(preparedHeadPatch);
-      if (!headApplied) {
-        return;
-      }
+      if (!headApplied) return;
       outletCommitted = commitAkanSegmentOutletPatch(patch.outletKey, patchThenable);
       if (!outletCommitted) {
         rollbackPreparedAkanHeadSnapshotPatch(preparedHeadPatch);
@@ -229,8 +223,7 @@ async function fetchRsc(
     sendRouterState: options.sendRouterState,
     shouldApplyNavigation,
   });
-  if (responseResult.type === "redirected") return responseResult;
-  if (responseResult.type === "not-found") return responseResult;
+  if (responseResult.type === "redirected" || responseResult.type === "not-found") return responseResult;
   if (responseResult.type === "patch") {
     const patchResult = await validateRscPatchForGuardedCommit({
       partialCommitEnabled: isAkanRscPartialCommitEnabled(),

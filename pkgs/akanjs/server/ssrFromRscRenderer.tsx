@@ -45,9 +45,7 @@ export class SsrChunkRegistry<T> {
     let entry = uniqueKeys
       .map((key) => this.#entriesByKey.get(key))
       .find((item): item is SsrChunkRegistryEntry<T> => Boolean(item));
-    if (!entry) {
-      entry = { keys: new Set(), lruKey: uniqueKeys[0] as string, value };
-    }
+    entry ??= { keys: new Set(), lruKey: uniqueKeys[0] as string, value };
     entry.value = value;
 
     for (const key of uniqueKeys) {
@@ -97,7 +95,7 @@ export function encodeInlineRscChunk(chunk: Uint8Array): InlineRscChunk {
   }
 }
 
-export function htmlEscapeJsonString(value: string): string {
+function htmlEscapeJsonString(value: string): string {
   return JSON.stringify(value)
     .replace(/</g, "\\u003c")
     .replace(/>/g, "\\u003e")
@@ -180,6 +178,8 @@ function sanitizeFlightRows(
   );
 }
 
+// RSDW hints each stylesheet as `:HL[href,"stylesheet"]`, which the browser preloads with an invalid
+// as="stylesheet" (Chromium warns); only the browser-bound tee is rewritten to "style", the SSR one stays React's.
 export function sanitizeFlightForClientStream(stream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
   return sanitizeFlightRows(stream, { rewriteStylesheetHints: true });
 }
@@ -476,8 +476,8 @@ export function interleaveRscScriptsWithHtml(
         controller.close();
       };
 
+      const requestContext = options.requestStore ?? options.request;
       const runPump = () => {
-        const requestContext = options.requestStore ?? options.request;
         const cleanup = requestContext ? pushRequestFallback(requestContext) : undefined;
         return pump()
           .catch(fail)
@@ -486,7 +486,6 @@ export function interleaveRscScriptsWithHtml(
             options.onComplete?.();
           });
       };
-      const requestContext = options.requestStore ?? options.request;
       if (requestContext && requestStorage) void requestStorage.run(requestContext, runPump);
       else void runPump();
     },
@@ -634,16 +633,16 @@ export class SsrFromRscRenderer {
       injectThemeInitScript: input.injectThemeInitScript,
     });
 
-    return SsrFromRscRenderer.#appendRscScriptsAfterHtml(
-      withHeadScripts,
-      SsrFromRscRenderer.#sanitizeFlightForClient(rscForClient),
-      input.bootstrapModules,
-      input.request,
-      input.requestStore,
-      input.lateControl,
-      () => stderrSuppressor?.stop(),
-      input.onCancel,
-    );
+    // Splice only at chunk boundaries (Fizz may split inside SVG paths or attributes), and append the bootstrap module
+    // scripts here: one React emitted mid-stream could run cached before $RC() restores Suspense segments.
+    return interleaveRscScriptsWithHtml(withHeadScripts, sanitizeFlightForClientStream(rscForClient), {
+      bootstrapModuleScripts: SsrFromRscRenderer.#createBootstrapModuleScriptTags(input.bootstrapModules),
+      lateControl: input.lateControl,
+      onComplete: () => stderrSuppressor?.stop(),
+      onCancel: input.onCancel,
+      request: input.request,
+      requestStore: input.requestStore,
+    });
   }
 
   static #installWebpackShims(): void {
@@ -674,9 +673,7 @@ export class SsrFromRscRenderer {
     };
     g.__webpack_require__ = (id: string) => {
       const mod = registry.get(id);
-      if (!mod) {
-        throw new Error(`[ssrFromRsc] module not loaded yet: ${id}`);
-      }
+      if (!mod) throw new Error(`[ssrFromRsc] module not loaded yet: ${id}`);
       return mod;
     };
   }
@@ -688,18 +685,13 @@ export class SsrFromRscRenderer {
   }
 
   static #reportRenderError(error: unknown, input: SsrFromRscInput, phase = "render"): void {
-    const description = SsrFromRscRenderer.#describeError(error);
+    const description = error instanceof Error ? (error.stack ?? error.message) : String(error);
     if (SsrFromRscRenderer.#isExpectedRequestAbort(error)) {
       SsrFromRscRenderer.#logger.debug(`[SSR] ${phase} aborted: ${description}`);
       return;
     }
     const path = input.request ? new URL(input.request.url).pathname : "unknown";
     SsrFromRscRenderer.#logger.error(`[SSR] ${phase} failed path=${path}: ${description}`);
-  }
-
-  static #describeError(error: unknown): string {
-    if (!(error instanceof Error)) return String(error);
-    return error.stack ?? error.message;
   }
 
   static #isExpectedRequestAbort(error: unknown): boolean {
@@ -820,34 +812,5 @@ export class SsrFromRscRenderer {
     return bootstrapModules
       .map((src) => `<script type="module" src="${SsrFromRscRenderer.#escapeHtmlAttr(src)}"></script>`)
       .join("");
-  }
-
-  // RSDW hints each stylesheet as `:HL[href,"stylesheet"]`, which the browser preloads with an invalid
-  // as="stylesheet" (Chromium warns); only the browser-bound tee is rewritten to "style", the SSR one stays React's.
-  static #sanitizeFlightForClient(stream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
-    return sanitizeFlightForClientStream(stream);
-  }
-
-  static #appendRscScriptsAfterHtml(
-    htmlStream: ReadableStream<Uint8Array>,
-    rscClientStream: ReadableStream<Uint8Array>,
-    bootstrapModules?: string[],
-    request?: Request,
-    requestStore?: AkanRequestStore,
-    lateControl?: Promise<SsrLateRedirect | null>,
-    onComplete?: () => void,
-    onCancel?: (reason?: unknown) => void,
-  ): ReadableStream<Uint8Array> {
-    const bootstrapModuleScripts = SsrFromRscRenderer.#createBootstrapModuleScriptTags(bootstrapModules);
-    // Splice only at chunk boundaries (Fizz may split inside SVG paths or attributes), and append the bootstrap module
-    // scripts here: one React emitted mid-stream could run cached before $RC() restores Suspense segments.
-    return interleaveRscScriptsWithHtml(htmlStream, rscClientStream, {
-      bootstrapModuleScripts,
-      lateControl,
-      onComplete,
-      onCancel,
-      request,
-      requestStore,
-    });
   }
 }

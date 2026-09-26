@@ -41,10 +41,6 @@ export class HmrWsHub {
   readonly #conns = new Set<Bun.ServerWebSocket<HmrWsData>>();
   #publish: ((topic: string, payload: string) => void) | null = null;
 
-  get size(): number {
-    return this.#conns.size;
-  }
-
   setPublisher(publish: (topic: string, payload: string) => void): void {
     this.#publish = publish;
   }
@@ -61,8 +57,7 @@ export class HmrWsHub {
   }
 
   broadcast(msg: HmrMessage): void {
-    const payload = JSON.stringify(msg);
-    this.#publish?.(HMR_WS_TOPIC, payload);
+    this.#publish?.(HMR_WS_TOPIC, JSON.stringify(msg));
   }
 
   handleMessage(message: string): void {
