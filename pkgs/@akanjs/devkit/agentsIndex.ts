@@ -23,7 +23,7 @@ export const extractBlockVersion = (content: string): string | null =>
 /** The running `@akanjs/devkit` version; null when its package.json is unreadable, which must not fail a doctor run. */
 export const readDevkitVersion = async (): Promise<string | null> => {
   const { readFile } = await import("node:fs/promises");
-  const { getDirname } = await import("./getDirname");
+  const { getDirname } = await import("./fileSys");
   try {
     const raw = await readFile(`${getDirname(import.meta.url)}/package.json`, "utf-8");
     return (JSON.parse(raw) as { version?: string }).version ?? null;

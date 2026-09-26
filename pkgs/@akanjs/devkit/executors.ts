@@ -43,8 +43,7 @@ import {
 import { AkanAppConfig, AkanLibConfig, decreaseBuildNum, increaseBuildNum } from "./akanConfig";
 import { getRootBoundarySegments, isRootBoundarySegments } from "./artifact/implicitRootLayout";
 import { CodegenLock } from "./codegenLock";
-import { FileSys } from "./fileSys";
-import { getDirname } from "./getDirname";
+import { FileSys, getDirname } from "./fileSys";
 import { Linter } from "./linter";
 import { resolveRepoName } from "./repoIdentity";
 import { AppInfo, LibInfo, PkgInfo, WorkspaceInfo } from "./scanInfo";

@@ -19,7 +19,6 @@ export type * from "./dependencyScanner";
 export type * from "./executors";
 export type * from "./fileSys";
 export type * from "./frontendBuild";
-export type * from "./getDirname";
 export type * from "./getRelatedCnsts";
 export type * from "./incrementalBuilder";
 export type * from "./mobile";

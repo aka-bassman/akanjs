@@ -11,8 +11,7 @@ import { type Command, program } from "commander";
 import { AppSelectionMemory } from "../appSelectionMemory";
 import { AppExecutor, Executor, LibExecutor, ModuleExecutor, PkgExecutor, WorkspaceExecutor } from "../executors";
 // Never the root barrel: it drags ink, @trapezedev/project, ssh2 and the cloud stack into every command process.
-import { FileSys } from "../fileSys";
-import { getDirname } from "../getDirname";
+import { FileSys, getDirname } from "../fileSys";
 import type { PackageJson } from "../types";
 import {
   type ArgMeta,

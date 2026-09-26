@@ -1,5 +1,9 @@
 import { lstat, rename, rm, stat } from "node:fs/promises";
+import nodePath from "node:path";
+import { fileURLToPath } from "node:url";
 import { Logger } from "akanjs/common";
+
+export const getDirname = (url: string) => nodePath.dirname(fileURLToPath(url));
 
 export class FileSys {
   static logger = new Logger("FileSys");

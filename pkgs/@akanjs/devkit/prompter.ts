@@ -1,7 +1,7 @@
 import fsPromise from "node:fs/promises";
 import { input, select } from "@inquirer/prompts";
 
-import { getDirname } from "./getDirname";
+import { getDirname } from "./fileSys";
 
 interface FileUpdateRequestProps {
   context: string;
