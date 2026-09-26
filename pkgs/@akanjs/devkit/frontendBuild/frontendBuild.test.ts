@@ -34,14 +34,15 @@ afterEach(async () => {
 
 describe("PagesEntrySourceGenerator", () => {
   const toSpecifier = (absPath: string) => path.resolve(absPath).split(path.sep).join("/");
+  const indexAbs = path.resolve("/repo/apps/demo/page/_index.tsx");
+  const adminAbs = path.resolve("/repo/apps/demo/page/admin.tsx");
+  const entries = [
+    { key: "./_index.tsx", moduleAbsPath: indexAbs },
+    { key: "./admin.tsx", moduleAbsPath: adminAbs },
+  ];
 
   test("generates dynamic import source using forward-slash module paths", () => {
-    const indexAbs = path.resolve("/repo/apps/demo/page/_index.tsx");
-    const adminAbs = path.resolve("/repo/apps/demo/page/admin.tsx");
-    const source = PagesEntrySourceGenerator.generate([
-      { key: "./_index.tsx", moduleAbsPath: indexAbs },
-      { key: "./admin.tsx", moduleAbsPath: adminAbs },
-    ]);
+    const source = PagesEntrySourceGenerator.generate(entries);
 
     expect(source).toBe(
       [
@@ -55,12 +56,7 @@ describe("PagesEntrySourceGenerator", () => {
   });
 
   test("generates static import source for single-file CSR bundles", async () => {
-    const indexAbs = path.resolve("/repo/apps/demo/page/_index.tsx");
-    const adminAbs = path.resolve("/repo/apps/demo/page/admin.tsx");
-    const source = await PagesEntrySourceGenerator.generateStatic([
-      { key: "./_index.tsx", moduleAbsPath: indexAbs },
-      { key: "./admin.tsx", moduleAbsPath: adminAbs },
-    ]);
+    const source = await PagesEntrySourceGenerator.generateStatic(entries);
 
     expect(source).toBe(
       [
@@ -501,6 +497,14 @@ describe("CssImportResolver", () => {
 });
 
 describe("CssCompiler", () => {
+  const cssCompilerFor = (root: string, cwdPath: string, app: object = {}) =>
+    new CssCompiler({
+      workspace: { workspaceRoot: root },
+      cwdPath,
+      getTsConfig: async () => ({ compilerOptions: { paths: {} } }),
+      ...app,
+    } as never);
+
   test("scans installed akanjs sources while ignoring other node_modules", async () => {
     expect(isIgnoredNodeModuleSource("/repo/node_modules/react/index.js")).toBe(true);
     expect(isIgnoredNodeModuleSource("/repo/node_modules/akanjs/ui/Button.tsx")).toBe(false);
@@ -514,13 +518,8 @@ describe("CssCompiler", () => {
     await write(cssPath, `@import ${JSON.stringify(tailwindCssPath)};\n@source "./**/*";\n`);
     await write(uiSource, 'export const Button = () => <button className="text-fuchsia-500" />;\n');
 
-    const compiler = new CssCompiler({
-      workspace: { workspaceRoot: root },
-      // The candidate cache lands under `<cwdPath>/.akan/cache`, so point it at this test's temp root
-      // rather than wherever the suite happens to run from.
-      cwdPath: root,
-      getTsConfig: async () => ({ compilerOptions: { paths: {} } }),
-    } as never);
+    // The candidate cache lands under `<cwdPath>/.akan/cache`, so keep it inside this test's temp root.
+    const compiler = cssCompilerFor(root, root);
     const css = await compiler.compileCss([cssPath], []);
 
     expect(css).toContain(".text-fuchsia-500");
@@ -542,11 +541,7 @@ describe("CssCompiler", () => {
     const cssPath = path.join(root, "apps/demo/page/styles.css");
     await write(cssPath, '@import "../../../libs/shared/ui/tokens.css";\n');
 
-    const compiler = new CssCompiler({
-      workspace: { workspaceRoot: root },
-      cwdPath: path.join(root, "apps/demo"),
-      getTsConfig: async () => ({ compilerOptions: { paths: {} } }),
-    } as never);
+    const compiler = cssCompilerFor(root, path.join(root, "apps/demo"));
 
     await expect(compiler.compileCss([cssPath], [])).rejects.toThrow(
       /failed to resolve stylesheet import "\.\.\/\.\.\/\.\.\/libs\/shared\/ui\/tokens\.css"/,
@@ -560,13 +555,10 @@ describe("CssCompiler", () => {
     await write(path.join(appDir, "page/styles.css"), '@import "../../../libs/shared/ui/brand.css";\n');
     await write(path.join(root, "libs/shared/ui/brand.css"), ":root { --kakao: #fee500; --naver: #1ec800; }\n");
 
-    const compiler = new CssCompiler({
-      workspace: { workspaceRoot: root },
-      cwdPath: appDir,
+    const compiler = cssCompilerFor(root, appDir, {
       getPageKeys: async () => ["./_index.tsx"],
       getConfig: async () => ({ barrelImports: [], basePaths: [] }),
-      getTsConfig: async () => ({ compilerOptions: { paths: {} } }),
-    } as never);
+    });
     const cssByBasePath = await compiler.getCssByBasePath();
 
     expect(cssByBasePath[""]).toContain("--kakao");
@@ -587,13 +579,11 @@ describe("CssCompiler", () => {
     await write(path.join(root, "libs/shared/ui/tokens.css"), ":root { --kakao: #fee500; }\n");
     await write(path.join(root, "libs/unused/ui/tokens.css"), ":root { --unused: #000000; }\n");
 
-    const compiler = new CssCompiler({
-      workspace: { workspaceRoot: root },
-      cwdPath: appDir,
+    const compiler = cssCompilerFor(root, appDir, {
       getPageKeys: async () => ["./_index.tsx"],
       getConfig: async () => ({ barrelImports: [] }),
       getTsConfig: async () => ({ compilerOptions: { paths: { "@libs/*": ["./libs/*"] } } }),
-    } as never);
+    });
     const { cssPaths } = await compiler.discoverCssAndSources();
 
     expect(cssPaths).toEqual([path.join(root, "libs/shared/ui/tokens.css"), path.join(appDir, "page/styles.css")]);
