@@ -331,45 +331,36 @@ export class SqlDocumentStore {
   }
 
   async find(query?: DocumentQuery, options: FindManyOptions = {}) {
-    const { where, params, joins } = this.safeQuery(query);
-    const limitValue = Number(options.limit ?? 0);
-    const skipValue = Number(options.skip ?? 0);
-    const limit = limitValue ? ` LIMIT ${limitValue}` : "";
-    const offset = skipValue ? ` OFFSET ${skipValue}` : "";
-    const join = this.joinSql(joins);
-    const order = options.sample ? "ORDER BY random()" : `ORDER BY ${this.orderBy(options.sort, joins)}`;
-    const args = [...this.joinParams(joins), ...params];
+    const { star, tail, args } = this.listQuery(query, options);
     const projection = this.resolveProjection(options.select);
     if (projection) {
       const rows = await this.prepareStmt(
-        `SELECT ${this.projectionSql(projection)} FROM ${quoteIdent(this.table)}${join} WHERE ${where} ${order}${limit}${offset}`,
+        `SELECT ${this.projectionSql(projection)} ${tail}`,
       ).all<ProjectedSqliteDocumentRow>(...args);
       return rows.map((row) => this.hydrate(this.fromProjectedRow(row, projection), undefined, { track: false }));
     }
-    // A bare `*` would also drag the join subquery's `rid`/`score` into the row, so the star is qualified once a
-    // join is present.
-    const star = joins.length ? `${quoteIdent(this.table)}.*` : "*";
-    const rows = await this.prepareStmt(
-      `SELECT ${star} FROM ${quoteIdent(this.table)}${join} WHERE ${where} ${order}${limit}${offset}`,
-    ).all<SqliteDocumentRow>(...args);
+    const rows = await this.prepareStmt(`SELECT ${star} ${tail}`).all<SqliteDocumentRow>(...args);
     return rows.map((row) => this.#withStoredRow(this.hydrate(this.fromRow(row), undefined, { track: false }), row));
   }
 
-  async findIds(
-    query?: DocumentQuery,
-    options: { sort?: SortOption; skip?: number | null; limit?: number | null; sample?: number } = {},
-  ) {
+  async findIds(query?: DocumentQuery, options: Omit<FindManyOptions, "select"> = {}) {
+    const { tail, args } = this.listQuery(query, options);
+    const rows = await this.prepareStmt(`SELECT ${quoteIdent(this.table)}."id" ${tail}`).all<{ id: string }>(...args);
+    return rows.map((row) => row.id);
+  }
+
+  private listQuery(query: DocumentQuery | undefined, options: FindManyOptions) {
     const { where, params, joins } = this.safeQuery(query);
     const limitValue = Number(options.limit ?? 0);
     const skipValue = Number(options.skip ?? 0);
-    const limit = limitValue ? ` LIMIT ${limitValue}` : "";
-    const offset = skipValue ? ` OFFSET ${skipValue}` : "";
-    const join = this.joinSql(joins);
     const order = options.sample ? "ORDER BY random()" : `ORDER BY ${this.orderBy(options.sort, joins)}`;
-    const rows = await this.prepareStmt(
-      `SELECT ${quoteIdent(this.table)}."id" FROM ${quoteIdent(this.table)}${join} WHERE ${where} ${order}${limit}${offset}`,
-    ).all<{ id: string }>(...this.joinParams(joins), ...params);
-    return rows.map((row) => row.id);
+    const page = `${limitValue ? ` LIMIT ${limitValue}` : ""}${skipValue ? ` OFFSET ${skipValue}` : ""}`;
+    return {
+      // A bare `*` would drag the join subquery's `rid`/`score` into the row.
+      star: joins.length ? `${quoteIdent(this.table)}.*` : "*",
+      tail: `FROM ${quoteIdent(this.table)}${this.joinSql(joins)} WHERE ${where} ${order}${page}`,
+      args: [...this.joinParams(joins), ...params],
+    };
   }
 
   async findOne(query?: DocumentQuery, options: FindOneOptions = {}) {
@@ -566,17 +557,12 @@ export class SqlDocumentStore {
     return doc;
   }
 
-  private toRow(doc: DocumentRecord) {
-    const payload = { ...doc };
-    delete payload.id;
-    delete payload.createdAt;
-    delete payload.updatedAt;
-    delete payload.removedAt;
+  private toRow({ id, createdAt, updatedAt, removedAt, ...payload }: DocumentRecord) {
     return {
-      id: doc.id,
-      createdAt: Number(encodeSqlValue(doc.createdAt ?? dayjs())),
-      updatedAt: Number(encodeSqlValue(doc.updatedAt ?? dayjs())),
-      removedAt: doc.removedAt ? Number(encodeSqlValue(doc.removedAt)) : null,
+      id,
+      createdAt: Number(encodeSqlValue(createdAt ?? dayjs())),
+      updatedAt: Number(encodeSqlValue(updatedAt ?? dayjs())),
+      removedAt: removedAt ? Number(encodeSqlValue(removedAt)) : null,
       _doc: assertStorableJson(JSON.stringify(sanitizeJson(payload)), this.table),
     };
   }
@@ -644,10 +630,7 @@ export class SqlDocumentStore {
           doc[field] =
             typeof props.default === "function" ? (props.default as (data: unknown) => unknown)(doc) : props.default;
         } else {
-          doc[field] =
-            freshPrimitiveValue(
-              ((props as Record<string, unknown>).modelRef as { [DEFAULT_VALUE]?: unknown })?.[DEFAULT_VALUE],
-            ) ?? null;
+          doc[field] = SqlDocumentStore.#primitiveDefault(props as Record<string, unknown>);
         }
       } else {
         doc[field] = props ? this.decodeFieldValue(value, props) : value;
@@ -657,17 +640,8 @@ export class SqlDocumentStore {
   }
 
   private async findForWrite(query?: DocumentQuery, options: FindManyOptions = {}) {
-    const { where, params, joins } = this.safeQuery(query);
-    const limitValue = Number(options.limit ?? 0);
-    const skipValue = Number(options.skip ?? 0);
-    const limit = limitValue ? ` LIMIT ${limitValue}` : "";
-    const offset = skipValue ? ` OFFSET ${skipValue}` : "";
-    const join = this.joinSql(joins);
-    const order = options.sample ? "ORDER BY random()" : `ORDER BY ${this.orderBy(options.sort, joins)}`;
-    const star = joins.length ? `${quoteIdent(this.table)}.*` : "*";
-    const rows = await this.prepareStmt(
-      `SELECT ${star} FROM ${quoteIdent(this.table)}${join} WHERE ${where} ${order}${limit}${offset}`,
-    ).all<SqliteDocumentRow>(...this.joinParams(joins), ...params);
+    const { star, tail, args } = this.listQuery(query, options);
+    const rows = await this.prepareStmt(`SELECT ${star} ${tail}`).all<SqliteDocumentRow>(...args);
     return rows.map((row) => this.#withStoredRow(this.hydrate(this.fromRow(row)), row));
   }
 
@@ -798,10 +772,7 @@ export class SqlDocumentStore {
           // A row from before the field was declared: `null` would fail the next save's own not-null check.
           result[key] = getDefault((props.modelRef as { [FIELD_META]: FieldMap })[FIELD_META] as never);
         } else {
-          result[key] =
-            freshPrimitiveValue(
-              ((props as Record<string, unknown>).modelRef as { [DEFAULT_VALUE]?: unknown })?.[DEFAULT_VALUE],
-            ) ?? null;
+          result[key] = SqlDocumentStore.#primitiveDefault(props);
         }
       } else {
         result[key] = this.decodeFieldValue(value, props);
@@ -813,6 +784,10 @@ export class SqlDocumentStore {
       result[key] = props ? this.decodeFieldValue(value, props) : value;
     }
     return result;
+  }
+
+  static #primitiveDefault(props: Record<string, unknown>) {
+    return freshPrimitiveValue((props.modelRef as { [DEFAULT_VALUE]?: unknown } | undefined)?.[DEFAULT_VALUE]) ?? null;
   }
 
   private decodeFieldValue(value: unknown, props: Record<string, unknown>): unknown {
