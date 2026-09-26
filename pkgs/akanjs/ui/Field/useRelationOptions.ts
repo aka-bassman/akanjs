@@ -9,7 +9,7 @@ import { LightRefCache } from "./lightRefCache";
 
 export interface RelationOptionsSource<Light extends { id: string }> {
   slice: SliceMeta;
-  /** Ids the control holds right now, whether or not the option list carries them. */
+  /** Held ids, whether or not the option list carries them. */
   ids: string[];
   /** Rows the control was handed outright, which a `Light`-valued field's own value already is. */
   pinned?: (Light | null)[];
@@ -29,12 +29,8 @@ const merge = <Light extends { id: string }>(
   return sortOption ? merged.sort(sortOption) : merged;
 };
 
-/**
- * The options a relation control offers, which are never only the slice list: that list arrives when the dropdown
- * opens and holds one page when it does, so a control rendering a value the list does not carry would render an
- * empty field over a form that holds the value. What is missing from it is filled from the value the control was
- * handed, and — for an id-valued control, which holds no row at all — read by id through {@link LightRefCache}.
- */
+// Never only the slice list, which arrives on open and holds one page: missing rows come from the handed value or,
+// for an id-valued control, from `LightRefCache`.
 export const useRelationOptions = <Light extends { id: string }>({
   slice,
   ids,
@@ -77,7 +73,7 @@ export const useRelationOptions = <Light extends { id: string }>({
     () => merge(sliceList, [...held, ...missing.map((id) => LightRefCache.get<Light>(refName, id))], sortOption),
     [sliceList, heldKey, missingKey, resolvedCount],
   );
-  /** The one line an option reads as, so a search matches it and an agent can match an id against the screen. */
+  // The one line an option reads as, so a search matches it and an agent can match an id against the screen.
   const optionLabel = (model: Light) => {
     const rendered = renderOption?.(model);
     if (typeof rendered === "string" && rendered) return rendered;
@@ -90,12 +86,9 @@ export const useRelationOptions = <Light extends { id: string }>({
     options,
     optionLabel,
     listLoading,
-    /**
-     * `invalidate: false` so an open reuses a list the page already loaded rather than replacing it: the slice
-     * list is one store key, so refetching it here overwrites whatever listing of the same model is on screen.
-     */
+    // `invalidate: false`: the slice list is one store key, so a refetch would replace the listing on screen.
     load: () => storeDo[names.refreshModel]({ invalidate: false, queryArgs: initArgs }),
-    /** Live rather than the rendered list, because the agent's list tool loads and reads within one call. */
+    // Live rather than the rendered list, because the agent's list tool loads and reads within one call.
     read: () =>
       merge(
         storeGet<DataList<Light>>()[names.modelList],

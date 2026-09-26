@@ -67,7 +67,6 @@ export const Number = ({
         className={cn("w-full", "")}
         inputClassName={cn("w-full", inputClassName)}
         validate={(value) => {
-          //수정여지
           if (min !== undefined && (value as number) < min) return l("base.numberTooSmallError", { min });
           else if (max !== undefined && (value as number) > max) return l("base.numberTooBigError", { max });
           else return validate?.(value as number) ?? true;
