@@ -22,8 +22,7 @@ import { createPortal } from "react-dom";
 import { FontFace } from "../FontFace";
 import { Load } from "../Load";
 import { Client, ClientPathWrapper } from "./Client";
-import { ManifestLink, type ProviderProps } from "./Common";
-import { getFrameCssVars } from "./frameCssVars";
+import { getFrameCssVars, ManifestLink, type ProviderProps } from "./Common";
 
 export const CSR = ({ children }: { children: ReactNode }) => {
   return <div></div>;

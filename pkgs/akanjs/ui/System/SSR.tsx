@@ -16,8 +16,7 @@ import { FontCss } from "../fontCss";
 import { Load } from "../Load";
 import { createServerPortalStore, ServerPortalOutlet, setActiveServerPortalStore } from "../ServerPortal";
 import { ClientBridge, ClientInner, ClientPathWrapper, ClientSsrBridge, ClientWrapper } from "./Client";
-import { ManifestLink, type ProviderProps } from "./Common";
-import { getFrameCssVars } from "./frameCssVars";
+import { getFrameCssVars, ManifestLink, type ProviderProps } from "./Common";
 
 export const SSR = () => {
   return <></>;

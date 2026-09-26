@@ -37,7 +37,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { getFrameCssVars } from "./frameCssVars";
+import { getFrameCssVars } from "./Common";
 import { Messages } from "./Messages";
 import { Reconnect } from "./Reconnect";
 
