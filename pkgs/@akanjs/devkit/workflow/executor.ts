@@ -341,6 +341,14 @@ const unsupportedInput = (input: string, message: string): WorkflowDiagnostic =>
   message,
 });
 
+const surfaceReview = (
+  plan: WorkflowPlan,
+  { code, target, action, message, reason }: Record<"code" | "target" | "action" | "message" | "reason", string>,
+): WorkflowStepResult => ({
+  recommendations: [{ code, kind: "manual-action", target, action, confidence: "medium", message }],
+  nextActions: [{ command: `akan workflow explain ${plan.workflow}`, reason }],
+});
+
 const addFieldUiSurfaceInspection = (plan: WorkflowPlan): WorkflowStepResult => {
   const app = workflowStringInput(plan.inputs.app);
   const module = workflowStringInput(plan.inputs.module) ?? "<module>";
@@ -350,75 +358,41 @@ const addFieldUiSurfaceInspection = (plan: WorkflowPlan): WorkflowStepResult => 
   const surfaces = workflowStringArrayInput(plan.inputs.surfaces);
   const templateRequested = surfaces?.includes("template") ?? false;
   const moduleClassName = moduleComponentName(module);
-  const target = `${app ? `apps/${app}` : "*"}/${moduleSourcePaths(module).template}`;
-  return {
-    recommendations: [
-      {
-        code: "add-field-ui-surface-review",
-        kind: "manual-action",
-        target,
-        action: templateRequested
-          ? `Template was requested for ${field}. If no Template file changed, users will not see the field in the form yet because the file was missing, the generated ${module}Form/Layout.Template pattern was not found, or ${policy.component} needs option binding. Add it inside Layout.Template near existing Field components.`
-          : `Template was not selected, so users will not see ${field} in the form from this apply. If list/card display is needed, include ${field} in Light${moduleClassName} projection data and place it in the local Unit/View card layout.`,
-        confidence: "medium",
-        message: `Review user-visible UI for ${module}.${field}; recommended component is ${policy.component}.`,
-      },
-    ],
-    nextActions: [
-      {
-        command: `akan workflow explain ${plan.workflow}`,
-        reason: "Review UI surface guidance before manually editing ambiguous UI files.",
-      },
-    ],
-  };
+  return surfaceReview(plan, {
+    code: "add-field-ui-surface-review",
+    target: `${app ? `apps/${app}` : "*"}/${moduleSourcePaths(module).template}`,
+    action: templateRequested
+      ? `Template was requested for ${field}. If no Template file changed, users will not see the field in the form yet because the file was missing, the generated ${module}Form/Layout.Template pattern was not found, or ${policy.component} needs option binding. Add it inside Layout.Template near existing Field components.`
+      : `Template was not selected, so users will not see ${field} in the form from this apply. If list/card display is needed, include ${field} in Light${moduleClassName} projection data and place it in the local Unit/View card layout.`,
+    message: `Review user-visible UI for ${module}.${field}; recommended component is ${policy.component}.`,
+    reason: "Review UI surface guidance before manually editing ambiguous UI files.",
+  });
 };
 
 const addMutationActionSurfaceInspection = (plan: WorkflowPlan): WorkflowStepResult => {
   const module = workflowStringInput(plan.inputs.module) ?? "<module>";
   const mutation = workflowStringInput(plan.inputs.mutation) ?? "<mutation>";
   const moduleClassName = moduleComponentName(module);
-  return {
-    recommendations: [
-      {
-        code: "add-mutation-action-surface-review",
-        kind: "manual-action",
-        target: `*/${moduleSourcePaths(module).store}`,
-        action: `Name the endpoint's guards and add its dictionary .endpoint() entry with a .desc(). After sync, fetch.${mutation} exists; write a store action only for a toast, an optimistic update, or a multi-field write, and put the control that calls it in ${moduleClassName}.Util.tsx.`,
-        confidence: "medium",
-        message: `Workflow apply does not write store or UI code for ${module}.${mutation}; review whether a screen should call it.`,
-      },
-    ],
-    nextActions: [
-      {
-        command: `akan workflow explain ${plan.workflow}`,
-        reason: "Review action surface guidance before manually editing store or UI files.",
-      },
-    ],
-  };
+  return surfaceReview(plan, {
+    code: "add-mutation-action-surface-review",
+    target: `*/${moduleSourcePaths(module).store}`,
+    action: `Name the endpoint's guards and add its dictionary .endpoint() entry with a .desc(). After sync, fetch.${mutation} exists; write a store action only for a toast, an optimistic update, or a multi-field write, and put the control that calls it in ${moduleClassName}.Util.tsx.`,
+    message: `Workflow apply does not write store or UI code for ${module}.${mutation}; review whether a screen should call it.`,
+    reason: "Review action surface guidance before manually editing store or UI files.",
+  });
 };
 
 const addSliceViewSurfaceInspection = (plan: WorkflowPlan): WorkflowStepResult => {
   const module = workflowStringInput(plan.inputs.module) ?? "<module>";
   const slice = workflowStringInput(plan.inputs.slice) ?? "<slice>";
   const moduleClassName = moduleComponentName(module);
-  return {
-    recommendations: [
-      {
-        code: "add-slice-view-surface-review",
-        kind: "manual-action",
-        target: `*/${moduleSourcePaths(module).zone}`,
-        action: `Fill in the service query stub and add the dictionary .slice() entry. After sync, load fetch.init${moduleClassName}${capitalize(slice)}() in the page and pass the result to a ${moduleClassName}.Zone as an init prop.`,
-        confidence: "medium",
-        message: `Workflow apply does not write page or Zone code for ${module}.${slice}; review where the list should render.`,
-      },
-    ],
-    nextActions: [
-      {
-        command: `akan workflow explain ${plan.workflow}`,
-        reason: "Review view surface guidance before manually editing Zone or page files.",
-      },
-    ],
-  };
+  return surfaceReview(plan, {
+    code: "add-slice-view-surface-review",
+    target: `*/${moduleSourcePaths(module).zone}`,
+    action: `Fill in the service query stub and add the dictionary .slice() entry. After sync, load fetch.init${moduleClassName}${capitalize(slice)}() in the page and pass the result to a ${moduleClassName}.Zone as an init prop.`,
+    message: `Workflow apply does not write page or Zone code for ${module}.${slice}; review where the list should render.`,
+    reason: "Review view surface guidance before manually editing Zone or page files.",
+  });
 };
 
 export const createWorkflowStepRegistry = ({
