@@ -13,7 +13,7 @@ import type {
   WebsocketResData,
   WebsocketSubscribeAck,
 } from "akanjs/signal";
-import { type ErrorConstructor, type RestoredError, restoreRemoteError } from "./remoteError";
+import { type ErrorConstructor, restoreRemoteError } from "./remoteError";
 
 export interface WsClientReconnectOptions {
   enabled?: boolean;
@@ -31,6 +31,12 @@ interface SubscribeOption {
 interface Listener {
   callback: (data: unknown) => void;
   once: boolean;
+}
+interface RoomSubscription {
+  key: string;
+  data: unknown[];
+  handleEvent: (data: unknown) => void;
+  handleResync?: () => void;
 }
 
 type WsRequestPayload = unknown | unknown[];
@@ -131,9 +137,7 @@ export class WsClient {
           return;
         }
         const parsed = JSON.parse(e.data) as { error?: unknown } & WebsocketResData;
-        if (parsed?.error) {
-          throw this.#restoreError(parsed);
-        }
+        if (parsed?.error) throw restoreRemoteError(parsed, 500, this.ErrorCls);
         const type = (parsed as WebsocketResData | WebsocketHeartbeatAckData).type;
         switch (type) {
           case "msg": {
@@ -147,8 +151,7 @@ export class WsClient {
               if (sub.subscribe) this.#roomAliasMap.set(sub.roomId, sub.requestRoomId);
               else this.#roomAliasMap.delete(sub.roomId);
             }
-            if (sub.subscribe) this.logger.verbose(`Websocket subscribe accepted: ${sub.roomId}`);
-            else this.logger.verbose(`Websocket unsubscribe accepted: ${sub.roomId}`);
+            this.logger.verbose(`Websocket ${sub.subscribe ? "subscribe" : "unsubscribe"} accepted: ${sub.roomId}`);
             break;
           }
           case "pub": {
@@ -243,10 +246,6 @@ export class WsClient {
     for (const listener of roomSubscribe.listener) listener(data);
   }
 
-  #restoreError(body: unknown): RestoredError {
-    return restoreRemoteError(body, 500, this.ErrorCls);
-  }
-
   destroy() {
     this.logger.debug(`WebSocket destroying`);
     this.#destroyed = true;
@@ -293,15 +292,7 @@ export class WsClient {
     return this;
   }
   hasListeners(key: string) {
-    const hasGeneric = (this.#listenerMap.get(key)?.size ?? 0) > 0;
-    const roomSub = this.#roomSubscribeMap.get(key);
-    const hasRoom = roomSub ? roomSub.listener.size > 0 : false;
-    return hasGeneric || hasRoom;
-  }
-  #warnNotConnected(action: "emit" | "subscribe", key: string) {
-    console.warn(
-      `[akanjs] WebSocket is not connected. Call fetch.instance.connect(), or drop the root layout "wsConnect = false", before ${action} "${key}".`,
-    );
+    return (this.#listenerMap.get(key)?.size ?? 0) > 0 || (this.#roomSubscribeMap.get(key)?.listener.size ?? 0) > 0;
   }
   #warnUnconnected(action: "emit" | "subscribe", key: string) {
     const timerKey = `${action}:${key}`;
@@ -309,7 +300,9 @@ export class WsClient {
     const timer = setTimeout(() => {
       this.#unconnectedWarnTimers.delete(timerKey);
       if (this.#connectRequested || this.#destroyed) return;
-      this.#warnNotConnected(action, key);
+      console.warn(
+        `[akanjs] WebSocket is not connected. Call fetch.instance.connect(), or drop the root layout "wsConnect = false", before ${action} "${key}".`,
+      );
     }, 0);
     this.#unconnectedWarnTimers.set(timerKey, timer);
   }
@@ -325,34 +318,22 @@ export class WsClient {
     this.#ws.send(frame);
     return this;
   }
-  subscribe(option: { key: string; data: unknown[]; handleEvent: (data: unknown) => void; handleResync?: () => void }) {
+  subscribe(option: RoomSubscription) {
     const roomId = WsClient.makeRoomId(option.key, option.data);
     if (!this.#ws) this.#warnUnconnected("subscribe", option.key);
-    if (!this.#roomSubscribeMap.has(roomId)) {
-      this.#roomSubscribeMap.set(roomId, {
-        key: option.key,
-        data: option.data,
-        listener: new Set(),
-        resync: new Set(),
-      });
-      if (this.#ws?.readyState === WebSocket.OPEN) {
-        this.#sendSubscribe(option.key, option.data, true);
-      }
+    let roomSubscribe = this.#roomSubscribeMap.get(roomId);
+    if (!roomSubscribe) {
+      roomSubscribe = { key: option.key, data: option.data, listener: new Set(), resync: new Set() };
+      this.#roomSubscribeMap.set(roomId, roomSubscribe);
+      if (this.#ws?.readyState === WebSocket.OPEN) this.#sendSubscribe(option.key, option.data, true);
       this.logger.verbose(`Websocket subscribe pubsub for ${roomId}`);
     }
-    const roomSubscribe = this.#roomSubscribeMap.get(roomId);
-    if (!roomSubscribe) return;
     roomSubscribe.listener.add(option.handleEvent);
     if (option.handleResync) roomSubscribe.resync.add(option.handleResync);
     this.logger.verbose(`Websocket subscribe pubsub for ${roomId} - ${roomSubscribe.listener.size} listeners added`);
     return this;
   }
-  unsubscribe(option: {
-    key: string;
-    data: unknown[];
-    handleEvent: (data: unknown) => void;
-    handleResync?: () => void;
-  }) {
+  unsubscribe(option: RoomSubscription) {
     const roomId = WsClient.makeRoomId(option.key, option.data);
     const roomSusbscribe = this.#roomSubscribeMap.get(roomId);
     if (!roomSusbscribe) return;
