@@ -57,11 +57,6 @@ export class ServiceSignal<
 }
 
 // TODO: add scalar signal for resolve field
-// export interface ScalarSignal {
-//   internal: InternalCls;
-// }
-
-/** Registry for database and service signals used by routing and fetch serialization. */
 export class SignalRegistry {
   static readonly #database = new Map<string, DatabaseSignal<InternalCls, EndpointCls, SliceCls, ServerSignalCls>>();
   static readonly #service = new Map<string, ServiceSignal<InternalCls, EndpointCls, ServerSignalCls>>();

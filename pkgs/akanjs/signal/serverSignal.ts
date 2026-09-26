@@ -56,14 +56,12 @@ export type ServerSignalCls<EnpCls = unknown, IntCls = unknown> = AdaptorCls<
 > &
   ServerSignalClsStatics;
 
-/** Composes endpoint and internal classes into a server-side signal class. */
 export const serverSignal = <EnpCls, IntCls>(
   endpointRef: EnpCls,
   internalRef: IntCls,
 ): ServerSignalCls<EnpCls, IntCls> => {
   const refName = (endpointRef as unknown as EndpointCls).refName.slice(0, -8);
   return class ServerSignal extends adapt(`${refName}Signal`, ({ plug }) => ({
-    // websocket: use<ServerWebSocket>(),
     queue: plug(QueueAdaptorRole),
   })) {
     static readonly [ENDPOINT_META] = Object.fromEntries(

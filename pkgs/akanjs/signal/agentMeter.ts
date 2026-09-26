@@ -16,11 +16,7 @@ export interface AgentQuotaCheck {
 export type AgentUsageHook = (report: AgentUsageReport) => PromiseOrObject<void>;
 export type AgentQuotaHook = (check: AgentQuotaCheck) => PromiseOrObject<boolean>;
 
-/**
- * The relay's metering seam: a quota asked before a turn spends the key, and the provider's own token counts
- * reported after it. `account` is whatever the app's account middleware put on the call — the framework has no
- * account model, so it hands the value through rather than guessing at an id.
- */
+/** `account` is whatever the app's account middleware put on the call; the framework has no account model. */
 export class AgentMeter {
   static #usage: AgentUsageHook | null = null;
   static #quota: AgentQuotaHook | null = null;
@@ -35,8 +31,7 @@ export class AgentMeter {
     if (AgentMeter.#quota && !(await AgentMeter.#quota({ account }))) throw new Err("agent.error.quotaExceeded");
     const result = await turn();
     const hook = AgentMeter.#usage;
-    //* Reported after the answer is in hand and never awaited by it: a slow or failing ledger must not cost the
-    //* user a turn the provider has already billed.
+    //* Never awaited: a slow or failing ledger must not cost the user a turn the provider already billed.
     if (hook && result.usage)
       void Promise.resolve()
         .then(() => hook({ account, model: result.model ?? null, usage: result.usage as LlmUsage }))

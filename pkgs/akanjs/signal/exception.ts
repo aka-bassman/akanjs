@@ -1,31 +1,6 @@
-/**
- * The three ways this framework throws, and which one to reach for.
- *
- * - **`Exception`** (here) — a request-level answer with a status code. It travels to the caller as it is:
- *   `{ error, statusCode, path, timestamp }`, with the message intact. Reach for it when the caller did
- *   something the endpoint can name — a filter that does not exist, an argument that will not parse, a guard's
- *   refusal. The message is read by whoever called, so it may not say anything the caller may not know.
- *
- * - **`Err`** (`akanjs/dictionary`, `new Err("<module>.error.<key>")`) — the same thing for a **domain** rule,
- *   with the sentence in the module's dictionary in every language. Everything a *user* reads is one of these;
- *   `Exception` carries English prose and belongs to the protocol rather than to the product.
- *
- * - **`Error`** — a bug, an invariant the code holds and something broke, or a misconfiguration a developer has
- *   to fix. It never reaches a caller: `SignalFailure` generalizes anything without a status code to
- *   `Internal Server Error` and logs the stack, because a stack names server paths and a driver message quotes
- *   the statement. Most of the 379 `throw new Error` in this package are boot-time refusals, which is right —
- *   nobody is holding the connection.
- *
- * The test for the first two is whether a caller can act on it. The test for the third is whether *this repo*
- * has to change for the throw to stop happening.
- */
-/**
- * The shape of every `Exception.<Status>` shorthand below.
- *
- * The annotation is not decoration: a `static X = class extends Exception {}` has to be serialized into the
- * `.d.ts` as a structural type, and that type contains `Exception`, whose statics contain it again — declaration
- * emit gives up with TS7056 and `akn build-package akanjs` fails. Naming the type breaks the cycle.
- */
+// An `Exception` travels to the caller with its message intact, so it may say nothing the caller may not know; a
+// plain `Error` is generalized to a 500 by `SignalFailure`. User-facing domain rules throw a dictionary `Err`.
+// Deletion caution: naming this type breaks the `.d.ts` cycle of `static X = class extends Exception` (TS7056).
 export interface StatusException {
   new (message?: string, details?: unknown): Exception;
 }
@@ -86,12 +61,7 @@ export class Exception extends Error {
   };
 }
 
-/**
- * What a transport forwards to the caller instead of generalizing: a status code and a payload the value can
- * write itself. An `Exception` is one; so is a dictionary `Err`; so is a failure `restoreRemoteError` rebuilt
- * from another process, which is what lets a server hop rethrow a remote `Err` and have it travel as that
- * `Err`. Anything else is this repo's own bug and becomes `SignalFailure`'s 500.
- */
+/** Forwarded to the caller instead of generalized: an `Exception`, a dictionary `Err`, or a restored remote one. */
 export interface ExceptionLike {
   statusCode: number;
   toJSON: () => object;

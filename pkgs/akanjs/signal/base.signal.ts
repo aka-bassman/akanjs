@@ -30,7 +30,6 @@ export class BaseEndpoint extends endpoint(srv.base, ({ query, mutation, message
 export class Base extends serverSignal(BaseEndpoint, BaseInternal) {}
 export const base = SignalRegistry.registerService("base" as const, BaseInternal, BaseEndpoint, Base);
 
-// The agent relay rides the same root fetch every lib chain starts from, so `fetch.runAgentTurn` reaches every app.
 const createBaseFetch = () => FetchClient.from(base, agent);
 type BaseFetch = ReturnType<typeof createBaseFetch>;
 
