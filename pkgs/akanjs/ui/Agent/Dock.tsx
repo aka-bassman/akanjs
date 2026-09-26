@@ -9,23 +9,16 @@ import StateKey from "./StateKey";
 import Tool from "./Tool";
 import Transcript from "./Transcript";
 
-// Exported because `index.ts` puts `Dock` in the `Agent` namespace object, and the package's declaration emit has to
-// name this type from that other module. Same reason `PanelProps` and `FieldProps` are exported.
+// Exported so declaration emit can name it through the `Agent` namespace object in `index.ts`.
 export interface DockProps {
   className?: string;
-  /** The store keys and their masking. Defaults to the app's own. */
+  /** Defaults to the app's own. */
   bridge?: AgentBridge;
-  /** Where the declared tools live. Pass a zone's own to inspect it; defaults to the whole screen's. */
+  /** Defaults to the whole screen's; pass a zone's own to inspect it. */
   surface?: AgenticSurface;
   open?: boolean;
 }
 
-/**
- * The in-page surface of the agent: what this screen declared an agent may do, what it may read, and what it has
- * done. Tools come from the surface rather than from the store, because a tool exists only where a component
- * declared one — the dock is the way to see that this screen published what its author thought it did, which is
- * the one thing no amount of reading the source answers. Renders nothing on `AKAN_PUBLIC_ENV=main`.
- */
 export const Dock = ({ className, bridge, surface, open = false }: DockProps) => {
   const held = useRef<{ bridge: AgentBridge; surface: AgenticSurface } | null>(null);
   held.current ??= { bridge: bridge ?? ensureStoreSurface().bridge, surface: surface ?? AgenticSurface.shared };

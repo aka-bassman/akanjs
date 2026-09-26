@@ -10,10 +10,7 @@ import { Attach, Chips } from "./Attach";
 import { Mic } from "./Mic";
 import { ReferenceChips } from "./Refer";
 
-/**
- * What the chat needs of whatever the composer draws into — a textarea, or the mention editor. Every offset is an
- * offset into the draft string, tokens included, because that is the text the chat reasons about.
- */
+/** Every offset is into the draft string, tokens included. */
 export interface ComposerHandle {
   focus: () => void;
   caret: () => number | null;
@@ -25,45 +22,36 @@ export interface ComposerProps {
   session: AgentSession;
   draft: string;
   attached: readonly MessageAttachment[];
-  /**
-   * What the draft's `@[…](mention:…)` tokens point at. The text is what carries them, so a composer that draws no
-   * chip still sends them — the chip is how somebody sees and removes one, not how it travels.
-   */
+  /** What the draft's `@[…](mention:…)` tokens point at; the text carries them, chips only show them. */
   references?: readonly MessageReference[];
-  /** Files still being read. An `attach` that uploads takes seconds, and a panel that shows nothing looks broken. */
+  /** Files still being read. */
   pending?: number;
-  /** Absent when the screen cannot listen — the same rule as publishing no tool for a control that is not drawn. */
+  /** Absent when the screen cannot listen. */
   mic?: { listening: boolean; onToggle: () => void };
   onDraft: (text: string) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onFiles: (files: File[]) => void;
   onRemoveFile: (idx: number) => void;
-  /** Keyed on `refName/refId#path`, not on a row index: the order is the draft's, and the draft is the truth. */
+  /** Keyed on `refName/refId#path`, not on a row index. */
   onRemoveReference?: (key: string) => void;
   onSend: () => void;
   onStop: () => void;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
-  /**
-   * Draws each `@` pointer as the name it points at instead of as its token. On only where the chat was given
-   * `reference` sources, so an app that declared none never fetches the editor's chunk.
-   */
+  /** Draws each `@` pointer as its name; set only when the chat has `reference` sources. */
   mentions?: boolean;
   /** Filled by whichever input is drawn. An override that draws its own textarea leaves it null and `inputRef` answers. */
   handleRef?: RefObject<ComposerHandle | null>;
 }
 
-// Its own chunk behind the chat's: the editor is the one heavy thing in this panel, and a chat with no mention
-// sources has nothing to spend it on.
+// Its own chunk: the editor is the panel's one heavy dependency, and only mention sources need it.
 const RichInput = lazy(() => import("./RichInput"), {
   ssr: false,
   suspense: true,
   loading: () => <div className="flex-1" />,
 });
 
-/** Where the box stops growing and starts scrolling: a chat composer is a paragraph at most. */
 const maxComposerHeight = 128;
 
-/** What the user writes with: the staged files above, and the controls that send or stop below them. */
 export const DefaultComposer = ({
   className,
   session,
@@ -108,8 +96,7 @@ export const DefaultComposer = ({
   useEffect(() => {
     const area = inputRef?.current;
     if (!area) return;
-    // Measured from a collapsed box: `scrollHeight` reports the content plus whatever height the box already has,
-    // so without the reset the composer only ever grows.
+    // Reset first: `scrollHeight` includes the box's current height, so without it the composer only ever grows.
     area.style.height = "auto";
     area.style.height = `${Math.min(area.scrollHeight, maxComposerHeight)}px`;
   }, [draft, inputRef]);

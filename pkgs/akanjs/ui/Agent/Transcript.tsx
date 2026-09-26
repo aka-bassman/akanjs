@@ -7,12 +7,6 @@ interface TranscriptProps {
   calls: readonly AgentCall[];
 }
 
-/**
- * What the agent did, newest last, so the user can check it against what they saw the page do.
- *
- * There is no undo here. Every model removal in this framework is soft, so one is possible in principle, but which
- * writes are reversible is a per-module judgement and `local/agent-native/PLAN.md` §9-3 leaves it open.
- */
 export default function Transcript({ className, calls }: TranscriptProps) {
   return (
     <div className={cn("flex flex-col gap-1", className)}>

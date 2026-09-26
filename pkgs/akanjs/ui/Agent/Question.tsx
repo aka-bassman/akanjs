@@ -10,12 +10,7 @@ export interface QuestionProps {
   question: PendingQuestion;
 }
 
-/**
- * The agent's question, parked above the composer while the loop waits on it. Only the picks live here — the
- * composer below is the free-text answer, so the panel never grows a second input meaning the same thing. There is
- * always that way out of the options: the model wrote them, and only the user knows whether the answer is among
- * them. Mounted keyed by call id, so a second ask starts with nothing picked.
- */
+/** Only the picks: the composer below is the free-text answer. */
 export const DefaultQuestion = ({ className, question }: QuestionProps) => {
   const { l } = usePage();
   const [picked, setPicked] = useState<string[]>([]);

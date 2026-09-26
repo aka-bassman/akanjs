@@ -11,31 +11,24 @@ import { type PersistOption, sessionHistoryOf } from "./sessionHistory";
 import { type BuiltinOption, sessionView } from "./sessionView";
 
 export interface AgentSessionSetup {
-  /** Read per call rather than captured, so text the session builds follows a language switched mid-conversation. */
+  /** Read per call, so the session's own text follows a language switched mid-conversation. */
   l: (key: string) => string;
-  /** The zone's scope path, empty for the root agent — it picks both the surface view and the persistence key. */
+  /** The zone's scope path, empty for the root agent; it picks both the surface view and the persistence key. */
   view?: string[];
   runner?: AgentRunner;
   instructions?: string;
   maxTurns?: number;
   compact?: CompactOptions;
-  /**
-   * Which of the runtime's own tools this session gets: all of them by default, none with `false`, exactly the
-   * ones an array names. A zone whose conversation must stay on one screen takes `navigate` and `goBack` off it.
-   */
+  /** Every runtime tool by default, `false` none, an array exactly the ones it names. */
   builtins?: BuiltinOption;
-  /** Web storage by default; a `SessionHistory` puts the transcript wherever the app keeps it, including a server. */
+  /** Web storage by default, or an app `SessionHistory`. */
   persist?: PersistOption | SessionHistory;
-  /** Called after a compaction replaced messages with one summary — where a host syncs its own watermark. */
+  /** Called after a compaction replaced messages with one summary. */
   onCompact?: AgentSessionOptions["onCompact"];
-  /** What the page draws while this session drives it — `false` draws nothing. */
+  /** `false` draws nothing while this session drives the page. */
   visual?: boolean | AgentVisualOption;
 }
 
-/**
- * The one place a chat session is wired to the akan runtime. Chat and Zone both build one, and building it twice
- * is how a zone came to be the only surface with no `compact` option — an option added on one side of a copy.
- */
 export const agentSessionOf = ({
   l,
   view = [],

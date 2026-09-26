@@ -3,20 +3,8 @@ import { type ChatMessage, type SessionHistory, Transcript } from "use-agentic";
 
 export type PersistOption = boolean | { storage?: "session" | "local"; key?: string };
 
-/**
- * Attachment content never reaches storage. Web storage is a few megabytes per origin, one screenshot fills a
- * chunk of it, and `AgentSession` swallows a failed save — so persisting the bytes would quietly stop persisting
- * the transcript itself. The name and type stay so a restored conversation still reads as what happened, and a
- * `url` stays because a pointer is not content; the server then tells the model the content is gone rather than
- * letting it answer from the filename. A `ref` stays for the same reason and matters more: it is the host's own
- * handle on the file, so dropping it leaves a restored conversation with nothing but a name and size to guess
- * from — the guess `ref` exists to retire.
- *
- * A reference's `value` goes the same way and for the same reason — it is capped at 20,000 characters each, and a
- * transcript of 50 messages would not fit beside it. What is left behind is better than what an attachment leaves,
- * though, and the note says so rather than leaving the model to notice: `refName`/`refId`/`path` is a live pointer,
- * so the answer to a restored reference is to read it again with a tool, not to guess from the label.
- */
+// Attachment bytes and reference values never reach storage: web storage holds a few MB and a failed save is
+// swallowed, so persisting them would quietly stop persisting the transcript. Pointers (url, ref, refId) stay.
 const restoredValue =
   "the conversation was restored from storage, which keeps what the user pointed at but not the value it held";
 
@@ -48,21 +36,11 @@ const withoutContent = (message: ChatMessage): ChatMessage => {
   };
 };
 
-/**
- * Maps the `persist` prop onto a `SessionHistory` over web storage. Session storage is the default on purpose:
- * surviving a refresh is the whole ask, and a transcript that dies with the tab never lingers on a shared machine
- * or collides across tabs. `"local"` is the explicit opt-up. The envelope is versioned so a wire change discards
- * stale transcripts instead of replaying them, and only the newest messages are kept under the cap — which is
- * why the cap is applied *before* the pairing repair: the window it keeps can start between a tool call and the
- * result answering it, and a transcript restored in that state is refused by the provider on its first turn.
- */
 export const sessionHistoryOf = (
   persist: PersistOption | SessionHistory | undefined,
   pathKey = "",
 ): SessionHistory | undefined => {
   if (!persist) return undefined;
-  // A host that brought its own store is handed straight back: `load` is what only a `SessionHistory` has, and the
-  // web-storage branch below is exactly the thing such a host is replacing, window or no window.
   if (typeof persist === "object" && typeof (persist as SessionHistory).load === "function")
     return persist as SessionHistory;
   if (typeof window === "undefined") return undefined;
@@ -79,6 +57,7 @@ export const sessionHistoryOf = (
       return parsed.v === version && Array.isArray(parsed.messages) ? parsed.messages : null;
     },
     save: (messages) => {
+      // Cap before `sanitize`: the window may open between a tool call and its result, which a provider refuses.
       const kept = Transcript.sanitize(messages.slice(-cap)).map(withoutContent);
       storage.setItem(key, JSON.stringify({ v: version, messages: kept }));
     },

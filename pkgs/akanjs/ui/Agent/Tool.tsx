@@ -11,12 +11,6 @@ interface ToolProps {
   onRun: () => void;
 }
 
-/**
- * One declared tool, with the arguments as JSON rather than as a generated form.
- *
- * A form per argument is what the API explorer does, and it is the wrong trade here: the point of the dock is to
- * watch a call land in the running app, and every schema shape a component declares is already legible as JSON.
- */
 export default function Tool({ className, surface, tool, onRun }: ToolProps) {
   const [args, setArgs] = useState("{}");
   const [error, setError] = useState("");
@@ -47,8 +41,7 @@ export default function Tool({ className, surface, tool, onRun }: ToolProps) {
           value={args}
           onChange={(event) => setArgs(event.target.value)}
         />
-        {/* `buttonRecipe` rather than `Button`, which reads the app runtime through `usePage()` for labels this
-            developer surface does not localize anyway — the same English the API explorer uses. */}
+        {/* `buttonRecipe`, not `Button`: this developer surface does not read the app runtime through `usePage()`. */}
         <button className={buttonRecipe({ size: "xs" })} onClick={run} type="button">
           Run
         </button>

@@ -6,9 +6,9 @@ import { createOverridable } from "../UiOverride";
 export interface LauncherProps {
   className?: string;
   label: string;
-  /** The chord that opens the chat, shown on hover. Null until the platform is known, which needs the client. */
+  /** Shown on hover; null until the client knows the platform. */
   hotkey?: { label: string; keys: string } | null;
-  /** Messages that arrived while the panel was closed, so a finished turn is not silent. */
+  /** Messages that arrived while the panel was closed. */
   unread: number;
   onOpen: () => void;
   buttonRef?: Ref<HTMLButtonElement>;

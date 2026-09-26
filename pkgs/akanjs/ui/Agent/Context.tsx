@@ -8,14 +8,6 @@ interface ContextProps {
   className?: string;
 }
 
-/**
- * Assembles and shows exactly what a turn would carry, on demand — the one preview of "what does the agent see on
- * this screen" that no amount of reading the source answers.
- *
- * The tool list leads, by name only: a zone publishes its tools scope-prefixed, and instructions that name a tool
- * without its prefix name a tool that does not exist. That is invisible in the source of either file and obvious
- * here. Renders nothing on `AKAN_PUBLIC_ENV=main`.
- */
 export default function Context({ className }: ContextProps) {
   const [shown, setShown] = useState("");
   // Production visitors never see the turn snapshot — tool names, guides, and the assembled context.

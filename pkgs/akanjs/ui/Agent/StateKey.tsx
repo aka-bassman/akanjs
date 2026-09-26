@@ -11,12 +11,7 @@ interface StateKeyProps {
   live?: boolean;
 }
 
-/**
- * One readable state key, read on demand rather than rendered with the rest.
- *
- * Reading is where masking happens, so a key that holds an object no model claims refuses here instead of in the
- * catalogue — whether it is readable depends on what is in it, which the catalogue cannot know ahead of time.
- */
+// Masking happens on read, so a key holding an object no model claims refuses here, not in the catalogue.
 export default function StateKey({ className, bridge, name, entry, live }: StateKeyProps) {
   const [shown, setShown] = useState("");
   const read = () => {

@@ -7,19 +7,13 @@ export interface ChatCommandContext {
 
 export interface ChatCommand {
   name: string;
-  /** Accepted but not listed: one row per command, so the menu names each thing once. */
+  /** Accepted but not listed in the menu. */
   aliases?: string[];
   description: string;
   run: (context: ChatCommandContext) => void | Promise<void>;
 }
 
-/**
- * The chat's own slash commands — the whole `/` menu, since an app's prompts are `page().prompt()` declarations
- * served over MCP and not listed by a browser chat.
- *
- * Output goes through `session.note`, never `send`: a command is answered by this browser, so its text belongs in
- * the transcript the user reads and nowhere in the history the model reads.
- */
+/** Output goes through `session.note`, never `send`: the user reads it, the model never does. */
 export class ChatCommands {
   static list(l: (key: string) => string): ChatCommand[] {
     return [
@@ -35,7 +29,6 @@ export class ChatCommands {
         name: "retry",
         description: l("base.agentCmdRetry"),
         run: async ({ session, l: t }) => {
-          // Told apart because a turn in flight is not an empty transcript, and one message for both would be a lie.
           if (session.isRunning) session.note(t("base.agentBusy"));
           else if (!(await session.retry())) session.note(t("base.agentNothingToRetry"));
         },
@@ -45,8 +38,6 @@ export class ChatCommands {
         description: l("base.agentCmdCompact"),
         run: async ({ session, l: t }) => {
           if (session.isRunning) session.note(t("base.agentBusy"));
-          // Keeps nothing verbatim: a user who asks for a summary is asking about the whole conversation, and the
-          // turn that follows reads it in place of everything above it.
           else if (await session.compact()) session.note(t("base.agentCompacted"));
           else session.note(t("base.agentNothingToCompact"));
         },
@@ -61,7 +52,7 @@ export class ChatCommands {
     return ChatCommands.list(l).find((command) => command.name === name || command.aliases?.includes(name)) ?? null;
   }
 
-  /** A command is user-typed, so a failure inside one lands in the transcript instead of at the page. */
+  /** A failure is reported into the transcript instead of thrown. */
   static async run(command: ChatCommand, context: ChatCommandContext) {
     try {
       await command.run(context);
@@ -70,17 +61,12 @@ export class ChatCommands {
     }
   }
 
-  /**
-   * The conversation as markdown. The relay is stateless and the transcript lives only in this browser, so an
-   * export is the only way a wrong answer can reach whoever could fix it — which is why the header carries where
-   * and when it happened. Local notes are left out: they are this chat talking to itself.
-   */
+  /** The conversation as markdown, local notes left out. */
   static transcriptOf(messages: readonly ChatMessage[], where = ""): string {
     const lines = [`# Agent conversation`, [where, new Date().toISOString()].filter(Boolean).join(" · "), ""];
     for (const message of messages) {
       if (message.local) continue;
-      // A summary wears the user's role on the wire, and an export that repeated that would read as the user
-      // pasting notes they never wrote.
+      // A summary wears the user's role on the wire; exported as such it would read as the user's own notes.
       lines.push(`**${message.summary ? "summary" : message.role}**`);
       if (message.text) lines.push(message.text);
       for (const attachment of message.attachments ?? [])
@@ -102,7 +88,7 @@ export class ChatCommands {
       await navigator.clipboard.writeText(ChatCommands.transcriptOf(session.messages, where));
       session.note(l("base.agentCopied"));
     } catch {
-      // Clipboard access is denied outside a secure context and in a background tab; the user hears about it.
+      // Clipboard access is denied outside a secure context and in a background tab.
       session.note(l("base.agentCopyFailed"));
     }
   }
@@ -112,10 +98,7 @@ export class ChatCommands {
     session.note([l("base.agentHelpIntro"), ...rows, "", l("base.agentHelpNote")].join("\n"));
   }
 
-  /**
-   * What this screen published, read off the session's own surface — a zone chat therefore lists its zone's view.
-   * `askUser` is the session's rather than the surface's, so it is added here the same way the turn adds it.
-   */
+  // `askUser` belongs to the session, not the surface, so it is added the way the turn adds it.
   static #tools({ session, l }: ChatCommandContext) {
     const { tools, resources } = session.surface.snapshot();
     const published = tools.some((tool) => tool.name === AgentSession.askUserTool.name)
@@ -134,7 +117,6 @@ export class ChatCommands {
     );
   }
 
-  /** A tool description is written for a model and runs long; the menu row wants its first sentence. */
   static #sentence(text: string) {
     const first = text.split(/(?<=[.!?])\s/)[0].trim();
     return first.length > 120 ? `${first.slice(0, 117)}...` : first;

@@ -18,13 +18,9 @@ import { tokenCount } from "./tokenCount";
 export interface BubbleProps {
   className?: string;
   message: ChatMessage;
-  /** What the call still running last reported about itself, so a slow tool says what it is doing. */
+  /** What the running call last reported about itself. */
   progress?: (AgentProgressReport & { callId: string }) | null;
-  /**
-   * Results by call id, gathered across the transcript. A call and its result are two wire messages — the model
-   * needs both — but they are one thing that happened, so the call's own row resolves in place instead of the
-   * name appearing again as a second row.
-   */
+  /** Results by call id across the transcript, so a call's own row resolves in place. */
   results?: ReadonlyMap<string, ToolCallResult>;
 }
 
@@ -35,7 +31,6 @@ interface RowProps {
   progress?: AgentProgressReport | null;
 }
 
-/** What the row shows when it is opened: everything the model was handed that the one line could not fit. */
 const payloadOf = ({ result, changes, error }: ToolCallResult) => ({
   ...(result !== undefined ? { result } : {}),
   ...(changes?.length ? { changes } : {}),
@@ -53,8 +48,6 @@ const stepTone = {
 interface StepListProps {
   steps: AgentProgressStep[];
 }
-//* Folded by default: a code worker's edit-by-edit trail is what a user opens when the one-line summary is not
-//* enough, not what every running row should grow by.
 const StepList = ({ steps }: StepListProps) => {
   const settled = steps.filter((step) => step.status === "done" || step.status === "error").length;
   return (
@@ -75,21 +68,12 @@ const StepList = ({ steps }: StepListProps) => {
   );
 };
 
-/**
- * The arguments ride along because two calls of one tool are the same row otherwise — two searches, one name.
- *
- * A settled row opens: the estimated token cost is on the line, and the value itself is one click below it. Both
- * are there because a tool result is the one part of a transcript neither the user nor the app author sees — it is
- * the app's own return value, sized for a screen and not for a model's window, and a conversation that fills up
- * after four messages is answered by *which* row cost a million tokens and nothing else.
- */
 const Row = ({ name, args, result, progress }: RowProps) => {
   const { l } = usePage();
   const payload = result ? payloadOf(result) : null;
   const head = (
     <>
       {result ? (
-        // A glyph is the whole status, so it carries the word a screen reader reads in its place.
         <span
           aria-label={l(result.error ? "base.agentToolFailed" : "base.agentToolDone")}
           className={cn("shrink-0 text-[10px]", result.error ? "text-destructive" : "text-success")}
@@ -152,11 +136,7 @@ interface AskProps {
   result: ToolCallResult;
 }
 
-/**
- * A settled `askUser` reads as the exchange it was — the question, then what the user answered — instead of as a
- * tool row. An unsettled one renders nothing here: the question card below the transcript is holding it, and the
- * text would otherwise sit on screen twice.
- */
+// Settled only: an unsettled ask is already on screen as the question card below the transcript.
 const Ask = ({ args, result }: AskProps) => {
   const answered = (Array.isArray(result.result) ? result.result : [result.result])
     .filter((one): one is string => typeof one === "string" && !!one)
@@ -178,8 +158,6 @@ const Ask = ({ args, result }: AskProps) => {
 
 const Content = ({ className, message, progress, results }: BubbleProps) => {
   const { l } = usePage();
-  // Collapsed through `details` rather than state: both halves stay rendered, and what compaction replaced is
-  // there to read without being the loudest thing in the transcript.
   if (message.summary)
     return (
       <details className={cn("rounded-box border border-border bg-muted/60 px-3 py-2", className)}>
@@ -229,14 +207,7 @@ const Content = ({ className, message, progress, results }: BubbleProps) => {
   );
 };
 
-/**
- * Memoized because the transcript re-renders on every streamed delta and on every keystroke in the composer, and
- * a settled bubble re-parses its markdown for nothing each time. The props are compared by identity, so the caller
- * hands the same `results` map and `progress` value to every row — which is why only the rows that actually
- * changed re-render.
- *
- * A component bound to the `AgentBubble` slot replaces the memoized default, so it carries its own `memo`.
- */
+/** Memoized on prop identity; a component bound to the `AgentBubble` slot replaces it and carries its own `memo`. */
 export const DefaultBubble = memo(Content);
 
 export default createOverridable("AgentBubble", DefaultBubble);

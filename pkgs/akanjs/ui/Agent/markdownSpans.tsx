@@ -2,7 +2,6 @@
 import { type MarkdownSpan, MarkdownSpans } from "akanjs/common";
 import type { ReactNode } from "react";
 
-/** The browser rendering of {@link MarkdownSpans}; the scanner, and which hrefs are refused, live there. */
 export const spans = (text: string): ReactNode[] => MarkdownSpans.of(text).map((span, at) => node(span, at));
 
 const node = (span: MarkdownSpan, at: number): ReactNode => {
