@@ -1,5 +1,5 @@
 import type { WorkflowSpec } from "@akanjs/devkit/workflow";
-import { baseValidation, moduleInput, sysInputs } from "./shared";
+import { baseValidation, moduleInput, sysInputs, validateTargetStep } from "./shared";
 
 export const createUiWorkflowSpec: WorkflowSpec = {
   schemaVersion: 1,
@@ -39,12 +39,7 @@ export const createUiWorkflowSpec: WorkflowSpec = {
       tool: "syncTarget",
       description: "Refresh UI barrels after adding a component.",
     },
-    {
-      id: "validate-target",
-      title: "Validate target",
-      tool: "lintTarget",
-      description: "Run validation commands for the target.",
-    },
+    validateTargetStep,
   ],
   predictedChanges: [
     { target: "*/lib/<module>/<Module>.<Surface>.tsx", action: "create", reason: "New UI component is created." },

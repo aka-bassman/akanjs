@@ -1,5 +1,5 @@
 import type { WorkflowSpec } from "@akanjs/devkit/workflow";
-import { baseValidation, moduleInput, sysInputs } from "./shared";
+import { baseValidation, moduleInput, sysInputs, validateTargetStep } from "./shared";
 
 export const addEnumFieldWorkflowSpec: WorkflowSpec = {
   schemaVersion: 1,
@@ -52,12 +52,7 @@ export const addEnumFieldWorkflowSpec: WorkflowSpec = {
       tool: "syncTarget",
       description: "Refresh generated files after enum source changes.",
     },
-    {
-      id: "validate-target",
-      title: "Validate target",
-      tool: "lintTarget",
-      description: "Run validation commands for the target.",
-    },
+    validateTargetStep,
   ],
   predictedChanges: [
     { target: "*/lib/<module>/<module>.constant.ts", action: "modify", reason: "Enum field shape is added." },

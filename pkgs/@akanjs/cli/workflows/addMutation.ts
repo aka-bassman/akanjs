@@ -1,5 +1,5 @@
 import type { WorkflowSpec } from "@akanjs/devkit/workflow";
-import { baseValidation, moduleInput, sysInputs } from "./shared";
+import { baseValidation, moduleInput, sysInputs, validateTargetStep } from "./shared";
 
 export const addMutationWorkflowSpec: WorkflowSpec = {
   schemaVersion: 1,
@@ -51,12 +51,7 @@ export const addMutationWorkflowSpec: WorkflowSpec = {
       tool: "syncTarget",
       description: "Refresh generated service and signal barrels.",
     },
-    {
-      id: "validate-target",
-      title: "Validate target",
-      tool: "lintTarget",
-      description: "Run validation commands for the target.",
-    },
+    validateTargetStep,
   ],
   predictedChanges: [
     {

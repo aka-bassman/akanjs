@@ -1,5 +1,5 @@
 import type { WorkflowSpec } from "@akanjs/devkit/workflow";
-import { baseValidation, moduleInput, sysInputs } from "./shared";
+import { baseValidation, moduleInput, sysInputs, validateTargetStep } from "./shared";
 
 export const addSliceWorkflowSpec: WorkflowSpec = {
   schemaVersion: 1,
@@ -49,12 +49,7 @@ export const addSliceWorkflowSpec: WorkflowSpec = {
       tool: "syncTarget",
       description: "Refresh generated files after slice changes.",
     },
-    {
-      id: "validate-target",
-      title: "Validate target",
-      tool: "lintTarget",
-      description: "Run validation commands for the target.",
-    },
+    validateTargetStep,
   ],
   predictedChanges: [
     {

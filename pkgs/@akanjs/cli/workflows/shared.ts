@@ -1,4 +1,4 @@
-import type { WorkflowInputSpec, WorkflowValidation } from "@akanjs/devkit/workflow";
+import type { WorkflowInputSpec, WorkflowStep, WorkflowValidation } from "@akanjs/devkit/workflow";
 export const sysInputs = {
   app: {
     type: "string",
@@ -23,3 +23,10 @@ export const baseValidation = [
     kind: "lint",
   },
 ] satisfies readonly WorkflowValidation[];
+
+export const validateTargetStep = {
+  id: "validate-target",
+  title: "Validate target",
+  tool: "lintTarget",
+  description: "Run validation commands for the target.",
+} satisfies WorkflowStep;
