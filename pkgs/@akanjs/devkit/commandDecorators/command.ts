@@ -117,17 +117,13 @@ const assertEnumChoice = (argMeta: ArgMeta, value: unknown) => {
   );
 };
 
-const resolveEnumChoices = async (argMeta: ArgMeta, context: CommandContext) => {
-  const enumChoices = argMeta.argsOption.enum;
-  if (!enumChoices) return null;
-  if (typeof enumChoices === "function") return await enumChoices(context);
-  return enumChoices;
-};
+const inputMessageOf = ({ name, argsOption: { desc, example, ask } }: ArgMeta) =>
+  ask ? `${ask}: ` : desc ? `${desc}: ` : `Enter the ${name} value${example ? ` (example: ${example})` : ""}: `;
 
 export const getOptionValue = async (argMeta: ArgMeta, opt: Record<string, unknown>, context: CommandContext) => {
   const {
     name,
-    argsOption: { enum: enumChoices, default: defaultValue, type, desc, nullable, example, ask },
+    argsOption: { enum: enumChoices, default: defaultValue, type, desc, nullable, ask },
   } = argMeta;
   if (opt[argMeta.name] !== undefined) {
     assertEnumChoice(argMeta, opt[argMeta.name]);
@@ -135,42 +131,26 @@ export const getOptionValue = async (argMeta: ArgMeta, opt: Record<string, unkno
   } else if (defaultValue !== undefined) return defaultValue;
 
   if (enumChoices) {
-    const choices = normalizeEnumChoices((await resolveEnumChoices(argMeta, context)) ?? []);
+    const choices = normalizeEnumChoices(
+      (typeof enumChoices === "function" ? await enumChoices(context) : enumChoices) ?? [],
+    );
     if (choices.length === 1) return choices[0]?.value;
-    const choice = await select({ message: ask ?? desc ?? `Select the ${name} value`, choices });
-    return choice;
+    return await select({ message: ask ?? desc ?? `Select the ${name} value`, choices });
   } else if (nullable) return null;
   else if (type === "boolean") {
     const message = ask ?? desc ?? `Do you want to set ${name}? ${desc ? ` (${desc})` : ""}: `;
     return await confirm({ message });
-  } else {
-    const message = ask
-      ? `${ask}: `
-      : desc
-        ? `${desc}: `
-        : `Enter the ${name} value${example ? ` (example: ${example})` : ""}: `;
-    if (argMeta.argsOption.nullable) return await input({ message });
-    else return convertArgValue(await input({ message }), type ?? "string");
-  }
+  } else return convertArgValue(await input({ message: inputMessageOf(argMeta) }), type ?? "string");
 };
 
 export const getArgumentValue = async (argMeta: ArgMeta, value: string | undefined) => {
-  const {
-    name,
-    argsOption: { default: defaultValue, type, desc, nullable, example, ask },
-  } = argMeta;
+  const { default: defaultValue, type, nullable } = argMeta.argsOption;
   if (value !== undefined) {
     assertEnumChoice(argMeta, value);
     return convertArgValue(value, type ?? "string");
   } else if (defaultValue !== undefined) return defaultValue;
   else if (nullable) return null;
-
-  const message = ask
-    ? `${ask}: `
-    : desc
-      ? `${desc}: `
-      : `Enter the ${name} value${example ? ` (example: ${example})` : ""}: `;
-  return convertArgValue(await input({ message }), type ?? "string");
+  return convertArgValue(await input({ message: inputMessageOf(argMeta) }), type ?? "string");
 };
 
 const assignCommandContext = (context: CommandContext, argMeta: ArgMeta | InternalArgMeta, value: unknown) => {
@@ -244,32 +224,23 @@ export const getInternalArgumentValue = async (
   if (argMeta.type === "Workspace") return workspace;
   const sysType = argMeta.type.toLowerCase();
   const [appNames, libNames, pkgNames] = await workspace.getExecs();
-  if (sysType === "sys") {
-    if (value && appNames.includes(value)) return AppExecutor.from(workspace, value);
-    else if (value && libNames.includes(value)) return LibExecutor.from(workspace, value);
-    else {
-      const sysName = await select<string>({
-        message: `Select the App or Lib name`,
-        choices: [...appNames, ...libNames],
-      });
-      if (appNames.includes(sysName)) return AppExecutor.from(workspace, sysName);
-      else if (libNames.includes(sysName)) return LibExecutor.from(workspace, sysName);
-      else throw new Error(`Invalid system name: ${sysName}`);
-    }
-  } else if (sysType === "exec") {
-    if (value && appNames.includes(value)) return AppExecutor.from(workspace, value);
-    else if (value && libNames.includes(value)) return LibExecutor.from(workspace, value);
-    else if (value && pkgNames.includes(value)) return PkgExecutor.from(workspace, value);
-    else {
-      const execName = await select<string>({
-        message: `Select the App or Lib or Pkg name`,
-        choices: [...appNames, ...libNames, ...pkgNames],
-      });
-      if (appNames.includes(execName)) return AppExecutor.from(workspace, execName);
-      else if (libNames.includes(execName)) return LibExecutor.from(workspace, execName);
-      else if (pkgNames.includes(execName)) return PkgExecutor.from(workspace, execName);
-      else throw new Error(`Invalid system name: ${execName}`);
-    }
+  if (sysType === "sys" || sysType === "exec") {
+    const pkgChoices = sysType === "exec" ? pkgNames : [];
+    const execOf = (name: string) => {
+      if (appNames.includes(name)) return AppExecutor.from(workspace, name);
+      if (libNames.includes(name)) return LibExecutor.from(workspace, name);
+      if (pkgChoices.includes(name)) return PkgExecutor.from(workspace, name);
+      return null;
+    };
+    const found = value ? execOf(value) : null;
+    if (found) return found;
+    const name = await select<string>({
+      message: sysType === "exec" ? `Select the App or Lib or Pkg name` : `Select the App or Lib name`,
+      choices: [...appNames, ...libNames, ...pkgChoices],
+    });
+    const picked = execOf(name);
+    if (!picked) throw new Error(`Invalid system name: ${name}`);
+    return picked;
   } else if (sysType === "app") {
     if (value && appNames.includes(value)) return AppExecutor.from(workspace, value);
     if (!value && appNames.length === 1 && appNames[0]) return AppExecutor.from(workspace, appNames[0]);
@@ -335,12 +306,9 @@ export const runCommands = async (...commands: CommandCls[]) => {
   process.env.AKAN_VERSION = cliPackageJson?.version ?? "0.0.1";
 
   const hasHelpFlag = process.argv.includes("--help") || process.argv.includes("-h");
-  const hasCommand = process.argv.length > 2 && !process.argv[2]?.startsWith("-");
-  if (hasHelpFlag || !hasCommand) {
-    if (process.argv.length === 2 || (process.argv.length === 3 && hasHelpFlag)) {
-      Logger.rawLog(formatHelp(commands, process.env.AKAN_VERSION));
-      process.exit(0);
-    }
+  if (process.argv.length === 2 || (process.argv.length === 3 && hasHelpFlag)) {
+    Logger.rawLog(formatHelp(commands, process.env.AKAN_VERSION));
+    process.exit(0);
   }
 
   program.version(process.env.AKAN_VERSION).description("Akan CLI").configureHelp({

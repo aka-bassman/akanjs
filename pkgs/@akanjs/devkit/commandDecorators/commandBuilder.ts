@@ -2,6 +2,7 @@ import type {
   App,
   ArgMeta,
   ArgsOption,
+  ArgType,
   CommandContext,
   Exec,
   InternalArgMeta,
@@ -69,6 +70,14 @@ type CommandHandler<Deps extends readonly DependencyCls[], Params extends unknow
   ...args: Params
 ) => unknown | Promise<unknown>;
 
+const argMetaOf = (
+  type: ArgType,
+  name: string,
+  primitive: PrimitiveArgType,
+  argsOption: object | undefined,
+  idx: number,
+): ArgMeta => ({ name, argsOption: { ...argsOption, type: normalizePrimitiveArgType(primitive) }, key: "", idx, type });
+
 class TargetBuilder<Deps extends readonly DependencyCls[], Params extends unknown[] = [], Context = object> {
   readonly #args: (ArgMeta | InternalArgMeta)[];
 
@@ -79,56 +88,29 @@ class TargetBuilder<Deps extends readonly DependencyCls[], Params extends unknow
     this.#args = args;
   }
 
+  #add<NextParams extends unknown[], NextContext = Context>(...argMetas: (ArgMeta | InternalArgMeta)[]) {
+    return new TargetBuilder<Deps, NextParams, NextContext>(this.targetOption, [...this.#args, ...argMetas]);
+  }
+
   arg<Type extends PrimitiveArgType, const Option extends ArgsOption<Context> = ArgsOption<Context>>(
     name: string,
     type: Type,
     argsOption: Option = {} as Option,
-  ): TargetBuilder<Deps, AddArg<Params, Type, Option>, Context> {
-    return new TargetBuilder<Deps, AddArg<Params, Type, Option>, Context>(this.targetOption, [
-      ...this.#args,
-      {
-        name,
-        argsOption: { ...argsOption, type: normalizePrimitiveArgType(type) },
-        key: "",
-        idx: this.#args.length,
-        type: "Argument",
-      } as ArgMeta<CommandContext>,
-    ]);
+  ) {
+    return this.#add<AddArg<Params, Type, Option>>(argMetaOf("Argument", name, type, argsOption, this.#args.length));
   }
 
   option<Type extends PrimitiveArgType, const Option extends ArgsOption<Context> = ArgsOption<Context>>(
     name: string,
     type: Type,
     argsOption: Option = {} as Option,
-  ): TargetBuilder<Deps, AddArg<Params, Type, Option>, Context> {
-    return new TargetBuilder<Deps, AddArg<Params, Type, Option>, Context>(this.targetOption, [
-      ...this.#args,
-      {
-        name,
-        argsOption: { ...argsOption, type: normalizePrimitiveArgType(type) },
-        key: "",
-        idx: this.#args.length,
-        type: "Option",
-      } as ArgMeta<CommandContext>,
-    ]);
+  ) {
+    return this.#add<AddArg<Params, Type, Option>>(argMetaOf("Option", name, type, argsOption, this.#args.length));
   }
 
-  with<const Tokens extends readonly InternalArgToken[]>(
-    ...tokens: Tokens
-  ): TargetBuilder<Deps, AddInternalArgs<Params, Tokens>, AddInternalContext<Context, Tokens>> {
-    return new TargetBuilder<Deps, AddInternalArgs<Params, Tokens>, AddInternalContext<Context, Tokens>>(
-      this.targetOption,
-      [
-        ...this.#args,
-        ...tokens.map(
-          (token, offset) =>
-            ({
-              key: "",
-              idx: this.#args.length + offset,
-              type: token.type,
-            }) satisfies InternalArgMeta,
-        ),
-      ],
+  with<const Tokens extends readonly InternalArgToken[]>(...tokens: Tokens) {
+    return this.#add<AddInternalArgs<Params, Tokens>, AddInternalContext<Context, Tokens>>(
+      ...tokens.map((token, offset) => ({ key: "", idx: this.#args.length + offset, type: token.type })),
     );
   }
 
@@ -170,22 +152,8 @@ const createContext = <Deps extends readonly DependencyCls[]>(): CommandBuilderC
   public: createTarget<Deps>("public"),
   cloud: createTarget<Deps>("cloud"),
   dev: createTarget<Deps>("dev"),
-  arg: (name, type, argsOption) =>
-    ({
-      name,
-      argsOption: { ...(argsOption ?? {}), type: normalizePrimitiveArgType(type) },
-      key: "",
-      idx: -1,
-      type: "Argument",
-    }) as ArgMeta<CommandContext>,
-  option: (name, type, argsOption) =>
-    ({
-      name,
-      argsOption: { ...(argsOption ?? {}), type: normalizePrimitiveArgType(type) },
-      key: "",
-      idx: -1,
-      type: "Option",
-    }) as ArgMeta<CommandContext>,
+  arg: (name, type, argsOption) => argMetaOf("Argument", name, type, argsOption, -1),
+  option: (name, type, argsOption) => argMetaOf("Option", name, type, argsOption, -1),
 });
 
 const buildCommandMeta = (definitions: Record<string, TargetDefinition>) => {
