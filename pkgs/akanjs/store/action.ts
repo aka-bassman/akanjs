@@ -914,6 +914,29 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
     const hasMoreFrom = (batch: unknown[], askedFor: number) => ({
       [namesOfSlice.hasMoreOfModel]: batch.length >= askedFor && askedFor > 0,
     });
+    const fetchList = (queryArgs: unknown[], skip: number, limit: number, sort: Sort, options?: object) =>
+      (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
+        ...expandQueryArgs(queryArgs, slice.args),
+        skip,
+        limit,
+        sort,
+        options,
+      );
+    const fetchInsight = (queryArgs: unknown[], options?: object) =>
+      (fetch[namesOfSlice.modelInsight] as (...args: any[]) => Promise<Insight & BaseInsight>)(
+        ...expandQueryArgs(queryArgs, slice.args),
+        options,
+      );
+    const loadList = async <T>(self: SetGet, load: () => Promise<T>, commit: (loaded: T) => object) => {
+      self.set({ [namesOfSlice.modelListLoading]: true });
+      const ticket = requests.claim();
+      try {
+        const loaded = await load();
+        if (requests.isCurrent(ticket)) self.set(commit(loaded));
+      } finally {
+        if (requests.isCurrent(ticket)) self.set({ [namesOfSlice.modelListLoading]: false });
+      }
+    };
     const singleSliceAction = {
       [namesOfSlice.initModel]: async function (
         this: SetGet,
@@ -973,46 +996,33 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
           isQueryEqual(sort as unknown as object, sortOfModel as unknown as object)
         )
           return;
-        else this.set({ [namesOfSlice.modelListLoading]: true });
-        const ticket = requests.claim();
-        const fetchQueryArgs = expandQueryArgs(queryArgs, slice.args);
-        try {
-          const [modelDataList, modelObjInsight] = await Promise.all([
-            (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
-              ...fetchQueryArgs,
-              (page - 1) * limit,
-              fetchLimit,
-              sort,
-              { ...fetchPolicy, onError: initForm.onError },
-            ),
-            insight === false
-              ? null
-              : (fetch[namesOfSlice.modelInsight] as (...args: any[]) => Promise<Insight & BaseInsight>)(
-                  ...fetchQueryArgs,
-                  { ...fetchPolicy, onError: initForm.onError },
-                ),
-          ]);
-          if (!requests.isCurrent(ticket)) return;
-          const modelList = new DataList(modelDataList);
-          const modelInsight =
-            modelObjInsight ??
-            (new cnst.insight().set({ count: modelDataList.length }) as unknown as Insight & BaseInsight);
-          this.set({
-            [namesOfSlice.modelList]: modelList,
-            [namesOfSlice.modelInsight]: modelInsight,
-            [namesOfSlice.modelInitList]: modelList,
-            [namesOfSlice.modelInitAt]: new Date(),
-            [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / (limit || 20)) + 1, 1),
-            ...hasMoreFrom(modelDataList, fetchLimit),
-            [namesOfSlice.limitOfModel]: limit,
-            [namesOfSlice.queryArgsOfModel]: queryArgs,
-            [namesOfSlice.sortOfModel]: sort,
-            [namesOfSlice.pageOfModel]: page,
-            [names.modelOperation]: "idle",
-          });
-        } finally {
-          if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
-        }
+        await loadList(
+          this,
+          () =>
+            Promise.all([
+              fetchList(queryArgs, (page - 1) * limit, fetchLimit, sort, { ...fetchPolicy, onError: initForm.onError }),
+              insight === false ? null : fetchInsight(queryArgs, { ...fetchPolicy, onError: initForm.onError }),
+            ]),
+          ([modelDataList, modelObjInsight]) => {
+            const modelList = new DataList(modelDataList);
+            const modelInsight =
+              modelObjInsight ??
+              (new cnst.insight().set({ count: modelDataList.length }) as unknown as Insight & BaseInsight);
+            return {
+              [namesOfSlice.modelList]: modelList,
+              [namesOfSlice.modelInsight]: modelInsight,
+              [namesOfSlice.modelInitList]: modelList,
+              [namesOfSlice.modelInitAt]: new Date(),
+              [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / (limit || 20)) + 1, 1),
+              ...hasMoreFrom(modelDataList, fetchLimit),
+              [namesOfSlice.limitOfModel]: limit,
+              [namesOfSlice.queryArgsOfModel]: queryArgs,
+              [namesOfSlice.sortOfModel]: sort,
+              [namesOfSlice.pageOfModel]: page,
+              [names.modelOperation]: "idle",
+            };
+          },
+        );
       },
       [namesOfSlice.selectModel]: function (
         this: SetGet,
@@ -1038,27 +1048,16 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         const limitOfModel = currentState[namesOfSlice.limitOfModel] as number;
         const sortOfModel = currentState[namesOfSlice.sortOfModel] as Sort;
         if (pageOfModel === page) return;
-        this.set({ [namesOfSlice.modelListLoading]: true });
-        const ticket = requests.claim();
-        const fetchQueryArgs = expandQueryArgs(queryArgsOfModel, slice.args);
-        try {
-          const modelDataList = await (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
-            ...fetchQueryArgs,
-            (page - 1) * limitOfModel,
-            limitOfModel,
-            sortOfModel,
-            options,
-          );
-          if (!requests.isCurrent(ticket)) return;
-          this.set({
+        await loadList(
+          this,
+          () => fetchList(queryArgsOfModel, (page - 1) * limitOfModel, limitOfModel, sortOfModel, options),
+          (modelDataList) => ({
             [namesOfSlice.modelList]: new DataList(modelDataList),
             [namesOfSlice.pageOfModel]: page,
             [namesOfSlice.isCumulativeOfModel]: false,
             ...hasMoreFrom(modelDataList, limitOfModel),
-          });
-        } finally {
-          if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
-        }
+          }),
+        );
       },
       // Offsets by the rows on screen, not a page, so a live insert cannot shift it. Never raises `ListLoading`
       // (that would drop live events), so concurrent calls may fetch one offset twice; the ticket keeps the newest.
@@ -1073,9 +1072,8 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         const limitOfModel = (currentState[namesOfSlice.limitOfModel] as number) || 20;
         const sortOfModel = currentState[namesOfSlice.sortOfModel] as Sort;
         const ticket = requests.claim();
-        const fetchQueryArgs = expandQueryArgs(queryArgsOfModel, slice.args);
-        const modelDataList = await (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
-          ...fetchQueryArgs,
+        const modelDataList = await fetchList(
+          queryArgsOfModel,
           (pageOfModel - 1) * limitOfModel + modelList.length,
           limitOfModel,
           sortOfModel,
@@ -1100,29 +1098,18 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         if (limitOfModel === limit) return;
         const skip = (pageOfModel - 1) * limitOfModel;
         const page = Math.max(Math.floor((skip - 1) / limit) + 1, 1);
-        this.set({ [namesOfSlice.modelListLoading]: true });
-        const ticket = requests.claim();
-        const fetchQueryArgs = expandQueryArgs(queryArgsOfModel, slice.args);
-        try {
-          const modelDataList = await (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
-            ...fetchQueryArgs,
-            (page - 1) * limit,
-            limit,
-            sortOfModel,
-            options,
-          );
-          if (!requests.isCurrent(ticket)) return;
-          this.set({
+        await loadList(
+          this,
+          () => fetchList(queryArgsOfModel, (page - 1) * limit, limit, sortOfModel, options),
+          (modelDataList) => ({
             [namesOfSlice.modelList]: new DataList(modelDataList),
             [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / limit) + 1, 1),
             [namesOfSlice.limitOfModel]: limit,
             [namesOfSlice.pageOfModel]: page,
             [namesOfSlice.isCumulativeOfModel]: false,
             ...hasMoreFrom(modelDataList, limit),
-          });
-        } finally {
-          if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
-        }
+          }),
+        );
       },
       [namesOfSlice.setQueryArgsOfModel]: async function (
         this: SetGet,
@@ -1146,25 +1133,14 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
           Logger.trace(`${namesOfSlice.queryArgsOfModel} store-level cache hit`);
           return;
         }
-        this.set({ [namesOfSlice.modelListLoading]: true });
-        const ticket = requests.claim();
-        const fetchQueryArgs = expandQueryArgs(queryArgs, slice.args);
-        try {
-          const [modelDataList, modelInsight] = await Promise.all([
-            (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
-              ...fetchQueryArgs,
-              0,
-              limitOfModel,
-              sortOfModel,
-              options,
-            ),
-            (fetch[namesOfSlice.modelInsight] as (...args: any[]) => Promise<Insight & BaseInsight>)(
-              ...fetchQueryArgs,
-              options,
-            ),
-          ]);
-          if (!requests.isCurrent(ticket)) return;
-          this.set({
+        await loadList(
+          this,
+          () =>
+            Promise.all([
+              fetchList(queryArgs, 0, limitOfModel, sortOfModel, options),
+              fetchInsight(queryArgs, options),
+            ]),
+          ([modelDataList, modelInsight]) => ({
             [namesOfSlice.queryArgsOfModel]: queryArgs,
             [namesOfSlice.modelList]: new DataList(modelDataList),
             [namesOfSlice.modelInsight]: modelInsight,
@@ -1173,10 +1149,8 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
             [namesOfSlice.isCumulativeOfModel]: false,
             ...hasMoreFrom(modelDataList, limitOfModel),
             [namesOfSlice.modelSelection]: new Map(),
-          });
-        } finally {
-          if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
-        }
+          }),
+        );
       },
       [namesOfSlice.setSortOfModel]: async function (this: SetGet, sort: Sort, options?: FetchPolicy) {
         const currentState = this.get() as { [key: string]: any };
@@ -1184,28 +1158,17 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         const limitOfModel = currentState[namesOfSlice.limitOfModel] as number;
         const sortOfModel = currentState[namesOfSlice.sortOfModel] as Sort;
         if (sortOfModel === sort) return;
-        this.set({ [namesOfSlice.modelListLoading]: true });
-        const ticket = requests.claim();
-        const fetchQueryArgs = expandQueryArgs(queryArgsOfModel, slice.args);
-        try {
-          const modelDataList = await (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
-            ...fetchQueryArgs,
-            0,
-            limitOfModel,
-            sort,
-            options,
-          );
-          if (!requests.isCurrent(ticket)) return;
-          this.set({
+        await loadList(
+          this,
+          () => fetchList(queryArgsOfModel, 0, limitOfModel, sort, options),
+          (modelDataList) => ({
             [namesOfSlice.modelList]: new DataList(modelDataList),
             [namesOfSlice.sortOfModel]: sort,
             [namesOfSlice.pageOfModel]: 1,
             [namesOfSlice.isCumulativeOfModel]: false,
             ...hasMoreFrom(modelDataList, limitOfModel),
-          });
-        } finally {
-          if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
-        }
+          }),
+        );
       },
       // Membership was decided server-side; a row is placed only where its position is knowable, else stamped stale.
       [namesOfSlice.applyLiveModel]: function (this: SetGet, event: LiveEventPayload) {
