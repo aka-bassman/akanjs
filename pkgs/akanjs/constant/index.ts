@@ -2,7 +2,6 @@ export * from "./cascadePaths";
 export * from "./constantRegistry";
 export * from "./crystalize";
 export * from "./dateSlot";
-export * from "./deserialize";
 export * from "./fieldInfo";
 export * from "./fieldQueryMeta";
 export * from "./getDefault";
