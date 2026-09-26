@@ -1,36 +1,20 @@
 import { capitalize } from "akanjs/common";
+import { sliceKeysOf } from "../store/sliceKeys";
 
 export const sliceNamesOf = (model: string, sliceName: string) => {
   const Model = capitalize(model);
+  const { state, action } = sliceKeysOf(model);
   const names = {
+    ...state,
+    ...action,
     model,
     modelId: `${model}Id`,
-    modelList: `${model}List`,
-    modelListLoading: `${model}ListLoading`,
-    modelInsight: `${model}Insight`,
-    modelInitList: `${model}InitList`,
-    modelInitAt: `${model}InitAt`,
-    modelStaleAt: `${model}StaleAt`,
     modelObjList: `${model}ObjList`,
     modelObjInsight: `${model}ObjInsight`,
-    pageOfModel: `pageOf${Model}`,
-    lastPageOfModel: `lastPageOf${Model}`,
-    limitOfModel: `limitOf${Model}`,
-    hasMoreOfModel: `hasMoreOf${Model}`,
-    isCumulativeOfModel: `isCumulativeOf${Model}`,
-    queryArgsOfModel: `queryArgsOf${Model}`,
-    sortOfModel: `sortOf${Model}`,
-    initModel: `init${Model}`,
     newModel: `new${Model}`,
     editModel: `edit${Model}`,
     viewModel: `view${Model}`,
     removeModel: `remove${Model}`,
-    refreshModel: `refresh${Model}`,
-    watchLiveModel: `watchLive${Model}`,
-    setPageOfModel: `setPageOf${Model}`,
-    loadMoreOfModel: `loadMoreOf${Model}`,
-    setSortOfModel: `setSortOf${Model}`,
-    setLimitOfModel: `setLimitOf${Model}`,
     setViewOfModel: `setViewOf${Model}`,
     exportCsvOfModel: `exportCsvOf${Model}`,
     exportJsonOfModel: `exportJsonOf${Model}`,
