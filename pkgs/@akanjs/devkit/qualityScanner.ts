@@ -103,8 +103,6 @@ const CONVENTION_SUFFIXES = [
   ".store.ts",
 ] as const;
 
-// How to remediate each rule, keyed by rule id. Surfaced as a `fix:` line per warning (text + JSON output)
-// so the scan result tells the reader what to do, not just what is wrong.
 const RULE_FIXES: Record<string, string> = {
   "akan.global.duplicate-exported-function-name":
     "Rename one of the exports, or if they are the same thing, extract it into one shared module and import it in both places.",
@@ -343,9 +341,7 @@ export class AkanQualityScanner {
     if (!isComponentDeclarationFile(sourceFile.file)) return [];
     const isPage = isPageRouteFile(sourceFile.file);
     const declarations = getComponentFileDeclarations(sourceFile.sourceFile);
-    // Compound/namespaced components (e.g. `Like.WithDislike = WithDislike`) are valid without being exported.
     const compoundComponentNames = getCompoundComponentNames(sourceFile.sourceFile);
-    // Components are the exported (or compound) PascalCase values; their "<Component>Props" interface may live here.
     const componentNames = declarations
       .filter((declaration) => declaration.exported && isComponentValueKind(declaration.kind))
       .filter((declaration) => isPascalCaseName(declaration.name))
@@ -368,7 +364,6 @@ export class AkanQualityScanner {
         });
         continue;
       }
-      // A non-exported PascalCase component attached as a compound member is an accepted pattern.
       if (isComponentValueKind(declaration.kind) && compoundComponentNames.has(declaration.name)) continue;
       if (isRestrictedInternalKind(declaration.kind)) {
         warnings.push({
@@ -517,8 +512,7 @@ function formatQualityLocation(file: string | undefined, line: number | undefine
 
 function getExportedFunctionLikes(sourceFile: SourceFileInfo): ExportedFunctionLike[] {
   const declarations: ExportedFunctionLike[] = [];
-  // UI component names (e.g. Card, Button) naturally repeat across apps/libs, so exempt ui files from the
-  // duplicate-exported-name check. This only relaxes the name check; the shared-body check still applies.
+  // UI component names (Card, Button) repeat across apps and libs by design; only the name check is relaxed.
   const nameExempt = isPageRouteFile(sourceFile.file) || isUiComponentFile(sourceFile.file);
   for (const statement of sourceFile.sourceFile.statements) {
     if (ts.isFunctionDeclaration(statement) && statement.name && isExported(statement)) {
@@ -646,9 +640,7 @@ function getComponentFileDeclarations(sourceFile: ts.SourceFile): ComponentFileD
   return declarations;
 }
 
-// Detects compound/namespaced component assignments like `Like.WithDislike = WithDislike`. The PascalCase
-// member is the public component name; when the right side is a PascalCase identifier it is the local
-// definition. Both are treated as valid components so the definition and its "<Component>Props" may stay local.
+// `Like.WithDislike = WithDislike` makes both names components, so the local definition and its Props may stay unexported.
 function getCompoundComponentNames(sourceFile: ts.SourceFile): Set<string> {
   const names = new Set<string>();
   for (const statement of sourceFile.statements) {
@@ -676,7 +668,6 @@ function isAllowedComponentExport(declaration: ComponentFileDeclaration, isPage:
 }
 
 function isPascalCaseName(name: string) {
-  // PascalCase component names start uppercase and are not SCREAMING_SNAKE_CASE constants.
   return /^[A-Z]/.test(name) && !/^[A-Z0-9_]+$/.test(name);
 }
 
@@ -686,17 +677,8 @@ function isDefaultExportStatement(statement: ts.Statement) {
   return !!ts.getModifiers(statement)?.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
 }
 
-/**
- * Bun's bundler keeps `//!` and `/*!` through minification (it reads them as the `@license` class), so a
- * bang marker in browser-reachable code ships verbatim to every visitor. `no-bang-comment-in-client.grit`
- * is the build gate; this exists because that rule cannot see the whole file.
- *
- * A comment is trivia, which Biome's GritQL exposes to no node pattern, so the rule matches through
- * `file($name, $body)` — and `$body` is the module's *token* span. A marker above the first statement or
- * below the last one sits in leading or trailing trivia and is unreachable from GritQL at all. Reading the
- * raw text here covers both, and re-reporting the markers grit already catches costs nothing: the two run
- * from different commands, and a file with one is failing lint either way.
- */
+// Bun keeps `//!` and `/*!` through minification. GritQL's `file($name, $body)` spans tokens only, so the grit rule
+// misses a marker in the file's leading or trailing trivia; the raw text is read here.
 function getBangCommentWarnings(sourceFile: SourceFileInfo): QualityWarning[] {
   if (!isClientReachableFile(sourceFile.file)) return [];
   // Anchored to line start or to whitespace after code, so a literal like `"https://host//!path"` is not a hit.
@@ -710,7 +692,7 @@ function getBangCommentWarnings(sourceFile: SourceFileInfo): QualityWarning[] {
   }));
 }
 
-/** Mirrors the path scope of `no-bang-comment-in-client.grit` in `biome.base.json`. */
+// Mirrors the path scope of `no-bang-comment-in-client.grit` in `biome.base.json`.
 function isClientReachableFile(file: string) {
   if (/\.(test|spec)\.tsx?$/.test(file)) return false;
   if (/\.(constant|store)\.ts$/.test(file)) return true;
