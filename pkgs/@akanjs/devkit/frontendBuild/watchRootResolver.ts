@@ -16,7 +16,9 @@ export class WatchRootResolver {
     const appDir = path.resolve(this.#app.cwdPath);
     const appsContainer = path.dirname(appDir);
     const libsContainer = path.resolve(this.#app.workspace.workspaceRoot, "libs");
-    const libRoots = await this.#resolveLibRoots(libsContainer);
+    const libRoots = (await this.#resolveLibDeps(libsContainer))
+      ?.map((name) => path.join(libsContainer, name))
+      .filter((dir) => fs.existsSync(dir));
     const set = new Set<string>();
     set.add(path.resolve(`${this.#app.cwdPath}/page`));
     for (const targets of Object.values(tsconfig.compilerOptions.paths ?? {})) {
@@ -34,12 +36,6 @@ export class WatchRootResolver {
       }
     }
     return [...set];
-  }
-
-  async #resolveLibRoots(libsContainer: string): Promise<string[] | null> {
-    const libDeps = await this.#resolveLibDeps(libsContainer);
-    if (!libDeps) return null;
-    return libDeps.map((name) => path.join(libsContainer, name)).filter((dir) => fs.existsSync(dir));
   }
 
   async #resolveLibDeps(libsContainer: string): Promise<string[] | null> {

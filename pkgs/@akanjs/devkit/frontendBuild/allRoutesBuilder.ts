@@ -43,20 +43,15 @@ export class AllRoutesBuilder {
     this.#discovery = await GraphClientEntryDiscovery.create(this.#app);
 
     // Every route's entries go into one Bun.build: chunk splitting only dedupes within a single build.
-    const allEntries: string[] = [];
-    const seen = new Set<string>();
+    const allEntries = new Set<string>();
     for (const entry of seedIndex.entries) {
       const seeds = Array.from(new Set([...seedIndex.globalLayoutFiles, ...entry.seeds]));
-      for (const discovered of await this.#discovery.discover(seeds)) {
-        if (seen.has(discovered)) continue;
-        seen.add(discovered);
-        allEntries.push(discovered);
-      }
+      for (const discovered of await this.#discovery.discover(seeds)) allEntries.add(discovered);
       this.#routeIds.push(entry.routeId);
     }
-    this.#app.verbose(`[build-all] ${allEntries.length} client entries across ${this.#routeIds.length} routes`);
+    this.#app.verbose(`[build-all] ${allEntries.size} client entries across ${this.#routeIds.length} routes`);
 
-    const delta = await this.#buildEntries(allEntries);
+    const delta = await this.#buildEntries([...allEntries]);
     this.#mergeDelta(delta);
     this.#merged.knownEntries = Array.from(this.#knownSet);
 
@@ -106,10 +101,8 @@ export class AllRoutesBuilder {
   }
 
   #mergeDelta(delta: BuildRouteClientResult): void {
-    for (const [key, row] of Object.entries(delta.manifestDelta)) this.#merged.clientManifest[key] = row;
-    for (const [url, byName] of Object.entries(delta.ssrManifestDelta.moduleMap)) {
-      this.#merged.ssrManifest.moduleMap[url] = byName;
-    }
+    Object.assign(this.#merged.clientManifest, delta.manifestDelta);
+    Object.assign(this.#merged.ssrManifest.moduleMap, delta.ssrManifestDelta.moduleMap);
     for (const abs of delta.newEntries) this.#knownSet.add(abs);
   }
 }

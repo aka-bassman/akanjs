@@ -24,7 +24,6 @@ export class ClientEntriesBundler {
   #target: ClientBundleTarget;
   #outputSubdir: string;
   #reactFastRefresh: boolean;
-  #artifactDir: string;
   #outdir: string;
   #servePrefix: string;
   #manifest: ClientManifest = {};
@@ -47,8 +46,8 @@ export class ClientEntriesBundler {
     this.#target = options.target ?? "browser";
     this.#outputSubdir = options.outputSubdir ?? "client";
     this.#reactFastRefresh = options.reactFastRefresh ?? false;
-    this.#artifactDir = `${this.#command === "build" ? this.#app.dist.cwdPath : this.#app.cwdPath}/.akan/artifact`;
-    this.#outdir = `${this.#artifactDir}/${this.#outputSubdir}`;
+    const artifactDir = `${this.#command === "build" ? this.#app.dist.cwdPath : this.#app.cwdPath}/.akan/artifact`;
+    this.#outdir = `${artifactDir}/${this.#outputSubdir}`;
     this.#servePrefix = `/_akan/${this.#outputSubdir}`;
   }
 
@@ -174,11 +173,8 @@ export class ClientEntriesBundler {
     exactExternals: Set<string>,
     subpathExternals: Set<string>,
   ): boolean {
-    if (exactExternals.has(specifier)) return true;
-    if (subpathExternals.has(specifier)) return true;
-    for (const external of subpathExternals) {
-      if (specifier.startsWith(`${external}/`)) return true;
-    }
+    if (exactExternals.has(specifier) || subpathExternals.has(specifier)) return true;
+    for (const external of subpathExternals) if (specifier.startsWith(`${external}/`)) return true;
     return false;
   }
 

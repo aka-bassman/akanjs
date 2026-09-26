@@ -9,14 +9,6 @@ import { ClientEntriesBundler } from "./clientEntriesBundler";
 import { GraphClientEntryDiscovery } from "./clientEntryDiscovery";
 import { VENDOR_SPECIFIERS } from "./vendorSpecifiers";
 
-const SSR_CLIENT_EXTERNALS = [
-  "react",
-  "react-dom",
-  "react-dom/client",
-  "react/jsx-runtime",
-  "react/jsx-dev-runtime",
-  "akanjs/fetch",
-] as const;
 const SSR_CLIENT_ALIAS_EXTERNALS = [
   "react",
   "react-dom",
@@ -24,6 +16,7 @@ const SSR_CLIENT_ALIAS_EXTERNALS = [
   "react/jsx-runtime",
   "react/jsx-dev-runtime",
 ] as const;
+const SSR_CLIENT_EXTERNALS = [...SSR_CLIENT_ALIAS_EXTERNALS, "akanjs/fetch"] as const;
 
 export interface BuildRouteClientOptions {
   app: App;

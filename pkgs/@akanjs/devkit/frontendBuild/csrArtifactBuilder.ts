@@ -167,7 +167,7 @@ void bootCsr(pages);
 
   async #inlineCsrArtifacts(cssAssets: Record<string, CssAsset>): Promise<void> {
     const jsFiles = new Set<string>();
-    for (const htmlPath of await this.#htmlOutputPaths()) {
+    for (const htmlPath of await this.#listOutputFiles((filePath) => filePath.endsWith(".html"))) {
       const htmlFile = Bun.file(htmlPath);
       if (!(await htmlFile.exists())) continue;
       const basePath = CsrArtifactBuilder.basePathOfHtml(htmlPath);
@@ -207,10 +207,6 @@ void bootCsr(pages);
       return await Bun.file(jsPath).text();
     });
     return { html: next, jsFiles };
-  }
-
-  async #htmlOutputPaths(): Promise<string[]> {
-    return await this.#listOutputFiles((filePath) => filePath.endsWith(".html"));
   }
 
   async #listOutputFiles(predicate: (filePath: string) => boolean): Promise<string[]> {

@@ -93,15 +93,15 @@ export class DevChangePlanner {
       roles.add("barrel");
       reasons.add(isGenerated ? "generated-index" : "barrel-facet-child");
     }
-    if (isSource && this.#isServerBiased(abs, parts)) {
+    if (isSource && this.#isServerBiased(base, parts)) {
       roles.add("server");
       reasons.add("server-path");
     }
-    if (isSource && this.#isClientBiased(abs, parts)) {
+    if (isSource && this.#isClientBiased(base, parts)) {
       roles.add("client");
       reasons.add("client-path");
     }
-    if (isSource && this.#isSharedBiased(abs, parts)) {
+    if (isSource && this.#isSharedBiased(base, parts)) {
       roles.add("shared");
       reasons.add("shared-path");
     }
@@ -123,8 +123,7 @@ export class DevChangePlanner {
     return roles;
   }
 
-  #isServerBiased(abs: string, parts: string[]): boolean {
-    const base = path.basename(abs);
+  #isServerBiased(base: string, parts: string[]): boolean {
     return (
       parts.includes("srvkit") ||
       SERVER_SUFFIXES.some((suffix) => base.endsWith(suffix)) ||
@@ -133,8 +132,7 @@ export class DevChangePlanner {
     );
   }
 
-  #isClientBiased(abs: string, parts: string[]): boolean {
-    const base = path.basename(abs);
+  #isClientBiased(base: string, parts: string[]): boolean {
     return (
       parts.includes("ui") ||
       parts.includes("webkit") ||
@@ -143,8 +141,7 @@ export class DevChangePlanner {
     );
   }
 
-  #isSharedBiased(abs: string, parts: string[]): boolean {
-    const base = path.basename(abs);
+  #isSharedBiased(base: string, parts: string[]): boolean {
     return (
       parts.includes("common") ||
       SHARED_SUFFIXES.some((suffix) => base.endsWith(suffix)) ||
