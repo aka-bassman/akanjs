@@ -29,9 +29,7 @@ export class TunnelTcpStream implements TunnelStream {
           hostname: this.#hostname,
           port,
           socket: {
-            open: () => {
-              this.#link.sendFrame({ type: "head", streamId, status: 200, headers: [], body: true });
-            },
+            open: () => this.#link.sendFrame({ type: "head", streamId, status: 200, headers: [], body: true }),
             data: (_socket, data) => {
               for (let at = 0; at < data.byteLength; at += tunnelWireContract.chunkBytes)
                 void this.#link.sendPayload(data.subarray(at, at + tunnelWireContract.chunkBytes));

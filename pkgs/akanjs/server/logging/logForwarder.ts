@@ -52,10 +52,6 @@ export class LogForwarder {
     return this.#removeSink !== null;
   }
 
-  get dropped() {
-    return this.#dropped;
-  }
-
   setMinSev(minSev: number | null) {
     this.#minSev = minSev;
     const floor = this.minSev;

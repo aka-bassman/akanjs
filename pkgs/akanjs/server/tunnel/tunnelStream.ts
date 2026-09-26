@@ -21,7 +21,6 @@ export interface TunnelStream {
 // lib.dom's WebSocket.send refuses a Uint8Array<ArrayBufferLike>, though nothing here is SharedArrayBuffer-backed.
 export const wsBytes = (data: Uint8Array) => data as unknown as Uint8Array<ArrayBuffer>;
 
-const abortNames = new Set(["AbortError", "TimeoutError"]);
 const refusedCodes = new Set(["ConnectionRefused", "ECONNREFUSED"]);
 
 // Bun reports a failed dial only through `error.name` / `error.code`; the message is prose.
@@ -29,7 +28,7 @@ const refusedCodes = new Set(["ConnectionRefused", "ECONNREFUSED"]);
 export const tunnelResetCodeOf = (error: unknown): TunnelResetCode => {
   const { name, code } = (error ?? {}) as { name?: string; code?: string | number };
   if (name === "TimeoutError") return "originTimeout";
-  if (name && abortNames.has(name)) return "canceled";
+  if (name === "AbortError") return "canceled";
   if (typeof code === "string" && refusedCodes.has(code)) return "originRefused";
   if (typeof code === "string" && code.startsWith("E")) return "originUnreachable";
   return "internal";

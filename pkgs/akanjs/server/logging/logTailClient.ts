@@ -8,8 +8,6 @@ export interface LogTailHandlers {
   onClose?: () => void;
 }
 
-type Pending = { resolve: (response: LogControlResponse) => void; reject: (error: Error) => void };
-
 /** Says the app is not running at all, as opposed to a request that failed once connected. */
 export class LogControlUnavailableError extends Error {
   readonly socketPath: string;
@@ -59,7 +57,7 @@ export class LogTailClient {
   }
 
   readonly #handlers: LogTailHandlers;
-  readonly #pending: Pending[] = [];
+  readonly #pending: { resolve: (response: LogControlResponse) => void; reject: (error: Error) => void }[] = [];
   #socket: Bun.Socket<undefined> | null = null;
   #inbox = "";
   #closed = false;

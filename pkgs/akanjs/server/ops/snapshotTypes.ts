@@ -36,8 +36,6 @@ export interface SnapshotSources {
   solid: string | null;
 }
 
-export type SnapshotJobStatus = "running" | "uploading" | "done" | "failed";
-
 export interface SnapshotUploadUrls {
   main: string;
   solid?: string;
@@ -46,7 +44,7 @@ export interface SnapshotUploadUrls {
 
 export interface SnapshotJobState {
   id: string;
-  status: SnapshotJobStatus;
+  status: "running" | "uploading" | "done" | "failed";
   startedAt: string;
   finishedAt?: string;
   manifest?: SnapshotManifest;

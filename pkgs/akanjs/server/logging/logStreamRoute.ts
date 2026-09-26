@@ -30,8 +30,7 @@ export class LogStreamRoute {
       return new Response("Unauthorized", { status: 401, headers: { "www-authenticate": "Bearer" } });
     const hub = this.#hub();
     if (!hub) return new Response("Log hub is not running", { status: 503 });
-    const url = new URL(req.url);
-    const query = LogQueryMatcher.parse(url.searchParams);
+    const query = LogQueryMatcher.parse(new URL(req.url).searchParams);
     const matcher = new LogQueryMatcher(query);
     let subscription: { unsubscribe(): void } | null = null;
     const stream = new EventStream(
@@ -42,8 +41,8 @@ export class LogStreamRoute {
       { keepAliveMs: LogStreamRoute.heartbeatMs, keepAliveChunk: ": heartbeat\n\n" },
     );
     stream.retry(LogStreamRoute.retryMs);
-    const lastEventId = LogStreamRoute.#lastEventId(req);
-    if (lastEventId !== null) LogStreamRoute.#resume(hub, stream, matcher, lastEventId);
+    const lastEventId = req.headers.get("last-event-id")?.trim();
+    if (lastEventId && /^\d+$/.test(lastEventId)) LogStreamRoute.#resume(hub, stream, matcher, Number(lastEventId));
     subscription = hub.subscribe(query, (entry) => LogStreamRoute.#send(stream, entry));
     return stream.response();
   }
@@ -54,12 +53,6 @@ export class LogStreamRoute {
     if (!match) return false;
     const presented = Buffer.from(match[1] ?? "");
     return presented.length === this.#token.length && timingSafeEqual(presented, this.#token);
-  }
-
-  static #lastEventId(req: Request): number | null {
-    const value = req.headers.get("last-event-id");
-    if (value === null || !/^\d+$/.test(value.trim())) return null;
-    return Number(value.trim());
   }
 
   static #resume(hub: LogHub, stream: EventStream, matcher: LogQueryMatcher, lastEventId: number) {

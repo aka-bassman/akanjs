@@ -53,8 +53,7 @@ export class OpsRoute {
       logger.error(`Ops channel disabled: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }
-    const resolved = sources();
-    const snapshotDir = SqliteFiles.snapshotDir(resolved);
+    const snapshotDir = SqliteFiles.snapshotDir(sources());
     const jobs = new SnapshotJobs({
       snapshotDir,
       capture: (request) => OpsRoute.captureInChild(request, sources(), snapshotDir),

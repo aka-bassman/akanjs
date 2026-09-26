@@ -11,11 +11,7 @@ export class LogStdoutWriter {
   #subscription: { unsubscribe(): void } | null;
 
   constructor(hub: LogHub, { minSev, write }: LogStdoutWriterOptions) {
-    this.#write =
-      write ??
-      ((line) => {
-        process.stdout.write(line);
-      });
+    this.#write = write ?? ((line) => void process.stdout.write(line));
     this.#subscription = hub.subscribe({ minSev }, (entry) => this.#write(LogStdoutWriter.line(entry)));
   }
 

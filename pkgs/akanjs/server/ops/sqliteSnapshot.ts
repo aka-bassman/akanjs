@@ -41,10 +41,6 @@ export class SqliteSnapshot {
   static readonly manifestName = "manifest.json";
   static readonly idPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
-  static assertId(id: string) {
-    if (!SqliteSnapshot.idPattern.test(id)) throw new Error(`Invalid snapshot id "${id}"`);
-  }
-
   static async capture({
     id,
     dir,
@@ -52,7 +48,7 @@ export class SqliteSnapshot {
     includeSolid = false,
     encryptor = null,
   }: SnapshotCaptureOptions): Promise<SnapshotCapture> {
-    SqliteSnapshot.assertId(id);
+    if (!SqliteSnapshot.idPattern.test(id)) throw new Error(`Invalid snapshot id "${id}"`);
     const { appName, environment, databaseMode } = getEnv();
     if (databaseMode === "cluster" || !databaseMode)
       throw new Error(`Snapshots support SQLite database modes only, not "${databaseMode ?? "unknown"}"`);

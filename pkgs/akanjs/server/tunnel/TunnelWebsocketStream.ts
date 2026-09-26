@@ -43,9 +43,7 @@ export class TunnelWebsocketStream implements TunnelStream {
         const accepted: TunnelHeaderList = ws.protocol ? [["sec-websocket-protocol", ws.protocol]] : [];
         this.#link.sendFrame({ type: "head", streamId, status: 101, headers: accepted });
       };
-      ws.onmessage = (event) => {
-        void this.#forward(event.data);
-      };
+      ws.onmessage = (event) => void this.#forward(event.data);
       ws.onerror = (event) => {
         // A failed dial never opens, so this is the only place a refused local origin is reported.
         if (!this.#ws || this.#closed) return;
