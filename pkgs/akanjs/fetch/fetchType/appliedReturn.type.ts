@@ -1,7 +1,6 @@
 import type { DataList, GetStateObject, PromiseOrObject } from "akanjs/base";
 import type { ExtractSort, FilterInstance } from "akanjs/document";
 
-/** Metadata that identifies a generated slice list/insight request. */
 export type SliceMeta = {
   refName: string;
   sliceName: string;
@@ -11,17 +10,9 @@ export type SliceMeta = {
 /** What the root slice takes: one of the model's declared filter queries, and the args that filter asks for. */
 export interface QuerySetting {
   queryKey: string;
-  /**
-   * Read when the query is applied rather than when the setting is written, so a thunk keeps an arg relative to
-   * now — `() => [dayjs().subtract(1, "hour")]` — current at the moment the user asks for it.
-   */
+  /** Read when the query is applied, so a thunk keeps an arg relative to now. */
   args?: unknown[] | (() => unknown[]);
-  /**
-   * The same list under the name the rest of the framework already uses for it — the `queryArgsOf<Model>` state
-   * key, `refresh<Model>({ queryArgs })`, and a field's own `.meta(...)` declaration. Accepted so a query a
-   * field declares is one of these as it stands, rather than something every caller has to rename by hand.
-   * `args` wins when both are given.
-   */
+  /** `args` under the framework's usual name (`queryArgsOf<Model>`, a field's `.meta(...)`); `args` wins over it. */
   queryArgs?: unknown[] | (() => unknown[]);
 }
 
@@ -67,7 +58,6 @@ export type ServerInit<
   GetStateObject<Insight>,
   ExtractSort<Filter>
 >;
-/** Client/server-friendly return type for initialized list and insight data. */
 export type ClientInit<
   RefName extends string,
   Light,
@@ -81,7 +71,6 @@ export type ServerView<RefName extends string, Model> = { refName: RefName } & {
 } & {
   [K in `${RefName}ViewAt`]: Date;
 };
-/** Client/server-friendly return type for a single model view payload. */
 export type ClientView<RefName extends string, Model> = PromiseOrObject<ServerView<RefName, Model>>;
 
 export type ServerEdit<RefName extends string, Model> = { refName: RefName } & {
@@ -103,11 +92,7 @@ export type EditReturn<RefName extends string, Full> = {
   [K in `${RefName}Edit`]: ServerEdit<RefName, Full>;
 };
 
-/**
- * What `fetch.view<Model>` / `fetch.edit<Model>` / `fetch.init<Model><Suffix>` return: awaitable for the shape
- * the helper has always given, and destructurable into one promise per field for a route that wants each
- * section to render as its own data lands instead of holding the page for the slowest.
- */
+/** Awaitable as the shape the helper always gave, and destructurable into one promise per field. */
 export type FetchHandleOf<Awaited, Fields> = PromiseLike<Awaited> & Fields;
 
 export type ViewHandle<RefName extends string, Full> = FetchHandleOf<
@@ -156,11 +141,8 @@ export type InitReturn<
 >;
 
 /**
- * The list resolves without waiting for the aggregate, so `x<Slice>List` lands before `x<Slice>Init` — which
- * carries `lastPageOf<Model>` and therefore needs the count.
- *
- * `x<Slice>List` and `x<Slice>Insight` hold hydrated model instances, which React Flight refuses as props to a
- * client component: consume them in a server component and hand `x<Slice>Init` to a `Zone`.
+ * `x<Slice>List` lands before `x<Slice>Init`, which needs the count. List and Insight hold hydrated instances React
+ * Flight refuses as client props: consume them in a server component and hand `x<Slice>Init` to a `Zone`.
  */
 type InitHandleShape<
   RefName extends string,
@@ -191,5 +173,3 @@ export type InitHandle<
     Insight
   >
 >;
-
-// ============= Method Generators =============

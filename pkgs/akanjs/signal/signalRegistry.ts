@@ -23,17 +23,14 @@ export class DatabaseSignal<
   SlceCls extends SliceCls = SliceCls,
   SrvrCls extends ServerSignalCls = ServerSignalCls,
 > {
-  internal: IntlCls;
-  endpoint: EndpCls;
-  slice: SlceCls;
-  server: SrvrCls;
   serializedSignal: SerializedSignal;
 
-  constructor(internal: IntlCls, endpoint: EndpCls, slice: SlceCls, server: SrvrCls) {
-    this.internal = internal;
-    this.endpoint = endpoint;
-    this.slice = slice;
-    this.server = server;
+  constructor(
+    public internal: IntlCls,
+    public endpoint: EndpCls,
+    public slice: SlceCls,
+    public server: SrvrCls,
+  ) {
     this.serializedSignal = FetchSerializer.serializeDatabaseSignal(slice, endpoint);
   }
 }
@@ -43,25 +40,18 @@ export class ServiceSignal<
   EndpCls extends EndpointCls = EndpointCls,
   SrvrCls extends ServerSignalCls = ServerSignalCls,
 > {
-  internal: IntlCls;
-  endpoint: EndpCls;
-  server: SrvrCls;
   serializedSignal: SerializedSignal;
 
-  constructor(internal: IntlCls, endpoint: EndpCls, server: SrvrCls) {
-    this.internal = internal;
-    this.endpoint = endpoint;
-    this.server = server;
+  constructor(
+    public internal: IntlCls,
+    public endpoint: EndpCls,
+    public server: SrvrCls,
+  ) {
     this.serializedSignal = FetchSerializer.serializeServiceSignal(endpoint);
   }
 }
 
 // TODO: add scalar signal for resolve field
-// export interface ScalarSignal {
-//   internal: InternalCls;
-// }
-
-/** Registry for database and service signals used by routing and fetch serialization. */
 export class SignalRegistry {
   static readonly #database = new Map<string, DatabaseSignal<InternalCls, EndpointCls, SliceCls, ServerSignalCls>>();
   static readonly #service = new Map<string, ServiceSignal<InternalCls, EndpointCls, ServerSignalCls>>();

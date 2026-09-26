@@ -12,8 +12,7 @@ import {
 import { ConstantRegistry, via } from "akanjs/constant";
 import { JsonSchemaBuilder } from "./JsonSchemaBuilder";
 
-// The subclass form is what registers the enum: `isEnum` walks two prototype hops, so a bare
-// `const X = enumOf(...)` is never found by `ConstantRegistry.enum`.
+// A subclass, because `isEnum` walks two prototype hops: a bare `enumOf(...)` const is never registered.
 class SchemaRole extends enumOf("schemaRole", ["admin", "user"] as const) {}
 
 class SchemaTagInput extends via((field) => ({ label: field(String) })) {}
@@ -95,7 +94,6 @@ describe("JsonSchemaBuilder", () => {
       type: "string",
       enum: ["admin", "user"],
     });
-    // `oneOf` is a fixed list an arg carries without a registered enum behind it — the root slice's query keys.
     expect(schema.arg({ type: "search", name: "queryKey", refName: "String", oneOf: ["any", "byAuthor"] })).toEqual({
       type: "string",
       enum: ["any", "byAuthor"],
@@ -125,9 +123,6 @@ describe("JsonSchemaBuilder", () => {
   });
 
   test("drops hidden, secret and visual fields only where the schema describes a response", () => {
-    // `SignalContext.resolveReturn` strips the first two from every response, so naming them describes a property
-    // no answer carries — and on a real model the names are the leak. A request body carries all three
-    // legitimately, so the default keeps them and only the caller that publishes a *return* shape asks for this.
     const keys = (value: unknown) => Object.keys((value as { properties: object }).properties);
     const vaultInput = SchemaVaultInput as unknown as Parameters<typeof schema.model>[0];
     expect(keys(schema.model(vaultInput))).toEqual(["label", "password", "internalPath", "preview"]);
@@ -137,8 +132,6 @@ describe("JsonSchemaBuilder", () => {
   });
 
   test("a visual field is absent from the readable schema, since it is absent from the value", () => {
-    // A schema that promises a field the payload omits is worse than one that never named it: a non-optional
-    // visual field would be listed `required` and a validating client would refuse the whole result.
     const vaultInput = SchemaVaultInput as unknown as Parameters<typeof schema.model>[0];
     const readable = schema.model(vaultInput, { readable: true }) as { properties: object };
     expect("preview" in readable.properties).toBe(false);
@@ -149,7 +142,6 @@ describe("JsonSchemaBuilder", () => {
     const referenced = schema.referencedSchemas({
       schema: schema.returns({ refName: "schemaPost", modelType: "input" }),
     });
-    // SchemaPostInput references SchemaTag, which pulls in nothing further.
     expect(Object.keys(referenced)).toEqual(["SchemaPostInput", "SchemaTag"]);
   });
 
@@ -158,7 +150,6 @@ describe("JsonSchemaBuilder", () => {
   });
 
   test("honours a custom ref prefix on both emit and resolve", () => {
-    // `#/$defs/` contains `$`; a regex-based prefix match would read it as end-of-input and resolve nothing.
     const defs = new JsonSchemaBuilder({ refPrefix: "#/$defs/" });
     const returns = defs.returns({ refName: "schemaPost", modelType: "input" });
     expect(returns).toEqual({ $ref: "#/$defs/SchemaPostInput" });
@@ -212,8 +203,6 @@ describe("JsonSchemaBuilder relations", () => {
   const placeInput = SchemaPlaceInput as unknown as Parameters<typeof builder.model>[0];
 
   test("asks for a relation's id in a request schema and keeps an embedded scalar inline", () => {
-    // `serialize` sends a relation as its id, so this is the shape the server reads; a scalar is embedded whole and
-    // has no tool of its own, so it stays a `$ref`. A map's model values are also sent whole and stay inline.
     const { properties } = builder.model(placeInput, { relations: "id" }) as {
       properties: Record<string, unknown>;
     };
@@ -231,7 +220,6 @@ describe("JsonSchemaBuilder relations", () => {
     const { properties } = schemas.SchemaPlace as { properties: Record<string, unknown> };
     expect(properties.tag).toEqual({ anyOf: [{ type: "object", description: "SchemaTag" }, { type: "null" }] });
     expect(properties.tags).toEqual({ type: "array", items: { type: "object", description: "SchemaTag" } });
-    // The closure stops at the returned model and its scalars: nothing here refers to SchemaTag any more.
     const seed = { $ref: "#/components/schemas/SchemaPlace" };
     expect(Object.keys(builder.referencedSchemas(seed, schemas))).toEqual(["SchemaGeo", "SchemaPlace"]);
     expect(Object.keys(builder.referencedSchemas(seed, builder.allModelSchemas({ readable: true })))).toEqual([
@@ -247,10 +235,8 @@ describe("JsonSchemaBuilder relations", () => {
       properties: Record<string, unknown>;
     };
     expect(properties.tag).toEqual({ type: ["string", "null"] });
-    // An enum must list `null` too, or the type array admits what the value list still refuses.
     expect(properties.role).toEqual({ type: ["string", "null"], enum: ["admin", "user", null] });
     expect(JsonSchemaBuilder.primitive("ID", { idPattern: false })).toEqual({ type: "string" });
-    // A `$ref` has no type of its own, so it keeps the `anyOf` spelling.
     expect(
       compact.arg({ type: "body", name: "tag", refName: "schemaTag", modelType: "input", nullable: true }),
     ).toEqual({

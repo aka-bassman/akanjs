@@ -3,10 +3,8 @@ import type { Redis } from "ioredis";
 import { ConformanceEnv } from "../../test/conformance";
 import { type LiveChange, WebSocketRedisAdaptor } from "./websocket.adaptor";
 
-// Cross-server delivery through Redis, checked against what the same event looks like when it is delivered on the
-// server that published it: the JSON the local socket gets. Ids are from `local/database-modes/01-multiple-redis.md`;
-// an id on a plain `test` is a fixed defect. The single-node transport (gateway IPC) has no second server to deliver to
-// here, so it is covered end to end only.
+// Cross-server delivery must equal what the publishing server's own socket gets; the single-node transport has no
+// second server, so it is tested end to end. Ids are from `local/database-modes/01-multiple-redis.md`.
 
 interface Received {
   roomId: string;
@@ -140,8 +138,7 @@ describe.skipIf(!ConformanceEnv.has("pubsub conformance", "redis"))("pubsub conf
     expect(JSON.stringify(event)).toBe(JSON.stringify(sent));
   });
 
-  // A live room is routed by the server its socket is on, so a write has to reach every server whether or not the
-  // writer holds the room — and whether or not the receiver holds one yet.
+  // A live room is routed by its socket's server, so a write reaches every server, room held or not.
   test("[L-1] a committed write reaches every other server of the app, and not the writer or another app", async () => {
     const change: LiveChange = {
       refName: ConformanceEnv.uniqueName("model"),

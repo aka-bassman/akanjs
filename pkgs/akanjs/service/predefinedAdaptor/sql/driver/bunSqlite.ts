@@ -4,23 +4,25 @@ import type { AkanSqlClient, AkanSqlStatement } from "../types";
 /** Resolves once a write from the calling context may run; `null` when it may run now. */
 export type SqliteWriteTurn = () => Promise<void> | null;
 
-const openTurn: SqliteWriteTurn = () => null;
-// Only a plain read may skip its turn. Anything else — `INSERT … RETURNING` read through `get()` included — writes.
-const readOnlyStatement = /^\s*select\b/i;
-export const isReadOnlyStatement = (sql: string) => readOnlyStatement.test(sql);
+export const openTurn: SqliteWriteTurn = () => null;
+
+export const waitForTurn = (sql: string, writeTurn: SqliteWriteTurn) => {
+  // Only a plain read may skip its turn. Anything else — `INSERT … RETURNING` read through `get()` included — writes.
+  const writes = !/^\s*select\b/i.test(sql);
+  return async () => {
+    if (!writes) return;
+    for (let turn = writeTurn(); turn; turn = writeTurn()) await turn;
+  };
+};
 
 export class BunSqliteStatement implements AkanSqlStatement {
-  readonly #writes: boolean;
+  readonly #turn: () => Promise<void>;
   constructor(
     private readonly statement: Statement,
     sql: string,
-    private readonly writeTurn: SqliteWriteTurn = openTurn,
+    writeTurn: SqliteWriteTurn = openTurn,
   ) {
-    this.#writes = !isReadOnlyStatement(sql);
-  }
-  async #turn() {
-    if (!this.#writes) return;
-    for (let turn = this.writeTurn(); turn; turn = this.writeTurn()) await turn;
+    this.#turn = waitForTurn(sql, writeTurn);
   }
   async run(...params: unknown[]) {
     await this.#turn();

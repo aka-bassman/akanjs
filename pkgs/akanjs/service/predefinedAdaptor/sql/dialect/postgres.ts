@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
 import type { DocumentUpdateOperator } from "akanjs/document";
-import { quoteIdent } from "../../sqlDescriptor";
 import type { CreateIndexProps, PathKind, SqlDialect, SqlFrag } from "../types";
-import { jsonStr, likePattern } from "../values";
+import { jsonStr, likePattern, quoteIdent } from "../values";
 
 export class PostgresDialect implements SqlDialect {
   readonly name = "postgres" as const;
@@ -11,10 +10,8 @@ export class PostgresDialect implements SqlDialect {
   static readonly #identifierBytes = 63;
 
   /**
-   * `json_set` in SQLite creates the objects a nested path is missing and leaves the document alone when a parent is
-   * not an object; `jsonb_set` returns the document untouched when a parent is missing, so a nested write vanishes.
-   * A function rather than inline SQL because updates fold into one expression: reading the accumulated document
-   * twice per level would repeat every earlier operation's parameters.
+   * `jsonb_set` drops a nested write whose parent is missing, where SQLite's `json_set` creates it. A function, since
+   * inline SQL would re-read the folded document per level and repeat every earlier operation's parameters.
    */
   static schemaSetup() {
     return `CREATE OR REPLACE FUNCTION ${PostgresDialect.#setFunction}(target jsonb, path text[], value jsonb) RETURNS jsonb
@@ -46,8 +43,7 @@ export class PostgresDialect implements SqlDialect {
   docColumn() {
     return quoteIdent("_doc");
   }
-  // postgres.js serializes a value bound to a `jsonb` parameter itself, so the JSON text the store already built would
-  // be stored as one JSON string. Bound as text, Postgres parses it.
+  // postgres.js would serialize a jsonb-bound value again, storing the JSON text as a string; bound as text it parses.
   docValuePlaceholder() {
     return "?::text::jsonb";
   }
@@ -63,10 +59,9 @@ export class PostgresDialect implements SqlDialect {
   #text(path: string) {
     return `(${this.docColumn()} #>> ${this.#path(path)})`;
   }
-  // SQLite's answers are the contract — live sync's in-memory evaluator is pinned to them — so a path compares the way
-  // `json_extract` reads it. A declared string reads as text in byte order, since a jsonb string follows the database
-  // collation, which puts "a" before "B". Anything else stays jsonb with a stored JSON null read as SQL NULL, so a null
-  // is left out of `<>`, `<` and `NOT IN`, sorts first, and does not collide in a unique index.
+  // SQLite's answers are the contract (live sync's evaluator is pinned to them): a declared string compares as text in
+  // byte order, as jsonb follows the collation ("a" before "B"); the rest stays jsonb with JSON null read as SQL NULL,
+  // so a null leaves `<>`, `<` and `NOT IN`, sorts first, and never collides in a unique index.
   #value(path: string, kind: PathKind) {
     return kind === "text" ? `(${this.#text(path)} COLLATE "C")` : `NULLIF(${this.#jsonb(path)}, 'null'::jsonb)`;
   }
@@ -142,8 +137,7 @@ export class PostgresDialect implements SqlDialect {
   empty(path: string): SqlFrag {
     return { sql: `(${this.#jsonb(path)} IS NULL OR jsonb_typeof(${this.#jsonb(path)}) = 'null')`, params: [] };
   }
-  // `@>` on a missing value is NULL, which `NOT` keeps NULL where SQLite's `EXISTS` answers false. The `AND` makes it
-  // false without hiding the `@>` from a GIN index.
+  // `@>` on a missing value is NULL where SQLite's `EXISTS` says false; the `AND` fixes that and keeps the GIN index.
   arrayHas(path: string, value: unknown): SqlFrag {
     return {
       sql: `(${this.#jsonb(path)} @> ?::text::jsonb AND ${this.#jsonb(path)} IS NOT NULL)`,
@@ -177,8 +171,7 @@ export class PostgresDialect implements SqlDialect {
   }
   applyUpdate(acc: string, op: DocumentUpdateOperator, path: string, value: unknown): SqlFrag {
     const p = this.#path(path);
-    // Reads target the original `_doc` column (param-free) so folding never duplicates prior placeholders; `acc` is
-    // only ever the write target.
+    // Reads target the param-free original `_doc`, so folding never duplicates placeholders; `acc` is only written.
     const jsonbAt = `(${this.docColumn()}) #> ${p}`;
     const textAt = `(${this.docColumn()}) #>> ${p}`;
     const arr = `COALESCE(NULLIF(${jsonbAt}, 'null'::jsonb), '[]'::jsonb)`;

@@ -22,16 +22,12 @@ export type InternalCls<
   SrvModule extends ServiceModel = ServiceModel,
   InternalInfoMap extends { [key: string]: InternalInfo } = { [key: string]: InternalInfo },
 > = AdaptorCls & {
-  /**
-   * The adaptor name, which `dangerouslyAdapt` suffixes — and which the DI container keys `live.internal` by.
-   * It used to be declared as the bare service name, so every typed read of it disagreed with the value.
-   */
+  /** The suffixed adaptor name the DI container keys `live.internal` by. */
   refName: `${SrvRefName<SrvModule>}Internal`;
   srv: SrvModule;
   [INTERNAL_META]: InternalInfoMap;
 };
 
-/** Builds an internal adaptor for schedules, queues, processes, and server-only jobs. */
 export function internal<
   SrvModule extends ServiceModel,
   InternalInfoMap extends ReturnType<InternalBuilder<SrvModule>>,

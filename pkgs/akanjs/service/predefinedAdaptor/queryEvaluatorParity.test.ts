@@ -64,8 +64,7 @@ const seeds = [
   { title: "Omega", status: "active", score: 1, ownerId: "u4", tags: ["hot"], note: "Élan 50%" },
 ] as const;
 
-// Every case runs through the same `empty("removedAt")` wrapper the store adds to every read
-// (`SqlDocumentStore.findForRead`); without it the two sides would be comparing different queries.
+// Every case runs through the `empty("removedAt")` wrapper the store adds to every read, or the sides would differ.
 const cases: { name: string; query: DocumentQuery }[] = [
   { name: "empty query", query: {} },
   { name: "eq on a string", query: { status: "active" } },

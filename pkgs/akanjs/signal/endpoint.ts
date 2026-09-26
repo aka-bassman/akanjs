@@ -33,7 +33,6 @@ type MergeEndpointMetas<EndpClses extends readonly EndpointCls[], Acc = unknown>
   ? MergeEndpointMetas<Rest, Assign<Acc, EndpointMetaOf<First>>>
   : Acc;
 
-/** Builds a typed endpoint adaptor from a service module and endpoint builder. */
 export function endpoint<
   SrvModule extends ServiceModel,
   Builder extends EndpointBuilder<SrvModule>,

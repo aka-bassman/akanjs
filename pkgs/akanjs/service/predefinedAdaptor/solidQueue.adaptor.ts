@@ -209,8 +209,7 @@ export class SolidQueue
     }
   }
 
-  // `removeOnComplete`/`removeOnFail` read the way bullmq reads them: `true` drops the row, a number keeps that many of
-  // the newest, `false` keeps it.
+  // As bullmq reads `removeOnComplete`/`removeOnFail`: `true` drops, a number keeps that many newest, `false` keeps.
   #settle(job: AkanJob, status: "completed" | "failed", remove: boolean | number) {
     if (remove === true) {
       this.#db.query(`DELETE FROM "_akan_solid_jobs" WHERE "id" = ?`).run(job.id);
@@ -233,11 +232,7 @@ export class SolidQueue
       .run(this.queueName, job.name, status, Math.max(0, Math.floor(remove)));
   }
 
-  /**
-   * Rows written before completed jobs were dropped on completion, and failed rows past their retention. Batched and
-   * yielding, because a queue that ran for months before this existed can hold millions of completed rows and
-   * bun:sqlite deletes synchronously.
-   */
+  //* Batched and yielding: an old queue may hold millions of completed rows, and bun:sqlite deletes synchronously.
   async #cleanup() {
     const expiredFailedAt = Date.now() - this.config.queueFailedRetentionMs;
     for (let batch = 0; batch < 10 && !this.#closed; batch++) {

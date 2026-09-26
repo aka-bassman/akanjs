@@ -33,8 +33,7 @@ const memberDatabase = DatabaseRegistry.buildModel(
   MemberFilter,
 );
 
-// A model table ensured through the store, as an app's would be — on Postgres that is also what grants the insight
-// role its base columns — and rows written with fixed values so the answers can be stated.
+// Ensured through the store like an app's table (on Postgres that grants the insight role), with fixed rows.
 const openMembers = async (kind: SqlDriverKind, options: { insight?: boolean; memory?: boolean } = {}) => {
   const driver = await ConformanceEnv.openSqlDriver(kind, { insight: true, ...options });
   await new SqlDocumentStore(
@@ -179,8 +178,7 @@ for (const kind of kinds) {
       });
 
       test("survives a statement that balances the wrapper's own parentheses", async () => {
-        // Reshaping the wrapper is possible and breaks nothing: every gate is on the statement text, the connection or
-        // the rows, never on the wrapper holding its shape.
+        // Every gate is on the statement text, the connection or the rows, never on the wrapper keeping its shape.
         await expect(insight.run(`SELECT 1) AS a, (SELECT _doc FROM "insightMember"`)).rejects.toThrow("cannot read");
         await expect(insight.run(`SELECT 1) AS a; DROP TABLE "insightMember"`)).rejects.toThrow("one statement");
         const reshaped = await insight.run(`SELECT 1 AS one) AS a, (SELECT 2 AS two`);
@@ -290,8 +288,7 @@ for (const kind of kinds) {
           expect(rows).toEqual([{ a$b: 1, dollars: "x$$y" }]);
         });
 
-        // A table alias is the whole row as a value in Postgres, `_doc` included, and a string can hold a query. The
-        // model's name reads the view that leaves `_doc` out; the table itself, named in full, refuses the role.
+        // A Postgres table alias is the whole row, `_doc` included; the view omits it and the table refuses the role.
         test("[X-9] never hands over the document column as part of a whole row", async () => {
           const { rows } = await insight.run(
             `SELECT to_jsonb(m) -> '_doc' ->> 'password' AS leaked FROM "insightMember" m`,

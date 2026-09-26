@@ -112,7 +112,7 @@ export interface AkanSqlClient {
   close(): Promise<void>;
 }
 
-/** A connection on which the engine itself cannot reach `_doc`. See `InsightQuery`. */
+/** A connection on which the engine itself cannot reach `_doc`. */
 export interface InsightSession {
   read(statement: string, timeoutMs: number): Promise<Record<string, unknown>[]>;
   close(): Promise<void>;
@@ -124,8 +124,7 @@ export interface DatabaseAdaptor {
   /** Every model table this process has opened a store for. */
   stores?(): SqlDocumentStore[];
   transaction<T>(fn: () => PromiseOrObject<T>): Promise<T>;
-  // Declared here so a service holding `plug(DatabaseAdaptorRole)` can reach `suspend`/`resume` around a bulk
-  // import without casting. `null` on adaptors that have no text search, which is how callers tell them apart.
+  // `null` without text search; declared so a service can `suspend`/`resume` around a bulk import without casting.
   getSearchIndex(): SearchIndex | null;
   openInsight?(): Promise<InsightSession>;
 }
@@ -192,10 +191,7 @@ export interface DocumentDatabaseOwner {
   setMeta(key: string, value: string): Promise<void>;
   afterCommit(fn: () => PromiseOrObject<void>): Promise<void>;
   transaction?<T>(fn: () => PromiseOrObject<T>): Promise<T>;
-  /**
-   * Runs `fn` as the only schema change in the database. Postgres needs it: two `CREATE … IF NOT EXISTS` naming one
-   * table race to a duplicate-key error there instead of one of them skipping.
-   */
+  /** Runs `fn` as the only schema change: Postgres races two `CREATE … IF NOT EXISTS` into a duplicate-key error. */
   lockSchema?<T>(fn: () => Promise<T>): Promise<T>;
   hasTable?(table: string): Promise<boolean>;
   hasValidIndex?(name: string): Promise<boolean>;
@@ -228,9 +224,8 @@ export interface CompileContext {
 }
 
 /**
- * What a document path holds, as far as the model declares it: `text` for a declared string — `String`, `ID`, a string
- * enum, or a relation, which stores its target's id — and `json` for everything else, including any path the model
- * does not type (inside an `Any`, a `Map`, an array of objects). SQLite reads both alike; Postgres compares them apart.
+ * `text` for a declared string (`String`, `ID`, a string enum, a relation's id), `json` for the rest, untyped paths
+ * included. SQLite reads both alike; Postgres compares them apart.
  */
 export type PathKind = "text" | "json";
 
@@ -249,10 +244,7 @@ export interface CreateIndexProps {
   concurrently?: boolean;
 }
 
-// A `SqlDialect` owns every dialect-specific SQL fragment so the compilers stay dialect-agnostic. Leaf query
-// operators and update operators are compiled fully here (SQL + params) — the accumulator string returned by
-// `applyUpdate` lets updates fold into a single nested JSON expression that the database applies atomically.
-// SQLite/libsql share JSON1 syntax; Postgres uses the jsonb operator/function family.
+// `applyUpdate`'s accumulator folds an update into one nested JSON expression the database applies atomically.
 export interface SqlDialect {
   readonly name: "sqlite" | "postgres";
   timestampType(): string;
@@ -297,8 +289,7 @@ export type QueryLeafOps = Pick<
   | "contains"
 >;
 
-// Base columns (`id`/`createdAt`/`updatedAt`/`removedAt`) are real SQL columns, not JSON paths, so they compile the
-// same way on every dialect.
+// Defined non-enumerable on a document, so `toRow`'s rest copy and `sanitizeJson` never see it.
 export const MODIFICATION_STATE = Symbol("akan.document.modificationState");
 
 export interface ModificationState {

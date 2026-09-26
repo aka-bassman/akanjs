@@ -21,11 +21,8 @@ export interface SliceInitInput {
 }
 
 /**
- * The two calls a slice's `init` makes and the three values callers read off them.
- *
- * The list does not wait for the aggregate: `x<Slice>List` resolves as soon as the rows land, while
- * `x<Slice>Init` — which carries `lastPageOf<Model>` and therefore needs the count — waits for both. Every
- * derived value is memoized, so the awaited shape and the un-awaited handle hand out the same instances.
+ * `x<Slice>List` resolves when the rows land; `x<Slice>Init` needs the count (`lastPageOf<Model>`) and waits for
+ * both. Derived values are memoized, so the awaited shape and the handle share instances.
  */
 export class SliceInitHandle {
   readonly #input: SliceInitInput;
@@ -78,8 +75,7 @@ export class SliceInitHandle {
       [`pageOf${capRefName}`]: page,
       [`lastPageOf${capRefName}`]: lastPage,
       [`limitOf${capRefName}`]: limit,
-      // Read off the batch, not off the count: `{ insight: false }` provides no count, and the store maintains
-      // this the same way from every later fetch so the two never disagree about what "more" means.
+      // Off the batch, not the count: `{ insight: false }` has none, and the store derives it the same way.
       [`hasMoreOf${capRefName}`]: !!limit && modelObjList.length >= limit,
       [`queryArgsOf${capRefName}`]: queryArgs,
       [`sortOf${capRefName}`]: sort,

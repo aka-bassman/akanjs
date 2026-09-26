@@ -9,10 +9,7 @@ import type {
   WsSocketData,
 } from "./websocket.adaptor";
 
-/**
- * `AppWsData` mints the id at the handshake, so this reads it; the fallback only covers a socket that
- * was upgraded outside the app router, where nothing else would have given it one.
- */
+/** `AppWsData` mints the id at the handshake; the fallback covers a socket upgraded outside the app router. */
 const getSocketId = (ws: Bun.ServerWebSocket<unknown>) => {
   const data = ws.data as WsSocketData;
   data.socketId ??= Bun.randomUUIDv7();

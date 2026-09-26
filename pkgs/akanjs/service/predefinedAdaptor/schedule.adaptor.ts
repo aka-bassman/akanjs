@@ -45,9 +45,8 @@ export class Scheduler
   }))
   implements ScheduleAdaptor
 {
-  //* Every instance of an app shares its cache, and a lease there is what lets one instance run a cron tick, an
-  //* interval period or a `once` init while the others skip it. `lockMap` still keeps a job from overlapping itself
-  //* inside one process.
+  //* A lease in the shared cache lets one instance run a cron tick, interval period or `once` init as others skip it;
+  //* `lockMap` still keeps a job from overlapping itself inside one process.
   static readonly #topic = "akan:schedule";
   static readonly #minuteMs = 60_000;
   static readonly #runningLeaseMs = 30_000;
@@ -62,8 +61,7 @@ export class Scheduler
     return this.cronMap.get(key);
   }
   registerCron(key: string, cronStr: string, callback: () => Promise<void>, { lock = true }: { lock?: boolean } = {}) {
-    // Bun.cron computes the next fire time only after the callback settles, so overlapping runs are
-    // impossible and `lock: false` cannot be honoured. The lock below stays to make the skip observable.
+    // Bun.cron schedules the next fire only after the callback settles, so `lock: false` cannot be honoured.
     if (!lock) this.logger.warn(`Schedule ${key} requested lock:false, but Bun.cron never overlaps a job`);
     const cron = Bun.cron(cronStr, async () => {
       if (this.lockMap.get(key) && lock) {
@@ -115,8 +113,7 @@ export class Scheduler
       try {
         this.lockMap.set(key, true);
         const now = Date.now();
-        // Held for one period and kept, so the next run anywhere is a period later; a locked job also renews it
-        // while it runs, so no instance starts it again before it ends.
+        // Held for a period and kept, so the next run anywhere is a period later; a locked job renews it while running.
         const ran = await this.#holding(`interval:${key}`, scheduleTime, { release: false, renew: lock }, callback);
         if (ran) this.logger.debug(`Schedule interval ${key} finished ${Date.now() - now}ms`);
       } catch (e) {
@@ -200,7 +197,6 @@ export class Scheduler
   async _runDestroy() {
     await Promise.all([...this.destroyMap.values()].map((callback) => callback()));
   }
-  /** Runs `run` under `lease`, and answers false without running it when another instance holds the lease. */
   async #holding(
     lease: string,
     ttlMs: number,
@@ -228,8 +224,7 @@ export class Scheduler
     );
     return () => clearInterval(timer);
   }
-  // One instance at a time. One that waited for another's run lets that run stand for it — concurrent boots create
-  // the root admin once — while one that found nobody running it runs its own, as a restart of a single instance does.
+  // One instance at a time; a waiter lets the finished run stand for it, so concurrent boots create one root admin.
   async #once(key: string, run: () => Promise<void>) {
     const lease = `init:${key}`;
     let waited = false;

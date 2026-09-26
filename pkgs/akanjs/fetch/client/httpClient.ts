@@ -24,14 +24,7 @@ const transportErrorKeyMap = {
 const serverUnreachableKey = "base.error.serverUnreachable";
 const unexpectedResponseKey = "base.error.unexpectedResponse";
 const transportDetailLimit = 200;
-/**
- * How long a call waits before giving up.
- *
- * Nothing else bounds it: a gateway answers a dead upstream with a 504, but a solo process has no gateway and a
- * severed connection produces no response at all — the request then sits until the browser's own limit, which is
- * minutes. The dictionary already has the wording for a slow server (`gatewayTimeout`), so this is the client
- * side of an answer that only existed for one deployment shape.
- */
+// A solo process has no gateway to answer a dead upstream with a 504, and a severed connection answers nothing at all.
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 export class HttpClient {
@@ -53,14 +46,10 @@ export class HttpClient {
   setTimeout(timeout?: number | false) {
     this.#timeout = timeout;
   }
-  #resolveBaseUrl(baseUrl?: string) {
-    return (baseUrl ?? this.baseUrl).replace(/\/$/, "");
-  }
   #resolveUrl(url: string, options: FetchOptions) {
-    return `${this.#resolveBaseUrl(options.baseUrl)}${url}`;
+    return `${(options.baseUrl ?? this.baseUrl).replace(/\/$/, "")}${url}`;
   }
-  // Accept describes the response, not the body: a proxy that sees no `Accept: application/json` cannot
-  // tell this call from a browser navigation, and answers a dead upstream with its own HTML page.
+  // Without `Accept: application/json` a proxy takes this call for a navigation and answers with its own HTML page.
   #makeHeaders(headers: Record<string, string>, options: FetchOptions) {
     return { Accept: "application/json", ...this.#headers, ...headers, ...options.headers };
   }
@@ -72,8 +61,7 @@ export class HttpClient {
     );
   }
   #makeReqContent(data: FormData | Record<string, unknown>): { body: BodyInit; headers: Record<string, string> } {
-    // FormData: do not set Content-Type — fetch adds multipart boundary; a bare
-    // "multipart/form-data" without boundary makes servers throw ERR_FORMDATA_PARSE_ERROR.
+    // No Content-Type: fetch adds the boundary, and a bare "multipart/form-data" throws ERR_FORMDATA_PARSE_ERROR.
     if (data instanceof FormData) return { body: data, headers: {} };
     return { body: JSON.stringify(data), headers: { "Content-Type": "application/json" } };
   }
@@ -114,32 +102,24 @@ export class HttpClient {
 
   async #request<Returns>(url: string, init: RequestInit, options: FetchOptions = {}): Promise<Returns> {
     const res = await this.#fetch(url, this.#withTimeout(init, options));
-    return await this.#readJsonResponse<Returns>(res);
+    const body = await this.#readBody(res);
+    if (res.ok) return body as Returns;
+    throw this.#restoreError(body, res.status);
   }
 
-  /**
-   * An upload gets no deadline of its own: a large file on a slow uplink is a long request that is working, and
-   * the request body is the only thing this side can tell that from. Everything else takes the default unless
-   * the caller named one.
-   */
+  //* An upload gets no deadline: a large file on a slow uplink is a long request that is still working.
   #withTimeout(init: RequestInit, options: FetchOptions): RequestInit {
     const timeout = options.timeout ?? (init.body instanceof FormData ? false : (this.#timeout ?? DEFAULT_TIMEOUT_MS));
     if (timeout === false || !Number.isFinite(timeout) || timeout <= 0) return init;
     return { ...init, signal: AbortSignal.timeout(timeout) };
   }
 
-  /**
-   * `fetch` rejects only when no response arrived at all — a refused connection, a DNS failure, a socket
-   * dropped mid-flight. That is the server being unreachable, not an error this API reported, so it is
-   * restored as one rather than surfacing the runtime's own `TypeError: Failed to fetch`.
-   */
+  //* `fetch` rejects only when no response arrived: the server is unreachable, not `TypeError: Failed to fetch`.
   async #fetch(url: string, init: RequestInit) {
     try {
       return await fetch(url, init);
     } catch (error) {
-      // A caller's own abort — a navigation, a cancelled screen — stays an `AbortError` for the caller to
-      // ignore. `AbortSignal.timeout` rejects with `TimeoutError` instead, which is this client giving up and
-      // is reported as the slow-server answer the dictionary already has wording for.
+      // A caller's own abort stays an `AbortError`; `AbortSignal.timeout`'s `TimeoutError` is this client giving up.
       if (error instanceof Error && error.name === "TimeoutError")
         throw this.#restoreError({ error: transportErrorKeyMap[408], data: { status: 408 } }, 408);
       if (error instanceof Error && error.name === "AbortError") throw error;
@@ -147,17 +127,7 @@ export class HttpClient {
     }
   }
 
-  async #readJsonResponse<Returns>(res: Response): Promise<Returns> {
-    const body = await this.#readBody(res);
-    if (res.ok) return body as Returns;
-    throw this.#restoreError(body, res.status);
-  }
-
-  /**
-   * A proxy answers a restarting upstream with a page of its own — nginx's `504 Gateway Time-out` HTML,
-   * the federation gateway's plain-text 503. That body is not this API's, so parsing it would surface the
-   * parser's complaint (`Unexpected token '<'`) instead of the fact that the server is down.
-   */
+  //* A proxy answers a restarting upstream with its own page (nginx HTML, the gateway's plain-text 503), not our JSON.
   async #readBody(res: Response) {
     if (jsonContentType.test(res.headers.get("content-type") ?? "")) {
       try {
@@ -198,12 +168,9 @@ export class HttpClient {
     searchArgs.forEach((arg) => {
       const argValue = argMap.get(arg.name);
       if (argValue === null || argValue === undefined) return;
-      // `Any` carries a structure the query string has no spelling for; `String(value)` would send
-      // "[object Object]". `HttpExecutionContext` parses it back with the same rule.
+      // `String(value)` would send "[object Object]"; `HttpExecutionContext` parses this back by the same rule.
       if (arg.refName === "Any") {
-        // A value JSON has no spelling for — a function, a symbol — stringifies to the JS `undefined`, which
-        // `set` would write as the literal text "undefined" and the reader would reject as malformed JSON.
-        // An arg it cannot carry is an arg it does not carry.
+        // A function or symbol stringifies to `undefined`, which `set` would send as "undefined": left out instead.
         const encoded = JSON.stringify(argValue);
         if (encoded !== undefined) searchParams.set(arg.name, encoded);
       } else if (arg.arrDepth && Array.isArray(argValue))
@@ -219,42 +186,33 @@ export class HttpClient {
     });
     return `${paramedPath}${searchPath}`;
   }
-  // `<input type="file">.files` is a FileList, not an array: appending it as one value would send
-  // the literal "[object FileList]" instead of the files.
+  // A FileList is not an array: appended as one value it would send "[object FileList]".
   static #toUploadValues(argValue: unknown): (Blob | string)[] {
     if (Array.isArray(argValue)) return argValue as (Blob | string)[];
     if (typeof FileList !== "undefined" && argValue instanceof FileList) return Array.from(argValue);
     return [argValue as Blob | string];
   }
   static makeBody(bodyArgs: SerializedArg[], uploadArgs: SerializedArg[], argMap: Map<string, unknown>) {
-    if (uploadArgs.length > 0) {
-      const formData = new FormData();
-      uploadArgs.forEach((arg) => {
-        const argValue = argMap.get(arg.name);
-        if (arg.nullable && (argValue === null || argValue === undefined)) return;
-        if (!arg.nullable && (argValue === null || argValue === undefined))
-          throw new Error(`Argument ${arg.name} is required`);
-        HttpClient.#toUploadValues(argValue).forEach((value) => {
-          formData.append(arg.name, value);
-        });
+    const valueOf = (arg: SerializedArg) => {
+      const argValue = argMap.get(arg.name);
+      if (!arg.nullable && (argValue === null || argValue === undefined))
+        throw new Error(`Argument ${arg.name} is required`);
+      return argValue;
+    };
+    if (!uploadArgs.length) return Object.fromEntries(bodyArgs.map((arg) => [arg.name, valueOf(arg)]));
+    const formData = new FormData();
+    uploadArgs.forEach((arg) => {
+      const argValue = valueOf(arg);
+      if (argValue === null || argValue === undefined) return;
+      HttpClient.#toUploadValues(argValue).forEach((value) => {
+        formData.append(arg.name, value);
       });
-      bodyArgs.forEach((arg) => {
-        const argValue = argMap.get(arg.name);
-        if (arg.nullable && (argValue === null || argValue === undefined)) return;
-        if (!arg.nullable && (argValue === null || argValue === undefined))
-          throw new Error(`Argument ${arg.name} is required`);
-        formData.append(arg.name, typeof argValue === "string" ? argValue : JSON.stringify(argValue));
-      });
-      return formData;
-    } else {
-      const body: Record<string, unknown> = {};
-      bodyArgs.forEach((arg) => {
-        const argValue = argMap.get(arg.name);
-        if (!arg.nullable && (argValue === null || argValue === undefined))
-          throw new Error(`Argument ${arg.name} is required`);
-        body[arg.name] = argValue;
-      });
-      return body;
-    }
+    });
+    bodyArgs.forEach((arg) => {
+      const argValue = valueOf(arg);
+      if (argValue === null || argValue === undefined) return;
+      formData.append(arg.name, typeof argValue === "string" ? argValue : JSON.stringify(argValue));
+    });
+    return formData;
   }
 }

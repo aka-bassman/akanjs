@@ -11,8 +11,6 @@ describe("McpUriTemplate", () => {
   });
 
   test("keeps the root list out of the segment a slice key occupies", () => {
-    // A slice may legally be called `all`, so a root list published at `…/list/all` would take the uri that
-    // slice's own list needs and answer it with a different endpoint.
     expect(McpUriTemplate.list("user", "all", [])).toBe("akan://user/list/all");
     expect(McpUriTemplate.parse("akan://user/list/all")).toEqual({ endpointKey: "userListAll", args: {} });
     expect(McpUriTemplate.parse("akan://user/list")).toEqual({ endpointKey: "userList", args: {} });
@@ -23,13 +21,10 @@ describe("McpUriTemplate", () => {
       endpointKey: "user",
       args: { userId: "6712ab34cd56ef7890123456" },
     });
-    // The light read is not published, so the shape it held is gone rather than routed to a tool nothing lists.
     expect(McpUriTemplate.parse("akan://user/light/6712ab34cd56ef7890123456")).toBeNull();
   });
 
   test("preserves camelCase in the authority", () => {
-    // A WHATWG `URL` may normalize the authority of a non-special scheme; a lowercased `agentsession` would
-    // silently stop matching its model, which is why parsing is done by hand.
     expect(McpUriTemplate.parse("akan://agentSession/abc")?.endpointKey).toBe("agentSession");
   });
 
@@ -56,17 +51,12 @@ describe("McpUriTemplate", () => {
     expect(McpUriTemplate.parse("akan://user//1")).toBeNull();
     expect(McpUriTemplate.parse("akan://user/1/2/3")).toBeNull();
     expect(McpUriTemplate.parse("akan://user/anything/1")).toBeNull();
-    // `list` is reserved, so a two-segment uri may not use it as an id: it reads as the root list rather than as
-    // a document whose id is the word.
     expect(McpUriTemplate.parse("akan://user/list")?.endpointKey).toBe("userList");
   });
 
   test("reads an undecodable escape as unknown rather than throwing", () => {
-    // `decodeURIComponent` throws `URIError` on these, and the router's catch would turn a caller's typo into a
-    // 500 with a stack in the log — on a method an agent may call with any string.
     expect(McpUriTemplate.parse("akan://user/%")).toBeNull();
     expect(McpUriTemplate.parse("akan://user/list/%E0%A4%A")).toBeNull();
-    // The query half never needed the guard: `URLSearchParams` reads a bad escape as literal text.
     expect(McpUriTemplate.parse("akan://user/list?q=%ZZ")?.args).toEqual({ q: "%ZZ" });
   });
 });

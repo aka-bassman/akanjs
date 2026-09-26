@@ -5,6 +5,7 @@ export class PendingStoreEnsures {
   track(ensure: Promise<void>): void {
     const tracked = ensure
       .catch((error: unknown) => {
+        // Every `ensure()` statement is `IF NOT EXISTS`, so one cut short by the close reruns on the next boot.
         if (this.#closed) return;
         throw error;
       })

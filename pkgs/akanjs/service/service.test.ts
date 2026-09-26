@@ -689,9 +689,7 @@ describe("dependency injection resolution", () => {
 
     await instance.participants.set("user-1", { status: "speaking", muted: false });
 
-    // A cache holds a string, a number or a Buffer. Redis coerces anything else to "[object Object]" while the
-    // sqlite-backed cache JSONs it on its own, so a value that leaves as an object means two different things
-    // per deployment — and the app hand-encodes JSON to get one of them back.
+    // Redis coerces an object to "[object Object]" while the sqlite cache JSONs it, so objects must leave encoded.
     const stored = cache.calls.at(-1)?.args[3];
     expect(typeof stored).toBe("string");
     expect(JSON.parse(stored as string)).toMatchObject({ status: "speaking", muted: false });

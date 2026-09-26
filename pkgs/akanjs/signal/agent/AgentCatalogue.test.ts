@@ -35,8 +35,6 @@ const keysOf = (options?: { excludeSignals?: string[] }) =>
 
 describe("AgentCatalogue candidates", () => {
   test("lists every endpoint a registry holds, whatever any audience would take", () => {
-    // Nothing in this fixture opts into anything. Enumeration is not admission — an audience decides that, and it
-    // cannot decide about a candidate it was never shown.
     const keys = keysOf();
     expect(keys).toContain("agentNote");
     expect(keys).toContain("lightAgentNote");
@@ -48,7 +46,6 @@ describe("AgentCatalogue candidates", () => {
 
   test("tells a candidate's origin, because that is where an opt-in for it can be written", () => {
     const byKey = new Map(AgentCatalogue.candidates(signal()).map((candidate) => [candidate.key, candidate]));
-    // A generated CRUD endpoint has no option of its own, so the verb names where the signal writes one.
     expect(byKey.get("createAgentNote")).toMatchObject({ origin: "base", baseVerb: "create" });
     expect(byKey.get("agentNote")).toMatchObject({ origin: "base", baseVerb: "get" });
     expect(byKey.get("agentNoteListByAuthor")?.origin).toBe("slice");
@@ -57,8 +54,6 @@ describe("AgentCatalogue candidates", () => {
   });
 
   test("orders identically on every walk, because a catalogue is cached by whoever reads it", () => {
-    // A client caches the list and an LLM prompt cache keys on its exact text, so an order that follows object
-    // iteration is a cache that misses for no reason.
     expect(keysOf()).toEqual(keysOf());
     expect([...keysOf()].sort()).toEqual(keysOf());
   });
@@ -104,8 +99,6 @@ describe("AgentCatalogue texts", () => {
   });
 
   test("lends the model's words to a generated entry that has none of its own", () => {
-    // `<model>List` publishes as "Slice List - Universal" whatever the dictionary says, so the model's is the only
-    // text there can be.
     expect(catalogueOf().entryTexts("agentNote", "agentNoteList")).toEqual({
       title: "Note",
       description: "A note somebody left on a record.",
@@ -113,7 +106,6 @@ describe("AgentCatalogue texts", () => {
   });
 
   test("appends the model description to a generated verb rather than replacing it", () => {
-    // On `removeAgentNote` a bare model description would read as if the tool returned one.
     const texts = catalogueOf().entryTexts("agentNote", "removeAgentNote");
     expect(texts.description).toBe("A note somebody left on a record.");
     expect(catalogueOf().undescribed).toEqual([]);

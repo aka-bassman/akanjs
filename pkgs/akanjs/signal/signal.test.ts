@@ -209,10 +209,6 @@ class EndpointMiddleware extends middleware("endpoint") {
 }
 let signalTestOrder: string[] = [];
 
-// Through the framework's own builder, so a field added to or dropped from `LiveRegistry` reaches the tests
-// instead of leaving a literal that still lists the eight keys it had when it was written.
-const makeLiveRegistry = (): LiveRegistry => getDefaultLiveRegistry();
-
 const makeHttpRequest = ({
   url = "http://localhost/api?ownerId=u1&ids=a&ids=b",
   params = { id: "123" },
@@ -228,8 +224,7 @@ const makeHttpRequest = ({
     url,
     params,
     body: body ? {} : undefined,
-    // What `HttpClient` sends for a JSON body, because `CrossSiteGuard` requires it: a body with any other
-    // content type is a cross-site form post that skipped its preflight.
+    // `CrossSiteGuard` refuses a JSON body without this content type.
     headers: new Headers(body ? { "content-type": "application/json", ...headers } : headers),
     json: async () => body ?? {},
   }) as unknown as Bun.BunRequest;
@@ -238,7 +233,7 @@ const makeSignalContext = ({
   endpointInfo = buildEndpoint.query(String).exec(() => "ok"),
   request = makeHttpRequest(),
   adaptor = new (adapt("signalTestContextAdaptor"))(),
-  live = makeLiveRegistry(),
+  live = getDefaultLiveRegistry(),
   middlewareMap = new Map(),
   registry = getDefaultInjectRegistry(),
 }: {
@@ -321,8 +316,7 @@ describe("signal metadata builders", () => {
   test("builds slice metadata with query, internal args, and nullable search args", () => {
     const sliceInfo = buildSlice(
       "signalTestItem",
-      // `buildSlice` infers `Input` from the class, and a `via()` input does not line up with what it derives —
-      // the same escape `DatabaseRegistry.buildModel` already takes for the same argument.
+      // A `via()` input does not line up with the `Input` `buildSlice` infers, as in `DatabaseRegistry.buildModel`.
       SignalTestInput as unknown as Parameters<typeof buildSlice>[1],
       SignalTestFull,
       SignalTestLight,
@@ -517,9 +511,6 @@ describe("signal serialization and registry", () => {
   class RegistryServerSignal extends serverSignal(RegistryEndpoint, RegistryInternal) {}
 
   test("resolves the mcp map the way it resolves the guards map, and ships only what is off", () => {
-    // Same keys, same fallbacks, same scope as `guards`: `create`/`update`/`remove` inherit `cru`, and a verb
-    // that names itself wins over it. Only the `false` answers travel — `true` is the default, so serializing it
-    // would put a field on every signal that says nothing.
     class McpSlice extends slice(
       signalTestServiceModel,
       { guards: { root: Public, get: Public, cru: Public }, mcp: { cru: false, update: true, root: false } },
@@ -528,7 +519,6 @@ describe("signal serialization and registry", () => {
     expect(McpSlice.mcp).toEqual({ get: true, create: false, update: true, remove: false });
     const serialized = FetchSerializer.serializeDatabaseSignal(McpSlice, RegistryEndpoint);
     expect(serialized.mcp).toEqual({ create: false, remove: false });
-    // `root` is not a generated verb but the root slice itself, so its answer rides on that slice.
     expect(serialized.slice?.[""]?.mcp).toBe(false);
 
     class QuietSlice extends slice(signalTestServiceModel, { guards: { root: Public }, mcp: false }, () => ({})) {}
@@ -562,9 +552,7 @@ describe("signal serialization and registry", () => {
       modelType: "full",
       nullable: true,
     });
-    // Sort keys are the client's only source for the orderings a list UI may offer.
     expect(databaseSignal.filter?.sortKeys).toEqual(["latest", "oldest", "relevance", "titleAsc"]);
-    // The filter map is the other half: the root slice names one of these keys instead of carrying a query.
     expect(databaseSignal.filter?.filter.byOwner).toEqual([
       { type: "search", refName: "ID", name: "ownerId", ref: "user" },
     ]);
@@ -615,7 +603,7 @@ describe("signal serialization and registry", () => {
       ServiceEndpoint,
       ServiceServer,
     );
-    const live = makeLiveRegistry();
+    const live = getDefaultLiveRegistry();
     live.endpointCls.set("signalTestItem", RegistryEndpoint);
     live.sliceCls.set("signalTestItem", RegistrySlice);
     live.endpointCls.set("signalTestAux", ServiceEndpoint);
@@ -636,7 +624,7 @@ describe("signal serialization and registry", () => {
       ),
     ).toThrow('Signal base mismatch: endpoint uses "signalTestAux", but registry expected "signalTestItem"');
 
-    const brokenLive = makeLiveRegistry();
+    const brokenLive = getDefaultLiveRegistry();
     brokenLive.endpointCls.set("signalTestItem", RegistryEndpoint);
     expect(() => FetchSerializer.serializeRegistry(brokenLive)).toThrow(
       'No slice found for service signal "signalTestItem"',
@@ -753,7 +741,7 @@ describe("SignalContext execution", () => {
       adaptor: new (adapt("signalTestWsAdaptor"))(),
       registry: getDefaultInjectRegistry(),
       env: {} as never,
-      live: makeLiveRegistry(),
+      live: getDefaultLiveRegistry(),
       middleware: new Map(),
     });
     const pubsubContext = new SignalContext(
@@ -764,7 +752,7 @@ describe("SignalContext execution", () => {
         adaptor: new (adapt("signalTestPubsubAdaptor"))(),
         registry: getDefaultInjectRegistry(),
         env: {} as never,
-        live: makeLiveRegistry(),
+        live: getDefaultLiveRegistry(),
         middleware: new Map(),
       },
     );
@@ -792,7 +780,7 @@ describe("SignalContext execution", () => {
         adaptor: new (adapt("signalTestWsSocketIdAdaptor"))(),
         registry: getDefaultInjectRegistry(),
         env: {} as never,
-        live: makeLiveRegistry(),
+        live: getDefaultLiveRegistry(),
         middleware: new Map(),
       },
     );
@@ -825,7 +813,7 @@ describe("SignalContext execution", () => {
         adaptor: new (adapt("signalTestWsLifecycleAdaptor"))(),
         registry: getDefaultInjectRegistry(),
         env: {} as never,
-        live: makeLiveRegistry(),
+        live: getDefaultLiveRegistry(),
         middleware: new Map(),
       },
     );
@@ -1225,7 +1213,7 @@ describe("SignalContext guards", () => {
 
 describe("SignalContext return resolution", () => {
   test("resolves primitives, arrays, hidden fields, scalar fields, nested documents, and resolve fields", async () => {
-    const live = makeLiveRegistry();
+    const live = getDefaultLiveRegistry();
     const relatedService = {
       __load: async (id: string) => ({
         toJSON: () => ({ id, title: `related:${id}` }),
@@ -1298,7 +1286,7 @@ describe("SignalContext return resolution", () => {
 
   test("loads and walks a relation once per response, however many rows name it", async () => {
     const loaded: string[] = [];
-    const live = makeLiveRegistry();
+    const live = getDefaultLiveRegistry();
     live.service.set("signalTestRelated", {
       __load: async (id: string) => {
         loaded.push(id);
@@ -1329,12 +1317,11 @@ describe("SignalContext return resolution", () => {
     expect(holders[1].requiredRelated).toBe(holders[0].relateds[1]);
 
     await resolveHolders();
-    // The cache is the response's, not the process's, so the second one loads both documents again.
     expect(loaded).toHaveLength(4);
   });
 
   test("refuses a missing document for a non-nullable relation even when a nullable one cached the miss", async () => {
-    const live = makeLiveRegistry();
+    const live = getDefaultLiveRegistry();
     live.service.set("signalTestRelated", {
       __load: async () => null,
     } as unknown as Service);
@@ -1489,7 +1476,7 @@ describe("SignalContext websocket authorization", () => {
       adaptor: new (adapt("signalTestWsGuardAdaptor"))(),
       registry: getDefaultInjectRegistry(),
       env: {} as never,
-      live: makeLiveRegistry(),
+      live: getDefaultLiveRegistry(),
       middleware: middlewareMap as never,
     });
 

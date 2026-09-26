@@ -3,9 +3,8 @@ import { ConstantRegistry } from "akanjs/constant";
 import { FetchClient } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
 
-// A generated useClient.ts imports only FetchClient from this barrel, so the framework scalar must register
-// through FetchClient's own module: Bun links `export *` barrel modules lazily per used binding and its
-// transpiler drops unused imports, so neither the barrel re-export nor a bare reference runs ../agentTurn.
+// useClient.ts imports only FetchClient, and Bun links `export *` lazily per binding and drops unused imports, so
+// the scalar must register from FetchClient's own module.
 const agentSignal = {
   prefix: "agent",
   endpoint: {

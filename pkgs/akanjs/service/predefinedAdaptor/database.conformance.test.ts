@@ -14,9 +14,8 @@ import {
 import { ConformanceEnv, type SqlDriver, type SqlDriverKind } from "../../test/conformance";
 import { SqlDocumentStore } from "./database.adaptor";
 
-// Every case here states the SQLite answer, which is the contract: the in-memory query evaluator that routes live
-// sync is pinned to it (`document/queryEvaluator.ts`). A known divergence is `test.failingIf(<driver>)` and carries
-// its id from `local/database-modes/`; fixing it turns the case red, which is the cue to drop the marker.
+// Every case states the SQLite answer, the contract live sync's in-memory evaluator is pinned to. A known divergence is
+// `test.failingIf(<driver>)` with its `local/database-modes/` id; fixing it turns the case red, the cue to drop it.
 
 const q = createDocumentQueryHelper();
 
@@ -367,8 +366,7 @@ const describeDriver = (kind: SqlDriverKind) => {
     });
   });
 
-  // A failed transaction can leave its connection open inside the pool (see [PG-1]), so each of these gets storage
-  // of its own and closes it, rather than poisoning the cases above.
+  // A failed transaction can leave its pooled connection open ([PG-1]), so each of these gets storage of its own.
   describe(`sql transactions (${kind})`, () => {
     let driver: SqlDriver;
     let store: SqlDocumentStore;

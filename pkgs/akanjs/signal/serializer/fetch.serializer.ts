@@ -18,7 +18,7 @@ import type {
   SliceCls,
   SliceInfo,
 } from "akanjs/signal";
-import { refusesAgents } from "../guard";
+import { type GuardCls, refusesAgents } from "../guard";
 
 export class FetchSerializer {
   static logger = new Logger("FetchSerializer");
@@ -90,11 +90,7 @@ export class FetchSerializer {
       ...(argInfo.ref ? { ref: argInfo.ref } : {}),
     };
   }
-  /**
-   * The model's filter surface, which is what the root slice takes instead of a raw query. A client cannot
-   * offer a filter it cannot name, nor fill args it cannot type — so both travel, unlike the query map that
-   * used to stay server-side.
-   */
+  // What the root slice takes instead of a raw query, so a client can name a filter and type its args.
   static #serializeFilter(sliceCls: SliceCls): SerializedFilter | undefined {
     const filterMeta = getFilterMeta(sliceCls.srv.db.filter, { allowEmpty: true });
     if (!filterMeta) return undefined;
@@ -127,49 +123,55 @@ export class FetchSerializer {
 
   static serializeDatabaseSignal(sliceCls: SliceCls, endpointCls: EndpointCls): SerializedSignal {
     const sliceMeta = sliceCls[SLICE_META] as { [key: string]: SliceInfo };
-    const endpointMeta = endpointCls[ENDPOINT_META] as { [key: string]: EndpointInfo };
     const prefix = sliceCls.srv.cnst?.refName;
     const slice: { [key: string]: SerializedSlice } = {};
     for (const [key, sliceInfo] of Object.entries(sliceMeta)) {
       slice[key] = FetchSerializer.#serializeSlice(sliceInfo);
     }
-    const endpoint: { [key: string]: SerializedEndpoint } = {};
-    for (const [key, endpointInfo] of Object.entries(endpointMeta)) {
-      endpoint[key] = FetchSerializer.#serializeEndpoint(endpointInfo);
-    }
     const filter = FetchSerializer.#serializeFilter(sliceCls);
-    // The root slice picks one of these keys, so the list it may pick from belongs on the argument itself:
-    // every audience that reads a schema — the API explorer, the OpenAPI document, an MCP client — gets it.
+    // On the argument itself, so every schema reader (API explorer, OpenAPI, MCP) sees the keys it may pick.
     const queryKeyArg = slice[""]?.args.find((arg) => arg.name === "queryKey");
     if (queryKeyArg && filter) queryKeyArg.oneOf = Object.keys(filter.filter);
     return {
       ...(prefix ? { prefix } : {}),
       ...(Object.keys(slice).length ? { slice } : {}),
       ...(filter ? { filter } : {}),
-      ...(sliceCls.getGuards.filter((g) => g.name !== "None").length
-        ? { getGuards: sliceCls.getGuards.map((g) => g.name) }
-        : {}),
-      ...(sliceCls.cruGuards.filter((g) => g.name !== "None").length
-        ? { cruGuards: sliceCls.cruGuards.map((g) => g.name) }
-        : {}),
-      // create/update/remove are only emitted when they override cru (distinct array reference);
-      // otherwise the client falls back to cruGuards, keeping payloads unchanged for cru-only slices.
-      ...(sliceCls.createGuards !== sliceCls.cruGuards && sliceCls.createGuards.filter((g) => g.name !== "None").length
-        ? { createGuards: sliceCls.createGuards.map((g) => g.name) }
-        : {}),
-      ...(sliceCls.updateGuards !== sliceCls.cruGuards && sliceCls.updateGuards.filter((g) => g.name !== "None").length
-        ? { updateGuards: sliceCls.updateGuards.map((g) => g.name) }
-        : {}),
-      ...(sliceCls.removeGuards !== sliceCls.cruGuards && sliceCls.removeGuards.filter((g) => g.name !== "None").length
-        ? { removeGuards: sliceCls.removeGuards.map((g) => g.name) }
-        : {}),
+      ...FetchSerializer.#guardNames("getGuards", sliceCls.getGuards),
+      ...FetchSerializer.#guardNames("cruGuards", sliceCls.cruGuards),
+      // Emitted only when overriding cru (a distinct array reference); otherwise the client falls back to cruGuards.
+      ...FetchSerializer.#guardNames(
+        "createGuards",
+        sliceCls.createGuards,
+        sliceCls.createGuards !== sliceCls.cruGuards,
+      ),
+      ...FetchSerializer.#guardNames(
+        "updateGuards",
+        sliceCls.updateGuards,
+        sliceCls.updateGuards !== sliceCls.cruGuards,
+      ),
+      ...FetchSerializer.#guardNames(
+        "removeGuards",
+        sliceCls.removeGuards,
+        sliceCls.removeGuards !== sliceCls.cruGuards,
+      ),
       ...FetchSerializer.#serializeSliceMcp(sliceCls),
       ...FetchSerializer.#serializeSliceAgents(sliceCls),
-      endpoint,
+      endpoint: FetchSerializer.#serializeEndpoints(endpointCls),
     };
   }
 
-  /** The generated verbs a person-only guard protects, shaped like `mcp` so the client stamps both the same way. */
+  static #guardNames<Key extends string>(key: Key, guards: GuardCls[], emit = true) {
+    if (!emit || !guards.some((guard) => guard.name !== "None")) return {};
+    return { [key]: guards.map((guard) => guard.name) } as { [K in Key]: string[] };
+  }
+
+  static #serializeEndpoints(endpointCls: EndpointCls) {
+    const endpoint: { [key: string]: SerializedEndpoint } = {};
+    for (const [key, endpointInfo] of Object.entries(endpointCls[ENDPOINT_META] as { [key: string]: EndpointInfo }))
+      endpoint[key] = FetchSerializer.#serializeEndpoint(endpointInfo);
+    return endpoint;
+  }
+
   static #serializeSliceAgents(sliceCls: SliceCls): { agents?: SerializedSignalMcp } {
     const agents: SerializedSignalMcp = {
       ...(refusesAgents(sliceCls.getGuards) ? { get: false as const } : {}),
@@ -180,7 +182,6 @@ export class FetchSerializer {
     return Object.keys(agents).length ? { agents } : {};
   }
 
-  /** Only the verbs kept off the shelf travel: `true` is the default, so emitting it would grow every payload. */
   static #serializeSliceMcp(sliceCls: SliceCls): { mcp?: SerializedSignalMcp } {
     const mcp = Object.fromEntries(
       Object.entries(sliceCls.mcp ?? {})
@@ -191,20 +192,10 @@ export class FetchSerializer {
   }
 
   static serializeServiceSignal(endpointCls: EndpointCls): SerializedSignal {
-    const endpointMeta = endpointCls[ENDPOINT_META] as { [key: string]: EndpointInfo };
-    const endpoint: { [key: string]: SerializedEndpoint } = {};
-    for (const [key, endpointInfo] of Object.entries(endpointMeta)) {
-      endpoint[key] = FetchSerializer.#serializeEndpoint(endpointInfo);
-    }
-    return { endpoint };
+    return { endpoint: FetchSerializer.#serializeEndpoints(endpointCls) };
   }
 
-  /**
-   * A container that never finished initializing has empty registries rather than none, so a caller reaching a
-   * devtools or MCP route before boot completed gets an empty catalogue. Destructuring the registry used to
-   * throw before the loop, which surfaced as `Cannot destructure property 'endpointCls' from null` on a route
-   * whose honest answer is "nothing is registered yet".
-   */
+  /** A container that has not finished booting answers an empty catalogue rather than throwing. */
   static serializeRegistry(live: LiveRegistry | null | undefined): {
     signal: { [key: string]: SerializedSignal };
   } {

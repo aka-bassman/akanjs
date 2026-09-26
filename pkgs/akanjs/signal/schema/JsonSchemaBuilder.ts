@@ -5,22 +5,11 @@ import type { SerializedArg, SerializedReturns } from "../types";
 export type JsonSchema = Record<string, unknown>;
 
 export interface JsonSchemaBuilderOptions {
-  /**
-   * Where a model `$ref` points. OpenAPI collects every model under `components/schemas`, while MCP requires each
-   * tool schema to resolve on its own and so embeds its models in a per-schema `$defs`.
-   */
+  /** Default `#/components/schemas/` (OpenAPI); MCP embeds each tool's models in a per-schema `$defs`. */
   refPrefix?: string;
-  /**
-   * How a nullable schema is spelled. `anyOf` with a null branch is the OpenAPI habit and the default; `type` merges
-   * `"null"` into a schema that has one plain `type` (and lists `null` in its `enum`, which would otherwise still
-   * refuse it) — the shorter form a listing that is re-sent to every agent is paid for by the byte.
-   */
+  /** `anyOf` (default) adds a null branch; `type` merges `"null"` into a plain `type` (and its `enum`), shorter. */
   nullable?: "anyOf" | "type";
-  /**
-   * Which shape a primitive is published as. `wire` is what an HTTP body carries, which is what an API contract
-   * describes. `agent` is what an agent reads and writes, on both sides of a call: a primitive's `agent.schema`
-   * when it declares one, its wire shape otherwise.
-   */
+  /** `wire` (default) is the HTTP body shape; `agent` uses a primitive's `agent.schema` when it declares one. */
   face?: JsonSchemaFace;
 }
 
@@ -30,37 +19,19 @@ export type JsonSchemaRelations = "inline" | "id" | "named";
 
 export interface JsonSchemaModelOptions {
   /**
-   * Drops `hidden`, `secret`, and `visual` fields. `SignalContext.resolveReturn` strips the first two from every
-   * response, so naming them describes a value the caller can never read — and on a model like `user` the names
-   * are themselves the leak: `password`, `accountId`, `phone` published as readable properties of the model. This
-   * is the one place a field the framework blocks on every value path is still visible, so it is scoped to schemas
-   * that describe a *response*. A request body is a different shape and legitimately carries all three.
-   *
-   * `visual` is dropped here because it is dropped from the payload an AI caller receives, and a schema that
-   * promises a field the value omits is worse than one that never named it: a non-optional visual field would be
-   * listed `required` and a validating client would refuse the whole result.
+   * Response schemas only: drops `hidden`/`secret` (stripped from every response, and on `user` the names alone
+   * leak) and `visual` (stripped for AI callers, so listing it `required` would make a client refuse the result).
    */
   readable?: boolean;
   /**
-   * How a field holding another database model is described. `inline` follows the `$ref`, which is right where
-   * schemas share a component section. `id` is what a request body carries: `serialize` sends a relation as its id,
-   * so a schema showing the whole related object asks the caller for a shape the server never reads. `named` is for
-   * a response: the nested document becomes `{ type: "object" }` carrying its model name, so the returned model
-   * keeps every field of its own and stops dragging its relations' closures into each copy. An embedded scalar has
-   * no tool of its own and stays inline under either.
+   * A database-model field: `inline` (default) follows the `$ref`, `id` is what a request body carries, `named` is
+   * `{ type: "object" }` with the model name. An embedded scalar always stays inline.
    */
   relations?: JsonSchemaRelations;
-  /**
-   * Whether an id carries the 24-hex `pattern`. Kept on a top-level argument, where it is read once; dropped inside
-   * a per-tool `$defs`, where it would repeat on every id field of every copy.
-   */
+  /** Whether an id carries the 24-hex `pattern` (default `true`). */
   idPattern?: boolean;
 }
 
-/**
- * Turns serialized signal metadata and Akan constants into JSON Schema (2020-12 by default, which is also what
- * OpenAPI 3.1 uses). One builder per output dialect target — `new` it at the call site, it holds no shared state.
- */
 export class JsonSchemaBuilder {
   readonly #refPrefix: string;
   readonly #nullableForm: "anyOf" | "type";
@@ -115,7 +86,6 @@ export class JsonSchemaBuilder {
     };
   }
 
-  /** Every registered model, keyed by schema name. Callers narrow this with `referencedSchemas`. */
   allModelSchemas(options: JsonSchemaModelOptions = {}): Record<string, JsonSchema> {
     const schemas: Record<string, JsonSchema> = {};
     for (const [, database] of ConstantRegistry.database.entries()) {
@@ -129,14 +99,7 @@ export class JsonSchemaBuilder {
     return schemas;
   }
 
-  /**
-   * The models `seed` references, plus everything those transitively reference, sorted by name.
-   *
-   * `allSchemas` is derived from the registry, so a caller that narrows many seeds against the same registry —
-   * MCP builds one per tool schema and one per output schema — passes its own copy rather than rebuilding every
-   * registered model each time. Holding it here instead would make this builder stateful, and the one in
-   * `openapi.ts` lives at module scope for the life of the process.
-   */
+  /** The transitive closure of the models `seed` references, sorted by name. Pass `allSchemas` when narrowing often. */
   referencedSchemas(seed: unknown, allSchemas: Record<string, JsonSchema> = this.allModelSchemas()) {
     const referencedNames = this.collectRefNames(seed);
     const pending = [...referencedNames];
@@ -177,8 +140,7 @@ export class JsonSchemaBuilder {
     return refs;
   }
 
-  // Prefix matching rather than a compiled pattern: `#/$defs/` contains `$`, which a naive `new RegExp` would
-  // read as end-of-input and silently match nothing.
+  // Prefix matching, not a RegExp: `#/$defs/` contains `$`, which a naive pattern reads as end-of-input.
   #refName(ref: string): string | undefined {
     if (!ref.startsWith(this.#refPrefix)) return undefined;
     const name = ref.slice(this.#refPrefix.length);
@@ -273,8 +235,7 @@ export class JsonSchemaBuilder {
 
   #nullable(schema: JsonSchema, nullable: boolean): JsonSchema {
     if (!nullable) return schema;
-    // Only a schema with one plain `type` can carry `"null"` in it: a `$ref` has no type of its own, and an `enum`
-    // must list `null` too or the type array admits what the value list still refuses.
+    // A `$ref` has no type to merge into, and an `enum` must list `null` too or it still refuses the value.
     if (this.#nullableForm === "type" && typeof schema.type === "string" && !("$ref" in schema)) {
       const merged = { ...schema, type: [schema.type, "null"] };
       return Array.isArray(schema.enum) ? { ...merged, enum: [...schema.enum, null] } : merged;

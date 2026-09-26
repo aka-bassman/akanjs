@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { Client as LibsqlClient } from "@libsql/client";
-import { getEnv, type PromiseOrObject } from "akanjs/base";
+import type { PromiseOrObject } from "akanjs/base";
 import type { ConstantModel } from "akanjs/constant";
 import type { DatabaseModel, DocumentSchema, SchemaOf } from "akanjs/document";
 import type { Sql } from "postgres";
@@ -39,16 +39,12 @@ import {
   type SqliteEnv,
   type TransactionContext,
 } from "./sql/types";
-import { quoteIdent } from "./sqlDescriptor";
-import { resolveDefaultSqliteFile } from "./sqlitePath";
+import { quoteIdent } from "./sql/values";
+import { defaultSqliteFile } from "./sqlitePath";
 
 export { PostgresDialect } from "./sql/dialect/postgres";
 export { SqliteDialect } from "./sql/dialect/sqlite";
 export { SqlDocumentStore } from "./sql/SqlDocumentStore";
-/**
- * The three SQL databases an app can mount, and nothing else. The layer underneath them — drivers, dialects,
- * the query and update compilers, and the document store they all share — lives in .
- */
 export type {
   AkanSqlClient,
   AkanSqlStatement,
@@ -65,20 +61,15 @@ export type {
   SqlResultRows,
 } from "./sql/types";
 
+const searchConfigOf = (env: SqliteEnv): Required<SearchConfig> => ({
+  enabled: env.database?.search?.enabled ?? parseSearchEnabled(process.env.AKAN_SEARCH_ENABLED),
+  tokenizer: env.database?.search?.tokenizer ?? process.env.AKAN_SEARCH_TOKENIZER ?? DEFAULT_TOKENIZER,
+});
+
 export class SqliteDatabase
   extends adapt("sqliteDatabase", ({ env, plug }) => ({
     scheduler: plug(ScheduleAdaptorRole),
     config: env((env: SqliteEnv) => {
-      const defaultFile = () => {
-        const { appName, environment, operationMode } = getEnv();
-        return resolveDefaultSqliteFile({
-          appName,
-          fileName: `${appName}-${environment}.db`,
-          isProduction: process.env.NODE_ENV === "production",
-          operationMode,
-          workspaceRoot: env.workspaceRoot,
-        });
-      };
       return {
         journalMode: "WAL",
         busyTimeoutMs: 5000,
@@ -86,11 +77,11 @@ export class SqliteDatabase
         foreignKeys: true,
         ...env.database?.sqlite,
         // One image serves several deployments, so where the data lives is the deployment's env before the bundled one.
-        filePath: process.env.SQLITE_DATABASE_PATH ?? env.database?.sqlite?.filePath ?? defaultFile(),
-        search: {
-          enabled: env.database?.search?.enabled ?? parseSearchEnabled(process.env.AKAN_SEARCH_ENABLED),
-          tokenizer: env.database?.search?.tokenizer ?? process.env.AKAN_SEARCH_TOKENIZER ?? DEFAULT_TOKENIZER,
-        },
+        filePath:
+          process.env.SQLITE_DATABASE_PATH ??
+          env.database?.sqlite?.filePath ??
+          defaultSqliteFile("", env.workspaceRoot),
+        search: searchConfigOf(env),
       } satisfies Required<
         Pick<SqliteDatabaseConfig, "filePath" | "journalMode" | "busyTimeoutMs" | "synchronous" | "foreignKeys">
       > &
@@ -105,10 +96,8 @@ export class SqliteDatabase
   #transaction = new AsyncLocalStorage<TransactionContext>();
   #ensures = new PendingStoreEnsures();
   #searchIndex!: SearchIndex;
-  // One connection serves every request, so an open transaction is also every other request's transaction. A second
-  // connection is not the way out: bun:sqlite waits for a lock synchronously, which would park the event loop the
-  // holder needs in order to commit. Writes from other contexts queue behind `#open` instead; reads do not, so a
-  // batched load that mixes this context's keys with another's cannot deadlock on it.
+  // One connection serves every request; a second would wait for the lock synchronously and park the event loop the
+  // holder needs to commit. So other contexts' writes queue behind `#open` — reads do not, so no mixed load deadlocks.
   #open: { context: TransactionContext; done: Promise<void> } | null = null;
   #queue: Promise<void> = Promise.resolve();
 
@@ -245,27 +234,14 @@ export class LibsqlDatabase
   extends adapt("libsqlDatabase", ({ env, plug }) => ({
     scheduler: plug(ScheduleAdaptorRole),
     config: env((env: SqliteEnv) => {
-      const defaultFile = () => {
-        const { appName, environment, operationMode } = getEnv();
-        return resolveDefaultSqliteFile({
-          appName,
-          fileName: `${appName}-${environment}.db`,
-          isProduction: process.env.NODE_ENV === "production",
-          operationMode,
-          workspaceRoot: env.workspaceRoot,
-        });
-      };
       return {
         url:
           process.env.LIBSQL_URL ??
           process.env.LIBSQL_URI ??
           env.database?.libsql?.url ??
-          `file:${process.env.SQLITE_DATABASE_PATH ?? env.database?.sqlite?.filePath ?? defaultFile()}`,
+          `file:${process.env.SQLITE_DATABASE_PATH ?? env.database?.sqlite?.filePath ?? defaultSqliteFile("", env.workspaceRoot)}`,
         authToken: process.env.LIBSQL_AUTH_TOKEN ?? env.database?.libsql?.authToken,
-        search: {
-          enabled: env.database?.search?.enabled ?? parseSearchEnabled(process.env.AKAN_SEARCH_ENABLED),
-          tokenizer: env.database?.search?.tokenizer ?? process.env.AKAN_SEARCH_TOKENIZER ?? DEFAULT_TOKENIZER,
-        },
+        search: searchConfigOf(env),
       } satisfies LibsqlDatabaseConfig & { search: Required<SearchConfig> };
     }),
   }))
@@ -277,9 +253,8 @@ export class LibsqlDatabase
   #transaction = new AsyncLocalStorage<TransactionContext & { client: LibsqlAkanClient }>();
   #ensures = new PendingStoreEnsures();
   #searchIndex!: SearchIndex;
-  // A transaction takes the client's connection with it and the client opens another for everything else, which on a
-  // `file:` URL is a second connection to one SQLite file — and that waits for a lock synchronously, parking the event
-  // loop the transaction needs in order to commit. So other writes queue behind `#open`, as on `SqliteDatabase`.
+  // On a `file:` URL the client's second connection waits for the transaction's lock synchronously, parking the event
+  // loop it needs to commit, so other writes queue behind `#open` as on `SqliteDatabase`.
   #open: { context: TransactionContext; done: Promise<void> } | null = null;
   #queue: Promise<void> = Promise.resolve();
 
@@ -317,8 +292,7 @@ export class LibsqlDatabase
     return this.#searchIndex;
   }
 
-  // bun:sqlite opening libsql's own file would put two SQLite libraries on one file in one process, where closing a
-  // descriptor in either drops the POSIX locks the other holds.
+  // bun:sqlite on libsql's file would put two SQLite libraries on it; closing either drops the other's POSIX locks.
   async openInsight(): Promise<InsightSession> {
     throw new Error(
       "An insight query needs the sqlite or postgres database: libsql has no connection that can leave `_doc` out.",
@@ -415,10 +389,7 @@ export class PostgresDatabase
         user: process.env.POSTGRES_USER ?? env.database?.postgres?.user ?? "akan",
         password: process.env.POSTGRES_PASSWORD ?? env.database?.postgres?.password ?? "akan",
         insightUrl: process.env.POSTGRES_INSIGHT_URL ?? env.database?.postgres?.insightUrl,
-        search: {
-          enabled: env.database?.search?.enabled ?? parseSearchEnabled(process.env.AKAN_SEARCH_ENABLED),
-          tokenizer: env.database?.search?.tokenizer ?? process.env.AKAN_SEARCH_TOKENIZER ?? DEFAULT_TOKENIZER,
-        },
+        search: searchConfigOf(env),
       } satisfies PostgresDatabaseConfig & { search: Required<SearchConfig> };
     }),
   }))
@@ -470,10 +441,8 @@ export class PostgresDatabase
     });
   }
 
-  // Pool size, SSL, timeouts and `prepare` ride the URL's query string (`?max=20&ssl=require`), which postgres.js reads
-  // itself. `count(*)` and the epoch-ms columns are int8, which postgres.js hands back as strings. jsonb is kept as the
-  // text it arrives as: a document keeps the row it was read from to tell which fields a save changed, and a parsed
-  // object would be shared with the document and change along with it.
+  // Pool size, SSL and timeouts ride the URL's query string, which postgres.js reads itself; it hands int8 back as a
+  // string. jsonb stays text: a document diffs a save against its read row, which a shared parsed object would change.
   #clientOptions() {
     return {
       types: {
@@ -517,8 +486,7 @@ export class PostgresDatabase
     return found ? role : null;
   }
 
-  // A GRANT rewrites the catalog row, and two processes granting on one object at once fail with "tuple concurrently
-  // updated" — both grants run under the schema lock, and only when the privilege is missing.
+  // Concurrent GRANTs on one object fail with "tuple concurrently updated": both run under the schema lock, if missing.
   async #grantInsightSchema() {
     if (!this.#insightRole) return;
     const schema = await this.getConnection()
@@ -607,9 +575,7 @@ export class PostgresDatabase
       .run(key, value, Date.now());
   }
 
-  // `BEGIN` sent through the pool lands on whichever connection is free and stays open there after the call returns;
-  // `begin()` reserves one connection for the whole transaction, and `getConnection()` hands it to every statement run
-  // inside it.
+  // `BEGIN` through the pool stays open on whichever connection ran it; `begin()` reserves one for the transaction.
   async transaction<T>(fn: () => PromiseOrObject<T>): Promise<T> {
     const active = this.#transaction.getStore();
     if (active) return await fn();
@@ -631,8 +597,7 @@ export class PostgresDatabase
     active.afterCommit.push(fn);
   }
 
-  // One at a time in this process, and across every process on the database through an advisory lock that the
-  // transaction releases.
+  // One at a time in-process, and across processes through an advisory lock the transaction releases.
   async lockSchema<T>(fn: () => Promise<T>): Promise<T> {
     const turn = this.#schemaTurn.then(
       async () =>
@@ -664,10 +629,8 @@ export class PostgresDatabase
     return !!row?.valid;
   }
 
-  // `CREATE INDEX` on a table holding rows blocks its writes until the build ends; `CONCURRENTLY` does not, but it
-  // cannot run in a transaction and a build that fails leaves an invalid index that `IF NOT EXISTS` then keeps
-  // forever. A session lock per index takes the place of the schema lock, which would make every other process's
-  // schema wait for this build.
+  // `CREATE INDEX` blocks writes; `CONCURRENTLY` cannot run in a transaction, and a failed build leaves an invalid
+  // index `IF NOT EXISTS` keeps. A per-index session lock replaces the schema lock, which would stall other schemas.
   async buildIndexConcurrently({ name, next, create, replace }: ConcurrentIndexBuild) {
     const reserved = await this.#sql.reserve();
     const key = `akan:index:${name}`;

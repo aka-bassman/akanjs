@@ -3,30 +3,16 @@ import type { AgentWireMessage, AgentWireToolCall, LlmTurnRequest } from "./pred
 const wireSafe = /^[A-Za-z0-9_-]+$/;
 
 /**
- * Renames a turn's tools onto what a provider's function-calling wire accepts, and reads the answer back.
- *
- * A zone publishes its tools scope-prefixed — `videoProjectDraft.createVideoProject` — which is legal for MCP,
- * where `.` is an allowed character and the scope join. Every OpenAI-compatible and Anthropic function schema is
- * narrower: `[A-Za-z0-9_-]`, at most 64 characters. A provider that validates answers 400; DeepSeek does not, and
- * what happened instead was worse to debug — the model normalized the illegal name itself, called the bare
- * `createVideoProject`, and the browser answered `Unknown tool`, spending a turn on a tool that was published all
- * along.
- *
- * Renamed here rather than in each adaptor for the reason `AgentService.explained` gives: every adaptor would
- * otherwise have to remember, and forgetting is silent. A name the wire already accepts is left alone, so the
- * root agent's request is byte-for-byte what it was.
+ * OpenAI-dialect and Anthropic function names are `[A-Za-z0-9_-]{1,64}` while a zone scopes tools with `.`; DeepSeek
+ * does not refuse an illegal name but calls a normalized one that the browser does not know.
  */
 export class ToolNames {
-  /** Both dialects reject a longer name, and neither says so in terms of the tool you wrote. */
   static readonly limit = 64;
 
   readonly #toWire = new Map<string, string>();
   readonly #toSurface = new Map<string, string>();
 
-  /**
-   * Every name the request carries, not just the published ones: the transcript holds calls to tools that have
-   * since left the screen, and one of those reaching the wire unrenamed is the same failure a turn later.
-   */
+  /** The transcript's names too: a call to a tool that has since left the screen still reaches the wire. */
   static of(request: LlmTurnRequest): ToolNames {
     return new ToolNames([
       ...request.tools.map((tool) => tool.name),
@@ -38,8 +24,7 @@ export class ToolNames {
     const all = [...new Set(names)];
     // A name that already fits keeps itself, so it is claimed before any folded name can be assigned it.
     const taken = new Set(all.filter((name) => ToolNames.#fits(name)));
-    // Sorted so the mapping depends on the set of names and not on the order they were met: a suffix that moved
-    // between turns would leave the transcript naming one tool two ways.
+    // Sorted so the mapping depends on the set, not the order met: a moving suffix would name one tool two ways.
     for (const name of all.filter((candidate) => !ToolNames.#fits(candidate)).sort((a, b) => (a < b ? -1 : 1))) {
       const wire = ToolNames.#unique(ToolNames.#fold(name), taken);
       taken.add(wire);
@@ -56,10 +41,7 @@ export class ToolNames {
     return this.#toWire.get(name) ?? name;
   }
 
-  /**
-   * Unknown stays as it came. A model that invented a name is answered by the surface's own `Unknown tool`, which
-   * lands in the transcript as a tool result it can correct from — guessing which tool it meant would run one.
-   */
+  /** An invented name stays as it came for the surface's `Unknown tool`: guessing the intended tool would run one. */
   surface(name: string) {
     return this.#toSurface.get(name) ?? name;
   }
