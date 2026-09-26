@@ -14,15 +14,16 @@ import {
 } from "@akanjs/devkit/workflow";
 export type RepairKind = RepairAction["kind"];
 
-const commandForShell = (command: string) => (command.startsWith("akan ") ? `bun run ${command}` : command);
+export const spawnShell = async (workspace: Workspace, command: string) =>
+  await workspace.spawn("bash", ["-lc", command.startsWith("akan ") ? `bun run ${command}` : command], {
+    cwd: workspace.workspaceRoot,
+  });
 
 const defaultExecutor =
   (workspace: Workspace): WorkflowValidationCommandExecutor =>
   async (command) => {
     try {
-      const stdout = await workspace.spawn("bash", ["-lc", commandForShell(command.command)], {
-        cwd: workspace.workspaceRoot,
-      });
+      const stdout = await spawnShell(workspace, command.command);
       return {
         command: command.command,
         reason: command.reason,
@@ -57,6 +58,13 @@ const repairAction = (kind: RepairKind, command: string, reason: string, safeToR
   safeToRun,
 });
 
+interface RepairTarget {
+  workspace: Workspace;
+  app?: string | null;
+  module?: string | null;
+  target?: string | null;
+}
+
 export class RepairRunner extends runner("repair") {
   async repair(
     kind: RepairKind,
@@ -67,14 +75,7 @@ export class RepairRunner extends runner("repair") {
       target = null,
       format = "markdown",
       execute,
-    }: {
-      workspace: Workspace;
-      app?: string | null;
-      module?: string | null;
-      target?: string | null;
-      format?: WorkflowFormat;
-      execute?: WorkflowValidationCommandExecutor;
-    },
+    }: RepairTarget & { format?: WorkflowFormat; execute?: WorkflowValidationCommandExecutor },
   ) {
     const executor = execute ?? defaultExecutor(workspace);
     const report = await this.createRepairReport(kind, { workspace, app, module, target, execute: executor });
@@ -102,13 +103,7 @@ export class RepairRunner extends runner("repair") {
       module = null,
       target = null,
       execute,
-    }: {
-      workspace: Workspace;
-      app?: string | null;
-      module?: string | null;
-      target?: string | null;
-      execute: WorkflowValidationCommandExecutor;
-    },
+    }: RepairTarget & { execute: WorkflowValidationCommandExecutor },
   ): Promise<RepairReport> {
     if (kind === "generated") {
       if (!app) {
