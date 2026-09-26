@@ -3,6 +3,7 @@ import path from "node:path";
 import type { SsrManifest, SsrManifestEntry } from "akanjs/server";
 import type { BunPlugin } from "bun";
 import { toClientReferencePath } from "../transforms/rscUseClientTransform";
+import { bundleDefine } from "./bundleDefine";
 import {
   type BundleClientEntriesInternalOptions,
   type BundleClientEntriesResult,
@@ -62,7 +63,7 @@ export class ClientEntriesBundler {
       format: "esm",
       naming: CLIENT_BUNDLE_NAMING,
       metafile: true,
-      define: this.#getDefine(),
+      define: bundleDefine(this.#app, this.#command, "ssr"),
       minify: this.#command === "build",
       optimizeImports: akanConfig.optimizeImports,
       reactFastRefresh: this.#command === "start" && this.#outputSubdir === "client" && this.#reactFastRefresh,
@@ -91,17 +92,6 @@ export class ClientEntriesBundler {
       entryOutputAbsByAbsPath: this.#entryOutputAbsByAbsPath,
       entryDepsByAbsPath: this.#entryDepsByAbsPath,
       clientReferenceIdByAbsPath: this.#clientReferenceIdByAbsPath,
-    };
-  }
-
-  #getDefine(): Record<string, string> {
-    const nodeEnv = this.#command === "build" ? "production" : (process.env.NODE_ENV ?? "development");
-    return {
-      "process.env.NODE_ENV": JSON.stringify(nodeEnv),
-      "process.env.AKAN_PUBLIC_RENDER_ENV": JSON.stringify("ssr"),
-      ...Object.fromEntries(
-        Object.entries(this.#app.getPublicEnv()).map(([key, value]) => [`process.env.${key}`, JSON.stringify(value)]),
-      ),
     };
   }
 

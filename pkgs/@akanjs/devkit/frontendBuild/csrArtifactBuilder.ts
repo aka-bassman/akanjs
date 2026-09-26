@@ -3,6 +3,7 @@ import path from "node:path";
 import type { BaseBuildArtifact } from "akanjs/server";
 import { type PageEntry, resolveSsrPageEntriesForApp } from "../artifact/implicitRootLayout";
 import type { App } from "../commandDecorators";
+import { bundleDefine } from "./bundleDefine";
 import { getPageKeyBasePath } from "./cssCompiler";
 import { PagesBundleBuilder } from "./pagesBundleBuilder";
 import { PagesEntrySourceGenerator } from "./pagesEntrySourceGenerator";
@@ -61,7 +62,7 @@ export class CsrArtifactBuilder {
       splitting: false,
       minify: true,
       env: "AKAN_PUBLIC_*",
-      define: this.#define(),
+      define: bundleDefine(this.#app, this.#command, "csr"),
       optimizeImports: akanConfig.optimizeImports,
       // A raw `.css` in the route graph is Tailwind source; the base artifact's compiled sheet is the only stylesheet.
       plugins: [PagesBundleBuilder.createCssStubPlugin()],
@@ -115,17 +116,6 @@ export class CsrArtifactBuilder {
 
   #generatedPath(filename: string): string {
     return path.join(this.#generatedDir, filename);
-  }
-
-  #define(): Record<string, string> {
-    const nodeEnv = this.#command === "build" ? "production" : (process.env.NODE_ENV ?? "development");
-    return {
-      "process.env.NODE_ENV": JSON.stringify(nodeEnv),
-      "process.env.AKAN_PUBLIC_RENDER_ENV": JSON.stringify("csr"),
-      ...Object.fromEntries(
-        Object.entries(this.#app.getPublicEnv()).map(([key, value]) => [`process.env.${key}`, JSON.stringify(value)]),
-      ),
-    };
   }
 
   async #createEntryFile(basePath: string, pageEntries: PageEntry[]): Promise<readonly [string, string]> {
