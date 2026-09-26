@@ -148,16 +148,16 @@ export interface SqlFragment {
 }
 
 const op = (op: DocumentQueryOperator, value?: unknown): DocumentQueryNode => ({ kind: "op", op, value });
+const group =
+  (kind: "all" | "any") =>
+  (...queries: (DocumentQuery | null | undefined | false)[]): DocumentQueryNode => ({
+    kind,
+    queries: queries.filter(Boolean) as DocumentQuery[],
+  });
 
 export const createDocumentQueryHelper = () => ({
-  all: (...queries: (DocumentQuery | null | undefined | false)[]): DocumentQueryNode => ({
-    kind: "all",
-    queries: queries.filter(Boolean) as DocumentQuery[],
-  }),
-  any: (...queries: (DocumentQuery | null | undefined | false)[]): DocumentQueryNode => ({
-    kind: "any",
-    queries: queries.filter(Boolean) as DocumentQuery[],
-  }),
+  all: group("all"),
+  any: group("any"),
   not: (query: DocumentQuery): DocumentQueryNode => ({ kind: "not", query }),
   eq: (value: unknown) => op("eq", value),
   ne: (value: unknown) => op("ne", value),
@@ -190,8 +190,7 @@ export type DocumentQueryHelper = ReturnType<typeof createDocumentQueryHelper>;
 export const documentQueryHelper = createDocumentQueryHelper();
 
 export const encodeDocumentValue = (value: unknown): unknown => {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
+  if (value === undefined || value === null) return value;
   if (dayjs.isDayjs(value)) return value.valueOf();
   if (value instanceof Date) return value.getTime();
   if (Array.isArray(value)) return value.map(encodeDocumentValue);
@@ -200,8 +199,7 @@ export const encodeDocumentValue = (value: unknown): unknown => {
 };
 
 export const sanitizeJson = (value: unknown): unknown => {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
+  if (value === undefined || value === null) return value;
   if (dayjs.isDayjs(value)) return value.valueOf();
   if (value instanceof Date) return value.getTime();
   if (value instanceof Map)

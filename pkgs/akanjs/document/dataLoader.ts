@@ -132,9 +132,7 @@ export class DataLoader<Key, Value, CacheKey = Key> {
       (values) => {
         if (values.length !== batch.length) {
           const error = new Error(`DataLoader expected ${batch.length} values, received ${values.length}`);
-          batch.forEach(({ reject }) => {
-            reject(error);
-          });
+          for (const { reject } of batch) reject(error);
           return;
         }
         values.forEach((value, index) => {
@@ -143,27 +141,20 @@ export class DataLoader<Key, Value, CacheKey = Key> {
         });
       },
       (error) => {
-        batch.forEach(({ reject }) => {
-          reject(error);
-        });
+        for (const { reject } of batch) reject(error);
       },
     );
   }
 }
 
-function toError(reason: unknown): Error {
-  return reason instanceof Error ? reason : new Error(String(reason));
-}
+const toError = (reason: unknown): Error => (reason instanceof Error ? reason : new Error(String(reason)));
 
-function keyBy<T>(items: T[], keyOrGetter: keyof T | ((item: T) => unknown)): Record<string, T> {
-  const entries = items.map((item) => {
-    const key = typeof keyOrGetter === "function" ? keyOrGetter(item) : item[keyOrGetter];
-    return [String(key), item] as const;
-  });
-  return Object.fromEntries(entries);
-}
+const keyBy = <T>(items: T[], keyOrGetter: keyof T | ((item: T) => unknown)): Record<string, T> =>
+  Object.fromEntries(
+    items.map((item) => [String(typeof keyOrGetter === "function" ? keyOrGetter(item) : item[keyOrGetter]), item]),
+  );
 
-function groupBy<T>(items: T[], getKey: (item: T) => unknown): Record<string, T[]> {
+const groupBy = <T>(items: T[], getKey: (item: T) => unknown): Record<string, T[]> => {
   const groups: Record<string, T[]> = {};
   for (const item of items) {
     const key = String(getKey(item));
@@ -171,7 +162,7 @@ function groupBy<T>(items: T[], getKey: (item: T) => unknown): Record<string, T[
     groups[key].push(item);
   }
   return groups;
-}
+};
 
 const findWhere = (model: LoaderModel, query: QueryOf<unknown>, field: string, op: "oneOf" | "has", value: unknown) =>
   Promise.resolve(model.find({ ...query, [field]: { kind: "op", op, value } }));
@@ -214,20 +205,18 @@ export const createQueryLoader = <Key, Value>(
   model: LoaderModel,
   queryKeys: string[],
   defaultQuery: QueryOf<unknown> = {},
-) => {
-  return new DataLoader<Key, Value, Key>(
+) =>
+  new DataLoader<Key, Value, Key>(
     (queries) => {
       const query = { kind: "all", queries: [{ kind: "any", queries }, defaultQuery] } as QueryOf<unknown>;
       const getQueryKey = (query: QueryOf<unknown>) =>
         queryKeys.map((key) => String((query as QueryRecord)[key])).join("");
-      const data = Promise.resolve(model.find(query)).then((list) => {
+      return Promise.resolve(model.find(query)).then((list) => {
         const listByKey = keyBy(list, getQueryKey);
         return queries.map((query: QueryOf<unknown>) => listByKey[getQueryKey(query)] ?? null);
-      });
-      return data as unknown as Promise<Value[]>;
+      }) as unknown as Promise<Value[]>;
     },
     { name: "dataloader" },
   );
-};
 
 export type Loader<Field, Value> = DataLoader<Field, Value | null>;

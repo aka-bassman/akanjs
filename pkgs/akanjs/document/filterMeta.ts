@@ -18,9 +18,8 @@ import type { ConstantFilterMeta } from "./types";
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-export const isFilterModel = (filterRef: Cls<unknown, { [FILTER_META]?: ConstantFilterMeta }>): boolean => {
-  return filterRef[FILTER_META] !== undefined;
-};
+export const isFilterModel = (filterRef: Cls<unknown, { [FILTER_META]?: ConstantFilterMeta }>): boolean =>
+  filterRef[FILTER_META] !== undefined;
 export const getFilterMeta = <AllowEmpty extends boolean = false>(
   filterRef: Cls<unknown, { [FILTER_META]?: ConstantFilterMeta }> | FilterCls,
   { allowEmpty = false as AllowEmpty }: { allowEmpty?: AllowEmpty } = {},
@@ -67,10 +66,7 @@ export const getFilterInfoByKey = <ArgNames extends string[] = [], Args extends 
   modelRef: FilterCls,
   key: string,
 ): FilterInfo<ArgNames, Args, Model> => {
-  const filterMeta = getFilterMeta(
-    modelRef as Cls<unknown, { [FILTER_META]?: ConstantFilterMeta; sortField: Set<string> }>,
-  );
-  const queryMeta = filterMeta.query[key];
+  const queryMeta = getFilterMeta(modelRef).query[key];
   if (!queryMeta) throw new Error(`queryMeta is not defined for key: ${key}`);
   return queryMeta;
 };
@@ -82,12 +78,7 @@ export const setFilterInfoByKey = <ArgNames extends string[] = [], Args extends 
   const filterMeta = getFilterMeta(modelRef);
   Object.assign(filterMeta.query, { [key]: filterInfo });
 };
-export const getFilterSortByKey = (modelRef: FilterCls, key: string) => {
-  const filterMeta = getFilterMeta(
-    modelRef as Cls<unknown, { [FILTER_META]?: ConstantFilterMeta; sortField: Set<string> }>,
-  );
-  return filterMeta.sort[key];
-};
+export const getFilterSortByKey = (modelRef: FilterCls, key: string) => getFilterMeta(modelRef).sort[key];
 
 export const fillMissingFilterArgs = (filterInfo: FilterInfo, args: unknown[]) => {
   if (args.length >= filterInfo.args.length) return args;

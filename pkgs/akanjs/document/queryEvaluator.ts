@@ -82,17 +82,12 @@ export class DocumentQueryEvaluator {
   }
 
   /** Splits a saved document into the row shape above, mirroring `SqlDocumentStore.toRow`. */
-  static rowViewOf(doc: Record<string, unknown>): DocumentRowView {
-    const payload = { ...doc };
-    delete payload.id;
-    delete payload.createdAt;
-    delete payload.updatedAt;
-    delete payload.removedAt;
+  static rowViewOf({ id, createdAt, updatedAt, removedAt, ...payload }: Record<string, unknown>): DocumentRowView {
     return {
-      id: doc.id ?? null,
-      createdAt: doc.createdAt === undefined ? null : Number(encodeDocumentValue(doc.createdAt)),
-      updatedAt: doc.updatedAt === undefined ? null : Number(encodeDocumentValue(doc.updatedAt)),
-      removedAt: doc.removedAt ? Number(encodeDocumentValue(doc.removedAt)) : null,
+      id: id ?? null,
+      createdAt: createdAt === undefined ? null : Number(encodeDocumentValue(createdAt)),
+      updatedAt: updatedAt === undefined ? null : Number(encodeDocumentValue(updatedAt)),
+      removedAt: removedAt ? Number(encodeDocumentValue(removedAt)) : null,
       doc: (sanitizeJson(payload) ?? {}) as Record<string, unknown>,
     };
   }
