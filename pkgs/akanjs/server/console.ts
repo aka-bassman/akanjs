@@ -7,7 +7,7 @@ import { type AkanConsoleCommand, AkanConsoleSession } from "./consoleSession";
 import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { LogControlUnavailableError, LogTailClient } from "./logging/logTailClient";
 
-export * from "./consoleEvaluator";
+export { evaluateAkanConsoleInput, isAkanConsoleInputComplete } from "./consoleSession";
 
 export interface AkanConsoleOptions {
   prompt?: string;

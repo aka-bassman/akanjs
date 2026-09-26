@@ -1,6 +1,5 @@
 import { clearLine, createInterface, cursorTo, type Interface } from "node:readline";
 import { inspect } from "node:util";
-import { evaluateAkanConsoleInput, isAkanConsoleInputComplete } from "./consoleEvaluator";
 import { ConsolePasteFilter } from "./consolePasteFilter";
 
 export interface AkanConsoleCommand {
@@ -17,6 +16,59 @@ export interface AkanConsoleSessionOptions {
   /** Dot-commands beyond the built-ins, keyed with their leading dot (`.tail`). */
   commands?: Record<string, AkanConsoleCommand>;
 }
+
+type AsyncFunctionConstructor = new (...args: string[]) => (scope: object) => Promise<unknown>;
+
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as AsyncFunctionConstructor;
+
+// JSC closes the wrapper function itself, so input ending inside an open bracket reports `Unexpected token '}'`.
+const incompleteSyntaxMessages = [
+  "Unexpected end of script",
+  "Unexpected EOF",
+  "Unexpected token '}'",
+  "Multiline comment was not closed properly",
+  "Unexpected end of input",
+  "Unterminated",
+] as const;
+
+const createScope = (context: Record<string, unknown>) =>
+  new Proxy(context, {
+    has: () => true,
+    get(target, prop) {
+      if (prop === Symbol.unscopables) return undefined;
+      if (prop in target) return target[prop as keyof typeof target];
+      return (globalThis as Record<PropertyKey, unknown>)[prop];
+    },
+    set(target, prop, value) {
+      target[prop as keyof typeof target] = value;
+      return true;
+    },
+  });
+
+export const isAkanConsoleInputComplete = (source: string) => {
+  const trimmed = source.trim();
+  if (!trimmed) return true;
+  try {
+    new AsyncFunction(trimmed);
+    return true;
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) return true;
+    return !incompleteSyntaxMessages.some((message) => error.message.includes(message));
+  }
+};
+
+export const evaluateAkanConsoleInput = async (source: string, context: Record<string, unknown>) => {
+  const trimmed = source.trim();
+  if (!trimmed) return undefined;
+  const scope = createScope(context);
+
+  try {
+    return await new AsyncFunction("scope", `with (scope) { return await (${trimmed}); }`)(scope);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return await new AsyncFunction("scope", `with (scope) { return await (async () => {\n${trimmed}\n})(); }`)(scope);
+  }
+};
 
 const commandNames = new Set([".help", ".globals", ".clear", ".exit", ".quit"]);
 
