@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { Client as LibsqlClient } from "@libsql/client";
-import { getEnv, type PromiseOrObject } from "akanjs/base";
+import type { PromiseOrObject } from "akanjs/base";
 import type { ConstantModel } from "akanjs/constant";
 import type { DatabaseModel, DocumentSchema, SchemaOf } from "akanjs/document";
 import type { Sql } from "postgres";
@@ -40,7 +40,7 @@ import {
   type TransactionContext,
 } from "./sql/types";
 import { quoteIdent } from "./sqlDescriptor";
-import { resolveDefaultSqliteFile } from "./sqlitePath";
+import { defaultSqliteFile } from "./sqlitePath";
 
 export { PostgresDialect } from "./sql/dialect/postgres";
 export { SqliteDialect } from "./sql/dialect/sqlite";
@@ -61,20 +61,15 @@ export type {
   SqlResultRows,
 } from "./sql/types";
 
+const searchConfigOf = (env: SqliteEnv): Required<SearchConfig> => ({
+  enabled: env.database?.search?.enabled ?? parseSearchEnabled(process.env.AKAN_SEARCH_ENABLED),
+  tokenizer: env.database?.search?.tokenizer ?? process.env.AKAN_SEARCH_TOKENIZER ?? DEFAULT_TOKENIZER,
+});
+
 export class SqliteDatabase
   extends adapt("sqliteDatabase", ({ env, plug }) => ({
     scheduler: plug(ScheduleAdaptorRole),
     config: env((env: SqliteEnv) => {
-      const defaultFile = () => {
-        const { appName, environment, operationMode } = getEnv();
-        return resolveDefaultSqliteFile({
-          appName,
-          fileName: `${appName}-${environment}.db`,
-          isProduction: process.env.NODE_ENV === "production",
-          operationMode,
-          workspaceRoot: env.workspaceRoot,
-        });
-      };
       return {
         journalMode: "WAL",
         busyTimeoutMs: 5000,
@@ -82,11 +77,11 @@ export class SqliteDatabase
         foreignKeys: true,
         ...env.database?.sqlite,
         // One image serves several deployments, so where the data lives is the deployment's env before the bundled one.
-        filePath: process.env.SQLITE_DATABASE_PATH ?? env.database?.sqlite?.filePath ?? defaultFile(),
-        search: {
-          enabled: env.database?.search?.enabled ?? parseSearchEnabled(process.env.AKAN_SEARCH_ENABLED),
-          tokenizer: env.database?.search?.tokenizer ?? process.env.AKAN_SEARCH_TOKENIZER ?? DEFAULT_TOKENIZER,
-        },
+        filePath:
+          process.env.SQLITE_DATABASE_PATH ??
+          env.database?.sqlite?.filePath ??
+          defaultSqliteFile("", env.workspaceRoot),
+        search: searchConfigOf(env),
       } satisfies Required<
         Pick<SqliteDatabaseConfig, "filePath" | "journalMode" | "busyTimeoutMs" | "synchronous" | "foreignKeys">
       > &
@@ -239,27 +234,14 @@ export class LibsqlDatabase
   extends adapt("libsqlDatabase", ({ env, plug }) => ({
     scheduler: plug(ScheduleAdaptorRole),
     config: env((env: SqliteEnv) => {
-      const defaultFile = () => {
-        const { appName, environment, operationMode } = getEnv();
-        return resolveDefaultSqliteFile({
-          appName,
-          fileName: `${appName}-${environment}.db`,
-          isProduction: process.env.NODE_ENV === "production",
-          operationMode,
-          workspaceRoot: env.workspaceRoot,
-        });
-      };
       return {
         url:
           process.env.LIBSQL_URL ??
           process.env.LIBSQL_URI ??
           env.database?.libsql?.url ??
-          `file:${process.env.SQLITE_DATABASE_PATH ?? env.database?.sqlite?.filePath ?? defaultFile()}`,
+          `file:${process.env.SQLITE_DATABASE_PATH ?? env.database?.sqlite?.filePath ?? defaultSqliteFile("", env.workspaceRoot)}`,
         authToken: process.env.LIBSQL_AUTH_TOKEN ?? env.database?.libsql?.authToken,
-        search: {
-          enabled: env.database?.search?.enabled ?? parseSearchEnabled(process.env.AKAN_SEARCH_ENABLED),
-          tokenizer: env.database?.search?.tokenizer ?? process.env.AKAN_SEARCH_TOKENIZER ?? DEFAULT_TOKENIZER,
-        },
+        search: searchConfigOf(env),
       } satisfies LibsqlDatabaseConfig & { search: Required<SearchConfig> };
     }),
   }))
@@ -407,10 +389,7 @@ export class PostgresDatabase
         user: process.env.POSTGRES_USER ?? env.database?.postgres?.user ?? "akan",
         password: process.env.POSTGRES_PASSWORD ?? env.database?.postgres?.password ?? "akan",
         insightUrl: process.env.POSTGRES_INSIGHT_URL ?? env.database?.postgres?.insightUrl,
-        search: {
-          enabled: env.database?.search?.enabled ?? parseSearchEnabled(process.env.AKAN_SEARCH_ENABLED),
-          tokenizer: env.database?.search?.tokenizer ?? process.env.AKAN_SEARCH_TOKENIZER ?? DEFAULT_TOKENIZER,
-        },
+        search: searchConfigOf(env),
       } satisfies PostgresDatabaseConfig & { search: Required<SearchConfig> };
     }),
   }))
