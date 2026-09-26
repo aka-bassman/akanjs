@@ -20,8 +20,7 @@ interface RemoveWrapperProps {
 
 export default function RemoveWrapper({ children, slice, name, modelId, className, modal }: RemoveWrapperProps) {
   const { l } = usePage();
-  const { refName, sliceName } = slice;
-  const modelName = refName;
+  const { refName: modelName } = slice;
   const names = {
     removeModel: `remove${capitalize(modelName)}`,
   };

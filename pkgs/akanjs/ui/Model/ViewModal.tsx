@@ -42,7 +42,7 @@ export default function ViewModal({
 }: ViewModalProps) {
   const storeUse = st.use as unknown as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => void };
-  const { refName, sliceName } = slice;
+  const { refName } = slice;
   const [modelName, ModelName] = [refName, capitalize(refName)];
   const names = {
     model: modelName,

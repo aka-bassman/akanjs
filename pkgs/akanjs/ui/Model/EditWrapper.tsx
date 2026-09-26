@@ -31,8 +31,7 @@ export default function EditWrapper({
   resets,
   draft,
 }: EditWrapperProps) {
-  const { refName, sliceName } = slice;
-  const modelName = refName;
+  const { refName: modelName } = slice;
   const names = {
     editModel: `edit${capitalize(modelName)}`,
   };

@@ -58,7 +58,7 @@ const EditModel = <Full,>({
 }: OpenEditorProps<Full>) => {
   const storeUse = st.use as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => void };
-  const { refName, sliceName } = slice;
+  const { refName } = slice;
   const [modelName, ModelName] = useMemo(() => [lowerlize(refName), capitalize(refName)], []);
   const names = useMemo(
     () => ({
@@ -332,9 +332,6 @@ export default function EditModal<Full extends { id: string }>({
                   disabled={modelSubmit.disabled || !!disabled}
                   onClick={async (e, { onError }) => {
                     await handleSubmit({ onError });
-                  }}
-                  onSuccess={() => {
-                    //
                   }}
                 >
                   {modelFormId ? <AiOutlineSave /> : <AiOutlinePlus />}

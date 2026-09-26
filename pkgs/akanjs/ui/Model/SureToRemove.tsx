@@ -4,7 +4,7 @@ import { cn, msg, router, usePage } from "akanjs/client";
 import { capitalize } from "akanjs/common";
 import type { SliceMeta } from "akanjs/fetch";
 import { st } from "akanjs/store";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { AiOutlineDelete } from "react-icons/ai";
 
 import { agentAttrs } from "../agentAttrs";
@@ -41,14 +41,8 @@ export default function SureToRemove({
   const [repeatName, setRepeatName] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
-  const { refName, sliceName } = slice;
-  const modelName = refName;
-  const names = useMemo(
-    () => ({
-      removeModel: `remove${capitalize(modelName)}`,
-    }),
-    [],
-  );
+  const { refName: modelName } = slice;
+  const names = { removeModel: `remove${capitalize(modelName)}` };
 
   const removeModel = async (id: string) => {
     await storeDo[names.removeModel](id);
