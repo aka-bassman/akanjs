@@ -4,10 +4,9 @@ import type { AkanImageConfig } from "akanjs/server";
 export const archs = ["amd64", "arm64"] as const;
 export type Arch = (typeof archs)[number];
 
-/** One image step. The object form runs only on the matching `TARGETARCH` leg of a multi-arch build. */
+/** The object form runs only on the matching `TARGETARCH` leg of a multi-arch build. */
 export type DockerRun = string | { [key in Arch]?: string };
 
-/** The pieces Akan assembles a Dockerfile from. */
 export interface DockerImageConfig {
   image: string | { [key in Arch]?: string };
   /** Runs before `bun install`, so a system package a native dependency needs is there for the install. */
@@ -17,19 +16,12 @@ export interface DockerImageConfig {
   command: string[];
 }
 
-/**
- * A whole Dockerfile as a string, or the parts Akan assembles one from. The string form is taken verbatim —
- * nothing is merged into it, including the steps a lib contributes through its own `docker`.
- */
+/** The string form is taken verbatim: nothing is merged into it, not even a lib's `docker` steps. */
 export type DockerConfig = string | DockerImageConfig;
 
-/** What an `akan.config.ts` may write for `docker`: a whole Dockerfile, or any subset of the parts. */
 export type DockerOption = string | Partial<DockerImageConfig>;
 
-/**
- * A lib's contribution to the image of every app that mounts it — a lib never picks the base image or the
- * command, only the steps its own runtime needs.
- */
+/** Steps every app mounting the lib inherits; a lib never picks the base image or the command. */
 export interface LibDockerConfig {
   preRuns: DockerRun[];
   postRuns: DockerRun[];
@@ -47,39 +39,23 @@ export interface AkanRouteConfig {
   domains: AkanRouteDomains;
 }
 
-/**
- * Which web surfaces an app serves, resolved. `ssr` is the RSC/SSR route renderer and everything it needs —
- * the pages bundle, the client bundles, the RSC worker process. `csr` is the single-file SPA shell that the
- * Capacitor mobile build ships and that `/__csr` serves.
- */
+/** `ssr`: the RSC/SSR renderer with its bundles and RSC worker; `csr`: the SPA shell Capacitor ships and `/__csr` serves. */
 export interface AkanWebConfig {
   ssr: boolean;
   csr: boolean;
 }
 
 /**
- * What an `akan.config.ts` may write. `false` is an API-only app — no web artifact is built and no web route
- * is mounted; `true` (the default) is both surfaces. The object form keeps SSR and toggles only the CSR
- * bundle, which is the whole range there is: the CSR bundle inlines the stylesheet the SSR build compiles, so
- * CSR without SSR would ship an unstyled app and is not expressible here.
+ * `false` is an API-only app, `true` (the default) both surfaces; the object form toggles only CSR, because the CSR
+ * bundle inlines the stylesheet the SSR build compiles.
  */
 export type AkanWebOption = boolean | { csr: boolean };
 
-/**
- * How `akan build` trims the `public/` tree it copies into `dist`. Source trees are never touched: an app's
- * and a lib's `public/` keep every file, and only the build's own copy is trimmed.
- */
+/** Trims only the build's own copy of `public/`; source trees keep every file. */
 export interface AkanAssetsConfig {
-  /**
-   * Drop font files from the build's `public/` that no built surface references. A font with `optimize` on is
-   * served from `/_akan/fonts` after subsetting, so its source is a build input the image never reads.
-   */
+  /** Drops fonts no built surface references; an `optimize` font is served subset from `/_akan/fonts`. */
   pruneFonts: boolean;
-  /**
-   * Font files to keep whatever the scan concludes, as globs relative to this app's or lib's own `public/`
-   * (`"fonts/Assistant-*.woff2"`). For the case a scan cannot see: a URL assembled at runtime. Declare it in
-   * the `akan.config.ts` that owns the font, so the reason travels with the lib rather than with the app.
-   */
+  /** Globs relative to the owning app's or lib's `public/`, for fonts a scan cannot see (a runtime-built URL). */
   keepFonts: string[];
 }
 
@@ -140,13 +116,6 @@ export interface AkanMobileConfig extends AkanCapacitorLikeConfig {
   targets: Record<string, AkanMobileTargetConfig>;
 }
 
-// ── Plugin system ──
-// Akan plugins let libraries (e.g. `libs/util`) contribute native/optional features
-// — push, camera, contacts, … — that the web-first framework core does not bake in.
-// A plugin is declared in a lib/app `akan.config.ts` `plugins` field and read live by
-// the CLI/devkit at build time. Because a plugin carries functions, it is deliberately
-// kept out of the serializable `AppConfigResult`/`LibConfigResult`.
-
 export interface PluginRuntimeContext {
   readonly appName: string;
   readonly mobile: AkanMobileConfig;
@@ -154,8 +123,7 @@ export interface PluginRuntimeContext {
   hasMobilePermission(permission: MobilePermission): boolean;
 }
 
-// A minimal, framework-level view of a resolved scan (AppInfo/LibInfo), exposing the module/lib lists a
-// plugin needs. Kept to `string[]` accessors so the devkit scan classes satisfy it structurally.
+// Structural, so the devkit scan classes (AppInfo/LibInfo) satisfy it without a dependency.
 export interface AkanScanInfo {
   /** Transitive lib dependencies of the app (or direct deps of a lib). */
   getLibs(): string[];
@@ -164,10 +132,7 @@ export interface AkanScanInfo {
   getScalarModules(): string[];
 }
 
-// A minimal, framework-level view of the CLI/devkit executor (AppExecutor/LibExecutor). It is exposed on
-// plugin contexts so plugins can read scan results and perform file operations directly, without the
-// framework depending on the devkit package — the devkit executors satisfy this interface structurally.
-// Paths are resolved relative to the executor's `cwdPath` (see the concrete executor's getPath).
+// Structural, so the devkit executors satisfy it without a dependency; paths are relative to `cwdPath`.
 export interface AkanExecutor {
   readonly name: string;
   readonly type: "app" | "lib";
@@ -187,7 +152,6 @@ export interface AkanExecutor {
 export interface AkanSyncContext {
   readonly appName: string;
   readonly appPath: string;
-  /** The full app/lib executor for advanced scan-result access and file operations. */
   readonly executor: AkanExecutor;
   getPath(rel: string): string;
   fileExists(rel: string): Promise<boolean>;
@@ -199,7 +163,6 @@ export interface AkanSyncContext {
 
 export interface AkanNativeContext {
   readonly appPath: string;
-  /** The app executor for advanced scan-result access and file operations. */
   readonly executor: AkanExecutor;
   readonly target: AkanMobileTargetConfig;
   readonly operation: "local" | "release";
@@ -221,15 +184,14 @@ export interface AkanNativeContext {
 export interface AkanPluginCapacitorConfig {
   /** Mobile permission that activates this plugin's native config (reuses the existing permission model). */
   permission?: MobilePermission;
-  /** Imperative native (Capacitor) project configuration. */
   configureNative?: (ctx: AkanNativeContext) => Promise<void>;
 }
 
+/** Read live by the CLI at build time; it carries functions, so it stays out of the serializable config results. */
 export interface AkanPlugin {
   name: string;
   /** Runtime npm packages this plugin needs; installed on demand by the CLI (e.g. firebase for push). */
   runtimePackages?: (ctx: PluginRuntimeContext) => string[];
-  /** Native (Capacitor) project configuration. */
   capacitor?: AkanPluginCapacitorConfig;
   /** Build-time asset generation (e.g. `public/firebase-messaging-sw.js`). */
   syncAssets?: (ctx: AkanSyncContext) => Promise<void>;
@@ -244,9 +206,8 @@ export interface AkanApiConfig {
 
 export interface AkanDatabaseConfig {
   /**
-   * The modes this app's build can run in. `akan build` bundles the drivers of each, the image lets a deployment
-   * pick one of them with `AKAN_DATABASE_MODE` and no other, and `akan start` runs the first unless the shell names
-   * another. A deployment of a build carrying several has to name one.
+   * The build carries each mode's drivers; a deployment picks one with `AKAN_DATABASE_MODE` (required when there are
+   * several), and `akan start` runs the first unless the shell names another.
    */
   modes: DatabaseMode[];
 }
@@ -255,18 +216,16 @@ export interface AppConfigResult {
   docker: DockerConfig;
   database: AkanDatabaseConfig;
   /**
-   * Where this app mounts its endpoints. Declared here rather than only in `main.ts` because the value is baked
-   * into every client bundle: a prebuilt CSR shell or a mobile bundle never reaches the server that would tell
-   * it otherwise. `new AkanApp({ prefix })` still overrides the server and every server-rendered page.
+   * Baked into every client bundle, since a prebuilt CSR shell or mobile bundle never asks the server;
+   * `new AkanApp({ prefix })` still overrides the server and every server-rendered page.
    */
   api: AkanApiConfig;
   /** Web surfaces built into the app and mounted at boot. Both default to `true`. */
   web: AkanWebConfig;
   routes?: AkanRouteConfig[];
   /**
-   * Mounts `libs/<lib>/page` into this app under `page/(libs)/(<lib>)` on sync. `true` takes every lib
-   * dependency that ships a `page` folder, an array takes exactly the libs listed, `false` (the default)
-   * syncs nothing and removes what a previous sync created.
+   * Mounts `libs/<lib>/page` under `page/(libs)/(<lib>)` on sync: `true` every lib dependency with a `page` folder, an
+   * array exactly those libs, `false` (the default) nothing, removing what a previous sync created.
    */
   syncPageLibs?: string[] | boolean;
   externalLibs: string[];
@@ -277,7 +236,6 @@ export interface AppConfigResult {
   publicEnv: string[];
   mobile: AkanMobileConfig;
   secrets: string[];
-  /** How the build trims the `public/` copy it ships. */
   assets: AkanAssetsConfig;
 }
 
@@ -315,30 +273,15 @@ export interface SubspaceDeclaration {
   repo: string;
   /** Apps this subspace serves. Libraries are never listed — they are derived from each app's closure. */
   apps: string[];
-  /**
-   * The cloud workspace this subspace deploys from — its own `AKAN_WORKSPACE_ID`, not this workspace's.
-   * `akan subspace upload-env` is the only thing that reads it.
-   */
+  /** The subspace's own `AKAN_WORKSPACE_ID`, not this workspace's; only `akan subspace upload-env` reads it. */
   workspaceId?: string;
 }
 
-/**
- * What `akan.subspace.ts` at a workspace root may write: the customer repos this workspace is mirrored
- * to. There is no branch field — the branch is whichever one the workspace is on, so one declaration
- * serves every release branch and each of them holds one akanjs version and one copy of the library
- * source.
- */
+/** `akan.subspace.ts`: the repos this workspace mirrors to, on whichever branch the workspace is on. */
 export interface SubspaceConfigInput {
-  /**
-   * Branches a push may target. A feature branch is refused, because pushing it would copy this
-   * workspace's branch namespace into every customer repo.
-   */
+  /** A feature branch is refused: pushing it would copy this workspace's branch namespace into every customer repo. */
   pushableBranches?: string[];
-  /**
-   * Workspace-root entries to keep out of every subspace, on top of the ones that always are. Top-level
-   * names or `dir/` prefixes — a workspace's own infra, release and benchmark trees are the usual
-   * entries.
-   */
+  /** Workspace-root names or `dir/` prefixes kept out of every subspace, on top of the ones that always are. */
   exclude?: string[];
   subspaces: SubspaceDeclaration[];
 }
@@ -362,10 +305,8 @@ export interface FileConventionScanResult {
 }
 
 /**
- * What a *live* scan exposes on `AppInfo.file` / `LibInfo.file`: a set per module kind, with every file
- * type carrying all four kinds. `FileConventionScanResult` above is the serialized form that crosses a
- * process boundary as JSON, which is why it is arrays and why each file type lists only the kinds it can
- * hold. The two are not interchangeable — every reader of `.file` calls `.has()`.
+ * The live form of `FileConventionScanResult` on `AppInfo.file`/`LibInfo.file` (every reader calls `.has()`); the
+ * arrays above are its JSON form, which lists only the kinds each file type can hold.
  */
 export interface FileConventionScanSet {
   all: Set<string>;

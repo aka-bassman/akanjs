@@ -14,7 +14,7 @@ const getLocalIP = () => {
       if (alias.family === "IPv4" && !alias.internal) return alias.address;
     }
   }
-  return "127.0.0.1"; // fallback to localhost if no suitable IP found
+  return "127.0.0.1";
 };
 
 const normalizeBasePath = (basePath: string | undefined) => basePath?.replace(/^\/+|\/+$/g, "");
