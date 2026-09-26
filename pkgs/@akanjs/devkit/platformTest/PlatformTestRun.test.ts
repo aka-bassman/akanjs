@@ -1,15 +1,12 @@
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
+import { tempDirs } from "../testHelpers";
 import { BunTestReport } from "./BunTestReport";
 import { PlatformTestRun } from "./PlatformTestRun";
 import type { PackageTestResult, PlatformTestResult } from "./PlatformTestTarget";
 
-const roots: string[] = [];
-afterAll(async () => {
-  await Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
-});
+const makeRoot = tempDirs("akan-platform-env-");
 
 const pkg = (status: PackageTestResult["status"]): PackageTestResult => ({
   pkg: "akanjs",
@@ -42,8 +39,7 @@ describe("PlatformTestRun", () => {
   });
 
   test("hands a test host only the env keys the CLI needs, never the secrets beside them", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "akan-platform-env-"));
-    roots.push(root);
+    const root = await makeRoot();
     await writeFile(
       path.join(root, ".env"),
       ["USE_AKANJS_PKGS=true", "OPENAI_API_KEY=sk-secret", 'AKAN_PUBLIC_SERVE_DOMAIN="akanjs.com"', "JEV_KEY=x"].join(

@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   AGENT_BLOCK_END,
@@ -14,6 +12,7 @@ import {
   upsertAgentBlock,
 } from "./agentsIndex";
 import type { RecipeInfo } from "./recipeScanner";
+import { tempDirs, writeText } from "./testHelpers";
 
 const button: RecipeInfo = {
   name: "buttonRecipe",
@@ -79,12 +78,10 @@ describe("upsertAgentBlock / extractAgentBlock", () => {
 });
 
 describe("collectScopeRecipeSources", () => {
+  const makeTempRoot = tempDirs("agents-index-");
   test("collects own + dependency lib recipes, never the framework's", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "agents-index-"));
-    const write = async (rel: string, content: string) => {
-      await mkdir(path.dirname(path.join(root, rel)), { recursive: true });
-      await writeFile(path.join(root, rel), content);
-    };
+    const root = await makeTempRoot();
+    const write = async (rel: string, content: string) => await writeText(path.join(root, rel), content);
     await write("apps/minimal/ui/Recipe/appCard.ts", `export const appCard = recipe(tv({ base: "x" }));`);
     await write("libs/shared/ui/Recipe/panel.ts", `export const panelRecipe = recipe(tv({ base: "y" }));`);
     await write("pkgs/akanjs/ui/recipe/buttonRecipe.ts", `export const buttonRecipe = recipe(tv({ base: "z" }));`);

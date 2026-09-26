@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { collectRecipeSources, findInlineRecipeDuplicates, type RecipeInfo, scanRecipes } from "./recipeScanner";
+import { tempDirs } from "./testHelpers";
 
 const byName = (recipes: RecipeInfo[], name: string) => recipes.find((recipe) => recipe.name === name);
 
@@ -130,8 +130,9 @@ describe("findInlineRecipeDuplicates", () => {
 
 // The AGENTS.md index, the recipeGate lint and the MCP module context all degrade silently if this finds nothing.
 describe("collectRecipeSources", () => {
+  const makeTempRoot = tempDirs("akan-recipe-");
   const seed = async (files: Record<string, string>) => {
-    const root = await mkdtemp(path.join(tmpdir(), "akan-recipe-"));
+    const root = await makeTempRoot();
     for (const [rel, content] of Object.entries(files)) {
       const abs = path.join(root, rel);
       await Bun.write(abs, content);
@@ -170,7 +171,7 @@ describe("collectRecipeSources", () => {
   });
 
   test("returns nothing when neither shape exists, without throwing", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "akan-recipe-"));
+    const root = await makeTempRoot();
     await writeFile(path.join(root, "placeholder"), "");
     expect(await collectRecipeSources(path.join(root, "ui"), "@apps/x/ui")).toEqual([]);
   });

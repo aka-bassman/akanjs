@@ -1,15 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { tempDirs } from "../testHelpers";
 import { DevStabilityHarness } from "./devStabilityHarness";
 
-const roots: string[] = [];
 const servers: Bun.Server<undefined>[] = [];
+const makeRoot = tempDirs("akan-harness-port-");
 
 const createRoot = async (): Promise<string> => {
-  const root = await mkdtemp(path.join(tmpdir(), "akan-harness-port-"));
-  roots.push(root);
+  const root = await makeRoot();
   await mkdir(path.join(root, "apps"), { recursive: true });
   return root;
 };
@@ -20,9 +19,8 @@ const occupy = (port: number): Bun.Server<undefined> => {
   return server;
 };
 
-afterEach(async () => {
+afterEach(() => {
   for (const server of servers.splice(0)) server.stop(true);
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe("dev stability harness port allocation", () => {
