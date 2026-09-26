@@ -17,24 +17,14 @@ export interface CameraPromptLabels {
   cancel?: string;
 }
 
-/**
- * The picker sheet is drawn by the OS from strings handed to it, so there is no component to render `l()` in and
- * no render pass to read it during — the same position `showMessage` is in, and the same answer.
- */
+// The OS draws the picker from these strings, so they are translated here: there is no render to call `l()` in.
 const promptLabel = (key: string, override?: string) =>
   override ?? Translator.translateByLocale(Translator.getActiveLocale() ?? parseAkanI18nEnv().defaultLocale, key);
 
-/** Capacitor camera/photos hook with permission checks and app-settings fallback. */
+/** `checkPermission` opens the app settings when camera or photo access is denied. */
 export const useCamera = ({ promptLabels = {} }: { promptLabels?: CameraPromptLabels } = {}) => {
   const [permissions, setPermissions] = useState<PermissionStatus>({ camera: "prompt", photos: "prompt" });
 
-  /**
-   * 최초로 킬 경우 권한은 prompt 상태이다.
-   * prompt 상태일 경우 권한을 요청한다.
-   * 권한이 denied 상태일 경우 설정으로 이동한다.
-   * 이후 state의 permission을 업데이트해야한다.
-   *
-   */
   const checkPermission = async (type: "photos" | "camera" | "all") => {
     try {
       const { Camera } = await loadCapacitorCamera();

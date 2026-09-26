@@ -1,15 +1,10 @@
 "use client";
 import { useEffect } from "react";
 
-/**
- * One count shared by every overlay, because two can cover the page at once — a dialog opened from a
- * dialog, a legacy modal beside a new one. A per-component flag would let the first one to unmount give
- * scrolling back while the other is still up.
- */
+// Shared by every overlay: with a per-component flag, the first to unmount would unlock a page another still covers.
 let lockCount = 0;
 let previousOverflow = "";
 
-/** Hold `document.body` unscrollable while `active`. */
 export const useBodyScrollLock = (active: boolean) => {
   useEffect(() => {
     if (!active || typeof document === "undefined") return;

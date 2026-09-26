@@ -12,10 +12,7 @@ export interface ProductType {
 
 export type CdvProductType = CdvPurchase.ProductType;
 
-/**
- * @deprecated Built on `cordova-plugin-purchase`, which is a peer dependency of the whole package because of
- * this one hook. Replace with `@revenuecat/purchases-capacitor`; this stays only for apps already on it.
- */
+/** @deprecated Needs `cordova-plugin-purchase`, a package-wide peer dependency; use `@revenuecat/purchases-capacitor`. */
 export const usePurchase = ({
   platform,
   productInfo,
@@ -31,7 +28,6 @@ export const usePurchase = ({
 }) => {
   const [isLoading, setIsLoading] = useState(true);
   const billingRef = useRef<any>(null);
-  // const purchase = new Purchase();
 
   useEffect(() => {
     const init = async () => {
@@ -70,7 +66,6 @@ export const usePurchase = ({
       ]);
       await CdvPurchase.store.update();
       await CdvPurchase.store.restorePurchases();
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       CdvPurchase.store.validator = (async (
         request: { id: string; transaction: { id: string; purchaseToken: string; appStoreReceipt: string } },
         callback: (result: {
@@ -78,7 +73,7 @@ export const usePurchase = ({
           data: { id: string; latest_receipt: boolean; transaction: CdvPurchase.Transaction };
         }) => void,
       ) => {
-        const transactionId = request.transaction.id; // 트랜잭션 ID
+        const transactionId = request.transaction.id;
         const transactions = CdvPurchase.store.localTransactions;
         const verifingTransaction = transactions.find((transaction) => transaction.transactionId === transactionId);
 
@@ -105,11 +100,8 @@ export const usePurchase = ({
 
         billingRef.current = billing.json();
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
         callback({
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
           ok: !!billing,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           data: { id: request.id, latest_receipt: true, transaction: request.transaction } as any,
         });
       }) as any;

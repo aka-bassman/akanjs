@@ -1029,12 +1029,7 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
     };
     window.onpopstate = async () => {
       const href = window.location.href.replace(window.location.origin, "");
-      const routeType =
-        href === getNextLocation()?.href // && history.current.type !== "back"
-          ? "forward"
-          : href === getPrevLocation()?.href
-            ? "back"
-            : null;
+      const routeType = href === getNextLocation()?.href ? "forward" : href === getPrevLocation()?.href ? "back" : null;
       const scrollTop = pageContentRef.current?.scrollTop ?? 0;
       debugFrame("router.popstate", { href, routeType, scrollTop });
       if (!routeType) return;
@@ -1045,7 +1040,6 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
         settle(location);
         broadcastSyncNavigation("pop", getSyncRouteHref(getLocation(href)));
       } else {
-        // back
         const location = getCurrentLocation();
         if (shouldPrepareFrameTransition(href)) await startFrameTransition();
         await onBack.current[location.pathRoute.pageState.transition]?.();
@@ -1142,9 +1136,7 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
     bottomUp: useBottomUpTransition,
     scaleOut: useScaleOutTransition,
   };
-  // Keyboard-driven height/padding changes animate instead of snapping. It belongs to the current page's
-  // contentStyle, so it is merged here rather than in CSR: CSR renders one container per path route and
-  // would rebuild this object for every one of them on every render.
+  // Merged here, not in CSR: CSR renders one container per path route and would rebuild it for each on every render.
   const contentResizeStyle = useMemo(() => {
     if (!shouldAnchorContentBottom || !keyboardFrame.sticky) return null;
     const duration = keyboardFrame.animationDuration ?? 420;
