@@ -4,8 +4,7 @@ import { Header } from "./Header";
 import { Navbar } from "./Navbar";
 import { Template, Unit, View, Zone } from "./Role";
 import { LeftSider, RightSider, Sider } from "./Sider";
-import { TopInset } from "./TopInset";
-import { TopLeftAction } from "./TopLeftAction";
+import { TopInset, TopLeftAction } from "./TopInset";
 
 export const Layout = {
   Header,
