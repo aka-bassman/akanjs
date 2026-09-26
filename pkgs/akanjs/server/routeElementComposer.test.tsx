@@ -38,19 +38,25 @@ function suspendingPageRender(gate: Promise<void>): RouteRender {
   };
 }
 
+const composePage = (gate: Promise<void>, navKey?: string) =>
+  RouteElementComposer.composeRenders({
+    renders: [suspendingPageRender(gate)],
+    params: {},
+    searchParams: {},
+    navKey,
+  }) as ReactElement;
+
+const renderDocument = (body: ReactNode) =>
+  renderToReadableStream(
+    <html lang="en">
+      <body>{body}</body>
+    </html>,
+  );
+
 describe("RouteElementComposer streaming", () => {
   test("streams the page Loading fallback as the shell before the delayed page resolves", async () => {
     const gate = createDeferred();
-    const body = RouteElementComposer.composeRenders({
-      renders: [suspendingPageRender(gate.promise)],
-      params: {},
-      searchParams: {},
-    });
-    const stream = await renderToReadableStream(
-      <html lang="en">
-        <body>{body}</body>
-      </html>,
-    );
+    const stream = await renderDocument(composePage(gate.promise));
 
     const reader = stream.getReader();
     const decoder = new TextDecoder();
@@ -78,16 +84,7 @@ describe("RouteElementComposer streaming", () => {
 
   test("blocking (allReady) withholds the whole document until the page resolves", async () => {
     const gate = createDeferred();
-    const body = RouteElementComposer.composeRenders({
-      renders: [suspendingPageRender(gate.promise)],
-      params: {},
-      searchParams: {},
-    });
-    const stream = await renderToReadableStream(
-      <html lang="en">
-        <body>{body}</body>
-      </html>,
-    );
+    const stream = await renderDocument(composePage(gate.promise));
 
     let allReadySettled = false;
     const allReady = stream.allReady.then(() => {
@@ -109,30 +106,15 @@ const pending = new Promise<void>(() => {});
 
 describe("RouteElementComposer navigation keying", () => {
   test("keys the leaf page Suspense by navKey when it has a Loading", () => {
-    const el = RouteElementComposer.composeRenders({
-      renders: [suspendingPageRender(pending)],
-      params: {},
-      searchParams: {},
-      navKey: "/loadingtest/bbb",
-    }) as ReactElement;
+    const el = composePage(pending, "/loadingtest/bbb");
 
     expect(isValidElement(el)).toBe(true);
     expect(el.key).toBe("akan-loading:/loadingtest/bbb");
   });
 
   test("different navKeys produce different keys so the boundary remounts on navigation", () => {
-    const aaa = RouteElementComposer.composeRenders({
-      renders: [suspendingPageRender(pending)],
-      params: {},
-      searchParams: {},
-      navKey: "/loadingtest/aaa",
-    }) as ReactElement;
-    const bbb = RouteElementComposer.composeRenders({
-      renders: [suspendingPageRender(pending)],
-      params: {},
-      searchParams: {},
-      navKey: "/loadingtest/bbb",
-    }) as ReactElement;
+    const aaa = composePage(pending, "/loadingtest/aaa");
+    const bbb = composePage(pending, "/loadingtest/bbb");
 
     expect(aaa.key).not.toBe(bbb.key);
   });
@@ -149,11 +131,7 @@ describe("RouteElementComposer navigation keying", () => {
   });
 
   test("does not key when navKey is absent", () => {
-    const el = RouteElementComposer.composeRenders({
-      renders: [suspendingPageRender(pending)],
-      params: {},
-      searchParams: {},
-    }) as ReactElement;
+    const el = composePage(pending);
 
     expect(el.key).toBeNull();
   });

@@ -73,6 +73,19 @@ const waitForRestart = (port: number) =>
     return child?.ready && child.restartCount > 0 && !child.restartPending ? body : null;
   }, 6_000);
 
+const answerHealthPing = `if (message.type === "health.ping") {
+  process.send?.({ type: "health.pong", nonce: message.nonce, sentAt: message.sentAt, pid: process.pid });
+}`;
+
+const sendReady = (wsUpstream?: string) => `process.send?.({
+  type: "ready",
+  pid: process.pid,
+  replicaIdx: Number(process.env.AKAN_REPLICA_IDX ?? 0),
+  role: process.env.SERVER_MODE ?? "all",
+  upstream: { type: "unix", socketPath: process.env.AKAN_CHILD_SOCKET },${wsUpstream ? `\n  wsUpstream: ${wsUpstream},` : ""}
+  healthPath: "/_akan/app/child-health",
+});`;
+
 const writeOkChild = (serverPath: string, body: string) =>
   Bun.write(
     serverPath,
@@ -85,22 +98,13 @@ const writeOkChild = (serverPath: string, body: string) =>
           });
           process.on("message", (message) => {
             if (!message || typeof message !== "object") return;
-            if (message.type === "health.ping") {
-              process.send?.({ type: "health.pong", nonce: message.nonce, sentAt: message.sentAt, pid: process.pid });
-            }
+            ${answerHealthPing}
             if (message.type === "shutdown") {
               http.stop(true);
               process.exit(0);
             }
           });
-          process.send?.({
-            type: "ready",
-            pid: process.pid,
-            replicaIdx: Number(process.env.AKAN_REPLICA_IDX ?? 0),
-            role: process.env.SERVER_MODE ?? "all",
-            upstream: { type: "unix", socketPath: process.env.AKAN_CHILD_SOCKET },
-            healthPath: "/_akan/app/child-health",
-          });
+          ${sendReady()}
         },
       };
     `,
@@ -263,24 +267,14 @@ const writeWebSocketRelayChild = async (serverPath: string, observedPath: string
           const address = ws.address();
           process.on("message", (message) => {
             if (!message || typeof message !== "object") return;
-            if (message.type === "health.ping") {
-              process.send?.({ type: "health.pong", nonce: message.nonce, sentAt: message.sentAt, pid: process.pid });
-            }
+            ${answerHealthPing}
             if (message.type === "shutdown") {
               for (const socket of sockets) socket.destroy();
               http.stop(true);
               ws.close(() => process.exit(0));
             }
           });
-          process.send?.({
-            type: "ready",
-            pid: process.pid,
-            replicaIdx: Number(process.env.AKAN_REPLICA_IDX ?? 0),
-            role: process.env.SERVER_MODE ?? "all",
-            upstream: { type: "unix", socketPath: process.env.AKAN_CHILD_SOCKET },
-            wsUpstream: { type: "tcp", host: "127.0.0.1", port: address.port },
-            healthPath: "/_akan/app/child-health",
-          });
+          ${sendReady(`{ type: "tcp", host: "127.0.0.1", port: address.port }`)}
         },
       };
     `,
@@ -407,22 +401,13 @@ describe("AkanApp", () => {
             });
             process.on("message", (message) => {
               if (!message || typeof message !== "object") return;
-              if (message.type === "health.ping") {
-                process.send?.({ type: "health.pong", nonce: message.nonce, sentAt: message.sentAt, pid: process.pid });
-              }
+              ${answerHealthPing}
               if (message.type === "shutdown") {
                 http.stop(true);
                 process.exit(0);
               }
             });
-            process.send?.({
-              type: "ready",
-              pid: process.pid,
-              replicaIdx: Number(process.env.AKAN_REPLICA_IDX ?? 0),
-              role: process.env.SERVER_MODE ?? "all",
-              upstream: { type: "unix", socketPath: process.env.AKAN_CHILD_SOCKET },
-              healthPath: "/_akan/app/child-health",
-            });
+            ${sendReady()}
             if (next === 1) setTimeout(() => process.exit(1), 50);
           },
         };
@@ -475,23 +460,14 @@ describe("AkanApp", () => {
             });
             process.on("message", (message) => {
               if (!message || typeof message !== "object") return;
-              if (message.type === "health.ping") {
-                process.send?.({ type: "health.pong", nonce: message.nonce, sentAt: message.sentAt, pid: process.pid });
-              }
+              ${answerHealthPing}
               if (message.type === "shutdown") {
                 try { http?.stop(true); } catch {}
                 try { ws?.stop(true); } catch {}
                 process.exit(0);
               }
             });
-            process.send?.({
-              type: "ready",
-              pid: process.pid,
-              replicaIdx: Number(process.env.AKAN_REPLICA_IDX ?? 0),
-              role: process.env.SERVER_MODE ?? "all",
-              upstream: { type: "unix", socketPath: process.env.AKAN_CHILD_SOCKET },
-              healthPath: "/_akan/app/child-health",
-            });
+            ${sendReady()}
           },
         };
       `,
@@ -586,9 +562,7 @@ describe("AkanApp", () => {
             Bun.serve({ unix: process.env.AKAN_CHILD_SOCKET, fetch() { return new Response("ok"); } });
             process.on("message", (message) => {
               if (!message || typeof message !== "object") return;
-              if (message.type === "health.ping") {
-                process.send?.({ type: "health.pong", nonce: message.nonce, sentAt: message.sentAt, pid: process.pid });
-              }
+              ${answerHealthPing}
               if (message.type === "shutdown") process.exit(0);
             });
             await Bun.sleep(1_500);
@@ -735,18 +709,9 @@ describe("AkanApp", () => {
               process.on("SIGTERM", () => {});
               process.on("message", (message) => {
                 if (!message || typeof message !== "object") return;
-                if (message.type === "health.ping") {
-                  process.send?.({ type: "health.pong", nonce: message.nonce, sentAt: message.sentAt, pid: process.pid });
-                }
+                ${answerHealthPing}
               });
-              process.send?.({
-                type: "ready",
-                pid: process.pid,
-                replicaIdx: Number(process.env.AKAN_REPLICA_IDX ?? 0),
-                role: process.env.SERVER_MODE ?? "all",
-                upstream: { type: "unix", socketPath: process.env.AKAN_CHILD_SOCKET },
-                healthPath: "/_akan/app/child-health",
-              });
+              ${sendReady()}
             },
           };
         `,
@@ -811,24 +776,14 @@ describe("AkanApp", () => {
               });
               process.on("message", (message) => {
                 if (!message || typeof message !== "object") return;
-                if (message.type === "health.ping") {
-                  process.send?.({ type: "health.pong", nonce: message.nonce, sentAt: message.sentAt, pid: process.pid });
-                }
+                ${answerHealthPing}
                 if (message.type === "shutdown") {
                   http.stop(true);
                   ws.stop(true);
                   process.exit(0);
                 }
               });
-              process.send?.({
-                type: "ready",
-                pid: process.pid,
-                replicaIdx: Number(process.env.AKAN_REPLICA_IDX ?? 0),
-                role: process.env.SERVER_MODE ?? "all",
-                upstream: { type: "unix", socketPath: process.env.AKAN_CHILD_SOCKET },
-                wsUpstream: { type: "tcp", host: "127.0.0.1", port: ws.port },
-                healthPath: "/_akan/app/child-health",
-              });
+              ${sendReady(`{ type: "tcp", host: "127.0.0.1", port: ws.port }`)}
             },
           };
         `,
