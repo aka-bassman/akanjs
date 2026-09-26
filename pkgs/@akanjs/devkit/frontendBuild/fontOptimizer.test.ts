@@ -76,7 +76,6 @@ describe("FontOptimizer cache", () => {
     expect(second.files).toEqual(first.files);
     expect(second.css).toBe(first.css);
     expect(second.fonts).toEqual(first.fonts);
-    // The output was reused, not rewritten — the whole point of the cache.
     expect((await stat(second.files[0])).mtimeMs).toBe(writtenAt);
   });
 
@@ -160,8 +159,6 @@ describe("FontOptimizer discovery", () => {
     expect(second.css).toContain(".font-brand");
   });
 
-  // A list the build cannot read subsets nothing while the runtime still preloads /_akan/fonts, so the 404s
-  // have to be announced at build time rather than found in a browser console.
   test("warns when the chain is handed a font list it cannot read", async () => {
     const { app, warnings } = await makeApp(chainLayoutWith("brandFonts"));
 
