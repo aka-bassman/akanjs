@@ -53,10 +53,7 @@ export class TunnelRunner extends runner("tunnel") {
     else Logger.rawLog(`No tunnel named ${code} is open.`, undefined, "error");
   }
 
-  /**
-   * Holds the process open with the tunnel, and hands the hostname back on the way out. A second interrupt
-   * abandons the release rather than looking hung — the share then expires on its own TTL.
-   */
+  // A second interrupt abandons the release rather than looking hung; the share then expires on its own TTL.
   static holdUntilInterrupt(onInterrupt: () => Promise<void>) {
     return new Promise<void>((resolve) => {
       let closing = false;
