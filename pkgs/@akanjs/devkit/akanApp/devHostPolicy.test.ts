@@ -28,6 +28,13 @@ import {
   shouldWarnBuilderRssCeilingTight,
 } from "./devHostPolicy";
 
+const status = (phase: BuildPhase, generation: number, ok: boolean): DevBuildStatus => ({
+  generation,
+  phase,
+  ok,
+  files: [],
+});
+
 const invalidateWithActions = (actions: DevChangeAction[]): Extract<BuilderMessage, { type: "invalidate" }> => ({
   type: "invalidate",
   kinds: ["code"],
@@ -275,14 +282,13 @@ describe("dev idle suspend", () => {
   });
 
   test("blocks a suspend on a failure in any phase, not just the newest generation", () => {
-    const status = (phase: BuildPhase, ok: boolean): DevBuildStatus => ({ generation: 1, phase, ok, files: [] });
     expect(hasAnyBuildFailure(new Map())).toBe(false);
-    expect(hasAnyBuildFailure(new Map([["scan", status("scan", true)]]))).toBe(false);
+    expect(hasAnyBuildFailure(new Map([["scan", status("scan", 1, true)]]))).toBe(false);
     expect(
       hasAnyBuildFailure(
         new Map([
-          ["scan", status("scan", true)],
-          ["pages", status("pages", false)],
+          ["scan", status("scan", 1, true)],
+          ["pages", status("pages", 1, false)],
         ]),
       ),
     ).toBe(true);
@@ -339,13 +345,6 @@ describe("recycled builder state announcements", () => {
 });
 
 describe("build status helpers", () => {
-  const status = (phase: DevBuildStatus["phase"], generation: number, ok: boolean): DevBuildStatus => ({
-    generation,
-    phase,
-    ok,
-    files: [],
-  });
-
   test("tracks recovery by phase without unrelated phases masking failures", () => {
     const previousByPhase = new Map<DevBuildStatus["phase"], DevBuildStatus>([
       ["pages", status("pages", 10, false)],
@@ -425,13 +424,6 @@ describe("backend recovery abandonment", () => {
 });
 
 describe("hasBuildFailureForGeneration", () => {
-  const status = (phase: DevBuildStatus["phase"], generation: number, ok: boolean): DevBuildStatus => ({
-    generation,
-    phase,
-    ok,
-    files: [],
-  });
-
   test("detects a failing phase recorded for the same generation", () => {
     const statusByPhase = new Map<DevBuildStatus["phase"], DevBuildStatus>([
       ["csr", status("csr", 3, false)],
