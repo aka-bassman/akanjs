@@ -777,8 +777,7 @@ const makeSchemaGraph = (databases: DatabaseSchema[], scalars: ScalarSchema[]) =
     const from = toNodeId(relation.sourceRefName);
     const to = toNodeId(relation.targetRefName);
     const existing = edges.get(`${from}>${to}`);
-    // One arrow per pair: a model reaching the same target through several fields drew a bundle of identical
-    // arrows, and the field names read better joined into that one arrow's label.
+    // One arrow per pair, its label joining every field that reaches the same target.
     edges.set(
       `${from}>${to}`,
       existing
