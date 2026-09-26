@@ -58,7 +58,6 @@ export default function CardList<
 }: CardListProps<T, Input, Full, Light, Filter>) {
   const storeUse = st.use as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
-  const storeGet = st.get as unknown as <T>() => { [key: string]: T };
   const { refName, sliceName } = slice;
   const [modelName, modelClassName] = [refName, capitalize(refName)];
   const names = {

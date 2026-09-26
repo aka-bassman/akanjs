@@ -15,7 +15,6 @@ interface PaginationProps<T extends string> {
 export default function Pagination<T extends string>({ className, slice }: PaginationProps<T>) {
   const storeUse = st.use as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
-  const storeGet = st.get as unknown as <T>() => { [key: string]: T };
   const { refName, sliceName } = slice;
   const [modelName, modelClassName] = [refName, capitalize(refName)];
   const names = {
