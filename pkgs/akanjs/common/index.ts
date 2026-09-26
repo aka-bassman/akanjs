@@ -195,11 +195,10 @@ export { mergeVersion, splitVersion } from "./version";
 export {
   type WebsocketAuthAckData,
   type WebsocketAuthRequest,
-  websocketAuthContract,
-} from "./websocketAuth";
-export { type WebsocketBinaryFrame, websocketBinaryFrameContract } from "./websocketBinaryFrame";
-export {
+  type WebsocketBinaryFrame,
   type WebsocketHeartbeatAckData,
   type WebsocketHeartbeatRequest,
+  websocketAuthContract,
+  websocketBinaryFrameContract,
   websocketHeartbeatContract,
-} from "./websocketHeartbeat";
+} from "./websocketContract";
