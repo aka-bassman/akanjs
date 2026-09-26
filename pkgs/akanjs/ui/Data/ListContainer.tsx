@@ -10,7 +10,6 @@ import {
   type ModelProps,
   usePage,
 } from "akanjs/client";
-import { capitalize } from "akanjs/common";
 import { type BaseInsight, ConstantRegistry, labelOf } from "akanjs/constant";
 import type { FetchInitForm, QuerySetting, SliceMeta } from "akanjs/fetch";
 import { st } from "akanjs/store";
@@ -33,6 +32,7 @@ import { Dropdown } from "../Dropdown";
 import { Loading } from "../Loading";
 import { Model } from "../Model";
 import { Select } from "../Select";
+import { sliceNamesOf } from "../sliceNamesOf";
 import DataCardList from "./CardList";
 import { columnKey, downloadBlob, toCsvBlob, toJsonBlob } from "./dataExport";
 import { dictLabel } from "./dataText";
@@ -124,45 +124,8 @@ export default function ListContainer<
   const storeSel = st.sel as <Ret>(selector: (state: unknown) => Ret) => Ret;
   const storeGet = st.get as unknown as <T>() => { [key: string]: T };
   const { refName, sliceName } = slice;
-  const [modelName, modelClassName] = [refName, capitalize(refName)];
   if (refName !== sliceName) throw new Error("ListContainer: sliceName must be the same as refName");
-  const names = {
-    model: modelName,
-    modelList: `${modelName}List`,
-    modelListLoading: `${modelName}ListLoading`,
-    modelInsight: `${modelName}Insight`,
-    limitOfModel: `limitOf${modelClassName}`,
-    sortOfModel: `sortOf${modelClassName}`,
-    initModel: `init${modelClassName}`,
-    newModel: `new${modelClassName}`,
-    refreshModel: `refresh${modelClassName}`,
-    setSortOfModel: `setSortOf${modelClassName}`,
-    setLimitOfModel: `setLimitOf${modelClassName}`,
-    setViewOfModel: `setViewOf${modelClassName}`,
-    exportCsvOfModel: `exportCsvOf${modelClassName}`,
-    exportJsonOfModel: `exportJsonOf${modelClassName}`,
-    editModel: `edit${modelClassName}`,
-    viewModel: `view${modelClassName}`,
-    removeModel: `remove${modelClassName}`,
-  };
-  const namesOfSlice = {
-    modelList: sliceName.replace(names.model, names.modelList),
-    modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-    modelInsight: sliceName.replace(names.model, names.modelInsight),
-    limitOfModel: sliceName.replace(names.model, names.limitOfModel),
-    sortOfModel: sliceName.replace(names.model, names.sortOfModel),
-    initModel: sliceName.replace(names.model, names.initModel),
-    newModel: sliceName.replace(names.model, names.newModel),
-    refreshModel: sliceName.replace(names.model, names.refreshModel),
-    setSortOfModel: sliceName.replace(names.model, names.setSortOfModel),
-    setLimitOfModel: sliceName.replace(names.model, names.setLimitOfModel),
-    setViewOfModel: sliceName.replace(names.model, names.setViewOfModel),
-    exportCsvOfModel: sliceName.replace(names.model, names.exportCsvOfModel),
-    exportJsonOfModel: sliceName.replace(names.model, names.exportJsonOfModel),
-    editModel: sliceName.replace(names.model, names.editModel),
-    viewModel: sliceName.replace(names.model, names.viewModel),
-    removeModel: sliceName.replace(names.model, names.removeModel),
-  };
+  const { namesOfSlice } = sliceNamesOf(refName, sliceName);
   const [view, setView] = useState(type);
   const limitOfModel = storeUse[namesOfSlice.limitOfModel]() as number;
   const sortOfModel = storeUse[namesOfSlice.sortOfModel]() as string;
@@ -189,41 +152,41 @@ export default function ListContainer<
       ? column.title
       : dictLabel(l._, `${sliceName}.${columnKey(column)}`, columnKey(column));
   const loadedList = () => [...(storeGet<DataList<Light>>()[namesOfSlice.modelList] as DataList<Light>)];
-  const whileLoaded = () => (modelListLoading ? `The ${modelName} list is still loading.` : true);
+  const whileLoaded = () => (modelListLoading ? `The ${refName} list is still loading.` : true);
   const setViewOfModel = st
     .tool(namesOfSlice.setViewOfModel)
-    .desc(`Render the ${modelName} list as cards or as a table.`)
+    .desc(`Render the ${refName} list as cards or as a table.`)
     .arg("mode", String, { oneOf: ["card", "list"] })
     .exec((mode) => {
       setView(mode);
     });
   const setSortOfModel = st
     .tool(sortKeys.length > 1 ? namesOfSlice.setSortOfModel : null)
-    .desc(`Reorder the ${modelName} list.`)
+    .desc(`Reorder the ${refName} list.`)
     .arg("sortKey", String, { oneOf: sortKeys })
     .exec((sortKey) => storeDo[namesOfSlice.setSortOfModel](sortKey));
   const setLimitOfModel = st
     .tool(namesOfSlice.setLimitOfModel)
-    .desc(`Set how many ${modelName} rows one page holds.`)
+    .desc(`Set how many ${refName} rows one page holds.`)
     .arg("limit", Int, { oneOf: pageLimits })
     .exec((limit) => storeDo[namesOfSlice.setLimitOfModel](limit));
   const refreshModel = st
     .tool(namesOfSlice.refreshModel, { settle: false })
-    .desc(`Reload the ${modelName} list from the server.`)
+    .desc(`Reload the ${refName} list from the server.`)
     .exec(() => storeDo[namesOfSlice.refreshModel]());
   const newModel = st
     .tool(renderTemplate && create ? namesOfSlice.newModel : null)
-    .desc(`Open the form that creates a ${modelName}.`)
+    .desc(`Open the form that creates a ${refName}.`)
     .exec(() => storeDo[namesOfSlice.newModel]());
   const exportCsvOfModel = st
     .tool(namesOfSlice.exportCsvOfModel, { guard: whileLoaded })
-    .desc(`Download the loaded page of ${modelName} rows as a CSV file.`)
+    .desc(`Download the loaded page of ${refName} rows as a CSV file.`)
     .exec(() => {
       downloadBlob(toCsvBlob(columns, loadedList() as Record<string, unknown>[], columnTitle), `${sliceName}.csv`);
     });
   const exportJsonOfModel = st
     .tool(namesOfSlice.exportJsonOfModel, { guard: whileLoaded })
-    .desc(`Download the loaded page of ${modelName} rows as a JSON file.`)
+    .desc(`Download the loaded page of ${refName} rows as a JSON file.`)
     .exec(() => {
       downloadBlob(toJsonBlob(loadedList()), `${sliceName}.json`);
     });
@@ -232,15 +195,15 @@ export default function ListContainer<
   // so it publishes none. The editor's own verbs come from `Model.EditModal`/`ViewModal` while they are open.
   const rowActions = Array.isArray(actions) ? actions : [];
   st.tool(rowActions.includes("edit") && renderTemplate ? namesOfSlice.editModel : null)
-    .desc(`Open one ${modelName} in the edit form.`)
+    .desc(`Open one ${refName} in the edit form.`)
     .arg("modelId", ID)
     .exec((modelId) => storeDo[namesOfSlice.editModel](modelId));
   st.tool(rowActions.includes("view") && renderView ? namesOfSlice.viewModel : null)
-    .desc(`Open one ${modelName} in the detail view.`)
+    .desc(`Open one ${refName} in the detail view.`)
     .arg("modelId", ID)
     .exec((modelId) => storeDo[namesOfSlice.viewModel](modelId));
   st.tool(rowActions.includes("remove") ? namesOfSlice.removeModel : null)
-    .desc(`Remove one ${modelName}.`)
+    .desc(`Remove one ${refName}.`)
     .arg("modelId", ID)
     .exec((modelId) => storeDo[namesOfSlice.removeModel](modelId));
   const scopePath = useScreenScope({

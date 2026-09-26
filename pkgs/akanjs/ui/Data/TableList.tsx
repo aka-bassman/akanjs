@@ -1,7 +1,6 @@
 "use client";
 import type { DataList } from "akanjs/base";
 import { type DataAction, type DataColumn, usePage } from "akanjs/client";
-import { capitalize } from "akanjs/common";
 import type { FilterInstance } from "akanjs/document";
 import type { FetchInitForm, SliceMeta } from "akanjs/fetch";
 import { st } from "akanjs/store";
@@ -9,6 +8,7 @@ import { type ReactNode, useEffect, useMemo } from "react";
 
 import { Loading } from "../Loading";
 import { Model } from "../Model";
+import { sliceNamesOf } from "../sliceNamesOf";
 import { Table } from "../Table";
 import { columnKey } from "./dataExport";
 import { dictLabel } from "./dataText";
@@ -55,19 +55,7 @@ export default function TableList<
   const storeUse = st.use as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
   const { refName, sliceName } = slice;
-  const [modelName, modelClassName] = [refName, capitalize(refName)];
-  const names = {
-    model: modelName,
-    modelId: `${modelName}Id`,
-    modelList: `${modelName}List`,
-    modelListLoading: `${modelName}ListLoading`,
-    initModel: `init${modelClassName}`,
-  };
-  const namesOfSlice = {
-    modelList: sliceName.replace(names.model, names.modelList),
-    modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-    initModel: sliceName.replace(names.model, names.initModel),
-  };
+  const { names, namesOfSlice } = sliceNamesOf(refName, sliceName);
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
   const RenderTemplate = ({ id }: { id: string }) => {

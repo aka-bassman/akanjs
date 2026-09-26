@@ -1,7 +1,7 @@
 "use client";
 import { DataList } from "akanjs/base";
 import { cn } from "akanjs/client";
-import { capitalize, type DynamicRecord, isQueryEqual, lowerlize } from "akanjs/common";
+import { type DynamicRecord, isQueryEqual, lowerlize } from "akanjs/common";
 import type { BaseInsight } from "akanjs/constant";
 import { ConstantRegistry, labelOf, withSharedInstances } from "akanjs/constant";
 import type { ClientInit, ServerInit } from "akanjs/fetch";
@@ -12,6 +12,7 @@ import { type ReactNode, type RefObject, useEffect, useMemo, useRef } from "reac
 import { Empty } from "../Empty";
 import { Loading } from "../Loading";
 import { More } from "../More";
+import { sliceNamesOf } from "../sliceNamesOf";
 import Stream from "./Stream";
 
 interface DefaultProps<L extends { id: string }> {
@@ -73,49 +74,9 @@ function Render<RefName extends string, Light extends { id: string }>({
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
   const storeGet = st.get as unknown as <T>() => { [key: string]: T };
   const { refName, sliceName } = init;
-  const [modelName, ModelName] = [lowerlize(refName), capitalize(refName)];
+  const modelName = lowerlize(refName);
   const cnst = ConstantRegistry.getDatabase(refName);
-  const names = {
-    model: modelName,
-    modelList: `${modelName}List`,
-    modelListLoading: `${modelName}ListLoading`,
-    modelInsight: `${modelName}Insight`,
-    modelInitList: `${modelName}InitList`,
-    modelInitAt: `${modelName}InitAt`,
-    modelStaleAt: `${modelName}StaleAt`,
-    modelObjList: `${modelName}ObjList`,
-    modelObjInsight: `${modelName}ObjInsight`,
-    pageOfModel: `pageOf${ModelName}`,
-    lastPageOfModel: `lastPageOf${ModelName}`,
-    limitOfModel: `limitOf${ModelName}`,
-    hasMoreOfModel: `hasMoreOf${ModelName}`,
-    isCumulativeOfModel: `isCumulativeOf${ModelName}`,
-    queryArgsOfModel: `queryArgsOf${ModelName}`,
-    sortOfModel: `sortOf${ModelName}`,
-    setPageOfModel: `setPageOf${ModelName}`,
-    loadMoreOfModel: `loadMoreOf${ModelName}`,
-    refreshModel: `refresh${ModelName}`,
-    watchLiveModel: `watchLive${ModelName}`,
-  };
-  const namesOfSlice = {
-    modelList: sliceName.replace(names.model, names.modelList),
-    modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-    modelInitList: sliceName.replace(names.model, names.modelInitList),
-    modelInitAt: sliceName.replace(names.model, names.modelInitAt),
-    modelStaleAt: sliceName.replace(names.model, names.modelStaleAt),
-    modelInsight: sliceName.replace(names.model, names.modelInsight),
-    pageOfModel: sliceName.replace(names.model, names.pageOfModel),
-    lastPageOfModel: sliceName.replace(names.model, names.lastPageOfModel),
-    limitOfModel: sliceName.replace(names.model, names.limitOfModel),
-    hasMoreOfModel: sliceName.replace(names.model, names.hasMoreOfModel),
-    isCumulativeOfModel: sliceName.replace(names.model, names.isCumulativeOfModel),
-    queryArgsOfModel: sliceName.replace(names.model, names.queryArgsOfModel),
-    sortOfModel: sliceName.replace(names.model, names.sortOfModel),
-    setPageOfModel: sliceName.replace(names.model, names.setPageOfModel),
-    loadMoreOfModel: sliceName.replace(names.model, names.loadMoreOfModel),
-    refreshModel: sliceName.replace(names.model, names.refreshModel),
-    watchLiveModel: sliceName.replace(names.model, names.watchLiveModel),
-  };
+  const { names, namesOfSlice } = sliceNamesOf(modelName, sliceName);
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
   const initQueryArgs = (init as DynamicRecord)[names.queryArgsOfModel] as object[];
