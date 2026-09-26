@@ -61,10 +61,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   readonly #interrupt = new InterruptTeardown();
   async confirmDatabaseModeDependencyInstall(databaseMode: DatabaseMode, installSpecs: string[]) {
     return await confirm({
-      message: [
-        `Database mode '${databaseMode}' requires missing dependencies: ${installSpecs.join(", ")}.`,
-        "Install them now?",
-      ].join(" "),
+      message: `Database mode '${databaseMode}' requires missing dependencies: ${installSpecs.join(", ")}. Install them now?`,
       default: true,
     });
   }
@@ -79,9 +76,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   }
   async confirmMobileDependencyInstall(installSpecs: string[]) {
     return await confirm({
-      message: [`Mobile builds require missing dependencies: ${installSpecs.join(", ")}.`, "Install them now?"].join(
-        " ",
-      ),
+      message: `Mobile builds require missing dependencies: ${installSpecs.join(", ")}. Install them now?`,
       default: true,
     });
   }
@@ -174,10 +169,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     await app.scanSync({ write });
     if (!quiet) Logger.rawLog(`Creating an optimized production build for ${app.name}...`);
     try {
-      const result = await this.applicationRunner.build(app, {
-        fast,
-        spinner: !quiet,
-      });
+      const result = await this.applicationRunner.build(app, { fast, spinner: !quiet });
       Logger.rawLog(`${app.name} built in dist/apps/${app.name}`);
       if (!quiet) ApplicationBuildReporter.printSummary(result);
     } catch (error) {
@@ -206,8 +198,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   async test(exec: Exec, { write = true }: { write?: boolean } = {}) {
     if (exec instanceof LibExecutor) {
       await this.libraryScript.syncLibrary(exec);
-      const spinner = exec.spinning(`Preparing ${exec.name}...`);
-      spinner.succeed(`${exec.name} prepared`);
+      exec.spinning(`Preparing ${exec.name}...`).succeed(`${exec.name} prepared`);
       await this.applicationRunner.test(exec);
       return;
     }
@@ -262,15 +253,12 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       if (!wasDbAlreadyUp) this.#stopDatabaseOnInterrupt(app.workspace);
     }
     const spinner = app.spinning("Preparing backend...");
-    const akanAppHost = await this.applicationRunner.start(app, {
+    return await this.applicationRunner.start(app, {
       open,
-      onStart: () => {
-        spinner.succeed(`${app.name} prepared, ready to start`);
-      },
+      onStart: () => spinner.succeed(`${app.name} prepared, ready to start`),
       onDevEvent,
       stdio,
     });
-    return akanAppHost;
   }
 
   // Reported line by line: the holder is often another checkout's dev server, which must be explainable from here.
@@ -397,13 +385,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     const akanConfig = await app.getConfig();
     await this.syncMobileDependencies(app, akanConfig);
     await this.syncMobileAppCapacitorPlugins(app, akanConfig);
-    await this.applicationRunner.startAndroid(app, {
-      open,
-      operation,
-      env,
-      target,
-      regenerate,
-    });
+    await this.applicationRunner.startAndroid(app, { open, operation, env, target, regenerate });
   }
   async releaseAndroid(
     app: App,
@@ -415,11 +397,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       throw new Error(
         "releaseAndroid --env local is blocked. Pass allowLocalRelease only for explicit local release testing.",
       );
-    await this.applicationRunner.releaseAndroid(app, assembleType, {
-      target,
-      env,
-      regenerate,
-    });
+    await this.applicationRunner.releaseAndroid(app, assembleType, { target, env, regenerate });
   }
 
   async configureApp(app: App) {

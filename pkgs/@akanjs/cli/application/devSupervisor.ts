@@ -138,10 +138,7 @@ export class DevSupervisor {
   }
 
   #makeChild(app: App, port: number): DevChild {
-    let markReady!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      markReady = resolve;
-    });
+    const { promise: ready, resolve: markReady } = Promise.withResolvers<void>();
     return {
       status: {
         app,

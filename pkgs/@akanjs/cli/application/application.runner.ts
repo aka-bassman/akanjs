@@ -63,9 +63,6 @@ export class ApplicationRunner extends runner("application") {
   async removeApplication(app: App) {
     await app.workspace.removeDir(`apps/${app.name}`);
   }
-  async getConfig(app: App) {
-    return await app.getConfig();
-  }
 
   async getScriptFilename(app: App) {
     if (!(await app.exists("script"))) {
@@ -113,10 +110,7 @@ export class ApplicationRunner extends runner("application") {
     const print = (record: LogRecord) =>
       process.stdout.write(options.json ? `${JSON.stringify(record)}\n` : Logger.render(record));
     const note = (text: string) => process.stderr.write(`[akan logs] ${text}\n`);
-    let finish: (() => void) | null = null;
-    const closed = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
+    const { promise: closed, resolve: finish } = Promise.withResolvers<void>();
     let client: Awaited<ReturnType<typeof LogTailClient.connect>>;
     try {
       client = await LogTailClient.connect(socketPath, {
@@ -124,7 +118,7 @@ export class ApplicationRunner extends runner("application") {
         onEvent: (response) => {
           if (response.type === "dropped") note(`${response.count} records dropped (reader too slow)`);
         },
-        onClose: () => finish?.(),
+        onClose: () => finish(),
       });
     } catch (error) {
       if (error instanceof LogControlUnavailableError)
@@ -462,31 +456,7 @@ try {
     app: App,
     { rebuild, buildNum = 0, environment = "debug", local = true }: ReleaseSourceOptions = {},
   ) {
-    await new (await loadReleasePackager())(app, { build: () => this.build(app).then(() => undefined) }).releaseSource({
-      rebuild,
-      buildNum,
-      environment,
-      local,
-    });
-    return;
-  }
-
-  async createApplicationTemplate(workspace: Workspace, appName: string) {
-    await workspace.applyTemplate({ basePath: `apps/${appName}`, template: "appRoot", dict: { appName } });
-  }
-
-  async compressProjectFiles(
-    app: App,
-    { rebuild, buildNum = 0, environment = "debug", local = true }: ReleaseSourceOptions = {},
-  ) {
-    await new (await loadReleasePackager())(app, {
-      build: () => this.build(app).then(() => undefined),
-    }).compressProjectFiles({
-      rebuild,
-      buildNum,
-      environment,
-      local,
-    });
-    return;
+    const packager = new (await loadReleasePackager())(app, { build: () => this.build(app).then(() => undefined) });
+    await packager.releaseSource({ rebuild, buildNum, environment, local });
   }
 }

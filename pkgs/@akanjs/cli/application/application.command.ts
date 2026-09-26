@@ -129,7 +129,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .option("write", Boolean, { desc: "write code generation", default: true })
     .option("regenerate", Boolean, { flag: "g", desc: "delete and regenerate native project", default: false })
     .exec(async function (app, target, env, write, regenerate) {
-      await this.applicationScript.buildIos(app, { target, env: env, write, regenerate });
+      await this.applicationScript.buildIos(app, { target, env, write, regenerate });
     }),
   buildAndroid: target({ short: true, desc: "Build Android app with Capacitor" })
     .with(App)
@@ -138,7 +138,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .option("write", Boolean, { desc: "write code generation", default: true })
     .option("regenerate", Boolean, { flag: "g", desc: "delete and regenerate native project", default: false })
     .exec(async function (app, target, env, write, regenerate) {
-      await this.applicationScript.buildAndroid(app, { target, env: env, write, regenerate });
+      await this.applicationScript.buildAndroid(app, { target, env, write, regenerate });
     }),
   start: target({ short: true, desc: "Start development server(s) (frontend SSR + backend)" })
     .with(Apps)
@@ -174,7 +174,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app, target, env, open, release, write, regenerate, allowProvisioningUpdates, device) {
       await this.applicationScript.startIos(app, {
         target,
-        env: env,
+        env,
         open,
         operation: release ? "release" : "local",
         write,
@@ -194,7 +194,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app, target, env, release, open, write, regenerate) {
       await this.applicationScript.startAndroid(app, {
         target,
-        env: env,
+        env,
         open,
         operation: release ? "release" : "local",
         write,
@@ -209,13 +209,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .option("regenerate", Boolean, { flag: "g", desc: "delete and regenerate native project", default: false })
     .option("allowLocalRelease", Boolean, { flag: "l", desc: "allow release with --env local", default: false })
     .exec(async function (app, target, env, write, regenerate, allowLocalRelease) {
-      await this.applicationScript.releaseIos(app, {
-        target,
-        env: env,
-        write,
-        regenerate,
-        allowLocalRelease,
-      });
+      await this.applicationScript.releaseIos(app, { target, env, write, regenerate, allowLocalRelease });
     }),
   releaseAndroid: target({ desc: "Build and package Android app for release (Play Store)" })
     .with(App)
@@ -228,7 +222,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app, assembleType, target, env, write, regenerate, allowLocalRelease) {
       await this.applicationScript.releaseAndroid(app, assembleType, {
         target,
-        env: env,
+        env,
         write,
         regenerate,
         allowLocalRelease,
