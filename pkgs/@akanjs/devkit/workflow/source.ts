@@ -2,6 +2,15 @@ import ts from "typescript";
 import type { Sys } from "../commandDecorators";
 import { generatedFilePathsForTarget } from "./artifacts";
 import { createPrimitiveWriteReport } from "./primitive";
+import {
+  callExpressionName,
+  expressionName,
+  firstObjectReturnedByArrow,
+  heritageCall,
+  nodeName,
+  propertyName,
+  sourceFileFor,
+} from "./sourceAst";
 import type {
   PrimitiveChangedFile,
   PrimitiveFileMap,
@@ -379,9 +388,6 @@ export interface AkanDictionaryStructure {
   fields: string[];
 }
 
-const sourceFileFor = (fileName: string, content: string, scriptKind = ts.ScriptKind.TS) =>
-  ts.createSourceFile(fileName, content, ts.ScriptTarget.Latest, true, scriptKind);
-
 const hasParseDiagnostics = (source: ts.SourceFile) =>
   ((source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? []).length > 0;
 
@@ -397,52 +403,6 @@ const lineEndAt = (content: string, position: number) => {
 
 const lineIndentAt = (content: string, position: number) =>
   /^[ \t]*/.exec(content.slice(lineStartAt(content, position)))?.[0] ?? "";
-
-const nodeName = (node: ts.PropertyName | ts.BindingName | undefined) => {
-  if (!node) return null;
-  if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNumericLiteral(node)) return node.text;
-  return null;
-};
-
-const propertyName = (node: ts.ObjectLiteralElementLike) =>
-  ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node) || ts.isMethodDeclaration(node)
-    ? nodeName(node.name)
-    : null;
-
-const expressionName = (expression: ts.Expression): string | null => {
-  if (ts.isIdentifier(expression)) return expression.text;
-  if (ts.isPropertyAccessExpression(expression)) return expression.name.text;
-  if (ts.isCallExpression(expression)) return expressionName(expression.expression);
-  if (ts.isAsExpression(expression)) return expressionName(expression.expression);
-  return null;
-};
-
-const firstObjectReturnedByArrow = (node: ts.Node): ts.ObjectLiteralExpression | null => {
-  if (!ts.isArrowFunction(node) && !ts.isFunctionExpression(node)) return null;
-  if (ts.isObjectLiteralExpression(node.body)) return node.body;
-  if (ts.isParenthesizedExpression(node.body) && ts.isObjectLiteralExpression(node.body.expression)) {
-    return node.body.expression;
-  }
-  if (!ts.isBlock(node.body)) return null;
-  for (const statement of node.body.statements) {
-    if (ts.isReturnStatement(statement) && statement.expression && ts.isObjectLiteralExpression(statement.expression)) {
-      return statement.expression;
-    }
-  }
-  return null;
-};
-
-const isViaCall = (expression: ts.Expression) =>
-  ts.isCallExpression(expression) && expressionName(expression.expression) === "via";
-
-const heritageCall = (node: ts.ClassDeclaration) => {
-  const heritage = node.heritageClauses?.flatMap((clause) => [...clause.types]) ?? [];
-  const expression = heritage.find((clause) => isViaCall(clause.expression))?.expression;
-  return expression && ts.isCallExpression(expression) ? expression : null;
-};
-
-const callExpressionName = (node: ts.CallExpression) =>
-  ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : expressionName(node.expression);
 
 const locatedObject = (source: ts.SourceFile, objectLiteral: ts.ObjectLiteralExpression): ObjectInsertionLocator => ({
   objectStart: objectLiteral.getStart(source),
