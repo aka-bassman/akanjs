@@ -24,14 +24,8 @@ export class McpSignIn {
         resource: stored.resource,
       };
       const tokens = await McpOAuth.refresh(server, stored);
-      McpTokenStore.write(ref.name, {
-        ...stored,
-        accessToken: tokens.accessToken,
-        // A server that rotates refresh tokens invalidates the old one, so keeping it would sign us out.
-        ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
-        ...(tokens.expiresAt ? { expiresAt: tokens.expiresAt } : {}),
-        ...(tokens.scope ? { scope: tokens.scope } : {}),
-      });
+      // A server that rotates refresh tokens invalidates the old one, so keeping it would sign us out.
+      McpTokenStore.write(ref.name, { ...stored, ...tokens });
       return tokens.accessToken;
     } catch (error) {
       onNotice?.(`MCP server "${ref.name}" needs signing in again — ${String(error)}`);
@@ -68,10 +62,7 @@ export class McpSignIn {
         clientId: client.clientId,
         ...(client.clientSecret ? { clientSecret: client.clientSecret } : {}),
         redirectUri,
-        accessToken: tokens.accessToken,
-        ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
-        ...(tokens.expiresAt ? { expiresAt: tokens.expiresAt } : {}),
-        ...(tokens.scope ? { scope: tokens.scope } : {}),
+        ...tokens,
       };
       McpTokenStore.write(ref.name, auth);
       return auth;

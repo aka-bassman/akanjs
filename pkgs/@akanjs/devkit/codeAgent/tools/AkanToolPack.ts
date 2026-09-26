@@ -52,7 +52,8 @@ export class AkanToolPack {
           const result = await runner.callMcpTool(this.#options.workspace, tool.name, params ?? {}, {
             mode: this.#options.mode,
           });
-          return { content: [{ type: "text", text: AkanToolPack.#render(result) }], details: undefined };
+          const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+          return { content: [{ type: "text", text }], details: undefined };
         },
       });
     }
@@ -87,10 +88,5 @@ export class AkanToolPack {
     } catch {
       return [];
     }
-  }
-
-  static #render(result: unknown) {
-    if (typeof result === "string") return result;
-    return JSON.stringify(result, null, 2);
   }
 }
