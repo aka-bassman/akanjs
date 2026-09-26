@@ -56,27 +56,23 @@ export class BarrelAnalyzer {
 
   async #analyzeSafe(pkgName: string): Promise<BarrelExportMap | null> {
     try {
-      return await this.#analyzeUncached(pkgName);
+      const pkg = await this.#opts.resolvePackage(pkgName);
+      if (!pkg) return null;
+      const map: BarrelExportMap = new Map();
+      await this.#walk(pkg.entryFile, pkg, map, new Set());
+      return map;
     } catch (err) {
       this.#logger.error(`analyze failed for ${pkgName}: ${(err as Error).message}`);
       return null;
     }
   }
 
-  async #analyzeUncached(pkgName: string): Promise<BarrelExportMap | null> {
-    const pkg = await this.#opts.resolvePackage(pkgName);
-    if (!pkg) return null;
-    const map: BarrelExportMap = new Map();
-    const visited = new Set<string>();
-    await this.#walk(pkg.entryFile, pkg, map, visited);
-    return map;
-  }
-
   async #walk(absFile: string, pkg: PackageEntry, map: BarrelExportMap, visited: Set<string>): Promise<void> {
     if (visited.has(absFile)) return;
     visited.add(absFile);
-    const source = await readIfExists(absFile);
-    if (source === null) return;
+    const file = Bun.file(absFile);
+    if (!(await file.exists())) return;
+    const source = await file.text();
     const currentSubpath = this.#subpathFor(pkg, absFile);
     if (!currentSubpath) return;
 
@@ -86,6 +82,13 @@ export class BarrelAnalyzer {
     authoritative.delete("default");
 
     const attributed = new Set<string>();
+    const attribute = (listBody: string, subpath: string) => {
+      for (const item of parseNamedList(listBody)) {
+        if (item.isType || item.imported === "default" || !authoritative.has(item.local)) continue;
+        attributed.add(item.local);
+        if (!map.has(item.local)) map.set(item.local, { subpath, originalName: item.imported });
+      }
+    };
 
     REEXPORT_RE.lastIndex = 0;
     let m: RegExpExecArray | null = REEXPORT_RE.exec(source);
@@ -113,16 +116,7 @@ export class BarrelAnalyzer {
         const targetAbs = await this.#resolveRel(absFile, spec);
         if (!targetAbs) continue;
         const targetSubpath = this.#subpathFor(pkg, targetAbs);
-        if (!targetSubpath) continue;
-        for (const item of parseNamedList(namedList)) {
-          if (item.isType) continue;
-          if (item.imported === "default") continue;
-          if (!authoritative.has(item.local)) continue;
-          attributed.add(item.local);
-          if (!map.has(item.local)) {
-            map.set(item.local, { subpath: targetSubpath, originalName: item.imported });
-          }
-        }
+        if (targetSubpath) attribute(namedList, targetSubpath);
       }
     }
 
@@ -131,15 +125,7 @@ export class BarrelAnalyzer {
     while (n !== null) {
       const body = n[1] ?? "";
       n = LOCAL_NAMED_RE.exec(source);
-      for (const item of parseNamedList(body)) {
-        if (item.isType) continue;
-        if (item.imported === "default") continue;
-        if (!authoritative.has(item.local)) continue;
-        attributed.add(item.local);
-        if (!map.has(item.local)) {
-          map.set(item.local, { subpath: currentSubpath, originalName: item.imported });
-        }
-      }
+      attribute(body, currentSubpath);
     }
 
     for (const name of authoritative) {
@@ -164,11 +150,12 @@ export class BarrelAnalyzer {
     const rel = path.relative(pkg.pkgDir, absFile);
     if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
     if (pkg.preserveFilePath) return `${pkg.pkgName}/${rel.split(path.sep).join("/")}`;
-    const noExt = stripKnownExt(rel);
+    const ext = CANDIDATE_EXTS.find((candidate) => rel.endsWith(candidate));
+    const parts = (ext ? rel.slice(0, -ext.length) : rel).split(path.sep);
     // `xxx/index` collapses to `xxx`: callers import `@pkg/xxx`, never `@pkg/xxx/index`.
-    const tail = collapseIndex(noExt);
-    if (tail === "") return pkg.pkgName;
-    return `${pkg.pkgName}/${tail.split(path.sep).join("/")}`;
+    if (parts[parts.length - 1] === "index") parts.pop();
+    const tail = parts.join("/");
+    return tail === "" ? pkg.pkgName : `${pkg.pkgName}/${tail}`;
   }
 
   async #resolveRel(fromFile: string, relSpec: string): Promise<string | null> {
@@ -179,12 +166,6 @@ export class BarrelAnalyzer {
 
 const isRelative = (spec: string): boolean => {
   return spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..";
-};
-
-const readIfExists = async (absFile: string): Promise<string | null> => {
-  const file = Bun.file(absFile);
-  if (!(await file.exists())) return null;
-  return file.text();
 };
 
 const defaultResolveRelative = async (fromFile: string, relSpec: string): Promise<string | null> => {
@@ -203,17 +184,4 @@ const defaultResolveRelative = async (fromFile: string, relSpec: string): Promis
     if (await Bun.file(cand).exists()) return cand;
   }
   return null;
-};
-
-const stripKnownExt = (relPath: string): string => {
-  for (const ext of CANDIDATE_EXTS) {
-    if (relPath.endsWith(ext)) return relPath.slice(0, -ext.length);
-  }
-  return relPath;
-};
-
-const collapseIndex = (relPathNoExt: string): string => {
-  const parts = relPathNoExt.split(path.sep);
-  if (parts[parts.length - 1] === "index") parts.pop();
-  return parts.join(path.sep);
 };

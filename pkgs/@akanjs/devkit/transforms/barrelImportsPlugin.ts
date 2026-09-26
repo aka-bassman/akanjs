@@ -35,18 +35,12 @@ export const createBarrelImportsPlugin = async (
         async (args) => {
           const realPath = args.path.replace(/\?v=\d+$/, "");
           const loader = loaderFor(realPath);
-          if (skipPath(realPath)) {
-            const raw = await Bun.file(realPath).text();
-            return { contents: raw, loader };
-          }
-
           let source = await Bun.file(realPath).text();
+          if (skipPath(realPath)) return { contents: source, loader };
 
           // Bun's macro evaluator races when a rewritten module holds `with { type: "macro" }` imports while another
           // macro host evaluates (a macro identifier ends up undefined), so macro hosts keep their barrel imports.
-          const hasMacroAttr = MACRO_ATTR_RE.test(source);
-
-          if (!hasMacroAttr && barrels.length > 0) {
+          if (!MACRO_ATTR_RE.test(source) && barrels.length > 0) {
             const rewritten = await rewriteBarrelImports(source, barrels, analyzer);
             if (rewritten !== null) source = rewritten;
           }
@@ -72,10 +66,7 @@ export const createTsconfigPackageResolver = async (
   // Longest prefix first so `@libs/util/*` wins over `@libs/*`.
   const wildcardEntries = Object.entries(tsconfigPaths)
     .filter(([k]) => k.endsWith("/*"))
-    .map(([k, v]) => ({
-      prefix: k.slice(0, -1),
-      replacements: v,
-    }))
+    .map(([k, v]) => ({ prefix: k.slice(0, -1), replacements: v }))
     .sort((a, b) => b.prefix.length - a.prefix.length);
 
   return async (pkgName) => {
@@ -89,13 +80,8 @@ export const createTsconfigPackageResolver = async (
       // rewrites to `@libs/util/lib/sig` (resolvable via `@libs/*`), not the missing `@libs/util/server/lib/sig`.
       const parsed = path.parse(entryFile);
       const lastSlash = pkgName.lastIndexOf("/");
-      if (parsed.name !== "index" && lastSlash !== -1) {
-        const facet = pkgName.slice(lastSlash + 1);
-        const parentSpec = pkgName.slice(0, lastSlash);
-        if (facet === parsed.name && parentSpec.length > 0) {
-          return { pkgName: parentSpec, entryFile, pkgDir: parsed.dir };
-        }
-      }
+      if (parsed.name !== "index" && lastSlash > 0 && pkgName.slice(lastSlash + 1) === parsed.name)
+        return { pkgName: pkgName.slice(0, lastSlash), entryFile, pkgDir: parsed.dir };
       return { pkgName, entryFile, pkgDir: path.dirname(entryFile) };
     }
 
@@ -112,20 +98,13 @@ export const createTsconfigPackageResolver = async (
           const file = `${candidate}${ext}`;
           if (await Bun.file(file).exists()) {
             const lastSlash = pkgName.lastIndexOf("/");
-            if (lastSlash !== -1) {
-              const parentSpec = pkgName.slice(0, lastSlash);
-              if (parentSpec.length > 0) {
-                return { pkgName: parentSpec, entryFile: file, pkgDir: path.dirname(file) };
-              }
-            }
-            return { pkgName, entryFile: file, pkgDir: path.dirname(file) };
+            const parentSpec = lastSlash > 0 ? pkgName.slice(0, lastSlash) : pkgName;
+            return { pkgName: parentSpec, entryFile: file, pkgDir: path.dirname(file) };
           }
         }
         for (const ext of CANDIDATE_EXTS) {
           const file = path.join(candidate, `index${ext}`);
-          if (await Bun.file(file).exists()) {
-            return { pkgName, entryFile: file, pkgDir: candidate };
-          }
+          if (await Bun.file(file).exists()) return { pkgName, entryFile: file, pkgDir: candidate };
         }
       }
       // A matched prefix with nothing on disk stops here, so a shorter prefix cannot resolve somewhere unrelated.
@@ -180,8 +159,7 @@ const resolveNodePackageExport = async (workspaceRoot: string, specifier: string
     if (!rel?.startsWith(".")) return null;
     const entryFile = await resolveFileCandidate(path.resolve(pkgDir, rel));
     if (!entryFile) return null;
-    const pkgEntryName = specifier;
-    return { pkgName: pkgEntryName, entryFile, pkgDir: path.dirname(entryFile), preserveFilePath: true };
+    return { pkgName: specifier, entryFile, pkgDir: path.dirname(entryFile), preserveFilePath: true };
   } catch {
     return null;
   }
@@ -278,8 +256,6 @@ interface ImportStatement {
   end: number;
   clause: string;
   specifier: string;
-  trailingSemicolon: boolean;
-  raw: string;
 }
 
 const findImportStatements = (source: string): ImportStatement[] => {
@@ -297,15 +273,11 @@ const findImportStatements = (source: string): ImportStatement[] => {
     if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
     const importClause = statement.importClause;
     if (!importClause) continue;
-    const statementStart = statement.getStart(sourceFile);
-    const statementEnd = statement.end;
     statements.push({
-      start: statementStart,
-      end: statementEnd,
+      start: statement.getStart(sourceFile),
+      end: statement.end,
       clause: source.slice(importClause.getStart(sourceFile), importClause.end).trim(),
       specifier: statement.moduleSpecifier.text,
-      trailingSemicolon: source.slice(statement.moduleSpecifier.end, statement.end).includes(";"),
-      raw: source.slice(statementStart, statementEnd),
     });
   }
   return statements;
@@ -343,9 +315,7 @@ const parseImportClause = (clause: string): ParsedClause | null => {
   if (rest.startsWith("{")) {
     const close = rest.indexOf("}");
     if (close === -1) return null;
-    const inner = rest.slice(1, close);
-    parsed.named = parseNamedList(inner);
-    return parsed;
+    parsed.named = parseNamedList(rest.slice(1, close));
   }
   return parsed;
 };
@@ -357,9 +327,7 @@ const rewriteSingleStatement = (stmt: ImportStatement, map: BarrelExportMap): st
   if (clause.namespaceImport) return null;
   // Pure type imports are erased at build; leave them alone.
   if (clause.typeOnly && !clause.defaultImport) return null;
-  if (!clause.named || clause.named.length === 0) {
-    return null;
-  }
+  if (!clause.named?.length) return null;
 
   const remaining: NamedItem[] = [];
   const rewrites = new Map<string, NamedItem[]>();
@@ -381,23 +349,17 @@ const rewriteSingleStatement = (stmt: ImportStatement, map: BarrelExportMap): st
   if (rewrites.size === 0) return null;
 
   const lines: string[] = [];
-  const tail = ";";
-
-  if (shouldPreserveBarrelSideEffects(stmt.specifier)) {
-    lines.push(`import "${stmt.specifier}"${tail}`);
-  }
+  if (shouldPreserveBarrelSideEffects(stmt.specifier)) lines.push(`import "${stmt.specifier}";`);
 
   if (clause.defaultImport || remaining.length > 0) {
     const parts: string[] = [];
     if (clause.defaultImport) parts.push(clause.defaultImport);
-    if (remaining.length > 0) {
-      parts.push(`{ ${remaining.map(serializeNamedItem).join(", ")} }`);
-    }
-    lines.push(`import ${parts.join(", ")} from "${stmt.specifier}"${tail}`);
+    if (remaining.length > 0) parts.push(`{ ${remaining.map(serializeNamedItem).join(", ")} }`);
+    lines.push(`import ${parts.join(", ")} from "${stmt.specifier}";`);
   }
 
   for (const [subpath, items] of rewrites) {
-    lines.push(`import { ${items.map(serializeNamedItem).join(", ")} } from "${subpath}"${tail}`);
+    lines.push(`import { ${items.map(serializeNamedItem).join(", ")} } from "${subpath}";`);
   }
 
   return lines.join("\n");

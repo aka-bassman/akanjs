@@ -70,8 +70,7 @@ export async function createExternalizeFrameworkPlugin(options: ExternalizeFrame
       }
     }
     for (const { pkg, entryFile } of rootEntries) {
-      if (spec !== pkg && !spec.startsWith(`${pkg}/`)) continue;
-      if (spec === pkg) continue; // the package root itself — let Bun's tsconfig resolver handle it
+      if (!spec.startsWith(`${pkg}/`)) continue;
       const suffix = spec.slice(pkg.length + 1);
       const pkgDir = path.dirname(path.resolve(workspaceRoot, entryFile));
       const candidate = path.join(pkgDir, suffix);
@@ -98,13 +97,9 @@ export async function createExternalizeFrameworkPlugin(options: ExternalizeFrame
           if (spec.startsWith(prefix)) return { path: spec, external: true };
         }
         // Bun resolves only root tsconfig `paths`, so a rewritten `akanjs/client/cookie` would silently stay external.
-        for (const prefix of includePrefixes) {
-          if (!spec.startsWith(prefix)) continue;
-          const resolved = await resolveWorkspaceSubpath(spec);
-          if (resolved) return { path: resolved };
-          return undefined;
-        }
-        return undefined;
+        if (!includePrefixes.some((prefix) => spec.startsWith(prefix))) return undefined;
+        const resolved = await resolveWorkspaceSubpath(spec);
+        return resolved ? { path: resolved } : undefined;
       });
     },
   };
