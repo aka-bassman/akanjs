@@ -39,4 +39,3 @@ export interface FindQueryOption<Sort = never, Obj = any> {
   sample?: boolean;
   select?: DocumentProjection<Obj>;
 }
-export type { SchemaOf } from "./documentSchema";
