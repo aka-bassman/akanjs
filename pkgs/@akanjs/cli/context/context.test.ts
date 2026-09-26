@@ -603,8 +603,7 @@ describe("AgentRunner", () => {
     expect(agents).toContain("akan repair generated");
     expect(agents).toContain("<!-- akan:agent:start -->");
     expect(agents).toContain("<!-- akan:agent:end -->");
-    // The conventions and onboarding guides ship in the package, so the block carries both, stamped with the
-    // release that rendered it. A workspace outside the framework monorepo gets onboarding too.
+    // Both guides ship in the package, stamped with the rendering release; a non-monorepo workspace gets onboarding too.
     expect(agents).toContain("Never hand-order Tailwind classes");
     expect(agents).toContain("Quick Decision Matrix");
     expect(agents).toMatch(/<!-- akan:agent:version \S+ -->/);
@@ -670,7 +669,6 @@ describe("AgentRunner", () => {
     tempRoots.push(root);
     const runner = new AgentRunner();
 
-    // A workspace with no scaffolded samples and a custom index page.
     await writeText(`${root}/apps/demo/page/_index.tsx`, "export default function Page() {\n  return null;\n}\n");
 
     await runner.install(workspace, ["agents-md"]);

@@ -35,11 +35,7 @@ import { RepairRunner } from "../repair/repair.runner";
 import { WorkflowRunner } from "../workflow/workflow.runner";
 import { createCliWorkflowStepRegistry } from "./context.workflowRegistry";
 
-/**
- * What a failed tool tells the model. Absolute paths are folded to a workspace-relative form: the
- * message crosses to whoever is driving the agent, and a host path names a filesystem the model has no
- * business enumerating.
- */
+// Host paths fold to `<workspace>/`: they name a filesystem the model driving the agent has no business enumerating.
 const toolErrorText = (error: unknown): string => {
   const message = error instanceof Error ? error.message : String(error);
   return message.replace(/\/(?:[^\s"'/]+\/)*(?=(?:pkgs|apps|libs|infra)\/)/g, "<workspace>/");
@@ -113,8 +109,7 @@ export class ContextRunner extends runner("context") {
     return format === "json" ? jsonText(result) : renderDoctorText(result);
   }
 
-  // `akan doctor --ios`: proactively flag mobile-config problems that otherwise only surface as an
-  // opaque device-signing failure — chiefly placeholder bundle ids that Apple's portal already claims.
+  // Placeholder bundle ids otherwise surface only as an opaque device-signing failure.
   async #doctorIos(workspace: Workspace, format: "text" | "json") {
     const appNames = await workspace.getApps();
     const diagnostics: { severity: "warning" | "error"; code: string; path: string; message: string }[] = [];
@@ -157,8 +152,7 @@ export class ContextRunner extends runner("context") {
     return await this.#installJsonMcp(workspace, target, { force, mode });
   }
 
-  // Cursor (.cursor/mcp.json) and Claude Code (.mcp.json) share a JSON `mcpServers` map, so the merge
-  // logic is identical: keep every existing server and upsert only the "akan" entry.
+  // Cursor (.cursor/mcp.json) and Claude Code (.mcp.json) share a JSON `mcpServers` map.
   async #installJsonMcp(
     workspace: Workspace,
     target: "cursor" | "claude",
@@ -185,7 +179,7 @@ export class ContextRunner extends runner("context") {
     return configPath;
   }
 
-  // Codex (.codex/config.toml) is TOML; we upsert only the [mcp_servers.akan] table as text.
+  // Codex (.codex/config.toml) is TOML, so only the [mcp_servers.akan] table is upserted, as text.
   async #installCodexMcp(workspace: Workspace, { force, mode }: { force: boolean; mode: AkanMcpMode }) {
     const existing = (await workspace.exists(codexMcpConfigPath)) ? await workspace.readFile(codexMcpConfigPath) : "";
     const merged = upsertCodexMcpServerBlock(existing, createAkanCodexMcpServerBlock(mode), { force });
@@ -352,9 +346,7 @@ export class ContextRunner extends runner("context") {
       if (framing === "newline") process.stdout.write(`${payload}\n`);
       else process.stdout.write(`Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`);
     };
-    // `id` is spelled `?? null` in both: JSON-RPC 2.0 §5 requires the member on every response, and
-    // `JSON.stringify` drops an `undefined` one silently, which produced an id-less error object that
-    // strict clients reject as malformed.
+    // `id ?? null`: JSON-RPC 2.0 §5 requires the member, and `JSON.stringify` silently drops an undefined one.
     const respond = (id: JsonRpcRequest["id"], result: unknown, framing: McpFraming) => {
       writeMessage({ jsonrpc: "2.0", id: id ?? null, result }, framing);
     };
@@ -390,12 +382,7 @@ export class ContextRunner extends runner("context") {
       }
       throw new Error(`Unknown resource: ${uri}`);
     };
-    /**
-     * One request, answered or deliberately not. Every throw below is converted into a JSON-RPC error
-     * rather than propagated: the only caller is the stdin loop, so an escaping rejection took the whole
-     * server down on one bad `resources/read` uri — and the CLI's `unhandledRejection` printer wrote the
-     * message to *stdout*, which is the protocol channel, before exiting.
-     */
+    // Every throw becomes a JSON-RPC error: an escaping rejection killed the server, printed to stdout (the protocol).
     const handleRequest = async (request: JsonRpcRequest, framing: McpFraming) => {
       const params = request.params ?? {};
       if (request.method === "initialize") {
@@ -434,10 +421,7 @@ export class ContextRunner extends runner("context") {
             framing,
           );
         } catch (error) {
-          // A tool that ran and failed reports `isError` in its *result*, not a JSON-RPC error: a
-          // protocol error is delivered to the client, not to the model, so the model never learns why
-          // its call failed and repeats it. Host paths are stripped for the same reason they are not
-          // published in a catalogue.
+          // `isError` in the result, not a JSON-RPC error: a protocol error never reaches the model, which then retries.
           respond(request.id, { content: [{ type: "text", text: toolErrorText(error) }], isError: true }, framing);
         }
       } else if (request.method === "resources/list") {
@@ -448,11 +432,7 @@ export class ContextRunner extends runner("context") {
         respondError(request.id, -32601, `Unknown method: ${request.method}`, framing);
       }
     };
-    /**
-     * A message with no `id` is a notification, and JSON-RPC 2.0 §4.1 forbids answering one at all —
-     * `notifications/cancelled` arrives whenever a client times out a call, so replying turned routine
-     * traffic into a stream of malformed error objects.
-     */
+    // No `id` is a notification (e.g. `notifications/cancelled`), which JSON-RPC 2.0 §4.1 forbids answering.
     const handle = async (request: JsonRpcRequest, framing: McpFraming) => {
       if (request.id === undefined || request.id === null) return;
       try {
@@ -461,10 +441,7 @@ export class ContextRunner extends runner("context") {
         respondError(request.id, -32603, error instanceof Error ? error.message : String(error), framing);
       }
     };
-    /**
-     * Undecodable input is answered, never thrown. The framing is known but the id is not, so §5 puts
-     * `null` there; a client that crashed mid-write is otherwise enough to end the session.
-     */
+    // Undecodable input is answered with a `null` id (§5), never thrown: a half-written frame must not end the session.
     const handleFrame = async (payload: string, framing: McpFraming) => {
       let request: JsonRpcRequest;
       try {
