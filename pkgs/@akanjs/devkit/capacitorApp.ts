@@ -63,8 +63,7 @@ export type IosRunFailureKind =
   | "simulator-runtime"
   | "unknown";
 
-// Recent iOS SDKs (iOS 18+) split SwiftUI into a SwiftUICore dylib that does not exist on older
-// runtimes, so an app built against them dyld-crashes at launch on an iOS <18 simulator/device.
+// iOS 18+ SDKs split SwiftUI into a SwiftUICore dylib older runtimes lack, so such a build dyld-crashes below iOS 18.
 export const SWIFTUICORE_MIN_IOS_MAJOR = 18;
 
 export interface IosRunFailureClassification {
@@ -123,11 +122,6 @@ interface MaterializeCapacitorConfigOptions {
 }
 type MobilePlatform = "ios" | "android";
 
-/**
- * `AppExecutor.spawn`'s own options plus the two the Capacitor config is written from before the spawn:
- * the platform the command targets, and — for iOS — whether it targets a device or a simulator, which
- * decide the `capacitor.config.json` that command reads.
- */
 type SpawnMobileOptions = Parameters<AppExecutor["spawn"]>[2] & {
   platform?: MobilePlatform;
   iosRunTargetKind?: IosRunTargetKind;
@@ -139,8 +133,7 @@ export interface LocalDevHostResolution {
   candidates: { name: string; address: string }[];
 }
 
-// Interface-name prefixes that are almost never the routable LAN NIC a physical device can reach:
-// bridges (Thunderbolt/USB), tunnels, AirDrop/awrl, VM/container virtual adapters.
+// Almost never a LAN NIC a device can reach: bridges, tunnels, AirDrop/awdl, VM and container adapters.
 const virtualInterfacePrefixes = [
   "bridge",
   "utun",
@@ -165,8 +158,7 @@ const isPrivateLanIpv4 = (address: string): boolean => {
   return Number.isFinite(secondOctet) && secondOctet >= 16 && secondOctet <= 31;
 };
 
-// Higher = more likely to be the reachable LAN address. Link-local (169.254) is never routable;
-// virtual/bridge interfaces are demoted below real NICs; private-LAN ranges get a small boost.
+// Link-local (169.254) is never routable.
 const scoreDevHostCandidate = (name: string, address: string): number => {
   const lowerName = name.toLowerCase();
   let score = 0;
@@ -177,9 +169,7 @@ const scoreDevHostCandidate = (name: string, address: string): number => {
   return score;
 };
 
-// Pick the dev-server host a physical device should connect to. An explicit override always wins;
-// otherwise rank non-internal IPv4 interfaces so a down/virtual interface (e.g. an inactive
-// Thunderbolt bridge enumerated first) never shadows a real LAN NIC. Deterministic tie-break.
+// Ranked, not first-found: an inactive Thunderbolt bridge is often enumerated before the real LAN NIC.
 export const selectLocalDevHost = (
   interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]>,
   { override }: { override?: string } = {},
@@ -227,8 +217,7 @@ const dedupeIosRunTargets = (targets: IosRunTarget[]) => {
   return [...byKey.values()];
 };
 
-// Normalize a simctl runtime — either the JSON key ("com.apple.CoreSimulator.SimRuntime.iOS-18-2")
-// or a per-device `runtimeIdentifier` / text header ("iOS 18.2") — into a "iOS 18.2" display string.
+// simctl spells a runtime as a JSON key ("com.apple.CoreSimulator.SimRuntime.iOS-18-2") or as "iOS 18.2".
 const formatSimctlRuntime = (key?: string): string | undefined => {
   if (!key) return undefined;
   if (/^(iOS|watchOS|tvOS|visionOS)\s+[\d.]+$/i.test(key)) return key;
@@ -237,8 +226,6 @@ const formatSimctlRuntime = (key?: string): string | undefined => {
   return `${match[1]} ${match[2]}${match[3] ? `.${match[3]}` : ""}`;
 };
 
-// Extract the major OS version from a runtime display string ("iOS 18.2" → 18). Undefined for
-// physical devices (no runtime) or unparseable values.
 export const parseIosRuntimeMajor = (runtime?: string): number | undefined => {
   const major = runtime?.match(/(\d+)/)?.[1];
   if (major === undefined) return undefined;
@@ -246,9 +233,6 @@ export const parseIosRuntimeMajor = (runtime?: string): number | undefined => {
   return Number.isNaN(parsed) ? undefined : parsed;
 };
 
-// Rank for default-target ordering: ready targets (booted simulator / connected device) first, then
-// physical devices, then newer simulator runtimes. Fixes the old ascending-runtime order that made a
-// stale iOS 17.x simulator the default pick.
 const iosRunTargetRank = (target: IosRunTarget): number => {
   const state = target.state?.toLowerCase() ?? "";
   const ready = state.includes("booted") || state.includes("connected") || state.includes("available") ? 1000 : 0;
@@ -515,9 +499,8 @@ export function sanitizeIosNativeRunEnv(env: MobileCommandEnv): MobileCommandEnv
   return Object.fromEntries(Object.entries(env).filter(([key]) => !iosNativeBlockedEnvKeys.has(key)));
 }
 
-// Bundle IDs that ship as scaffold placeholders (or use an obviously generic org segment) and are
-// almost always already claimed on Apple's developer portal, so device signing fails with
-// "cannot be registered to your development team". A unique reverse-DNS id fixes it.
+// Placeholder bundle IDs are already claimed on Apple's portal, so device signing fails with "cannot be registered
+// to your development team".
 export const PLACEHOLDER_APP_IDS = [
   "com.myapp.app",
   "com.myorg.myapp",
@@ -750,8 +733,6 @@ export class CapacitorApp {
   readonly iosProjectPath = "ios/App";
   readonly androidRootPath = "android";
   readonly androidAssetsPath = "android/app/src/main/assets";
-  //* Accumulates iOS entitlements contributed by deep links and plugins during a prepare,
-  //* then flushed to App/App.entitlements once (see #flushIosEntitlements).
   #iosEntitlements: Record<string, string | string[]> = {};
   constructor(
     private readonly app: AppExecutor,
@@ -1003,8 +984,6 @@ export class CapacitorApp {
   }
 
   async #updateAndroidBuildTypes() {
-    //keystore 기본 설정 및 debug, release 설정
-
     const appGradle = await FileEditor.create(path.join(this.app.cwdPath, this.androidRootPath, "app/build.gradle"));
     const buildTypesBlock = `
       debug {
@@ -1048,7 +1027,6 @@ export class CapacitorApp {
     await this.#prepareAndroid({ operation: "release", env, regenerate });
     await this.#assertAndroidReleaseSigningConfig();
     await this.#updateAndroidBuildTypes();
-    //윈도우는 gradlew.bat 사용
     const isWindows = process.platform === "win32";
     const gradleCommand = isWindows ? "gradlew.bat" : "./gradlew";
 
@@ -1194,8 +1172,7 @@ export class CapacitorApp {
     await Bun.write(path.join(this.targetRoot, "capacitor.config.json"), content);
     return content;
   }
-  // An explicit override always wins; an emulator/simulator run reaches the host machine through a
-  // loopback alias (10.0.2.2 / localhost), so LAN detection only applies to physical-device runs.
+  // Emulators and simulators reach the host through a loopback alias (10.0.2.2 / localhost); only devices need the LAN.
   async #resolveLocalDevHost({
     override,
     platform,
@@ -1219,8 +1196,6 @@ export class CapacitorApp {
     }
     return resolution;
   }
-  // Surface the live-reload URL a physical device must reach, and warn when auto-detection landed on
-  // a likely-unreachable host so a blank WebView is not mistaken for an app bug.
   #logDevHostResolution(resolution: LocalDevHostResolution, commandEnv: MobileCommandEnv) {
     this.app.log(`Mobile live-reload server: ${this.#localCsrUrl(resolution.host, commandEnv)}`);
     if (resolution.source === "override" || resolution.source === "platform") return;
@@ -1481,7 +1456,6 @@ export class CapacitorApp {
   #addIosEntitlements(entitlements: Record<string, string | string[]>) {
     Object.assign(this.#iosEntitlements, entitlements);
   }
-  //* Generic in-place transform of ios/App/App/AppDelegate.swift (no-op if the file is absent).
   //* Feature-specific native wiring (e.g. Firebase) lives in plugins, not the framework.
   async #editIosAppDelegate(transform: (content: string) => string) {
     const appDelegatePath = path.join(this.app.cwdPath, this.iosProjectPath, "App/AppDelegate.swift");
@@ -1520,8 +1494,6 @@ export class CapacitorApp {
     }
     return lines;
   }
-  //* Write the accumulated iOS entitlements (from deep links + plugins) to App/App.entitlements
-  //* once per prepare. Skipped entirely when nothing contributed entitlements.
   async #flushIosEntitlements() {
     if (Object.keys(this.#iosEntitlements).length === 0) return;
     const entitlementsRelPath = "App/App.entitlements";

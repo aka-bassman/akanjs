@@ -60,9 +60,8 @@ const SSR_RENDER_EXTERNALS = [
   "react-server-dom-webpack/client.browser",
 ] as const;
 
-// Identifier mangling renames every class, and `this.constructor.name` is what names a service's logger, an
-// `Exception`, a guard, and every frame of a stack trace — for ~2% of boot on server bytes nothing downloads.
-// `minify.keepNames` typechecks and does nothing as of Bun 1.4.2.
+// Mangling renames classes, and `this.constructor.name` names loggers, exceptions and guards; `minify.keepNames`
+// is a no-op as of Bun 1.4.2.
 export const AKAN_BACKEND_MINIFY = { whitespace: true, syntax: true, identifiers: false } as const;
 
 export const AKAN_OPTIONAL_BACKEND_EXTERNALS = [
@@ -219,8 +218,7 @@ export class ApplicationBuildRunner {
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
     } satisfies Omit<Bun.BuildConfig, "entrypoints">;
     const backendConfig = { ...sharedConfig, plugins: [this.#createExternalSpecifiersPlugin(externalLibs)] };
-    //* Built apart so main.js keeps its own module copies; splitting moves lazy vendor `import()`s out of the boot
-    //* parse (minimal: server.js import 79ms → 24ms, 59MB → 36MB RSS).
+    //* Built apart so main.js keeps its own module copies; splitting moves lazy vendor `import()`s out of the boot parse.
     const [mainResult, serverResult] = [
       await this.#buildOrThrow("backend", { ...backendConfig, entrypoints: [backendEntryPoints[0]] }),
       await this.#buildOrThrow("backend", { ...backendConfig, entrypoints: [backendEntryPoints[1]], splitting: true }),
