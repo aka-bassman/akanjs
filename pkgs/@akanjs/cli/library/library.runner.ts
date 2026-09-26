@@ -38,11 +38,8 @@ export class LibraryRunner extends runner("library") {
     return { origin: LibraryRunner.libraryRepository, sha: sha.trim().slice(0, 12) };
   }
 
-  /**
-   * Re-runnable: the copy overwrites the library source, which is the point, but the testing env is left
-   * alone once it exists — it holds the installing workspace's own values, not the origin's. The commit
-   * is skipped when nothing changed, so `git commit` is never handed an empty index.
-   */
+  // Re-runnable: the source is overwritten, the testing env (the installer's own values) is kept, and an empty
+  // index skips the commit.
   async installLibrary(workspace: Workspace, libName: string) {
     const source =
       (await this.#copyInstalledLibrary(workspace, libName)) ??
