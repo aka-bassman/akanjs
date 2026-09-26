@@ -1,14 +1,6 @@
 import type { CommandCls } from "@akanjs/devkit/commandDecorators";
 
-/**
- * Lazy loaders for every CLI command module, keyed by module id.
- *
- * Loading all of them costs ~173MB resident because each pulls its own stack (typescript, ssh2,
- * @trapezedev/project, the tailwind stack). `akan start` needs one of them, and
- * a dev sandbox holds that process for its whole session — so the entry resolves `argv[2]` through
- * {@link CommandManifest} and imports only the owning module. The manifest is generated at build time
- * from these same loaders, so it can never name a module that does not exist here.
- */
+// Lazy: each module pulls its own heavy stack, and `akan start` holds its process for the whole dev session.
 export const commandModules = {
   workspace: async () => (await import("./workspace/workspace.command")).WorkspaceCommand,
   agent: async () => (await import("./agent/agent.command")).AgentCommand,
