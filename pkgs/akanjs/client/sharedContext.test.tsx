@@ -11,7 +11,6 @@ const sources = (dir: string): string[] =>
 
 describe("sharedContext", () => {
   test("a second evaluation of the same module gets the object the first one made", () => {
-    // What two bundled copies of a module do: each runs it, and only one context may survive that.
     expect(sharedContext("interningTest", 0)).toBe(sharedContext("interningTest", 0));
     expect(sharedContext("interningTest", 0)).not.toBe(sharedContext("otherTest", 0));
   });

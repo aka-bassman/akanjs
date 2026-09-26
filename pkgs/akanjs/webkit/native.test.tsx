@@ -304,7 +304,6 @@ describe("native hooks", () => {
     const hook = renderHook(() => useCamera());
 
     expect(await hook.current.getPhoto("prompt")).toEqual({ dataUrl: "data:image/png;base64,test" });
-    // The OS draws this sheet from strings, so a hard-coded label shipped one language to every visitor.
     expect(cameraState.promptLabels).toEqual({
       promptLabelHeader: "base.cameraPromptHeader",
       promptLabelPhoto: "base.cameraPromptPhoto",
