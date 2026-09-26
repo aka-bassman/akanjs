@@ -6,7 +6,6 @@ import { collectRecipeSources, findInlineRecipeDuplicates, type RecipeInfo, scan
 
 const byName = (recipes: RecipeInfo[], name: string) => recipes.find((recipe) => recipe.name === name);
 
-// Mirrors pkgs/akanjs/ui/recipe/ (framework) — two recipes in one source, variant + size surfaces.
 // The scanner is per-source, so a folder of one-recipe files and a legacy multi-recipe file both parse.
 const FRAMEWORK = `
 import { recipe, tv } from "./recipeFactory";
@@ -24,7 +23,6 @@ export type ButtonVariants = NonNullable<Parameters<typeof buttonRecipe>[0]>;
 export const badgeRecipe = recipe(tv({ base: "rounded-full", variants: { variant: { default: "bg-muted", info: "bg-info" } } }));
 `;
 
-// Mirrors apps/minimal/ui/Recipe/ shapes — base-only (no variants) + single-variant, with per-export JSDoc.
 const APP = `
 import { recipe, tv } from "akanjs/ui";
 /** 전체 화면 배경/전경. 페이지 루트 컨테이너. */
@@ -97,12 +95,7 @@ describe("scanRecipes", () => {
   });
 });
 
-// Recipes moved from a flat `ui/Recipe.ts` to a `ui/Recipe/` folder. Three consumers (the AGENTS.md recipe
-// index, the recipeGate lint, the MCP module context) go through collectRecipeSources, and every one of them
-// degrades silently — empty list, no error — if it stops finding sources. These tests are that alarm.
-// The advisory exists to catch a look being re-authored inline. Requiring every base token only matched a
-// verbatim copy of the whole base — the one shape that never occurs in practice — so it reported nothing on
-// the near-copies it was built for, and silently, being advisory. These tests pin the ratio behaviour.
+// Requiring every base token matched only a verbatim copy, which never occurs; these tests pin the ratio instead.
 describe("findInlineRecipeDuplicates", () => {
   // 8 tokens → ceil(8 * 0.7) = 6 must be reproduced.
   const EIGHT = `export const cardRecipe = recipe(tv({ base: "flex rounded-box border border-border bg-card p-4 text-card-foreground shadow-sm" }));`;
@@ -135,6 +128,7 @@ describe("findInlineRecipeDuplicates", () => {
   });
 });
 
+// The AGENTS.md index, the recipeGate lint and the MCP module context all degrade silently if this finds nothing.
 describe("collectRecipeSources", () => {
   const seed = async (files: Record<string, string>) => {
     const root = await mkdtemp(path.join(tmpdir(), "akan-recipe-"));

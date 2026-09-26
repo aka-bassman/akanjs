@@ -356,8 +356,7 @@ describe("AkanAppConfig", () => {
     expect(config.getMissingDatabaseModeDependencySpecs("cluster")).toEqual([
       `postgres@${runtimeDependencies.postgres}`,
     ]);
-    // The workspace-root install covers the toolchain/runtime plus every app Capacitor plugin
-    // (deduped — "@capacitor/core" appears in both source lists).
+    // The workspace-root install covers the toolchain plus every app Capacitor plugin, deduped (`@capacitor/core`).
     const expectedMobilePackages: string[] = [
       "@capacitor/cli",
       "@capacitor/core",

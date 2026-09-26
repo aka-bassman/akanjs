@@ -50,7 +50,6 @@ const makeSys = async (root: string, member: "apps" | "libs", name: string, extr
     await write(path.join(root, member, name, relative), content);
 };
 
-/** A workspace with two apps, one shared library, and a subspace that serves only the first app. */
 const makeMirror = async (servedApp: string, privateApp: string, libName: string) => {
   const workRoot = await makeTempRoot();
   const wsRoot = path.join(workRoot, "workspace");
