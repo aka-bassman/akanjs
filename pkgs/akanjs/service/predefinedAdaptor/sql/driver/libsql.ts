@@ -1,22 +1,16 @@
 import type { Client as LibsqlClient, Transaction as LibsqlTransaction } from "@libsql/client";
 import type { AkanSqlClient, AkanSqlStatement } from "../types";
 import { toLibsqlArgs } from "../values";
-import { isReadOnlyStatement, type SqliteWriteTurn } from "./bunSqlite";
-
-const openTurn: SqliteWriteTurn = () => null;
+import { openTurn, type SqliteWriteTurn, waitForTurn } from "./bunSqlite";
 
 export class LibsqlStatement implements AkanSqlStatement {
-  readonly #writes: boolean;
+  readonly #turn: () => Promise<void>;
   constructor(
     private readonly client: LibsqlClient | LibsqlTransaction,
     private readonly sql: string,
-    private readonly writeTurn: SqliteWriteTurn = openTurn,
+    writeTurn: SqliteWriteTurn = openTurn,
   ) {
-    this.#writes = !isReadOnlyStatement(sql);
-  }
-  async #turn() {
-    if (!this.#writes) return;
-    for (let turn = this.writeTurn(); turn; turn = this.writeTurn()) await turn;
+    this.#turn = waitForTurn(sql, writeTurn);
   }
   async run(...params: unknown[]) {
     await this.#turn();
