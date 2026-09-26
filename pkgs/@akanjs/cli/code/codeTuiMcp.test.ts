@@ -6,7 +6,6 @@ import { CodeTuiMcp, type CodeTuiMcpView } from "./CodeTuiMcp";
 const file = "/repo/.akan/code/mcp.json";
 const globalFile = "/home/me/.akan/code/mcp.json";
 
-/** Declared in the workspace file unless a test says otherwise, which is the narrower of the two scopes. */
 const declared = (entry: CodeAgentMcpServerRef, patch: Partial<McpDeclaredServer> = {}): McpDeclaredServer => ({
   ref: entry,
   disabled: false,
@@ -41,7 +40,6 @@ const view = (patch: Partial<CodeTuiMcpView> = {}): CodeTuiMcpView => ({
 });
 
 describe("/mcp", () => {
-  /** "Declare once, reachable everywhere" only works if the listing says which of the two files a row is in. */
   test("each server says which file declares it, and both files are named", () => {
     const text = CodeTuiMcp.list(
       view({
@@ -80,14 +78,10 @@ describe("/mcp", () => {
     expect(text).toContain("unreachable — fetch failed");
   });
 
-  /**
-   * The session's tool allowlist is built once. A server added to the file afterwards is declared and not
-   * connected at the same time, and calling that state "broken" would send someone debugging their server.
-   */
+  // The session's tool allowlist is built once, so a server added to the file afterwards is declared but not connected.
   test("a server the file gained after this session started asks for a reload", () => {
     const text = CodeTuiMcp.list(view({ status: [live("github")], declared: [declared(ref("new"))] }));
     expect(text).toContain("declared · /mcp reload to connect");
-    // The live one is in no file any more, so its scope column is blank rather than a guess.
     expect(text).toMatch(/github\s+stdio\s+npx -y server-github\s+2 tools · removed from the file/);
   });
 
@@ -99,11 +93,9 @@ describe("/mcp", () => {
     const text = CodeTuiMcp.list(view({ declared: [declared(ref("off"), { disabled: true })] }));
     const row = text.split("\n").find((line) => line.startsWith("off"));
     expect(row).toContain("disabled in the file");
-    // Not "declared · /mcp reload to connect": reloading would connect nothing, the file having turned it off.
     expect(row).not.toContain("reload");
   });
 
-  /** A 401 is the server working: it answered, and it said who may call it. */
   test("a server asking for sign-in is not reported as broken", () => {
     const status = live("linear", { transport: "http", target: "https://x", tools: [], auth: "required" });
     const text = CodeTuiMcp.list(view({ status: [status], declared: [declared(ref("linear"))] }));
