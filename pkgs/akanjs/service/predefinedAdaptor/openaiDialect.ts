@@ -33,22 +33,9 @@ export interface OpenaiMessage {
   tool_call_id?: string;
 }
 
-/**
- * The OpenAI chat-completions wire format, which several providers speak — OpenAI's own endpoint, DeepSeek, and
- * every gateway that copied it. It lives apart from any one of them because a protocol fix belongs in one place:
- * the SSE tool-call assembly below is the subtle part, and two copies of it drift silently.
- *
- * `accepts` decides the shape of a user turn, and nothing else here reads it. A provider that takes no image gets
- * one string, exactly as before, because `AgentService.readable` has already reduced every attachment it cannot
- * read to a note in the text.
- */
+/** The chat-completions wire that OpenAI, DeepSeek and every gateway copying them speak. */
 export class OpenaiDialect {
-  /**
-   * The types this dialect's image part reads. Exact rather than an `image/*` prefix and declared apart from
-   * Anthropic's identical-looking set, because the two are each a provider's own list and only happen to agree:
-   * an unsupported one passed through is a refused *request*, not an unread attachment, so the safe direction is
-   * to name what is known to work and note the rest.
-   */
+  /** Apart from Anthropic's identical set: each is one provider's list, and an unlisted type is a refused request. */
   static readonly imageTypes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
   static requestBody(
@@ -82,8 +69,7 @@ export class OpenaiDialect {
 
   /** Context rides below the instructions framed as data — screen state must never read as directives. */
   static systemPrompt({ instructions, context }: LlmTurnRequest) {
-    // `AgentService.instructed` always supplies instructions, so this default stands only for an adaptor driven
-    // directly — it is a backstop, not the copy of the framework preamble to keep in sync.
+    // A backstop for direct use, not a copy of `AgentService.instructed`'s preamble to keep in sync.
     const base =
       instructions ??
       "You are an in-page assistant. Use the published tools to read and drive the screen the user is looking at.";
@@ -92,8 +78,7 @@ export class OpenaiDialect {
   }
 
   static providerMessages(message: AgentWireMessage, accepts?: LlmAccepts): OpenaiMessage[] {
-    // A compaction summary is what the model now remembers, not what the user just asked for — as a user turn it
-    // would read as the newest instruction and be answered instead of used.
+    // A system turn: as a user turn the compaction summary would read as the newest instruction and be answered.
     if (message.summary)
       return [
         {
@@ -130,15 +115,10 @@ export class OpenaiDialect {
     return [{ role: "user" as const, content: OpenaiDialect.userContent(message, accepts) }];
   }
 
-  /**
-   * Text attachments are labelled into the message, because a model handed two unlabelled documents can no longer
-   * cite either one. Images become their own parts only when the provider said it reads them; the dialect carries
-   * one as a `data:` URL, which is the same encoding whether the bytes were inlined or already addressable, so
-   * both carriers take one branch — the inlined bytes first, for the reason named at the branch.
-   */
   static userContent(message: AgentWireMessage, accepts?: LlmAccepts): string | OpenaiContentPart[] {
     const attachments = message.attachments ?? [];
     const notes: string[] = [];
+    // Labelled because a model handed two unlabelled documents can no longer cite either one.
     const blocks = attachments.flatMap((attachment) =>
       attachment.text ? [`--- attachment: ${attachment.name} (${attachment.mimeType}) ---\n${attachment.text}`] : [],
     );
@@ -148,8 +128,7 @@ export class OpenaiDialect {
           if (attachment.text) return [];
           // A media type may carry parameters (`image/jpeg; charset=…`), and a part matches on the essence alone.
           const mimeType = attachment.mimeType.split(";")[0].trim().toLowerCase();
-          // A non-image is `AgentService.readable`'s to degrade, and it already has: this adaptor accepts no
-          // document, so the only thing left to say here is which *images* have no part to ride in.
+          // `AgentService.readable` already degraded every non-image: this dialect accepts no document.
           if (!mimeType.startsWith("image/")) return [];
           if (!OpenaiDialect.imageTypes.has(mimeType)) {
             notes.push(
@@ -157,10 +136,7 @@ export class OpenaiDialect {
             );
             return [];
           }
-          // Bytes beat an address when a host sent both: it already paid for them on the way in, and the address it
-          // also sent is the one it renders — which the default storage backend serves on a path only the app can
-          // resolve. Picking that costs a confident answer about a picture nothing fetched; picking the bytes costs
-          // one hop that already carries them.
+          // Bytes beat a URL: the default storage serves a path only the app can resolve.
           const url = attachment.data ? `data:${mimeType};base64,${attachment.data}` : (attachment.url ?? "");
           return url ? [{ type: "image_url" as const, image_url: { url } }] : [];
         });
@@ -169,11 +145,7 @@ export class OpenaiDialect {
     return [...(text ? [{ type: "text" as const, text }] : []), ...images];
   }
 
-  /**
-   * The dialect streams `data: {chunk}` SSE lines ending with `data: [DONE]`. Tool calls arrive fragmented — the
-   * first fragment of an index carries id/name, later ones append to the arguments string — so they are assembled
-   * by index and parsed once at the end; only assistant text is worth reporting as it arrives.
-   */
+  //* Tool calls stream as fragments: an index's first carries id/name, later ones append to the arguments string.
   static async consumeStream(
     body: ReadableStream<Uint8Array>,
     onDelta: (delta: string) => void,
@@ -224,10 +196,7 @@ export class OpenaiDialect {
     };
   }
 
-  /**
-   * The ceiling wins over the calls that did arrive. A turn the provider cut short is one whose last call may be
-   * missing, so running the batch it did finish is acting on half an intention.
-   */
+  /** The ceiling wins over the calls that did arrive: a cut-off turn's last call may be missing. */
   static stopOf(finish: string | null | undefined, calls: number): LlmTurnAnswer["stop"] {
     if (finish === "length") return "length";
     return finish === "tool_calls" || calls ? "toolUse" : "end";
@@ -258,10 +227,7 @@ export class OpenaiDialect {
     }
   }
 
-  /**
-   * The dialect answers a refusal as `{ error: { message } }`, and that sentence is the useful half — a request
-   * past the context window says exactly which limit it passed.
-   */
+  /** The dialect refuses as `{ error: { message } }`, and that sentence names the limit a long prompt passed. */
   static async reasonOf(response: Response): Promise<string> {
     try {
       const body = (await response.json()) as { error?: { message?: unknown } | string };

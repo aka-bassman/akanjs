@@ -4,17 +4,8 @@ import { LlmOverflow } from "./llmOverflow";
 import { type OpenaiAnswer, OpenaiDialect } from "./openaiDialect";
 
 /**
- * The OpenAI chat-completions dialect, pointed at a host — and the framework's default fill for `LlmAdaptorRole`.
- *
- * One class rather than one per vendor: DeepSeek, Groq, Together, OpenRouter, Ollama and a self-hosted vLLM all
- * serve this same wire, so what distinguishes them is `option.setLlm({ host, model })` and not a protocol. A
- * provider that speaks its own wire — Anthropic's blocks, Bedrock's signed requests — is a different adaptor
- * class, in this package or in the app's own `srvkit/`, applied with
- * `option.applyAdaptor(LlmAdaptorRole, TheClass)`.
- *
- * `model` is required and has no default. A default would be a model name that ages out of the provider's
- * catalogue into a 404 at the first turn, and — worse — it would decide the vision claim below on the app's
- * behalf.
+ * The default `LlmAdaptorRole` fill, for every host serving the chat-completions wire. `model` has no default: one
+ * would age into a 404 and decide the vision claim on the app's behalf.
  */
 export class OpenaiLlm
   extends adapt("akanOpenaiLlm" as const, ({ use }) => ({
@@ -33,13 +24,7 @@ export class OpenaiLlm
     return this.llmOption.contextWindow ? { window: this.llmOption.contextWindow } : {};
   }
 
-  /**
-   * OpenAI's own endpoint takes image parts, so that is what is claimed for the default host. A host the app
-   * named is a gateway this class knows nothing about, and claiming vision for one is the worst guess available:
-   * the bytes reach a model that cannot decode them and the whole turn dies on a 400, where text-only degrades
-   * them to a note the model can repeat back. So a named host is text-only until `option.setLlm({ accepts })`
-   * says otherwise — as is the OpenAI model that reads no image.
-   */
+  /** A named host is text-only until `setLlm({ accepts })` says otherwise: undecodable bytes fail the whole turn. */
   get accepts(): LlmAccepts | undefined {
     if (this.llmOption.accepts) return this.llmOption.accepts;
     return this.llmOption.host ? undefined : { image: true };
@@ -68,9 +53,7 @@ export class OpenaiLlm
       );
       return { ...(await OpenaiDialect.consumeStream(body, onDelta)), model };
     } catch (error) {
-      // Logged here and rethrown rather than answered as `null`: a refusal the provider explained — a transcript
-      // past the context window is the common one — is the whole of what the user needs to read in the chat, and
-      // `null` would reach them as the one sentence that says a model is not configured.
+      // Rethrown, not `null`: the user needs the provider's refusal, and `null` reads as "no model is configured".
       this.logger.error(`LLM turn failed: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
@@ -99,7 +82,6 @@ export class OpenaiLlm
     return response.body;
   }
 
-  /** Carried on the `Err` so the chat prints the provider's own sentence rather than a status number. */
   static async refusal(host: string, response: Response): Promise<Error> {
     return LlmOverflow.refusal(host, response.status, await OpenaiDialect.reasonOf(response));
   }
