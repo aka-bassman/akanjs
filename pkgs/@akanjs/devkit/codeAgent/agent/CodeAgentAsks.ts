@@ -1,15 +1,10 @@
 import type { CodeAgentQuestion } from "akanjs/common";
 
-interface Deferred<T> {
-  resolve: (value: T) => void;
-  promise: Promise<T>;
-}
-
 // A question is a single slot (asking ends the turn); approvals queue, since two can arrive within one turn.
 // Idempotent by id: a second tab, or an answer after a refresh, for an already resolved id is ignored.
 export class CodeAgentAsks {
-  #question: { question: CodeAgentQuestion; deferred: Deferred<string> } | undefined;
-  readonly #approvals = new Map<string, Deferred<boolean>>();
+  #question: { question: CodeAgentQuestion; deferred: PromiseWithResolvers<string> } | undefined;
+  readonly #approvals = new Map<string, PromiseWithResolvers<boolean>>();
   #nextId = 0;
   //* Ids outlive the process on a suspending session, so a resumed worker must not hand out `q1` a second time.
   readonly #epoch = Date.now().toString(36);
@@ -34,7 +29,7 @@ export class CodeAgentAsks {
   openQuestion(question: CodeAgentQuestion) {
     // Replaces a pending question: its turn is gone, and leaving it unresolved would strand its caller.
     this.#question?.deferred.resolve("");
-    const deferred = CodeAgentAsks.#defer<string>();
+    const deferred = Promise.withResolvers<string>();
     this.#question = { question, deferred };
     return deferred.promise;
   }
@@ -48,7 +43,7 @@ export class CodeAgentAsks {
   }
 
   openApproval(id: string) {
-    const deferred = CodeAgentAsks.#defer<boolean>();
+    const deferred = Promise.withResolvers<boolean>();
     this.#approvals.set(id, deferred);
     return deferred.promise;
   }
@@ -67,13 +62,5 @@ export class CodeAgentAsks {
     this.#question = undefined;
     for (const deferred of this.#approvals.values()) deferred.resolve(false);
     this.#approvals.clear();
-  }
-
-  static #defer<T>(): Deferred<T> {
-    let resolve: (value: T) => void = () => {};
-    const promise = new Promise<T>((r) => {
-      resolve = r;
-    });
-    return { resolve, promise };
   }
 }

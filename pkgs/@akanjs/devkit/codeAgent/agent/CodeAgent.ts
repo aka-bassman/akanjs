@@ -405,7 +405,8 @@ export class CodeAgent {
     this.#session = session;
     session.subscribe((event) => {
       for (const body of this.#mapper.map(event)) this.#emit(body);
-      this.#emitContextUsage(event.type);
+      // Per turn, not per delta: the count only moves when a provider response lands.
+      if (event.type === "agent_end" || event.type === "compaction_end") this.#emitContextNow();
     });
     await session.bindExtensions({
       mode,
@@ -429,12 +430,6 @@ export class CodeAgent {
         };
       }),
     );
-  }
-
-  // Per turn, not per delta: the count only moves when a provider response lands.
-  #emitContextUsage(eventType: string) {
-    if (eventType !== "agent_end" && eventType !== "compaction_end") return;
-    this.#emitContextNow();
   }
 
   // Also on resume, or a session reopened at 80% shows no usage until its next turn ends.

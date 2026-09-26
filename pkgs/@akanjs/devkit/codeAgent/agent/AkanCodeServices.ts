@@ -36,20 +36,15 @@ export class AkanCodeServices {
   // The engine locks and rewrites `authPath` itself, so two `akan code` refreshing a token at once cannot clobber it.
   static async runtime(workspaceRoot: string, proxy: CodeAgentProxy | null = null) {
     mkdirSync(akanCodePaths.globalDir(), { recursive: true, mode: 0o700 });
-    if (proxy) {
-      //* Behind a proxy no real key may reach a request, so credentials live in a throwaway file.
-      const runtime = await ModelRuntime.create({
-        authPath: path.join(mkdtempSync(path.join(tmpdir(), "akan-code-proxy-")), "auth.json"),
-        modelsPath: akanCodePaths.modelsFile(),
-      });
-      await proxy.apply(runtime);
-      return runtime;
-    }
     const runtime = await ModelRuntime.create({
-      authPath: akanCodePaths.authFile(),
+      //* Behind a proxy no real key may reach a request, so credentials live in a throwaway file.
+      authPath: proxy
+        ? path.join(mkdtempSync(path.join(tmpdir(), "akan-code-proxy-")), "auth.json")
+        : akanCodePaths.authFile(),
       modelsPath: akanCodePaths.modelsFile(),
     });
-    await AkanEnvKeys.apply(runtime, workspaceRoot);
+    if (proxy) await proxy.apply(runtime);
+    else await AkanEnvKeys.apply(runtime, workspaceRoot);
     return runtime;
   }
 

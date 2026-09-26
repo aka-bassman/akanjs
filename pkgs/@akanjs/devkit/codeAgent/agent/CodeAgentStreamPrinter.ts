@@ -28,12 +28,8 @@ export class CodeAgentStreamPrinter {
         if (!this.#options.thinking) return;
         this.#streaming = true;
         return this.#write(chalk.dim(event.text));
-      case "message":
-        return;
       case "tool_start":
         return this.#line(chalk.cyan(`→ ${event.tool.title}`));
-      case "tool_progress":
-        return;
       case "tool_end":
         return this.#line(CodeAgentStreamPrinter.#toolEnd(event));
       case "session":
@@ -42,11 +38,12 @@ export class CodeAgentStreamPrinter {
         // Only `truncated` is said: a cut answer looks exactly like a finished one.
         if (event.stopReason === "truncated") return this.#line(chalk.yellow(codeAgentEventLabel(event)));
         return;
+      case "message":
+      case "tool_progress":
       case "turn_start":
       case "idle":
       case "queue":
       case "context":
-        return;
       // A stream has no rail to redraw; the pool already reports a child's start and cost as notices.
       case "subagent":
         return;
