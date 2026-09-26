@@ -68,7 +68,6 @@ export class DiLifecycle {
   readonly webProxies: WebProxyRegistration[] = [];
   readonly disabledModules = new Map<string, string>();
   readonly #predefinedAdaptor;
-  readonly #predefinedAdaptorRole = predefinedAdaptorRole;
   readonly #cascade = new CascadeRunner();
 
   get modules(): {
@@ -147,7 +146,7 @@ export class DiLifecycle {
         this.#middleware.set(middleware.refName, middleware);
       });
       lib.option.getAdaptorOverrides().forEach(({ role, adaptor }) => {
-        const roleKey = Object.entries(this.#predefinedAdaptorRole).find(([, roleCls]) => roleCls === role)?.[0];
+        const roleKey = Object.entries(predefinedAdaptorRole).find(([, roleCls]) => roleCls === role)?.[0];
         if (!roleKey) {
           this.logger.warn(`applyAdaptor got an unknown role "${role.refName}" — override ignored`);
           return;
@@ -283,11 +282,9 @@ export class DiLifecycle {
       .filter((refName) => !excluded.has(refName))
       .sort((a, b) => a.localeCompare(b));
     if (cascaded.length) {
-      const option = disableLibs.length
-        ? disableModules.length
-          ? "disableModules/disableLibs"
-          : "disableLibs"
-        : "disableModules";
+      const option = [disableModules.length && "disableModules", disableLibs.length && "disableLibs"]
+        .filter(Boolean)
+        .join("/");
       this.logger.info(`${option} also dropped ${cascaded.length} dependent module(s): ${cascaded.join(", ")}`);
     }
     return new Set(disabledReasons.keys());
@@ -452,13 +449,11 @@ export class DiLifecycle {
   }
 
   async runSchedulerInit() {
-    const scheduler = this.#getScheduler();
-    await scheduler._runInit();
+    await this.#getScheduler()._runInit();
   }
 
   async runSchedulerDestroy() {
-    const scheduler = this.#getScheduler();
-    await scheduler._runDestroy();
+    await this.#getScheduler()._runDestroy();
   }
 
   async destroyServices(): Promise<void> {
@@ -515,7 +510,7 @@ export class DiLifecycle {
   }
 
   getWebsocketAdaptor(): WebsocketAdaptor | undefined {
-    const adaptorCls = this.registry.adaptorRole.get(this.#predefinedAdaptorRole.websocket);
+    const adaptorCls = this.registry.adaptorRole.get(predefinedAdaptorRole.websocket);
     return adaptorCls ? (this.registry.adaptor.get(adaptorCls) as WebsocketAdaptor | undefined) : undefined;
   }
 
@@ -564,7 +559,7 @@ export class DiLifecycle {
   }
 
   #getScheduler(): Scheduler {
-    const adaptorCls = this.registry.adaptorRole.get(this.#predefinedAdaptorRole.schedule);
+    const adaptorCls = this.registry.adaptorRole.get(predefinedAdaptorRole.schedule);
     const scheduler = adaptorCls ? this.registry.adaptor.get(adaptorCls) : undefined;
     if (!scheduler) throw new Error("Scheduler is not registered");
     return scheduler as Scheduler;
@@ -601,7 +596,7 @@ export class DiLifecycle {
       ...this.#adaptor.entries(),
     ]);
     for (const [role, adaptorCls] of Object.entries(this.#predefinedAdaptor)) {
-      const roleCls = this.#predefinedAdaptorRole[role as keyof typeof predefinedAdaptorRole];
+      const roleCls = predefinedAdaptorRole[role as keyof typeof predefinedAdaptorRole];
       this.registry.adaptorRole.set(roleCls, adaptorCls);
       this.registry.adaptorCls.set(roleCls.refName, roleCls);
     }
@@ -624,7 +619,7 @@ export class DiLifecycle {
             this.live.adaptor.set(refName, adaptor);
             this.registry.adaptorCls.set(refName, adaptorCls);
             this.registry.adaptor.set(adaptorCls, adaptor);
-            for (const [role, roleAdaptorCls] of Object.entries(this.#predefinedAdaptorRole)) {
+            for (const [role, roleAdaptorCls] of Object.entries(predefinedAdaptorRole)) {
               if (this.#predefinedAdaptor[role as keyof typeof predefinedAdaptorRole] === adaptorCls) {
                 this.registry.adaptor.set(roleAdaptorCls, adaptor);
               }

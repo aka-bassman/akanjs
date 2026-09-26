@@ -44,18 +44,13 @@ const compressBody = (bytes: Uint8Array, encoding: ContentEncoding) =>
       })
     : gzipSync(bytes, { level: GZIP_LEVEL });
 
-export const negotiateContentEncoding = (req: Request): ContentEncoding | null => {
-  if (process.env.AKAN_HTTP_COMPRESS === "false" || process.env.AKAN_HTTP_COMPRESS === "0") return null;
-  const acceptEncoding = req.headers.get("accept-encoding") ?? "";
-  return CONTENT_ENCODINGS.find(({ accept }) => acceptsEncoding(acceptEncoding, accept))?.encoding ?? null;
-};
-
 // Buffers the body: never pass a streamed response (SSR HTML, RSC flight, SSE) — it would hold the whole render.
 export const compressResponse = async (req: Request, response: Response): Promise<Response> => {
   if (response.headers.has("content-encoding") || !response.body) return response;
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!isCompressibleContentType(contentType)) return response;
-  const encoding = negotiateContentEncoding(req);
+  if (!isCompressibleContentType(response.headers.get("content-type") ?? "")) return response;
+  if (process.env.AKAN_HTTP_COMPRESS === "false" || process.env.AKAN_HTTP_COMPRESS === "0") return response;
+  const acceptEncoding = req.headers.get("accept-encoding") ?? "";
+  const encoding = CONTENT_ENCODINGS.find(({ accept }) => acceptsEncoding(acceptEncoding, accept))?.encoding;
   if (!encoding) return response;
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.byteLength < MIN_COMPRESS_BYTES) return new Response(bytes, response);

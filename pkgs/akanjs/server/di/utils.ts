@@ -104,13 +104,9 @@ export const assertUniqueRegistrations = (kind: string, registrations: Registrat
 export const runStage = async (stageLabel: string, tasks: StageTask[]): Promise<void> => {
   if (tasks.length === 0) return;
   const settled = await Promise.allSettled(tasks.map((t) => t.run()));
-  const failures: { label: string; reason: unknown }[] = [];
-  settled.forEach((res, i) => {
-    if (res.status === "rejected") {
-      const task = tasks[i];
-      failures.push({ label: task ? task.label : `#${i}`, reason: res.reason });
-    }
-  });
+  const failures = settled.flatMap((res, i) =>
+    res.status === "rejected" ? [{ label: tasks[i]?.label ?? `#${i}`, reason: res.reason }] : [],
+  );
   if (failures.length === 0) return;
   const summary = failures.map((f) => `  • ${f.label}: ${reasonMessage(f.reason)}`).join("\n");
   const errors = failures.map((f) => toError(f.reason));

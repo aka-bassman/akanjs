@@ -188,7 +188,11 @@ export class ApiRouter {
         path,
         endpointPaths.has(path) || ApiRouter.#isApiRoute(path, apiPrefix) || ApiRouter.#isInternalRenderRoute(path)
           ? route
-          : ApiRouter.#wrapRoute(route, runner),
+          : ApiRouter.#mapRoute(route, (handler) => async (req) => {
+              const result = await runner.run(req);
+              if (result.response) return result.response;
+              return await handler(copyBunRequestFields(result.request, req));
+            }),
       ]),
     ) as NonNullHttpRoutes;
   }
@@ -200,18 +204,6 @@ export class ApiRouter {
 
   static #isInternalRenderRoute(path: string): boolean {
     return path === "/__csr" || path === "/__rsc" || path.startsWith("/__rsc/") || path.startsWith("/_akan/");
-  }
-
-  static #wrapRoute(route: RouteValue, runner: WebProxyRunner): RouteValue {
-    return ApiRouter.#mapRoute(route, (handler) => ApiRouter.#wrapHandler(handler, runner));
-  }
-
-  static #wrapHandler(handler: RouteHandler, runner: WebProxyRunner): RouteHandler {
-    return async (req) => {
-      const result = await runner.run(req);
-      if (result.response) return result.response;
-      return await handler(copyBunRequestFields(result.request, req));
-    };
   }
 
   // Signal routes only: web bodies stream and `compressResponse` buffers. Behind the gateway this sees

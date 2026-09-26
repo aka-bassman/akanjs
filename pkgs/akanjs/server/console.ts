@@ -168,7 +168,7 @@ export const createAkanConsoleContext = (
   server: AkanServer,
   globals: Record<string, unknown> = {},
 ): AkanConsoleContext => {
-  const context = {
+  return {
     server,
     env: server.env,
     get: server.get.bind(server) as AkanServer["get"],
@@ -179,7 +179,6 @@ export const createAkanConsoleContext = (
     debug: () => server.inspectConsole(),
     ...globals,
   };
-  return context;
 };
 
 export const startAkanConsole = async (server: AkanServer, options: AkanConsoleOptions = {}) => {

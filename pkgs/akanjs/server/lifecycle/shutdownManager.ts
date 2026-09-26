@@ -19,23 +19,15 @@ export class ShutdownManager {
 
     process.on("uncaughtException", async (error) => {
       logger.error(`Uncaught exception: ${ShutdownManager.#formatError(error)}`);
-      try {
-        await onShutdown();
-        process.exit(1);
-      } catch {
-        process.exit(1);
-      }
+      await onShutdown().catch(() => undefined);
+      process.exit(1);
     });
 
     process.on("unhandledRejection", async (reason) => {
       logger.error(`Unhandled rejection: ${ShutdownManager.#formatError(reason)}`);
       if (!ShutdownManager.#isFatalUnhandledRejection()) return;
-      try {
-        await onShutdown();
-        process.exit(1);
-      } catch {
-        process.exit(1);
-      }
+      await onShutdown().catch(() => undefined);
+      process.exit(1);
     });
   }
 

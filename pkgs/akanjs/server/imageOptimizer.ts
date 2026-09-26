@@ -236,11 +236,12 @@ export class ImageOptimizer {
       return { error: `"q" parameter (quality) of ${quality} is not allowed` };
     }
 
+    const accept = req.headers.get("accept") ?? "";
     return {
       href,
       width,
       quality,
-      outputType: ImageOptimizer.#getPreferredOutputType(req.headers.get("accept") ?? "", this.#config.formats),
+      outputType: this.#config.formats.find((format) => accept.includes(format)) ?? "",
       isRemote,
     };
   }
@@ -400,10 +401,6 @@ export class ImageOptimizer {
     // Bun's PNG encoder takes no quality — it is lossless unless you opt into palette quantization.
     if (options.contentType === ImageOptimizer.#png) return await image.png().toBuffer();
     return await image.jpeg({ quality: options.quality }).toBuffer();
-  }
-
-  static #getPreferredOutputType(accept: string, formats: AkanImageFormat[]): AkanImageFormat | "" {
-    return formats.find((format) => accept.includes(format)) ?? "";
   }
 
   static #hasRemoteMatch(patterns: AkanImagePattern[], url: URL): boolean {

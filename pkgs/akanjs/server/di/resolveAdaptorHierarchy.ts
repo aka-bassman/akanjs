@@ -8,7 +8,6 @@ interface AdaptorNode extends DependencyNode {
 
 export interface AdaptorHierarchy {
   graph: Map<string, AdaptorNode>;
-  classToKey: Map<AdaptorCls, string>;
   stages: string[][];
 }
 
@@ -82,5 +81,5 @@ export function resolveAdaptorHierarchy(
 
   const stages = topologicalStages(graph);
 
-  return { graph, classToKey, stages };
+  return { graph, stages };
 }
