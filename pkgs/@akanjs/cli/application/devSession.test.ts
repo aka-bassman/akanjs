@@ -3,6 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { getArgMetas } from "@akanjs/devkit/commandDecorators";
+import { camelToKebabCase } from "@akanjs/devkit/commandDecorators/camelToKebabCase";
 import { stripAnsi } from "@akanjs/devkit/stripAnsi";
 import { ApplicationCommand } from "./application.command";
 import { DevBootConcurrency } from "./devBootConcurrency";
@@ -21,7 +22,6 @@ const lineOf = (seq: number, app: string, text: string) => ({
   kind: "stdout" as const,
   text,
 });
-const camelToKebabCase = (value: string) => value.replace(/([A-Z])/g, "-$1").toLowerCase();
 
 describe("resolveDevUi", () => {
   test("the full-screen view is the default at every app count", () => {

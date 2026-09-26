@@ -1,9 +1,9 @@
 import chalk from "chalk";
 
 import { type EnumChoice, getArgMetas } from "./argMeta";
+import { camelToKebabCase } from "./camelToKebabCase";
 import { type CommandCls, getTargetMetas } from "./targetMeta";
 
-const camelToKebabCase = (str: string) => str.replace(/([A-Z])/g, "-$1").toLowerCase();
 const formatChoice = (choice: EnumChoice) => (typeof choice === "object" ? choice.label : choice.toString());
 
 const groupCommands = (commands: CommandCls[]) => {
