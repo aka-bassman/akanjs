@@ -28,19 +28,11 @@ export const useCamera = ({ promptLabels = {} }: { promptLabels?: CameraPromptLa
   const checkPermission = async (type: "photos" | "camera" | "all") => {
     try {
       const { Camera } = await loadCapacitorCamera();
-      if (type === "photos") {
-        if (permissions.photos === "prompt") {
-          const { photos } = await Camera.requestPermissions();
-          setPermissions((prev) => ({ ...prev, photos }));
-        } else if (permissions.photos === "denied") {
-          location.assign("app-settings:");
-          return;
-        }
-      } else if (type === "camera") {
-        if (permissions.camera === "prompt") {
-          const { camera } = await Camera.requestPermissions();
-          setPermissions((prev) => ({ ...prev, camera }));
-        } else if (permissions.camera === "denied") {
+      if (type !== "all") {
+        if (permissions[type] === "prompt") {
+          const { [type]: state } = await Camera.requestPermissions();
+          setPermissions((prev) => ({ ...prev, [type]: state }));
+        } else if (permissions[type] === "denied") {
           location.assign("app-settings:");
           return;
         }

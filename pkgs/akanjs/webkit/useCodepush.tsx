@@ -6,7 +6,7 @@ import { useState } from "react";
 
 export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
   const [update, setUpdate] = useState(false);
-  const [version, setVersion] = useState("");
+  const [version] = useState("");
 
   const initialize = async () => {
     const { CapacitorUpdater } = await loadCapacitorUpdater();
@@ -20,7 +20,7 @@ export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
     ]);
     const info = await Device.getInfo();
     const app = await App.getInfo();
-    const pluginVersion = await CapacitorUpdater.getPluginVersion();
+    await CapacitorUpdater.getPluginVersion();
     const { deviceId } = await CapacitorUpdater.getDeviceId();
     const { bundle: version, native } = await CapacitorUpdater.current();
     const builtInversion = await CapacitorUpdater.getBuiltinVersion();
@@ -69,10 +69,6 @@ export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
       version: mergeVersion(release.major, release.minor, release.patch),
     });
     await CapacitorUpdater.set(bundle);
-  };
-  const getVersion = async () => {
-    const { CapacitorUpdater } = await loadCapacitorUpdater();
-    return await CapacitorUpdater.getBuiltinVersion();
   };
 
   const statManager = async () => {

@@ -38,27 +38,19 @@ export const usePurchase = ({
       }
       const { App } = await loadCapacitorApp();
       const app = await App.getInfo();
-      if (platform === "all")
-        CdvPurchase.store.register([
-          ...productInfo.map((prouct) => ({
-            id: prouct.id,
-            platform: CdvPurchase.Platform.GOOGLE_PLAY,
-            type: CdvPurchase.ProductType[prouct.type],
-          })),
-          ...productInfo.map((prouct) => ({
-            id: prouct.id,
-            platform: CdvPurchase.Platform.APPLE_APPSTORE,
-            type: CdvPurchase.ProductType[prouct.type],
-          })),
-        ]);
-      else
-        CdvPurchase.store.register(
+      const storePlatforms =
+        platform === "all"
+          ? [CdvPurchase.Platform.GOOGLE_PLAY, CdvPurchase.Platform.APPLE_APPSTORE]
+          : [platform === "android" ? CdvPurchase.Platform.GOOGLE_PLAY : CdvPurchase.Platform.APPLE_APPSTORE];
+      CdvPurchase.store.register(
+        storePlatforms.flatMap((storePlatform) =>
           productInfo.map((product) => ({
             id: product.id,
-            platform: platform === "android" ? CdvPurchase.Platform.GOOGLE_PLAY : CdvPurchase.Platform.APPLE_APPSTORE,
+            platform: storePlatform,
             type: CdvPurchase.ProductType[product.type],
           })),
-        );
+        ),
+      );
 
       await CdvPurchase.store.initialize([
         { platform: CdvPurchase.Platform.APPLE_APPSTORE, options: { needAppReceipt: false } },
@@ -105,14 +97,12 @@ export const usePurchase = ({
           data: { id: request.id, latest_receipt: true, transaction: request.transaction } as any,
         });
       }) as any;
-      if (CdvPurchase.store.localReceipts.length > 0) {
-        CdvPurchase.store.localReceipts.forEach((receipt) => {
-          if (receipt.platform === CdvPurchase.Platform.GOOGLE_PLAY)
-            if (receipt.transactions[0].state === CdvPurchase.TransactionState.APPROVED)
-              void receipt.transactions[0].verify();
-            else void receipt.transactions[0].finish();
-        });
-      }
+      CdvPurchase.store.localReceipts.forEach((receipt) => {
+        if (receipt.platform === CdvPurchase.Platform.GOOGLE_PLAY)
+          if (receipt.transactions[0].state === CdvPurchase.TransactionState.APPROVED)
+            void receipt.transactions[0].verify();
+          else void receipt.transactions[0].finish();
+      });
 
       CdvPurchase.store
         .when()

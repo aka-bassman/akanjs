@@ -140,7 +140,6 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
       if (!children) throw new Error("No children");
       return children;
     }, routeMap);
-    if (!targetRouteMap) continue;
 
     const targetPath = pathSegments[pathSegments.length - 1];
     if (!targetPath) continue;
