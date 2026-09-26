@@ -86,9 +86,8 @@ export type DocumentQueryValue =
   | undefined
   | Record<string, unknown>;
 
-// Update operators mirror the query DSL: an update is `{ path: updateNode }`, symmetric with the `{ path: queryNode }`
-// query shape. A bare value at a path is shorthand for `set(value)`. Compilers translate these nodes into a single
-// atomic JSON expression pushed to the database (no read-modify-write).
+// A bare value at a path is shorthand for `set(value)`; the nodes compile to one atomic JSON expression, never a
+// read-modify-write.
 export type DocumentUpdateOperator =
   | "set"
   | "unset"
@@ -183,16 +182,14 @@ export const createDocumentQueryHelper = () => ({
   lte: (value: unknown) => op("lte", value),
   between: (from: unknown, to: unknown) => op("between", [from, to]),
   exists: (path: string) => ({ [path]: op("exists") }),
-  // `missing` is key absence, not "no value": an optional field left out of an insert has no key, but the same
-  // field on a document read back and saved carries an explicit null the read materialized. `empty` covers both
-  // and is what a caller asking "has no value" wants.
+  // `missing` is key absence, not "no value": a document read back and saved carries an explicit null the read
+  // materialized. `empty` covers both.
   missing: (path: string) => ({ [path]: op("missing") }),
   empty: (path: string) => ({ [path]: op("empty") }),
   has: (value: unknown) => op("has", value),
   contains: (value: unknown) => op("contains", value),
   raw: (sql: string, params: unknown[] = []): DocumentQueryNode => ({ kind: "raw", sql, params }),
-  // A pure descriptor: whether search is available at all is decided by the compiler, so a filter declaring
-  // `q.search(...)` still typechecks and still builds on a process that has the index switched off.
+  // A pure descriptor: the compiler decides whether search is available, so a filter still builds with it off.
   search: (text: string, options: DocumentSearchOptions = {}): DocumentQueryNode => ({
     kind: "search",
     text,

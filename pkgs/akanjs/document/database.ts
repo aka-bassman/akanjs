@@ -62,11 +62,7 @@ export class CacheDatabase<T = unknown> {
     return await this.cache.hincr(this.refName, `${topic}:${key}`, subKey, by, option);
   }
 }
-/**
- * What `update<Filter>` returns. The patch cannot be a trailing parameter — a filter's own args may be optional,
- * and no tuple type puts a required element after those — and leading it reads backwards. So it lands here, on a
- * terminal `.set()` that mirrors the `UPDATE … SET …` it compiles to.
- */
+/** What `update<Filter>` returns: the patch cannot trail a filter's optional args, so it lands on `.set()`. */
 export interface UpdateChain<Doc = any> {
   set(update: DocumentUpdateInput<Doc>): Promise<UpdateResult>;
 }

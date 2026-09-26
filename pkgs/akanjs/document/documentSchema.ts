@@ -7,9 +7,8 @@ export type DocumentHookName = `before${Capitalize<SaveEventType>}` | `after${Ca
 
 export interface DocumentIndexDescriptor {
   name?: string;
-  // `"text"` is a Mongo-era alias that compiles to the same plain index as `1`; full-text search is declared with
-  // `field(String, { text: … })` instead. Do not rewrite existing `"text"` call sites — the descriptor hash stored in
-  // `_akan_meta` would change and `ensure()` throws `Index descriptor mismatch` on every live database.
+  // `"text"` is a Mongo-era alias for `1`. Do not rewrite existing call sites: the descriptor hash in `_akan_meta`
+  // would change and `ensure()` throws `Index descriptor mismatch` on every live database.
   fields: Record<string, 1 | -1 | "text" | boolean>;
   unique?: boolean;
   where?: DocumentQuery;
@@ -22,13 +21,7 @@ export interface DocumentIndexBuilder<Schema> {
   done(): Schema;
 }
 
-/**
- * `previous` is the document as it was before this write, and is absent on a create.
- *
- * A hook that has to answer "did this leave the set it was in" cannot do it from the new value alone — a soft
- * delete and a field edit that moves a row out of a filter both look like an ordinary document afterwards. It is a
- * trailing optional parameter, so a listener that ignores it is unaffected.
- */
+/** `previous` is the document before this write (absent on a create), for a hook asking whether it left a set. */
 export type DocumentSaveHook<Doc = unknown> = (
   this: Doc,
   next?: () => void,

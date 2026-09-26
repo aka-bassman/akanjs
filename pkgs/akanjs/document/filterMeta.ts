@@ -101,11 +101,8 @@ export const fillMissingFilterArgs = (filterInfo: FilterInfo, args: unknown[]) =
 };
 
 const queryOptionKeys = new Set(["select", "skip", "limit", "sort", "sample"]);
-// A generated `list<Filter>` takes the filter's own args and an optional trailing query option, and the two are
-// told apart at runtime: the args are spread into the filter function, so an option mistaken for one lands in a
-// filter slot and changes the query. A plain object every key of which names a query option is the option — a
-// filter arg is a scalar, an id, an enum, a date or an array, never that shape. `{}` counts as an option for the
-// same reason: read as a filter arg it is a truthy value nobody passed on purpose.
+// A trailing plain object whose every key names a query option is the option: a filter arg is never that shape, and
+// `{}` read as a filter arg would be a truthy value nobody passed on purpose.
 const isQueryOptionArg = (value: unknown) => {
   if (!value || typeof value !== "object") return false;
   const proto = Object.getPrototypeOf(value);
@@ -113,10 +110,7 @@ const isQueryOptionArg = (value: unknown) => {
   return Object.keys(value).every((key) => queryOptionKeys.has(key));
 };
 
-/**
- * Splits a generated filter method's arguments into the filter's own args and the trailing query option.
- * Shared by the database and service resolvers so the two cannot drift into disagreeing about what an option is.
- */
+/** Shared by the database and service resolvers, so the two cannot disagree about what a query option is. */
 export const splitFilterArgs = (filterInfo: FilterInfo, args: unknown[]) => {
   const hasQueryOption = args.length > filterInfo.args.length || isQueryOptionArg(args.at(-1));
   return {
@@ -162,10 +156,8 @@ const tryDeserializeFilterArg = (arg: FilterArgInfo, value: unknown, key: string
 };
 
 /**
- * Compiles a `(queryKey, args)` pair into the query its filter declares — the root slice's whole contract.
- * Every arg is parsed by the type the filter declared for it, so a Date arg reaches the query as a Dayjs and
- * an id that is not one is refused here rather than becoming a query that matches nothing. Args past the
- * declared ones are dropped: the caller names a filter, never a query.
+ * The root slice's contract: each arg is parsed by its declared type (an invalid id is refused rather than matching
+ * nothing), and args past the declared ones are dropped — the caller names a filter, never a query.
  */
 export const resolveFilterQuery = (
   filterRef: FilterCls,
@@ -229,8 +221,7 @@ interface BaseQuery<Model> {
 interface BaseSort {
   latest: { createdAt: -1 };
   oldest: { createdAt: 1 };
-  // Named no field on purpose: an empty sort map is how a store is told to order by search relevance instead.
-  // Without a `q.search()` in the query it falls back to the default ordering.
+  // An empty sort map orders by search relevance; without a `q.search()` it falls back to the default ordering.
   relevance: Record<string, never>;
 }
 type LibFilterQuery<LibFilters extends FilterCls[]> = MergeAllDoubleKeyOfObjects<

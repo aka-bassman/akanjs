@@ -11,11 +11,7 @@ type BatchLoadFn<Key, Value> = (
 ) => PromiseLike<ReadonlyArray<Value | Error>> | ReadonlyArray<Value | Error>;
 
 interface DataLoaderOptions<Key, CacheKey> {
-  /**
-   * How long a loaded key is answered from memory: `false` (the default) remembers nothing past its own batch,
-   * a number keeps each key for that many milliseconds, and `true` keeps it for the life of the loader. A model's
-   * loaders live as long as the process, so anything but `false` serves a stale document after it changes.
-   */
+  /** `false` (default) keeps nothing past its batch, a number keeps a key that many ms, `true` for its whole life. */
   cache?: boolean | number;
   cacheKeyFn?: (key: Key) => CacheKey;
   batch?: boolean;
@@ -30,7 +26,6 @@ interface BatchItem<Key, Value> {
   reject: (reason: unknown) => void;
 }
 
-/** Minimal DataLoader-compatible batch loader used by Akan document resolvers. */
 export class DataLoader<Key, Value, CacheKey = Key> {
   static readonly #minSweepSize = 1024;
   readonly name?: string;
