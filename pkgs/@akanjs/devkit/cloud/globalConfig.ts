@@ -48,30 +48,22 @@ export class GlobalConfig {
     await GlobalConfig.#setAkanGlobalConfig(akanConfig);
   }
   static async getRemoteEnvServers(): Promise<AkanGlobalConfig["remoteEnvServers"]> {
-    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    return akanConfig.remoteEnvServers;
+    return (await GlobalConfig.#getAkanGlobalConfig()).remoteEnvServers;
   }
   static async setRemoteEnvServer(name: string, config: RemoteEnvServerConfig) {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
     await GlobalConfig.#setAkanGlobalConfig({
       ...akanConfig,
-      remoteEnvServers: {
-        ...akanConfig.remoteEnvServers,
-        [name]: config,
-      },
+      remoteEnvServers: { ...akanConfig.remoteEnvServers, [name]: config },
     });
   }
   static async removeRemoteEnvServer(name: string) {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
     const { [name]: _, ...remoteEnvServers } = akanConfig.remoteEnvServers;
-    await GlobalConfig.#setAkanGlobalConfig({
-      ...akanConfig,
-      remoteEnvServers,
-    });
+    await GlobalConfig.#setAkanGlobalConfig({ ...akanConfig, remoteEnvServers });
   }
   static async getTestTargets(): Promise<TestTargetsConfig> {
-    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    return akanConfig.testTargets;
+    return (await GlobalConfig.#getAkanGlobalConfig()).testTargets;
   }
   static async setTestTargets(testTargets: TestTargetsConfig) {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();

@@ -16,11 +16,7 @@ class HttpClient {
   }
   async get<T>(url: string, { headers, signal }: HttpRequestOptions = {}): Promise<T> {
     const response = await fetch(`${this.baseUrl}${url}`, {
-      headers: {
-        "Content-Type": "application/json",
-        ...this.headers,
-        ...headers,
-      },
+      headers: { "Content-Type": "application/json", ...this.headers, ...headers },
       ...(signal ? { signal } : {}),
     });
     return await HttpClient.#body<T>(response, url);
@@ -95,17 +91,20 @@ export class CloudApi {
     this.url = `${this.host}/api`;
     this.#api = new HttpClient(this.url);
     if (this.#accessToken && !GlobalConfig.needRefreshToken(this.#accessToken))
-      this.#api.setHeaders({
-        Authorization: `Bearer ${this.#accessToken.jwt}`,
-      });
+      this.#api.setHeaders({ Authorization: `Bearer ${this.#accessToken.jwt}` });
+  }
+
+  #authorize(accessTokenDto: AccessTokenDto) {
+    this.#accessToken = GlobalConfig.toAccessToken(accessTokenDto);
+    this.#api.setHeaders({ Authorization: `Bearer ${this.#accessToken.jwt}` });
+    return this.#accessToken;
   }
 
   async uploadEnv(devProjectId: string, file: File): Promise<boolean> {
     const formData = new FormData();
     formData.append("devProjectId", devProjectId);
     formData.append("file", file);
-    const data = await this.#api.post<boolean>(`/uploadEnv/${devProjectId}`, formData);
-    return data;
+    return await this.#api.post<boolean>(`/uploadEnv/${devProjectId}`, formData);
   }
   async downloadEnv(devProjectId: string): Promise<unknown> {
     const localPath = `${this.#workspace.workspaceRoot}/local/env.tar`;
@@ -114,33 +113,13 @@ export class CloudApi {
   }
   async getRemoteAuthToken(remoteId: string): Promise<AccessToken | null> {
     try {
-      const accessToken = await this.#api.get<AccessTokenDto>(`/getRemoteAuthToken/${remoteId}`);
-      this.#accessToken = GlobalConfig.toAccessToken(accessToken);
-      this.#api.setHeaders({
-        Authorization: `Bearer ${this.#accessToken.jwt}`,
-      });
-      return this.#accessToken;
+      return this.#authorize(await this.#api.get<AccessTokenDto>(`/getRemoteAuthToken/${remoteId}`));
     } catch (_) {
       return null;
     }
   }
-  async #ensureAccessTokenLive({
-    allowUnauthorized = false,
-  }: {
-    allowUnauthorized?: boolean;
-  } = {}): Promise<AccessToken> {
-    if (!this.#accessToken) throw new Error("No access token");
-    const needRefresh = GlobalConfig.needRefreshToken(this.#accessToken);
-    if (!needRefresh) return this.#accessToken;
-    const refreshToken = this.#accessToken?.refreshToken;
-    if (!refreshToken) throw new Error("No refresh token");
-    return await this.refreshAuthToken(refreshToken);
-  }
   async refreshAuthToken(refreshToken: string): Promise<AccessToken> {
-    const response = await this.#api.post<AccessTokenDto>(`/refreshAuthToken`, { refreshToken });
-    this.#accessToken = GlobalConfig.toAccessToken(response);
-    this.#api.setHeaders({ Authorization: `Bearer ${this.#accessToken.jwt}` });
-    return this.#accessToken;
+    return this.#authorize(await this.#api.post<AccessTokenDto>(`/refreshAuthToken`, { refreshToken }));
   }
   // `/tunnel` is the model's refName, which the `_cloud` service routes above lack; dropping it answers 404.
   async requestTunnel(input: { name: string; ttlMinutes?: number }): Promise<TunnelGrant> {
@@ -157,8 +136,7 @@ export class CloudApi {
   }
   async getRemoteSelf(): Promise<{ id: string; nickname: string } | null> {
     try {
-      const data = await this.#api.get<{ id: string; nickname: string }>(`/getRemoteSelf`);
-      return data;
+      return await this.#api.get<{ id: string; nickname: string }>(`/getRemoteSelf`);
     } catch {
       return null;
     }
