@@ -1,22 +1,20 @@
 "use client";
-import { PrimitiveRegistry } from "akanjs/base";
-import { cn, usePage } from "akanjs/client";
+import { cn } from "akanjs/client";
 import { mcpHintsOf, mcpRefusalOf } from "akanjs/common";
-import { type ConstantCls, ConstantRegistry } from "akanjs/constant";
 import { FetchClient, type FetchProxy } from "akanjs/fetch";
 import type { SerializedEndpoint } from "akanjs/signal";
 import { st } from "akanjs/store";
-import { type ReactNode, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { AiOutlineApi, AiOutlineCopy, AiOutlineFileWord, AiOutlineSend, AiOutlineWarning } from "react-icons/ai";
 import { buttonRecipe } from "../Button";
 import { Copy } from "../Copy";
-import { Collapse, dictText, docPill, docUi, Panel, Segmented } from "../Reference";
-import { Signal } from ".";
+import { docPill, docUi, Segmented } from "../Reference";
 import Arg from "./Arg";
-import { endpointEntriesOf, guardsOf, isWsEndpoint, matchesGuards, matchesSearch } from "./endpointEntries";
+import { ArgSection, EndpointCollapse, EndpointInterface } from "./Endpoint";
+import { endpointEntriesOf, isWsEndpoint, matchesGuards, matchesSearch } from "./endpointEntries";
 import { getExampleData } from "./makeExample";
 import Response from "./Response";
-import { getGuardBadgeClassName, getMcpBadgeClassName, getMethodBadgeClassName, getMethodLabel } from "./style";
+import { getMcpBadgeClassName, getMethodBadgeClassName, getMethodLabel } from "./style";
 
 type RestApiFetchFn = (
   ...args: [...args: unknown[], option: { token?: string; crystalize?: boolean }]
@@ -30,17 +28,6 @@ const restViewItems = [
   { key: "doc", label: "Reference", icon: <AiOutlineFileWord /> },
   { key: "test", label: "Try it", icon: <AiOutlineApi /> },
 ] as const;
-
-interface ArgSectionProps {
-  label: string;
-  children: ReactNode;
-}
-const ArgSection = ({ label, children }: ArgSectionProps) => (
-  <div className="flex flex-col gap-2">
-    <div className={docUi.sectionLabel}>{label}</div>
-    {children}
-  </div>
-);
 
 interface RestApiEndpointsProps {
   refName: string;
@@ -106,37 +93,21 @@ const RestApiEndpoint = ({
   open,
   httpUri,
 }: RestApiEndpointProps) => {
-  const { l } = usePage();
   const [viewStatus, setViewStatus] = useState<"doc" | "test">("doc");
   const path = FetchClient.makeHttpUrl(endpointKey, endpoint, signalPrefix, new Map());
   // The server's own fail-closed rules, so the badge says what the MCP catalogue says.
   const mcpRefusal = mcpRefusalOf(endpoint, { refName, key: endpointKey });
-  const guards = guardsOf(endpoint);
-  const label = dictText(l, `${refName}.signal.${endpointKey}`);
-  const desc = dictText(l, `${refName}.signal.${endpointKey}.desc`);
   const hints = Object.entries(mcpHintsOf(endpointKey, endpoint)).filter(([, on]) => on);
   return (
-    <Collapse
+    <EndpointCollapse
+      refName={refName}
+      endpointKey={endpointKey}
+      endpoint={endpoint}
       open={open}
-      summary={
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={getMethodBadgeClassName(endpoint.type)}>{getMethodLabel(endpoint.type)}</span>
-            <span className="break-all font-medium font-mono text-sm">{path}</span>
-            <span className="ml-auto flex flex-wrap items-center gap-1.5">
-              {guards.map((guard) => (
-                <span className={getGuardBadgeClassName(guard)} key={guard}>
-                  {guard}
-                </span>
-              ))}
-              <span className={getMcpBadgeClassName(!mcpRefusal)}>{mcpRefusal ? "MCP refused" : "MCP"}</span>
-            </span>
-          </div>
-          {label ? <div className="text-foreground/55 text-sm">{label}</div> : null}
-        </div>
-      }
+      badge={<span className={getMethodBadgeClassName(endpoint.type)}>{getMethodLabel(endpoint.type)}</span>}
+      title={path}
+      extraBadge={<span className={getMcpBadgeClassName(!mcpRefusal)}>{mcpRefusal ? "MCP refused" : "MCP"}</span>}
     >
-      {desc ? <p className={docUi.prose}>{desc}</p> : null}
       {mcpRefusal ? (
         <div className="flex items-start gap-2 rounded-box border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
           <AiOutlineWarning className="mt-0.5 shrink-0" />
@@ -164,7 +135,7 @@ const RestApiEndpoint = ({
           httpUri={httpUri}
         />
       )}
-    </Collapse>
+    </EndpointCollapse>
   );
 };
 RestApi.Endpoint = RestApiEndpoint;
@@ -174,38 +145,21 @@ interface RestApiInterfaceProps {
   endpointKey: string;
   endpoint: SerializedEndpoint;
 }
-const RestApiInterface = ({ refName, endpointKey, endpoint }: RestApiInterfaceProps) => {
-  const returnRef = ConstantRegistry.getModelRef(endpoint.returns.refName, endpoint.returns.modelType);
-  const isReturnModelType = !PrimitiveRegistry.has(returnRef);
-  const argSections = [
-    { label: "Form data", args: endpoint.args.filter((arg) => arg.type === "upload") },
-    { label: "Path parameters", args: endpoint.args.filter((arg) => arg.type === "param") },
-    { label: "Query", args: endpoint.args.filter((arg) => arg.type === "search") },
-    { label: "Body", args: endpoint.args.filter((arg) => arg.type === "body") },
-  ].filter((section) => section.args.length);
-  return (
-    <div className="flex w-full flex-col gap-4">
-      {argSections.map((section) => (
-        <ArgSection key={section.label} label={section.label}>
-          <div className={docUi.tablePanel}>
-            <Arg.Table refName={refName} endpointKey={endpointKey} args={section.args} />
-          </div>
-        </ArgSection>
-      ))}
-      <div className="grid gap-3 md:grid-cols-2 md:items-start">
-        <Panel bodyClassName="max-h-none" label="Returns">
-          <div className="flex flex-col items-start gap-3">
-            <Signal.Object.Type objRef={returnRef} arrDepth={endpoint.returns.arrDepth ?? 0} />
-            {isReturnModelType ? (
-              <Signal.Object.Detail className="w-full border-0 bg-transparent" objRef={returnRef as ConstantCls} />
-            ) : null}
-          </div>
-        </Panel>
-        <Response.Example endpoint={endpoint} />
-      </div>
-    </div>
-  );
-};
+const RestApiInterface = ({ refName, endpointKey, endpoint }: RestApiInterfaceProps) => (
+  <EndpointInterface
+    className="flex w-full flex-col gap-4"
+    refName={refName}
+    endpointKey={endpointKey}
+    endpoint={endpoint}
+    argSections={[
+      { label: "Form data", args: endpoint.args.filter((arg) => arg.type === "upload") },
+      { label: "Path parameters", args: endpoint.args.filter((arg) => arg.type === "param") },
+      { label: "Query", args: endpoint.args.filter((arg) => arg.type === "search") },
+      { label: "Body", args: endpoint.args.filter((arg) => arg.type === "body") },
+    ]}
+    returnsLabel="Returns"
+  />
+);
 RestApi.Interface = RestApiInterface;
 
 interface RestApiTryProps {

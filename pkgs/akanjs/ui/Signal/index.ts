@@ -1,10 +1,8 @@
 import Arg from "./Arg";
 import Doc from "./Doc";
 import Listener from "./Listener";
-import Message from "./Message";
 import Object from "./Object";
-import PubSub from "./PubSub";
 import RestApi from "./RestApi";
-import WebSocket from "./WebSocket";
+import WebSocket, { Message, PubSub } from "./WebSocket";
 
 export const Signal = { Doc, Object, RestApi, Arg, Listener, WebSocket, PubSub, Message };
