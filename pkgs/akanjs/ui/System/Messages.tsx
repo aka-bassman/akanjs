@@ -17,8 +17,7 @@ interface ArmedMessage {
   timeoutId: ReturnType<typeof setTimeout>;
 }
 
-// How long a message may take to play its exit before it is dropped anyway: a `Toast`/`ToastItem` override
-// that renders no exit animation never fires `onClosed`, and the message would sit there forever.
+// An override with no exit animation never fires `onClosed`, so a leaving message is dropped after this anyway.
 const exitGraceMs = 2000;
 
 export const Messages = () => {
@@ -58,9 +57,7 @@ export const Messages = () => {
     const rearmed: string[] = [];
     for (const message of messages) {
       const armed = running.get(message.key);
-      // `showMessage` replaces the object when an existing key is shown again, so object identity — not the
-      // list — is what says a countdown restarts. Re-arming on every list change would restart the timer of
-      // every toast already on screen whenever a new one arrives.
+      // `showMessage` replaces the object for a re-shown key, so identity (not a list change) restarts a countdown.
       if (armed?.message === message) continue;
       if (armed) {
         clearTimeout(armed.timeoutId);
@@ -139,8 +136,7 @@ export const Messages = () => {
     ...message,
     leaving: leavingKeys.includes(message.key),
   }));
-  // Portalled to the body like Dialog's modal: the page tree sits under `#pageContainers`, which is
-  // `isolation: isolate`, so a z-index declared inside it can never rise above a body-level overlay.
+  // Portalled: `#pageContainers` is `isolation: isolate`, so no z-index inside it rises above a body-level overlay.
   return createPortal(
     <Toast
       messages={toastMessages}
