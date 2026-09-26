@@ -1,5 +1,4 @@
-// Reached at the leaf rather than through `@akanjs/devkit/codeAgent`: that barrel loads the engine, and this
-// module is imported for `akan --help` like every other runner.
+// Leaf and lazy imports only: the codeAgent barrel loads the heavy engine, and every runner loads for `akan --help`.
 import { akanCodeDefaultModel, type CodeAgentModelRef } from "@akanjs/devkit/codeAgent/agent/akanCodeModel";
 import { CodeAgentStreamPrinter } from "@akanjs/devkit/codeAgent/agent/CodeAgentStreamPrinter";
 import { runner, type Workspace } from "@akanjs/devkit/commandDecorators";
@@ -17,13 +16,8 @@ export interface CodeRunOptions {
 }
 
 export class CodeRunner extends runner("code") {
-  /**
-   * Serves the agent over stdio as akan wire frames, for a host that drives it from another process.
-   *
-   * `consoleToStderr` is imported first and on its own line: it must run before the engine's module body does,
-   * or anything the engine logs while loading lands on stdout and corrupts the very first frame.
-   */
   async serve(options: CodeRunOptions, listen?: string) {
+    // Must run before the engine loads, or what it logs while loading corrupts the first stdout frame.
     await import("@akanjs/devkit/codeAgent/agent/consoleToStderr");
     const [{ CodeAgent }, { CodeAgentRpcHost }, { CodeAgentRpcListener }] = await Promise.all([
       import("@akanjs/devkit/codeAgent/agent/CodeAgent"),
@@ -48,12 +42,6 @@ export class CodeRunner extends runner("code") {
     await listener.serve();
   }
 
-  /**
-   * The interactive terminal host.
-   *
-   * It reads the same wire the printer and the RPC host read, so what it can draw is exactly what the
-   * contract carries — see {@link CodeTui}.
-   */
   async tui(options: CodeRunOptions, seed: string) {
     const [{ CodeAgent }, { CodeTui }] = await Promise.all([
       import("@akanjs/devkit/codeAgent/agent/CodeAgent"),
@@ -64,9 +52,7 @@ export class CodeRunner extends runner("code") {
     let resume = options.resume;
     let prompt = seed;
     let notice: string | undefined;
-    // Switching sessions builds a new agent rather than re-pointing this one: the engine binds its extensions,
-    // its tool registry and its context to the session at construction, so half of what a session is would
-    // stay behind. The host is cheap to rebuild; the session is not cheap to swap.
+    // A session switch rebuilds the agent: the engine binds extensions, tools and context to it at construction.
     for (;;) {
       const agent = await CodeAgent.create({
         workspace: options.workspace,
@@ -93,15 +79,7 @@ export class CodeRunner extends runner("code") {
     }
   }
 
-  /**
-   * Runs one prompt to completion and prints the event stream.
-   *
-   * Non-interactive on purpose: it is the smallest host that exercises the whole contract, and a script or a CI
-   * step wants exactly this shape.
-   */
   async run(prompt: string, options: CodeRunOptions) {
-    // The engine costs ~122MiB resident on import, and `akan --help` loads every command module. Importing it
-    // here rather than at the top of the file keeps that cost on the one command that needs it.
     const { CodeAgent } = await import("@akanjs/devkit/codeAgent/agent/CodeAgent");
     const profile = CodeRunner.profileOf(options, { hostAttached: false });
     const agent = await CodeAgent.create({

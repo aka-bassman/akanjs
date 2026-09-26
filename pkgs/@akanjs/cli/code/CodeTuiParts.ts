@@ -7,17 +7,9 @@ export interface CodeTuiPartsOptions {
   thinking?: boolean;
 }
 
-/**
- * Transcript parts as terminal rows.
- *
- * The shape follows what a coding agent's terminal has settled on: a filled bullet opens a tool call and its
- * result hangs under it on an elbow, reasoning is folded away behind one dim line, and the assistant's own
- * prose is the only thing rendered at full width with no marker — because it is the thing being read.
- */
 export class CodeTuiParts {
-  /** How much reasoning stays on screen. The whole of it is in the transcript; this is the part worth watching. */
   static readonly thinkingLines = 6;
-  /** Lines of a failed call's output. Enough to name the failure, not enough to become the screen. */
+  /** Lines shown of a failed or refused call's output; a successful call's output is never shown. */
   static readonly outputLines = 4;
 
   static lines(parts: readonly CodeTranscriptPart[], width: number, options: CodeTuiPartsOptions = {}): CodeTuiLine[] {
@@ -71,9 +63,7 @@ export class CodeTuiParts {
   }
 
   static #assistant(part: Extract<CodeTranscriptPart, { kind: "assistant" }>, width: number): CodeTuiRow[] {
-    // Rendered while it streams, not only once settled. Half-arrived markdown is the state a reader spends
-    // most of the answer looking at, and the scanner is stable there — measured: an unterminated fence scans
-    // as `code` from its opening line, so the block it becomes is the block it started as.
+    // Safe to render mid-stream: an unterminated fence already scans as `code`, so no block changes kind later.
     const rows = CodeTuiMarkdown.rows(part.text, width);
     if (!part.truncated) return rows;
     return [
@@ -82,13 +72,7 @@ export class CodeTuiParts {
     ];
   }
 
-  /**
-   * Reasoning, folded — the default, because it is the model talking to itself.
-   *
-   * Drawn as a marked one-liner rather than dropped: reasoning arrives before the first token of an answer and
-   * before the first tool call, so a turn that opens with a long think would otherwise be a blank screen, and
-   * a reader who wants it has no way to learn it is there.
-   */
+  // Folded to one marked line, not dropped: a turn opening with a long think would otherwise be a blank screen.
   static #folded(text: string): CodeTuiRow[] {
     const count = text.split("\n").filter((line) => line.trim()).length;
     return [
@@ -135,7 +119,6 @@ export class CodeTuiParts {
     ];
   }
 
-  /** The tool's name reads as a name, and its arguments recede — the name is what is scanned for. */
   static #title(name: string, title: string): CodeTuiSpan[] {
     if (!title.startsWith(name)) return [{ text: title, bold: true }];
     return [
@@ -146,8 +129,6 @@ export class CodeTuiParts {
 
   static #detail(part: Extract<CodeTranscriptPart, { kind: "tool" }>) {
     if (part.outcome === undefined) return part.progress ? [part.progress] : [];
-    // A successful call's output is already in the model's context and says nothing a person needs; a failed
-    // or refused one is the only reason the row is worth reading past its name.
     if (part.outcome === "ok") return [];
     return (part.output ?? "")
       .split("\n")

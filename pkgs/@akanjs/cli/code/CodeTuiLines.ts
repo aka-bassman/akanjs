@@ -12,31 +12,21 @@ export interface CodeTuiStyle {
 
 export type CodeTuiSpan = CodeTuiStyle & { text: string };
 
-/** Exactly one terminal row. Styling is per span because a sentence carries bold and code inside it. */
+/** Exactly one terminal row. */
 export interface CodeTuiLine {
   key: string;
   spans: CodeTuiSpan[];
 }
 
-/** A row before wrapping: its content, the marker on its first line, and the indent its later lines carry. */
+/** A row before wrapping: `prefix` marks its first line and `hang` indents the rest. */
 export interface CodeTuiRow {
   spans: CodeTuiSpan[];
   prefix?: CodeTuiSpan;
-  /** Continuation indent. Defaults to blanks as wide as `prefix`, which is what a hanging list item wants. */
+  /** Defaults to blanks as wide as `prefix`. */
   hang?: string;
 }
 
-/**
- * Wraps styled rows into terminal lines.
- *
- * Width is measured with the same `string-width` Ink truncates by, not `String.length`. A Hangul syllable
- * occupies two columns and one code unit, so a length-based wrap puts Korean text past the right edge and Ink
- * then truncates it somewhere the wrap did not expect.
- *
- * Wrapping happens here rather than in Ink because the transcript pane has a fixed height and scrolls:
- * `wrap="wrap"` would make one paragraph occupy a number of rows nothing upstream knows, and the window
- * arithmetic — how many rows above, how many below — would be computed against the wrong total.
- */
+/** Wraps here rather than in Ink so the scroll arithmetic knows every row; widths use Ink's own `string-width`. */
 export class CodeTuiLines {
   static width(text: string) {
     return stringWidth(text);
@@ -63,17 +53,11 @@ export class CodeTuiLines {
     }));
   }
 
-  /**
-   * Word wrap over a styled run, breaking mid-word only for a token wider than the line — a path, a base64
-   * blob, or CJK text, which carries no spaces to break at.
-   */
   static #wrap(spans: CodeTuiSpan[], width: number): CodeTuiSpan[][] {
     const lines: CodeTuiSpan[][] = [];
     let line: CodeTuiSpan[] = [];
     let used = 0;
-    // True only after an overflow break. Leading whitespace is dropped there — it is the space the break
-    // replaced — but kept after an explicit newline, where it is the writer's own indentation and dropping it
-    // reflows code that a language parses by column.
+    // Leading whitespace is dropped only after an overflow break; after a newline it is the writer's indentation.
     let soft = false;
     const push = (fromWrap: boolean) => {
       lines.push(line);
@@ -110,7 +94,6 @@ export class CodeTuiLines {
     return lines;
   }
 
-  /** Words with their trailing space attached, so a break never loses or doubles the separator. */
   static #words(text: string) {
     return text.match(/\S+\s*|\s+/g) ?? [];
   }
@@ -128,7 +111,6 @@ export class CodeTuiLines {
     return chunks;
   }
 
-  /** The plain text of a line, for a test or a width check. */
   static text(line: CodeTuiLine) {
     return line.spans.map((span) => span.text).join("");
   }

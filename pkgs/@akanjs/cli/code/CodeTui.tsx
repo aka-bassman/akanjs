@@ -35,35 +35,22 @@ import { CodeTuiParts } from "./CodeTuiParts";
 export interface CodeTuiOptions {
   /** Draw the model's reasoning in full. Folded to one line otherwise, and `/thinking` flips it either way. */
   thinking?: boolean;
-  /** What the session this one replaced wanted said here — see {@link CodeTuiExit}. */
   notice?: string;
   stdout?: NodeJS.WriteStream;
   stdin?: NodeJS.ReadStream;
 }
 
-/**
- * The session to open instead of this one, and the one line it should open with.
- *
- * Switching sessions tears the host down and builds another, so anything the leaving session wanted to say
- * has nowhere to be printed — the next frame clears the terminal. It travels with the id instead.
- */
+// The next frame clears the terminal, so a leaving session's last word travels with the id it switches to.
 export interface CodeTuiExit {
   id: string;
   notice?: string;
 }
 
-/** A slash command's answer, held open until it is dismissed instead of being written into the conversation. */
 interface CodeTuiOverlay {
   title: string;
   text: string;
 }
 
-/**
- * The menu above the prompt, and the range of the buffer it completes.
- *
- * Commands and file mentions share it because they are the same gesture — a token under the caret, a list of
- * what it could become — and differ only in what enter means: a command runs, a path is inserted.
- */
 interface CodeTuiMenu {
   kind: "command" | "file";
   from: number;
@@ -71,63 +58,29 @@ interface CodeTuiMenu {
   options: CodeTuiOption[];
 }
 
-/** One of the two blocks that can occupy the bottom of the screen: the prompt, or a question. */
 interface CodeTuiAskBlock {
   rows: number;
-  /** Rows the block draws above the prompt's first line, which is what the caret's own row is counted from. */
-  above: number;
+  above: number; // rows drawn above the prompt's first line, which the caret row is counted from
   selected: number;
-  /** Where the caret sits inside the block, when the block is one that has a caret. */
   caret: { row: number; col: number } | undefined;
   snapshot: Pick<CodeTuiSnapshot, "input" | "menu" | "menuSelected" | "options">;
 }
 
-/**
- * The terminal host: one agent, drawn from the akan wire and nothing else.
- *
- * It holds no engine type. Everything on screen comes from {@link CodeTranscript}, which reads the contract —
- * so a field the contract carries and this cannot draw is a hole in the contract, and a field this needs that
- * the contract lacks is the same hole from the other side. That is why the printer, this, and the web host are
- * three thin readers of one fold rather than three renderers of the engine.
- *
- * Ink repaints a whole frame per render and a streaming answer arrives token by token, so nothing here renders
- * per event: events land in the fold and a frame timer publishes.
- */
 export class CodeTui {
   /** Ink throttles its own writes to `maxFps: 30`, so notifying faster only buys extra reconciles. */
   static readonly frameMs = 34;
-  /** How often the clipboard is asked whether it holds a picture. The check is a flag, not a read. */
   static readonly clipboardMs = 2_000;
   static readonly noticeMs = 4_000;
-  /** The hint row under the input. */
-  static readonly chromeRows = 1;
-  /** The rule above the prompt box, which the caret's row is measured from, and the matching one below it. */
-  static readonly promptRuleRows = 1;
-  /** The pane's header plus one line of conversation. */
-  static readonly minBodyRows = 3;
-  /** How tall the prompt may grow before it scrolls internally rather than eating the transcript. */
+  static readonly chromeRows = 1; // the hint row under the input
+  static readonly promptRuleRows = 1; // the rule above the prompt box, and its twin below
+  static readonly minBodyRows = 3; // the pane's header plus one line of conversation
   static readonly maxInputRows = 8;
-  /** What the session calls itself on the first screen. */
   static readonly title = "Akan — write one line, deploy every stack";
-  /** How an attachment appears in the prompt, and the only place it can be removed from. */
   static readonly imageMark = /\[image #(\d+)] ?/g;
-  /**
-   * The extra choice a question with `freeText` grows, under the options the model wrote.
-   *
-   * Host-only: choosing it opens the prompt rather than answering, so the key never reaches the core. A list
-   * of options is the model's guess at what the answers are, and the person is the one who knows when none of
-   * them is it.
-   */
+  // Host-only choice: picking it opens the prompt instead of answering, so the key never reaches the core.
   static readonly freeTextKey = "__free_text__";
 
-  /**
-   * Bracketed paste, which is what makes `cmd+v` reach us at all.
-   *
-   * A terminal in this mode wraps every paste in `ESC[200~` … `ESC[201~`, so a paste is distinguishable from
-   * typing — and, decisively, a paste whose clipboard held no text still sends the two markers with nothing
-   * between them. That empty paste is the only notice an application gets that the key was pressed. The mode
-   * is off by default and the shell turns it off again before running a command, so it has to be asked for.
-   */
+  // Bracketed paste: cmd+v over an image-only clipboard still sends an empty `ESC[200~`…`ESC[201~` pair.
   static readonly pasteOn = "\u001b[?2004h";
   static readonly pasteOff = "\u001b[?2004l";
 
@@ -140,11 +93,9 @@ export class CodeTui {
   readonly #instance: ReturnType<typeof render>;
   readonly #stdout: NodeJS.WriteStream;
   #historyAt = -1;
-  /** Index of the last visible transcript row, or null while following the tail. */
-  #anchor: number | null = null;
+  #anchor: number | null = null; // last visible transcript row; null follows the tail
   #selected = 0;
-  /** Whether the open question is being answered in prose rather than from its list — see {@link freeTextKey}. */
-  #typing = false;
+  #typing = false; // answering the open question in prose rather than from its list
   #menuAt = 0;
   #checked: string[] = [];
   #overlay: CodeTuiOverlay | null = null;
@@ -192,16 +143,11 @@ export class CodeTui {
         }}
       />,
       {
-        // Ink's console patch replaces the console methods themselves, which is the only interception that
-        // catches Bun — its `console.log` writes to fd 1 natively and never reaches `process.stdout.write`.
-        // Without it, one engine log lands in the middle of a frame and the screen is corrupt until a resize.
+        // Bun's `console.log` writes to fd 1 natively, bypassing `process.stdout.write`; only Ink's patch catches it.
         patchConsole: true,
-        // Ink's own ctrl+c handler unmounts before a `useInput` handler sees the key, so with it on the host
-        // never runs its exit at all: no interrupt of the turn in flight, and no chance to wipe the frame.
+        // Ink's own ctrl+c handler unmounts before `useInput` sees the key, skipping the host's interrupt and wipe.
         exitOnCtrlC: false,
-        // Enter and shift+enter are the same byte on a plain terminal; only the kitty keyboard protocol
-        // distinguishes them. `auto` turns it on after the terminal answers a capability query, so one that
-        // cannot report the key keeps exactly the handling it has today.
+        // Only the kitty protocol tells shift+enter from enter; `auto` enables it once the terminal answers a query.
         kittyKeyboard: { mode: "auto" },
         ...streams,
       },
@@ -226,18 +172,10 @@ export class CodeTui {
     return this.#switchTo;
   }
 
-  /** Unmounts without going through a key, so a test does not leave Ink attached to a fake terminal. */
   close() {
     this.#quit();
   }
 
-  /**
-   * Offers the clipboard's picture, because the key a mac user reaches for cannot arrive.
-   *
-   * `cmd+v` is handled by the terminal emulator: it writes the clipboard's **text** to stdin and drops
-   * everything else, so with an image on the clipboard the keystroke reaches no application at all. Nothing
-   * can bind it. Saying what to press instead is the whole of what is left.
-   */
   #watchClipboard() {
     if (!this.#agent.canSeeImages) return;
     this.#clipboardTimer = setInterval(() => {
@@ -260,12 +198,6 @@ export class CodeTui {
     this.#farewell();
   }
 
-  /**
-   * The one line worth leaving behind.
-   *
-   * Only when there is something to come back to: a session nobody asked anything is a file with no
-   * conversation in it, and an id printed for one is an invitation to resume nothing.
-   */
   #farewell() {
     const info = this.#transcript.info;
     if (this.#switchTo || !info?.sessionId || !this.#agent.sessions().length) return;
@@ -294,27 +226,14 @@ export class CodeTui {
     for (const listener of this.#listeners) listener();
   }
 
-  /**
-   * How the rows are divided.
-   *
-   * Ink does not clip an overflowing column, it overwrites — a prompt one row too tall prints through its own
-   * first option — so the split has to be exact. A long question and a tall prompt are both windowed rather
-   * than the transcript being squeezed below what it needs to show anything.
-   */
+  // Ink overwrites rather than clips an overflowing column, so every row split in this file has to be exact.
   static layout(frameRows: number, askRows: number, railRows = 0) {
     const room = Math.max(1, frameRows - CodeTui.minBodyRows - CodeTui.chromeRows - railRows);
     const ask = Math.max(1, Math.min(askRows, room));
     return { ask, bodyHeight: Math.max(CodeTui.minBodyRows, frameRows - ask - CodeTui.chromeRows - railRows) };
   }
 
-  /**
-   * How tall the frame may be, which is one row short of the terminal.
-   *
-   * Ink calls a frame that fills the terminal fullscreen: it drops the trailing newline, repaints with
-   * `clearTerminal` — `ESC[3J`, which erases the scrollback buffer, not just the screen — and its `useCursor`
-   * arithmetic still assumes the newline is there, so every caret lands one row above the text it belongs to.
-   * Leaving the last row to Ink's own newline takes all three away.
-   */
+  // One row short: Ink treats a terminal-filling frame as fullscreen, erasing scrollback and misplacing the caret.
   static frameRowsOf(terminalRows: number) {
     return Math.max(CodeTui.minBodyRows + CodeTui.chromeRows + 1, terminalRows - 1);
   }
@@ -327,9 +246,6 @@ export class CodeTui {
     const approval = this.#transcript.approval;
     const mode = this.#typing ? "input" : CodeTui.#modeOf(question, approval);
     const subagents = this.#railRows(columns);
-    // The prompt is measured against a frame the rail has already taken its rows out of: Ink draws a row that
-    // runs past the frame over the one below it instead of dropping it, so the two cannot both assume the
-    // whole height.
     const ask =
       mode === "input"
         ? this.#inputBlock(columns, frameRows - subagents.length)
@@ -373,7 +289,6 @@ export class CodeTui {
     return this.#cached;
   };
 
-  /** The banner, then the conversation. The banner is not a transcript part, so `/clear` cannot take it. */
   #lines(width: number): CodeTuiLine[] {
     return [
       ...CodeTuiLines.rows(this.#banner(), width, "banner"),
@@ -381,12 +296,7 @@ export class CodeTui {
     ];
   }
 
-  /**
-   * The sub-agent rail, or nothing at all when the frame has no room for the whole of it.
-   *
-   * Dropped rather than windowed: it is a status, and half a list of running children reads as the whole one.
-   * The room it is measured against leaves the prompt its rules and one row to type on.
-   */
+  // Dropped rather than windowed when it does not fit: half a list of running children reads as the whole one.
   #railRows(columns: number): CodeTuiLine[] {
     const agents = this.#transcript.subagents;
     if (!agents.length) return [];
@@ -411,13 +321,6 @@ export class CodeTui {
     ];
   }
 
-  /**
-   * A horizontal rule carrying a label at each end.
-   *
-   * The labels ride the prompt's own frame rather than a status row of their own: they are read a few times a
-   * session and would otherwise cost a line of conversation on every screen. The left one goes first when the
-   * terminal is too narrow for both, because the right one is the session's identity.
-   */
   static rule(left: string, right: string, width: number): CodeTuiSpan[] {
     const room = (label: string) => (label ? 3 + CodeTuiLines.width(label) : 1);
     const tail = right ? codeAgentClip(right, Math.max(1, width - 4)) : "";
@@ -446,8 +349,7 @@ export class CodeTui {
     if (this.#picker) return this.#pickerBlock(width, height);
     const overlay = this.#overlay;
     if (!overlay) return null;
-    // The box eats a border pair and its title row.
-    const room = Math.max(1, height - 3);
+    const room = Math.max(1, height - 3); // a border pair and the title row
     const body = Math.max(8, width - 4);
     const all = CodeTui.#overlayRows(overlay.text, body);
     const first = Math.max(0, Math.min(this.#overlayAt, all.length - room));
@@ -471,8 +373,7 @@ export class CodeTui {
       .map((entry, at) => CodeTui.#sessionRow(entry, first + at === picker.at));
     return {
       title: `sessions · ${picker.entries.length}`,
-      // One line per session, whatever it opened with: a wrapped entry would push the list past the box, and
-      // a list is scanned down its left edge — an entry that takes four rows is four rows of nothing to scan.
+      // One row per session: a wrapped entry would push the list past the box.
       lines: rows.flatMap((row, at) => CodeTuiLines.rows([row], body, `sessions:${first + at}`).slice(0, 1)),
       above: first,
       below: Math.max(0, picker.entries.length - first - room),
@@ -499,15 +400,11 @@ export class CodeTui {
     return `${Math.round(minutes / (60 * 24))}d ago`;
   }
 
-  /** The prompt block: the menu when a command is being typed, then the rules and the buffer's own rows. */
   #inputBlock(columns: number, frameRows: number): CodeTuiAskBlock {
     const all = this.#menu()?.options ?? [];
     const { rows, row, col } = this.#editor.layout(columns - promptMarkWidth - 1);
-    // The attachment row and the clipboard offer are the same row; only one of them is ever drawn.
     const offered = this.#offered ? 1 : 0;
     const room = frameRows - CodeTui.minBodyRows - CodeTui.chromeRows - 2 * CodeTui.promptRuleRows - offered;
-    // Windowed around the highlighted entry, because Ink overwrites what runs past the frame instead of
-    // dropping it: a menu longer than the terminal does not scroll off, it draws over the prompt below it.
     const menuRows = Math.max(0, Math.min(all.length, room - 1));
     const menuFrom = Math.max(0, Math.min(this.#menuAt - Math.floor(menuRows / 2), all.length - menuRows));
     const menu = all.slice(menuFrom, menuFrom + menuRows);
@@ -566,22 +463,14 @@ export class CodeTui {
     const token = this.#editor.token();
     if (!token.text.startsWith("@")) return null;
     const options = this.#files.match(token.text.slice(1)).map((file) => ({ key: file, label: `@${file}` }));
-    // An empty list while the listing is still in flight would read as "no such file"; one after it has
-    // landed is the truth, and the menu closes.
     if (!options.length && this.#files.ready) return null;
     return { kind: "file", from: token.from, to: token.to, options };
   }
 
-  /**
-   * Line by line, so a hard break in a command's answer stays one.
-   *
-   * The markdown scanner folds consecutive lines into a paragraph, which is right for an answer written as
-   * prose and wrong for a column of commands — the whole reason the overlay exists is to lay them out.
-   */
+  // Line by line: the markdown scanner would fold a column of commands into one paragraph.
   static #overlayRows(text: string, width: number): CodeTuiLine[] {
     return text.split("\n").flatMap((line, at) =>
-      // A blank line keeps a space: a row with no spans renders as no element at all, and the gap it was
-      // there to make disappears.
+      // A row with no spans renders nothing, so a blank line keeps a space.
       CodeTuiLines.rows(
         line.trim() ? CodeTuiMarkdown.rows(line, width) : [{ spans: [{ text: " " }] }],
         width,
@@ -598,13 +487,7 @@ export class CodeTui {
     return parts.join(" · ");
   }
 
-  /**
-   * Model, window, profile and effort — the line that makes a wrong model descriptor visible.
-   *
-   * The declared window stays on screen next to the share used: a descriptor that is wrong but
-   * self-consistent — a 65k window declared for a provider that serves 1M — passes every programmatic check
-   * there is, and the only thing that catches it is a person reading the number.
-   */
+  // The declared window stays visible: a wrong but self-consistent descriptor passes every check but a reader's.
   #statusLabel() {
     const info = this.#transcript.info;
     if (!info) return "starting…";
@@ -663,7 +546,6 @@ export class CodeTui {
 
   #type = (text: string) => {
     const pasted = this.#agent.canSeeImages ? CodeTuiClipboard.imagePathsIn(text) : undefined;
-    // Only when a path was actually found: otherwise the text goes in byte for byte, newlines and all.
     if (pasted?.images.length) {
       for (const file of pasted.images) this.#attach(file);
       if (pasted.rest) this.#editor.insert(pasted.rest);
@@ -699,13 +581,6 @@ export class CodeTui {
     this.#renderNow();
   };
 
-  /**
-   * Up and down move inside the prompt, and fall through to history at its edges.
-   *
-   * That order is what makes a multi-line prompt editable at all: binding the arrows to history outright would
-   * leave no way to reach the line above the caret, and binding them to the buffer outright would lose the
-   * one-line recall that is most of what the arrows are used for.
-   */
   #vertical = (delta: -1 | 1) => {
     if (this.#picker) return this.#move(delta);
     if (this.#overlay) return this.#scroll(delta);
@@ -714,9 +589,7 @@ export class CodeTui {
       this.#menuAt = (this.#menuAt + delta + menu.length) % menu.length;
       return this.#renderNow();
     }
-    // While a recalled entry is on the prompt the arrows stay on history. One that wraps would otherwise
-    // swallow them moving inside itself, and since the text does not change the key reads as dead — which is
-    // the whole reason recall is a mode: an edit leaves it, and then the arrows move in the buffer again.
+    // While a recalled entry is shown the arrows stay on history; a wrapped entry would otherwise swallow them.
     if (this.#historyAt < 0 && this.#editor.move(delta, this.#snapshot().columns - promptMarkWidth - 1))
       return this.#renderNow();
     if (delta < 0) return this.#historyPrev();
@@ -727,8 +600,6 @@ export class CodeTui {
     const menu = this.#menu();
     const chosen = menu?.options[this.#menuAt];
     if (!menu || !chosen) return;
-    // A command taking an argument is completed with the space already typed, because the next thing the user
-    // means to do is type that argument. A path is followed by one for the same reason.
     const command = CodeTuiCommands.all.find((entry) => entry.name === chosen.key);
     const text = menu.kind === "command" ? `/${chosen.key}${command?.arg ? " " : ""}` : `@${chosen.key} `;
     this.#editor.replace(menu.from, menu.to, text);
@@ -799,8 +670,6 @@ export class CodeTui {
 
   #cancel = () => {
     if (this.#overlay || this.#picker) return this.#dismiss();
-    // Back to the choices, not out of the question: reaching the prompt was a keypress, and undoing it should
-    // cost the same rather than throwing away a question the model is still waiting on.
     if (this.#typing && this.#transcript.question?.options?.length) {
       this.#typing = false;
       this.#editor.clear();
@@ -817,7 +686,6 @@ export class CodeTui {
     }
   };
 
-  /** Ctrl+C stops the turn first and quits second, so one reflex never costs an unfinished answer. */
   #interrupt = () => {
     if (this.#transcript.streaming) {
       void this.#agent.abort();
@@ -831,9 +699,7 @@ export class CodeTui {
     if (this.#exiting) return;
     this.#exiting = true;
     this.#stdout.write(`${CodeTuiMouse.off}${CodeTui.pasteOff}`);
-    // Cleared before the unmount, not after: `clear` erases the rows of the frame Ink last wrote, and
-    // unmounting forgets how many that was — so afterwards it erases nothing and the whole session stays on
-    // the terminal, which is the mess a quit is supposed to take with it.
+    // clear() before unmount(): unmounting forgets the frame's height, so a later clear erases nothing.
     this.#instance.clear();
     this.#instance.unmount();
   }
@@ -842,10 +708,6 @@ export class CodeTui {
     if (this.#picker) return this.#resume(this.#picker.entries[this.#picker.at]?.id);
     const question = this.#transcript.question;
     if (question) return void this.#answerCurrent(question.questionId);
-    // Enter runs the highlighted command rather than the prefix under the caret, so `/hel` sends `/help` and
-    // a fully typed `/help` does not need a trailing space to close the menu first. Tab is the key that
-    // completes without running, which is the only reason to have both. A file mention has nothing to run,
-    // so there enter completes too.
     const menu = this.#menu();
     if (menu?.kind === "file") return this.#complete();
     const chosen = menu?.options[this.#menuAt];
@@ -866,12 +728,7 @@ export class CodeTui {
     void this.#agent.prompt(text, images).catch((error: unknown) => this.#fail(error));
   }
 
-  /**
-   * Pulls an image off the OS clipboard, because a paste never carries one.
-   *
-   * `ctrl+v` is handled by the terminal emulator: it writes the clipboard's **text** to stdin and has no way
-   * to hand over bytes, so an image on the clipboard is invisible to a TUI that only reads keys.
-   */
+  // A terminal paste carries only text, so an image has to be read off the OS clipboard.
   #paste = () => {
     if (!this.#agent.canSeeImages) return this.#open("images", CodeTui.#imageHelp(this.#transcript.info?.model));
     void CodeTuiClipboard.image()
@@ -879,51 +736,29 @@ export class CodeTui {
       .catch((error: unknown) => this.#fail(error));
   };
 
-  /**
-   * One whole paste, and the one place `cmd+v` arrives.
-   *
-   * The terminal handles that key itself and writes the clipboard's **text** to stdin — so with a screenshot
-   * on the clipboard there is no text to write and the paste comes through empty. Empty is therefore not
-   * nothing: it is a paste that had a picture in it, and going to the OS for that picture is what the key was
-   * asked to do. A clipboard that is genuinely empty asks for nothing, which is why the OS is consulted first.
-   */
   #pasted = (text: string) => {
     // A terminal sends a newline inside a paste as a carriage return; the prompt stores newlines.
     if (text) return this.#type(text.replace(/\r\n?/g, "\n"));
     if (CodeTuiClipboard.has()) this.#paste();
   };
 
-  /**
-   * Attaches a picture and writes its marker into the prompt.
-   *
-   * The marker is the attachment: deleting `[image #1]` before pressing enter un-attaches it, and there is
-   * nowhere else to go looking for what is about to be sent. A count in the corner cannot be edited.
-   */
+  // The marker is the attachment: deleting it from the prompt before enter un-attaches the image.
   #attach(file: string) {
     this.#images.push(file);
     this.#editor.insert(`[image #${this.#images.length}] `);
     this.#renderNow();
   }
 
-  /** The images whose markers survived editing, and the text with the markers taken out. */
   #pending(text: string) {
     const marks = [...text.matchAll(CodeTui.imageMark)].map((match) => Number(match[1]));
     const images = marks
       .map((mark) => this.#images[mark - 1])
       .filter((file): file is string => !!file)
       .map((path) => ({ path }));
-    // The marker takes its own trailing space with it; nothing else about the text is touched, because a
-    // paste of a stack trace or a snippet is exactly where collapsing runs of spaces does damage.
+    // Only the marker's own trailing space goes; collapsing spaces would damage a pasted stack trace.
     return { images, text: text.replace(CodeTui.imageMark, "").trim() };
   }
 
-  /**
-   * Why an image was refused, and what to do when the catalogue is the thing that is wrong.
-   *
-   * `input` is a claim in the model catalogue, not a fact we checked: sending a picture to a model the entry
-   * calls text-only earns a provider error nobody can act on, and refusing with no way to disagree is the
-   * other bad end of the same guess.
-   */
   static #imageHelp(model: { provider: string; id: string } | undefined) {
     const provider = model?.provider ?? "<provider>";
     const id = model?.id ?? "<model>";
@@ -950,7 +785,6 @@ export class CodeTui {
     this.#renderNow();
   };
 
-  /** Leaves the host for the runner to rebuild against the chosen session — see `CodeRunner.tui`. */
   #resume(id: string | undefined) {
     if (!id) return this.#dismiss();
     if (id === this.#transcript.info?.sessionId) return this.#dismiss();
@@ -958,12 +792,6 @@ export class CodeTui {
     this.#quit();
   }
 
-  /**
-   * Continues this conversation twice: the copy takes over here, the original stays where it was left.
-   *
-   * Switching to the copy rather than opening it beside this one is what makes the gesture mean "branch from
-   * right here" — the alternative leaves the person in the session they just decided not to continue.
-   */
   #fork(argument: string) {
     if (!this.#transcript.parts.some((part) => part.kind === "user"))
       return this.#open("fork", "Nothing has been said in this session yet, so a fork of it is a new session.");
@@ -977,12 +805,6 @@ export class CodeTui {
     }
   }
 
-  /**
-   * A question arriving takes the cursor, and the recommendation takes the cursor inside it.
-   *
-   * Offered under the cursor rather than merely labelled: "you decide" is the most common answer there is, and
-   * it should cost one keypress rather than a hunt down the list for the row that says so.
-   */
   #openQuestion(question: CodeAgentQuestion) {
     this.#typing = false;
     this.#checked = [];
@@ -1006,8 +828,6 @@ export class CodeTui {
       this.#editor.clear();
       return this.#renderNow();
     }
-    // The synthetic choice is filtered rather than refused: it can be ticked in a multi-select, and what it
-    // means there is the same thing it means alone — that the list did not have the answer.
     const keys = question?.multiSelect
       ? this.#checked.filter((key) => key !== CodeTui.freeTextKey)
       : [shown[this.#selected]?.key ?? ""];
@@ -1069,12 +889,6 @@ export class CodeTui {
     }
   }
 
-  /**
-   * What the `task` tool can open, and the ceilings it opens them under.
-   *
-   * The budget is the part worth showing: a sub-agent spends tokens nobody watching the transcript sees spent,
-   * so the number that stops it is the one a person needs in front of them before they ask for another.
-   */
   #agentList() {
     const budget = this.#agent.profile.tools.subagent;
     if (!budget) return "Sub-agents are off in this profile.";
@@ -1089,16 +903,8 @@ export class CodeTui {
     ].join("\n");
   }
 
-  /**
-   * The MCP servers, and the three things that can be done to them from here.
-   *
-   * `add` and `remove` write the file and stop there: the session's tool allowlist is fixed when the session
-   * is created, so a server declared now is reachable only by the reload — which is the same gesture a session
-   * switch already is, pointed back at this session.
-   */
   #mcp(argument: string) {
     const words = argument.split(" ").filter(Boolean);
-    // Anywhere in the line, because it reads as an adverb and nobody remembers which slot an adverb goes in.
     const local = words.includes("--local");
     const [verb, name, ...rest] = words.filter((word) => word !== "--local");
     const root = this.#agent.workspaceRoot;
@@ -1128,13 +934,7 @@ export class CodeTui {
     }
   }
 
-  /**
-   * Signing a server in, or forgetting that it ever was.
-   *
-   * The sign-in is left running rather than awaited: it opens a browser and waits for a person, which is
-   * minutes, and holding the command would freeze the prompt for all of them. The session reloads itself when
-   * the token lands, because a token this session did not start with reaches no tool registry until it does.
-   */
+  // Sign-in is not awaited: it waits minutes on a person in the browser, and would freeze the prompt meanwhile.
   #mcpAuth(verb: "login" | "logout", name: string | undefined) {
     const root = this.#agent.workspaceRoot;
     if (!name) return this.#open("mcp", [`Usage: /mcp ${verb} <name>`, "", ...CodeTuiMcp.usage].join("\n"));
@@ -1161,13 +961,7 @@ export class CodeTui {
     };
   }
 
-  /**
-   * Reopens this session against what is on disk now.
-   *
-   * The engine binds its tool registry at construction, so nothing declared afterwards can be reached without
-   * building another agent — and the runner already rebuilds one around a session id. Pointing that at the
-   * session already open keeps the conversation and takes the new assembly, which is what a reload is.
-   */
+  // The engine binds its tool registry at construction, so a reload rebuilds the agent around this session.
   #reload(notice: string) {
     const id = this.#transcript.info?.sessionId;
     if (!id || !this.#agent.sessions().some((entry) => entry.id === id))
@@ -1217,12 +1011,6 @@ export class CodeTui {
     }
   }
 
-  /**
-   * Switching model, and the three listings that answer "to what".
-   *
-   * A bare `/model` lists rather than prints a usage line: the id it wants is one of ~1,700 the catalogue
-   * carries, and nothing on screen anywhere else names even one of them.
-   */
   #setModel(argument: string) {
     const wanted = argument.trim();
     const [provider, ...rest] = wanted.split("/");
@@ -1236,13 +1024,7 @@ export class CodeTui {
     return this.#open("model", [`There is no provider called "${provider}".`, "", ...CodeTuiModels.usage].join("\n"));
   }
 
-  /**
-   * A command's answer, over the transcript rather than in it.
-   *
-   * A slash command asks the host something; the conversation is what the model and the person said to each
-   * other. Writing the answer into the transcript makes every `/help` a permanent row — and, on a profile
-   * that persists, part of what the next session reloads.
-   */
+  // Over the transcript, not in it: a persisted transcript would reload every `/help` answer next session.
   #open(title: string, text: string) {
     this.#overlay = { title, text };
     this.#overlayAt = 0;

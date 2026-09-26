@@ -1,12 +1,5 @@
 import type { CodeAgentProviderInfo } from "akanjs/common";
 
-/**
- * What `/model` puts on screen.
- *
- * Three screens rather than one list, because the catalogue is ~1,700 models across 41 providers and a single
- * listing of it answers nothing. What a person is asking is one of: what can I switch to right now, what else
- * could I run, and what does this provider offer — so those are the three.
- */
 export class CodeTuiModels {
   /** `DEEPSEEK_API_KEY` names the provider `deepseek`; the engine's ids are lower-kebab, so the map is exact. */
   static envKeyOf(provider: string) {
@@ -19,7 +12,6 @@ export class CodeTuiModels {
     "/model <provider>        what one provider offers",
   ];
 
-  /** The models that can be switched to right now: everything under a provider with a configured key. */
   static list(catalogue: CodeAgentProviderInfo[]) {
     const ready = catalogue.filter((provider) => provider.authorized);
     const locked = catalogue.length - ready.length;
@@ -68,7 +60,6 @@ export class CodeTuiModels {
     ].join("\n");
   }
 
-  /** One provider's models, whether or not it has a key — this is the screen that answers "could I run X". */
   static ofProvider(catalogue: CodeAgentProviderInfo[], id: string) {
     const provider = catalogue.find((entry) => entry.id === id);
     if (!provider) return undefined;
