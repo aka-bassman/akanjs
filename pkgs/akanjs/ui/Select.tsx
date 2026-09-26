@@ -26,10 +26,8 @@ import { overlayZ, useOverlayLayerProps } from "./overlayLayer";
 import { useOverlayPosition } from "./overlayPosition";
 import { createOverridable, useUiOverride } from "./UiOverride";
 
-// Bound here rather than taken off the `Loading` namespace: that namespace pulls `Loading/ProgressBar`, which
-// imports the `akanjs/ui` barrel, and the barrel reaches `Field/index.tsx` — which imports this file's caller.
-// The cycle leaves `Field/Relation` half-initialized. `createOverridable` only looks a slot up at render, so
-// binding the same name twice resolves to the same `_overrides.tsx` entry.
+// Not `Loading.Spin`: that namespace reaches the `akanjs/ui` barrel, whose cycle back through `Field/index.tsx`
+// half-initializes `Field/Relation`. A slot is looked up at render, so binding the name twice is harmless.
 const LoadingSpin = createOverridable("LoadingSpin", Spin);
 
 interface LabelOption<T> {
@@ -44,41 +42,29 @@ export interface SelectProps<
   Searchable extends boolean = false,
   Option extends Options<T> = Options<T>,
 > {
-  /** Optional label shown above the selector. */
   label?: ReactNode;
-  /** Optional tooltip/help description next to the label. */
   desc?: ReactNode;
   labelClassName?: string;
   className?: string;
-  /** Controlled selected value, or selected values when multiple is true. */
   value: Multiple extends true ? T[] : T;
-  /** Option values, label/value pairs, or an Akan enum instance. */
   options: Searchable extends true ? (T extends string ? Option : LabelOption<T>[]) : Option;
-  /** Enable selecting multiple values. */
   multiple?: Multiple;
-  /** Enable search input inside the selector. */
   searchable?: Searchable;
   placeholder?: string;
   selectClassName?: string;
   selectorClassName?: string;
   selectedClassName?: string;
-  /** Allow no value to be selected: offers a clear row and the clear button. */
+  /** Offers a clear row and a clear button. */
   nullable?: boolean;
-  /** Disable open and selection behavior. */
   disabled?: boolean;
-  /** The options are still being loaded: shows a spinner in place of the empty placeholder. */
+  /** Shows a spinner in place of the empty placeholder. */
   loading?: boolean;
-  /** Called when the dropdown opens. */
   onOpen?: () => void;
-  /** Controlled change callback. Receives next and previous value. */
   onChange: Multiple extends true ? (value: T[], prev: T[]) => void : (value: T, prev: T) => void;
-  /** Optional remote/local search callback. */
+  /** Replaces local filtering; debounced 300ms and never called with empty text. */
   onSearch?: (text: string) => void;
-  /** Placeholder for a selector with no options to offer. */
   empty?: ReactNode;
-  /** Custom option renderer. */
   renderOption?: (value: T) => ReactNode;
-  /** Custom selected value renderer. */
   renderSelected?: (value: T) => ReactNode;
 }
 
@@ -129,19 +115,15 @@ const DefaultSelect = <
   }, [options]);
 
   const [searchText, setSearchText] = useState("");
-  // Resolved in an effect rather than at render: the first client pass has to match the server's, which
-  // portalled nothing. The panel is mounted while closed, so a render-time `typeof document` branch would
-  // hand hydration an extra node on every SSR page that renders a Select.
+  // Set in an effect: the first client pass has to match the server's, which portalled nothing.
   const [portal, setPortal] = useState<HTMLElement | null>(null);
   const [searchOptions, setSearchOptions] = useState<LabelOption<T>[]>(labeledOptions);
   const [activeIdx, setActiveIdx] = useState(-1);
   const listId = useId();
   const dropdownRef = useRef<HTMLDivElement>(null);
-  // Measured off the field, not the wrapper: a label sits inside the wrapper, and a panel placed above
-  // would clear that label instead of the control it drops out of.
+  // The field, not the wrapper: a panel placed above must clear the control, not its label.
   const fieldRef = useRef<HTMLDivElement>(null);
   const optionsRef = useRef<HTMLDivElement>(null);
-  // Read through the portal-to-be: whichever dismissable scope rendered this field owns its options.
   const overlayLayerProps = useOverlayLayerProps();
   const position = useOverlayPosition({
     opened: isOpen,
@@ -150,11 +132,10 @@ const DefaultSelect = <
     align: "start",
   });
 
-  // Read off the prop rather than mirrored in state: a parent that refuses a change keeps its own value
-  // on screen, which a local copy would silently overwrite until the prop happened to change again.
+  // Off the prop, not mirrored in state: a parent that refuses a change must keep its own value on screen.
   const selectedValues: T[] = multiple ? ((value as T[]) ?? []) : [value as T];
   const hasSelection = multiple ? selectedValues.length > 0 : value !== null && value !== undefined;
-  // A null row is the clear row `nullable` puts at the head of the same list the keyboard walks.
+  // `null` is the clear row, walked by the keyboard like any option.
   const rows: (LabelOption<T> | null)[] = useMemo(
     () => (nullable ? [null, ...searchOptions] : searchOptions),
     [nullable, searchOptions],
@@ -174,7 +155,7 @@ const DefaultSelect = <
 
   const handleClickOutside = (event: Event) => {
     const target = event.target as Node;
-    // The options portal out of this subtree, so the field alone is no longer the whole of "inside".
+    // The options portal out of this subtree.
     if (optionsRef.current?.contains(target)) return;
     if (dropdownRef.current && !dropdownRef.current.contains(target)) close();
   };
@@ -301,8 +282,7 @@ const DefaultSelect = <
         <span className="flex w-full flex-wrap items-center gap-1">
           {multiple
             ? selectedValues.map((v, index) => {
-                // Off the value, not off a matching option: the options are the caller's to load and can lag
-                // behind the value, or never carry it — dropping the chip would blank a field that holds one.
+                // Off the value: options can lag behind it or never carry it, and dropping the chip blanks the field.
                 const optionValue = labeledOptions.find((option) => option.value === v);
                 return (
                   <div
@@ -389,8 +369,7 @@ const DefaultSelect = <
               aria-hidden={!isOpen}
               {...overlayLayerProps}
               data-open={isOpen}
-              // Inline, because a computed position cannot be a class. The width follows the field, which is
-              // what `w-full` did while the panel still lived inside it.
+              // Inline: a computed position cannot be a class.
               style={{
                 position: "fixed",
                 zIndex: overlayZ.select,
@@ -401,10 +380,8 @@ const DefaultSelect = <
               }}
               className={cn(
                 "scrollbar-thin scrollbar-thumb-foreground/20 scrollbar-track scrollbar-track-foreground/40 overflow-y-auto rounded-box border border-border bg-popover text-popover-foreground shadow-lg",
-                // Animated through max-height, not height: `height` cannot ease to `auto`, so a fixed open
-                // height was the only way to animate — and it left a short list padded out with dead space.
-                // Only that property eases: `transition-all` would ease the computed top/left as well, and
-                // the panel would lag behind its field on every scroll.
+                // max-height because height cannot ease to `auto`; easing anything else would lag the fixed
+                // top/left behind the field on scroll.
                 "origin-center transition-[max-height] duration-200 data-[open=false]:max-h-0 data-[open=true]:max-h-[270px] data-[open=true]:border data-[open=false]:border-none",
                 selectorClassName,
               )}
@@ -471,11 +448,7 @@ const DefaultSelect = <
   );
 };
 
-/**
- * Select. Resolves to a route-scoped override when a `page/**\/_overrides.tsx` in the route's
- * ancestry declares one, otherwise renders {@link DefaultSelect}. The public generic signature is
- * preserved, so `<Select<MyEnum, true> …/>` still infers the value/onChange shape.
- */
+// Written out rather than `createOverridable`, so `<Select<MyEnum, true> …/>` still infers.
 export const Select = <
   T extends string | number | boolean | null | undefined,
   Multiple extends boolean = false,

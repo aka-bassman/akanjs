@@ -137,16 +137,10 @@ export const DefaultDropdown = ({
           {value}
         </button>
       )}
-      {/* Mounted from the first render and hidden while closed: a menu item declares its tool on mount, so an
-          unmounted menu publishes nothing an agent could find — and unmounting an open one takes any overlay
-          a menu item opened down with it. */}
+      {/* Mounted while closed: an item declares its agent tool on mount, and unmounting would drop its overlays. */}
       {portal ? createPortal(menu, portal) : null}
     </div>
   );
 };
 
-/**
- * Dropdown. Resolves to a route-scoped override when a `page/**\/_overrides.tsx`
- * in the route's ancestry declares one, otherwise renders {@link DefaultDropdown}.
- */
 export const Dropdown = createOverridable("Dropdown", DefaultDropdown);

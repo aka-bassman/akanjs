@@ -5,7 +5,6 @@ import { type ComponentType, createElement, Fragment, type ReactNode } from "rea
 import { buttonRecipe } from "./Button";
 import { createOverridable, useUiOverride, useUiRecipe } from "./UiOverride";
 
-/** Toggle-select cell: outline button (recipe slot), filled primary when selected. */
 const selectedCls = "border-transparent bg-primary text-primary-foreground hover:bg-primary/90";
 
 export interface ToggleSelectProps<I extends string | number | boolean | null> {
@@ -161,17 +160,13 @@ const DefaultMulti = ({
     </div>
   );
 };
+// Written out rather than `createOverridable`, so `<ToggleSelect<Status> …/>` still infers.
 const ToggleSelectBase = <I extends string | number | boolean | null>(props: ToggleSelectProps<I>) => {
   const Override = useUiOverride("ToggleSelect");
   const Impl = (Override ?? DefaultToggleSelect) as unknown as ComponentType<ToggleSelectProps<I>>;
   return createElement(Impl, props);
 };
 
-/**
- * Toggle-select. `ToggleSelect` keeps its generic signature (so `<ToggleSelect<Status> …/>` still
- * infers), and both it and `ToggleSelect.Multi` resolve to a route-scoped override when a
- * `page/**\/_overrides.tsx` in the route's ancestry declares one (slots `ToggleSelect`, `ToggleSelectMulti`).
- */
 export const ToggleSelect = Object.assign(ToggleSelectBase, {
   Multi: createOverridable("ToggleSelectMulti", DefaultMulti),
 });

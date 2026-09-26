@@ -18,26 +18,20 @@ import { inputRecipe } from "./recipe";
 import { createOverridable, useUiRecipe } from "./UiOverride";
 
 export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & {
-  /** Visual input style. */
   inputStyleType?: "bordered" | "borderless" | "underline";
-  /** Ref forwarded to the native input element. */
   inputRef?: RefObject<HTMLInputElement | null>;
-  /** Controlled input value. */
   value: string;
-  /** Allow empty value without warning status. */
+  /** Allows an empty value without the warning status. */
   nullable?: boolean;
-  /** Optional leading icon. */
   icon?: React.ReactNode;
   iconClassName?: string;
   inputClassName?: string;
   inputWrapperClassName?: string;
-  /** Called when Enter is pressed. */
   onPressEnter?: (value: any, event: KeyboardEvent<HTMLInputElement>) => void;
-  /** Returns true for valid input, false/string for invalid input. */
+  /** `true` is valid; `false` or a message string is invalid. */
   validate?: (value: string) => boolean | string;
-  /** Controlled value change callback. */
   onChange?: (value: string, e?: ChangeEvent<HTMLInputElement>) => void;
-  /** Called when Escape is pressed after blurring the input. */
+  /** Called after Escape blurs the input. */
   onPressEscape?: (e: KeyboardEvent<HTMLInputElement>) => void;
 };
 const DefaultInput = ({
@@ -69,7 +63,6 @@ const DefaultInput = ({
       : validateResult === false
         ? l("base.invalidValueError")
         : validateResult;
-  // const invalidMessage = l("base.invalidValueError");
   const statusClass =
     inputStyleType === "bordered"
       ? status === "error"
@@ -115,7 +108,6 @@ const DefaultInput = ({
         className={cn(
           "text-foreground outline-hidden duration-300 focus:border-primary focus:outline-hidden",
           inputType,
-          // statusClass,
           inputClassName,
         )}
       />
@@ -546,15 +538,9 @@ const DefaultNumber = ({
           value={formatValue}
           onKeyDown={handleKeyDown}
           onBlur={(e) => {
-            // if (rest.max !== undefined && parsedValue > parseFloat(rest.max as string)) {
-            //   e.target.value = formatter ? formatter(String(rest.max)) : String(rest.max);
-            // } else if (rest.min !== undefined && parsedValue < parseFloat(rest.min as string)) {
-            //   e.target.value = formatter ? formatter(String(rest.min)) : String(rest.min);
-            // }
             if (firstFocus && value) setFirstFocus(false);
           }}
           onChange={(e) => {
-            //string만 허용
             const parsedValue = parser ? parser(e.target.value) : e.target.value;
             setFormatValue(formatter ? formatter(parsedValue) : e.target.value);
             onChange(parser ? parseFloat(parsedValue) : parseFloat(e.target.value), e);
@@ -590,8 +576,7 @@ const DefaultCheckbox = ({ checked, onChange, className, ...rest }: CheckboxProp
       {...agentAttrs(onChange)}
       type="checkbox"
       checked={checked}
-      // Native rendering with `accent-color` rather than an appearance-none rebuild: the browser keeps
-      // the focus ring, keyboard toggle and indeterminate state, and only the fill needs theming.
+      // Native with `accent-color`: the browser keeps the focus ring, keyboard toggle and indeterminate state.
       className={cn("size-5 accent-primary", className)}
       onChange={(e) => {
         onChange(e.target.checked, e);
@@ -601,11 +586,6 @@ const DefaultCheckbox = ({ checked, onChange, className, ...rest }: CheckboxProp
 };
 const InputBase = createOverridable("Input", DefaultInput);
 
-/**
- * Text input plus its field variants. Each leaf resolves to a route-scoped override when a
- * `page/**\/_overrides.tsx` in the route's ancestry declares one (slots `Input`, `InputTextArea`,
- * `InputPassword`, `InputEmail`, `InputNumber`, `InputCheckbox`), otherwise renders the default.
- */
 export const Input = Object.assign(InputBase, {
   TextArea: createOverridable("InputTextArea", DefaultTextArea),
   Password: createOverridable("InputPassword", DefaultPassword),

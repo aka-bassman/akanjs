@@ -9,7 +9,6 @@ import { createOverridable, useUiRecipe } from "./UiOverride";
 export interface PaginationProps {
   /** 1-based. */
   currentPage: number;
-  /** Total number of items. */
   total: number;
   /** Called with the 1-based page. */
   onPageSelect: (page: number) => void;

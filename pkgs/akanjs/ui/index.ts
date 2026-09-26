@@ -1,10 +1,4 @@
-// The chat's own parts, so an app bound to an `Agent*` slot composes the default instead of re-implementing it.
-// The `use-agentic` names below are re-exported because an app may not import that package directly (a barrel
-// takes no third-party import): without them a replacement cannot see the session an `Agent.Zone` handed down,
-// a custom transport cannot be typed, and a host cannot back the transcript with a store of its own.
-
-// Re-exported beside the chat it points into, so a component pointing at data imports from one place rather than
-// reaching into the store barrel for the hook and `akanjs/ui` for the chat.
+// `use-agentic` is re-exported because an app may not import that package directly (no-import-external-library).
 export { type AgentReferenceInput, useAgentReference } from "akanjs/store";
 export {
   AgentProvider,
@@ -146,11 +140,9 @@ export {
 } from "./Toast";
 export { ToggleSelect } from "./ToggleSelect";
 export { Tooltip, type TooltipProps } from "./Tooltip";
-// Public so a `Dropdown` replacement bound in `_overrides.tsx` can put the menu's aria state on its own trigger,
-// the way the default does. Framework surfaces otherwise wrap their slots — see the note in the file.
+// Public so a `Dropdown` replacement can put the menu's aria state on its own trigger, as the default does.
 export { triggerSlot } from "./triggerSlot";
-// `UiOverrideProvider` is public on purpose: the wrapper generated for every `_overrides.tsx`
-// (devkit `artifact/implicitRootLayout.ts`) imports it from `akanjs/ui`, and an app may mount one around a subtree.
+// `UiOverrideProvider` is imported from here by the wrapper devkit generates for every `_overrides.tsx`.
 export {
   type AkanModalComponent,
   type AkanUiOverrideManifest,

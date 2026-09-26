@@ -1,19 +1,7 @@
 import { actionTagOf } from "akanjs/store";
 
-/**
- * The `data-akan-*` attributes for a handler the caller passed by reference.
- *
- * `{}` when the handler is an inline arrow, which is the honest answer: a closure the caller wrote says nothing
- * about what it does, and a guessed annotation is worse than none. The house form for a model field is the setter
- * itself (`onChange={st.do.setNameOnUser}`), so the fields that matter are annotated without an app writing anything.
- *
- * What it buys, beyond an in-page agent: an accessibility tree and E2E selectors that name the action rather than a
- * class, and an external browser agent — one this framework has no bridge into — reading the same names.
- *
- * `key` is for a control that shares its handler with its siblings — a tab's menus, a list's rows — and names
- * which one of them this is, in the same vocabulary the call's argument uses. Without it every namesake is
- * interchangeable in the DOM, so the page can say *what* the agent did but never *where*.
- */
+/** `data-akan-*` attributes for a handler passed by reference, `{}` for an inline arrow. `key` tells apart the
+ *  controls sharing one handler (a tab's menus, a list's rows), in the vocabulary of the call's argument. */
 export const agentAttrs = (
   handler: unknown,
   key?: string | number,

@@ -21,19 +21,15 @@ export interface RecentTimeRelative {
 export type RecentTimeRelativeFormat = RecentTimeRelativeStyle | ((relative: RecentTimeRelative) => string);
 
 export interface RecentTimeProps {
-  /** Date value to render. Null renders nothing, and epoch placeholder values render --:--. */
+  /** Null renders nothing; an epoch placeholder renders --:--. */
   date: Date | Dayjs | null;
-  /** Unit at which relative labels stop and formatted dates are shown instead. */
+  /** The unit past which a formatted date replaces the relative label. */
   breakUnit?: Intl.RelativeTimeFormatUnit;
-  /** Use compact automatic formatting or always include date and time. */
+  /** `"full"` always includes date and time. */
   format?: "full" | "auto";
-  /**
-   * Relative phrasing. `"fromNow"` (default) keeps dayjs locale strings (`하루 전`).
-   * `"always"` / `"auto"` use `Intl.RelativeTimeFormat` — `1일 전` vs `어제`.
-   * A function replaces the relative label; return `defaultLabel` to keep the default.
-   */
+  /** `"fromNow"` (default) keeps dayjs locale strings (`하루 전`); `"always"` / `"auto"` use `Intl.RelativeTimeFormat`
+   *  (`1일 전` vs `어제`); a function replaces the label, returning `defaultLabel` to keep it. */
   relative?: RecentTimeRelativeFormat;
-  /** Additional classes for the trigger span. */
   className?: string;
 }
 

@@ -71,9 +71,7 @@ export interface DatePickerProps {
   value?: Dayjs | null;
   onChange: (value: Dayjs | null) => void;
   showTime?: boolean;
-  /** Earliest selectable value. The browser enforces it. */
   min?: Dayjs | null;
-  /** Latest selectable value. The browser enforces it. */
   max?: Dayjs | null;
   /** Rejected on selection rather than greyed out — a native field constrains only through `min` / `max`. */
   disabledDate?: (date: Dayjs) => boolean | null | undefined;
@@ -118,8 +116,7 @@ export interface RangePickerProps {
 
 const DefaultRangePicker = ({ className = "", value, onChange, showTime, disabledDate }: RangePickerProps) => {
   const type = showTime ? "datetime-local" : "date";
-  // The wrapper is the field shell; the two inputs sit inside it, so they carry no shell of their own —
-  // `p-0` on the wrapper puts their edges on top of its border and a second border would double the line.
+  // The wrapper is the field shell, so the inputs carry none: a second border would double the line.
   const inputClassName = "m-0 h-full w-full border-none bg-transparent p-3 text-center focus:outline-hidden";
   return (
     <div className={inputRecipe({}, ["flex h-full w-fit items-center gap-2 p-0", className])}>
@@ -172,15 +169,8 @@ const DefaultTimePicker = ({ className, value, onChange, disabled, disabledDate 
 
 const DatePickerBase = createOverridable("DatePicker", DefaultDatePicker);
 
-/**
- * Date picker. `DatePicker`, `DatePicker.RangePicker`, and `DatePicker.TimePicker` each resolve to a
- * route-scoped override when a `page/**\/_overrides.tsx` in the route's ancestry declares one (slots
- * `DatePicker`, `DatePickerRangePicker`, `DatePickerTimePicker`).
- *
- * Each renders one native `<input type="date" | "datetime-local" | "time">`, so the calendar is the browser's
- * own: an OS wheel on mobile, keyboard entry everywhere, nothing shipped in the bundle. What that costs is a
- * themed popup, a chosen display format, and per-day disabling — an app needing any of those overrides the slot.
- */
+// Native inputs: the browser's own calendar and nothing bundled, at the cost of a themed popup, a display format
+// and per-day disabling — an app needing those overrides the slot.
 export const DatePicker = Object.assign(DatePickerBase, {
   RangePicker: createOverridable("DatePickerRangePicker", DefaultRangePicker),
   TimePicker: createOverridable("DatePickerTimePicker", DefaultTimePicker),
