@@ -19,8 +19,6 @@ import type { DatePickerProps, RangePickerProps, TimePickerProps } from "../Date
 import type { DropdownProps } from "../Dropdown";
 import type { EmptyProps } from "../Empty";
 import type { CheckboxProps, EmailProps, InputProps, NumberProps, PasswordProps, TextAreaProps } from "../Input";
-import type { LoadingProps as LoadingButtonProps } from "../Loading/Button";
-import type { LoadingProps as LoadingInputProps } from "../Loading/Input";
 import type { ProgressBarProps } from "../Loading/ProgressBar";
 import type { SkeletonProps } from "../Loading/Skeleton";
 import type { SpinProps } from "../Loading/Spin";
@@ -93,8 +91,8 @@ export interface AkanUiOverrides {
   LoadingSpin: ComponentType<SpinProps>;
   LoadingSkeleton: ComponentType<SkeletonProps>;
   LoadingProgressBar: ComponentType<ProgressBarProps>;
-  LoadingButton: ComponentType<LoadingButtonProps>;
-  LoadingInput: ComponentType<LoadingInputProps>;
+  LoadingButton: ComponentType<SkeletonProps>;
+  LoadingInput: ComponentType<SkeletonProps>;
   LoadingArea: ComponentType<Record<string, never>>;
 }
 

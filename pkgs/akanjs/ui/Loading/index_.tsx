@@ -1,11 +1,8 @@
 "use client";
 import { createOverridable } from "../UiOverride";
-import { Area } from "./Area";
-import { Button } from "./Button";
-import { Input } from "./Input";
 import { ProgressBar } from "./ProgressBar";
-import { Skeleton } from "./Skeleton";
-import { Spin } from "./Spin";
+import { Button, Input, Skeleton } from "./Skeleton";
+import { Area, Spin } from "./Spin";
 
 // One export per member, not the namespace: a `"use client"` module's exports become client-reference stubs, so
 // `Loading.Skeleton` off one stub would be `undefined` on the server. `index.ts` assembles the namespace instead.
