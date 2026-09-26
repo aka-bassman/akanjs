@@ -38,11 +38,7 @@ import {
 
 type Equal<Left, Right> =
   (<Type>() => Type extends Left ? 1 : 2) extends <Type>() => Type extends Right ? 1 : 2 ? true : false;
-/**
- * Mutual assignability, for a guard about what a type *carries* rather than how it is spelled. `Equal` above is
- * identity, which tells an intersection apart from the object it resolves to — a distinction that matters for a
- * marker type and not for "does this return carry the app's own fields".
- */
+// What a type carries, where `Equal` (identity) would tell an intersection apart from the object it resolves to.
 type Mutual<Left, Right> = [Left] extends [Right] ? ([Right] extends [Left] ? true : false) : false;
 type Expect<Type extends true> = Type;
 type TypeRegressionBaseFetch = {
@@ -87,8 +83,7 @@ type TypeRegressionAppUser = TypeRegressionSharedUser & { githubInfo: { login: s
 type TypeRegressionUserEndpoint = EndpointCls<
   never,
   {
-    // The trailing `false` is `Nullable`, which defaults to `boolean` — i.e. nullable — and made this
-    // regression guard assert against `TypeRegressionSharedUser | null` instead of the app's full model.
+    // The trailing `false` is `Nullable`, whose `boolean` default would make this guard assert `… | null`.
     getSelf: EndpointInfo<
       "query",
       Record<string, unknown>,
@@ -152,6 +147,36 @@ const setMockFetch = () => {
     const status = responseStatuses.length ? responseStatuses.shift() : 200;
     return Response.json(value, { status });
   }) as typeof fetch;
+};
+const setHangingFetch = () => {
+  const signals: (AbortSignal | null | undefined)[] = [];
+  globalThis.fetch = ((_url: string, init?: RequestInit) => {
+    signals.push(init?.signal);
+    return new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject((init.signal as AbortSignal).reason));
+    });
+  }) as typeof globalThis.fetch;
+  return signals;
+};
+const setAnsweringFetch = () => {
+  const signals: (AbortSignal | null | undefined)[] = [];
+  globalThis.fetch = ((_url: string, init?: RequestInit) => {
+    signals.push(init?.signal);
+    return Promise.resolve(new Response("{}", { headers: { "content-type": "application/json" } }));
+  }) as typeof globalThis.fetch;
+  return signals;
+};
+const captureWarnings = async (run: (warnings: string[]) => Promise<void>) => {
+  const originalConsoleWarn = console.warn;
+  const warnings: string[] = [];
+  console.warn = ((message: string) => {
+    warnings.push(message);
+  }) as typeof console.warn;
+  try {
+    await run(warnings);
+  } finally {
+    console.warn = originalConsoleWarn;
+  }
 };
 const setAkanPublicEnv = () => {
   process.env.AKAN_PUBLIC_APP_NAME = "fetchTest";
@@ -385,39 +410,21 @@ const databaseSignal: SerializedSignal = {
 describe("HttpClient", () => {
   test("gives up on a request nothing answers, as the slow-server error rather than a bare abort", async () => {
     const client = new HttpClient("http://127.0.0.1:1");
-    const original = globalThis.fetch;
-    // Never resolves unless the signal fires, which is exactly the request the old client waited out.
-    globalThis.fetch = ((_url: string, init?: RequestInit) =>
-      new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject((init.signal as AbortSignal).reason));
-      })) as typeof globalThis.fetch;
-    try {
-      const failure = await client.get("/slow", { timeout: 10 }).catch((error: unknown) => error);
-      expect((failure as { statusCode?: number }).statusCode).toBe(408);
-      expect((failure as Error).message).toBe("base.error.gatewayTimeout");
-    } finally {
-      globalThis.fetch = original;
-    }
+    setHangingFetch();
+    const failure = await client.get("/slow", { timeout: 10 }).catch((error: unknown) => error);
+    expect((failure as { statusCode?: number }).statusCode).toBe(408);
+    expect((failure as Error).message).toBe("base.error.gatewayTimeout");
   });
 
   test("leaves an upload without a deadline, since a large body on a slow uplink is working", async () => {
     const client = new HttpClient("http://127.0.0.1:1");
-    const original = globalThis.fetch;
-    const signals: (AbortSignal | null | undefined)[] = [];
-    globalThis.fetch = ((_url: string, init?: RequestInit) => {
-      signals.push(init?.signal);
-      return Promise.resolve(new Response("{}", { headers: { "content-type": "application/json" } }));
-    }) as typeof globalThis.fetch;
-    try {
-      const form = new FormData();
-      form.set("files", new Blob(["x"]));
-      await client.post("/upload", form);
-      await client.post("/plain", { title: "x" });
-      expect(signals[0]).toBeUndefined();
-      expect(signals[1]).toBeInstanceOf(AbortSignal);
-    } finally {
-      globalThis.fetch = original;
-    }
+    const signals = setAnsweringFetch();
+    const form = new FormData();
+    form.set("files", new Blob(["x"]));
+    await client.post("/upload", form);
+    await client.post("/plain", { title: "x" });
+    expect(signals[0]).toBeUndefined();
+    expect(signals[1]).toBeInstanceOf(AbortSignal);
   });
 
   test("builds paths, urls, and bodies", () => {
@@ -453,8 +460,7 @@ describe("HttpClient", () => {
         new Map<string, unknown>([["args", ["a", 2, null]]]),
       ),
     ).toBe(`/items?args=${encodeURIComponent('["a",2,null]')}`);
-    // A value JSON cannot spell stringifies to `undefined`, which `URLSearchParams.set` would write as the
-    // literal text "undefined" — and the reader answers 400 on it. An arg it cannot carry it does not carry.
+    // Unspellable in JSON, it stringifies to `undefined`, which `set` would send as "undefined" and the reader 400s.
     expect(
       HttpClient.makeUrl(
         "/items",
@@ -562,53 +568,27 @@ describe("HttpClient", () => {
 
   test("uses the constructor timeout when the call does not name one", async () => {
     const client = new HttpClient("http://127.0.0.1:1", { timeout: 10 });
-    const original = globalThis.fetch;
-    globalThis.fetch = ((_url: string, init?: RequestInit) =>
-      new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject((init.signal as AbortSignal).reason));
-      })) as typeof globalThis.fetch;
-    try {
-      const failure = await client.get("/slow").catch((error: unknown) => error);
-      expect((failure as { statusCode?: number }).statusCode).toBe(408);
-    } finally {
-      globalThis.fetch = original;
-    }
+    setHangingFetch();
+    const failure = await client.get("/slow").catch((error: unknown) => error);
+    expect((failure as { statusCode?: number }).statusCode).toBe(408);
   });
 
   test("constructor timeout false leaves a json call unbounded", async () => {
     const client = new HttpClient("http://127.0.0.1:1", { timeout: false });
-    const original = globalThis.fetch;
-    const signals: (AbortSignal | null | undefined)[] = [];
-    globalThis.fetch = ((_url: string, init?: RequestInit) => {
-      signals.push(init?.signal);
-      return Promise.resolve(new Response("{}", { headers: { "content-type": "application/json" } }));
-    }) as typeof globalThis.fetch;
-    try {
-      await client.get("/items");
-      expect(signals[0]).toBeUndefined();
-    } finally {
-      globalThis.fetch = original;
-    }
+    const signals = setAnsweringFetch();
+    await client.get("/items");
+    expect(signals[0]).toBeUndefined();
   });
 
   test("leaves a constructor timeout off an upload unless the call names one", async () => {
     const client = new HttpClient("http://127.0.0.1:1", { timeout: 10 });
-    const original = globalThis.fetch;
-    const signals: (AbortSignal | null | undefined)[] = [];
-    globalThis.fetch = ((_url: string, init?: RequestInit) => {
-      signals.push(init?.signal);
-      return Promise.resolve(new Response("{}", { headers: { "content-type": "application/json" } }));
-    }) as typeof globalThis.fetch;
-    try {
-      const form = new FormData();
-      form.set("files", new Blob(["x"]));
-      await client.post("/upload", form);
-      await client.post("/upload", form, { timeout: 10 });
-      expect(signals[0]).toBeUndefined();
-      expect(signals[1]).toBeInstanceOf(AbortSignal);
-    } finally {
-      globalThis.fetch = original;
-    }
+    const signals = setAnsweringFetch();
+    const form = new FormData();
+    form.set("files", new Blob(["x"]));
+    await client.post("/upload", form);
+    await client.post("/upload", form, { timeout: 10 });
+    expect(signals[0]).toBeUndefined();
+    expect(signals[1]).toBeInstanceOf(AbortSignal);
   });
 
   test("restores non-ok responses with the provided error constructor", async () => {
@@ -1061,9 +1041,7 @@ describe("FetchClient HTTP generation", () => {
     jsonResponses.push("Scoped", "Legacy", "Neighbour");
     const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
     setAkanPublicEnv();
-    // Read back rather than assume: `getEnv()` caches on its first call anywhere in the process, and the
-    // workspace runner supplies an `AKAN_PUBLIC_ENV` that `setAkanPublicEnv` does not set. A hardcoded
-    // environment made every token read as another app's, so the header vanished under `akan test` only.
+    // Read back: `getEnv()` caches on first call, and the workspace runner sets an `AKAN_PUBLIC_ENV` this does not.
     const { appName, environment } = getEnv();
     const jwtOf = (tokenApp: string) =>
       `header.${Buffer.from(JSON.stringify({ appName: tokenApp, environment })).toString("base64url")}.signature`;
@@ -1635,12 +1613,7 @@ describe("FetchClient database signal helpers", () => {
 describe("WsClient", () => {
   test("warns when realtime APIs are used and nothing ever connects", async () => {
     setFakeWebSocket();
-    const originalConsoleWarn = console.warn;
-    const warnings: string[] = [];
-    console.warn = ((message: string) => {
-      warnings.push(message);
-    }) as typeof console.warn;
-    try {
+    await captureWarnings(async (warnings) => {
       const client = new WsClient("ws://example/ws");
       client.emit("send", ["hello"]);
       client.subscribe({ key: "roomKey", data: ["r1"], handleEvent: () => undefined });
@@ -1651,19 +1624,12 @@ describe("WsClient", () => {
         expect.stringContaining('before emit "send"'),
         expect.stringContaining('before subscribe "roomKey"'),
       ]);
-    } finally {
-      console.warn = originalConsoleWarn;
-    }
+    });
   });
 
   test("queues a subscribe issued before connect and replays it on open without warning", async () => {
     setFakeWebSocket();
-    const originalConsoleWarn = console.warn;
-    const warnings: string[] = [];
-    console.warn = ((message: string) => {
-      warnings.push(message);
-    }) as typeof console.warn;
-    try {
+    await captureWarnings(async (warnings) => {
       const client = new WsClient("ws://example/ws");
       const events: unknown[] = [];
       client.subscribe({ key: "roomKey", data: ["r1"], handleEvent: (data) => events.push(data) });
@@ -1676,19 +1642,12 @@ describe("WsClient", () => {
       expect(events).toEqual([{ title: "event" }]);
       await new Promise((resolve) => originalSetTimeout(resolve, 5));
       expect(warnings).toEqual([]);
-    } finally {
-      console.warn = originalConsoleWarn;
-    }
+    });
   });
 
   test("queues an emit issued before connect and replays it on open without warning", async () => {
     setFakeWebSocket();
-    const originalConsoleWarn = console.warn;
-    const warnings: string[] = [];
-    console.warn = ((message: string) => {
-      warnings.push(message);
-    }) as typeof console.warn;
-    try {
+    await captureWarnings(async (warnings) => {
       const client = new WsClient("ws://example/ws");
       client.emit("send", ["hello"]);
       client.connect();
@@ -1700,9 +1659,7 @@ describe("WsClient", () => {
       expect(JSON.parse(ws.sent.at(-1) ?? "{}")).toEqual({ key: "send", data: ["again"] });
       await new Promise((resolve) => originalSetTimeout(resolve, 5));
       expect(warnings).toEqual([]);
-    } finally {
-      console.warn = originalConsoleWarn;
-    }
+    });
   });
 
   test("re-keys a live room to the id the server names and matches its frames", () => {
@@ -1720,8 +1677,7 @@ describe("WsClient", () => {
       subscribe: true,
     });
 
-    // The client never learns the caller's resolved internal args, so the room it publishes into is not the one
-    // the client asked for. Without the ack's pairing, every live frame would be dropped here.
+    // The server's room carries internal args the client never learns; without the ack's pairing this frame drops.
     ws.receive({ type: "pub", roomId: "taskLiveInOrg-o1::u1", data: { op: "enter", id: "t1" } });
     expect(events).toEqual([{ op: "enter", id: "t1" }]);
     ws.receive({ type: "pub", roomId: "someoneElse-o1::u2", data: { op: "enter", id: "t2" } });
@@ -1920,8 +1876,7 @@ describe("FetchClient websocket generation", () => {
     const ws = FakeWebSocket.instances[0];
     ws.open();
 
-    // The whole reason this exists: a slice's client handlers are derived from the slice metadata, not from the
-    // endpoint class, so a live slice with no entry here has no subscriber at all and the store call throws.
+    // Slice handlers come from the slice metadata, so a live slice without this entry has no subscriber at all.
     const subscribe = client.handler.subscribeFetchTestItemLiveInRoot as (...args: unknown[]) => () => void;
     expect(typeof subscribe).toBe("function");
     expect(client.handler.subscribeFetchTestItemLiveByOwner).toBeUndefined();
@@ -2097,17 +2052,6 @@ describe("FetchClient request budget", () => {
       },
     },
   });
-  const setHangingFetch = () => {
-    const signals: (AbortSignal | null | undefined)[] = [];
-    globalThis.fetch = ((_url: string, init?: RequestInit) => {
-      signals.push(init?.signal);
-      return new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject((init.signal as AbortSignal).reason));
-      });
-    }) as typeof globalThis.fetch;
-    return signals;
-  };
-
   test("gives a call the budget its endpoint declared", async () => {
     setHangingFetch();
     const client = new FetchClient("https://api.example", {}, { service: budgetSignal(5) });
