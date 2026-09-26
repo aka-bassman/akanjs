@@ -304,31 +304,31 @@ export class ConstantField<
       count: field(Int, { default: 0, accumulate: {} }).toField(),
     };
   }
-  readonly nullable: Nullable;
-  readonly ref?: string;
-  readonly refPath?: string;
-  readonly refType?: "child" | "parent" | "relation";
-  readonly default: FieldValue | ((doc: { id: string }) => FieldValue);
-  readonly type?: FieldPreset;
-  readonly fieldType: FieldType;
-  readonly immutable: boolean;
-  readonly min?: number;
-  readonly max?: number;
-  readonly enum?: EnumInstance;
-  readonly select: boolean;
-  readonly minlength?: number;
-  readonly maxlength?: number;
-  readonly accumulate?: any;
-  readonly example?: FieldValue;
-  readonly of?: MapValue; // for Map type fields
-  readonly validate?: (value: FieldValue, model: any) => boolean;
-  readonly text?: TextFieldRole;
-  readonly cascade?: CascadeAction;
-  readonly visual: boolean;
-  readonly modelRef: ConstantModelRef;
-  readonly arrDepth: number;
-  readonly optArrDepth: number;
-  readonly meta: Metadata;
+  declare readonly nullable: Nullable;
+  declare readonly ref?: string;
+  declare readonly refPath?: string;
+  declare readonly refType?: "child" | "parent" | "relation";
+  declare readonly default: FieldValue | ((doc: { id: string }) => FieldValue);
+  declare readonly type?: FieldPreset;
+  declare readonly fieldType: FieldType;
+  declare readonly immutable: boolean;
+  declare readonly min?: number;
+  declare readonly max?: number;
+  declare readonly enum?: EnumInstance;
+  declare readonly select: boolean;
+  declare readonly minlength?: number;
+  declare readonly maxlength?: number;
+  declare readonly accumulate?: any;
+  declare readonly example?: FieldValue;
+  declare readonly of?: MapValue; // for Map type fields
+  declare readonly validate?: (value: FieldValue, model: any) => boolean;
+  declare readonly text?: TextFieldRole;
+  declare readonly cascade?: CascadeAction;
+  declare readonly visual: boolean;
+  declare readonly modelRef: ConstantModelRef;
+  declare readonly arrDepth: number;
+  declare readonly optArrDepth: number;
+  declare readonly meta: Metadata;
   declare _isScalar: IsScalar;
   declare _isRelation: IsRelation;
   declare _isEnum: IsEnum;
@@ -337,31 +337,7 @@ export class ConstantField<
   declare _isSecret: IsSecret;
   declare _isMap: IsMap;
   constructor(props: ConstantFieldBuildProps<FieldType, FieldValue, MapValue, Metadata>) {
-    this.nullable = props.nullable as unknown as Nullable;
-    this.ref = props.ref;
-    this.refPath = props.refPath;
-    this.refType = props.refType;
-    this.default = props.default;
-    this.type = props.type;
-    this.fieldType = props.fieldType;
-    this.immutable = props.immutable;
-    this.min = props.min;
-    this.max = props.max;
-    this.enum = props.enum;
-    this.select = props.select;
-    this.minlength = props.minlength;
-    this.maxlength = props.maxlength;
-    this.accumulate = props.accumulate;
-    this.example = props.example;
-    this.of = props.of;
-    this.validate = props.validate;
-    this.text = props.text;
-    this.cascade = props.cascade;
-    this.visual = props.visual;
-    this.modelRef = props.modelRef;
-    this.arrDepth = props.arrDepth;
-    this.optArrDepth = props.optArrDepth;
-    this.meta = props.meta;
+    Object.assign(this, props);
   }
 
   static fromFieldInfo<
@@ -464,37 +440,7 @@ export class ConstantField<
     return this.#props;
   }
   #buildProps(): FieldProps {
-    return {
-      nullable: this.nullable as unknown as boolean,
-      ref: this.ref,
-      refPath: this.refPath,
-      refType: this.refType,
-      default: this.default,
-      type: this.type,
-      fieldType: this.fieldType,
-      immutable: this.immutable,
-      min: this.min,
-      max: this.max,
-      enum: this.enum,
-      select: this.select,
-      minlength: this.minlength,
-      maxlength: this.maxlength,
-      accumulate: this.accumulate,
-      example: this.example,
-      of: this.of,
-      validate: this.validate,
-      text: this.text,
-      cascade: this.cascade,
-      visual: this.visual,
-      modelRef: this.modelRef,
-      arrDepth: this.arrDepth,
-      optArrDepth: this.optArrDepth,
-      meta: this.meta,
-      isClass: this.isClass,
-      isScalar: this.isScalar,
-      isArray: this.isArray,
-      isMap: this.isMap,
-    };
+    return { ...this, isClass: this.isClass, isScalar: this.isScalar, isArray: this.isArray, isMap: this.isMap };
   }
 }
 export interface FieldObject {

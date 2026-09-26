@@ -123,38 +123,14 @@ export class ConstantRegistry {
     lightRef: LightRef,
     insightRef: InsightRef,
     constExports: Record<string, unknown>,
-  ): ConstantModel<
-    T,
-    Input,
-    Obj,
-    Full,
-    Light,
-    Insight,
-    FullFieldObj,
-    Capitalize<T>,
-    DefaultOf<Full>,
-    DefaultOf<Input>,
-    GetStateObject<Full>,
-    GetStateObject<Input>,
-    DefaultOf<Insight>,
-    PurifiedModel<Input>,
-    DocumentModel<Full>,
-    DocumentModel<Input>,
-    QueryOf<DocumentModel<Full>>,
-    GetStateObject<Light>,
-    GetStateObject<Insight>
-  > {
+  ) {
     const modelRefSet = new Set([inputRef, objectRef, fullRef, lightRef, insightRef]);
-    modelRefSet.forEach((modelRef) => {
-      ConstantRegistry.modelRefNameMap.set(modelRef, refName);
-    });
+    for (const modelRef of modelRefSet) ConstantRegistry.modelRefNameMap.set(modelRef, refName);
     inputRef.modelType = "input";
     objectRef.modelType = "object";
     fullRef.modelType = "full";
     lightRef.modelType = "light";
     insightRef.modelType = "insight";
-    type Doc = DocumentModel<Full>;
-    type DocInput = DocumentModel<Input>;
     const cnst: ConstantModel<
       T,
       Input,
@@ -170,8 +146,8 @@ export class ConstantRegistry {
       GetStateObject<Input>,
       DefaultOf<Insight>,
       PurifiedModel<Input>,
-      Doc,
-      DocInput,
+      DocumentModel<Full>,
+      DocumentModel<Input>,
       QueryOf<any>,
       GetStateObject<Light>,
       GetStateObject<Insight>
@@ -219,13 +195,7 @@ export class ConstantRegistry {
     };
     ConstantRegistry.setScalar(refName, cnst as unknown as ScalarConstantModel);
     ConstantRegistry.#registerExports(constExports, new Set([Model]));
-    return cnst as unknown as ScalarConstantModel<
-      T,
-      Model,
-      DefaultOf<Model>,
-      DocumentModel<Model>,
-      PurifiedModel<Model>
-    >;
+    return cnst;
   }
   static #registerExports(constExports: Record<string, unknown>, modelRefs: Set<unknown>) {
     for (const [key, value] of Object.entries(constExports)) {

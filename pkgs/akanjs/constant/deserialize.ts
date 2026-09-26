@@ -10,12 +10,10 @@ import {
 
 import { type ConstantCls, type ConstantModelRef, ConstantRegistry, type FieldProps, withSharedInstances } from ".";
 
-const getDeserializeFn = (inputRef: ConstantModelRef | PrimitiveScalar) => {
-  const deserializeFn = PrimitiveRegistry.has(inputRef as Cls)
+const getDeserializeFn = (inputRef: ConstantModelRef | PrimitiveScalar) =>
+  PrimitiveRegistry.has(inputRef as Cls)
     ? (value: unknown) => (inputRef as unknown as typeof PrimitiveScalar)._parse(value as never)
     : (value: unknown) => value as object;
-  return deserializeFn;
-};
 const deserializeMap = (value: unknown, field: Pick<FieldProps, "of">) => {
   if (!field.of) return value;
   return Object.fromEntries(
@@ -34,23 +32,17 @@ const deserializeInput = <Input = unknown>(
 ): Input | Input[] => {
   if (arrDepth && Array.isArray(value))
     return value.map((v) => deserializeInput(v, inputRef, arrDepth - 1, convertFn) as Input) as unknown as Input[];
-  else if ((inputRef as ConstantCls).prototype === Map.prototype) {
+  if ((inputRef as ConstantCls).prototype === Map.prototype) {
     const deserializeFn = getDeserializeFn(inputRef);
     const entries = value instanceof Map ? [...value.entries()] : Object.entries(value as Record<string, unknown>);
-    const returnValue = Object.fromEntries(
-      entries.map(([key, val]) => [key, applyFnToArrayObjects(val, deserializeFn)]),
-    ) as unknown as Input;
-    return convertFn(returnValue) as Input;
-  } else if (PrimitiveRegistry.has(inputRef as Cls)) {
-    const deserializeFn = getDeserializeFn(inputRef);
-    const returnValue = deserializeFn(value) as Input;
-    return convertFn(returnValue) as Input;
+    return convertFn(
+      Object.fromEntries(entries.map(([key, val]) => [key, applyFnToArrayObjects(val, deserializeFn)])),
+    ) as Input;
   }
-  if (!ConstantRegistry.isScalar(inputRef as Cls)) {
-    const returnValue = value as { id: string } as Input;
-    return convertFn(returnValue) as Input;
-  } else {
-    const returnValue = Object.fromEntries(
+  if (PrimitiveRegistry.has(inputRef as Cls)) return convertFn(getDeserializeFn(inputRef)(value)) as Input;
+  if (!ConstantRegistry.isScalar(inputRef as Cls)) return convertFn(value) as Input;
+  return convertFn(
+    Object.fromEntries(
       Object.entries((inputRef as ConstantCls)[FIELD_META]).map(([key, field]) => [
         key,
         field.isMap
@@ -61,9 +53,8 @@ const deserializeInput = <Input = unknown>(
               enum: field.enum,
             }),
       ]),
-    ) as unknown as Input;
-    return convertFn(returnValue) as Input;
-  }
+    ),
+  ) as Input;
 };
 
 interface DeserializeOption {

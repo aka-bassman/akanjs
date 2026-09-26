@@ -66,10 +66,9 @@ export type PurifyFuncV2<
 
 const getPurifyFn = (modelRef: Cls): ((value: unknown) => unknown) => {
   const [valueRef] = getNonArrayModel(modelRef);
-  const purifyFn = PrimitiveRegistry.has(valueRef)
+  return PrimitiveRegistry.has(valueRef)
     ? (value: unknown) => (valueRef as unknown as typeof PrimitiveScalar)._serialize(value as never)
     : (value: unknown) => value as object;
-  return purifyFn;
 };
 
 const purify = (field: FieldProps, key: string, value: unknown, self: Record<string, unknown>): unknown => {
@@ -110,12 +109,11 @@ const purify = (field: FieldProps, key: string, value: unknown, self: Record<str
     throw new Error(`Invalid Value (Failed to pass validation) / ${value} in ${key}`);
   if (!field.nullable && !value && value !== 0 && value !== false && (field.modelRef as Cls) !== Any)
     throw new Error(`Invalid Value (Nullable) in ${key} for value ${value}`);
-  const purifyFn = getPurifyFn(field.modelRef);
-  return purifyFn(value);
+  return getPurifyFn(field.modelRef)(value);
 };
 
-export const makePurify = <I>(modelRef: ConstantModelRef<I>): PurifyFunc<I> => {
-  const fn = ((self: Record<string, unknown>, isChild?: boolean): unknown => {
+export const makePurify = <I>(modelRef: ConstantModelRef<I>): PurifyFunc<I> =>
+  ((self: Record<string, unknown>, isChild?: boolean): unknown => {
     try {
       if (isChild && !ConstantRegistry.isScalar(modelRef)) {
         const id = self.id as string;
@@ -123,10 +121,8 @@ export const makePurify = <I>(modelRef: ConstantModelRef<I>): PurifyFunc<I> => {
         return id;
       }
       const result: Record<string, unknown> = {};
-      Object.entries(modelRef[FIELD_META]).forEach(([key, field]) => {
-        const value = self[key] as object;
-        result[key] = purify(field.getProps(), key, value, self) as object;
-      });
+      for (const [key, field] of Object.entries(modelRef[FIELD_META]))
+        result[key] = purify(field.getProps(), key, self[key], self);
       return result;
     } catch (err) {
       if (isChild) throw new Error(err as string);
@@ -134,5 +130,3 @@ export const makePurify = <I>(modelRef: ConstantModelRef<I>): PurifyFunc<I> => {
       return null;
     }
   }) as PurifyFunc<I>;
-  return fn;
-};

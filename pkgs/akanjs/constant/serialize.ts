@@ -22,12 +22,10 @@ export type Serialized<O> = O extends (infer V)[]
         ? { [K in keyof O]: Serialized<O[K]> }
         : O;
 
-const getSerializeFn = (inputRef: Cls, { optional = false }: { optional?: boolean } = {}) => {
-  const serializeFn = PrimitiveRegistry.has(inputRef)
+const getSerializeFn = (inputRef: Cls, { optional = false }: { optional?: boolean } = {}) =>
+  PrimitiveRegistry.has(inputRef)
     ? (value: unknown) => (inputRef as typeof PrimitiveScalar)._serialize(value as never, { optional })
     : (value: unknown) => value as object;
-  return serializeFn;
-};
 const serializeInput = <Input = unknown>(
   value: Input | Input[],
   inputRef: ConstantModelRef<Input> | PrimitiveScalar,

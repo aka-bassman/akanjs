@@ -60,10 +60,7 @@ type ResolvedFieldObject<ResolveField extends (resolve: FieldResolver) => FieldI
 const toFieldObject = (fieldMap: FieldInfoObject): FieldObject =>
   Object.fromEntries(Object.entries(fieldMap).map(([key, field]) => [key, field.toField()]));
 
-const objectModelOf = <T>(
-  inputRef: ConstantCls<T>,
-  fieldMap: FieldInfoObject,
-): ConstantCls<WithBase<T>, FieldObject, WithBase<T>, FieldObject, "object"> => {
+const objectModelOf = <T>(inputRef: ConstantCls<T>, fieldMap: FieldInfoObject) => {
   const applyFieldObject = { ...inputRef[FIELD_META], ...toFieldObject(fieldMap) };
   const field = Object.assign(ConstantField.getBaseModelField(), applyFieldObject);
   const baseObjectModelRef = getBaseConstantClass(field);
@@ -77,13 +74,7 @@ const lightModelOf = <T, F extends keyof OmitBase<T>>(
   fields: readonly F[],
   fieldMap: FieldInfoObject,
   ...libLightModelRefs: ConstantCls[]
-): ConstantCls<
-  Pick<OmitBase<T>, F> & BaseObject,
-  FieldObject,
-  Pick<OmitBase<T>, F> & BaseObject,
-  FieldObject,
-  "light"
-> => {
+) => {
   const libLightModelRef = libLightModelRefs.at(0);
   const applyFieldObject = {
     ...toFieldObject(fieldMap),
@@ -108,24 +99,18 @@ const fullModelOf = <A, B = undefined>(
   lightRef: ConstantCls<B>,
   fieldMap: FieldInfoObject,
   ...libFullModelRefs: ConstantCls[]
-): ConstantCls<Merge<A, B>, FieldObject, Merge<A, B>, FieldObject, "full"> => {
+) => {
   const fullRef = libFullModelRefs.at(0) ?? getBaseConstantClass(ConstantField.getBaseModelField());
   const applyFieldObject = { ...objectRef[FIELD_META], ...lightRef[FIELD_META], ...toFieldObject(fieldMap) };
   Object.assign(fullRef[FIELD_META], applyFieldObject);
   applyMixins(fullRef, [objectRef, lightRef, ...libFullModelRefs]);
-  libFullModelRefs.forEach((libFullModelRef) => {
-    applyMixins(libFullModelRef, [objectRef, lightRef]);
-  });
-
+  for (const libFullModelRef of libFullModelRefs) applyMixins(libFullModelRef, [objectRef, lightRef]);
   applyConstantStatics(fullRef, applyFieldObject);
   fullRef.modelType = "full";
   return fullRef as unknown as ConstantCls<Merge<A, B>, FieldObject, Merge<A, B>, FieldObject, "full">;
 };
 
-const extendModelInputs = <T extends ConstantCls[]>(
-  fieldMap: FieldInfoObject,
-  ...libInputModelRefs: T
-): ConstantCls<MergeOwnSchemas<T>, FieldObject, MergeOwnSchemas<T>, FieldObject, "input"> => {
+const extendModelInputs = <T extends ConstantCls[]>(fieldMap: FieldInfoObject, ...libInputModelRefs: T) => {
   const baseInputModelRef = libInputModelRefs.at(0);
   const applyFieldObject = toFieldObject(fieldMap);
   const fieldObject = Object.assign(baseInputModelRef?.[FIELD_META] ?? {}, applyFieldObject);
@@ -144,13 +129,7 @@ const extendModelObjects = <Input, ObjectModels extends ConstantCls[]>(
   inputRef: ConstantCls<Input>,
   fieldMap: FieldInfoObject,
   ...libObjectModelRefs: ObjectModels
-): ConstantCls<
-  MergeWithOwnSchemas<ObjectModels, Input & object>,
-  FieldObject,
-  MergeWithOwnSchemas<ObjectModels, Input & object>,
-  FieldObject,
-  "object"
-> => {
+) => {
   const baseObjectModelRef = libObjectModelRefs.at(0);
   const applyFieldObject = { ...inputRef[FIELD_META], ...toFieldObject(fieldMap) };
   const field = Object.assign(baseObjectModelRef?.[FIELD_META] ?? {}, applyFieldObject);
@@ -168,7 +147,7 @@ const extendModelObjects = <Input, ObjectModels extends ConstantCls[]>(
 const extendModelInsights = <InsightModels extends ConstantCls[]>(
   fieldMap: FieldInfoObject,
   ...insightModelRefs: InsightModels
-): ConstantCls<MergeOwnSchemas<InsightModels>, FieldObject, MergeOwnSchemas<InsightModels>, FieldObject, "insight"> => {
+) => {
   const baseInsightModelRef = insightModelRefs.at(0);
   const applyFieldObject = toFieldObject(fieldMap);
   const field = Object.assign(
@@ -176,7 +155,6 @@ const extendModelInsights = <InsightModels extends ConstantCls[]>(
     applyFieldObject,
   );
   const baseInsightRef = getBaseConstantClass(field, "insight");
-
   applyConstantStatics(baseInsightRef, applyFieldObject);
   return baseInsightRef as unknown as ConstantCls<
     MergeOwnSchemas<InsightModels>,
@@ -212,15 +190,7 @@ const getBaseConstantClass = (field: FieldObject, modelType: ConstantType = "sca
   return BaseConstant as unknown as ConstantCls;
 };
 
-const makeBaseScalar = <FieldMap extends FieldInfoObject>(
-  fieldMap: FieldMap,
-): ConstantCls<
-  ExtractFieldInfoObject<FieldMap>,
-  FieldObject,
-  ExtractFieldInfoObject<FieldMap>,
-  FieldObject,
-  "scalar"
-> => {
+const makeBaseScalar = <FieldMap extends FieldInfoObject>(fieldMap: FieldMap) => {
   const fieldObject = toFieldObject(fieldMap);
   const baseScalarRef = getBaseConstantClass(fieldObject, "scalar");
   applyConstantStatics(baseScalarRef, fieldObject);
