@@ -688,6 +688,20 @@ describe("AkanApp", () => {
     expect(await readAsset("false")).toBe("from-child");
   }, 40_000);
 
+  test("serves immutable artifacts with the asset security headers WebRouter sends", async () => {
+    const { root, serverPath, runtimeDir, port } = await makeRoot("akan-app-asset-headers-");
+    await Bun.write(path.join(root, ".akan/artifact/client/app.js"), "export const x = 1;\n");
+    await writeOkChild(serverPath, "from-child");
+
+    await withApp(serverPath, { replica: 1, runtimeDir, port }, async () => {
+      await waitForReady(port);
+      const res = await fetch(`http://127.0.0.1:${port}/_akan/client/app.js`);
+      expect(await res.text()).toContain("export const x = 1;");
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(res.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
+    });
+  }, 20_000);
+
   test("force-kills a child that ignores graceful shutdown within the shutdown budget", async () => {
     const { serverPath, runtimeDir, port } = await makeRoot("akan-app-slow-shutdown-");
 

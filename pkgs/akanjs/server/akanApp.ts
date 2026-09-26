@@ -974,6 +974,8 @@ export class AkanApp {
   ): Promise<Response> {
     const headers = new Headers({ "Content-Type": options.contentType });
     if (options.cacheControl) headers.set("Cache-Control", options.cacheControl);
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
     return await encodedFileResponse(req, filePath, options.contentType, headers);
   }
 
