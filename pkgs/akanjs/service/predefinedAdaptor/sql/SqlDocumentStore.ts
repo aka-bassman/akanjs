@@ -55,11 +55,9 @@ interface DeclaredIndex {
   create: (name: string, concurrently: boolean) => string;
 }
 
-// A field hands out its own literal default — the `[]` every array field is given when it declares no default
-// included. The constant layer copies it on the way into an instance (`crystalize`); this path does not, so
-// without a copy one document's `push` lands in the model default and in every document filled from it after.
 type StoredRow = Omit<SqliteDocumentRow, "id">;
 
+// A literal default (every array field's `[]`) belongs to the model; uncopied, one document's `push` would reach it.
 const freshDefault = (value: unknown) => (Array.isArray(value) ? [...(value as unknown[])] : value);
 
 export class SqlDocumentStore {
@@ -67,14 +65,13 @@ export class SqlDocumentStore {
   readonly table: string;
   readonly compiler: QueryCompiler;
   readonly updateCompiler: UpdateCompiler;
-  // Keyed by connection as well as text: inside a transaction `getConnection()` hands out the transaction's own client,
-  // and a statement bound to the pool would run outside it.
+  // Keyed by connection too: inside a transaction a statement bound to the pool would run outside it.
   #statements = new WeakMap<AkanSqlClient, Map<string, AkanSqlStatement>>();
   #docPrototype: object | null = null;
   #immutableKeys: string[] | null = null;
   #ensured: Promise<void> | null = null;
   static readonly #logger = new Logger("SqlDocumentStore");
-  /** The row a document was read as, or last written as. See `#changesOf`. */
+  /** The row a document was read or last written as. */
   static readonly #storedRow = Symbol("akan.storedRow");
 
   constructor(
@@ -87,14 +84,12 @@ export class SqlDocumentStore {
     this.schema = schema;
     this.table = database.refName;
     const fields = database.doc[FIELD_META] as unknown as FieldMap;
-    // Resolved per compile rather than captured: the store is built before the adaptor finishes `onInit`, so the
-    // search index does not exist yet at this point.
+    // Resolved per compile: the store exists before the adaptor's `onInit` builds the search index.
     this.compiler = new QueryCompiler(fields, dialect, this.table, () => this.owner.getSearchIndex());
     this.updateCompiler = new UpdateCompiler(fields, dialect);
   }
 
-  // `getStore()` starts this and the model's `onInit` awaits it, so the two share one run: two `CREATE TABLE IF NOT
-  // EXISTS` on one name at once are harmless in SQLite and a duplicate-key error in Postgres.
+  // One shared run: two concurrent `CREATE TABLE IF NOT EXISTS` on one name are a duplicate-key error in Postgres.
   ensure() {
     this.#ensured ??= this.#ensure();
     return this.#ensured;
@@ -222,7 +217,6 @@ export class SqlDocumentStore {
   }
 
   async remove(id: string) {
-    // Document-level soft delete: fire `remove` hooks, not `save`/`update`.
     return this.update(id, { removedAt: dayjs() }, { runSaveHooks: false, crudType: "remove" });
   }
 
@@ -244,10 +238,7 @@ export class SqlDocumentStore {
     }));
   }
 
-  /**
-   * Writes rows as they were stored elsewhere, replacing a row whose id is taken. No hook runs and no field is
-   * derived: the rows are already what the source database held.
-   */
+  /** Rows as another database stored them: a taken id is replaced, and no hook runs or field is derived. */
   async importRows(rows: TransferRow[]) {
     const write = async () => {
       const statement = this.owner.getConnection().prepare(
@@ -267,9 +258,8 @@ export class SqlDocumentStore {
     else await write();
   }
 
-  // Query-based writes push a single atomic UPDATE to the database (no read-modify-write, no lost-update race) and
-  // deliberately fire NO document hooks — mirroring how MongoDB query middleware bypasses `save`/document middleware.
-  // Callers needing per-document hooks must use the document paths (`create`/`update(id)`/`remove(id)`/`.save()`).
+  // One atomic UPDATE firing no document hooks, as MongoDB query middleware skips document middleware; per-document
+  // hooks need `create`/`update(id)`/`remove(id)`/`.save()`.
   async updateOneByQuery(query: DocumentQuery, update: DocumentUpdateInput, options: DocumentUpdateOptions = {}) {
     const resolved = resolveDocumentUpdate(update);
     const { assignments, params } = this.compiledUpdate(resolved);
@@ -304,18 +294,15 @@ export class SqlDocumentStore {
   }
 
   async removeManyByQuery(query: DocumentQuery) {
-    // Query-level remove is a single atomic UPDATE stamping `removedAt` (bare value = set); it fires no hooks.
     // "remove", not "delete": the row survives, and `delete` stays free to mean an actual DELETE some day.
     return this.updateManyByQuery(query, { removedAt: dayjs() });
   }
 
   async removeOneByQuery(query: DocumentQuery) {
-    // "One" is the newest match: `updateOneByQuery` orders its subquery `createdAt` descending. The caller cannot
-    // pick, and the result carries counts rather than an id, so this is for "at most one of these" — not a queue.
+    // The newest match, reported as counts rather than an id: for "at most one of these", not a queue.
     return this.updateOneByQuery(query, { removedAt: dayjs() });
   }
 
-  // Prepends the mandatory `updatedAt = now` stamp to the compiled assignments so every atomic write bumps it.
   private compiledUpdate(update: DocumentUpdate) {
     for (const raw of Object.values(update))
       assertStorableJson(jsonStr(isDocumentUpdateNode(raw) ? raw.value : raw), this.table);
@@ -440,8 +427,7 @@ export class SqlDocumentStore {
     return this.compiler.compile(documentQueryHelper.all(documentQueryHelper.empty("removedAt"), query ?? {}));
   }
 
-  // An atomic UPDATE/DELETE has no join to hang the search index on. Ignoring the search node would widen the write
-  // to every row matching the remaining conditions, so the caller is told instead.
+  // An atomic write has no join for the search; ignoring it would widen the write to every other match.
   private writeQuery(query: DocumentQuery | undefined, operation: string) {
     const compiled = this.safeQuery(query);
     if (compiled.joins.length)
@@ -453,15 +439,13 @@ export class SqlDocumentStore {
     return joins.length ? ` ${joins.map((join) => join.sql).join(" ")}` : "";
   }
 
-  // The JOIN precedes the WHERE in the statement text, so its bindings must precede the WHERE bindings too.
-  // Getting this order wrong produces no error, only wrong rows.
+  // The JOIN precedes the WHERE in the text, so its bindings go first; a wrong order raises nothing, just wrong rows.
   private joinParams(joins: SearchJoin[]) {
     return joins.flatMap((join) => join.params);
   }
 
-  // Every engine's score sorts best-first ascending: bm25 is negative and falls with a better match, and Postgres
-  // negates its rank to match. The `id` tiebreaker keeps skip/limit paging stable when two rows score identically. An explicitly requested
-  // sort always wins; `relevance` reaches here as an empty sort map, which is what asks for the score order.
+  // Scores sort best-first ascending (bm25 is negative; Postgres negates its rank), `id` keeping paging stable on ties.
+  // An explicit sort wins; `relevance` arrives as an empty sort map.
   private orderBy(sort: SortOption, joins: SearchJoin[]) {
     const explicit = sort && Object.keys(sort).length ? sort : null;
     if (!explicit && joins.length) return `${joins[0].alias}."score", ${quoteIdent(this.table)}."id" DESC`;
@@ -478,9 +462,7 @@ export class SqlDocumentStore {
         if (props.default !== undefined && props.default !== null) {
           doc[key] = freshDefault(typeof props.default === "function" ? props.default(data) : props.default);
         } else if (props.isClass && props.isScalar && !props.nullable) {
-          // A nested scalar owns its own field defaults, so an absent one is constructible rather than missing —
-          // the rule `getDefault` already applies, nullable first. A relation is not constructible: only the
-          // caller knows which row it names, so it keeps failing closed below.
+          // A nested scalar owns its field defaults, so it is constructible; a relation is not, and fails closed below.
           doc[key] = getDefault((props.modelRef as { [FIELD_META]: FieldMap })[FIELD_META] as never);
         } else if (!props.nullable && !["removedAt"].includes(key)) {
           if (["id", "createdAt", "updatedAt"].includes(key)) continue;
@@ -519,8 +501,7 @@ export class SqlDocumentStore {
     );
   }
 
-  // Builds the initial document for an upsert insert by applying the update nodes in JS (there is no existing row to
-  // mutate atomically). `setOnInsert` applies here — and only here — since it is defined only for the insert path.
+  // An upsert's insert applies the update nodes in JS, having no row to mutate; `setOnInsert` applies only here.
   private applyInsertUpdate(base: DocumentRecord, update: DocumentUpdate) {
     const doc: MutableDocumentRecord = { ...base };
     const setPath = (path: string, value: unknown) => {
@@ -711,8 +692,7 @@ export class SqlDocumentStore {
     const prepared = this.prepareDocument({ ...data, id, updatedAt: dayjs() });
     this.#assertImmutableUnchanged(prepared, originalData);
     const doc = this.hydrate(prepared, originalData);
-    // Already the hydrated pre-state: every caller reaches here through `update()`, which re-reads the row rather
-    // than trusting the document the caller mutated, so this is the row as the database still holds it.
+    // `update()` re-read the row rather than trusting the caller's document, so this is the stored pre-state.
     const previous = originalData;
     if (runSaveHooks) await this.runHooks("save", crudType, doc, "pre", previous);
     await this.runHooks(crudType, crudType, doc, "pre", previous);
@@ -725,12 +705,8 @@ export class SqlDocumentStore {
   }
 
   /**
-   * Writes the fields `written` holds differently from `read`, merged into the row in the statement itself.
-   *
-   * Rewriting the whole `_doc` put back every field as this process last read it, erasing what another request or
-   * process wrote to a different field in between. A field both of them changed goes to the later write, as it did.
-   * `read` is the row as stored, so a key it lacks is written out the way the whole-document write did — `q.missing`
-   * tells rows written before a field existed apart by exactly that.
+   * Merges only the fields that changed into the stored `_doc`, so a concurrent write to another field survives. A key
+   * the stored row lacks is written out, which is what `q.missing` tells rows from before a field existed apart by.
    */
   async #writeChanges(id: string, read: StoredRow, written: StoredRow) {
     const before = SqlDocumentStore.#encodedFields(read);
@@ -761,13 +737,11 @@ export class SqlDocumentStore {
       .run(...params, id);
   }
 
-  // The fields a document holds differently from the row it was read as. A document with no row — built by the
-  // caller rather than read — is taken as changing every field it holds.
+  // A document with no stored row — built rather than read — changes every field it holds.
   #changesOf(doc: DocumentRecord): DocumentRecord {
     const row = (doc as Record<symbol, StoredRow | undefined>)[SqlDocumentStore.#storedRow];
     if (!row) return doc;
-    // Decoded and encoded again, so a field the document never touched compares equal to itself: defaults filled in
-    // on read, and nested models rebuilt in declared order, would otherwise read as changes and be written back.
+    // Round-tripped so read-filled defaults and nested models rebuilt in declared order compare equal to themselves.
     const reread = this.hydrate(this.fromRow({ ...row, id: String(doc.id) }), undefined, { track: false });
     const read = SqlDocumentStore.#encodedFields(this.toRow(reread));
     const held = SqlDocumentStore.#encodedFields(this.toRow(doc));
@@ -792,10 +766,8 @@ export class SqlDocumentStore {
     return doc;
   }
 
-  // `immutable` is enforced on the document path only, mirroring mongoose: a query-level write compiles straight
-  // to SQL and is left alone, the same way mongoose exempts `bulkWrite` — that path fires no hooks either, so a
-  // caller reaching for it has already stepped outside document semantics. Checked before the save hooks so the
-  // error names what the caller changed, not what a hook derived from it.
+  // The document path only, as mongoose exempts `bulkWrite`; checked before save hooks so the error names the
+  // caller's change, not a hook's.
   #assertImmutableUnchanged(prepared: DocumentRecord, originalData: DocumentRecord) {
     this.#immutableKeys ??= Object.entries(this.database.doc[FIELD_META] as unknown as FieldMap)
       .filter(([, fieldMeta]) => fieldMeta.getProps().immutable)
@@ -823,8 +795,7 @@ export class SqlDocumentStore {
         } else if (props.nullable) {
           result[key] = null;
         } else if (props.isClass && props.isScalar) {
-          // A row written before the field was declared carries no value for it. A scalar has no DEFAULT_VALUE to
-          // fall back on, and reading it as `null` makes the next save of that row fail its own not-null check.
+          // A row from before the field was declared: `null` would fail the next save's own not-null check.
           result[key] = getDefault((props.modelRef as { [FIELD_META]: FieldMap })[FIELD_META] as never);
         } else {
           result[key] =
@@ -909,12 +880,7 @@ export class SqlDocumentStore {
     return result;
   }
 
-  /**
-   * `track` buys `isModified()` and costs a deep clone of the row, so it is decided per call site rather than
-   * paid everywhere. Only the read paths (`find`, and the projected read behind it) opt out — that clone was 42%
-   * of a list query, and a listed document is never the one a save hook runs on. Everything else keeps it, so an
-   * external caller of `hydrate` sees no change.
-   */
+  /** `track` buys `isModified()` with a deep clone of the row; only the read paths opt out. */
   hydrate(data: DocumentRecord, originalData: DocumentRecord = data, { track = true }: { track?: boolean } = {}) {
     const isNew = !originalData.id;
     const hydratedData = isNew ? this.prepareDocument(data) : data;
@@ -923,8 +889,7 @@ export class SqlDocumentStore {
     Object.defineProperty(doc, MODIFICATION_STATE, {
       value: {
         isNew,
-        // Cloned rather than referenced: `doc` shares every nested object with `hydratedData`, so an in-place
-        // `doc.tags.push(...)` would otherwise mutate the thing it is being compared against.
+        // Cloned: `doc` shares nested objects with `hydratedData`, so an in-place push would move the baseline.
         original: JSON.parse(JSON.stringify(sanitizeJson(originalData) ?? {})) as Record<string, unknown>,
       } satisfies ModificationState,
     });
@@ -939,11 +904,7 @@ export class SqlDocumentStore {
     return this.hydrate(this.fromRow(JSON.parse(text) as SqliteDocumentRow), undefined, { track: false });
   }
 
-  /**
-   * One prototype per store instead of six closures per document. It extends the model's own document prototype,
-   * so declared chain methods and `instanceof` are unaffected, and every method here is non-enumerable exactly as
-   * the previous per-document `defineProperties` made them.
-   */
+  //* One prototype per store, extending the model's own so chain methods and `instanceof` hold; methods non-enumerable.
   #documentPrototype() {
     if (this.#docPrototype) return this.#docPrototype;
     const store = this;
@@ -989,10 +950,8 @@ export class SqlDocumentStore {
     return this.#docPrototype;
   }
 
-  // Thrown rather than answered with a guess: both answers are wrong in a way that is silent. `false` skips work
-  // that was needed, `true` redoes work that was not — `admin.document.ts` hashes an already-hashed password on
-  // that branch. A save hook always runs on a written document, which is tracked, so this only fires on a
-  // document that came straight out of a read.
+  // Thrown, not guessed: `false` skips needed work and `true` redoes it (re-hashing a hashed password). Save hooks
+  // always see a tracked document; only one straight out of a read lands here.
   static #untrackedModificationMessage(table: string) {
     return (
       `isModified() is unavailable on this ${table} document: it was loaded through a read query, which does not ` +
@@ -1046,15 +1005,3 @@ export class SqlDocumentStore {
       throw new Error(`Invalid database identifier: ${refName}`);
   }
 }
-
-/**
- * The schema setups `getStore` starts but nobody awaits.
- *
- * `getStore` returns a store synchronously while `ensure()` goes on creating tables and indexes, so
- * the connection could be closed out from under one — a server shutting down, or a test tearing its
- * fixture down. That surfaced as an unhandled `Cannot use a closed database` blamed on whatever ran
- * next, which made it look like a flaky test rather than a race at shutdown.
- *
- * Every statement `ensure()` runs is `IF NOT EXISTS`, so one cut short is simply redone on the next
- * boot; a failure *before* the close is still a real problem and still surfaces.
- */
