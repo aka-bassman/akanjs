@@ -25,8 +25,7 @@ export const makeDictionary = <Dicts extends Record<string, unknown>[]>(
   return Object.assign(...(dicts as unknown as [object, object])) as Prettify<ObjectAssign<Dicts>>;
 };
 
-// Locales are per-app (`AKAN_PUBLIC_LOCALES`), so the codes the framework ships names for are a hint for
-// autocomplete, not a closed set — an app is free to configure one nothing here lists.
+// An autocomplete hint, not a closed set: locales are per-app (`AKAN_PUBLIC_LOCALES`).
 type Language = "en" | "ko" | "zhChs" | "zhCht" | "ja" | (string & {});
 export interface TransMessageOption {
   key?: string;
@@ -67,15 +66,8 @@ export type ErrConstructor<ErrorKey extends string> = {
   Conflict: new (key: ErrorKey, data?: TranslationData, option?: ErrRestoreOption) => ErrInstance;
 };
 
-/**
- * The toast API, before anything has claimed it.
- *
- * `<Messages/>` assigns the real implementations onto this object when it mounts, so a call before that — a
- * store action on the first frame — has nowhere to go. It stays a no-op rather than throwing (a dropped toast
- * must not take the render with it) and says so once, because a message that silently never appeared is
- * otherwise indistinguishable from one the user missed. Server code reaches this object too, through
- * `akanjs/dictionary`, and there nothing ever assigns over it.
- */
+// `<Messages/>` assigns the real toasts over these when it mounts (never on the server); until then a call warns once
+// instead of throwing, because a dropped toast must not take the render with it.
 const unclaimed = (level: string) => () => {
   if (unclaimed.warned) return null;
   unclaimed.warned = true;
@@ -197,9 +189,7 @@ export const makeTrans = <
     const node = pathGetLoose(msgKey, model, ".") as { t?: unknown } | null;
     return typeof node?.t === "string" ? node.t : undefined;
   };
-  // A dictionary declares its own locale tuple, so an app that configures a third locale gets no node at all for
-  // the keys every lib — and the framework itself — only wrote in two. The dotted key is right only when no
-  // locale carries it.
+  // A lib's dictionary has no node for a locale only the app configures, so try the default locale before the bare key.
   const lookupDefault = (lang: string, modelName: string, msgKey: string) => {
     const { defaultLocale } = parseAkanI18nEnv();
     return defaultLocale === lang ? undefined : lookup(defaultLocale, modelName, msgKey);

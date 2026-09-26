@@ -2,13 +2,7 @@ import { pathGetLoose } from "akanjs/common";
 import { DictionaryRegistry } from "./dictionaryRegistry";
 import type { DictionaryNode } from "./trans";
 
-/**
- * Reads translated text out of the merged dictionary tree by dotted key (`user.signal.createUser.arg.data.desc`).
- *
- * Unlike `translate`, a missing key resolves to `undefined` rather than echoing the key back: callers here are
- * document generators (OpenAPI, MCP) that must omit an absent description instead of emitting `"user.signal.…"`
- * as if it were prose. The merged root is snapshotted once per instance, so build a fresh one per document.
- */
+/** A missing key reads `undefined` (unlike `translate`, which echoes it); the root is snapshotted per instance. */
 export class DictionaryLookup {
   readonly language: string;
   readonly #models: Record<string, DictionaryNode>;

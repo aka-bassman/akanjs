@@ -17,13 +17,8 @@ export interface LocaleGap {
   missing: string[];
 }
 
-/**
- * Collects every dictionary tree built by `makeTrans` so a server process can read the merged result.
- *
- * `makeTrans` keeps its `rootDictionary` in a closure and `AkanLib` carries no dictionary, so without this
- * the i18n tree is unreachable from `AkanServer`. Registration happens at module-evaluation time, which the
- * API process reaches because it imports the generated `server.ts` (which re-exports `lib/dict.ts`) whole.
- */
+// The only path from `AkanServer` to the i18n tree: `makeTrans` keeps its root in a closure and `AkanLib` carries no
+// dictionary. Registration runs when the server imports the generated `server.ts`, which re-exports `lib/dict.ts`.
 export class DictionaryRegistry {
   static readonly #roots: RootDictionary[] = [];
   static readonly #modules = new Map<string, DictionaryModuleInfo>();
@@ -57,14 +52,7 @@ export class DictionaryRegistry {
     return Object.fromEntries([...DictionaryRegistry.#modules.entries()].map(([key, info]) => [key, { ...info }]));
   }
 
-  /**
-   * Which configured locales the registered dictionaries never wrote, per locale.
-   *
-   * A dictionary declares its own locale tuple — `serviceDictionary(["en", "ko"])` — and a lib ships that tuple to
-   * every app that mounts it, so an app that adds a third locale cannot widen it from the outside. Every key those
-   * modules own then resolves through the default-locale fallback: the screen stays readable and nothing throws,
-   * which is exactly why the gap is invisible without asking.
-   */
+  /** Modules whose own locale tuple lacks a configured locale; their keys silently fall back to the default locale. */
   static getLocaleGaps(locales: string[] = parseAkanI18nEnv().locales): LocaleGap[] {
     const modules = [...DictionaryRegistry.#modules.entries()];
     return locales
