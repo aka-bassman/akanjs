@@ -7,7 +7,6 @@ import { Readable, type Transform } from "node:stream";
 import { buffer } from "node:stream/consumers";
 import { AgeEncryption } from "./ageEncryption";
 
-//* Interop against the reference implementation runs only where AKAN_TEST_AGE_BIN points at an `age` binary.
 const ageBin = process.env.AKAN_TEST_AGE_BIN;
 const root = mkdtempSync(path.join(tmpdir(), "akan-age-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));

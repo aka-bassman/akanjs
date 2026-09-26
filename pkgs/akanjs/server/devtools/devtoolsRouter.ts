@@ -19,21 +19,12 @@ export interface DevtoolsRouterContext {
   getStatus: () => string;
 }
 
-/**
- * Local-dev-only JSON endpoints that describe the running system for developer tools.
- *
- * These are registered as builtin routes rather than as signal endpoints so they stay off the `/api` prefix,
- * skip guards and the middleware chain, and — most importantly — never enter the `serializedSignal` payload
- * that ships to every client bundle in production.
- */
+/** Builtin routes, not signals: off `/api` and guards, and never in the `serializedSignal` payload sent to clients. */
 export class DevtoolsRouter {
   static readonly basePath = "/_akan";
   static readonly logger = new Logger("DevtoolsRouter");
 
-  /**
-   * `AKAN_DEVTOOLS` is an explicit override for debugging a deployed environment; otherwise the endpoints
-   * exist only under `AKAN_PUBLIC_ENV=local`. Shape mirrors `AkanServer.#isOpenApiEnvEnabled`.
-   */
+  /** Local-only unless `AKAN_DEVTOOLS` ("true"/"1", "false"/"0") overrides it, e.g. to debug a deployed env. */
   static isEnabled(env: BaseEnv): boolean {
     const override = process.env.AKAN_DEVTOOLS;
     if (override === "false" || override === "0") return false;
@@ -126,7 +117,6 @@ export class DevtoolsRouter {
     };
   }
 
-  /** `?lang=en` narrows the tree to one language — full dictionaries get large fast. */
   static #dictionary(req: Request): DictionaryData {
     const lang = new URL(req.url).searchParams.get("lang");
     const root = DictionaryRegistry.getRoot();

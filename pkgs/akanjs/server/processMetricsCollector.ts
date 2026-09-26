@@ -9,11 +9,7 @@ type BunJscHeapStats = {
   protectedObjectCount?: number;
 };
 
-/**
- * Samples event-loop scheduling delay by measuring how late a fixed-interval timer
- * actually fires. The sample window is summarized and reset on each metrics report,
- * so values reflect recent load rather than process lifetime.
- */
+// Each report summarizes and resets the sample window, so values reflect recent load, not process lifetime.
 class EventLoopLagMonitor {
   static readonly #maxSamples = 600;
   #timer: ReturnType<typeof setInterval> | null = null;
@@ -34,11 +30,9 @@ class EventLoopLagMonitor {
       if (this.#samples.length < EventLoopLagMonitor.#maxSamples) this.#samples.push(lag);
       else this.#samples[Math.floor(Math.random() * EventLoopLagMonitor.#maxSamples)] = lag;
     }, intervalMs);
-    // Do not keep the process alive solely for lag sampling.
     (this.#timer as { unref?: () => void }).unref?.();
   }
 
-  /** Summarize the current window and reset it. */
   snapshotAndReset(): { meanMs: number; p99Ms: number; maxMs: number } | null {
     if (this.#samples.length === 0) return null;
     const sorted = [...this.#samples].sort((a, b) => a - b);
@@ -69,7 +63,7 @@ export class ProcessMetricsCollector {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : ProcessMetricsCollector.#defaultMemoryLogIntervalMs;
   }
 
-  /** Begin sampling event-loop lag. Idempotent; safe to call from each server role. */
+  /** Idempotent; safe to call from each server role. */
   static startEventLoopLagMonitor(intervalMs = 500): void {
     ProcessMetricsCollector.#lagMonitor.start(intervalMs);
   }
@@ -138,8 +132,7 @@ export class ProcessMetricsCollector {
       ...(metrics.jscHeapSizeBytes !== undefined
         ? [`jscHeap=${ProcessMetricsCollector.formatBytes(metrics.jscHeapSizeBytes)}`]
         : []),
-      // A replica owns an RSC worker whose RSS is a separate process; without this the log line
-      // shows only half of what the replica actually costs the pod.
+      // The replica's RSC worker is a separate process; without this the line shows half of what the replica costs.
       ...(metrics.rscWorkerRssBytes !== undefined
         ? [`rscWorkerRss=${ProcessMetricsCollector.formatBytes(metrics.rscWorkerRssBytes)}`]
         : []),

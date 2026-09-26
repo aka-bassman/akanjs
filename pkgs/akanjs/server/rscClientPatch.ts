@@ -69,31 +69,10 @@ function guardRscPatchControlRows(
   );
 }
 
-export async function validateRscPatchAndRequestFullFallback<T extends PromiseLike<unknown>>({
-  href,
-  response,
-  patch,
-  currentTree,
-  createThenable,
-  navId,
-  getCurrentNavId,
-}: ValidateRscSegmentPatchInput<T>): Promise<{
-  sendRouterState: false;
-  patchResult: AkanSegmentPatchResult<T>;
-}> {
-  const patchResult = await validateRscSegmentPatch({
-    href,
-    response,
-    patch,
-    currentTree,
-    createThenable,
-    navId,
-    getCurrentNavId,
-  });
-  return {
-    sendRouterState: false,
-    patchResult,
-  };
+export async function validateRscPatchAndRequestFullFallback<T extends PromiseLike<unknown>>(
+  input: ValidateRscSegmentPatchInput<T>,
+): Promise<{ sendRouterState: false; patchResult: AkanSegmentPatchResult<T> }> {
+  return { sendRouterState: false, patchResult: await validateRscSegmentPatch(input) };
 }
 
 export async function validateRscSegmentPatch<T extends PromiseLike<unknown>>({

@@ -8,8 +8,6 @@ export interface LogTailHandlers {
   onClose?: () => void;
 }
 
-type Pending = { resolve: (response: LogControlResponse) => void; reject: (error: Error) => void };
-
 /** Says the app is not running at all, as opposed to a request that failed once connected. */
 export class LogControlUnavailableError extends Error {
   readonly socketPath: string;
@@ -20,11 +18,7 @@ export class LogControlUnavailableError extends Error {
   }
 }
 
-/**
- * The client half of `LogControlSocket`: `akan logs` and the console's `.tail` both speak through it. Records
- * stream to `onRecord`; every other line answers the oldest request still waiting, in order, because the
- * socket answers in order.
- */
+// Every non-record line answers the oldest pending request, because the control socket answers in order.
 export class LogTailClient {
   static socketPath(runtimeDir: string) {
     return LogControlSocket.pathIn(runtimeDir);
@@ -63,7 +57,7 @@ export class LogTailClient {
   }
 
   readonly #handlers: LogTailHandlers;
-  readonly #pending: Pending[] = [];
+  readonly #pending: { resolve: (response: LogControlResponse) => void; reject: (error: Error) => void }[] = [];
   #socket: Bun.Socket<undefined> | null = null;
   #inbox = "";
   #closed = false;

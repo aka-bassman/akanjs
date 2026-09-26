@@ -2,8 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import path from "node:path";
 import { ConformanceEnv } from "../test/conformance";
 
-// Two processes of one app on shared storage — what multiple and cluster mode are for — each serving its own
-// sockets. Ids are from `local/database-modes/03-single-instance-assumptions.md`.
+// Test ids like [L-1] come from `local/database-modes/03-single-instance-assumptions.md`.
 
 interface Instance {
   port: number;

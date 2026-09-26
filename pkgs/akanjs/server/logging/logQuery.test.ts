@@ -1,24 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { type LogRecord, logSeverity } from "akanjs/common";
 import { LogQueryMatcher } from "./logQuery";
+import { makeLogRecord } from "./logRecord.fixture";
 
-const record = (overrides: Partial<LogRecord> = {}): LogRecord => ({
-  at: 1_000,
-  elapsedMs: 0,
-  level: "info",
-  sev: logSeverity.info,
-  name: "PaymentService",
-  context: "",
-  message: "payment refund started for order 1234",
-  stream: "stdout",
-  pid: 1,
-  replicaIdx: 0,
-  role: "all",
-  origin: "http",
-  traceId: "t-1",
-  endpoint: "mutation:refundPayment",
-  ...overrides,
-});
+const record = (overrides: Partial<LogRecord> = {}) =>
+  makeLogRecord("payment refund started for order 1234", {
+    name: "PaymentService",
+    origin: "http",
+    traceId: "t-1",
+    endpoint: "mutation:refundPayment",
+    ...overrides,
+  });
 
 const matches = (query: ConstructorParameters<typeof LogQueryMatcher>[0], overrides: Partial<LogRecord> = {}) =>
   new LogQueryMatcher(query).matches(record(overrides));
@@ -105,22 +97,7 @@ describe("LogQueryMatcher.parse", () => {
 describe("LogQueryMatcher promoted records", () => {
   test("a flight or debug record passes minSev, since it was asked for below the level", () => {
     const matcher = new LogQueryMatcher({ minSev: logSeverity.warn });
-    const base: LogRecord = {
-      at: 1,
-      elapsedMs: 0,
-      level: "trace",
-      sev: logSeverity.trace,
-      name: "Svc",
-      context: "",
-      message: "m",
-      stream: "stdout",
-      pid: 1,
-      replicaIdx: 0,
-      role: "all",
-      origin: null,
-      traceId: null,
-      endpoint: null,
-    };
+    const base = makeLogRecord("m", { at: 1, level: "trace", sev: logSeverity.trace });
     expect(matcher.matches(base)).toBe(false);
     expect(matcher.matches({ ...base, attrs: { flight: true } })).toBe(true);
     expect(matcher.matches({ ...base, attrs: { debug: true } })).toBe(true);

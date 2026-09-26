@@ -23,10 +23,7 @@ interface SocketData {
   refused?: boolean;
 }
 
-/**
- * The gateway half, only as far as the agent can tell the difference. It is what the real gateway in the akasys
- * repo has to behave like, so a change here that makes these pass is a change to the contract.
- */
+// Stands in for the akasys gateway: a change here that makes these pass is a change to the wire contract.
 class GatewayStub {
   readonly server: Bun.Server<SocketData>;
   readonly sessionId = "session-1";
@@ -42,8 +39,7 @@ class GatewayStub {
       idleTimeout: 0,
       fetch: (request, server) => {
         const { pathname } = new URL(request.url);
-        // A refusal is accepted first and closed with a 4000-range code: an HTTP status at the upgrade reaches
-        // the agent as a bare 1006, which it cannot tell from a dropped link and so retries forever.
+        // Accept, then close with a 4000-range code: an HTTP status at the upgrade reaches the agent as a bare 1006.
         const refused = request.headers.get("authorization") !== `${tunnelWireContract.authScheme} test-token`;
         const kind = pathname === tunnelWireContract.controlPath ? "control" : "data";
         if (pathname !== tunnelWireContract.controlPath && pathname !== tunnelWireContract.dataPath)
@@ -53,8 +49,7 @@ class GatewayStub {
       websocket: {
         idleTimeout: 0,
         maxPayloadLength: tunnelWireContract.maxFrameBytes,
-        // Deferred a tick: closing inside `open` races the handshake the runtime is still finishing, and the
-        // client sees 1006 with the code discarded — the same failure an HTTP status produces.
+        // Deferred a tick: closing inside `open` races the handshake, and the client sees 1006 with the code discarded.
         open: (ws) => {
           if (ws.data.refused) setTimeout(() => ws.close(tunnelCloseCode.unauthorized, "bad token"), 0);
         },
@@ -79,8 +74,7 @@ class GatewayStub {
   }
 
   #message(ws: Bun.ServerWebSocket<SocketData>, message: string | Buffer) {
-    // A socket already being closed answers nothing; replying into it tears the connection down before the
-    // close frame lands, and the agent sees a protocol error instead of the code it was meant to read.
+    // A closing socket answers nothing: a reply tears it down before the close frame lands, hiding the close code.
     if (ws.data.refused) return;
     if (typeof message !== "string") {
       const collector = this.#collectors.get(ws);
@@ -143,7 +137,6 @@ class GatewayStub {
     return socket;
   }
 
-  /** One public request, carried the way the real gateway must carry it. */
   async request(init: {
     method?: string;
     path: string;
@@ -199,7 +192,6 @@ class GatewayStub {
     };
   }
 
-  /** A websocket carried through the tunnel: the public side of one, as the gateway would drive it. */
   async websocket(path: string) {
     const socket = await this.#take();
     this.#streamNum += 1;
@@ -359,8 +351,6 @@ describe("tunnel agent against a gateway", () => {
     const answer = await gateway.request({ path: "/big" });
     expect(answer.body.byteLength).toBe(600_000);
     expect(answer.sizes.length).toBeGreaterThan(1);
-    // The ceiling is the contract's, not the origin's: an origin handing back one 600 KB chunk must still not
-    // put 600 KB in one frame.
     expect(Math.max(...answer.sizes)).toBeLessThanOrEqual(tunnelWireContract.chunkBytes);
   });
 
@@ -394,7 +384,6 @@ describe("tunnel agent against a gateway", () => {
 
     const answer = await other.request({ path: "/" });
 
-    // The one a developer can act on: the tunnel is up and the app is not running behind it.
     expect(answer.reset).toContain("originRefused");
     await pointedAtNothing.stop();
     other.stop();
@@ -422,11 +411,6 @@ describe("tunnel agent against a gateway", () => {
     refusing.stop();
   });
 
-  /**
-   * The safety net for a gateway that does *not* follow the contract: an HTTP status at the upgrade, or a proxy
-   * in front of one, reaches the agent as a bare 1006 that it cannot tell from a dropped link. Without a bound
-   * on a link that never went ready, `akan tunnel` would sit there retrying a dead credential in silence.
-   */
   test("stops retrying a link that never goes ready, even with no close code to read", async () => {
     const silent = Bun.serve({ port: 0, idleTimeout: 0, fetch: () => new Response("no", { status: 401 }) });
     const agent = new TunnelAgent({

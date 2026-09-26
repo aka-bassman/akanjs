@@ -15,12 +15,7 @@ const loggerStub = () => {
   return { logger, errors };
 };
 
-/**
- * `register` installs process-wide listeners, so each test records what it added and removes exactly those —
- * leaving the test runner's own handlers in place. The added listener is then invoked directly rather than
- * through `process.emit`, which would also fire the runner's handler and fail the suite on a rejection the
- * test raised on purpose.
- */
+// Listeners are invoked directly: process.emit would also fire the runner's handler and fail the suite.
 describe("ShutdownManager", () => {
   let before: Map<ProcessEvent, unknown[]>;
   let exitCalls: number[];

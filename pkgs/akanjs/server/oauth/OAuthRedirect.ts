@@ -1,7 +1,7 @@
 import type { OAuthRedirectPolicy } from "./oauthTypes";
 
 export class OAuthRedirect {
-  // RFC 8252 §7.3 names 127.0.0.1 and ::1 and discourages `localhost`; Claude Code redirects to `localhost`, so it is one.
+  // RFC 8252 §7.3 discourages `localhost`, but Claude Code redirects to it, so it counts as loopback.
   static readonly loopbackHosts: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
   /** A parsed redirect URI, or `null` for one that does not parse or carries a fragment (RFC 6749 §3.1.2). */
@@ -18,11 +18,7 @@ export class OAuthRedirect {
     return url.protocol === "http:" && OAuthRedirect.loopbackHosts.has(url.hostname);
   }
 
-  /**
-   * What may be registered: HTTPS, loopback HTTP, or a private-use scheme the deployment named. The MCP spec allows
-   * only the first two; the third exists because Cursor's desktop client registers `cursor://…/oauth/callback`, and
-   * a server that refuses it cannot be used from Cursor at all.
-   */
+  // MCP allows only HTTPS and loopback HTTP; named private-use schemes exist for Cursor, which registers `cursor://…`.
   static isRegistrable(uri: string, { allowedSchemes = [] }: OAuthRedirectPolicy = {}): boolean {
     const url = OAuthRedirect.parse(uri);
     if (!url) return false;
@@ -30,10 +26,7 @@ export class OAuthRedirect {
     return allowedSchemes.includes(url.protocol.slice(0, -1));
   }
 
-  /**
-   * Exact match against what was registered, except that a loopback redirect may vary its port: a native client
-   * binds whichever port is free at the time (RFC 8252 §7.3), and Claude Code picks one at random per session.
-   */
+  // Exact match, except a loopback redirect may vary its port (RFC 8252 §7.3): native clients bind any free port.
   static matches(registered: readonly string[], presented: string): boolean {
     if (registered.includes(presented)) return true;
     const url = OAuthRedirect.parse(presented);

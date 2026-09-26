@@ -26,21 +26,17 @@ export function renderAkanHeadSnapshot(snapshot: AkanHeadSnapshotV1): Head {
   return (
     <>
       {snapshot.nodes.map((node, index) => {
-        const marker = {
-          "data-akan-head": "route",
-          "data-akan-head-key": `${node.tag}:${index}`,
-        };
+        const key = `${node.tag}:${index}`;
+        const marker = { "data-akan-head": "route", "data-akan-head-key": key };
         if (node.tag === "title") {
           return (
-            <title key={`${node.tag}:${index}`} {...marker}>
+            <title key={key} {...marker}>
               {node.text ?? ""}
             </title>
           );
         }
-        if (node.tag === "meta") {
-          return <meta key={`${node.tag}:${index}`} {...node.attrs} {...marker} />;
-        }
-        return <link key={`${node.tag}:${index}`} {...node.attrs} {...marker} />;
+        if (node.tag === "meta") return <meta key={key} {...node.attrs} {...marker} />;
+        return <link key={key} {...node.attrs} {...marker} />;
       })}
     </>
   );
@@ -50,7 +46,7 @@ export function shouldRenderLocaleAlternates(options: { isSpecialRoute?: boolean
   return options.isSpecialRoute !== true;
 }
 
-export function isResolvedHead(value: unknown): value is ResolvedHead {
+function isResolvedHead(value: unknown): value is ResolvedHead {
   return isRecord(value) && "node" in value;
 }
 

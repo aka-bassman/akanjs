@@ -1,4 +1,4 @@
-import { Logger } from "akanjs/common";
+import { Logger, logSeverity } from "akanjs/common";
 import type { LogHub, LogHubEntry } from "./logHub";
 import { LogStdoutWriter } from "./logStdoutWriter";
 import type { RotatingLogWriter } from "./rotatingLogWriter";
@@ -9,11 +9,7 @@ export interface HubFileSinkOptions {
   json: boolean;
 }
 
-/**
- * The rotating log file fed from the hub instead of from this process's own Logger. In an ndjson deployment a
- * child writes no text line the owner could relay, so the file is written from the records that reached the
- * hub — every process in one place, keyed the way the text-mode files were.
- */
+// In an ndjson deployment a child writes no text line to relay, so the log file is fed from the hub's records.
 export class HubFileSink {
   #subscription: { unsubscribe(): void } | null;
 
@@ -24,6 +20,15 @@ export class HubFileSink {
         json ? LogStdoutWriter.line(entry) : Logger.stripAnsi(Logger.render(entry.record)),
       );
     });
+  }
+
+  static attach(writer: RotatingLogWriter, hub: LogHub | null, label: string): () => void {
+    if (!hub || !Logger.isNdjson) return Logger.addSink((entry) => void writer.write(label, entry.plainMessage));
+    const sink = new HubFileSink(hub, writer, {
+      minSev: logSeverity[Logger.fileLevel],
+      json: Logger.format === "ndjson-only",
+    });
+    return () => sink.close();
   }
 
   static processKey({ record }: LogHubEntry): string {

@@ -4,7 +4,7 @@ import type { OAuthClientAuthMethod, OAuthClientMetadata, OAuthClientRecord, OAu
 
 export type OAuthRegistrationResult = { ok: true; client: OAuthClientMetadata } | { ok: false; response: Response };
 
-/** RFC 7591 Dynamic Client Registration — the request's validation and the response's shape; the identifier is the caller's. */
+// RFC 7591 Dynamic Client Registration; the caller assigns the client identifier.
 export class OAuthRegistration {
   static readonly authMethods: readonly OAuthClientAuthMethod[] = ["none", "client_secret_post", "client_secret_basic"];
   static readonly grantTypes: readonly string[] = ["authorization_code", "refresh_token"];
@@ -70,7 +70,6 @@ export class OAuthRegistration {
     return Array.isArray(value) && value.every((entry) => typeof entry === "string");
   }
 
-  /** The list as sent when every entry is allowed, the default when absent, `null` when something else was named. */
   static #subset(value: unknown, allowed: readonly string[], fallback: string[]): string[] | null {
     if (value === undefined) return fallback;
     if (!OAuthRegistration.#strings(value) || !value.length) return null;

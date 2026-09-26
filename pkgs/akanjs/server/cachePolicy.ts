@@ -83,16 +83,6 @@ export function resolveAutoRouteCacheTtl(input: {
   return normalizeRouteCacheTtl(input.ttl, input.defaultTtl ?? DEFAULT_ROUTE_CACHE_TTL_SECONDS);
 }
 
-export function combineMinRevalidate(...values: Array<number | false | null | undefined>): number | false | undefined {
-  let out: number | undefined;
-  for (const value of values) {
-    if (value === undefined || value === null) continue;
-    if (value === false) return false;
-    out = out === undefined ? value : Math.min(out, value);
-  }
-  return out;
-}
-
 export function getClientFacingOrigin(request: Request, url = new URL(request.url)): string {
   return originFromRequest(request.headers, url);
 }
@@ -105,6 +95,9 @@ export function isPublicRouteCacheableRequest(request: Request): boolean {
   return [...parseCookieHeader(cookie).keys()].every((name) => name === "theme");
 }
 
+const isAtOrUnder = (value: string, prefix: string) =>
+  value === prefix || value.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
+
 export function isRouteCachePathAllowed(
   pathname: string,
   options: { allow?: string | null; deny?: string | null; defaultAllow?: boolean } = {},
@@ -115,9 +108,7 @@ export function isRouteCachePathAllowed(
       .map((prefix) => prefix.trim())
       .filter(Boolean);
     if (prefixes.length === 0) return false;
-    return prefixes.some(
-      (prefix) => pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`),
-    );
+    return prefixes.some((prefix) => isAtOrUnder(pathname, prefix));
   };
   if (matches(options.deny)) return false;
   const allow = options.allow ?? "";
@@ -165,10 +156,6 @@ export function resolvePublicRouteCacheEntryDecision(input: PublicRouteCacheEntr
   return { entry: createRouteCacheEntry({ request: input.request, url: input.url, theme: input.theme, ttl }) };
 }
 
-export function resolvePublicRouteCacheEntry(input: PublicRouteCacheEntryInput): RouteCacheEntry | null {
-  return resolvePublicRouteCacheEntryDecision(input).entry;
-}
-
 export function resolveRouteCacheStoreTtl(baseTtl: number, state: RouteCacheRenderState): number | null {
   if (!state.cacheable || state.revalidate === false) return null;
   if (typeof state.revalidate !== "number") return baseTtl;
@@ -185,7 +172,7 @@ export function shouldStoreRouteCache(input: {
   const dynamicUsage = input.dynamicUsage ? { ...input.dynamicUsage } : undefined;
   const routeId = input.policy?.routeId;
   const tags = input.policy ? [...input.policy.tags] : undefined;
-  const revalidate = combineMinRevalidate(input.policy?.revalidate);
+  const revalidate = input.policy?.revalidate;
   if (input.renderControlType) {
     const reason =
       input.renderControlType === "redirect" && input.lateRedirect
@@ -215,10 +202,7 @@ export function shouldInvalidateRouteCacheEntry(
       if (!path) return false;
       const normalized = path.startsWith("/") ? path : `/${path}`;
       return (
-        metadata.pathname === normalized ||
-        metadata.pathname.startsWith(normalized.endsWith("/") ? normalized : `${normalized}/`) ||
-        metadata.routeId === normalized ||
-        Boolean(metadata.routeId?.startsWith(normalized.endsWith("/") ? normalized : `${normalized}/`))
+        isAtOrUnder(metadata.pathname, normalized) || (!!metadata.routeId && isAtOrUnder(metadata.routeId, normalized))
       );
     });
   }
@@ -226,22 +210,13 @@ export function shouldInvalidateRouteCacheEntry(
 }
 
 export interface LruTtlCacheOptions<T> {
-  /**
-   * Measures one entry's payload. Entry count alone says nothing about a cache whose entries span
-   * three orders of magnitude, and a byte ceiling needs a running total to enforce. The default
-   * reports 0 rather than guessing, so `byteSize` stays honest about not knowing.
-   */
+  /** Defaults to reporting 0 rather than guessing, so `byteSize` stays honest about not knowing. */
   sizeOf?: (value: T) => number;
   /** Total payload ceiling. 0 leaves the cache bounded only by `maxEntries`. */
   maxBytes?: number;
   /** An entry over this is not stored at all, rather than evicting everything else to fit it. */
   maxEntryBytes?: number;
-  /**
-   * Cadence of the idle sweep. Without one a filled cache never shrinks: an entry is dropped only
-   * when its own key is fetched after expiry or when a write evicts it, so a pod that stops
-   * serving holds its peak forever — measured at 100 entries / 21.4 MiB still resident 310s after
-   * the last request, with a 30s TTL. 0 disables it.
-   */
+  /** Idle sweep cadence; without it a cache nobody reads or writes never releases expired entries. 0 disables it. */
   sweepIntervalMs?: number;
 }
 
@@ -288,7 +263,6 @@ export class LruTtlCache<T> {
     return entry.value;
   }
 
-  /** Returns whether the entry was stored; a payload over `maxEntryBytes` is rejected. */
   set(key: string, value: T, ttlSeconds: number): boolean {
     this.#remove(key);
     const byteLength = LruTtlCache.#measure(this.#sizeOf, value);
@@ -306,12 +280,7 @@ export class LruTtlCache<T> {
     return true;
   }
 
-  /**
-   * Drops every expired entry. Deliberately a full scan rather than a walk from the oldest that
-   * stops at the first live entry: insertion order is *LRU* order because `get` reinserts, and TTLs
-   * differ per entry, so expiry is not monotonic in map order and an early break would leave
-   * expired entries behind. The map is bounded by `maxEntries`, so the scan is cheap.
-   */
+  // A full scan on purpose: map order is LRU (`get` reinserts) and TTLs differ, so expiry is not monotonic in it.
   sweepExpired(now = Date.now()): number {
     let removed = 0;
     for (const [key, entry] of this.#entries) {
@@ -322,7 +291,6 @@ export class LruTtlCache<T> {
     return removed;
   }
 
-  /** Stops the idle sweep. The cache stays usable; only the timer goes away. */
   dispose(): void {
     if (!this.#sweepTimer) return;
     clearInterval(this.#sweepTimer);
@@ -349,8 +317,7 @@ export class LruTtlCache<T> {
   }
 
   static parseByteCeiling(value: string | undefined | null, fallback = 0): number {
-    const parsed = Number.parseInt(value ?? "", 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    return parsePositiveInt(value) ?? fallback;
   }
 
   #remove(key: string): boolean {

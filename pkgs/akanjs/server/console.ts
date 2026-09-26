@@ -7,7 +7,7 @@ import { type AkanConsoleCommand, AkanConsoleSession } from "./consoleSession";
 import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { LogControlUnavailableError, LogTailClient } from "./logging/logTailClient";
 
-export * from "./consoleEvaluator";
+export { evaluateAkanConsoleInput, isAkanConsoleInputComplete } from "./consoleSession";
 
 export interface AkanConsoleOptions {
   prompt?: string;
@@ -28,10 +28,7 @@ export const parseAkanConsoleQuery = (args: string): Record<string, string> => {
   return query;
 };
 
-/**
- * `.tail` and `.trace` attach to the *running* server's control socket — the console booted its own
- * `listen: false` server, whose logs are not the ones anybody is looking for.
- */
+/** Attaches to the running server's control socket, not the console's own `listen: false` server. */
 export const createAkanConsoleLogCommands = (
   appName: string,
   runtimeDir: string,
@@ -171,7 +168,7 @@ export const createAkanConsoleContext = (
   server: AkanServer,
   globals: Record<string, unknown> = {},
 ): AkanConsoleContext => {
-  const context = {
+  return {
     server,
     env: server.env,
     get: server.get.bind(server) as AkanServer["get"],
@@ -182,7 +179,6 @@ export const createAkanConsoleContext = (
     debug: () => server.inspectConsole(),
     ...globals,
   };
-  return context;
 };
 
 export const startAkanConsole = async (server: AkanServer, options: AkanConsoleOptions = {}) => {

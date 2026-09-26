@@ -1,4 +1,4 @@
-import type { PageDefinition, PathRoute, RouteDefinition } from "akanjs/client";
+import type { PageDefinition, PathRoute } from "akanjs/client";
 import { Logger } from "akanjs/common";
 import { getRequestStore } from "akanjs/fetch";
 import type { PagePromptEntry, PagePromptRecord, PagePromptRun, PagePromptRunInput } from "../signal/mcp/pagePrompt";
@@ -6,19 +6,12 @@ import { RouteTreeBuilder } from "./routeTreeBuilder";
 
 interface RscPagePromptsProps {
   routes: () => PathRoute[];
-  /** The worker's own request scope — the ALS store the page's `fetch.*` calls record into. */
   run: <T>(request: Request, routeId: string, fn: () => Promise<T>) => Promise<T>;
   defaultLocale: () => string;
 }
 
-/**
- * Page prompts, read off `page().prompt()` declarations and answered by running the page's body.
- *
- * Running means calling the route's render functions — root layouts, layouts, then the page — inside one
- * request scope and reading the `fetch.*` queries they made off that scope's log. Nothing is rendered: the JSX a
- * body returns is an element tree nobody walks, so a client component's code never runs and the screen's data
- * footprint is exactly the set of endpoints the page asked for, with the arguments it asked with.
- */
+// Runs the route's render functions without rendering: the returned JSX is never walked, so only the page's own
+// `fetch.*` calls run, and they are read off the request scope's query log.
 export class RscPagePrompts {
   static readonly logger = new Logger("RscPagePrompts");
 
@@ -83,7 +76,8 @@ export class RscPagePrompts {
     const entries: PagePromptEntry[] = [];
     const owners = new Map<string, string>();
     for (const route of routes) {
-      const meta = RscPagePrompts.#promptOf(await route.renderPage.getRouteDefinition?.());
+      const definition = await route.renderPage.getRouteDefinition?.();
+      const meta = definition?.kind === "page" ? (definition as PageDefinition).promptMeta : undefined;
       if (!meta) continue;
       const owner = owners.get(meta.name);
       if (owner)
@@ -95,10 +89,6 @@ export class RscPagePrompts {
     return entries.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  static #promptOf(definition: RouteDefinition | undefined) {
-    return definition?.kind === "page" ? (definition as PageDefinition).promptMeta : undefined;
-  }
-
   static #pathParams(pattern: string) {
     return pattern
       .split("/")
@@ -107,10 +97,7 @@ export class RscPagePrompts {
       .filter((name) => name !== "lang");
   }
 
-  /**
-   * A prompt argument is one string, so a list arrives comma-separated; the URL the page reads spells it as a
-   * repeated key, the way a browser would, so the page sees the same value either way.
-   */
+  // A prompt argument is one string, so a list arrives comma-separated; the URL repeats the key like a browser would.
   static #searchValue(list: boolean, raw: string): string | string[] {
     if (!list) return raw;
     return raw
@@ -145,10 +132,7 @@ export class RscPagePrompts {
     }
   }
 
-  /**
-   * Checked by digest rather than by class: the page body threw these from the pages bundle, whose copy of
-   * `AkanRedirectError` is not the one this file could import.
-   */
+  // By digest, not instanceof: the pages bundle carries its own copy of `AkanRedirectError`.
   static #refusal(error: unknown): PagePromptRun {
     const digest = typeof error === "object" && error !== null ? (error as { digest?: unknown }).digest : undefined;
     if (digest === "AKAN_REDIRECT") {
@@ -161,8 +145,7 @@ export class RscPagePrompts {
     }
     if (digest === "AKAN_NOT_FOUND")
       return { ok: false, reason: "not-found", message: "The page answers not-found for these arguments." };
-    // A `fetch.*` the body awaited was refused by its guard, or found nothing. The remote `Err` travels as itself
-    // with its `statusCode`, so the verdict is the guard's and not "the page broke".
+    // A guard's refusal (or a miss) of an awaited `fetch.*` arrives as the remote `Err` with its `statusCode`.
     const status = (error as { statusCode?: unknown } | null)?.statusCode;
     if (status === 401 || status === 403)
       return { ok: false, reason: "forbidden", message: `A query the screen makes refused the caller (${status}).` };

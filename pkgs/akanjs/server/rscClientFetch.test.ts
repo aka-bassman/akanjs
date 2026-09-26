@@ -1,18 +1,25 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   AKAN_RSC_CURRENT_STATE_HEADER,
   AKAN_RSC_PATCH_SEGMENT_PATH_HEADER,
   AKAN_RSC_PATCH_START_INDEX_HEADER,
   AKAN_RSC_PATCH_START_SEGMENT_HEADER,
   AKAN_RSC_STATE_VERSION_HEADER,
-  type AkanRouterStateV1,
   encodeAkanRscPatchSegmentPath,
 } from "./routeState";
 import { fetchRscNavigationResponse } from "./rscClientFetch";
 import { RSC_CONTENT_TYPE } from "./rscHttp";
+import { makeRouterState } from "./rscNavigation.fixture";
 
 const originalFetch = globalThis.fetch;
 const originalWindow = globalThis.window;
+
+beforeEach(() => {
+  Object.defineProperty(globalThis, "window", {
+    value: { location: { origin: "https://example.test" } },
+    configurable: true,
+  });
+});
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -21,21 +28,7 @@ afterEach(() => {
 
 describe("fetchRscNavigationResponse", () => {
   test("returns patch payloads with metadata for P10c-1a shadow validation", async () => {
-    Object.defineProperty(globalThis, "window", {
-      value: { location: { origin: "https://example.test" } },
-      configurable: true,
-    });
-    const currentRouterState: AkanRouterStateV1 = {
-      version: 1,
-      buildId: 3,
-      href: "https://example.test/docs/intro",
-      routeId: "/docs/intro",
-      segments: [
-        { kind: "root-layout", path: "/", key: "root:/:0" },
-        { kind: "layout", path: "/docs", key: "layout:/docs:1" },
-        { kind: "page", path: "/docs/intro", key: "page:/docs/intro:2" },
-      ],
-    };
+    const currentRouterState = makeRouterState("https://example.test/docs/intro", "/docs/intro");
     const requests: { url: string; headers: Headers }[] = [];
     let patchPayloadCancelled = false;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -81,21 +74,7 @@ describe("fetchRscNavigationResponse", () => {
   });
 
   test("retries malformed patch responses without router state for full fallback", async () => {
-    Object.defineProperty(globalThis, "window", {
-      value: { location: { origin: "https://example.test" } },
-      configurable: true,
-    });
-    const currentRouterState: AkanRouterStateV1 = {
-      version: 1,
-      buildId: 3,
-      href: "https://example.test/docs/intro",
-      routeId: "/docs/intro",
-      segments: [
-        { kind: "root-layout", path: "/", key: "root:/:0" },
-        { kind: "layout", path: "/docs", key: "layout:/docs:1" },
-        { kind: "page", path: "/docs/intro", key: "page:/docs/intro:2" },
-      ],
-    };
+    const currentRouterState = makeRouterState("https://example.test/docs/intro", "/docs/intro");
     const requests: { url: string; headers: Headers }[] = [];
     let malformedPatchCancelled = false;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -132,14 +111,8 @@ describe("fetchRscNavigationResponse", () => {
   });
 
   test("reports a 404 as not-found and never hands its body to the decoder", async () => {
-    Object.defineProperty(globalThis, "window", {
-      value: { location: { origin: "https://example.test" } },
-      configurable: true,
-    });
     let bodyCancelled = false;
     globalThis.fetch = (async () =>
-      // What the RSC route actually answers for a target that resolves to nothing: a Flight payload whose root
-      // is `null`. Decoded, it commits an empty tree over the whole document.
       new Response(
         new ReadableStream<Uint8Array>({
           start(controller) {

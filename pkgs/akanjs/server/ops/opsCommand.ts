@@ -6,10 +6,7 @@ import type { SnapshotSources } from "./snapshotTypes";
 import { SqliteFiles } from "./sqliteFiles";
 import { SqliteSnapshot } from "./sqliteSnapshot";
 
-/**
- * `bun main.js ops <snapshot|restore>` — the same entry a production image already runs, because an image carries
- * no `akan` CLI. The app's own env names the files, so it runs with the container's env and nothing else.
- */
+// Rides `bun main.js ops …` because a production image carries no `akan` CLI; the container's env names the files.
 export class OpsCommand {
   static readonly usage = [
     "Usage:",

@@ -122,12 +122,10 @@ export class RotatingLogWriter {
   async #createState(processKey: string, date: string): Promise<RotatingLogWriterState> {
     const sequence = await this.#getNextSequence(processKey, date);
     const filePath = this.#getFilePath(processKey, date, sequence);
-    let sizeBytes = 0;
-    try {
-      sizeBytes = (await stat(filePath)).size;
-    } catch {
-      sizeBytes = 0;
-    }
+    const sizeBytes = await stat(filePath).then(
+      (file) => file.size,
+      () => 0,
+    );
     return { date, sequence, sizeBytes };
   }
 

@@ -3,7 +3,9 @@ import { getDefaultInjectRegistry, getDefaultLiveRegistry } from "akanjs/service
 import { MCP_LEGACY_PRIOR_VERSION, MCP_LEGACY_VERSION, MCP_MODERN_VERSION } from "../../signal/mcp";
 import { McpRouter } from "./McpRouter";
 
-// The advertised server name is the runtime identity, not a server option, so `getEnv()` has to resolve.
+const rpc = (method: string, params?: object) => ({ jsonrpc: "2.0", id: 1, method, ...(params ? { params } : {}) });
+
+// `getEnv()` has to resolve: the advertised server name is the runtime identity, not a server option.
 process.env.AKAN_PUBLIC_APP_NAME = "probe";
 process.env.AKAN_PUBLIC_REPO_NAME = "akan";
 process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
@@ -31,7 +33,7 @@ const post = async (body: object, init: RequestInit = {}, handlers: Routes[strin
     headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
   });
   const res = await handlers.POST(req);
-  // A transport-level refusal answers in plain text, before any JSON-RPC envelope exists to put an error in.
+  // A transport-level refusal answers in plain text, before any JSON-RPC envelope exists.
   const text = await res.text();
   let json: { result?: any; error?: { code: number; message: string; data?: any }; raw?: string };
   try {
@@ -47,7 +49,6 @@ const meta = {
   "io.modelcontextprotocol/clientCapabilities": {},
 };
 
-/** The mirror headers the modern era requires on every POST, which the server refuses a request for omitting. */
 const mirrored = (method: string, name?: string) => ({
   "MCP-Protocol-Version": MCP_MODERN_VERSION,
   "Mcp-Method": method,
@@ -76,27 +77,19 @@ describe("McpRouter transport", () => {
   });
 
   test("rejects a cross-origin post but allows a client that sends none", async () => {
-    const { res } = await post(
-      { jsonrpc: "2.0", id: 1, method: "tools/list" },
-      { headers: { Origin: "http://evil.test" } },
-    );
+    const { res } = await post(rpc("tools/list"), { headers: { Origin: "http://evil.test" } });
     expect(res.status).toBe(403);
-    const matching = await post(
-      { jsonrpc: "2.0", id: 1, method: "tools/list" },
-      { headers: { Origin: "http://127.0.0.1:8080" } },
-    );
+    const matching = await post(rpc("tools/list"), { headers: { Origin: "http://127.0.0.1:8080" } });
     expect(matching.res.status).toBe(200);
-    // MCP clients are not browsers and normally send no Origin at all.
-    const absent = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const absent = await post(rpc("tools/list"));
     expect(absent.res.status).toBe(200);
   });
 
   test("judges a browser's origin against the configured resource, not a header the caller wrote", async () => {
     const pinned = routes({ auth: { resource: "https://public.example.com/mcp" } })["/mcp"];
-    const list = { jsonrpc: "2.0", id: 1, method: "tools/list" };
+    const list = rpc("tools/list");
     const ours = await post(list, { headers: { Origin: "https://public.example.com" } }, pinned);
     expect(ours.res.status).toBe(200);
-    // The request's own host is the internal child; a forwarded host that agrees with the Origin used to be enough.
     const forwarded = await post(
       list,
       { headers: { Origin: "https://evil.example.net", "x-forwarded-host": "evil.example.net" } },
@@ -123,11 +116,7 @@ describe("McpRouter eras", () => {
     });
     expect(res.headers.get("Mcp-Session-Id")).toBeNull();
     expect(json.result.protocolVersion).toBe(MCP_LEGACY_VERSION);
-    // Nothing opted in on this registry, so nothing is advertised — a client that reads capabilities skips three
-    // listing round-trips it would otherwise make to discover three empty shelves.
     expect(json.result.capabilities).toEqual({});
-    // Legacy results carry no `resultType`; a legacy client would ignore it, but keeping the eras separable
-    // is what makes a captured exchange readable.
     expect(json.result.resultType).toBeUndefined();
   });
 
@@ -138,8 +127,6 @@ describe("McpRouter eras", () => {
       method: "initialize",
       params: { protocolVersion: MCP_LEGACY_PRIOR_VERSION, capabilities: {} },
     });
-    // The wire this server implements is identical across the legacy revisions, so listing only the measured one
-    // turned every other legacy client into a disconnect.
     expect(json.result.protocolVersion).toBe(MCP_LEGACY_PRIOR_VERSION);
   });
 
@@ -150,7 +137,6 @@ describe("McpRouter eras", () => {
       method: "initialize",
       params: { protocolVersion: "1999-01-01" },
     });
-    // A client proposes the newest it speaks. Older than everything here means the newest is hopeless for it.
     expect(older.json.result.protocolVersion).toBe(MCP_LEGACY_PRIOR_VERSION);
     const newer = await post({
       jsonrpc: "2.0",
@@ -162,46 +148,31 @@ describe("McpRouter eras", () => {
   });
 
   test("serves modern discovery with resultType and serverInfo", async () => {
-    const { json } = await post(
-      { jsonrpc: "2.0", id: 1, method: "server/discover", params: { _meta: meta } },
-      { headers: mirrored("server/discover") },
-    );
+    const { json } = await post(rpc("server/discover", { _meta: meta }), { headers: mirrored("server/discover") });
     expect(json.result.resultType).toBe("complete");
     expect(json.result.supportedVersions).toEqual([MCP_MODERN_VERSION, MCP_LEGACY_VERSION, MCP_LEGACY_PRIOR_VERSION]);
     expect(json.result._meta["io.modelcontextprotocol/serverInfo"]).toEqual({ name: "probe-mcp", version: "0.0.0" });
   });
 
   test("treats a legacy _meta as legacy instead of demanding modern fields", async () => {
-    // Legacy `_meta` exists too — it carries `progressToken`. Reading that as modern would reject a valid request.
-    const { res, json } = await post({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/list",
-      params: { _meta: { progressToken: "abc" } },
-    });
+    const { res, json } = await post(rpc("tools/list", { _meta: { progressToken: "abc" } }));
     expect(res.status).toBe(200);
     expect(json.result.tools).toEqual([]);
     expect(json.result.resultType).toBeUndefined();
   });
 
   test("requires the modern _meta fields once a modern request declares itself", async () => {
-    const { res, json } = await post({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/list",
-      params: { _meta: { "io.modelcontextprotocol/protocolVersion": MCP_MODERN_VERSION } },
-    });
+    const { res, json } = await post(
+      rpc("tools/list", { _meta: { "io.modelcontextprotocol/protocolVersion": MCP_MODERN_VERSION } }),
+    );
     expect(res.status).toBe(400);
     expect(json.error?.code).toBe(-32602);
   });
 
   test("names the versions it speaks when asked for one it does not", async () => {
-    const { res, json } = await post({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/list",
-      params: { _meta: { ...meta, "io.modelcontextprotocol/protocolVersion": "2030-01-01" } },
-    });
+    const { res, json } = await post(
+      rpc("tools/list", { _meta: { ...meta, "io.modelcontextprotocol/protocolVersion": "2030-01-01" } }),
+    );
     expect(res.status).toBe(400);
     expect(json.error?.code).toBe(-32022);
     expect(json.error?.data).toEqual({
@@ -213,23 +184,15 @@ describe("McpRouter eras", () => {
 
 describe("McpRouter header mirroring", () => {
   test("rejects a header that contradicts the body", async () => {
-    const { res, json } = await post(
-      { jsonrpc: "2.0", id: 1, method: "tools/list", params: { _meta: meta } },
-      { headers: { "Mcp-Method": "tools/call" } },
-    );
+    const { res, json } = await post(rpc("tools/list", { _meta: meta }), { headers: { "Mcp-Method": "tools/call" } });
     expect(res.status).toBe(400);
     expect(json.error?.code).toBe(-32020);
   });
 
   test("accepts a matching header and refuses one that was left out", async () => {
-    const matched = await post(
-      { jsonrpc: "2.0", id: 1, method: "tools/list", params: { _meta: meta } },
-      { headers: mirrored("tools/list") },
-    );
+    const matched = await post(rpc("tools/list", { _meta: meta }), { headers: mirrored("tools/list") });
     expect(matched.res.status).toBe(200);
-    // A gateway rule keyed on `mcp-method` never fires for a request that omits it, so absence buys the same
-    // bypass as a header that lies. The modern era requires the mirror; a legacy request never gets here.
-    const absent = await post({ jsonrpc: "2.0", id: 1, method: "tools/list", params: { _meta: meta } });
+    const absent = await post(rpc("tools/list", { _meta: meta }));
     expect(absent.res.status).toBe(400);
     expect(absent.json.error?.code).toBe(-32020);
     expect(absent.json.error?.message).toContain("mcp-protocol-version");
@@ -237,10 +200,9 @@ describe("McpRouter header mirroring", () => {
 
   test("compares a base64 sentinel by its decoded value", async () => {
     const encoded = `=?base64?${Buffer.from("한글도구", "utf8").toString("base64")}?=`;
-    const { res, json } = await post(
-      { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "한글도구", _meta: meta } },
-      { headers: mirrored("tools/call", encoded) },
-    );
+    const { res, json } = await post(rpc("tools/call", { name: "한글도구", _meta: meta }), {
+      headers: mirrored("tools/call", encoded),
+    });
     // Past the header check, so the failure is the unknown tool rather than a mismatch.
     expect(res.status).toBe(200);
     expect(json.error?.code).toBe(-32602);
@@ -256,36 +218,31 @@ describe("McpRouter methods", () => {
       ["resources/templates/list", "resourceTemplates"],
       ["prompts/list", "prompts"],
     ] as const) {
-      const { json } = await post({ jsonrpc: "2.0", id: 1, method });
+      const { json } = await post(rpc(method));
       expect(json.result[key]).toEqual([]);
     }
   });
 
   test("answers an unimplemented method with 404 for a modern client and 200 for a legacy one", async () => {
-    const modern = await post(
-      { jsonrpc: "2.0", id: 1, method: "sampling/createMessage", params: { _meta: meta } },
-      { headers: mirrored("sampling/createMessage") },
-    );
-    // The 404 is what tells a modern client the refusal came from an MCP server and not from a proxy.
+    const modern = await post(rpc("sampling/createMessage", { _meta: meta }), {
+      headers: mirrored("sampling/createMessage"),
+    });
     expect(modern.res.status).toBe(404);
     expect(modern.json.error?.code).toBe(-32601);
-    // A legacy client spends 404 on "your session is gone, start a new one", so the same status there invites a
-    // re-handshake loop over a method that will still not exist. It reads the JSON-RPC error at 200 instead.
-    const legacy = await post({ jsonrpc: "2.0", id: 1, method: "sampling/createMessage" });
+    const legacy = await post(rpc("sampling/createMessage"));
     expect(legacy.res.status).toBe(200);
     expect(legacy.json.error?.code).toBe(-32601);
-    // A legacy client cannot fall forward, so this message is the only diagnostic it gets.
     expect(legacy.json.error?.message).toContain(MCP_MODERN_VERSION);
   });
 
   test("keeps a tool-level failure at HTTP 200 inside the JSON-RPC error", async () => {
-    const { res, json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "nope" } });
+    const { res, json } = await post(rpc("tools/call", { name: "nope" }));
     expect(res.status).toBe(200);
     expect(json.error?.code).toBe(-32602);
   });
 
   test("refuses an unadvertised resource uri", async () => {
-    const { json } = await post({ jsonrpc: "2.0", id: 1, method: "resources/read", params: { uri: "akan://user/1" } });
+    const { json } = await post(rpc("resources/read", { uri: "akan://user/1" }));
     expect(json.error?.code).toBe(-32602);
   });
 });
@@ -307,7 +264,6 @@ describe("McpRouter rate limit", () => {
     });
     for (const id of [1, 2]) {
       const { res, json } = await post(call(id), bearer("a"), handlers);
-      // The unknown tool is refused as a call, and counted as one.
       expect(res.status).toBe(200);
       expect(json.error?.message).toContain("Unknown tool");
     }
@@ -316,7 +272,6 @@ describe("McpRouter rate limit", () => {
     expect(third.res.headers.get("retry-after")).toMatch(/^\d+$/);
     expect(third.json.error?.code).toBe(-32010);
     expect(third.json.error?.message).toContain("2 calls per 60s");
-    // Another session, another budget; a listing is never counted.
     expect((await post(call(4), bearer("b"), handlers)).res.status).toBe(200);
     expect((await post({ jsonrpc: "2.0", id: 5, method: "tools/list" }, bearer("a"), handlers)).res.status).toBe(200);
   });

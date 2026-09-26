@@ -1,4 +1,3 @@
-import { copyBunRequestFields } from "./bunRequestFields";
 import {
   WEB_PROXY_RESULT,
   type WebProxy,
@@ -8,6 +7,19 @@ import {
   type WebProxyReturn,
   type WebProxyRunResult,
 } from "./types";
+
+export const copyBunRequestFields = (target: Request, source: Request): Request => {
+  const sourceWithParams = source as Request & { params?: Record<string, string> };
+  if (sourceWithParams.params) {
+    Object.defineProperty(target, "params", {
+      configurable: true,
+      enumerable: true,
+      value: sourceWithParams.params,
+      writable: true,
+    });
+  }
+  return target;
+};
 
 export class WebProxyRunner {
   readonly #proxies: Array<{ proxy: WebProxy; matcher?: WebProxyMatcher }>;

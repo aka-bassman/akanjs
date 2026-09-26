@@ -2,26 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { Logger, type LogRecord, logSeverity } from "akanjs/common";
 import type { AkanIpcMessage } from "akanjs/service";
 import { LogForwarder } from "./logForwarder";
+import { makeLogRecord } from "./logRecord.fixture";
 
 type LogBatch = Extract<AkanIpcMessage, { type: "log.records" }>;
 
-const record = (message: string, overrides: Partial<LogRecord> = {}): LogRecord => ({
-  at: 1,
-  elapsedMs: 0,
-  level: "info",
-  sev: logSeverity.info,
-  name: "Svc",
-  context: "",
-  message,
-  stream: "stdout",
-  pid: 1,
-  replicaIdx: 0,
-  role: "all",
-  origin: null,
-  traceId: null,
-  endpoint: null,
-  ...overrides,
-});
+const record = (message: string, overrides: Partial<LogRecord> = {}) => makeLogRecord(message, { at: 1, ...overrides });
 
 const collect = () => {
   const sent: LogBatch[] = [];

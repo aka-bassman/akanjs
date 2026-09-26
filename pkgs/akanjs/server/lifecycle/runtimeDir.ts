@@ -1,9 +1,6 @@
 import path from "node:path";
 
-/**
- * Where a replica keeps its child sockets and rotating logs. Both the gateway and a solo server resolve it,
- * and they must land on the same directory: switching between the two modes must not move the log file.
- */
+// Shared by the gateway and a solo server: switching modes must not move the child sockets or the rotating log.
 export const resolveRuntimeDir = (runtimeDir?: string): string =>
   path.resolve(
     runtimeDir ??

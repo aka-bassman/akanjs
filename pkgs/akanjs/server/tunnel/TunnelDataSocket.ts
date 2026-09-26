@@ -18,13 +18,9 @@ export interface TunnelDataSocketOptions {
   onGone: (socket: TunnelDataSocket) => void;
 }
 
-/** Enough in flight to keep the link busy, little enough that a slow reader cannot grow the agent's heap. */
 const highWaterMark = tunnelWireContract.chunkBytes * 8;
 
-/**
- * One socket of the pool. It carries exactly one stream at a time, which is what lets a payload frame be bare
- * bytes with no stream id — see the invariants on `TunnelDataFromAgent`.
- */
+/** Carries one stream at a time, which is what lets a payload frame be bare bytes with no stream id. */
 export class TunnelDataSocket {
   readonly #options: TunnelDataSocketOptions;
   #ws: WebSocket | null = null;
@@ -134,8 +130,7 @@ export class TunnelDataSocket {
     const ws = this.#ws;
     if (ws?.readyState !== WebSocket.OPEN) return;
     ws.send(wsBytes(payload));
-    // A client `WebSocket` has no `drain` event, so `bufferedAmount` is the only signal that the link caught up.
-    // Without this an origin faster than the tunnel is buffered in the agent's heap rather than being paced.
+    // A client WebSocket has no drain event: polling bufferedAmount is what paces an origin faster than the tunnel.
     while (ws.readyState === WebSocket.OPEN && ws.bufferedAmount > highWaterMark) await sleep(1);
   }
 }

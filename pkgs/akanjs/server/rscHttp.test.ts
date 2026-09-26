@@ -9,70 +9,57 @@ import {
 
 const encoder = new TextEncoder();
 
+const respond = (body: string, status: number, contentType: string) =>
+  new Response(body, { status, headers: { "Content-Type": contentType } });
+
+const streamOf = (...chunks: Uint8Array[]) =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+
 describe("RSC HTTP helpers", () => {
   test("allows normal RSC payload responses", () => {
-    const response = new Response("flight", {
-      status: 200,
-      headers: { "Content-Type": RSC_CONTENT_TYPE },
-    });
+    const response = respond("flight", 200, RSC_CONTENT_TYPE);
 
     expect(isRscPayloadResponse(response)).toBe(true);
   });
 
   test("allows not-found RSC payload responses", () => {
-    const response = new Response("flight", {
-      status: 404,
-      headers: { "Content-Type": RSC_CONTENT_TYPE },
-    });
+    const response = respond("flight", 404, RSC_CONTENT_TYPE);
 
     expect(isRscPayloadResponse(response)).toBe(true);
   });
 
   test("rejects non-RSC not-found responses", () => {
-    const response = new Response("Not Found", {
-      status: 404,
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    const response = respond("Not Found", 404, "text/plain; charset=utf-8");
 
     expect(isRscPayloadResponse(response)).toBe(false);
   });
 
   test("rejects non-RSC server error fallbacks so navigation can hard-reload", () => {
-    const response = new Response("Internal Server Error", {
-      status: 500,
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    const response = respond("Internal Server Error", 500, "text/plain; charset=utf-8");
 
     expect(isRscPayloadResponse(response)).toBe(false);
   });
 
   test("returns the original RSC response body stream for client decoding", () => {
-    const response = new Response("flight", {
-      status: 200,
-      headers: { "Content-Type": RSC_CONTENT_TYPE },
-    });
+    const response = respond("flight", 200, RSC_CONTENT_TYPE);
 
     expect(getRscPayloadStream(response)).toBe(response.body);
   });
 
   test("returns null for non-RSC response bodies", () => {
-    const response = new Response("Internal Server Error", {
-      status: 500,
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    const response = respond("Internal Server Error", 500, "text/plain; charset=utf-8");
 
     expect(getRscPayloadStream(response)).toBeNull();
   });
 
   test("passes normal RSC rows through the redirect guard", async () => {
     const stream = guardRscRedirectRows(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode('0:D{"name":"Page"}\n'));
-          controller.enqueue(encoder.encode('1:["$","main",null,{}]\n'));
-          controller.close();
-        },
-      }),
+      streamOf(encoder.encode('0:D{"name":"Page"}\n'), encoder.encode('1:["$","main",null,{}]\n')),
     );
 
     await expect(new Response(stream).text()).resolves.toBe('0:D{"name":"Page"}\n1:["$","main",null,{}]\n');
@@ -81,22 +68,12 @@ describe("RSC HTTP helpers", () => {
   test("replaces split Akan redirect rows before RSDW sees them", async () => {
     const row = 'a:E{"digest":"AKAN_REDIRECT","name":"AkanRedirectError","message":"Redirect to /target"}\n';
     const redirects: Array<{ rowId: string; location?: string }> = [];
-    const stream = guardRscRedirectRows(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          const bytes = encoder.encode(row);
-          controller.enqueue(bytes.slice(0, 11));
-          controller.enqueue(bytes.slice(11, 37));
-          controller.enqueue(bytes.slice(37));
-          controller.close();
-        },
-      }),
-      {
-        onRedirect: (redirect) => {
-          redirects.push(redirect);
-        },
+    const bytes = encoder.encode(row);
+    const stream = guardRscRedirectRows(streamOf(bytes.slice(0, 11), bytes.slice(11, 37), bytes.slice(37)), {
+      onRedirect: (redirect) => {
+        redirects.push(redirect);
       },
-    );
+    });
 
     await expect(new Response(stream).text()).resolves.toBe("a:null\n");
     expect(redirects).toEqual([{ rowId: "a", location: "/target" }]);
@@ -110,19 +87,11 @@ describe("RSC HTTP helpers", () => {
     });
     const row = `b:E{"digest":"${digest}","name":"Error"}\n`;
     const redirects: Array<{ rowId: string; location?: string; method?: string; status?: number }> = [];
-    const stream = guardRscRedirectRows(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode(row));
-          controller.close();
-        },
-      }),
-      {
-        onRedirect: (redirect) => {
-          redirects.push(redirect);
-        },
+    const stream = guardRscRedirectRows(streamOf(encoder.encode(row)), {
+      onRedirect: (redirect) => {
+        redirects.push(redirect);
       },
-    );
+    });
 
     await expect(new Response(stream).text()).resolves.toBe("b:null\n");
     expect(redirects).toEqual([

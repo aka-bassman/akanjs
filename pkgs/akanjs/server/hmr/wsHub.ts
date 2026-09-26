@@ -1,6 +1,14 @@
 import { Logger } from "akanjs/common";
 import type { BuildPhase } from "../artifact";
 
+// Sent over IPC by devkit's fs watcher.
+export type ChangeKind = "code" | "css" | "config" | "ignore";
+
+export interface ChangeBatch {
+  files: string[];
+  kinds: Set<Exclude<ChangeKind, "ignore">>;
+}
+
 export interface HmrWsData {
   kind: "akan-hmr";
   openedAt: number;
@@ -41,10 +49,6 @@ export class HmrWsHub {
   readonly #conns = new Set<Bun.ServerWebSocket<HmrWsData>>();
   #publish: ((topic: string, payload: string) => void) | null = null;
 
-  get size(): number {
-    return this.#conns.size;
-  }
-
   setPublisher(publish: (topic: string, payload: string) => void): void {
     this.#publish = publish;
   }
@@ -61,8 +65,7 @@ export class HmrWsHub {
   }
 
   broadcast(msg: HmrMessage): void {
-    const payload = JSON.stringify(msg);
-    this.#publish?.(HMR_WS_TOPIC, payload);
+    this.#publish?.(HMR_WS_TOPIC, JSON.stringify(msg));
   }
 
   handleMessage(message: string): void {
@@ -78,7 +81,7 @@ export class HmrWsHub {
   }
 }
 
-const isSyncNavigationEnabled = () =>
+export const isSyncNavigationEnabled = () =>
   process.env.AKAN_PUBLIC_SYNC_NAVIGATION === "true" ||
   process.env.AKAN_PUBLIC_SYNC_NAVIGATION === "1" ||
   process.env.SYNC_DOMAIN === "true" ||

@@ -71,8 +71,7 @@ describe("isAnimatedImage", () => {
   });
 
   test("reads a real still WebP from Bun as still", async () => {
-    // Bun's WebP encoder emits the extended `VP8X` header even for a still image, so a reader that
-    // took VP8X as the animation marker would pass every other test here and still be wrong.
+    // Bun's WebP encoder writes a `VP8X` header even for a still image, so VP8X alone is no animation marker.
     const webp = Buffer.from(await new Bun.Image(onePixelPng).webp({ quality: 60 }).bytes());
     expect(webp.toString("ascii", 12, 16)).toBe("VP8X");
     expect(isAnimatedImage(webp, "image/webp")).toBe(false);

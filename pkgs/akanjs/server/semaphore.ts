@@ -13,8 +13,7 @@ export class Semaphore {
     try {
       return await task();
     } finally {
-      // The slot passes straight to the next waiter instead of being released and re-taken: a caller
-      // arriving in the microtask gap between a release and the waiter waking would see a free slot too.
+      // Hand the slot over directly: release + re-take lets a caller in the microtask gap take it too.
       const next = this.#waiters.shift();
       if (next) next();
       else this.#running -= 1;

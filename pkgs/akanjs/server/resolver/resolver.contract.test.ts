@@ -73,7 +73,17 @@ class FakeSqliteDatabase extends adapt("fakeSqliteDatabase") {
 
 class FakeSolidCache extends adapt("fakeSolidCache") {}
 
-/** The chainable read the model facade exposes, as much of it as these assertions drive. */
+const bootModel = async <Model>(database = new FakeSqliteDatabase()) => {
+  const { adaptor: DatabaseAdaptor, schema } = DatabaseResolver.resolveDatabase(
+    serverResolverTestConstant,
+    serverResolverTestDatabase,
+  );
+  const instance = new DatabaseAdaptor() as InstanceType<typeof DatabaseAdaptor> & Model;
+  Object.assign(instance, { __database: database, __cache: new FakeSolidCache() });
+  await instance.onInit();
+  return { instance, schema };
+};
+
 type FindChain<Result> = Promise<Result> & {
   sort: (sort: unknown) => FindChain<Result>;
   skip: (skip: number) => FindChain<Result>;
@@ -81,7 +91,6 @@ type FindChain<Result> = Promise<Result> & {
   select: (projection?: unknown) => FindChain<Result>;
 };
 
-// The real store hydrates onto a prototype carrying `set`/`save`, which is the path a write-through read takes.
 const makeFakeDoc = (calls: { method: string; args: unknown[] }[], id: string) => ({
   id,
   category: "news",
@@ -99,11 +108,14 @@ const makeFakeDoc = (calls: { method: string; args: unknown[] }[], id: string) =
 
 const makeFakeStore = () => {
   const calls: { method: string; args: unknown[] }[] = [];
+  const rec = <Result>(method: string, args: unknown[], result?: Result) => {
+    calls.push({ method, args });
+    return result as Result;
+  };
+  const written = () => ({ acknowledged: true, matchedCount: 1, modifiedCount: 1 });
   return {
     calls,
-    async ensure() {
-      calls.push({ method: "ensure", args: [] });
-    },
+    ensure: async () => rec("ensure", []),
     async find(query: unknown, options?: unknown) {
       calls.push({ method: "find", args: [query, options] });
       if (
@@ -120,93 +132,34 @@ const makeFakeStore = () => {
       }
       return [{ id: "doc-1", category: "news", title: "Alpha" }];
     },
-    async findIds(query: unknown, options?: unknown) {
-      calls.push({ method: "findIds", args: [query, options] });
-      return ["doc-1"];
-    },
-    async findOne(query: unknown, options?: unknown) {
-      calls.push({ method: "findOne", args: [query, options] });
-      return makeFakeDoc(calls, "doc-1");
-    },
-    async findId(query: unknown, options?: unknown) {
-      calls.push({ method: "findId", args: [query, options] });
-      return "doc-1";
-    },
-    async pickOne(query: unknown, options?: unknown) {
-      calls.push({ method: "pickOne", args: [query, options] });
-      return makeFakeDoc(calls, "doc-1");
-    },
-    async pickById(id: string) {
-      calls.push({ method: "pickById", args: [id] });
-      return { id, title: "Alpha" };
-    },
-    async exists(query: unknown) {
-      calls.push({ method: "exists", args: [query] });
-      return "doc-1";
-    },
-    async count(query: unknown) {
-      calls.push({ method: "count", args: [query] });
-      return 1;
-    },
-    async insight(query: unknown) {
-      calls.push({ method: "insight", args: [query] });
-      return { total: 1 };
-    },
-    async hydrate(data: Record<string, unknown>) {
-      calls.push({ method: "hydrate", args: [data] });
-      return { ...data, hydrated: true };
-    },
-    async clone(data: Record<string, unknown>) {
-      calls.push({ method: "clone", args: [data] });
-      return { ...data, id: "clone-1" };
-    },
-    async create(data: Record<string, unknown>) {
-      calls.push({ method: "create", args: [data] });
-      return { ...data, id: "created-1" };
-    },
-    async update(id: string, data: Record<string, unknown>) {
-      calls.push({ method: "update", args: [id, data] });
-      return { ...data, id };
-    },
-    async remove(id: string) {
-      calls.push({ method: "remove", args: [id] });
-      return { id, removed: true };
-    },
-    async search(text: string, options?: unknown) {
-      calls.push({ method: "search", args: [text, options] });
-      return { docs: [{ id: "doc-1" }], count: 1 };
-    },
-    async updateOneByQuery(query: unknown, update: unknown, options?: unknown) {
-      calls.push({ method: "updateOneByQuery", args: [query, update, options] });
-      return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
-    },
-    async updateManyByQuery(query: unknown, update: unknown) {
-      calls.push({ method: "updateManyByQuery", args: [query, update] });
-      return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
-    },
-    async removeManyByQuery(query: unknown) {
-      calls.push({ method: "removeManyByQuery", args: [query] });
-      return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
-    },
-    async removeOneByQuery(query: unknown) {
-      calls.push({ method: "removeOneByQuery", args: [query] });
-      return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
-    },
-    async bulkWrite(operations: unknown) {
-      calls.push({ method: "bulkWrite", args: [operations] });
-      return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
-    },
+    findIds: async (query: unknown, options?: unknown) => rec("findIds", [query, options], ["doc-1"]),
+    findOne: async (query: unknown, options?: unknown) => rec("findOne", [query, options], makeFakeDoc(calls, "doc-1")),
+    findId: async (query: unknown, options?: unknown) => rec("findId", [query, options], "doc-1"),
+    pickOne: async (query: unknown, options?: unknown) => rec("pickOne", [query, options], makeFakeDoc(calls, "doc-1")),
+    pickById: async (id: string) => rec("pickById", [id], { id, title: "Alpha" }),
+    exists: async (query: unknown) => rec("exists", [query], "doc-1"),
+    count: async (query: unknown) => rec("count", [query], 1),
+    insight: async (query: unknown) => rec("insight", [query], { total: 1 }),
+    hydrate: async (data: Record<string, unknown>) => rec("hydrate", [data], { ...data, hydrated: true }),
+    clone: async (data: Record<string, unknown>) => rec("clone", [data], { ...data, id: "clone-1" }),
+    create: async (data: Record<string, unknown>) => rec("create", [data], { ...data, id: "created-1" }),
+    update: async (id: string, data: Record<string, unknown>) => rec("update", [id, data], { ...data, id }),
+    remove: async (id: string) => rec("remove", [id], { id, removed: true }),
+    search: async (text: string, options?: unknown) =>
+      rec("search", [text, options], { docs: [{ id: "doc-1" }], count: 1 }),
+    updateOneByQuery: async (query: unknown, update: unknown, options?: unknown) =>
+      rec("updateOneByQuery", [query, update, options], written()),
+    updateManyByQuery: async (query: unknown, update: unknown) => rec("updateManyByQuery", [query, update], written()),
+    removeManyByQuery: async (query: unknown) => rec("removeManyByQuery", [query], written()),
+    removeOneByQuery: async (query: unknown) => rec("removeOneByQuery", [query], written()),
+    bulkWrite: async (operations: unknown) => rec("bulkWrite", [operations], written()),
   };
 };
 
 describe("DatabaseResolver declaration contracts", () => {
   test("turns document declarations into initialized model adaptors", async () => {
-    const { adaptor: DatabaseAdaptor } = DatabaseResolver.resolveDatabase(
-      serverResolverTestConstant,
-      serverResolverTestDatabase,
-    );
     const fakeDatabase = new FakeSqliteDatabase();
-    const instance = new DatabaseAdaptor() as InstanceType<typeof DatabaseAdaptor> & {
+    const { instance } = await bootModel<{
       __database: FakeSqliteDatabase;
       __store: ReturnType<typeof makeFakeStore>;
       serverResolverTestItemLoader: {
@@ -226,10 +179,7 @@ describe("DatabaseResolver declaration contracts", () => {
       pickInCategory: (...args: unknown[]) => Promise<unknown>;
       queryInCategory: (...args: unknown[]) => unknown;
       __pickId: (query?: unknown) => Promise<string>;
-    };
-    Object.assign(instance, { __database: fakeDatabase, __cache: new FakeSolidCache() });
-
-    await instance.onInit();
+    }>(fakeDatabase);
 
     expect(instance.__store.calls.at(0)).toEqual({ method: "ensure", args: [] });
     expect(fakeDatabase.schema.indexes).toContainEqual({ fields: { category: 1 } });
@@ -300,12 +250,8 @@ describe("DatabaseResolver declaration contracts", () => {
       queries: [{}, { kind: "any", queries: [{ ownerId: "owner-1", category: "news" }] }],
     });
 
-    // `find`/`findOne` are the chainable half of the facade — the one thing a generated filter method cannot
-    // give you, since a filter returns an executed list. Each link returns a fresh chain, so nothing is
-    // executed until the chain is awaited, and awaiting it twice runs it twice.
     const callsBeforeChain = instance.__store.calls.length;
     const chain = instance.ServerResolverTestItem.find({ category: "news" });
-    // Building the chain touches nothing; the preceding loader calls are the last thing the store saw.
     expect(instance.__store.calls.length).toBe(callsBeforeChain);
     await chain.sort({ title: 1 }).skip(2).limit(3).select({ title: true });
     expect(instance.__store.calls.at(-1)).toEqual({
@@ -313,7 +259,6 @@ describe("DatabaseResolver declaration contracts", () => {
       args: [{ category: "news" }, { sort: { title: 1 }, skip: 2, limit: 3, select: { title: true } }],
     });
 
-    // The links do not mutate the chain they came from: this awaits the original, which carries no options.
     await chain;
     expect(instance.__store.calls.at(-1)).toEqual({ method: "find", args: [{ category: "news" }, {}] });
 
@@ -325,11 +270,7 @@ describe("DatabaseResolver declaration contracts", () => {
   });
 
   test("hands the facade projection to the store", async () => {
-    const { adaptor: DatabaseAdaptor } = DatabaseResolver.resolveDatabase(
-      serverResolverTestConstant,
-      serverResolverTestDatabase,
-    );
-    const instance = new DatabaseAdaptor() as InstanceType<typeof DatabaseAdaptor> & {
+    const { instance } = await bootModel<{
       __store: ReturnType<typeof makeFakeStore>;
       ServerResolverTestItem: {
         find: (query: unknown, projection?: unknown) => FindChain<unknown[]>;
@@ -338,12 +279,8 @@ describe("DatabaseResolver declaration contracts", () => {
         pickById: (id: string | undefined, projection?: unknown) => Promise<unknown>;
         pickOne: (query: unknown, projection?: unknown) => Promise<unknown>;
       };
-    };
-    Object.assign(instance, { __database: new FakeSqliteDatabase(), __cache: new FakeSolidCache() });
-    await instance.onInit();
+    }>();
 
-    // A `field.secret(...)` value only arrives when the read names it, and `findById` is the one read with no
-    // chain to name it on — dropping the argument turned a secret into an empty value with no error.
     await instance.ServerResolverTestItem.findById("doc-1", { title: true });
     expect(instance.__store.calls.at(-1)).toEqual({
       method: "findOne",
@@ -368,7 +305,6 @@ describe("DatabaseResolver declaration contracts", () => {
       args: [{ category: "news" }, { select: { title: true } }],
     });
 
-    // The chain link still wins over the argument, so `.select()` keeps overriding what the call opened with.
     await instance.ServerResolverTestItem.findOne({ category: "news" }, { title: true }).select({ tags: true });
     expect(instance.__store.calls.at(-1)).toEqual({
       method: "findOne",
@@ -380,21 +316,14 @@ describe("DatabaseResolver declaration contracts", () => {
   });
 
   test("writes through the document on pickAndWrite", async () => {
-    const { adaptor: DatabaseAdaptor } = DatabaseResolver.resolveDatabase(
-      serverResolverTestConstant,
-      serverResolverTestDatabase,
-    );
-    const instance = new DatabaseAdaptor() as InstanceType<typeof DatabaseAdaptor> & {
+    const { instance } = await bootModel<{
       __store: ReturnType<typeof makeFakeStore>;
       ServerResolverTestItem: {
         pickAndWrite: (id: string, rawData: unknown) => Promise<unknown>;
         pickOneAndWrite: (query: unknown, rawData: unknown) => Promise<unknown>;
       };
-    };
-    Object.assign(instance, { __database: new FakeSqliteDatabase(), __cache: new FakeSolidCache() });
-    await instance.onInit();
+    }>();
 
-    // The write goes through the document, so the save hooks run — that is the whole difference from `updateById`.
     await instance.ServerResolverTestItem.pickAndWrite("doc-1", { title: "Beta" });
     expect(instance.__store.calls.slice(-2)).toEqual([
       { method: "findOne", args: [{ id: "doc-1" }, { select: undefined }] },
@@ -409,16 +338,10 @@ describe("DatabaseResolver declaration contracts", () => {
   });
 
   test("unsubscribes a document listener", async () => {
-    const { adaptor: DatabaseAdaptor, schema: documentSchema } = DatabaseResolver.resolveDatabase(
-      serverResolverTestConstant,
-      serverResolverTestDatabase,
-    );
-    const instance = new DatabaseAdaptor() as InstanceType<typeof DatabaseAdaptor> & {
+    const { instance, schema: documentSchema } = await bootModel<{
       listenPre: (type: string, listener: () => void) => () => void;
       ServerResolverTestItem: { listenPost: (type: string, listener: () => void) => () => void };
-    };
-    Object.assign(instance, { __database: new FakeSqliteDatabase(), __cache: new FakeSolidCache() });
-    await instance.onInit();
+    }>();
 
     const preBefore = documentSchema.preHooks.get("update")?.length ?? 0;
     const unlistenPre = instance.listenPre("update", () => undefined);
@@ -426,8 +349,6 @@ describe("DatabaseResolver declaration contracts", () => {
     unlistenPre();
     expect(documentSchema.preHooks.get("update")?.length).toBe(preBefore);
 
-    // The schema holds a wrapper around the listener, so an unsubscribe that looked the listener up by identity
-    // would find nothing and silently leave the hook in place.
     const postBefore = documentSchema.postHooks.get("update")?.length ?? 0;
     const unlistenPost = instance.ServerResolverTestItem.listenPost("update", () => undefined);
     expect(documentSchema.postHooks.get("update")?.length).toBe(postBefore + 1);
@@ -436,23 +357,16 @@ describe("DatabaseResolver declaration contracts", () => {
   });
 
   test("tells a trailing query option from a filter argument", async () => {
-    const { adaptor: DatabaseAdaptor } = DatabaseResolver.resolveDatabase(
-      serverResolverTestConstant,
-      serverResolverTestDatabase,
-    );
-    const instance = new DatabaseAdaptor() as InstanceType<typeof DatabaseAdaptor> & {
+    const { instance } = await bootModel<{
       __store: ReturnType<typeof makeFakeStore>;
       listInCategory: (...args: unknown[]) => Promise<unknown[]>;
-    };
-    Object.assign(instance, { __database: new FakeSqliteDatabase(), __cache: new FakeSolidCache() });
-    await instance.onInit();
+    }>();
 
     const notRemoved = { removedAt: { kind: "op", op: "empty" } };
     const queryOf = (call?: { args: unknown[] }) => call?.args[0];
     const optionOf = (call?: { args: unknown[] }) => call?.args[1];
 
-    // An option the caller named lands as an option even when no key of it is a number or a string. Read as a
-    // filter arg instead it would fill `includeRemoved`, and every soft-removed row would join the result.
+    // Misread as a filter arg, this option would fill `includeRemoved` and let soft-removed rows join the result.
     await instance.listInCategory("news", { sample: 2 });
     expect(queryOf(instance.__store.calls.at(-1))).toEqual({
       kind: "all",
@@ -472,7 +386,6 @@ describe("DatabaseResolver declaration contracts", () => {
       queries: [{ category: "news" }, notRemoved],
     });
 
-    // A filter arg that is itself an object is still a filter arg: an array, a date, and a scalar all stay put.
     await instance.listInCategory("news", true);
     expect(queryOf(instance.__store.calls.at(-1))).toEqual({ kind: "all", queries: [{ category: "news" }, {}] });
 
@@ -482,19 +395,13 @@ describe("DatabaseResolver declaration contracts", () => {
   });
 
   test("narrows the by-id facade writes to a single id query", async () => {
-    const { adaptor: DatabaseAdaptor } = DatabaseResolver.resolveDatabase(
-      serverResolverTestConstant,
-      serverResolverTestDatabase,
-    );
-    const instance = new DatabaseAdaptor() as InstanceType<typeof DatabaseAdaptor> & {
+    const { instance } = await bootModel<{
       __store: ReturnType<typeof makeFakeStore>;
       ServerResolverTestItem: {
         updateById: (id: string, update: unknown, options?: unknown) => Promise<unknown>;
         removeById: (id: string) => Promise<unknown>;
       };
-    };
-    Object.assign(instance, { __database: new FakeSqliteDatabase(), __cache: new FakeSolidCache() });
-    await instance.onInit();
+    }>();
 
     await instance.ServerResolverTestItem.updateById("doc-1", { title: "Beta" }, { upsert: true });
     expect(instance.__store.calls.at(-1)).toEqual({
@@ -511,7 +418,6 @@ describe("DatabaseResolver declaration contracts", () => {
       ({
         full: { cascade: { removeRef: new Map(), removeWith: new Map([[path.key as string, path]]) } },
       }) as unknown as typeof serverResolverTestConstant;
-    // Without the index the owner's removal scans the whole child table: every non-base field is inside `_doc`.
     const single = DatabaseResolver.resolveDatabase(
       constantWith({ key: "agentSession", modelRef: null, refName: "agentSession", typeKey: null, typeValues: [] }),
       serverResolverTestDatabase,
@@ -524,8 +430,6 @@ describe("DatabaseResolver declaration contracts", () => {
     );
     expect(polymorphic.schema.indexes).toContainEqual({ fields: { removedAt: 1, parentType: 1, parent: 1 } });
 
-    // A wildcard owner names no candidate, and the index is what keeps its sweep an empty probe rather than a
-    // scan — the whole reason `removeWithAny` is affordable at all.
     const wildcard = DatabaseResolver.resolveDatabase(
       constantWith({
         key: "parent",
@@ -607,6 +511,9 @@ describe("ServiceResolver cascade", () => {
     };
   };
 
+  const removeWithChild = (field: { key: string } & Record<string, unknown>) =>
+    constantOf("cascadeChild", { removeWith: new Map([[field.key, field]]) });
+
   const buildCascade = (
     parentConstant: typeof serverResolverTestConstant,
     child: ReturnType<typeof childTarget> | null,
@@ -630,9 +537,6 @@ describe("ServiceResolver cascade", () => {
   };
 
   test("removes each referenced document through the target's service, not its model", async () => {
-    // Through the service is the whole point: `__remove` is what runs the target's `_postRemove`, and that is
-    // where a module puts the side effect the removal has to carry — deleting the stored file, say. Reaching the
-    // model instead still empties the row, so nothing looks wrong until the storage bill arrives.
     const child = childTarget(true);
     const { service } = buildCascade(
       constantOf(parentRef, { removeRef: new Map([["cover", cascadeChildFull]]) }),
@@ -670,8 +574,6 @@ describe("ServiceResolver cascade", () => {
       new DocumentSchema(),
       ServerResolverTestService as never,
     );
-    // Cascading into a module the app never mounted is a misconfiguration. Every service is live by the time the
-    // plan is sealed, so saying so at boot beats discovering it half-way through the first removal.
     expect(() => cascade.seal(() => null as never)).toThrow('removes "cascadeChild", which this app does not mount');
   });
 
@@ -680,11 +582,7 @@ describe("ServiceResolver cascade", () => {
     const { service } = buildCascade(
       constantOf(parentRef, {}),
       child,
-      constantOf("cascadeChild", {
-        removeWith: new Map([
-          ["parent", { key: "parent", modelRef: null, refName: parentRef, typeKey: null, typeValues: [] }],
-        ]),
-      }),
+      removeWithChild({ key: "parent", modelRef: null, refName: parentRef, typeKey: null, typeValues: [] }),
     );
     service.__databaseModel = { __remove: async (id: string) => ({ id }) } as never;
 
@@ -701,11 +599,7 @@ describe("ServiceResolver cascade", () => {
     const { service } = buildCascade(
       constantOf(parentRef, {}),
       child,
-      constantOf("cascadeChild", {
-        removeWith: new Map([
-          ["parent", { key: "parent", modelRef: null, refName: parentRef, typeKey: null, typeValues: [] }],
-        ]),
-      }),
+      removeWithChild({ key: "parent", modelRef: null, refName: parentRef, typeKey: null, typeValues: [] }),
     );
     service.__databaseModel = { __remove: async (id: string) => ({ id }) } as never;
 
@@ -719,13 +613,12 @@ describe("ServiceResolver cascade", () => {
     const { service } = buildCascade(
       constantOf(parentRef, {}),
       child,
-      constantOf("cascadeChild", {
-        removeWith: new Map([
-          [
-            "owner",
-            { key: "owner", modelRef: null, refName: null, typeKey: "ownerType", typeValues: [parentRef, "unmounted"] },
-          ],
-        ]),
+      removeWithChild({
+        key: "owner",
+        modelRef: null,
+        refName: null,
+        typeKey: "ownerType",
+        typeValues: [parentRef, "unmounted"],
       }),
     );
     service.__databaseModel = { __remove: async (id: string) => ({ id }) } as never;
@@ -740,23 +633,20 @@ describe("ServiceResolver cascade", () => {
     const { service } = buildCascade(
       constantOf(parentRef, {}),
       child,
-      constantOf("cascadeChild", {
-        removeWith: new Map([
-          [
-            "owner",
-            { key: "owner", modelRef: null, refName: null, typeKey: "ownerType", typeValues: [], anyOwner: true },
-          ],
-        ]),
+      removeWithChild({
+        key: "owner",
+        modelRef: null,
+        refName: null,
+        typeKey: "ownerType",
+        typeValues: [],
+        anyOwner: true,
       }),
     );
     service.__databaseModel = { __remove: async (id: string) => ({ id }) } as never;
 
     await service.__remove("parent-1");
 
-    // The owner is unknowable at boot, so the removed model's own refName is what the sweep matches on.
     expect(child.listQueries.at(0)).toEqual({ owner: "parent-1", ownerType: parentRef });
-    // And the same declaration takes bulk away everywhere: a query-level removal of any model would be one whose
-    // wildcard children were never looked for, so this child goes one document at a time despite carrying no hook.
     expect(child.calls).toEqual([
       { method: "__remove", arg: "child-1" },
       { method: "__remove", arg: "child-2" },
@@ -868,12 +758,10 @@ describe("ServiceResolver declaration contracts", () => {
     expect(calls.at(-1)).toEqual({ method: "__removeMany", args: [query] });
     await service.removeOneInCategory("news");
     expect(calls.at(-1)).toEqual({ method: "__removeOne", args: [query] });
-    // The patch lands on `set()`, so it can never be mistaken for an omitted trailing filter arg.
     await service.updateInCategory("news").set({ title: "Beta" });
     expect(calls.at(-1)).toEqual({ method: "__updateMany", args: [query, { title: "Beta" }] });
     await service.updateOneInCategory("news").set({ title: "Beta" });
     expect(calls.at(-1)).toEqual({ method: "__updateOne", args: [query, { title: "Beta" }] });
-    // Building the chain touches nothing until `set()` runs.
     const pending = service.updateInCategory("news");
     expect(calls.at(-1)?.method).toBe("__updateOne");
     await pending.set({ title: "Gamma" });
@@ -881,8 +769,6 @@ describe("ServiceResolver declaration contracts", () => {
   });
 
   test("refuses a filter keyed after its own model", () => {
-    // Filter methods are assigned after CRUD, so this collision would silently swap the single-document
-    // remove/update for a query-level one that fires no hooks — and therefore no cascade.
     expect(() => assertFilterFitsCrud("chat", "chat", "Chat")).toThrow(
       'Filter "chat" on "chat" generates removeChat/updateChat',
     );
@@ -893,19 +779,10 @@ describe("ServiceResolver declaration contracts", () => {
 describe("SignalResolver declaration contracts", () => {
   test("turns endpoint declarations into HTTP and websocket route handlers", async () => {
     resetResolverOrder();
-    const registry = getDefaultInjectRegistry();
-    const live = getDefaultLiveRegistry();
-    const endpointInstance = new ServerResolverTestEndpoint() as InstanceType<typeof ServerResolverTestEndpoint> & {
-      serverResolverTestItemService: InstanceType<typeof ServerResolverTestService>;
-    };
-    endpointInstance.serverResolverTestItemService = new ServerResolverTestService();
-    const websocket = makeFakeWebsocket();
-    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const { registry, websocket } = withFakeWebsocket();
 
-    const resolved = SignalResolver.resolveEndpoint(ServerResolverTestEndpoint, endpointInstance, {
+    const resolved = resolveWith(ServerResolverTestEndpoint, makeTestEndpoint(), {
       registry,
-      env: makeEnv(),
-      live,
       middleware: new Map([["serverResolverTestMiddleware", ServerResolverTestMiddleware]]),
     });
 
@@ -973,26 +850,16 @@ describe("SignalResolver declaration contracts", () => {
       readRow: builder.query(String, { guards: [Public], prefix: false, path: "rest/v1/item" }).exec(() => "read"),
       writeRow: builder.mutation(String, { guards: [Public], prefix: false, path: "rest/v1/item" }).exec(() => "write"),
     })) {}
-    const resolved = SignalResolver.resolveEndpoint(SharedPathEndpoint, new SharedPathEndpoint(), {
-      registry: getDefaultInjectRegistry(),
-      env: makeEnv(),
-      live: getDefaultLiveRegistry(),
-      middleware: new Map(),
-    });
+    const resolved = resolveWith(SharedPathEndpoint, new SharedPathEndpoint());
     expect(Object.keys(resolved.routes?.["/rest/v1/item"] ?? {}).sort()).toEqual(["GET", "POST"]);
 
     class DoubledPathEndpoint extends endpoint(serverResolverTestServiceModel, (builder) => ({
       readRow: builder.query(String, { guards: [Public], prefix: false, path: "rest/v1/item" }).exec(() => "read"),
       readRowAgain: builder.query(String, { guards: [Public], prefix: false, path: "rest/v1/item" }).exec(() => "read"),
     })) {}
-    expect(() =>
-      SignalResolver.resolveEndpoint(DoubledPathEndpoint, new DoubledPathEndpoint(), {
-        registry: getDefaultInjectRegistry(),
-        env: makeEnv(),
-        live: getDefaultLiveRegistry(),
-        middleware: new Map(),
-      }),
-    ).toThrow("Route conflict: GET /rest/v1/item is declared more than once");
+    expect(() => resolveWith(DoubledPathEndpoint, new DoubledPathEndpoint())).toThrow(
+      "Route conflict: GET /rest/v1/item is declared more than once",
+    );
   });
 
   test("mounts a mutation under the verb it declares", () => {
@@ -1004,12 +871,7 @@ describe("SignalResolver declaration contracts", () => {
         .mutation(String, { guards: [Public], prefix: false, path: "rest/v1/item", method: "PATCH" })
         .exec(() => "patch"),
     })) {}
-    const resolved = SignalResolver.resolveEndpoint(VerbEndpoint, new VerbEndpoint(), {
-      registry: getDefaultInjectRegistry(),
-      env: makeEnv(),
-      live: getDefaultLiveRegistry(),
-      middleware: new Map(),
-    });
+    const resolved = resolveWith(VerbEndpoint, new VerbEndpoint());
     expect(Object.keys(resolved.routes?.["/rest/v1/item"] ?? {}).sort()).toEqual(["PATCH", "POST"]);
   });
 
@@ -1025,20 +887,8 @@ describe("SignalResolver declaration contracts", () => {
 
   test("guards a pubsub subscribe and revokes the room once the socket loses access", async () => {
     resetResolverOrder();
-    const registry = getDefaultInjectRegistry();
-    const live = getDefaultLiveRegistry();
-    const endpointInstance = new ServerResolverTestEndpoint() as InstanceType<typeof ServerResolverTestEndpoint> & {
-      serverResolverTestItemService: InstanceType<typeof ServerResolverTestService>;
-    };
-    endpointInstance.serverResolverTestItemService = new ServerResolverTestService();
-    const websocket = makeFakeWebsocket();
-    registry.adaptor.set(SolidPubSub, websocket.instance);
-    const resolved = SignalResolver.resolveEndpoint(ServerResolverTestEndpoint, endpointInstance, {
-      registry,
-      env: makeEnv(),
-      live,
-      middleware: new Map(),
-    });
+    const { registry, websocket } = withFakeWebsocket();
+    const resolved = resolveWith(ServerResolverTestEndpoint, makeTestEndpoint(), { registry });
     const roomId = `guardedRoomFeed-${validId}`;
 
     const anonymous = makeWs();
@@ -1086,15 +936,8 @@ describe("SignalResolver declaration contracts", () => {
           return `ok:${text as string}`;
         }),
     })) {}
-    const registry = getDefaultInjectRegistry();
-    const websocket = makeFakeWebsocket();
-    registry.adaptor.set(SolidPubSub, websocket.instance);
-    const resolved = SignalResolver.resolveEndpoint(LifecycleEndpoint, new LifecycleEndpoint(), {
-      registry,
-      env: makeEnv(),
-      live: getDefaultLiveRegistry(),
-      middleware: new Map(),
-    });
+    const { registry } = withFakeWebsocket();
+    const resolved = resolveWith(LifecycleEndpoint, new LifecycleEndpoint(), { registry });
 
     const unsubscribed = makeWs();
     await resolved.wsRoutes?.lifecycleRoom?.(unsubscribed, [validId], "subscribe");
@@ -1106,7 +949,6 @@ describe("SignalResolver declaration contracts", () => {
     await resolved.wsRoutes?.lifecycleRoom?.(unsubscribed, [validId], "unsubscribe");
     expect(cleaned).toEqual([`unsubscribe:${validId}`]);
 
-    // The room was already unsubscribed, so only the message handler is left to run at close.
     await SignalResolver.handleWsClose(unsubscribed, registry);
     expect(cleaned).toEqual([`unsubscribe:${validId}`, "disconnect:chat"]);
 
@@ -1138,15 +980,8 @@ describe("SignalResolver declaration contracts", () => {
           ws.on("disconnect", leave);
         }),
     })) {}
-    const registry = getDefaultInjectRegistry();
-    const websocket = makeFakeWebsocket();
-    registry.adaptor.set(SolidPubSub, websocket.instance);
-    const resolved = SignalResolver.resolveEndpoint(SharedCleanupEndpoint, new SharedCleanupEndpoint(), {
-      registry,
-      env: makeEnv(),
-      live: getDefaultLiveRegistry(),
-      middleware: new Map(),
-    });
+    const { registry } = withFakeWebsocket();
+    const resolved = resolveWith(SharedCleanupEndpoint, new SharedCleanupEndpoint(), { registry });
 
     const ws = makeWs();
     await resolved.wsRoutes?.sharedRoom?.(ws, [validId], "subscribe");
@@ -1167,15 +1002,8 @@ describe("SignalResolver declaration contracts", () => {
           });
         }),
     })) {}
-    const registry = getDefaultInjectRegistry();
-    const websocket = makeFakeWebsocket();
-    registry.adaptor.set(SolidPubSub, websocket.instance);
-    const resolved = SignalResolver.resolveEndpoint(ThrowingLifecycleEndpoint, new ThrowingLifecycleEndpoint(), {
-      registry,
-      env: makeEnv(),
-      live: getDefaultLiveRegistry(),
-      middleware: new Map(),
-    });
+    const { registry, websocket } = withFakeWebsocket();
+    const resolved = resolveWith(ThrowingLifecycleEndpoint, new ThrowingLifecycleEndpoint(), { registry });
 
     const ws = makeWs();
     await resolved.wsRoutes?.throwingRoom?.(ws, [validId], "subscribe");
@@ -1204,9 +1032,7 @@ describe("SignalResolver declaration contracts", () => {
     const sliceEndpoint = new SliceEndpoint() as InstanceType<typeof SliceEndpoint> & Record<string, unknown>;
     sliceEndpoint.serverResolverTestItemService = { queryInCategory: (category: string) => ({ category }) };
 
-    const registry = getDefaultInjectRegistry();
-    const websocket = makeFakeWebsocket();
-    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const { registry, websocket } = withFakeWebsocket();
     const live = getDefaultLiveRegistry();
     live.sliceCls.set(LiveTestSlice.baseName, LiveTestSlice as never);
     const listeners: ((doc: unknown, type: string, previous?: unknown) => void)[] = [];
@@ -1222,7 +1048,6 @@ describe("SignalResolver declaration contracts", () => {
     expect(liveKeys).toEqual(["serverResolverTestItemLiveInCategory"]);
     expect(listeners).toHaveLength(3);
 
-    // With no room here yet, the write is still handed on: every other server may hold one.
     await listeners[0]({ id: validId, category: "news", createdAt: dayjs(1000), updatedAt: dayjs(1000) }, "create");
     expect(websocket.instance.calls.filter((call: { method: string }) => call.method === "publishChange")).toHaveLength(
       1,
@@ -1230,12 +1055,7 @@ describe("SignalResolver declaration contracts", () => {
     expect(published).toEqual([]);
     websocket.instance.calls.length = 0;
 
-    const resolved = SignalResolver.resolveEndpoint(SliceEndpoint, sliceEndpoint as never, {
-      registry,
-      env: makeEnv(),
-      live,
-      middleware: new Map(),
-    });
+    const resolved = resolveWith(SliceEndpoint, sliceEndpoint as never, { registry, live });
 
     const ws = makeWs();
     const ack = await resolved.wsRoutes?.serverResolverTestItemLiveInCategory?.(ws, ["news"], "subscribe");
@@ -1247,13 +1067,11 @@ describe("SignalResolver declaration contracts", () => {
     expect(published).toHaveLength(1);
     expect(published[0].roomId).toBe("serverResolverTestItemLiveInCategory-news");
     expect(published[0].data).toMatchObject({ op: "enter", id: validId });
-    // The room's event goes to this server's sockets; the write itself is what crosses to the others.
     expect(websocket.instance.calls.map((call: { method: string }) => call.method)).toEqual([
       "joinRoom",
       "publishChange",
     ]);
 
-    // A write another server made is routed into the room held here.
     published.length = 0;
     const elsewhere = { ...inRoom, id: "5f5f5f5f5f5f5f5f5f5f5f5f", title: "Beta" };
     websocket.receiveChange({ refName: "serverResolverTestItem", next: JSON.stringify(elsewhere) });
@@ -1265,12 +1083,10 @@ describe("SignalResolver declaration contracts", () => {
       },
     ]);
 
-    // Editing the row out of this slice's own filter has to arrive as a removal from the list it left.
     published.length = 0;
     await listeners[1]({ ...inRoom, category: "sports" }, "update", inRoom);
     expect(published[0].data).toMatchObject({ op: "leave", id: validId });
 
-    // And a change belonging to neither side of the room is not sent at all.
     published.length = 0;
     await listeners[1]({ ...inRoom, category: "sports", title: "B" }, "update", { ...inRoom, category: "sports" });
     expect(published).toEqual([]);
@@ -1295,8 +1111,7 @@ describe("SignalResolver declaration contracts", () => {
     ) {}
     const SliceEndpoint = SignalResolver.resolveSlice(TwoSearchLiveSlice);
     const live = SliceEndpoint[ENDPOINT_META].serverResolverTestItemLiveInCategory;
-    // Both stay nullable: a room's arguments are a positional array with explicit nulls, so an absent one is
-    // unambiguous, and dropping the flag would make it fail to deserialize on the way in.
+    // Room args are a positional array with explicit nulls: without the nullable flag an absent one fails to parse.
     expect(live.args.map((arg) => [arg.type, arg.name, arg.option?.nullable])).toEqual([
       ["room", "category", true],
       ["room", "title", true],
@@ -1304,8 +1119,6 @@ describe("SignalResolver declaration contracts", () => {
   });
 
   test("gates a live room with the slice's own guards, not the single-document read guard", async () => {
-    // A `Can<Verb><Model>` read guard looks for the model's own id and fails closed without one, which a room's
-    // arguments never carry. Taking `guards.get` here refused every subscribe on a slice that lists by a parent.
     class NeedsItemId {
       static name = "User";
       static scope = "resource" as const;
@@ -1329,14 +1142,11 @@ describe("SignalResolver declaration contracts", () => {
     const SliceEndpoint = SignalResolver.resolveSlice(GuardedLiveSlice);
     const liveInfo = SliceEndpoint[ENDPOINT_META].serverResolverTestItemLiveInCategory;
     expect(liveInfo.signalOption.guards).toEqual([Public]);
-    // The generated single-document read keeps the guard that belongs to it.
     expect(SliceEndpoint[ENDPOINT_META].serverResolverTestItem.signalOption.guards).toEqual([NeedsItemId]);
 
     const sliceEndpoint = new SliceEndpoint() as InstanceType<typeof SliceEndpoint> & Record<string, unknown>;
     sliceEndpoint.serverResolverTestItemService = { queryInCategory: (category: string) => ({ category }) };
-    const registry = getDefaultInjectRegistry();
-    const websocket = makeFakeWebsocket();
-    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const { registry } = withFakeWebsocket();
     const live = getDefaultLiveRegistry();
     live.sliceCls.set(GuardedLiveSlice.baseName, GuardedLiveSlice as never);
     live.service.set("serverResolverTestItem", {
@@ -1344,12 +1154,7 @@ describe("SignalResolver declaration contracts", () => {
       __databaseModel: { __store: makeTextStore() },
     } as never);
     SignalResolver.registerLiveSync(GuardedLiveSlice, { registry, live });
-    const resolved = SignalResolver.resolveEndpoint(SliceEndpoint, sliceEndpoint as never, {
-      registry,
-      env: makeEnv(),
-      live,
-      middleware: new Map(),
-    });
+    const resolved = resolveWith(SliceEndpoint, sliceEndpoint as never, { registry, live });
 
     const ack = await resolved.wsRoutes?.serverResolverTestItemLiveInCategory?.(makeWs(), ["news"], "subscribe");
     expect(ack).toMatchObject({ type: "sub", subscribe: true });
@@ -1378,9 +1183,7 @@ describe("SignalResolver declaration contracts", () => {
 
     const sliceEndpoint = new SliceEndpoint() as InstanceType<typeof SliceEndpoint> & Record<string, unknown>;
     sliceEndpoint.serverResolverTestItemService = { queryInCategory: (category: string) => ({ category }) };
-    const registry = getDefaultInjectRegistry();
-    const websocket = makeFakeWebsocket();
-    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const { registry } = withFakeWebsocket();
     const live = getDefaultLiveRegistry();
     live.sliceCls.set(PausedLiveSlice.baseName, PausedLiveSlice as never);
     live.service.set("serverResolverTestItem", {
@@ -1388,19 +1191,13 @@ describe("SignalResolver declaration contracts", () => {
       __databaseModel: { __store: makeTextStore() },
     } as never);
     SignalResolver.registerLiveSync(PausedLiveSlice, { registry, live });
-    const resolved = SignalResolver.resolveEndpoint(SliceEndpoint, sliceEndpoint as never, {
-      registry,
-      env: makeEnv(),
-      live,
-      middleware: new Map(),
-    });
+    const resolved = resolveWith(SliceEndpoint, sliceEndpoint as never, { registry, live });
     const subscribeTo = async (args: unknown[]) =>
       await resolved.wsRoutes?.serverResolverTestItemLiveInCategory?.(makeWs(), args, "subscribe");
 
     expect(await subscribeTo(["news", null])).toMatchObject({ type: "sub", subscribe: true });
     expect(live.syncHub.roomCountOf("serverResolverTestItem")).toBe(1);
 
-    // A client that ignores the declaration is refused rather than handed the room the slice said not to open.
     await expect(subscribeTo(["news", "lovelace"])).rejects.toThrow(/paused while "text" carries a value/);
     expect(live.syncHub.roomCountOf("serverResolverTestItem")).toBe(1);
   });
@@ -1418,7 +1215,6 @@ describe("SignalResolver declaration contracts", () => {
       })) {};
 
     expect(() => SignalResolver.resolveSlice(build(["nope"]))).toThrow(/not one of its arguments/);
-    // A param is never nullable, so pausing on one would switch the room off for good.
     expect(() => SignalResolver.resolveSlice(build(["category"]))).toThrow(/always present/);
     expect(() => SignalResolver.resolveSlice(build(["text"]))).not.toThrow();
   });
@@ -1497,7 +1293,6 @@ describe("SignalResolver declaration contracts", () => {
     await endpointMeta.serverResolverTestItemInsightInCategory.execFn?.call(sliceEndpoint, "news");
     expect(calls.at(-1)).toEqual({ method: "__insight", args: [{ category: "news" }] });
 
-    // The root list compiles its `(queryKey, args)` pair through the model's own filter, and defaults to `any`.
     await endpointMeta.serverResolverTestItemList.execFn?.call(sliceEndpoint, "byOwner", [validId], 0, 20, "latest");
     expect((calls.at(-1) as { args: unknown[] }).args[0]).toEqual({ ownerId: validId });
     await endpointMeta.serverResolverTestItemList.execFn?.call(sliceEndpoint, undefined, undefined, 0, 20, "latest");
@@ -1514,10 +1309,8 @@ describe("SignalResolver declaration contracts", () => {
   });
 
   test("turns server signal declarations into pubsub publishers and process queue clients", async () => {
-    const registry = getDefaultInjectRegistry();
+    const { registry, websocket } = withFakeWebsocket();
     const live = getDefaultLiveRegistry();
-    const websocket = makeFakeWebsocket();
-    registry.adaptor.set(SolidPubSub, websocket.instance);
     const localPublishes: { roomId: string; data: unknown }[] = [];
     SignalResolver.setLocalPublish((roomId, data) => localPublishes.push({ roomId, data }), websocket.instance);
 
@@ -1561,7 +1354,6 @@ describe("SignalResolver declaration contracts", () => {
     });
     expect(localPublishes.at(-1)?.roomId).toBe(`roomFeed-${validId}`);
 
-    // A Binary return skips `serialize`, which would have base64'd it, and travels as the bytes themselves.
     const packet = new Uint8Array([2, 148, 1, 2, 63]);
     await serverSignal.roomStream("ch1", packet);
     expect(websocket.instance.calls.at(-1)).toEqual({ method: "publish", args: ["roomStream-ch1", packet] });
@@ -1572,8 +1364,6 @@ describe("SignalResolver declaration contracts", () => {
     expect(last).toBeInstanceOf(Uint8Array);
     expect([...(last as Uint8Array)]).toEqual([2, 148, 1, 2, 63]);
 
-    // Coalescing follows the endpoint that owns the room, so every publish path reaches the same answer
-    // without carrying it. A room no endpoint declared `Binary` for is absent, and queues.
     expect(SignalResolver.coalescesRoom("roomStream-ch1")).toBe(true);
     expect(SignalResolver.coalescesRoom("roomQueuedStream-ch1")).toBe(false);
     expect(SignalResolver.coalescesRoom("roomFeed-anything")).toBe(false);
@@ -1613,7 +1403,6 @@ describe("SignalResolver declaration contracts", () => {
     SignalResolver.resolveSchedule(ScheduleInternal, internalInstance as unknown as Internal, "federation");
 
     expect(internalInstance.schedule.calls.map((call) => call.method)).toEqual(["registerInit", "registerInterval"]);
-    // `process` defaults to enabled: placement is governed by serverMode/operationMode, not an extra opt-in flag.
     expect(internalInstance.queue.calls.map((call) => call.method)).toEqual(["registerProcessWorker"]);
     expect(internalInstance.queue.calls[0]?.args[0]).toBe("processAll");
     expect(internalInstance.schedule.calls[1]).toMatchObject({
@@ -1655,7 +1444,6 @@ describe("SignalResolver declaration contracts", () => {
     expect(execArgs).toHaveLength(1);
     const [itemId, at, passedJob] = execArgs[0] as [string, Dayjs, AkanJob];
     expect(itemId).toBe(validId);
-    // deserialized against the declared arg type, so `Date` lands as dayjs rather than the raw JSON string
     expect(dayjs.isDayjs(at)).toBe(true);
     expect(at.toISOString()).toBe("2026-07-26T00:00:00.000Z");
     expect(passedJob).toBe(job);
@@ -1683,9 +1471,7 @@ describe("SignalResolver declaration contracts", () => {
     })) {}
     const internalInstance = Object.assign(new QueuedInternal(), { schedule: makeFakeSchedule(), queue });
 
-    // the worker side: `process` needs no `enabled` flag to be registered
     SignalResolver.resolveSchedule(QueuedInternal, internalInstance as unknown as Internal, "all");
-    // the producer side: exactly what resolveServerSignal's generated method calls
     await queue.registerProcessQueue("archiveItem", [validId]);
 
     const startedAt = Date.now();
@@ -1707,7 +1493,6 @@ describe("SignalResolver declaration contracts", () => {
   });
 });
 
-// A document store reduced to the text round trip live sync needs to hand a write to another server.
 const makeTextStore = () => ({
   serialize: (doc: object) => JSON.stringify(doc),
   deserialize: (text: string) => {
@@ -1719,32 +1504,20 @@ const makeTextStore = () => ({
 const makeFakeWebsocket = () => {
   class FakeWebsocket extends adapt("solidPubsub") {}
   let changeHandler: ((change: LiveChange) => void) | null = null;
+  const calls: { method: string; args: unknown[] }[] = [];
+  const rec = (method: string, args: unknown[]) => void calls.push({ method, args });
   const instance = Object.assign(new FakeWebsocket(), {
-    calls: [] as { method: string; args: unknown[] }[],
-    publish(roomId: string, data: unknown) {
-      this.calls.push({ method: "publish", args: [roomId, data] });
-    },
-    publishChange(change: LiveChange) {
-      this.calls.push({ method: "publishChange", args: [change] });
-    },
+    calls,
+    publish: (roomId: string, data: unknown) => rec("publish", [roomId, data]),
+    publishChange: (change: LiveChange) => rec("publishChange", [change]),
     onChange(handler: (change: LiveChange) => void) {
       changeHandler = handler;
     },
-    setEventHandler(handler: unknown) {
-      this.calls.push({ method: "setEventHandler", args: [handler] });
-    },
-    joinRoom(ws: unknown, roomId: string) {
-      this.calls.push({ method: "joinRoom", args: [ws, roomId] });
-    },
-    leaveRoom(ws: unknown, roomId: string) {
-      this.calls.push({ method: "leaveRoom", args: [ws, roomId] });
-    },
-    registerSocket(ws: unknown) {
-      this.calls.push({ method: "registerSocket", args: [ws] });
-    },
-    unregisterSocket(ws: unknown) {
-      this.calls.push({ method: "unregisterSocket", args: [ws] });
-    },
+    setEventHandler: (handler: unknown) => rec("setEventHandler", [handler]),
+    joinRoom: (ws: unknown, roomId: string) => rec("joinRoom", [ws, roomId]),
+    leaveRoom: (ws: unknown, roomId: string) => rec("leaveRoom", [ws, roomId]),
+    registerSocket: (ws: unknown) => rec("registerSocket", [ws]),
+    unregisterSocket: (ws: unknown) => rec("unregisterSocket", [ws]),
   }) as InstanceType<typeof FakeWebsocket> & WebsocketAdaptor & { calls: { method: string; args: unknown[] }[] };
   return { cls: FakeWebsocket, instance, receiveChange: (change: LiveChange) => changeHandler?.(change) };
 };
@@ -1766,6 +1539,26 @@ const makeWs = () => {
     unsubscribed: string[];
   };
 };
+
+const withFakeWebsocket = () => {
+  const registry = getDefaultInjectRegistry();
+  const websocket = makeFakeWebsocket();
+  registry.adaptor.set(SolidPubSub, websocket.instance);
+  return { registry, websocket };
+};
+
+const resolveWith = (
+  Endpoint: Parameters<typeof SignalResolver.resolveEndpoint>[0],
+  instance: Parameters<typeof SignalResolver.resolveEndpoint>[1],
+  {
+    registry = getDefaultInjectRegistry(),
+    live = getDefaultLiveRegistry(),
+    middleware = new Map(),
+  }: Partial<Parameters<typeof SignalResolver.resolveEndpoint>[2]> = {},
+) => SignalResolver.resolveEndpoint(Endpoint, instance, { registry, env: makeEnv(), live, middleware });
+
+const makeTestEndpoint = () =>
+  Object.assign(new ServerResolverTestEndpoint(), { serverResolverTestItemService: new ServerResolverTestService() });
 
 const makeFakeSchedule = () => ({
   calls: [] as { method: string; args: unknown[] }[],

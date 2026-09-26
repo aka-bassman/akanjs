@@ -4,7 +4,7 @@ import { OAuthRedirect } from "./OAuthRedirect";
 import type { OAuthAuthorizeErrorCode, OAuthAuthorizeParams, OAuthClientRecord } from "./oauthTypes";
 
 export interface OAuthAuthorizeContext {
-  /** The client the request's `client_id` resolved to, however it was registered; `null` when it resolved to nothing. */
+  /** `null` when the request's `client_id` resolved to no client. */
   client: OAuthClientRecord | null;
   issuer: string;
   /** The one resource this server issues tokens for — the MCP endpoint's canonical URL. */
@@ -14,11 +14,8 @@ export interface OAuthAuthorizeContext {
 export type OAuthAuthorizeResult = { ok: true; params: OAuthAuthorizeParams } | { ok: false; response: Response };
 
 export class OAuthAuthorize {
-  /**
-   * Validates in the order RFC 6749 §4.1.2.1 prescribes: the client and its redirect URI first, answered with a page
-   * because nothing may be redirected to an unverified destination; everything after that is answered through the
-   * redirect URI the client registered, with `state` and `iss` so the client can match and trust the answer.
-   */
+  // RFC 6749 §4.1.2.1 order: client and redirect URI first, refused with a page (never redirect to an unverified
+  // URI); every later failure goes through the registered redirect with `state` and `iss`.
   static parse(url: URL, { client, issuer, resource }: OAuthAuthorizeContext): OAuthAuthorizeResult {
     const param = (name: string) => url.searchParams.get(name) ?? undefined;
     const clientId = param("client_id");
@@ -48,8 +45,7 @@ export class OAuthAuthorize {
       return fail("unauthorized_client", "This client is not registered for the authorization_code grant.");
     const codeChallenge = param("code_challenge");
     const method = param("code_challenge_method");
-    // Method before shape: a `plain` challenge is the verifier itself and rarely fits the S256 shape, and the
-    // client that sent it needs to hear about the method, not about a challenge it did send.
+    // Method before shape: a `plain` challenge rarely fits the S256 shape, and its sender must hear about the method.
     if (method !== undefined && method !== OAuthPkce.method)
       return fail("invalid_request", `code_challenge_method "${method}" is not supported; use ${OAuthPkce.method}.`);
     if (!OAuthPkce.isChallenge(codeChallenge)) return fail("invalid_request", "A PKCE code_challenge is required.");

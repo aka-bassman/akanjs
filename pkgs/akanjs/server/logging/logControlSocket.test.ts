@@ -97,7 +97,6 @@ describe("LogControlSocket", () => {
     const delivered = await client.next();
     expect(delivered).toMatchObject({ type: "record", record: { message: "payment failed", level: "warn" } });
     expect(await client.idle()).toBe(0);
-    // Delivering a record must not itself produce a record: three logged, three ingested, no more.
     expect(hub.seq - seqBefore).toBe(3);
     client.close();
   });

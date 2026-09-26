@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { BuildRouteClientResult } from "./manifestTypes";
+import type { BuildRouteClientResult } from "./ipcTypes";
 import { RouteClientCache } from "./routeClientCache";
 import type { RoutesManifest } from "./routesManifestStore";
 
@@ -68,8 +68,7 @@ describe("RouteClientCache", () => {
   });
 
   test("invalidates built routes, ignores stale builds, and clears generations", async () => {
-    // An array, not a `let`: TS narrows a `let` initialized to `null` to exactly `null` and does not track the
-    // assignment made inside the promise executor, so the call below read as not callable.
+    // An array, not `let x = null`: TS ignores the executor's assignment and narrows the call below to `null`.
     const resolveBuild: (() => void)[] = [];
     const cache = new RouteClientCache({
       buildRoute: async (routeId, { generation }) =>

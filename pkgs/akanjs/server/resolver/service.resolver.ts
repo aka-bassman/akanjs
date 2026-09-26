@@ -1,28 +1,23 @@
 import type { PromiseOrObject } from "akanjs/base";
 import { capitalize } from "akanjs/common";
 import type { QueryOf } from "akanjs/constant";
-import {
-  assertFilterFitsCrud,
-  type CRUDEventType,
-  type DatabaseModel,
-  type DataInputOf,
-  type Doc,
-  type DocumentUpdateInput,
-  documentQueryHelper,
-  type FindQueryOption,
-  getFilterInfoByKey,
-  getFilterMeta,
-  type ListQueryOption,
-  type SaveEventType,
-  splitFilterArgs,
-  type UpdateChain,
+import type {
+  CRUDEventType,
+  DatabaseModel,
+  DataInputOf,
+  Doc,
+  DocumentUpdateInput,
+  FindQueryOption,
+  ListQueryOption,
+  SaveEventType,
 } from "akanjs/document";
 import type { DatabaseService, ServiceCls } from "akanjs/service";
 import type { CascadeRunner } from "./CascadeRunner";
+import { DatabaseResolver } from "./database.resolver";
 
 export class ServiceResolver {
   static #getDefaultDbServiceMethods(refName: string, className: string, cascade: CascadeRunner) {
-    const dbServiceMethods = {
+    return {
       async __get(this: DatabaseService, id: string) {
         return await this.__databaseModel.__get(id);
       },
@@ -121,84 +116,11 @@ export class ServiceResolver {
         return await this.__databaseModel.__updateOne(query, update);
       },
     };
-    return dbServiceMethods;
   }
   static resolveDatabaseService(database: DatabaseModel, srvRef: ServiceCls, cascade: CascadeRunner): ServiceCls {
     const className = capitalize(database.refName);
     Object.assign(srvRef.prototype, ServiceResolver.#getDefaultDbServiceMethods(database.refName, className, cascade));
-    const getQueryDataFromKey = (queryKey: string, args: any): { query: any; queryOption: any } => {
-      const filterInfo = getFilterInfoByKey(database.filter, queryKey);
-      const queryFn = filterInfo.queryFn;
-      if (!queryFn) throw new Error(`No query function for key: ${queryKey}`);
-      const { queryArgs, queryOption } = splitFilterArgs(filterInfo, args);
-      return { query: queryFn(...queryArgs, documentQueryHelper), queryOption };
-    };
-    const filterMeta = getFilterMeta(database.filter);
-    const queryKeys = Object.keys(filterMeta.query);
-    queryKeys.forEach((queryKey) => {
-      const filterInfo = getFilterInfoByKey(database.filter, queryKey);
-      const queryFn = filterInfo.queryFn;
-      if (!queryFn) throw new Error(`No query function for key: ${queryKey}`);
-      const capitalizedQueryKey = capitalize(queryKey);
-      assertFilterFitsCrud(database.refName, queryKey, className);
-      Object.assign(srvRef.prototype, {
-        [`list${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-          const { query, queryOption } = getQueryDataFromKey(queryKey, args);
-          return this.__list(query, queryOption);
-        },
-        [`listIds${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-          const { query, queryOption } = getQueryDataFromKey(queryKey, args);
-          return this.__listIds(query, queryOption);
-        },
-        [`find${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-          const { query, queryOption } = getQueryDataFromKey(queryKey, args);
-          return this.__find(query, queryOption);
-        },
-        [`findId${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-          const { query, queryOption } = getQueryDataFromKey(queryKey, args);
-          return this.__findId(query, queryOption);
-        },
-        [`pick${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-          const { query, queryOption } = getQueryDataFromKey(queryKey, args);
-          return this.__pick(query, queryOption);
-        },
-        [`pickId${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-          const { query, queryOption } = getQueryDataFromKey(queryKey, args);
-          return this.__pickId(query, queryOption);
-        },
-        [`exists${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-          const { query } = getQueryDataFromKey(queryKey, args);
-          return this.__exists(query);
-        },
-        [`count${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-          const { query } = getQueryDataFromKey(queryKey, args);
-          return this.__count(query);
-        },
-        [`insight${capitalize(queryKey)}`]: async function (this: DatabaseService, ...args: any) {
-          const { query } = getQueryDataFromKey(queryKey, args);
-          return this.__insight(query);
-        },
-        [`query${capitalize(queryKey)}`]: function (this: DatabaseService, ...args: any) {
-          return queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
-        },
-        [`remove${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-          const { query } = getQueryDataFromKey(queryKey, args);
-          return this.__removeMany(query);
-        },
-        [`removeOne${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-          const { query } = getQueryDataFromKey(queryKey, args);
-          return this.__removeOne(query);
-        },
-        [`update${capitalizedQueryKey}`]: function (this: DatabaseService, ...args: any): UpdateChain {
-          const { query } = getQueryDataFromKey(queryKey, args);
-          return { set: (update) => this.__updateMany(query, update) };
-        },
-        [`updateOne${capitalizedQueryKey}`]: function (this: DatabaseService, ...args: any): UpdateChain {
-          const { query } = getQueryDataFromKey(queryKey, args);
-          return { set: (update) => this.__updateOne(query, update) };
-        },
-      });
-    });
+    DatabaseResolver.applyFilterMethods(srvRef.prototype, database, className);
     return srvRef;
   }
 }

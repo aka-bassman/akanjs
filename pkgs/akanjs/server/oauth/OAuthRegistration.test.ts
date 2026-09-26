@@ -34,7 +34,6 @@ describe("OAuthRegistration parse", () => {
     const json = await body(result.response);
     expect(json.error).toBe("invalid_redirect_uri");
     expect(json.error_description).toContain("http://app.example.com/callback");
-    // Cursor's desktop scheme passes only under a policy that names it.
     const cursor = { redirect_uris: ["cursor://anysphere.cursor-mcp/oauth/callback"] };
     expect(OAuthRegistration.parse(cursor).ok).toBe(false);
     expect(OAuthRegistration.parse(cursor, { allowedSchemes: ["cursor"] }).ok).toBe(true);

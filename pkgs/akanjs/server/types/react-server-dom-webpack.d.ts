@@ -1,10 +1,4 @@
-// Minimal ambient declarations for the `react-server-dom-webpack` subpaths we
-// use. The upstream package ships runtime code only; no types are published.
-// We only declare the surface our SSR/RSC pipeline actually touches.
-//
-// This file is intentionally a top-level ambient declaration (no `import`/
-// `export` at file scope) so that TypeScript registers the module names below
-// globally.
+// Upstream ships no types. No top-level import/export here, or these ambient module declarations stop being global.
 
 declare module "react-server-dom-webpack/server.node" {
   export interface ClientReferenceManifestEntry {

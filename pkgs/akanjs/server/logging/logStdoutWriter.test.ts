@@ -1,27 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { type LogRecord, logSeverity } from "akanjs/common";
+import { logSeverity } from "akanjs/common";
 import { HubFileSink } from "./hubFileSink";
 import { LogHub } from "./logHub";
+import { makeLogRecord as record } from "./logRecord.fixture";
 import { LogStdoutWriter } from "./logStdoutWriter";
 import type { RotatingLogWriter } from "./rotatingLogWriter";
-
-const record = (message: string, overrides: Partial<LogRecord> = {}): LogRecord => ({
-  at: 1_000,
-  elapsedMs: 0,
-  level: "info",
-  sev: logSeverity.info,
-  name: "Svc",
-  context: "",
-  message,
-  stream: "stdout",
-  pid: 1,
-  replicaIdx: 0,
-  role: "all",
-  origin: null,
-  traceId: null,
-  endpoint: null,
-  ...overrides,
-});
 
 describe("LogStdoutWriter", () => {
   test("writes one JSON line per admitted record, seq first, and nothing below the level or without one", () => {

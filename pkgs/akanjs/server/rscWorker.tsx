@@ -30,7 +30,6 @@ import {
   type LruTtlCacheOptions,
   parsePositiveInt,
   type RouteCacheEntry,
-  type RouteCacheInvalidation,
   type RouteCacheRenderState,
   resolvePublicRouteCacheEntryDecision,
   resolveRouteCacheStoreTtl,
@@ -51,6 +50,7 @@ import {
   encodeAkanHeadSnapshot,
   encodeAkanRouterState,
   encodeAkanRscPatchSegmentPath,
+  isAkanRscPartialCommitEnabled,
   readAkanRouterStateRequest,
   resolveAkanRscPartialDecision,
   resolveAkanRscPatchDecision,
@@ -58,22 +58,21 @@ import {
 import { type PagesContext, RouteTreeBuilder } from "./routeTreeBuilder";
 import { encodeAkanRedirectDigest } from "./rscHttp";
 import { RscPagePrompts } from "./rscPagePrompts";
-import { isAkanRscPartialCommitEnabled } from "./rscPartialCommit";
-import { resolveAkanRscHeadSafePatchDecision } from "./rscPatchSafety";
 import {
   type CachedRscResult,
   createCachedRscPatchMetadata,
   createRscWorkerCachedPatchReplayDecision,
   invalidateCachedRscResults,
   isCachedRscPatchMetadataCompatible,
+  replayCachedRscResult,
+  resolveAkanRscHeadSafePatchDecision,
   resolveRscWorkerPatchCacheEntry,
   shouldCollectRscWorkerRenderChunks,
   shouldStoreRscWorkerPatchResult,
   shouldUseRscWorkerFullResultCache,
 } from "./rscWorkerCache";
-import { replayCachedRscResult } from "./rscWorkerReplay";
 import type { RscTraceMetadata } from "./ssrTypes";
-import { createSystemPageDocument, getSystemPageHomeHref } from "./systemPageDocument";
+import { createSystemPageDocument, getPathnameLocale, getSystemPageHomeHref } from "./systemPageDocument";
 
 interface InitMsg {
   type: "init";
@@ -101,7 +100,6 @@ interface ReloadMsg {
   clientManifest: ClientManifest;
   cssAssets?: Record<string, { cssUrl: string; cssRelPath: string }>;
   buildId: number;
-  /** Optional new bundle path — when the builder rebundled user code. */
   pagesBundlePath?: string;
 }
 interface UpdateCssAssetsMsg {
@@ -229,9 +227,7 @@ export class RscRenderer {
     pagesBundleBuildId: 0,
   };
   readonly #routeStats = new Map<string, RouteRenderStats>();
-  // Both caches hold whole Flight payloads, which have no natural size limit — unlike the html
-  // cache, which has had a per-body cap from the start. Without these ceilings a handful of heavy
-  // routes can fill 100 entries with arbitrarily many MB each.
+  // Flight payloads have no natural size cap; without byte ceilings a few heavy routes fill every entry with MBs.
   #resultCache = new LruTtlCache<CachedRscResult>(
     parsePositiveInt(process.env.AKAN_RSC_RESULT_CACHE_MAX_ENTRIES) ?? 100,
     RscRenderer.#resultCacheOptions(),
@@ -261,8 +257,7 @@ export class RscRenderer {
     if (Logger.isNdjson) Logger.consoleOutput = false;
     this.#logForwarder = new LogForwarder((message) => this.#send(message));
     process.on("message", (msg: InMsg) => this.#handleMessage(msg));
-    // The IPC channel closes when the parent replica dies (including SIGKILL); exit instead of
-    // lingering as an orphaned renderer.
+    // Fires when the parent replica dies, SIGKILL included; exit rather than linger as an orphaned renderer.
     process.on("disconnect", () => {
       this.#logger.warn("parent IPC channel closed; exiting rsc worker");
       process.exit(0);
@@ -300,7 +295,8 @@ export class RscRenderer {
         return;
       case "invalidate-cache":
         this.#logger.verbose(`received invalidate-cache reason=${msg.reason ?? "(none)"}`);
-        this.#invalidateResultCache(msg);
+        invalidateCachedRscResults(this.#resultCache, msg);
+        invalidateCachedRscResults(this.#patchResultCache, msg);
         return;
       case "log-level":
         this.#logForwarder.setMinSev(msg.minSev);
@@ -314,7 +310,6 @@ export class RscRenderer {
     }
   }
 
-  /** A request whose answer is one JSON value: it rides a single reply rather than the render stream. */
   async #answer(requestId: string, type: string, fn: () => Promise<unknown>): Promise<void> {
     try {
       this.#send({ type, requestId, result: await fn() });
@@ -328,14 +323,8 @@ export class RscRenderer {
     const reader = this.#activeRenderReaders.get(requestId);
     if (!reader) return;
     void reader.cancel().catch(() => {
-      // Cancellation is best-effort; the render loop also checks
-      // `#cancelledRenderRequests` before sending more chunks.
+      // Best-effort: the render loop also checks `#cancelledRenderRequests` before sending more chunks.
     });
-  }
-
-  #invalidateResultCache(invalidation: RouteCacheInvalidation): void {
-    invalidateCachedRscResults(this.#resultCache, invalidation);
-    invalidateCachedRscResults(this.#patchResultCache, invalidation);
   }
 
   async #handleInit(msg: InitMsg): Promise<void> {
@@ -526,7 +515,7 @@ export class RscRenderer {
           ...(cacheDecision.reason ? { cacheReason: cacheDecision.reason } : {}),
         });
         const traceBase = createTraceBase(safePatchDecision, patchCacheEntry?.key ?? cacheEntry?.key);
-        const cachedPatch = patchCacheEntry ? this.#getCachedPatchResult(patchCacheEntry.key) : null;
+        const cachedPatch = patchCacheEntry ? this.#getCached(this.#patchResultCache, patchCacheEntry.key) : null;
         if (
           cachedPatch?.patch &&
           patchCacheEntry &&
@@ -545,63 +534,31 @@ export class RscRenderer {
             patchCacheEntry.key,
             cachedPatch.patch.targetRouterState,
           );
-          this.#stats.lastRenderDurationMs = Date.now() - startedAt;
-          this.#stats.lastRenderLoadedModuleDelta = 0;
-          this.#stats.lastRenderLoadedModules = [];
-          this.#stats.lastFlightBytes = cachedPatch.bytes;
-          this.#stats.lastFlightChunks = cachedPatch.chunksCount;
-          this.#stats.totalFlightBytes += cachedPatch.bytes;
-          this.#stats.totalFlightChunks += cachedPatch.chunksCount;
-          this.#recordRouteStats(routeId, cachedPatch.bytes, this.#stats.lastRenderDurationMs);
-          await replayCachedRscResult({
-            requestId,
-            chunks: cachedPatch.chunks,
-            theme: cachedPatch.theme,
-            cacheState: cachedPatch.cacheState,
-            trace: {
-              ...cachedTraceBase,
-              cache: "hit",
-              partial: "patch",
-              partialReason: "cache-hit-patch-replay",
-            },
-            send: (message) => this.#send(message),
-            isCancelled: () => this.#cancelledRenderRequests.has(requestId),
+          await this.#replayCached(requestId, routeId, startedAt, cachedPatch, {
+            ...cachedTraceBase,
+            cache: "hit",
+            partial: "patch",
+            partialReason: "cache-hit-patch-replay",
           });
           return;
         }
         const cached =
           shouldUseRscWorkerFullResultCache({ cacheEntry, patchCacheEntry }) && cacheEntry
-            ? this.#getCachedResult(cacheEntry.key)
+            ? this.#getCached(this.#resultCache, cacheEntry.key)
             : null;
         if (cached) {
-          this.#stats.lastRenderDurationMs = Date.now() - startedAt;
-          this.#stats.lastRenderLoadedModuleDelta = 0;
-          this.#stats.lastRenderLoadedModules = [];
-          this.#stats.lastFlightBytes = cached.bytes;
-          this.#stats.lastFlightChunks = cached.chunksCount;
-          this.#stats.totalFlightBytes += cached.bytes;
-          this.#stats.totalFlightChunks += cached.chunksCount;
-          this.#recordRouteStats(routeId, cached.bytes, this.#stats.lastRenderDurationMs);
-          await replayCachedRscResult({
-            requestId,
-            chunks: cached.chunks,
-            theme: cached.theme,
-            cacheState: cached.cacheState,
-            trace: {
-              ...traceBase,
-              cache: "hit",
-              partial: "full",
-              partialReason: "cache-hit-full-replay",
-              partialCommonPrefixLength: 0,
-              patchStartIndex: undefined,
-              patchSegmentPath: undefined,
-              patchStartSegment: undefined,
-              patchHeadSafe: undefined,
-              patchHeadSnapshot: undefined,
-              ssrBlocking: cached.ssrBlocking,
-            },
-            send: (message) => this.#send(message),
-            isCancelled: () => this.#cancelledRenderRequests.has(requestId),
+          await this.#replayCached(requestId, routeId, startedAt, cached, {
+            ...traceBase,
+            cache: "hit",
+            partial: "full",
+            partialReason: "cache-hit-full-replay",
+            partialCommonPrefixLength: 0,
+            patchStartIndex: undefined,
+            patchSegmentPath: undefined,
+            patchStartSegment: undefined,
+            patchHeadSafe: undefined,
+            patchHeadSnapshot: undefined,
+            ssrBlocking: cached.ssrBlocking,
           });
           return;
         }
@@ -650,6 +607,17 @@ export class RscRenderer {
               lateRedirect: control?.type === "redirect" && lateControlSent,
             });
             const storeTtl = cacheEntry ? resolveRouteCacheStoreTtl(cacheEntry.ttl, cacheState) : null;
+            const stored = (): CachedRscResult => ({
+              chunks,
+              bytes,
+              chunksCount,
+              pathname: urlObj.pathname,
+              routeId,
+              tags: cacheState.tags,
+              theme: getRequestTheme(),
+              ssrBlocking,
+              cacheState,
+            });
             if (
               shouldStoreRscWorkerPatchResult({
                 cacheEntry,
@@ -662,41 +630,10 @@ export class RscRenderer {
               effectivePatchDecision.patch &&
               storeTtl !== null
             ) {
-              this.#setCachedPatchResult(
-                patchCacheEntry.key,
-                {
-                  chunks,
-                  bytes,
-                  chunksCount,
-                  pathname: urlObj.pathname,
-                  routeId,
-                  tags: cacheState.tags,
-                  theme: getRequestTheme(),
-                  ssrBlocking,
-                  cacheState,
-                  patch: createCachedRscPatchMetadata({
-                    targetRouterState,
-                    patch: effectivePatchDecision.patch,
-                  }),
-                },
-                storeTtl,
-              );
+              const patch = createCachedRscPatchMetadata({ targetRouterState, patch: effectivePatchDecision.patch });
+              this.#store("patch", this.#patchResultCache, patchCacheEntry.key, { ...stored(), patch }, storeTtl);
             } else if (cacheEntry && storeTtl !== null && effectivePatchDecision.status !== "patch") {
-              this.#setCachedResult(
-                cacheEntry.key,
-                {
-                  chunks,
-                  bytes,
-                  chunksCount,
-                  pathname: urlObj.pathname,
-                  routeId,
-                  tags: cacheState.tags,
-                  theme: getRequestTheme(),
-                  ssrBlocking,
-                  cacheState,
-                },
-                storeTtl,
-              );
+              this.#store("full", this.#resultCache, cacheEntry.key, stored(), storeTtl);
             }
             return cacheState;
           },
@@ -715,10 +652,7 @@ export class RscRenderer {
               msg.clientManifest ?? this.#clientManifest,
               { requestId, status: 404, trace },
             );
-            if (systemResult.cancelled) return;
-            if (!systemResult.control) {
-              return;
-            }
+            if (systemResult.cancelled || !systemResult.control) return;
           }
           if (
             match &&
@@ -752,18 +686,14 @@ export class RscRenderer {
           this.#sendRenderControl(requestId, control);
           return;
         }
-        this.#stats.lastFlightBytes = result.bytes;
-        this.#stats.lastFlightChunks = result.chunksCount;
-        this.#stats.totalFlightBytes += result.bytes;
-        this.#stats.totalFlightChunks += result.chunksCount;
+        this.#recordFlight(result);
         this.#stats.lastRenderDurationMs = Date.now() - startedAt;
         const afterLoadedKeys = RouteTreeBuilder.getCacheStats().loadedModuleKeys;
         this.#stats.lastRenderLoadedModules = afterLoadedKeys.filter((key) => !beforeLoadedKeys.includes(key));
         this.#stats.lastRenderLoadedModuleDelta = this.#stats.lastRenderLoadedModules.length;
         this.#recordRouteStats(routeId, result.bytes, this.#stats.lastRenderDurationMs);
-        const responseTheme = getRequestTheme();
         this.#logger.verbose(
-          `render[${requestId}] done chunks=${result.chunksCount} bytes=${result.bytes} theme=${responseTheme ?? "(none)"} in ${
+          `render[${requestId}] done chunks=${result.chunksCount} bytes=${result.bytes} theme=${getRequestTheme() ?? "(none)"} in ${
             Date.now() - startedAt
           }ms`,
         );
@@ -781,27 +711,25 @@ export class RscRenderer {
         });
         return;
       }
+      const { url: fallbackUrl, match: fallbackMatch } = activeRoute;
+      const trySendFallback = async (kind: "not-found" | "error") =>
+        !!fallbackUrl &&
+        !!fallbackMatch &&
+        (await this.#trySendFallbackRender({
+          requestId,
+          kind,
+          route: fallbackMatch.pathRoute,
+          params: fallbackMatch.params,
+          searchParams: RouteTreeBuilder.parseSearchParams(fallbackUrl.search),
+          pathname: fallbackUrl.pathname,
+          url: fallbackUrl,
+          error: kind === "error" ? error : undefined,
+          clientManifest: msg.clientManifest ?? this.#clientManifest,
+        }));
       if (isAkanNotFoundError(error)) {
         this.#stats.lastRenderKind = "not-found";
         this.#logger.verbose(`render[${requestId}] not-found`);
-        const fallbackUrl = activeRoute.url;
-        const fallbackMatch = activeRoute.match;
-        if (
-          fallbackUrl &&
-          fallbackMatch &&
-          (await this.#trySendFallbackRender({
-            requestId,
-            kind: "not-found",
-            route: fallbackMatch.pathRoute,
-            params: fallbackMatch.params,
-            searchParams: RouteTreeBuilder.parseSearchParams(fallbackUrl.search),
-            pathname: fallbackUrl.pathname,
-            url: fallbackUrl,
-            clientManifest: msg.clientManifest ?? this.#clientManifest,
-          }))
-        ) {
-          return;
-        }
+        if (await trySendFallback("not-found")) return;
         if (
           fallbackUrl &&
           (await this.#trySendSystemNotFoundRender({
@@ -818,25 +746,7 @@ export class RscRenderer {
       this.#logger.error(
         `render[${requestId}] failed url=${url}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
       );
-      const fallbackUrl = activeRoute.url;
-      const fallbackMatch = activeRoute.match;
-      if (
-        fallbackUrl &&
-        fallbackMatch &&
-        (await this.#trySendFallbackRender({
-          requestId,
-          kind: "error",
-          route: fallbackMatch.pathRoute,
-          params: fallbackMatch.params,
-          searchParams: RouteTreeBuilder.parseSearchParams(fallbackUrl.search),
-          pathname: fallbackUrl.pathname,
-          url: fallbackUrl,
-          error,
-          clientManifest: msg.clientManifest ?? this.#clientManifest,
-        }))
-      ) {
-        return;
-      }
+      if (await trySendFallback("error")) return;
       this.#send({
         type: "error",
         requestId,
@@ -883,8 +793,6 @@ export class RscRenderer {
       rscLoadedRouteModuleKeys: routeStats.loadedModuleKeys,
       rscTopRoutesByRenderCount: this.#topRoutes((route) => route.count),
       rscTopRoutesByFlightBytes: this.#topRoutes((route) => route.flightBytes),
-      // Reported separately: the full and patch caches fill on different request shapes, so a
-      // combined number cannot tell which one is holding the bytes.
       rscResultCacheEntries: this.#resultCache.size,
       rscResultCacheBytes: this.#resultCache.byteSize,
       rscPatchResultCacheEntries: this.#patchResultCache.size,
@@ -896,12 +804,7 @@ export class RscRenderer {
     this.#send({ type: "metrics", metrics });
   }
 
-  /**
-   * An error raised after the first Flight chunk has left the worker can no longer become a status code or a
-   * system error page — `sendLateRedirect` is the only control the host can still act on, so the render
-   * control is dropped. Logging here is the only record that the request failed at all; without it a page
-   * whose boundary died mid-stream is indistinguishable from one that rendered.
-   */
+  // Past the first Flight chunk only a late redirect reaches the host, so this log is the only record of the failure.
   #reportRenderError(error: unknown, pathname?: string): void {
     const description = error instanceof Error ? (error.stack ?? error.message) : String(error);
     const scope = pathname ? ` path=${pathname}` : "";
@@ -912,7 +815,6 @@ export class RscRenderer {
     this.#logger.error(`[rsc] render failed${scope}: ${description}`);
   }
 
-  /** A client that navigated away, or a stream the host cancelled: expected, and not the replica's problem. */
   static #isExpectedRequestAbort(error: unknown): boolean {
     if (!(error instanceof Error)) return false;
     return (
@@ -930,30 +832,18 @@ export class RscRenderer {
       collectChunks?: boolean;
       status?: number;
       trace?: RscTraceMetadata;
-      onComplete?: (result: {
-        chunks: Uint8Array[];
-        bytes: number;
-        chunksCount: number;
-        control: RenderControl | null;
-        lateControlSent: boolean;
-      }) => Promise<RouteCacheRenderState> | RouteCacheRenderState;
+      onComplete?: (
+        result: Omit<FlightRenderResult, "cancelled">,
+      ) => Promise<RouteCacheRenderState> | RouteCacheRenderState;
     } = {},
   ): Promise<FlightRenderResult> {
     const controlRef: { current: RenderControl | null } = { current: null };
     const stream = await renderToReadableStream(element, clientManifest, {
       onError: (error) => {
         if (isAkanRedirectError(error)) {
-          controlRef.current = {
-            type: "redirect",
-            location: error.location,
-            method: error.method,
-            status: error.status,
-          };
-          return encodeAkanRedirectDigest({
-            location: error.location,
-            method: error.method,
-            status: error.status,
-          });
+          const { location, method, status } = error;
+          controlRef.current = { type: "redirect", location, method, status };
+          return encodeAkanRedirectDigest({ location, method, status });
         }
         if (isAkanNotFoundError(error)) {
           controlRef.current = { type: "not-found" };
@@ -989,9 +879,7 @@ export class RscRenderer {
     };
     const sendLateRedirect = () => {
       if (!options.requestId || lateControlSent || controlRef.current?.type !== "redirect") return;
-      // Once Flight bytes have left the worker, only redirects can still be
-      // represented as a browser navigation. notFound/error stay in Flight and
-      // are handled by React's error path.
+      // Once bytes have left, only a redirect can still become a navigation; notFound/error stay in React's error path.
       lateControlSent = true;
       this.#send({
         type: "late-redirect",
@@ -1089,22 +977,11 @@ export class RscRenderer {
         searchParams,
         pathname,
         url,
-        error: kind === "error" ? RscRenderer.#errorForFallback(error) : undefined,
+        error: kind === "error" && process.env.NODE_ENV !== "production" ? error : undefined,
         digest: kind === "error" ? "AKAN_RENDER_ERROR" : undefined,
       });
       if (!element) return false;
-      const result = await this.#renderFlightElement(element, clientManifest, {
-        requestId,
-        status: kind === "not-found" ? 404 : 500,
-        trace,
-      });
-      if (result.cancelled) return true;
-      if (result.control) return false;
-      this.#stats.lastFlightBytes = result.bytes;
-      this.#stats.lastFlightChunks = result.chunksCount;
-      this.#stats.totalFlightBytes += result.bytes;
-      this.#stats.totalFlightChunks += result.chunksCount;
-      return true;
+      return await this.#trySendFlight(requestId, element, clientManifest, kind === "not-found" ? 404 : 500, trace);
     } catch (fallbackError) {
       this.#logger.error(
         `render[${requestId}] custom ${kind} fallback failed: ${
@@ -1127,18 +1004,7 @@ export class RscRenderer {
     trace?: RscTraceMetadata;
   }): Promise<boolean> {
     try {
-      const result = await this.#renderFlightElement(this.#renderSystemNotFound(url), clientManifest, {
-        requestId,
-        status: 404,
-        trace,
-      });
-      if (result.cancelled) return true;
-      if (result.control) return false;
-      this.#stats.lastFlightBytes = result.bytes;
-      this.#stats.lastFlightChunks = result.chunksCount;
-      this.#stats.totalFlightBytes += result.bytes;
-      this.#stats.totalFlightChunks += result.chunksCount;
-      return true;
+      return await this.#trySendFlight(requestId, this.#renderSystemNotFound(url), clientManifest, 404, trace);
     } catch (error) {
       this.#logger.error(
         `render[${requestId}] system not-found fallback failed: ${
@@ -1147,6 +1013,51 @@ export class RscRenderer {
       );
       return false;
     }
+  }
+
+  // A cancelled request counts as delivered; a control (redirect/not-found/error) leaves the next fallback to try.
+  async #trySendFlight(
+    requestId: string,
+    element: ReactNode,
+    clientManifest: ClientManifest,
+    status: number,
+    trace?: RscTraceMetadata,
+  ): Promise<boolean> {
+    const result = await this.#renderFlightElement(element, clientManifest, { requestId, status, trace });
+    if (result.cancelled) return true;
+    if (result.control) return false;
+    this.#recordFlight(result);
+    return true;
+  }
+
+  async #replayCached(
+    requestId: string,
+    routeId: string,
+    startedAt: number,
+    cached: CachedRscResult,
+    trace: RscTraceMetadata,
+  ): Promise<void> {
+    this.#stats.lastRenderDurationMs = Date.now() - startedAt;
+    this.#stats.lastRenderLoadedModuleDelta = 0;
+    this.#stats.lastRenderLoadedModules = [];
+    this.#recordFlight(cached);
+    this.#recordRouteStats(routeId, cached.bytes, this.#stats.lastRenderDurationMs);
+    await replayCachedRscResult({
+      requestId,
+      chunks: cached.chunks,
+      theme: cached.theme,
+      cacheState: cached.cacheState,
+      trace,
+      send: (message) => this.#send(message),
+      isCancelled: () => this.#cancelledRenderRequests.has(requestId),
+    });
+  }
+
+  #recordFlight({ bytes, chunksCount }: { bytes: number; chunksCount: number }): void {
+    this.#stats.lastFlightBytes = bytes;
+    this.#stats.lastFlightChunks = chunksCount;
+    this.#stats.totalFlightBytes += bytes;
+    this.#stats.totalFlightChunks += chunksCount;
   }
 
   #sendRenderControl(requestId: string, control: RenderControl): void {
@@ -1237,47 +1148,23 @@ export class RscRenderer {
     };
   }
 
-  #getCachedResult(cacheKey: string): CachedRscResult | null {
-    const cached = this.#resultCache.get(cacheKey);
-    if (!cached) {
-      this.#resultCacheMisses += 1;
-      return null;
-    }
-    this.#resultCacheHits += 1;
+  #getCached(cache: LruTtlCache<CachedRscResult>, cacheKey: string): CachedRscResult | null {
+    const cached = cache.get(cacheKey);
+    if (cached) this.#resultCacheHits += 1;
+    else this.#resultCacheMisses += 1;
     return cached;
   }
 
-  #getCachedPatchResult(cacheKey: string): CachedRscResult | null {
-    const cached = this.#patchResultCache.get(cacheKey);
-    if (!cached) {
-      this.#resultCacheMisses += 1;
-      return null;
-    }
-    this.#resultCacheHits += 1;
-    return cached;
-  }
-
-  #setCachedResult(cacheKey: string, result: CachedRscResult, ttl: number): void {
-    this.#logRejectedStore("full", result, this.#resultCache.set(cacheKey, result, ttl));
-  }
-
-  #setCachedPatchResult(cacheKey: string, result: CachedRscResult, ttl: number): void {
-    this.#logRejectedStore("patch", result, this.#patchResultCache.set(cacheKey, result, ttl));
-  }
-
-  /** A silently dropped store looks identical to a cache miss; say which route is too big to cache. */
-  #logRejectedStore(kind: string, result: CachedRscResult, stored: boolean): void {
-    if (stored) return;
+  #store(kind: string, cache: LruTtlCache<CachedRscResult>, cacheKey: string, result: CachedRscResult, ttl: number) {
+    if (cache.set(cacheKey, result, ttl)) return;
     this.#logger.verbose(
       `${kind} result cache store skipped pathname=${result.pathname} bytes=${result.bytes} reason=body-too-large`,
     );
   }
 
   #runWithRequest<T>(request: Request, routeId: string, fn: () => Promise<T>): Promise<T> {
-    // The flight render executes components while its stream pumps, where Bun's ALS arrives empty even though
-    // run() wraps the whole handler — so keep a request fallback pushed until the render settles, the same
-    // discipline ssrFromRscRenderer's runPump uses. The stack is global and last-push-wins, so concurrent
-    // renders can shadow each other; the real fix is pumping the flight render inside the ALS scope itself.
+    // Bun's ALS is empty while the Flight stream pumps, so a request fallback stays pushed until the render settles;
+    // the fallback stack is global and last-push-wins, so concurrent renders can shadow each other.
     const cleanup = pushRequestFallback(request);
     const run = () => Promise.resolve(fn()).finally(() => cleanup());
     const traced = () => runTraced(SignalTrace.create(routeId, "page", "page"), run);
@@ -1330,7 +1217,7 @@ export class RscRenderer {
         : { node: undefined };
     const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead, {});
     return (
-      <html lang={params.lang ?? RscRenderer.#getLocale(pathname, this.#i18n)} suppressHydrationWarning>
+      <html lang={params.lang ?? getPathnameLocale(pathname, this.#i18n)} suppressHydrationWarning>
         <head key="head">
           <meta key="charset" charSet="utf-8" />
           <meta key="viewport" name="viewport" content="width=device-width, initial-scale=1" />
@@ -1406,8 +1293,6 @@ export class RscRenderer {
       basePath: this.#getBasePath(url),
     });
     setRequestFrameState(pathRoute.pageState);
-    // The suffix path skips `resolveHead`, so populate `Loading` explicitly
-    // before composing or the client-navigation fallback would be empty.
     await RouteElementComposer.resolveSuffixLoadings(pathRoute, patchStartIndex);
     return RouteElementComposer.composeSuffix({
       pathRoute,
@@ -1444,7 +1329,7 @@ export class RscRenderer {
     return createSystemPageDocument({
       kind: "not-found",
       pathname: url.pathname,
-      lang: RscRenderer.#getLocale(url.pathname, this.#i18n),
+      lang: getPathnameLocale(url.pathname, this.#i18n),
       homeHref: getSystemPageHomeHref({
         pathname: url.pathname,
         i18n: this.#i18n,
@@ -1490,12 +1375,10 @@ export class RscRenderer {
     if (!routeHead.headSnapshot) return undefined;
     return mergeAkanHeadSnapshots(
       routeHead.headSnapshot,
-      shouldRenderLocaleAlternates(options) ? this.#createLocaleAlternateHeadSnapshot(url) : undefined,
+      shouldRenderLocaleAlternates(options)
+        ? createAkanLocaleAlternateHeadSnapshot(this.#getLocaleAlternateLanguages(url))
+        : undefined,
     );
-  }
-
-  #createLocaleAlternateHeadSnapshot(url: URL): ResolvedHead["headSnapshot"] {
-    return createAkanLocaleAlternateHeadSnapshot(this.#getLocaleAlternateLanguages(url));
   }
 
   #getLocaleAlternateLanguages(url: URL): Record<string, string> {
@@ -1533,16 +1416,6 @@ export class RscRenderer {
       headerBasePath: untrackedRequest()?.headers.get("x-base-path"),
     });
     return this.#cssAssets[basePath ?? ""]?.cssUrl ?? null;
-  }
-
-  static #getLocale(pathname: string, i18n: AkanI18nConfig): string {
-    const [segment] = pathname.split("/").filter(Boolean);
-    return segment && i18n.locales.includes(segment) ? segment : i18n.defaultLocale;
-  }
-
-  static #errorForFallback(error: unknown): unknown {
-    if (process.env.NODE_ENV !== "production") return error;
-    return undefined;
   }
 
   static #getPublicRequestUrl(url: URL): URL {

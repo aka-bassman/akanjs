@@ -3,8 +3,7 @@ import path from "node:path";
 import { getEnv } from "akanjs/base";
 import { Logger, resolveSubRouteHosts } from "akanjs/common";
 import type { BaseBuildArtifact } from "../types";
-import { AkanResponse } from "./akanResponse";
-import type { WebProxy } from "./types";
+import { AkanResponse, type WebProxy } from "./types";
 
 export class HostBasePathWebProxy implements WebProxy {
   static readonly refName = "HostBasePathWebProxy";
@@ -81,17 +80,17 @@ function loadWebRouteMetadata(): Pick<BaseBuildArtifact, "subRoutes" | "basePath
   }
 }
 
-function resolveArtifactDir(): string {
+export function resolveArtifactDir(): string {
   const localArtifactDir = path.join(process.cwd(), ".akan", "artifact");
   if (fs.existsSync(path.join(localArtifactDir, "base-artifact.json"))) return localArtifactDir;
   return path.join(process.cwd(), "apps", getEnv().appName, ".akan", "artifact");
 }
 
-function normalizeHost(host: string | null): string {
+export function normalizeHost(host: string | null): string {
   return (host ?? "").toLowerCase().replace(/:\d+$/, "");
 }
 
-function getPublicRequestUrl(request: Bun.BunRequest): URL {
+export function getPublicRequestUrl(request: Bun.BunRequest): URL {
   const url = new URL(request.url);
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   const proto = request.headers.get("x-forwarded-proto");
@@ -114,6 +113,6 @@ function toProxyRequestUrl(requestUrl: URL, targetUrl: URL): URL {
   return rewritten;
 }
 
-function isInternalProxyRequest(requestUrl: URL): boolean {
+export function isInternalProxyRequest(requestUrl: URL): boolean {
   return requestUrl.pathname === "/__rsc";
 }

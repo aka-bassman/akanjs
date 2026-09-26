@@ -10,8 +10,7 @@ import {
 } from "../artifact";
 import type { RscWorker } from "../rscWorkerHost";
 import type { RenderState } from "../types";
-import type { ChangeKind } from "./changeBatch";
-import { type HmrMessage, type HmrWsData, HmrWsHub } from "./wsHub";
+import { type ChangeKind, type HmrMessage, type HmrWsData, HmrWsHub } from "./wsHub";
 
 const APP_RUNTIME_METADATA_BASENAMES = new Set(["dict.ts", "sig.ts", "useClient.ts"]);
 
@@ -123,13 +122,8 @@ export class DevHmrController {
     this.#builderRpc.dispose();
   }
 
-  broadcastError(message: string): void {
-    this.#hub.broadcast({ type: "error", message });
-  }
-
   handleWs(req: Request): Response | undefined {
-    const upgraded = this.#upgradeHmrWs(req, { kind: "akan-hmr", openedAt: Date.now() });
-    if (upgraded) return;
+    if (this.#upgradeHmrWs(req, { kind: "akan-hmr", openedAt: Date.now() })) return;
     return new Response("Failed to upgrade HMR WebSocket", { status: 500 });
   }
 
@@ -144,14 +138,15 @@ export class DevHmrController {
       if (!DevHmrController.#isTrustedRscTarget(clientOrigin, targetUrl))
         return new Response("Bad Request", { status: 400 });
       const manifest = await this.ensureRoute(targetUrl);
+      const chunks = DevHmrController.clientChunkUrls(manifest.clientManifest);
       this.#logger.verbose(
-        `[hmr] client-refresh metadata route=${targetUrl.pathname} chunks=${DevHmrController.clientChunkUrls(manifest.clientManifest).length} in ${Date.now() - started}ms`,
+        `[hmr] client-refresh metadata route=${targetUrl.pathname} chunks=${chunks.length} in ${Date.now() - started}ms`,
       );
       return new Response(
         JSON.stringify({
           buildId: this.#renderState.buildId,
           generation: manifest.generation,
-          chunks: DevHmrController.clientChunkUrls(manifest.clientManifest),
+          chunks,
           routeIds: this.routeIdsForPath(targetUrl.pathname),
         }),
         { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } },
@@ -189,10 +184,6 @@ export class DevHmrController {
     return [...urls];
   }
 
-  static shouldFullReloadForRuntimeMetadata(files: string[]): boolean {
-    return files.some(isAkanRuntimeMetadataFile);
-  }
-
   #createBuilderRpc() {
     return new BuilderRpc({
       onInvalidate: (ev) => {
@@ -220,7 +211,7 @@ export class DevHmrController {
       onPagesUpdated: async ({ bundlePath, buildId, generation, changedFiles }) => {
         const started = Date.now();
         const files = changedFiles ?? [];
-        const runtimeMetadataChanged = DevHmrController.shouldFullReloadForRuntimeMetadata(files);
+        const runtimeMetadataChanged = files.some(isAkanRuntimeMetadataFile);
         const staleClientEntries = runtimeMetadataChanged ? new Set<string>() : this.#staleClientEntriesForFiles(files);
         const routeIds = runtimeMetadataChanged ? undefined : this.#routeIdsForFiles(files, staleClientEntries);
         const fastRefreshCandidate = !runtimeMetadataChanged && this.#isFastRefreshCandidate(files);
@@ -376,24 +367,22 @@ export class DevHmrController {
     for (const [entry, entryDeps] of Object.entries(depsByEntry)) {
       const resolvedEntry = path.resolve(entry);
       this.#recentClientEntries.add(resolvedEntry);
-      const entryRouteIds = this.#clientEntryRouteIds.get(resolvedEntry) ?? new Set<string>();
-      entryRouteIds.add(routeId);
-      this.#clientEntryRouteIds.set(resolvedEntry, entryRouteIds);
+      DevHmrController.#addTo(this.#clientEntryRouteIds, resolvedEntry, routeId);
       for (const dep of entryDeps) {
         const resolvedDep = path.resolve(dep);
         this.#recentClientFiles.add(resolvedDep);
-        const entries = this.#clientFileEntries.get(resolvedDep) ?? new Set<string>();
-        entries.add(resolvedEntry);
-        this.#clientFileEntries.set(resolvedDep, entries);
+        DevHmrController.#addTo(this.#clientFileEntries, resolvedDep, resolvedEntry);
       }
     }
     for (const dep of deps) {
       const resolved = path.resolve(dep);
       this.#recentClientFiles.add(resolved);
-      const routeIds = this.#clientFileRouteIds.get(resolved) ?? new Set<string>();
-      routeIds.add(routeId);
-      this.#clientFileRouteIds.set(resolved, routeIds);
+      DevHmrController.#addTo(this.#clientFileRouteIds, resolved, routeId);
     }
+  }
+
+  static #addTo(map: Map<string, Set<string>>, key: string, value: string) {
+    map.set(key, (map.get(key) ?? new Set<string>()).add(value));
   }
 
   #rememberClientEntries(routeId: string, entries: string[]): Set<string> {
@@ -412,9 +401,7 @@ export class DevHmrController {
     for (const entry of entries) {
       const resolvedEntry = path.resolve(entry);
       this.#recentClientEntries.add(resolvedEntry);
-      const routeIds = this.#clientEntryRouteIds.get(resolvedEntry) ?? new Set<string>();
-      routeIds.add(routeId);
-      this.#clientEntryRouteIds.set(resolvedEntry, routeIds);
+      DevHmrController.#addTo(this.#clientEntryRouteIds, resolvedEntry, routeId);
     }
     return orphanedEntries;
   }
@@ -462,9 +449,7 @@ export class DevHmrController {
     if (files.some((file) => runtimeRoots.some((needle) => path.resolve(file).includes(needle)))) return true;
     if (files.some((file) => path.basename(file).endsWith(".signal.ts"))) return true;
 
-    // A route source file that is not in the current seed index is likely a
-    // newly added route/layout. The backend's route seed index is static for
-    // this process, so a full reload is the safer recovery path.
+    // An unindexed page file is likely a new route, and the seed index is fixed for this process: reload fully.
     return (
       routeIds === undefined &&
       files.some((file) => path.resolve(file).includes(`${path.sep}page${path.sep}`) && /\.(tsx|ts|jsx|js)$/.test(file))

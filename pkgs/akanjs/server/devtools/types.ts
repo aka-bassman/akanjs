@@ -1,18 +1,6 @@
-/**
- * Payload contracts for the local-dev metadata endpoints consumed by developer tools.
- *
- *   GET /_akan/devtools    -> DevtoolsIndex
- *   GET /_akan/constant    -> DevtoolsEnvelope<"constant",   ConstantData>
- *   GET /_akan/signal      -> DevtoolsEnvelope<"signal",     SignalData>
- *   GET /_akan/dictionary  -> DevtoolsEnvelope<"dictionary", DictionaryData>
- *   GET /_akan/deps        -> DevtoolsEnvelope<"deps",       DepsData>
- */
-
 import type { ConstantType, TextFieldRole } from "akanjs/constant";
 import type { RootDictionary } from "akanjs/dictionary";
 import type { ArgType, HttpMutationMethod, SerializedArg, SerializedReturns } from "akanjs/signal";
-
-// * ==================== Envelope ==================== * //
 
 export interface DevtoolsIndex {
   version: 1;
@@ -39,14 +27,11 @@ export interface DevtoolsEnvelope<Kind extends string, Data> {
   data: Data;
 }
 
-/** Emitted in place of anything JSON cannot represent. */
 export interface Unserializable {
   __akan: "unserializable";
   type: "function" | "class" | "symbol" | "bigint" | "circular" | "depth-limit";
   name?: string;
 }
-
-// * ==================== /_akan/constant ==================== * //
 
 export type ConstantFieldKind = "property" | "hidden" | "secret" | "resolve";
 
@@ -135,8 +120,6 @@ export interface ConstantData {
   relations: RelationEdge[];
 }
 
-// * ==================== /_akan/signal ==================== * //
-
 export type { ArgType, SerializedArg, SerializedReturns };
 
 export interface EndpointNode {
@@ -185,7 +168,6 @@ export interface SignalNode {
   guards: { get?: string[]; cru?: string[]; create?: string[]; update?: string[]; remove?: string[] };
   internal: Record<string, InternalNode>;
   slice: Record<string, SliceNode>;
-  /** Endpoints declared in `.signal.ts`. */
   endpoint: Record<string, EndpointNode>;
   /** Framework-synthesized endpoints — absent from `SerializedSignal.endpoint`. */
   generated: {
@@ -218,8 +200,6 @@ export interface SignalData {
   middlewares: string[];
 }
 
-// * ==================== /_akan/dictionary ==================== * //
-
 export interface DictionaryModuleNode {
   kind: "model" | "scalar" | "service";
   languages: string[];
@@ -233,8 +213,6 @@ export interface DictionaryData {
   /** Flattened dotted paths, e.g. `"user.signal.createUser.arg.data"`. */
   keys: string[];
 }
-
-// * ==================== /_akan/deps ==================== * //
 
 export type DepNodeKind =
   | "service"

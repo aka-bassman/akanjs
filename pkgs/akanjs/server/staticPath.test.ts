@@ -17,7 +17,6 @@ const makeTree = async () => {
   fs.mkdirSync(path.join(base, "img"), { recursive: true });
   await writeFile(path.join(base, "img", "logo.png"), "png");
   await writeFile(path.join(root, "secret.txt"), "not yours");
-  // A sibling whose name starts with the base directory's, which is what the separator in the check is for.
   fs.mkdirSync(`${base}-secrets`, { recursive: true });
   await writeFile(path.join(`${base}-secrets`, "keys.txt"), "not yours either");
   return { root, base };
@@ -27,7 +26,6 @@ describe("resolveStaticPath", () => {
   test("resolves a file inside the tree", async () => {
     const { base } = await makeTree();
     expect(resolveStaticPath(base, "/img/logo.png")).toBe(path.join(base, "img", "logo.png"));
-    // A path that does not exist still resolves: the caller's existence check is what 404s it.
     expect(resolveStaticPath(base, "/img/missing.png")).toBe(path.join(base, "img", "missing.png"));
   });
 
@@ -37,7 +35,6 @@ describe("resolveStaticPath", () => {
     expect(resolveStaticPath(base, "/%2e%2e/secret.txt")).toBeNull();
     expect(resolveStaticPath(base, "/img/../../secret.txt")).toBeNull();
     expect(resolveStaticPath(base, "/img/logo.png\0.txt")).toBeNull();
-    // A malformed escape makes `decodeURIComponent` throw rather than return the raw text.
     expect(resolveStaticPath(base, "/%")).toBeNull();
   });
 
@@ -47,9 +44,6 @@ describe("resolveStaticPath", () => {
   });
 
   test("serves a lib asset through the link akan sync makes out of the tree", async () => {
-    // `akan sync` links `public/libs/<lib>` at `<workspaceRoot>/libs/<lib>/public`, so every lib asset is
-    // reached through a link whose target is outside the app's public dir. Resolving the link and refusing it
-    // 404s all of them under `akan start`; a built app has no link left, because the copy dereferences.
     const { root, base } = await makeTree();
     fs.mkdirSync(path.join(root, "libs", "kaiden", "public"), { recursive: true });
     await writeFile(path.join(root, "libs", "kaiden", "public", "model.glb"), "glb");

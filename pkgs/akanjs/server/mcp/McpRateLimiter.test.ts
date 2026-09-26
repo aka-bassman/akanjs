@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { McpRateLimiter, type McpSharedCounter } from "./McpRateLimiter";
 
-// The app's cache as the limiter reaches it: one counter every instance increments.
 const makeCounter = () => {
   const counts = new Map<string, number>();
   return {
@@ -22,9 +21,7 @@ describe("McpRateLimiter", () => {
     expect(first.ok && second.ok).toBe(true);
     const third = await limiter.acquire("a", 3_000);
     expect(third).toEqual({ ok: false, reason: "calls", retryAfterMs: 8_000 });
-    // Another caller has a budget of its own.
     expect((await limiter.acquire("b", 3_000)).ok).toBe(true);
-    // The window is fixed from the first call, so at its end the same caller starts over.
     expect((await limiter.acquire("a", 11_000)).ok).toBe(true);
   });
 
@@ -54,7 +51,6 @@ describe("McpRateLimiter", () => {
     expect((await two.acquire("a", 2_000)).ok).toBe(true);
     expect(await two.acquire("a", 3_000)).toEqual({ ok: false, reason: "calls", retryAfterMs: 7_000 });
     expect(await one.acquire("a", 4_000)).toMatchObject({ ok: false, reason: "calls" });
-    // Windows are aligned to the epoch, so the next one opens at 10s for every instance alike.
     expect((await one.acquire("a", 10_000)).ok).toBe(true);
   });
 
@@ -64,7 +60,6 @@ describe("McpRateLimiter", () => {
     if (!held.ok) throw new Error("expected a slot");
     held.release();
     expect(await limiter.acquire("a", 1)).toMatchObject({ ok: false, reason: "calls" });
-    // Had the refused call kept its reservation, this one would be turned away as a second call in flight.
     expect(await limiter.acquire("a", 2)).toMatchObject({ ok: false, reason: "calls" });
   });
 

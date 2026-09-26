@@ -16,7 +16,7 @@ import {
   resolveAkanRscPartialDecision,
   resolveAkanRscPatchDecision,
 } from "./routeState";
-import { resolveAkanRscHeadSafePatchDecision } from "./rscPatchSafety";
+import { resolveAkanRscHeadSafePatchDecision } from "./rscWorkerCache";
 
 function makeRoute(path: string, pathSegments: string[], rootLayouts = 1, layouts = 0): PathRoute {
   return {
@@ -28,6 +28,27 @@ function makeRoute(path: string, pathSegments: string[], rootLayouts = 1, layout
     renderLayouts: Array.from({ length: layouts }, () => ({ render: () => null })),
   };
 }
+
+const makeSearchParamsPair = () => {
+  const pathRoute = makeRoute("/docs", ["/", "/docs"], 1, 1);
+  return {
+    current: createAkanRouterState({ pathRoute, href: "https://example.test/docs?page=1", buildId: 3 }),
+    target: createAkanRouterState({ pathRoute, href: "https://example.test/docs?page=2", buildId: 3 }),
+  };
+};
+
+const makeSiblingPair = () => ({
+  current: createAkanRouterState({
+    pathRoute: makeRoute("/docs/intro", ["/", "/docs", "/intro"], 1, 1),
+    href: "https://example.test/docs/intro",
+    buildId: 3,
+  }),
+  target: createAkanRouterState({
+    pathRoute: makeRoute("/docs/api", ["/", "/docs", "/api"], 1, 1),
+    href: "https://example.test/docs/api",
+    buildId: 3,
+  }),
+});
 
 describe("RSC route state helpers", () => {
   test("creates stable segment keys from the route render stack", () => {
@@ -84,17 +105,7 @@ describe("RSC route state helpers", () => {
   });
 
   test("treats searchParams-only changes as partial candidates", () => {
-    const pathRoute = makeRoute("/docs", ["/", "/docs"], 1, 1);
-    const current = createAkanRouterState({
-      pathRoute,
-      href: "https://example.test/docs?page=1",
-      buildId: 3,
-    });
-    const target = createAkanRouterState({
-      pathRoute,
-      href: "https://example.test/docs?page=2",
-      buildId: 3,
-    });
+    const { current, target } = makeSearchParamsPair();
 
     expect(
       resolveAkanRscPartialDecision({ currentState: current, currentRoute: "/docs", targetState: target }),
@@ -106,16 +117,7 @@ describe("RSC route state helpers", () => {
   });
 
   test("treats sibling pages under the same layout chain as partial candidates", () => {
-    const current = createAkanRouterState({
-      pathRoute: makeRoute("/docs/intro", ["/", "/docs", "/intro"], 1, 1),
-      href: "https://example.test/docs/intro",
-      buildId: 3,
-    });
-    const target = createAkanRouterState({
-      pathRoute: makeRoute("/docs/api", ["/", "/docs", "/api"], 1, 1),
-      href: "https://example.test/docs/api",
-      buildId: 3,
-    });
+    const { current, target } = makeSiblingPair();
 
     expect(
       resolveAkanRscPartialDecision({ currentState: current, currentRoute: "/docs/intro", targetState: target }),
@@ -127,16 +129,7 @@ describe("RSC route state helpers", () => {
   });
 
   test("promotes sibling page candidates to patch metadata", () => {
-    const current = createAkanRouterState({
-      pathRoute: makeRoute("/docs/intro", ["/", "/docs", "/intro"], 1, 1),
-      href: "https://example.test/docs/intro",
-      buildId: 3,
-    });
-    const target = createAkanRouterState({
-      pathRoute: makeRoute("/docs/api", ["/", "/docs", "/api"], 1, 1),
-      href: "https://example.test/docs/api",
-      buildId: 3,
-    });
+    const { current, target } = makeSiblingPair();
     const partialDecision = resolveAkanRscPartialDecision({
       currentState: current,
       currentRoute: "/docs/intro",
@@ -210,17 +203,7 @@ describe("RSC route state helpers", () => {
   });
 
   test("promotes searchParams-only candidates to leaf page refresh patch metadata", () => {
-    const pathRoute = makeRoute("/docs", ["/", "/docs"], 1, 1);
-    const current = createAkanRouterState({
-      pathRoute,
-      href: "https://example.test/docs?page=1",
-      buildId: 3,
-    });
-    const target = createAkanRouterState({
-      pathRoute,
-      href: "https://example.test/docs?page=2",
-      buildId: 3,
-    });
+    const { current, target } = makeSearchParamsPair();
     const partialDecision = resolveAkanRscPartialDecision({
       currentState: current,
       currentRoute: "/docs",
@@ -240,17 +223,7 @@ describe("RSC route state helpers", () => {
   });
 
   test("marks guarded searchParams-only patches head-safe with target route snapshot", () => {
-    const pathRoute = makeRoute("/docs", ["/", "/docs"], 1, 1);
-    const current = createAkanRouterState({
-      pathRoute,
-      href: "https://example.test/docs?page=1",
-      buildId: 3,
-    });
-    const target = createAkanRouterState({
-      pathRoute,
-      href: "https://example.test/docs?page=2",
-      buildId: 3,
-    });
+    const { current, target } = makeSearchParamsPair();
     const partialDecision = resolveAkanRscPartialDecision({
       currentState: current,
       currentRoute: "/docs",

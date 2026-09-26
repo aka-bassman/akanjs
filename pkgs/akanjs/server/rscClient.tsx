@@ -6,6 +6,7 @@ import {
   type AkanRouterStateV1,
   type AkanRscPatchMetadata,
   decodeAkanRouterState,
+  isAkanRscPartialCommitEnabled,
   readAkanRouterStateResponseHeader,
 } from "./routeState";
 import { fetchRscNavigationResponse } from "./rscClientFetch";
@@ -28,10 +29,8 @@ import {
   type RscNavigationCacheNode,
   type RscPatchNavigationCacheNode,
   rememberRscCacheNode,
-  rememberRscPatchCacheNode,
   resolveCachedRscPatchNavigation,
 } from "./rscNavigationState";
-import { isAkanRscPartialCommitEnabled } from "./rscPartialCommit";
 import { commitAkanSegmentOutletPatch, resetAkanSegmentOutletPatches } from "./rscSegmentOutlet";
 
 type InlineRscChunk = [1, string] | [3, string];
@@ -53,16 +52,12 @@ declare global {
   var __AKAN_GET_SYNC_ROUTE_HREF__: ((href: string) => string) | undefined;
 }
 
-function decodeBase64(b64: string): Uint8Array {
-  const binary = atob(b64);
+function decodeInlineRscChunk([type, data]: InlineRscChunk): Uint8Array {
+  if (type === 1) return new TextEncoder().encode(data);
+  const binary = atob(data);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
-}
-
-function decodeInlineRscChunk([type, data]: InlineRscChunk): Uint8Array {
-  if (type === 1) return new TextEncoder().encode(data);
-  return decodeBase64(data);
 }
 
 type RscThenable = Promise<ReactNode> & {
@@ -94,15 +89,8 @@ class RscRedirectNavigationStarted extends Error {
   }
 }
 
-/**
- * A navigation whose target resolves to nothing. Thrown instead of committing the payload, and deliberately not
- * converted into a document navigation: the page the user is on is a working page, and trading it for a 404 — or,
- * before this, for the empty tree `0:null` decodes to — throws away everything mounted on it, an in-page agent's
- * session included. The route stays where it is and the caller is told.
- *
- * Recognised across bundles by `name` rather than `instanceof`: the RSC client is inlined into more than one
- * browser bundle, so the class identity a given file holds is not always the one that threw.
- */
+// Thrown, never turned into a document navigation, which would trade a working page (and an in-page agent's session)
+// for a 404. Matched by `name`, not instanceof: the RSC client is inlined into more than one browser bundle.
 class RscRouteNotFound extends Error {
   constructor(readonly href: string) {
     super(`[rscClient] no route at ${href}`);
@@ -132,17 +120,8 @@ function normalizeHref(href: string): string {
   return new URL(href, window.location.origin).href;
 }
 
-/**
- * Mirror React's thenable protocol (status/value/reason) onto the Flight thenable.
- *
- * Without this, `use(thenable)` cannot tell an already-resolved native Promise apart
- * from a pending one: it suspends the root transition once and relies on React's
- * ping -> retry -> re-commit path. That path intermittently lost the re-commit when
- * sync store updates raced the suspended transition, leaving the previous page DOM
- * visible even though the navigation pipeline completed. With the status tracked,
- * `use()` returns the fulfilled payload synchronously and the committed transition
- * renders the new tree in a single pass.
- */
+// React's thenable status lets use() read a fulfilled payload synchronously; its suspend-and-ping path intermittently
+// lost the re-commit when store updates raced the transition, leaving the previous page's DOM on screen.
 function trackRscThenable(thenable: RscThenable): RscThenable {
   if (thenable.status !== undefined) return thenable;
   thenable.status = "pending";
@@ -206,9 +185,7 @@ function commitRscPatchNavigation({
   startTransition(() => {
     try {
       headApplied = commitPreparedAkanHeadSnapshotPatch(preparedHeadPatch);
-      if (!headApplied) {
-        return;
-      }
+      if (!headApplied) return;
       outletCommitted = commitAkanSegmentOutletPatch(patch.outletKey, patchThenable);
       if (!outletCommitted) {
         rollbackPreparedAkanHeadSnapshotPatch(preparedHeadPatch);
@@ -245,8 +222,7 @@ async function fetchRsc(
     sendRouterState: options.sendRouterState,
     shouldApplyNavigation,
   });
-  if (responseResult.type === "redirected") return responseResult;
-  if (responseResult.type === "not-found") return responseResult;
+  if (responseResult.type === "redirected" || responseResult.type === "not-found") return responseResult;
   if (responseResult.type === "patch") {
     const patchResult = await validateRscPatchForGuardedCommit({
       partialCommitEnabled: isAkanRscPartialCommitEnabled(),
@@ -321,8 +297,7 @@ let currentCommitKind: "full" | "patch" = "full";
 let currentCommitFromCache = false;
 let navigationSeq = 0;
 
-// Lets hydrating client code (see `akanjs/client`'s `isRscNavigationFromCache`) tell a replayed payload
-// apart from a freshly fetched one, so data that must be current can refetch instead of trusting it.
+// Read by akanjs/client's isRscNavigationFromCache: data that must be current refetches instead of trusting a replay.
 globalThis.__AKAN_RSC_IS_FROM_CACHE__ = () => currentCommitFromCache;
 
 function rememberCommittedRouteState(node: RscCacheNode): void {
@@ -384,8 +359,6 @@ function Root(): ReactNode {
         shouldApplyNavigation: () => navId === navigationSeq,
       });
       if (next.type === "redirected") return;
-      // Nothing is committed: a refresh of a route that has since gone leaves what is on screen, which is the last
-      // tree that did render, rather than emptying the document.
       if (next.type === "not-found") {
         console.warn(`[rscClient] refresh target ${target} no longer resolves; keeping the current page`);
         return;
@@ -399,8 +372,7 @@ function Root(): ReactNode {
         isExpectedNavigationError: (error) => error instanceof RscRedirectNavigationStarted,
         onLatestError: (error) => hardNavigateAfterRscFailure(target, true, error),
       });
-      // Commit only once the payload root is fulfilled so `use()` never suspends the
-      // root transition (see trackRscThenable). Staleness is re-checked by navId below.
+      // Awaited before committing so use() never suspends the root transition (see trackRscThenable).
       await next.node.thenable;
       const committed = commitLatestRscNavigation({
         cache: rscCache,
@@ -460,7 +432,7 @@ function Root(): ReactNode {
             ) {
               currentCommitFromCache = true;
               rememberPatchedRouteState(patchResult.tree, patchResult.patchedNode);
-              rememberRscPatchCacheNode(rscPatchCache, cachedPatch, MAX_RSC_CACHE_ENTRIES);
+              rememberRscCacheNode(rscPatchCache, cachedPatch, MAX_RSC_CACHE_ENTRIES);
               return;
             }
           }
@@ -493,7 +465,7 @@ function Root(): ReactNode {
               outletKey: fetched.outletKey,
               headSnapshot: fetched.headSnapshot,
             });
-            if (patchCacheNode) rememberRscPatchCacheNode(rscPatchCache, patchCacheNode, MAX_RSC_CACHE_ENTRIES);
+            if (patchCacheNode) rememberRscCacheNode(rscPatchCache, patchCacheNode, MAX_RSC_CACHE_ENTRIES);
             return;
           }
           rscPatchCache.delete(target);
@@ -521,8 +493,7 @@ function Root(): ReactNode {
         isExpectedNavigationError: (error) => error instanceof RscRedirectNavigationStarted,
         onLatestError: (error) => hardNavigateAfterRscFailure(target, options.replace, error),
       });
-      // Commit only once the payload root is fulfilled so `use()` never suspends the
-      // root transition (see trackRscThenable). Staleness is re-checked by navId below.
+      // Awaited before committing so use() never suspends the root transition (see trackRscThenable).
       await nextNode.thenable;
       const committed = commitLatestRscNavigation({
         cache: rscCache,
@@ -547,8 +518,7 @@ function Root(): ReactNode {
       if (committed) rememberCommittedRouteState(nextNode);
     } catch (error) {
       if (error instanceof RscRedirectNavigationStarted) return;
-      // Rethrown ahead of the fallback on purpose: a document navigation here would land on the very 404 this
-      // refusal exists to avoid. Nothing was committed and history was never touched, so the page is untouched.
+      // Rethrown before the fallback: a document navigation would land on the very 404 this refusal exists to avoid.
       if (error instanceof RscRouteNotFound) throw error;
       if (navId === navigationSeq) hardNavigateAfterRscFailure(target, options.replace, error);
     }
@@ -558,8 +528,7 @@ function Root(): ReactNode {
 }
 
 window.addEventListener("popstate", () => {
-  // The address bar has already moved, so refusing would leave the tree and the URL describing different pages.
-  // The document route renders a real not-found page, which the RSC route has no way to return.
+  // The URL already moved, so a refused route falls back to the document route's real not-found page.
   void globalThis
     .__AKAN_RSC_NAVIGATE__?.(window.location.href, { replace: true, scrollToTop: false })
     ?.catch((error: unknown) => hardNavigateAfterRscFailure(window.location.href, true, error));

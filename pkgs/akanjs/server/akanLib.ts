@@ -19,7 +19,6 @@ export interface ServiceModule {
 export interface ScalarModule {
   constant: ScalarConstantModel;
   database: DatabaseCls;
-  // internal?: InternalCls;
 }
 
 export interface AkanLibProps {

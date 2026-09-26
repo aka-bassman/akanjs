@@ -22,7 +22,6 @@ import {
   createRscRedirectResponse,
   createRscStreamResponse,
   DEFAULT_HTML_RESULT_CACHE_MAX_BODY_BYTES,
-  isHtmlRouteCachePathAllowed,
   normalizeRscTargetUrlForHostBasePath,
   resolveHtmlRouteCacheStoreTtl,
   WebRouter,
@@ -34,6 +33,29 @@ const decoder = new TextDecoder();
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+const streamOf = (text: string) =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(text));
+      controller.close();
+    },
+  });
+
+const setEnv = (key: string, value: string | undefined) => {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+};
+
+const withEnv = async <T>(key: string, value: string | undefined, run: () => Promise<T>) => {
+  const previous = process.env[key];
+  setEnv(key, value);
+  try {
+    return await run();
+  } finally {
+    setEnv(key, previous);
+  }
+};
 
 type FullSsrHandler = (req: Request) => Response | Promise<Response>;
 type RouteHandler = (req: Request) => Response | Promise<Response>;
@@ -68,12 +90,7 @@ function createFakeRscWorker(
       const state = resolveRenderState(req, this.renderCalls.length);
       return {
         type: "stream",
-        stream: new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(encoder.encode("0:null\n"));
-            controller.close();
-          },
-        }),
+        stream: streamOf("0:null\n"),
         status: state.status,
         lateControl: Promise.resolve(state.lateControl ?? null),
         cacheState: Promise.resolve(state.cacheState ?? { cacheable: true, revalidate: 5 }),
@@ -142,22 +159,17 @@ async function withFullSsrCacheHarness<T>(
     AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES: process.env.AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES,
   };
   process.env.NODE_ENV = options.nodeEnv ?? "production";
-  if (options.commandType === undefined) delete process.env.AKAN_COMMAND_TYPE;
-  else process.env.AKAN_COMMAND_TYPE = options.commandType;
+  setEnv("AKAN_COMMAND_TYPE", options.commandType);
   process.env.AKAN_PUBLIC_APP_NAME = "akan-test";
   process.env.AKAN_PUBLIC_REPO_NAME = "akan";
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.test";
   process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-  if (options.appDir === undefined) delete process.env.AKAN_APP_DIR;
-  else process.env.AKAN_APP_DIR = options.appDir;
-  if (options.htmlCacheEnabled === undefined) delete process.env.AKAN_HTML_RESULT_CACHE;
-  else process.env.AKAN_HTML_RESULT_CACHE = options.htmlCacheEnabled;
-  if (options.htmlCachePaths === undefined) delete process.env.AKAN_HTML_RESULT_CACHE_PATHS;
-  else process.env.AKAN_HTML_RESULT_CACHE_PATHS = options.htmlCachePaths;
+  setEnv("AKAN_APP_DIR", options.appDir);
+  setEnv("AKAN_HTML_RESULT_CACHE", options.htmlCacheEnabled);
+  setEnv("AKAN_HTML_RESULT_CACHE_PATHS", options.htmlCachePaths);
   delete process.env.AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS;
   process.env.AKAN_HTML_RESULT_CACHE_TTL = "30";
-  if (options.htmlCacheMaxBodyBytes === undefined) delete process.env.AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES;
-  else process.env.AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES = options.htmlCacheMaxBodyBytes;
+  setEnv("AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES", options.htmlCacheMaxBodyBytes);
 
   const originalRender = SsrFromRscRenderer.prototype.render;
   let renderCount = 0;
@@ -167,12 +179,7 @@ async function withFullSsrCacheHarness<T>(
     options.onRenderInput?.(input);
     renderCount += 1;
     const pathname = input.request ? new URL(input.request.url).pathname : "/unknown";
-    return new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(encoder.encode(`<html><body>${pathname}:render-${renderCount}</body></html>`));
-        controller.close();
-      },
-    });
+    return streamOf(`<html><body>${pathname}:render-${renderCount}</body></html>`);
   };
 
   const fakeWorker = options.worker ?? createFakeRscWorker();
@@ -192,10 +199,7 @@ async function withFullSsrCacheHarness<T>(
   } finally {
     router.dispose();
     SsrFromRscRenderer.prototype.render = originalRender;
-    for (const [key, value] of Object.entries(envSnapshot)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
+    for (const [key, value] of Object.entries(envSnapshot)) setEnv(key, value);
   }
 }
 
@@ -256,21 +260,15 @@ describe("WebRouter sub route host resolution", () => {
     headers: Record<string, string>,
     { env }: { env?: string } = {},
   ): Promise<string | null> {
-    const previous = process.env.AKAN_SUB_ROUTE_HOSTS;
-    if (env === undefined) delete process.env.AKAN_SUB_ROUTE_HOSTS;
-    else process.env.AKAN_SUB_ROUTE_HOSTS = env;
-    try {
-      return await withFullSsrCacheHarness(
+    return await withEnv("AKAN_SUB_ROUTE_HOSTS", env, () =>
+      withFullSsrCacheHarness(
         async ({ renderEnvRoutes, fakeWorker }) => {
           await renderEnvRoutes["/__rsc"](new Request("http://internal/__rsc?url=%2Fen%2Fhome", { headers }));
           return fakeWorker.renderCalls[0]?.headers.get("x-base-path") ?? null;
         },
         { artifact: artifactWithSubRoutes() },
-      );
-    } finally {
-      if (previous === undefined) delete process.env.AKAN_SUB_ROUTE_HOSTS;
-      else process.env.AKAN_SUB_ROUTE_HOSTS = previous;
-    }
+      ),
+    );
   }
 
   test("falls back to a host injected through AKAN_SUB_ROUTE_HOSTS", async () => {
@@ -309,21 +307,15 @@ describe("WebRouter local sub route index", () => {
     pathname: string,
     { env, artifact }: { env?: string; artifact?: BaseBuildArtifact } = {},
   ): Promise<{ response: Response; renderCount: number }> {
-    const previous = process.env.AKAN_PUBLIC_ENV;
-    if (env === undefined) delete process.env.AKAN_PUBLIC_ENV;
-    else process.env.AKAN_PUBLIC_ENV = env;
-    try {
-      return await withFullSsrCacheHarness(
+    return await withEnv("AKAN_PUBLIC_ENV", env, () =>
+      withFullSsrCacheHarness(
         async ({ fullSsr, fakeWorker }) => {
           const response = await fullSsr(new Request(`https://akan.example.test${pathname}`));
           return { response, renderCount: fakeWorker.renderCalls.length };
         },
         { artifact: artifact ?? artifactWithSubRoutes() },
-      );
-    } finally {
-      if (previous === undefined) delete process.env.AKAN_PUBLIC_ENV;
-      else process.env.AKAN_PUBLIC_ENV = previous;
-    }
+      ),
+    );
   }
 
   test("serves a basePath picker at the site root instead of a 404", async () => {
@@ -452,11 +444,9 @@ describe("WebRouter deep link associations", () => {
     relation: string[];
     target: { namespace: string; package_name: string; sha256_cert_fingerprints: string[] };
   }
-  const requestAssetLinks = async (env: string) => {
-    const previous = process.env.AKAN_PUBLIC_ENV;
-    process.env.AKAN_PUBLIC_ENV = env;
-    try {
-      return await withFullSsrCacheHarness(
+  const requestAssetLinks = async (env: string) =>
+    await withEnv("AKAN_PUBLIC_ENV", env, () =>
+      withFullSsrCacheHarness(
         async ({ renderEnvRoutes }) => {
           const response = await renderEnvRoutes["/.well-known/assetlinks.json"](
             new Request("https://minimal.app/.well-known/assetlinks.json"),
@@ -465,12 +455,8 @@ describe("WebRouter deep link associations", () => {
           return (await response.json()) as AssetLink[];
         },
         { artifact: artifactWithDeepLinks() },
-      );
-    } finally {
-      if (previous === undefined) delete process.env.AKAN_PUBLIC_ENV;
-      else process.env.AKAN_PUBLIC_ENV = previous;
-    }
-  };
+      ),
+    );
 
   test("serves android asset links from deep link metadata", async () => {
     expect(await requestAssetLinks("main")).toEqual([
@@ -506,8 +492,7 @@ describe("WebRouter deep link associations", () => {
 });
 
 describe("WebRouter firebase messaging service worker", () => {
-  //* The worker is the push plugin's asset (it writes `public/firebase-messaging-sw.js`). A framework route
-  //* for the same path matches ahead of the static fallback and shadows it with no way to tell from outside.
+  //* The push plugin writes `public/firebase-messaging-sw.js`; a framework route would silently shadow that asset.
   test("is not a framework route, so the app's own public asset is what gets served", async () => {
     const routeKeys = await withFullSsrCacheHarness(async ({ renderEnvRoutes }) => Object.keys(renderEnvRoutes));
 
@@ -554,12 +539,7 @@ describe("WebRouter RSC stream response", () => {
   test("leaves late redirects in the streamed Flight payload for client fallback", async () => {
     const response = await createRscNavigationStreamResponse({
       type: "stream",
-      stream: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode('0:E{"digest":"AKAN_REDIRECT"}\n'));
-          controller.close();
-        },
-      }),
+      stream: streamOf('0:E{"digest":"AKAN_REDIRECT"}\n'),
       lateControl: Promise.resolve({ type: "redirect", location: "/target", method: "replace", status: 307 }),
       cacheState: Promise.resolve({ cacheable: false, reason: "late-redirect" }),
       cancel: () => {},
@@ -574,12 +554,7 @@ describe("WebRouter RSC stream response", () => {
   test("exposes RSC navigation trace metadata on response headers", async () => {
     const response = await createRscNavigationStreamResponse({
       type: "stream",
-      stream: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode("0:null\n"));
-          controller.close();
-        },
-      }),
+      stream: streamOf("0:null\n"),
       trace: {
         navId: "7",
         pathname: "/en/docs",
@@ -626,12 +601,7 @@ describe("WebRouter RSC stream response", () => {
   test("exposes same-route searchParams patch trace metadata on response headers", async () => {
     const response = await createRscNavigationStreamResponse({
       type: "stream",
-      stream: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode("0:null\n"));
-          controller.close();
-        },
-      }),
+      stream: streamOf("0:null\n"),
       trace: {
         navId: "8",
         pathname: "/en/docs",
@@ -735,12 +705,7 @@ describe("WebRouter RSC stream response", () => {
   test("preserves RSC navigation status while streaming", async () => {
     const response = await createRscNavigationStreamResponse({
       type: "stream",
-      stream: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode("flight"));
-          controller.close();
-        },
-      }),
+      stream: streamOf("flight"),
       status: 404,
       lateControl: Promise.resolve(null),
       cacheState: Promise.resolve({ cacheable: false, reason: "not-found" }),
@@ -818,22 +783,6 @@ describe("WebRouter HTML cache streaming", () => {
     expect(resolveRouteCacheStoreTtl(120, { cacheable: true, revalidate: false })).toBeNull();
   });
 
-  test("uses shared allow and deny semantics for HTML cache paths", () => {
-    const env = {
-      AKAN_HTML_RESULT_CACHE_PATHS: " /docs, /blog ",
-      AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS: "/docs/private",
-    };
-
-    expect(isHtmlRouteCachePathAllowed("/docs", env)).toBe(true);
-    expect(isHtmlRouteCachePathAllowed("/docs/intro", env)).toBe(true);
-    expect(isHtmlRouteCachePathAllowed("/docs-private", env)).toBe(false);
-    expect(isHtmlRouteCachePathAllowed("/docs/private", env)).toBe(false);
-    expect(isHtmlRouteCachePathAllowed("/docs/private/child", env)).toBe(false);
-    expect(isHtmlRouteCachePathAllowed("/docs/private-ish", env)).toBe(true);
-    expect(isHtmlRouteCachePathAllowed("/other", env)).toBe(false);
-    expect(isHtmlRouteCachePathAllowed("/other", {}, { defaultAllow: true })).toBe(true);
-  });
-
   test("passes through the first chunk before caching the completed HTML", async () => {
     let cachedHtml = "";
     const stream = cacheHtmlWhileStreaming(
@@ -870,12 +819,7 @@ describe("WebRouter HTML cache streaming", () => {
   test("passes through completed HTML but skips caching when a late redirect is observed", async () => {
     let cachedHtml = "";
     const stream = cacheHtmlWhileStreaming(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode("<html>redirect</html>"));
-          controller.close();
-        },
-      }),
+      streamOf("<html>redirect</html>"),
       (html) => {
         cachedHtml = html;
       },
@@ -893,12 +837,7 @@ describe("WebRouter HTML cache streaming", () => {
     let storeTtl = 30;
     let observedStoreTtl = 0;
     const stream = cacheHtmlWhileStreaming(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode("<html>cache</html>"));
-          controller.close();
-        },
-      }),
+      streamOf("<html>cache</html>"),
       (html) => {
         cachedHtml = html;
         observedStoreTtl = storeTtl;
@@ -919,41 +858,23 @@ describe("WebRouter HTML cache streaming", () => {
 
   test("combines worker and host cache state before writing HTML", () => {
     const hostStore = createRequestStore(new Request("https://example.test/cache"));
-
-    expect(
+    const storeTtl = (lateControl?: { type: "redirect" }) =>
       resolveHtmlRouteCacheStoreTtl({
         baseTtl: 120,
         workerCacheState: { cacheable: true, revalidate: 60 },
         hostRequestStore: hostStore,
-      }),
-    ).toBe(60);
+        lateControl,
+      });
+
+    expect(storeTtl()).toBe(60);
 
     hostStore.policy.revalidate = 30;
-    expect(
-      resolveHtmlRouteCacheStoreTtl({
-        baseTtl: 120,
-        workerCacheState: { cacheable: true, revalidate: 60 },
-        hostRequestStore: hostStore,
-      }),
-    ).toBe(30);
+    expect(storeTtl()).toBe(30);
 
     hostStore.dynamicUsage.headers = true;
-    expect(
-      resolveHtmlRouteCacheStoreTtl({
-        baseTtl: 120,
-        workerCacheState: { cacheable: true, revalidate: 60 },
-        hostRequestStore: hostStore,
-      }),
-    ).toBeNull();
+    expect(storeTtl()).toBeNull();
     hostStore.dynamicUsage.headers = false;
-    expect(
-      resolveHtmlRouteCacheStoreTtl({
-        baseTtl: 120,
-        workerCacheState: { cacheable: true, revalidate: 60 },
-        hostRequestStore: hostStore,
-        lateControl: { type: "redirect" },
-      }),
-    ).toBeNull();
+    expect(storeTtl({ type: "redirect" })).toBeNull();
   });
 
   test("blocks HTML cache writes for worker controls and host dynamic usage", () => {
@@ -994,12 +915,7 @@ describe("WebRouter HTML cache streaming", () => {
     let cachedHtml = "";
     let skipReason: string | undefined;
     const stream = cacheHtmlWhileStreaming(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode("<html>too-large</html>"));
-          controller.close();
-        },
-      }),
+      streamOf("<html>too-large</html>"),
       (html) => {
         cachedHtml = html;
       },
