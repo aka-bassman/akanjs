@@ -20,14 +20,7 @@ const IMPLICIT_DICT_DIR = path.join(".akan", "generated", "dict");
 const IMPLICIT_OVERRIDES_DIR = path.join(".akan", "generated", "overrides");
 const OVERRIDES_KEY_RE = /^\.\/(.+\/)?_overrides\.(tsx|ts|jsx|js)$/;
 
-/**
- * A `_overrides.tsx` manifest is a plain, server-safe module (`export default override({ Modal: BrandModal })`)
- * with no `"use client"` directive. The `UiOverrideProvider` that consumes it is a client component, so the
- * build emits a `"use client"` wrapper layout that reads the manifest's default map and mounts the provider
- * around the subtree. As a normal `"use client"` module the wrapper participates in client-entry discovery and
- * the RSC client manifest, so the server (as a client reference) and the client (as the real component) both
- * resolve it — and the author never writes `"use client"`.
- */
+// UiOverrideProvider is a client component, so `_overrides.tsx` mounts through a generated "use client" layout.
 async function writeGeneratedOverridesLayoutFile(opts: {
   appCwdPath: string;
   key: string;
@@ -185,8 +178,7 @@ async function writeGeneratedRootLayoutFile(opts: {
   const clientImport = opts.includeStInit
     ? `import { st } from "@apps/${opts.appName}/client";\nvoid st;\n`
     : `import "@apps/${opts.appName}/client";\n`;
-  // Both user modules go through `resolveRouteModule`: a `rootLayout()` chain and the legacy named exports read
-  // the same afterwards, and this file never has to know which shape the app wrote.
+  //? resolveRouteModule reads a rootLayout() chain and the legacy named exports alike.
   const inheritedLabel = inheritedSourceAbsPath ? path.relative(opts.appCwdPath, inheritedSourceAbsPath) : "";
   const inheritedImport = inheritedSourceSpecifier
     ? `import * as inheritedModule from ${JSON.stringify(inheritedSourceSpecifier)};\nconst inheritedLayout = resolveRouteModule(inheritedModule as never, ${JSON.stringify(inheritedLabel)}).module as LayoutModule;\n`
@@ -200,9 +192,8 @@ async function writeGeneratedRootLayoutFile(opts: {
     ? await AsyncDefaultExportDetector.detect(opts.boundary.sourceAbsPath)
     : false;
   const userLayoutElement = "<UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>";
-  // React has no async client component, so the CSR bundle calls an async layout and awaits its node the way
-  // `RenderLayer` does for pages. The RSC render keeps the element: awaiting there would hold the shell behind
-  // the layout's own awaits instead of streaming it as its own Flight chunk.
+  // React has no async client component, so CSR awaits an async layout's node; RSC keeps the element, since
+  // awaiting there would hold the shell behind the layout's own awaits instead of streaming it.
   const layoutSignature = isAsyncUserLayout
     ? "export default async function GeneratedLayout"
     : "export default function GeneratedLayout";
@@ -284,10 +275,6 @@ ${layoutBinding}  return ${layoutReturn};
   return absPath;
 }
 
-/**
- * When no root `page/_layout.*` exists on disk, merge a generated implicit root layout
- * (with generated client runtime registration and optional `void st` when `lib/st.ts` exists).
- */
 export async function resolveSsrPageEntries(opts: {
   appCwdPath: string;
   appName: string;
@@ -310,9 +297,7 @@ export async function resolveSsrPageEntries(opts: {
       .filter((key) => !rootLayoutKeys.has(key))
       .map(async (key) => {
         const userAbsPath = path.resolve(absPageDir, key);
-        // `_overrides.tsx` is served through a generated `"use client"` wrapper layout that mounts the provider,
-        // so the author writes no directive; the raw manifest becomes a build seed so its slot components (and
-        // the manifest itself) enter the client graph / RSC client manifest.
+        //? The raw manifest is a seed, so it and its slot components enter the client graph and RSC client manifest.
         if (OVERRIDES_KEY_RE.test(key)) {
           const moduleAbsPath = await writeGeneratedOverridesLayoutFile({
             appCwdPath: opts.appCwdPath,
