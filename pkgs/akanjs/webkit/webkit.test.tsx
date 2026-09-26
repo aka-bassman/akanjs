@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { Location, PathRoute, RouteGuide } from "akanjs/client";
-import { createRobotPage } from "./createRobotPage";
-import { createSitemapPage } from "./createSitemapPage";
+import { createRobotPage, createSitemapPage } from "./seoPages";
 
 type RenderHookResult<T> = {
   get current(): T;
