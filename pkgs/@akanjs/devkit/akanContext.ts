@@ -122,8 +122,7 @@ export type JsonRpcRequest = {
 export type McpFraming = "content-length" | "newline";
 export type AkanMcpMode = "readonly" | "plan" | "apply";
 
-// Coding-agent tools that can host the Akan MCP server. Cursor and Claude Code both read a JSON
-// `mcpServers` map; Codex reads a TOML `[mcp_servers.<name>]` table.
+// Cursor and Claude Code read a JSON `mcpServers` map; Codex reads a TOML `[mcp_servers.<name>]` table.
 export type AkanMcpInstallTarget = "cursor" | "claude" | "codex";
 
 export type CursorMcpConfig = {
@@ -132,11 +131,6 @@ export type CursorMcpConfig = {
 
 export const guidelineResourceUri = (name: string) => `akan://guidelines/${name}`;
 
-/**
- * Resources that exist whatever the workspace holds. The guideline entries are **not** here: they are
- * one per directory under `cli/guidelines/`, and a hardcoded pair listed 2 of 31 while `readResource`
- * threw on the other 29. `buildResourceList` is the only place the two halves meet.
- */
 const staticResourceList = [
   { uri: "akan://docs/framework", name: "Akan framework guide", mimeType: "text/markdown" },
   { uri: "akan://workspace/summary", name: "Workspace summary", mimeType: "application/json" },
@@ -167,11 +161,8 @@ export const akanMcpInstallConfigPaths: Record<AkanMcpInstallTarget, string> = {
   codex: codexMcpConfigPath,
 };
 
-// `akan mcp` resolves the workspace from process.cwd(), so every launcher must run it from the
-// workspace root. Cursor expands its own ${workspaceFolder} variable. Claude Code does not guarantee
-// the server's cwd but sets CLAUDE_PROJECT_DIR in its environment, so we cd into that at runtime.
-// Codex inherits its own launch cwd (it also discovers .codex/config.toml from cwd), so it runs the
-// command directly and must be started from the workspace root.
+// `akan mcp` resolves the workspace from its cwd: Cursor expands ${workspaceFolder}, Claude Code only sets
+// CLAUDE_PROJECT_DIR (its cwd is not guaranteed), and Codex runs from its own launch cwd.
 const cursorWorkspaceFolder = "$" + "{workspaceFolder}";
 const claudeProjectDir = "$CLAUDE_PROJECT_DIR";
 
@@ -190,19 +181,17 @@ export const createAkanClaudeMcpServer = (mode: AkanMcpMode = "readonly") => ({
   args: ["-lc", akanMcpCommand(mode, { cd: claudeProjectDir })],
 });
 
-// JSON-config targets (Cursor, Claude Code) share the same `mcpServers` entry shape.
 export const createAkanMcpServer = (target: "cursor" | "claude", mode: AkanMcpMode = "readonly") =>
   target === "cursor" ? createAkanCursorMcpServer(mode) : createAkanClaudeMcpServer(mode);
 
 export const akanCursorMcpServer = createAkanCursorMcpServer();
 
-// Codex config is TOML and we have no TOML serializer, so we build the `[mcp_servers.akan]` table as text.
+// No TOML serializer is bundled, so the `[mcp_servers.akan]` table is written as text.
 export const codexMcpServerTableHeader = "[mcp_servers.akan]";
 export const createAkanCodexMcpServerBlock = (mode: AkanMcpMode = "readonly") =>
   `${codexMcpServerTableHeader}\ncommand = "bash"\nargs = ["-lc", "${akanMcpCommand(mode)}"]\n`;
 
-// A TOML table runs from its header until the next top-level `[header]` or EOF. We upsert only the
-// akan table and preserve everything else in the file, mirroring the JSON merge behavior.
+// A TOML table runs from its header until the next top-level `[header]` or EOF.
 const codexAkanTablePattern = /^\[mcp_servers\.akan\][^\n]*\n(?:(?!\[)[^\n]*(?:\n|$))*/m;
 
 export const upsertCodexMcpServerBlock = (
@@ -635,9 +624,7 @@ export class AkanContextAnalyzer {
     };
   }
 
-  // The conventions in AGENTS.md ship with the package, but nothing re-renders them on `bun update` — a workspace
-  // keeps whichever release wrote its block until someone re-runs the install. Comparing the stamp against the
-  // running devkit is the only signal that the guide an agent is reading is older than the framework it describes.
+  // Nothing re-renders the AGENTS.md block on `bun update`, so the version stamp is the only staleness signal.
   static async #agentGuideDrift(workspace: WorkspaceExecutor) {
     const installed = await readDevkitVersion();
     if (!installed) return null;
@@ -784,8 +771,7 @@ export class AkanContextAnalyzer {
       }
     }
 
-    // Recipe SSOT advisory (항상 warning — 차단하지 않음): recipe 지문이 인라인 className 으로 재작성된
-    // 곳의 추이를 보이게 한다. 유입이 실제로 재발하면 그때 lint 승격을 검토한다 — 증거 기반 에스컬레이션.
+    //* Advisory only (warning): promoted to lint only if inline re-authoring actually recurs.
     for (const sys of [...context.apps, ...context.libs]) {
       const sources = await collectRecipeSources(path.join(workspace.workspaceRoot, sys.path, "ui"), "ui");
       if (sources.length === 0) continue;
@@ -815,11 +801,7 @@ export class AkanContextAnalyzer {
       });
     }
 
-    // Recipe index freshness. The recipe indexes are generated and read as authoritative — a recipe missing
-    // from its index gets re-invented inline, and a name lingering in it gets imported and fails. The index is
-    // split by ownership: the root AGENTS.md `## Recipes` lists framework recipes only, and every app/lib lists
-    // what it may additionally import in its own AGENTS.md `## Recipes In Scope`. Doctor never writes, so this
-    // is the check that catches a *committed* stale index (lint/sync self-heal the working tree instead).
+    // Doctor never writes, so this is what catches a committed stale recipe index (lint and sync self-heal the tree).
     const scanNames = async (uiDirPath: string, basename?: string) =>
       new Set(scanRecipes(await collectRecipeSources(uiDirPath, "ui", basename)).map((info) => info.name));
     const declaredByImport = new Map<string, Set<string>>();
