@@ -35,10 +35,10 @@ import {
   type WorkflowValidationKind,
   type WorkflowValidationRunReport,
   workflowCommandsForPlan,
+  workflowPathsForPlan,
   workflowPlanApproval,
   writeWorkflowRunArtifact,
 } from "@akanjs/devkit/workflow";
-import { capitalize } from "akanjs/common";
 import { ModuleScript } from "../module/module.script";
 import { PrimitiveScript } from "../primitive/primitive.script";
 import { spawnShell } from "../repair/repair.runner";
@@ -147,23 +147,6 @@ const defaultValidationExecutor =
   };
 
 const readJsonFile = async (filePath: string) => JSON.parse(await readFile(resolvePath(filePath), "utf8"));
-
-const planInputString = (plan: WorkflowPlan, key: string) => {
-  const value = plan.inputs[key];
-  return typeof value === "string" ? value : "";
-};
-
-const workflowPathsForPlanLike = (plan: WorkflowPlan) => {
-  const app = planInputString(plan, "app");
-  const module = planInputString(plan, "module");
-  const moduleClass = module ? capitalize(module) : "<Module>";
-  return plan.predictedChanges.map((change) =>
-    change.target
-      .replace(/^\*\//, app ? `apps/${app}/` : "")
-      .replaceAll("<module>", module || "<module>")
-      .replaceAll("<Module>", moduleClass),
-  );
-};
 
 const workflowDiagnosticFromDoctor = (
   {
@@ -472,7 +455,7 @@ export class WorkflowRunner extends runner("workflow") {
           plan: parsed,
           commands: workflowCommandsForPlan(parsed),
           diagnostics: parsed.diagnostics,
-          changedFiles: workflowPathsForPlanLike(parsed),
+          changedFiles: workflowPathsForPlan(parsed),
           repairActions: [],
         };
       }
