@@ -36,6 +36,15 @@ export interface PlatformRunContext {
 export abstract class PlatformTestTarget {
   static readonly installIdleMs = 5 * 60_000;
   static readonly testIdleMs = 2 * 60_000;
+  protected static readonly gitIdentityEnv = {
+    GIT_AUTHOR_NAME: "akan-test",
+    GIT_AUTHOR_EMAIL: "akan-test@localhost",
+    GIT_COMMITTER_NAME: "akan-test",
+    GIT_COMMITTER_EMAIL: "akan-test@localhost",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "init.defaultBranch",
+    GIT_CONFIG_VALUE_0: "main",
+  };
 
   abstract readonly platform: RemoteTestPlatform;
   abstract readonly policy: PlatformGatePolicy;
@@ -115,5 +124,19 @@ export abstract class PlatformTestTarget {
 
   #logPath(context: PlatformRunContext, name: string) {
     return path.join(context.logDir, this.platform, `${name}.log`);
+  }
+
+  protected static async spawnText(command: string[], stdin?: string) {
+    const proc = Bun.spawn(command, {
+      stdin: stdin === undefined ? "ignore" : new Response(stdin),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { stdout, stderr, exitCode };
   }
 }
