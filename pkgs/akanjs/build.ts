@@ -173,8 +173,7 @@ const formatDiagnosticMessages = (diagnostics: ts.Diagnostic[]) =>
 
 const collectSourceFiles = async (packageDir: string, excludedEntries: string[] = []) => {
   const files: string[] = [];
-  const glob = new Bun.Glob("**/*.{ts,tsx,js,jsx}");
-  for await (const file of glob.scan({ cwd: packageDir, onlyFiles: true })) {
+  for await (const file of new Bun.Glob("**/*.{ts,tsx,js,jsx}").scan({ cwd: packageDir, onlyFiles: true })) {
     const filePath = path.join(packageDir, file);
     if (isEmittableSourceFile(packageDir, filePath, excludedEntries)) files.push(filePath);
   }
@@ -218,8 +217,7 @@ const emitDeclarations = async (packageDir: string, typesOutDir: string, exclude
 };
 
 const copyExistingDeclarationFiles = async () => {
-  const glob = new Bun.Glob("**/*.d.ts");
-  for await (const file of glob.scan({ cwd: PACKAGE_DIR, onlyFiles: true })) {
+  for await (const file of new Bun.Glob("**/*.d.ts").scan({ cwd: PACKAGE_DIR, onlyFiles: true })) {
     const sourcePath = path.join(PACKAGE_DIR, file);
     const targetPath = path.join(TYPES_OUT_DIR, file);
     await mkdir(path.dirname(targetPath), { recursive: true });
@@ -228,8 +226,7 @@ const copyExistingDeclarationFiles = async () => {
 };
 
 const writeDirectoryDeclarationFacades = async (targetDir: string) => {
-  const glob = new Bun.Glob("**/index.d.ts");
-  for await (const file of glob.scan({ cwd: targetDir, onlyFiles: true })) {
+  for await (const file of new Bun.Glob("**/index.d.ts").scan({ cwd: targetDir, onlyFiles: true })) {
     const dirname = path.dirname(file);
     if (dirname === ".") continue;
 
@@ -268,26 +265,16 @@ const rewriteExportsTypes = (packageJson: { exports?: Record<string, unknown> })
   const rewrittenExports: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(exportsMap)) {
-    if (typeof value === "string") {
-      if (isSourceFile(value) || value.endsWith("/*")) {
-        rewrittenExports[key] = toTypesExport(value);
-        addExtensionWildcardTypes(rewrittenExports, key, value);
-      } else {
-        rewrittenExports[key] = value;
-      }
-      continue;
-    }
-
-    if (value && typeof value === "object" && "types" in value) {
+    if (typeof value === "string" && (isSourceFile(value) || value.endsWith("/*"))) {
+      rewrittenExports[key] = toTypesExport(value);
+      addExtensionWildcardTypes(rewrittenExports, key, value);
+    } else if (value && typeof value === "object" && "types" in value) {
       const exportValue = value as Record<string, unknown>;
       rewrittenExports[key] = {
         types: typeof exportValue.types === "string" ? toDeclarationPath(exportValue.types) : exportValue.types,
         ...Object.fromEntries(Object.entries(exportValue).filter(([condition]) => condition !== "types")),
       };
-      continue;
-    }
-
-    rewrittenExports[key] = value;
+    } else rewrittenExports[key] = value;
   }
 
   packageJson.exports = rewrittenExports;
@@ -298,9 +285,8 @@ const build = async () => {
     await $`rm -rf ${OUT_DIR}`;
     await $`mkdir -p ${OUT_DIR}`;
     await $`cp -R ${PACKAGE_DIR}/. ${OUT_DIR}`;
-    await $`rm -rf ${OUT_DIR}/build.ts`;
-    await rm(`${OUT_DIR}/build`, { recursive: true, force: true });
-    await rm(`${OUT_DIR}/tsconfig.json`, { force: true });
+    for (const entry of ["build.ts", "build", "tsconfig.json"])
+      await rm(`${OUT_DIR}/${entry}`, { recursive: true, force: true });
     await embedPackageSource();
     await removeTestFiles();
     await rewriteEmbeddedSpecifiers(OUT_DIR, EMBEDDED_OUT_DIR);

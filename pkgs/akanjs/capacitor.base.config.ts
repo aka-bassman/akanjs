@@ -91,11 +91,10 @@ const localCsrUrl = (ip: string, target: AkanMobileTargetConfig, appInfo: AppSca
 
 export const withBase = (
   configImp: (config: CapacitorConfig, target: AkanMobileTargetConfig) => CapacitorConfig = (config) => config,
-  appData?: AppScanResult,
+  appInfo?: AppScanResult,
   targetName?: string,
 ) => {
   const ip = getLocalIP();
-  const appInfo = appData;
   if (!appInfo) throw new Error("withBase requires apps/<app>/akan.app.json metadata.");
   const target = resolveTarget(appInfo, targetName);
   const {
