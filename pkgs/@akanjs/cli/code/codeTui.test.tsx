@@ -1,9 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { PassThrough } from "node:stream";
 import type { CodeAgent } from "@akanjs/devkit/codeAgent";
 import { akanCodePaths } from "@akanjs/devkit/codeAgent/agent/akanCodePaths";
 import type {
@@ -13,44 +11,10 @@ import type {
   CodeAgentMcpStatus,
   CodeAgentSessionInfo,
 } from "akanjs/common";
+import { csi, esc, FakeStdout, makeStdin } from "../ui/fakeTerminal.spec";
 import { CodeTui, type CodeTuiExit } from "./CodeTui";
 import { CodeTuiClipboard } from "./CodeTuiClipboard";
 import { CodeTuiMouse } from "./CodeTuiMouse";
-
-class FakeStdout extends EventEmitter {
-  columns = 90;
-  rows = 20;
-  // Only a tty reaches Ink's fullscreen branch, which the caret assertions below must be able to tell apart.
-  isTTY = true;
-  readonly frames: string[] = [];
-  write = (frame: string) => {
-    this.frames.push(frame);
-    return true;
-  };
-  // With a cursor position set, Ink follows each content frame with a cursor-only write.
-  get lastFrame() {
-    const csi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[a-zA-Z]`, "g");
-    for (let at = this.frames.length - 1; at >= 0; at -= 1) {
-      const text = (this.frames[at] ?? "").replace(csi, "");
-      if (text.trim()) return text;
-    }
-    return "";
-  }
-}
-
-const makeStdin = () => {
-  const stdin = new PassThrough() as PassThrough & {
-    isTTY: boolean;
-    setRawMode: (raw: boolean) => void;
-    ref: () => void;
-    unref: () => void;
-  };
-  stdin.isTTY = true;
-  stdin.setRawMode = () => undefined;
-  stdin.ref = () => undefined;
-  stdin.unref = () => undefined;
-  return stdin;
-};
 
 const info: CodeAgentSessionInfo = {
   sessionId: "s1",
@@ -156,9 +120,7 @@ class FakeAgent {
   }
 }
 
-const esc = String.fromCharCode(27);
 const keys = { backspace: String.fromCharCode(127) };
-const csi = new RegExp(`${esc}\\[[0-9;?]*[a-zA-Z]`, "g");
 
 // Ink moves the cursor "up N from the line after the last one", so the row is read from the frame of the same write.
 const caretOf = (stdout: FakeStdout) => {
@@ -191,7 +153,8 @@ beforeAll(() => {
 const running: { tui: CodeTui; done: Promise<CodeTuiExit | undefined> }[] = [];
 
 const mount = (root = "/repo") => {
-  const stdout = new FakeStdout();
+  // Only a tty reaches Ink's fullscreen branch, which the caret assertions below must be able to tell apart.
+  const stdout = new FakeStdout(90, 20, true);
   const stdin = makeStdin();
   const agent = new FakeAgent(root);
   const tui = new CodeTui(agent as unknown as CodeAgent, {

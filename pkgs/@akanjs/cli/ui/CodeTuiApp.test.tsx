@@ -1,44 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { EventEmitter } from "node:events";
-import { PassThrough } from "node:stream";
 import { render } from "ink";
 import type { CodeTuiLine } from "../code/CodeTuiLines";
 import { type CodeTuiActions, CodeTuiApp, type CodeTuiSnapshot } from "./CodeTuiApp";
+import { esc, FakeStdout, makeStdin, nextFrame } from "./fakeTerminal.spec";
 
-class FakeStdout extends EventEmitter {
-  columns = 90;
-  rows = 16;
-  readonly frames: string[] = [];
-  write = (frame: string) => {
-    this.frames.push(frame);
-    return true;
-  };
-  // With a cursor position set, Ink follows each content frame with a cursor-only write.
-  get lastFrame() {
-    const csi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[a-zA-Z]`, "g");
-    for (let at = this.frames.length - 1; at >= 0; at -= 1) {
-      const text = (this.frames[at] ?? "").replace(csi, "");
-      if (text.trim()) return text;
-    }
-    return "";
-  }
-}
-
-const makeStdin = () => {
-  const stdin = new PassThrough() as PassThrough & {
-    isTTY: boolean;
-    setRawMode: (raw: boolean) => void;
-    ref: () => void;
-    unref: () => void;
-  };
-  stdin.isTTY = true;
-  stdin.setRawMode = () => undefined;
-  stdin.ref = () => undefined;
-  stdin.unref = () => undefined;
-  return stdin;
-};
-
-const esc = String.fromCharCode(27);
 const keys = {
   up: `${esc}[A`,
   down: `${esc}[B`,
@@ -58,13 +23,10 @@ interface Harness {
   press: (input: string) => Promise<void>;
 }
 
-/** Ink throttles frame writes to `maxFps: 30`; anything shorter reads the previous frame. */
-const nextFrame = () => Bun.sleep(80);
-
 const harnesses: Harness[] = [];
 
 const mount = (patch: Partial<CodeTuiSnapshot> = {}): Harness => {
-  const stdout = new FakeStdout();
+  const stdout = new FakeStdout(90, 16);
   const stdin = makeStdin();
   const calls: string[] = [];
   const snapshot: CodeTuiSnapshot = {

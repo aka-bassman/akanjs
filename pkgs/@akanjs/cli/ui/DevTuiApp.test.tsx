@@ -1,37 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { EventEmitter } from "node:events";
-import { PassThrough } from "node:stream";
 import { render } from "ink";
 import type { DevLogLine } from "../application/devLogBuffer";
 import { HOST_SOURCE } from "../application/devLogBuffer";
 import { type DevTuiActions, DevTuiApp, type DevTuiRailRow, type DevTuiSnapshot } from "./DevTuiApp";
+import { esc, FakeStdout, makeStdin, nextFrame } from "./fakeTerminal.spec";
 
-class FakeStdout extends EventEmitter {
-  columns = 100;
-  rows = 14;
-  readonly frames: string[] = [];
-  write = (frame: string) => {
-    this.frames.push(frame);
-    return true;
-  };
-  get lastFrame() {
-    return (this.frames.at(-1) ?? "").replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
+class DevStdout extends FakeStdout {
+  override get lastFrame() {
+    return (this.frames.at(-1) ?? "").replace(new RegExp(`${esc}\\[[0-9;]*m`, "g"), "");
   }
 }
-
-const makeStdin = () => {
-  const stdin = new PassThrough() as PassThrough & {
-    isTTY: boolean;
-    setRawMode: (raw: boolean) => void;
-    ref: () => void;
-    unref: () => void;
-  };
-  stdin.isTTY = true;
-  stdin.setRawMode = () => undefined;
-  stdin.ref = () => undefined;
-  stdin.unref = () => undefined;
-  return stdin;
-};
 
 const lineOf = (seq: number, app: string, text: string, source = HOST_SOURCE): DevLogLine => ({
   seq,
@@ -50,20 +28,17 @@ const railOf = (): DevTuiRailRow[] => [
 ];
 
 interface Harness {
-  stdout: FakeStdout;
+  stdout: DevStdout;
   calls: string[];
   unmount: () => void;
   press: (input: string) => Promise<void>;
   setSnapshot: (patch: Partial<DevTuiSnapshot>) => void;
 }
 
-/** Ink throttles frame writes to `maxFps: 30`; anything shorter reads the previous frame. */
-const nextFrame = () => Bun.sleep(80);
-
 const harnesses: Harness[] = [];
 
 const mount = (patch: Partial<DevTuiSnapshot> = {}): Harness => {
-  const stdout = new FakeStdout();
+  const stdout = new DevStdout(100, 14);
   const stdin = makeStdin();
   const calls: string[] = [];
   let snapshot: DevTuiSnapshot = {
@@ -282,7 +257,6 @@ describe("DevTuiApp", () => {
   test("arrows scroll by a line and shift-arrows by a page", async () => {
     const harness = mount({ logRows: 10 });
     await nextFrame();
-    const esc = String.fromCharCode(27);
     await harness.press(`${esc}[A`);
     await harness.press(`${esc}[B`);
     await harness.press(`${esc}[5~`);
