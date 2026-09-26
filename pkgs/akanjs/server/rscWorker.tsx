@@ -267,7 +267,8 @@ export class RscRenderer {
 
   start(): void {
     this.#logger.verbose("sending hello to host");
-    this.#startMetricsReporting();
+    if (!this.#metricsTimer)
+      this.#metricsTimer = ProcessMetricsCollector.startReporting(() => this.#sendMetricsReport());
     this.#send({ type: "hello" });
   }
 
@@ -757,15 +758,6 @@ export class RscRenderer {
       this.#cancelledRenderRequests.delete(requestId);
       this.#stats.inFlightRenderCount = Math.max(0, this.#stats.inFlightRenderCount - 1);
     }
-  }
-
-  #startMetricsReporting() {
-    if (this.#metricsTimer) return;
-    const report = () => {
-      void this.#sendMetricsReport();
-    };
-    report();
-    this.#metricsTimer = setInterval(report, ProcessMetricsCollector.parseMemoryLogIntervalMs());
   }
 
   async #sendMetricsReport() {

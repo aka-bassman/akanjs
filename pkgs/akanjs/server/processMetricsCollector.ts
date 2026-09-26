@@ -63,6 +63,15 @@ export class ProcessMetricsCollector {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : ProcessMetricsCollector.#defaultMemoryLogIntervalMs;
   }
 
+  /** Calls `report` now and then every AKAN_MEMORY_LOG_INTERVAL_MS; the caller owns the returned timer. */
+  static startReporting(report: () => Promise<void>) {
+    const tick = () => {
+      void report();
+    };
+    tick();
+    return setInterval(tick, ProcessMetricsCollector.parseMemoryLogIntervalMs());
+  }
+
   /** Idempotent; safe to call from each server role. */
   static startEventLoopLagMonitor(intervalMs = 500): void {
     ProcessMetricsCollector.#lagMonitor.start(intervalMs);
