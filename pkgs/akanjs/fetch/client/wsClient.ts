@@ -13,6 +13,7 @@ import type {
   WebsocketResData,
   WebsocketSubscribeAck,
 } from "akanjs/signal";
+import { websocketRoomContract } from "../../common/websocketContract";
 import { type ErrorConstructor, restoreRemoteError } from "./remoteError";
 
 export interface WsClientReconnectOptions {
@@ -43,7 +44,7 @@ type WsRequestPayload = unknown | unknown[];
 
 export class WsClient {
   static makeRoomId(key: string, args: unknown[]) {
-    return `${key}${args.length ? "-" : ""}${args.join("-")}`;
+    return websocketRoomContract.idOf(key, args);
   }
 
   readonly logger = new Logger("WsClient");

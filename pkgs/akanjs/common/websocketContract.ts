@@ -40,6 +40,10 @@ export const websocketHeartbeatContract = {
   makeAck: (): WebsocketHeartbeatAckData => ({ type: "pong" }),
 } as const;
 
+export const websocketRoomContract = {
+  idOf: (key: string, args: unknown[]) => `${key}${args.length ? "-" : ""}${args.join("-")}`,
+} as const;
+
 export interface WebsocketBinaryFrame {
   roomId: string;
   payload: Uint8Array;

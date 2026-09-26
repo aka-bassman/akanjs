@@ -26,6 +26,7 @@ import {
   type WebsocketAdaptor,
   WebsocketAdaptorRole,
 } from "akanjs/service";
+import { websocketRoomContract } from "../../common/websocketContract";
 import { type Endpoint, type EndpointCls, sliceEndpoint } from "../../signal/endpoint";
 import type { EndpointInfo } from "../../signal/endpointInfo";
 import type { Internal, InternalCls } from "../../signal/internal";
@@ -56,7 +57,7 @@ export class SignalResolver {
   static logger = new Logger("SignalResolver");
 
   static makeRoomId(key: string, args: unknown[]) {
-    return `${key}${args.length ? "-" : ""}${args.join("-")}`;
+    return websocketRoomContract.idOf(key, args);
   }
   static #localPublish: LocalPublish = () => {
     SignalResolver.logger.verbose(`Local publish is not initialized yet`);
