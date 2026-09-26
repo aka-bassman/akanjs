@@ -63,13 +63,7 @@ export class ApplicationReleasePackager {
     await rm(`${buildRoot}/frontend/.next`, { recursive: true, force: true });
 
     const releaseRoot = this.#app.workspace.workspaceRoot;
-    // Pass a path relative to cwd so tar never sees a Windows drive letter (e.g. "C:\...")
-    // which GNU tar would interpret as a remote "host:file" spec.
-    const releaseArchivePath = path
-      .relative(releaseRoot, `${releaseRoot}/releases/builds/${this.#app.name}-release.tar.gz`)
-      .split(path.sep)
-      .join("/");
-    await this.#app.workspace.spawn("tar", ["-zcf", releaseArchivePath, "-C", buildRoot, "./"], { cwd: releaseRoot });
+    await this.#tar(releaseRoot, `${releaseRoot}/releases/builds/${this.#app.name}-release.tar.gz`, buildRoot);
     await this.#writeCsrZipIfPresent();
     return { platformVersion };
   }
@@ -112,26 +106,19 @@ export class ApplicationReleasePackager {
     await this.#writeSourceTsconfig(sourceRoot, libDeps);
     await Bun.write(`${sourceRoot}/README.md`, readme);
     const sourceCwd = this.#app.workspace.cwdPath;
-    // Pass a path relative to cwd so tar never sees a Windows drive letter (e.g. "C:\...")
-    // which GNU tar would interpret as a remote "host:file" spec.
-    const sourceArchivePath = path
-      .relative(sourceCwd, `${sourceCwd}/releases/sources/${this.#app.name}-source.tar.gz`)
-      .split(path.sep)
-      .join("/");
-    await this.#app.workspace.spawn("tar", ["-zcf", sourceArchivePath, "-C", sourceRoot, "./"], { cwd: sourceCwd });
+    await this.#tar(sourceCwd, `${sourceCwd}/releases/sources/${this.#app.name}-source.tar.gz`, sourceRoot);
+  }
+
+  async #tar(cwd: string, archivePath: string, sourceDir: string) {
+    // Relative to cwd so tar never sees a Windows drive letter ("C:\..."), which GNU tar reads as a remote "host:file".
+    const relativeArchivePath = path.relative(cwd, archivePath).split(path.sep).join("/");
+    await this.#app.workspace.spawn("tar", ["-zcf", relativeArchivePath, "-C", sourceDir, "./"], { cwd });
   }
 
   async #resetSourceRoot(sourceRoot: string): Promise<void> {
-    if (await FileSys.dirExists(sourceRoot)) {
-      const maxRetry = 3;
-      for (let i = 0; i < maxRetry; i++) {
-        try {
-          await rm(sourceRoot, { recursive: true, force: true });
-        } catch {
-          //
-        }
-      }
-    }
+    if (await FileSys.dirExists(sourceRoot))
+      for (let attempt = 0; attempt < 3; attempt++)
+        await rm(sourceRoot, { recursive: true, force: true }).catch(() => undefined);
     await mkdir(sourceRoot, { recursive: true });
   }
 
@@ -147,6 +134,17 @@ export class ApplicationReleasePackager {
     await Bun.write(`${sourceRoot}/tsconfig.json`, JSON.stringify(tsconfig, null, 2));
   }
 
+  static #envSetup = `  cat <<EOF >> .env
+  # ENV For Server => debug | debug.local | develop | develop.local | main | main.local
+  SERVER_ENV=debug.local
+  # Run Mode For Server => federation | batch | all
+  SERVER_MODE=federation
+  # ENV For Client => debug | debug.local | develop | develop.local | main | main.local
+  AKAN_PUBLIC_CLIENT_ENV=debug.local
+  ANALYZE=false
+  EOF
+`;
+
   #confidentialReadme(): string {
     return `# ${this.#app.name}
   본 프로젝트의 소스코드 및 관련자료는 모두 비밀정보로 관리됩니다.
@@ -157,16 +155,7 @@ export class ApplicationReleasePackager {
   bun install -g bun
   bun i
 
-  cat <<EOF >> .env
-  # ENV For Server => debug | debug.local | develop | develop.local | main | main.local
-  SERVER_ENV=debug.local
-  # Run Mode For Server => federation | batch | all
-  SERVER_MODE=federation
-  # ENV For Client => debug | debug.local | develop | develop.local | main | main.local
-  AKAN_PUBLIC_CLIENT_ENV=debug.local
-  ANALYZE=false
-  EOF
-
+${ApplicationReleasePackager.#envSetup}
   akn start-backend ${this.#app.name}
   # or akn start-frontend ${this.#app.name}, etc
   \`\`\`
@@ -185,16 +174,7 @@ export class ApplicationReleasePackager {
   ## Get Started
   Run the code below.
   \`\`\`
-  cat <<EOF >> .env
-  # ENV For Server => debug | debug.local | develop | develop.local | main | main.local
-  SERVER_ENV=debug.local
-  # Run Mode For Server => federation | batch | all
-  SERVER_MODE=federation
-  # ENV For Client => debug | debug.local | develop | develop.local | main | main.local
-  AKAN_PUBLIC_CLIENT_ENV=debug.local
-  ANALYZE=false
-  EOF
-
+${ApplicationReleasePackager.#envSetup}
   akan start ${this.#app.name}
   \`\`\`
 
