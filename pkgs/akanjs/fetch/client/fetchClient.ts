@@ -196,8 +196,9 @@ export class FetchClient {
       if (signal.filter) {
         // The merged copy: a lib signal applied on its own carries only its own filters.
         const filter = this.serializedSignal[refName]?.filter ?? signal.filter;
-        this.#registerFilterSortKey(refName, filter.sortKeys, filter.sorts);
-        this.#registerFilterQuery(refName, filter.filter);
+        this.sortKeyMap.set(refName, filter.sortKeys);
+        if (filter.sorts) this.sortValueMap.set(refName, filter.sorts);
+        this.filterQueryMap.set(refName, filter.filter);
       }
     }
     return this;
@@ -222,16 +223,10 @@ export class FetchClient {
   #getOrCreateHandler(key: string): FetchHandler | undefined {
     const current = this.#handlerStore[key];
     if (current) return current;
+    if (!this.#handlerFactory.has(key)) this.#syncSharedRegistry();
     const factory = this.#handlerFactory.get(key);
-    if (factory) {
-      const handler = factory();
-      this.#handlerStore[key] = handler;
-      return handler;
-    }
-    this.#syncSharedRegistry();
-    const syncedFactory = this.#handlerFactory.get(key);
-    if (!syncedFactory) return undefined;
-    const handler = syncedFactory();
+    if (!factory) return undefined;
+    const handler = factory();
     this.#handlerStore[key] = handler;
     return handler;
   }
@@ -293,25 +288,21 @@ export class FetchClient {
     }
     return this.jwt ? { Authorization: `Bearer ${this.jwt}` } : {};
   }
-  #registerFilterSortKey(refName: string, sortKeys: string[], sorts?: { [key: string]: { [path: string]: 1 | -1 } }) {
-    this.sortKeyMap.set(refName, sortKeys);
-    if (sorts) this.sortValueMap.set(refName, sorts);
-  }
-  #registerFilterQuery(refName: string, filter: { [queryKey: string]: SerializedArg[] }) {
-    this.filterQueryMap.set(refName, filter);
-  }
   #makeHttpFn(key: string, endpoint: SerializedEndpoint, prefix?: string) {
     const argLength = endpoint.args.length;
     const serializerMap = this.#makeArgSerializer(endpoint.args);
     const parseReturn = this.#makeReturnParser(endpoint.returns);
     const { bodyArgs, uploadArgs } = FetchClient.classifyHttpArgs(endpoint.args);
+    const requestOf = (argData: unknown[]) => {
+      const args = argData.slice(0, argLength);
+      const option = argData[argLength] as FetchPolicy | undefined;
+      const argMap = new Map(serializerMap.entries().map(([key, serializer], idx) => [key, serializer(args[idx])]));
+      return { option, argMap, url: FetchClient.makeHttpUrl(key, endpoint, prefix, argMap) };
+    };
     switch (endpoint.type) {
-      case "query": {
-        const queryFn = async (...argData: unknown[]) => {
-          const args = argData.slice(0, argLength);
-          const option = argData[argLength] as FetchPolicy | undefined;
-          const argMap = new Map(serializerMap.entries().map(([key, serializer], idx) => [key, serializer(args[idx])]));
-          const url = FetchClient.makeHttpUrl(key, endpoint, prefix, argMap);
+      case "query":
+        return async (...argData: unknown[]) => {
+          const { option, argMap, url } = requestOf(argData);
           const headers = this.#makeAuthHeaders(option);
           const baseUrl = option?.origin;
           const timeout = option?.timeout ?? endpoint.timeout;
@@ -327,39 +318,27 @@ export class FetchClient {
           const payload = claim.owned ? response : FetchClient.#deepCopy(response);
           return parseReturn(payload, { crystalize: option?.crystalize ?? true });
         };
-        return queryFn;
-      }
-      case "mutation": {
-        const mutationFn = async (...argData: unknown[]) => {
-          const args = argData.slice(0, argLength);
-          const option = argData[argLength] as FetchPolicy | undefined;
-          const argMap = new Map(serializerMap.entries().map(([key, serializer], idx) => [key, serializer(args[idx])]));
-          const url = FetchClient.makeHttpUrl(key, endpoint, prefix, argMap);
+      case "mutation":
+        return async (...argData: unknown[]) => {
+          const { option, argMap, url } = requestOf(argData);
           const body = HttpClient.makeBody(bodyArgs, uploadArgs, argMap);
           const response = await this.http.send(endpoint.method ?? "POST", url, body, {
             headers: this.#makeAuthHeaders(option),
             baseUrl: option?.origin,
             timeout: option?.timeout ?? endpoint.timeout,
           });
-          const parsedReturn = parseReturn(response, { crystalize: option?.crystalize ?? true });
-          return parsedReturn;
+          return parseReturn(response, { crystalize: option?.crystalize ?? true });
         };
-        return mutationFn;
-      }
       default:
         throw new Error(`Unsupported endpoint type: ${endpoint.type}`);
     }
   }
   #registerEndpoint(key: string, endpoint: SerializedEndpoint, prefix?: string) {
     switch (endpoint.type) {
-      case "query": {
+      case "query":
+      case "mutation":
         this.#setHandlerFactory(key, () => this.#makeHttpFn(key, endpoint, prefix));
         return;
-      }
-      case "mutation": {
-        this.#setHandlerFactory(key, () => this.#makeHttpFn(key, endpoint, prefix));
-        return;
-      }
       case "pubsub": {
         this.#setHandlerFactory(`subscribe${capitalize(key)}`, () => {
           const roomArgs = endpoint.args.filter((arg) => arg.type === "room");
@@ -515,12 +494,8 @@ export class FetchClient {
   #registerModelBaseEndpoint(refName: string, signal: SerializedSignal) {
     const capRefName = capitalize(refName);
     const names = {
-      createModel: `create${capRefName}`,
       updateModel: `update${capRefName}`,
-      removeModel: `remove${capRefName}`,
       model: refName,
-      modelId: `${refName}Id`,
-      lightModel: `light${capRefName}`,
       viewModel: `view${capRefName}`,
       getModelView: `get${capRefName}View`,
       editModel: `edit${capRefName}`,
@@ -540,29 +515,13 @@ export class FetchClient {
       this.#setHandlerFactory(names.viewModel, () =>
         this.#makeModelHandleFn(refName, names.model, names.viewModel, `${refName}View`),
       );
-      this.#setHandlerFactory(
-        names.getModelView,
-        () =>
-          (async (id: string, option?: FetchPolicy) => {
-            const modelFn = this.#requireHandler(names.model, names.getModelView);
-            const modelObj = await modelFn(id, { ...option, crystalize: false });
-            return { refName, [`${refName}Obj`]: modelObj, [`${refName}ViewAt`]: new Date() };
-          }) as FetchHandler,
-      );
+      this.#setHandlerFactory(names.getModelView, () => this.#makeModelObjFn(refName, names.getModelView));
     }
     if (signal.getGuards && anyCruGuards) {
       this.#setHandlerFactory(names.editModel, () =>
         this.#makeModelHandleFn(refName, names.model, names.editModel, `${refName}Edit`),
       );
-      this.#setHandlerFactory(
-        names.getModelEdit,
-        () =>
-          (async (id: string, option?: FetchPolicy) => {
-            const modelFn = this.#requireHandler(names.model, names.getModelEdit);
-            const modelObj = await modelFn(id, { ...option, crystalize: false });
-            return { refName, [`${refName}Obj`]: modelObj, [`${refName}ViewAt`]: new Date() };
-          }) as FetchHandler,
-      );
+      this.#setHandlerFactory(names.getModelEdit, () => this.#makeModelObjFn(refName, names.getModelEdit));
     }
     if (updateGuards) {
       this.#setHandlerFactory(
@@ -596,6 +555,13 @@ export class FetchClient {
           return await this.http.post(url, formData, { headers: this.#makeAuthHeaders(option) });
         }) as FetchHandler,
     );
+  }
+
+  #makeModelObjFn(refName: string, callerKey: string) {
+    return (async (id: string, option?: FetchPolicy) => {
+      const modelObj = await this.#requireHandler(refName, callerKey)(id, { ...option, crystalize: false });
+      return { refName, [`${refName}Obj`]: modelObj, [`${refName}ViewAt`]: new Date() };
+    }) as FetchHandler;
   }
 
   //* The full model is built lazily — a route handing the payload to `Load.View` never reads it; `ViewAt` stamps once.
