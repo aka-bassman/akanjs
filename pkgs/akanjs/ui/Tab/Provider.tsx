@@ -8,13 +8,10 @@ import { type ReactNode, useRef, useState } from "react";
 import { TabContext } from "./context";
 
 export interface ProviderProps {
-  /** Additional classes for the tab state wrapper. */
   className?: string;
-  /** Initial active menu key. */
   defaultMenu?: string | null;
-  /** Names this tab for the in-page agent. Without it the tab publishes nothing — two tabs on one screen would otherwise share a name. */
+  /** Names the tab for the in-page agent; omitted, it publishes nothing (two tabs would share a name). */
   namespace?: string;
-  /** Tab.Menus and Tab.Panel children. */
   children?: ReactNode;
 }
 export const Provider = ({ className, defaultMenu = null, namespace, children }: ProviderProps) => {
@@ -28,8 +25,7 @@ export const Provider = ({ className, defaultMenu = null, namespace, children }:
       current: menu,
       menus: [...menus.current].map(([key, disabled]) => (disabled ? { menu: key, disabled } : { menu: key })),
     }));
-  // The menu list is filled by the children after this render, so it cannot be a mount-static `oneOf`; the guard
-  // reads it at call time instead, which is also what keeps a disabled menu out of reach of the agent alone.
+  // A call-time guard, not a static `oneOf`: the children fill `menus` after this render.
   const switchTab = st
     .tool(namespace ? `switchTabIn${suffix}` : null, {
       guard: ({ menu }) => {

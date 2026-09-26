@@ -6,7 +6,7 @@ interface TabContextType {
   defaultMenu: string | null;
   menu: string | null;
   setMenu: (value: string | null) => void;
-  /** Every mounted menu key against whether it is disabled — the tab's own vocabulary, for the agent and for the disabled fallback. */
+  /** Mounted menu key → disabled. */
   menus: RefObject<Map<string, boolean>>;
   switchTab: (menu: string) => void;
 }
