@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { AkanMetricsReport } from "akanjs/service";
 import { LruTtlCache } from "./cachePolicy";
 import { shouldRenderLocaleAlternates } from "./head";
@@ -27,7 +30,9 @@ import {
   nextRscHostPendingChunkCount,
   projectRscWorkerProcessMetrics,
   type RscPending,
+  RscWorker,
 } from "./rscWorkerHost";
+import type { BaseBuildArtifact } from "./types";
 
 const decoder = new TextDecoder();
 
@@ -712,4 +717,57 @@ describe("RscWorker cached result replay", () => {
     });
     expect(messages[1]).toEqual({ type: "cache-state", requestId: "request-3", state: cacheState });
   });
+});
+
+describe("RscWorker respawn lifecycle", () => {
+  const workerSource = `import fs from "node:fs";
+const spawnsFile = process.env.AKAN_TEST_RSC_SPAWNS ?? "";
+const spawn = (fs.existsSync(spawnsFile) ? Number(fs.readFileSync(spawnsFile, "utf8")) : 0) + 1;
+fs.writeFileSync(spawnsFile, String(spawn));
+process.on("disconnect", () => process.exit(0));
+process.on("message", (message) => {
+  if (message.type === "init") {
+    if (spawn === 2) {
+      process.send?.({ type: "error", requestId: "__init__", message: "pages bundle failed to import" });
+      fs.writeFileSync(spawnsFile + ".init-failed", "1");
+      return;
+    }
+    process.send?.({ type: "ready" });
+    if (spawn === 1) setTimeout(() => process.exit(1), 20);
+    return;
+  }
+  if (message.type === "render") process.send?.({ type: "not-found", requestId: message.requestId });
+});
+process.send?.({ type: "hello" });
+`;
+
+  test("replaces a respawned worker whose init fails instead of queueing renders behind it forever", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "akan-rsc-respawn-"));
+    const spawnsFile = path.join(dir, "spawns");
+    fs.writeFileSync(path.join(dir, "worker.ts"), workerSource);
+    const saved = { workerPath: process.env.AKAN_RSC_WORKER_PATH, spawns: process.env.AKAN_TEST_RSC_SPAWNS };
+    process.env.AKAN_RSC_WORKER_PATH = path.join(dir, "worker.ts");
+    process.env.AKAN_TEST_RSC_SPAWNS = spawnsFile;
+    const rsc = new RscWorker({
+      pagesBundlePath: path.join(dir, "pages.js"),
+      pagesBundleBuildId: 1,
+    } as unknown as BaseBuildArtifact);
+    const eventually = async (done: () => boolean) => {
+      for (let waited = 0; waited < 8_000 && !done(); waited += 20) await Bun.sleep(20);
+      return done();
+    };
+    try {
+      await rsc.ready;
+      expect(await eventually(() => fs.existsSync(`${spawnsFile}.init-failed`))).toBe(true);
+      expect(await eventually(() => rsc.getMetrics().rscWorkerStatus === "ready")).toBe(true);
+      expect((await rsc.renderWithMeta(new Request("http://localhost/en"))).type).toBe("not-found");
+    } finally {
+      rsc.kill();
+      if (saved.workerPath === undefined) delete process.env.AKAN_RSC_WORKER_PATH;
+      else process.env.AKAN_RSC_WORKER_PATH = saved.workerPath;
+      if (saved.spawns === undefined) delete process.env.AKAN_TEST_RSC_SPAWNS;
+      else process.env.AKAN_TEST_RSC_SPAWNS = saved.spawns;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 20_000);
 });

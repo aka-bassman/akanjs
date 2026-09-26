@@ -702,7 +702,10 @@ export class RscWorker {
       case "error":
         if (message.requestId === "__init__") {
           if (!this.#readyResolved) this.#rejectReady(new Error(String(message.message)));
-          else this.#logger.error(`[rsc] worker init error on restart: ${message.message}`);
+          else {
+            this.#logger.error(`[rsc] worker init error on restart: ${message.message}`);
+            proc.kill();
+          }
           return;
         }
         if (message.requestId === "__reload__") {
