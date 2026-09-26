@@ -21,11 +21,8 @@ interface SureToRemoveProps {
   typeNameToRemove?: boolean;
   /** Element that opens the confirmation. Defaults to the framework's delete label. */
   trigger?: ReactNode;
-  /** Confirmation heading. */
   title?: ReactNode;
-  /** Confirmation body above the name field. */
   description?: ReactNode;
-  /** Label of the button that performs the removal. */
   confirmLabel?: ReactNode;
 }
 export default function SureToRemove({
@@ -61,8 +58,7 @@ export default function SureToRemove({
     if (redirect === "back") router.back();
     else router.push(redirect);
   };
-  // `typeNameToRemove` makes a person retype the name before the button unlocks. An approval card is one click,
-  // so it is not that gate — the lever is withheld rather than offered at a friction the screen does not have.
+  // `typeNameToRemove` gates a person behind retyping the name; a one-click approval card is no such gate, so no tool.
   const removeTool = st
     .tool(typeNameToRemove ? null : names.removeModel)
     .desc(`Remove one ${modelName}.`)

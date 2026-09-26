@@ -12,10 +12,7 @@ interface ViewToolsProps {
   closeView: () => void;
 }
 
-/**
- * Mounted only by the modal that is actually open. A list renders one `ViewModal` per row, and only the row
- * whose id matches opens, so the close verb reaches the surface once instead of once per row.
- */
+// Mounted only by the open modal, so a list of per-row `ViewModal`s publishes the close verb once.
 const ViewTools = ({ modelName, closeView }: ViewToolsProps) => {
   st.tool(`closeViewOf${capitalize(modelName)}`)
     .desc(`Close the ${modelName} detail view.`)

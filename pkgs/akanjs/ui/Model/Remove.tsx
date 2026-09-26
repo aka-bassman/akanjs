@@ -17,9 +17,7 @@ interface RemoveProps {
   slice: SliceMeta;
   modal?: string | null;
   redirect?: string;
-  /** Confirmation heading. */
   title?: ReactNode;
-  /** Confirmation body. */
   description?: ReactNode;
   /** Confirmation footer. Replacing it takes over the removal — call nothing else and the record stays. */
   action?: ReactNode;
@@ -56,8 +54,7 @@ export default function Remove({
     if (redirect === "back") router.back();
     else router.push(redirect);
   };
-  // The confirmation this draws is a modal; the agent's is the approval card the `remove` prefix turns on. Both
-  // land on the same removal, and the id rides in the argument so a per-row copy of this stays interchangeable.
+  // The agent's confirmation is the approval card the `remove` prefix turns on; the id rides in the argument.
   const removeTool = st
     .tool(names.removeModel)
     .desc(`Remove one ${modelName}.`)

@@ -1,27 +1,10 @@
 import { lazy } from "akanjs/webkit";
 
-/**
- * Every Model export carries its own Suspense boundary.
- *
- * These mount on interaction — a modal body, a dropdown item, a confirm shell — long after the page is
- * painted, and a chunk that resolves then would otherwise suspend all the way to the route and repaint
- * the page as its loading fallback, once per fresh load.
- */
+// These mount on interaction, long after paint; without their own boundary a loading chunk would suspend the route.
 const withSuspense = { suspense: true } as const;
 
-/**
- * A fallback here may only be a host element. This module has no `"use client"`, so a client component
- * referenced from it — `Loading.Skeleton` was the one tried — resolves to `undefined` inside the thunk
- * and the render throws "Element type is invalid", taking the whole page segment under the layout with
- * it. Marking the barrel `"use client"` is worse: `Model.*` becomes a real server→client boundary and
- * apps passing crystalized model instances as props fail serialization at boot. Plain markup crosses
- * neither line.
- *
- * Only the two exports that occupy space of their own get it. The triggers wrap the caller's own
- * children, so a fixed block would put a slab where a small button belongs, and the modals render `null`
- * until opened, so a block would appear where nothing ever shows. For those the collapse is a blink the
- * size of a button; here it is the page body dropping to zero height and snapping back.
- */
+// Host markup only: this module has no `"use client"`, so a client component (`Loading.Skeleton`) is `undefined`
+// in the thunk, and a `"use client"` barrel would make `Model.*` a boundary that refuses model-instance props.
 const bodyFallback = {
   suspense: true,
   loading: () => <div className="min-h-40 w-full animate-pulse rounded-box bg-muted" />,

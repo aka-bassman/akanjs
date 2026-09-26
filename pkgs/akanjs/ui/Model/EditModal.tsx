@@ -23,27 +23,19 @@ const modalResetKey = (modelName: string, modalName: string, modalId?: string) =
   `${modelName}|${modalName}|${modalId ?? ""}`;
 
 interface EditModelProps<Full> {
-  /** Rendering mode for the edit shell. */
   type?: "modal" | "form" | "empty";
-  /** Slice metadata generated for the model store/fetch contract. */
   slice: SliceMeta;
-  /** Additional classes for the wrapper. */
   className?: string;
-  /** Additional classes for the recovered-form banner this shell draws above the form. */
   draftBarClassName?: string;
-  /** Re-check submit eligibility when form state changes. */
+  /** Re-checks submit eligibility when the form changes. */
   checkSubmit?: boolean;
-  /** Client edit promise or partial form seed. */
   edit?: ClientEdit<string, Full> | Partial<Full>;
-  /** Store modal name that should activate this editor. */
+  /** The store modal name that opens this editor. */
   modal?: string;
   children: ReactNode;
-  /** Custom loading overlay wrapper, or false to disable the default overlay. */
+  /** `false` disables the default loading overlay. */
   loadingWrapper?: boolean | ((props: { children?: any; className?: string }) => ReactNode);
-  /**
-   * Draft recovery for this form. `false` turns it off; a string names the scope explicitly, for the rare
-   * screen whose context is not in the record id or in the seed the editor was given.
-   */
+  /** Draft recovery for this form. `false` turns it off; a string names the scope explicitly. */
   draft?: DraftProp;
 }
 
@@ -112,7 +104,6 @@ const EditModel = <Full,>({
           };
   }, []);
 
-  // if (type === "empty") return null;
   return (
     <LoadingWrapper className={cn("w-full", className)}>
       <DraftBar className={draftBarClassName} slice={slice} />
@@ -122,26 +113,19 @@ const EditModel = <Full,>({
 };
 
 interface EditModalProps<Full extends { id: string }> extends EditModelProps<Full> {
-  /** Model id used to scope edit modal state. */
   id?: string;
-  /** Disable modal trigger and submit behavior. */
   disabled?: boolean;
   checkSubmit?: boolean;
-  /** Additional classes for the modal window. */
   modalClassName?: string;
-  /** Modal title or title renderer receiving the current model. */
   renderTitle?: ((model: Full) => string | ReactNode) | string;
-  /** Submit button label. */
   submitText?: ReactNode;
-  /** Additional classes for the submit button. */
   submitClassName?: string;
-  /** Store submit options passed to the generated submit action. */
   submitOption?: CreateOption<Full>;
-  /** Custom submit renderer, or false to hide the default submit button. */
+  /** `false` hides the default submit button. */
   renderSubmit?: boolean | ((arg: any) => ReactNode);
-  /** Action name or callback invoked after submit. */
+  /** A callback, `"back"`, `"reset"`, or a path to replace to (`[<model>Id]` is filled in). */
   onSubmit?: string | ((model: Full) => void);
-  /** Action name or callback invoked on cancel. */
+  /** A callback, `"back"`, `"reset"`, or a path to replace to. */
   onCancel?: string | ((form?: any) => any);
 }
 
@@ -237,11 +221,9 @@ export default function EditModal<Full extends { id: string }>({
         void storeDo[names.editModel](modelObj.id, { modal, draftScope }).catch(() => {
           st.set({ [names.modelFormLoading]: false });
         });
-      // A fresh payload is not refetched, so the draft load that `edit<Model>` does at the end of its fetch has
-      // to happen here instead — otherwise exactly the pages that hand their editor a payload recover nothing.
+      // A fresh payload skips `edit<Model>`, so the draft load it would have ended with happens here.
       else void storeDo[names.loadModelDraft](draftScope);
     } else {
-      // new
       const crystal = new modelRef().set(modelEdit as Full) as unknown as Full;
       const draftScope = newDraftScope(draft, {
         seed: modelEdit as object,
@@ -264,10 +246,8 @@ export default function EditModal<Full extends { id: string }>({
   useEffect(() => {
     pendingModalResets.get(modalResetKey(modelName, modal ?? "edit", modalId))?.cancel();
     return () => {
-      // Openness lives in the store, not in local state, so an editor torn down while open (a parent
-      // closing, a route change) never runs handleCancel and leaves `<model>Modal === "edit"` behind —
-      // which re-opens this editor by itself the next time it mounts. Only reset what this editor owns,
-      // and only once a remount in the same commit has had its chance to claim the modal back.
+      // Openness lives in the store, so an editor torn down while open would leave `<model>Modal` set and reopen on
+      // the next mount. Reset only what this editor owns, after a same-commit remount had its chance to claim it.
       const { wasOpen, modalName, modalId } = ownershipRef.current;
       if (!wasOpen) return;
       const key = modalResetKey(modelName, modalName, modalId);
@@ -292,7 +272,6 @@ export default function EditModal<Full extends { id: string }>({
   const handleCancel = useCallback(() => {
     const modelForm = (st.get() as DynamicRecord)[names.modelForm] as Full;
     const form = deepObjectify(modelForm);
-    // await st.do[names.resetModel]();
     void storeDo[names.setModelModal](null);
     if (typeof onCancel === "function") onCancel(form);
     else if (onCancel === "back") router.back();

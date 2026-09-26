@@ -14,10 +14,7 @@ import { Modal } from "../Modal";
 import Remove from "./Remove";
 import View from "./View";
 
-/**
- * Closing is the one verb both faces of this modal share, and exactly one face is mounted while it is open —
- * so declaring it from whichever face is up publishes it once, and withdraws it when the modal closes.
- */
+// Declared from whichever face is mounted, so the shared close verb is published once and withdrawn on close.
 const useCloseViewTool = (modelName: string, closeView: () => void) =>
   st
     .tool(`closeViewOf${capitalize(modelName)}`)
@@ -70,9 +67,7 @@ interface ViewEditModalProps {
   renderTemplate: () => ReactNode | null;
   /** The kebab menu beside the title. `false` draws none, which also takes the remove entry off the modal. */
   menu?: ReactNode | false;
-  /** Label of the button that turns the detail view into the form. */
   editLabel?: ReactNode;
-  /** Label of the button that saves the form. */
   saveLabel?: ReactNode;
 }
 export default function ViewEditModal({
