@@ -1,5 +1,5 @@
 import type { WorkflowSpec } from "@akanjs/devkit/workflow";
-import { baseValidation, moduleInput, sysInputs, validateTargetStep } from "./shared";
+import { baseValidation, inspectModuleStep, moduleInput, syncGeneratedStep, sysInputs, validateTarget } from "./shared";
 
 export const addEnumFieldWorkflowSpec: WorkflowSpec = {
   schemaVersion: 1,
@@ -22,12 +22,7 @@ export const addEnumFieldWorkflowSpec: WorkflowSpec = {
     store: "infer",
   },
   steps: [
-    {
-      id: "inspect-module",
-      title: "Inspect module",
-      tool: "inspectModule",
-      description: "Read module files and existing enum conventions.",
-    },
+    inspectModuleStep("Read module files and existing enum conventions."),
     {
       id: "update-constant",
       title: "Update enum field",
@@ -46,13 +41,8 @@ export const addEnumFieldWorkflowSpec: WorkflowSpec = {
       tool: "updateOptionEnum",
       description: "Plan option entries used by UI controls.",
     },
-    {
-      id: "sync-generated",
-      title: "Sync generated files",
-      tool: "syncTarget",
-      description: "Refresh generated files after enum source changes.",
-    },
-    validateTargetStep,
+    syncGeneratedStep("Refresh generated files after enum source changes."),
+    validateTarget,
   ],
   predictedChanges: [
     { target: "*/lib/<module>/<module>.constant.ts", action: "modify", reason: "Enum field shape is added." },

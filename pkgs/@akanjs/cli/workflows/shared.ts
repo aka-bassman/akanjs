@@ -24,9 +24,12 @@ export const baseValidation = [
   },
 ] satisfies readonly WorkflowValidation[];
 
-export const validateTargetStep = {
-  id: "validate-target",
-  title: "Validate target",
-  tool: "lintTarget",
-  description: "Run validation commands for the target.",
-} satisfies WorkflowStep;
+const stepOf =
+  (id: string, title: string, tool: string) =>
+  (description: string): WorkflowStep => ({ id, title, tool, description });
+
+export const inspectModuleStep = stepOf("inspect-module", "Inspect module", "inspectModule");
+export const inspectSystemStep = stepOf("inspect-system", "Inspect target system", "inspectSystem");
+export const syncGeneratedStep = stepOf("sync-generated", "Sync generated files", "syncTarget");
+export const validateTargetStep = stepOf("validate-target", "Validate target", "lintTarget");
+export const validateTarget = validateTargetStep("Run validation commands for the target.");

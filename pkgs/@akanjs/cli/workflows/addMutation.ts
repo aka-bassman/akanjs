@@ -1,5 +1,5 @@
 import type { WorkflowSpec } from "@akanjs/devkit/workflow";
-import { baseValidation, moduleInput, sysInputs, validateTargetStep } from "./shared";
+import { baseValidation, inspectModuleStep, moduleInput, syncGeneratedStep, sysInputs, validateTarget } from "./shared";
 
 export const addMutationWorkflowSpec: WorkflowSpec = {
   schemaVersion: 1,
@@ -21,12 +21,7 @@ export const addMutationWorkflowSpec: WorkflowSpec = {
     dictionary: "include",
   },
   steps: [
-    {
-      id: "inspect-module",
-      title: "Inspect module",
-      tool: "inspectModule",
-      description: "Read service, signal, store, and UI action patterns.",
-    },
+    inspectModuleStep("Read service, signal, store, and UI action patterns."),
     {
       id: "update-service",
       title: "Update service",
@@ -45,13 +40,8 @@ export const addMutationWorkflowSpec: WorkflowSpec = {
       tool: "updateActionSurfaces",
       description: "Plan optional store and UI action changes.",
     },
-    {
-      id: "sync-generated",
-      title: "Sync generated files",
-      tool: "syncTarget",
-      description: "Refresh generated service and signal barrels.",
-    },
-    validateTargetStep,
+    syncGeneratedStep("Refresh generated service and signal barrels."),
+    validateTarget,
   ],
   predictedChanges: [
     {

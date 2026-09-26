@@ -1,5 +1,5 @@
 import type { WorkflowSpec } from "@akanjs/devkit/workflow";
-import { baseValidation, moduleInput, sysInputs, validateTargetStep } from "./shared";
+import { baseValidation, inspectModuleStep, moduleInput, syncGeneratedStep, sysInputs, validateTarget } from "./shared";
 
 export const createUiWorkflowSpec: WorkflowSpec = {
   schemaVersion: 1,
@@ -21,25 +21,15 @@ export const createUiWorkflowSpec: WorkflowSpec = {
     store: "infer",
   },
   steps: [
-    {
-      id: "inspect-module",
-      title: "Inspect module",
-      tool: "inspectModule",
-      description: "Read existing module context and component files.",
-    },
+    inspectModuleStep("Read existing module context and component files."),
     {
       id: "create-ui",
       title: "Create UI surface",
       tool: "createUi",
       description: "Create the requested UI surface through an Akan primitive.",
     },
-    {
-      id: "sync-generated",
-      title: "Sync generated files",
-      tool: "syncTarget",
-      description: "Refresh UI barrels after adding a component.",
-    },
-    validateTargetStep,
+    syncGeneratedStep("Refresh UI barrels after adding a component."),
+    validateTarget,
   ],
   predictedChanges: [
     { target: "*/lib/<module>/<Module>.<Surface>.tsx", action: "create", reason: "New UI component is created." },

@@ -1,5 +1,5 @@
 import type { WorkflowSpec } from "@akanjs/devkit/workflow";
-import { baseValidation, moduleInput, sysInputs, validateTargetStep } from "./shared";
+import { baseValidation, inspectModuleStep, moduleInput, syncGeneratedStep, sysInputs, validateTarget } from "./shared";
 
 export const addSliceWorkflowSpec: WorkflowSpec = {
   schemaVersion: 1,
@@ -19,12 +19,7 @@ export const addSliceWorkflowSpec: WorkflowSpec = {
     dictionary: "include",
   },
   steps: [
-    {
-      id: "inspect-module",
-      title: "Inspect module",
-      tool: "inspectModule",
-      description: "Read existing query, slice, zone, and page loading patterns.",
-    },
+    inspectModuleStep("Read existing query, slice, zone, and page loading patterns."),
     {
       id: "update-service-query",
       title: "Update service query",
@@ -43,13 +38,8 @@ export const addSliceWorkflowSpec: WorkflowSpec = {
       tool: "connectSliceSurfaces",
       description: "Plan optional Zone and page loader changes.",
     },
-    {
-      id: "sync-generated",
-      title: "Sync generated files",
-      tool: "syncTarget",
-      description: "Refresh generated files after slice changes.",
-    },
-    validateTargetStep,
+    syncGeneratedStep("Refresh generated files after slice changes."),
+    validateTarget,
   ],
   predictedChanges: [
     {

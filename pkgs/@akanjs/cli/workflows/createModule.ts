@@ -1,5 +1,5 @@
 import type { WorkflowSpec } from "@akanjs/devkit/workflow";
-import { baseValidation, sysInputs } from "./shared";
+import { baseValidation, inspectSystemStep, syncGeneratedStep, sysInputs, validateTargetStep } from "./shared";
 
 export const createModuleWorkflowSpec: WorkflowSpec = {
   schemaVersion: 1,
@@ -17,30 +17,15 @@ export const createModuleWorkflowSpec: WorkflowSpec = {
     view: "include",
   },
   steps: [
-    {
-      id: "inspect-system",
-      title: "Inspect target system",
-      tool: "inspectSystem",
-      description: "Check the target app or library before planning new module files.",
-    },
+    inspectSystemStep("Check the target app or library before planning new module files."),
     {
       id: "create-module",
       title: "Create module",
       tool: "createModule",
       description: "Use the existing create-module primitive to scaffold conventional module files.",
     },
-    {
-      id: "sync-generated",
-      title: "Sync generated files",
-      tool: "syncTarget",
-      description: "Refresh generated barrels after adding a module.",
-    },
-    {
-      id: "validate-target",
-      title: "Validate target",
-      tool: "lintTarget",
-      description: "Run validation commands that prove the scaffold matches Akan conventions.",
-    },
+    syncGeneratedStep("Refresh generated barrels after adding a module."),
+    validateTargetStep("Run validation commands that prove the scaffold matches Akan conventions."),
   ],
   predictedChanges: [
     { target: "*/lib/<module>/*", action: "create", reason: "New module source files are scaffolded." },
