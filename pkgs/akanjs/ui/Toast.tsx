@@ -18,9 +18,9 @@ export interface ToastMessage {
   key: string;
   type: ToastType;
   content: ReactNode;
-  /** Seconds the message is shown before the shell starts its exit. */
+  /** Seconds shown before the exit starts. */
   duration: number;
-  /** The shell started this message's exit: play the leave animation, then call `onClosed`. */
+  /** The exit started: play the leave animation, then call `onClosed`. */
   leaving: boolean;
 }
 
@@ -43,9 +43,9 @@ const messageTone: { [key in ToastType]: { card: string; chip: string; icon: Rea
 export interface ToastItemProps {
   className?: string;
   message: ToastMessage;
-  /** Dismisses early — starts the same exit the timer would. */
+  /** Starts the same exit the timer would. */
   onClose: () => void;
-  /** Takes the message off the screen. Call it when the exit animation has finished. */
+  /** Call when the exit animation has finished. */
   onClosed: () => void;
 }
 
@@ -87,13 +87,13 @@ export const DefaultToastItem = ({ className, message, onClose, onClosed }: Toas
 
 export interface ToastProps {
   className?: string;
-  /** Oldest first, already capped by the store. A replacement showing fewer slices the list itself. */
+  /** Oldest first, already capped by the store. */
   messages: ToastMessage[];
-  /** The device's top safe area in pixels — the stack starts below it. */
+  /** In pixels; the stack starts below it. */
   topSafeArea: number;
-  /** Starts a message's exit, as the dismiss button and the elapsed timer both do. */
+  /** Starts a message's exit. */
   onClose: (key: string) => void;
-  /** Takes a message off the screen once its exit animation has finished. */
+  /** Call once a message's exit animation has finished. */
   onClosed: (key: string) => void;
 }
 
@@ -119,14 +119,7 @@ export const DefaultToast = ({ className, messages, topSafeArea, onClose, onClos
 
 const ToastBase = createOverridable("Toast", DefaultToast);
 
-/**
- * The toast surface. `Toast` (the stack) and `Toast.Item` (one card) each resolve to a route-scoped override
- * when a `page/**\/_overrides.tsx` in the route's ancestry declares one (slots `Toast`, `ToastItem`).
- *
- * `System`'s `Messages` renders this and is not a slot: it keeps the `msg.*` wiring, the store read, the
- * body-level portal and the dismiss timers, so a replacement re-skins the surface without re-implementing
- * when a toast appears and goes away.
- */
+/** `System`'s `Messages` keeps the timers, portal and store wiring, so a replacement only re-skins the surface. */
 export const Toast = Object.assign(ToastBase, {
   Item: createOverridable("ToastItem", DefaultToastItem),
 });

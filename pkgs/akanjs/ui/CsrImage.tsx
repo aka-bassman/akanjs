@@ -22,20 +22,7 @@ export const CsrImage = ({ src, alt, file, className, abstractData, ...props }: 
   const [width, height] = [props.width ?? file?.imageSize[0], props.height ?? file?.imageSize[1]];
   const defaultAbstractData =
     "data:image/gif;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFklEQVR42mN8//HLfwYiAOOoQvoqBABbWyZJf74GZgAAAABJRU5ErkJggg==";
-  //CSRImage로 파일 만들어서 불러서 변경
   const blurDataURL = abstractData ?? file?.abstractData ?? defaultAbstractData;
-  // const [loadedImage, setLoadedImage] = useState(false);
-  // const fetchImage = (src) => {
-  //   const loadingImage = getNewImage();
-  //   loadingImage.src = src;
-  //   loadingImage.onload = () => {
-  //     setLoadedImage(true);
-  //   };
-  // };
-
-  // useEffect(() => {
-  //   // fetchImage(url);
-  // }, []);
   const { priority, preload, quality, unoptimized, fill, ...csrProps } = props;
   return (
     <img
@@ -43,10 +30,8 @@ export const CsrImage = ({ src, alt, file, className, abstractData, ...props }: 
       data-src={blurDataURL}
       width={width}
       height={height}
-      // className={clsx("object-cover w-full", className)}
       className={cn(!url && "bg-muted", className)}
       alt={alt ?? "image"}
-      // placeholder="blur"
       {...csrProps}
     />
   );

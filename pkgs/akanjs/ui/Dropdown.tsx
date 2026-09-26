@@ -28,17 +28,13 @@ export interface DropdownProps {
   value?: ReactNode;
   /** Whole trigger element, drawn instead of that button. The menu's click and aria state land on it. */
   trigger?: ReactNode;
-  /** Dropdown menu content. */
   content: ReactNode;
-  /** Additional classes for the dropdown wrapper. */
   className?: string;
-  /** Additional classes for the trigger button. */
   buttonClassName?: string;
-  /** Additional classes for the dropdown content panel. */
   dropdownClassName?: string;
   /** Trigger edge the menu lines up with. Position is computed, so a `left-0` class cannot do this. */
   align?: "start" | "end";
-  /** Names this dropdown for the in-page agent. Without it the menu publishes nothing — two on one screen would share a name. */
+  /** Names this dropdown for the in-page agent; without it the menu publishes nothing. */
   namespace?: string;
 }
 
@@ -53,15 +49,12 @@ export const DefaultDropdown = ({
   namespace,
 }: DropdownProps) => {
   const [opened, setOpened] = useState(false);
-  // Resolved in an effect rather than at render: the first client pass has to match the server's, which
-  // portalled nothing.
+  // Set in an effect: the first client pass has to match the server's, which portalled nothing.
   const [portal, setPortal] = useState<HTMLElement | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLUListElement>(null);
   const scope = useOverlayScope(useId());
-  // Read through the portal-to-be: whichever dismissable scope rendered this menu owns it.
   const overlayLayerProps = useOverlayLayerProps();
-  // Route-scoped look swap (recipe slot) — the trigger renders from the same button vocabulary as <Button>.
   const recipe = useUiRecipe("button") ?? buttonRecipe;
   const position = useOverlayPosition({ opened, triggerRef: ref, panelRef: menuRef, align });
   const suffix = namespace ? capitalize(namespace) : "";
@@ -80,7 +73,7 @@ export const DefaultDropdown = ({
     .exec(() => {
       setOpened(false);
     });
-  // One button for both states, so it dispatches — and annotates — whichever of the two the next click performs.
+  // Annotated with whichever of the two actions the next click performs.
   const toggle = opened ? closeDropdown : openDropdown;
   useEffect(() => {
     setPortal(document.body);
@@ -88,9 +81,8 @@ export const DefaultDropdown = ({
   useEffect(() => {
     if (!opened) return;
     const onMouseDown = (e: MouseEvent) => {
-      // A menu item may open a Modal, which portals to document.body and so is never inside ref.
+      // A modal a menu item opened, and the menu itself, both portal out of `ref`.
       if (isOwnOverlayClick(e.target, scope)) return;
-      // The menu portals out too, so the trigger's own subtree is no longer the whole of "inside".
       if (menuRef.current?.contains(e.target as Node)) return;
       if (ref.current && !ref.current.contains(e.target as Node)) setOpened(false);
     };
@@ -104,8 +96,7 @@ export const DefaultDropdown = ({
       ref={menuRef}
       {...overlayLayerProps}
       hidden={!opened}
-      // Inline, because a computed position cannot be a class — and so a caller's `dropdownClassName`
-      // cannot lower the stacking order out from under a modal it is opened over.
+      // Inline: a computed position cannot be a class, and `dropdownClassName` must not lower the stacking order.
       style={{
         position: "fixed",
         zIndex: overlayZ.dropdown,

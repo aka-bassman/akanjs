@@ -21,7 +21,6 @@ export const Clipboard = ({ text, className }: ClipboardProps): ReactElement => 
 
   const handleCopy = async () => {
     if (!text) return;
-    // 예시로 "복사할 텍스트"를 복사합니다
     await navigator.clipboard.writeText(text);
     setIsCopied(true);
   };
