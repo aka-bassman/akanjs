@@ -5,9 +5,7 @@ import { Spin } from "./Spin";
 
 export interface AreaProps {
   className?: string;
-  /** The mark above the message. */
   indicator?: ReactNode;
-  /** The message under the mark. */
   children?: ReactNode;
 }
 

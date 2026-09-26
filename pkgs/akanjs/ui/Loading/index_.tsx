@@ -7,13 +7,8 @@ import { ProgressBar } from "./ProgressBar";
 import { Skeleton } from "./Skeleton";
 import { Spin } from "./Spin";
 
-/**
- * One named export per member, rather than the `Loading` namespace object itself, because the `"use client"`
- * transform replaces a client module's *exports* with `registerClientReference` stubs. A namespace exported
- * from here would reach a server component as one reference for the whole object, and `Loading.Skeleton` on it
- * would read a property the stub does not have — `undefined`, which React reports as an invalid element type.
- * The namespace is assembled in `index.ts`, which carries no directive, so each member crosses on its own.
- */
+// One export per member, not the namespace: a `"use client"` module's exports become client-reference stubs, so
+// `Loading.Skeleton` off one stub would be `undefined` on the server. `index.ts` assembles the namespace instead.
 export const LoadingArea = createOverridable("LoadingArea", Area);
 export const LoadingButton = createOverridable("LoadingButton", Button);
 export const LoadingInput = createOverridable("LoadingInput", Input);

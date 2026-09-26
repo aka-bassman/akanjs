@@ -9,10 +9,7 @@ export interface ProgressBarProps {
   max: number;
 }
 
-/**
- * A div track rather than a native `<progress>`. `accent-color` themes only the fill; the track keeps the UA
- * grey, which reads as a light bar on a dark theme, and no browser applies the element's radius to the fill.
- */
+// A div track, not `<progress>`: `accent-color` themes only the fill, and no browser rounds the fill.
 export const ProgressBar = ({ className, value, max }: ProgressBarProps) => {
   const percent = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
   const spring = useSpring({ from: { percent: 0 }, to: { percent } });
