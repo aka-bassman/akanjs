@@ -25,12 +25,12 @@ export class CodeAgentGate {
   }
 
   verdict(toolName: string, args: unknown): GateVerdict {
-    const target = CodeAgentGate.#pathOf(args);
+    const target = CodeAgentGate.#stringArg(args, "path");
     if (target) {
       const denied = this.#deniedReason(target);
       if (denied) return { block: denied };
     }
-    const command = CodeAgentGate.#commandOf(args);
+    const command = CodeAgentGate.#stringArg(args, "command");
     if (command) {
       const denied = this.#deniedCommandReason(command);
       if (denied) return { block: denied };
@@ -83,22 +83,16 @@ export class CodeAgentGate {
     return trimmed.includes("*") ? "" : trimmed;
   }
 
-  static #commandOf(args: unknown) {
+  static #stringArg(args: unknown, key: "path" | "command") {
     if (!args || typeof args !== "object") return undefined;
-    const value = (args as { command?: unknown }).command;
-    return typeof value === "string" && value ? value : undefined;
-  }
-
-  static #pathOf(args: unknown) {
-    if (!args || typeof args !== "object") return undefined;
-    const value = (args as { path?: unknown }).path;
+    const value = (args as Record<string, unknown>)[key];
     return typeof value === "string" && value ? value : undefined;
   }
 
   static #summarize(toolName: string, args: unknown) {
     const record = (args ?? {}) as Record<string, unknown>;
     if (toolName === "bash") return `run: ${String(record.command ?? "").slice(0, 200)}`;
-    const target = CodeAgentGate.#pathOf(args);
+    const target = CodeAgentGate.#stringArg(args, "path");
     return target ? `${toolName} ${target}` : toolName;
   }
 }
