@@ -2,16 +2,13 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import type { ClientSignal } from "akanjs/fetch";
 import { createElement } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
+import { setTestEnv } from "./testHelpers";
 
 let html: string;
 let plainHtml: string;
 
-/** Imported after the environment is set: the `akanjs/store` barrel calls `getEnv()` while it is still evaluating. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "attrtest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "attrtest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("attrtest");
 
   const [{ Int, SLICE_META }, { ConstantRegistry, via }, storeFacet, { registerClientRuntime }, { Input }] =
     await Promise.all([

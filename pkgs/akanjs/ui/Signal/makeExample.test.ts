@@ -1,15 +1,13 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import type { ConstantCls, ConstantField, FieldInfoObject } from "akanjs/constant";
 import type { SerializedArg, SerializedEndpoint } from "akanjs/signal";
+import { setTestEnv } from "../testHelpers";
 
 let getExampleData: typeof import("./makeExample").getExampleData;
 let makeResponseExample: typeof import("./makeExample").makeResponseExample;
 
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "makeexampletest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "makeexampletest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("makeexampletest");
   const { FIELD_META, Int } = await import("akanjs/base");
   const { ConstantRegistry, field } = await import("akanjs/constant");
   ({ getExampleData, makeResponseExample } = await import("./makeExample"));

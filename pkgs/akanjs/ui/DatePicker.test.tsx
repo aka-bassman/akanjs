@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, mock, test } from "bun:test";
 import type { Dayjs } from "akanjs/base";
 import { act, type ReactNode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
+import { setTestEnv } from "./testHelpers";
 
 let DatePicker: typeof import("./DatePicker").DatePicker;
 let dayjs: typeof import("akanjs/base").dayjs;
@@ -19,10 +20,7 @@ const typeInto = async (input: HTMLInputElement, value: string) => {
 };
 
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "datepickertest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "datepickertest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("datepickertest");
   const { registerClientRuntime } = await import("akanjs/client");
   registerClientRuntime({
     usePage: () => ({ path: "/", lang: "en", l: Object.assign((key: string) => key, { _: (key: string) => key }) }),

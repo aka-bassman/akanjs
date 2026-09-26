@@ -7,15 +7,13 @@ import {
   type SurfaceSource,
   type SurfaceView,
 } from "use-agentic";
+import { setTestEnv } from "../testHelpers";
 
 let sessionView: typeof import("./agentSessionOf").sessionView;
 let sessionHistoryOf: typeof import("./agentSessionOf").sessionHistoryOf;
 
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "historytest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "historytest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("historytest");
   ({ sessionView, sessionHistoryOf } = await import("./agentSessionOf"));
 });
 

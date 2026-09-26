@@ -2,17 +2,14 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import type { ClientSignal } from "akanjs/fetch";
 import { createElement } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
+import { setTestEnv } from "../testHelpers";
 
 let html: string;
 let bridge: InstanceType<typeof import("akanjs/store")["AgentBridge"]>;
 let Dock: typeof import("./Dock")["Dock"];
 
-// Imported after the env is set: the `akanjs/store` barrel's `baseSt` calls `getEnv()` on load.
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "docktest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "docktest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("docktest");
 
   const [{ Int, SLICE_META }, { ConstantRegistry, via }, storeFacet, dockFacet] = await Promise.all([
     import("akanjs/base"),

@@ -3,14 +3,12 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToReadableStream } from "react-dom/server.browser";
+import { setTestEnv } from "./testHelpers";
 
 let Select: typeof import("./Select").Select;
 
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "selecttest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "selecttest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("selecttest");
   const { registerClientRuntime } = await import("akanjs/client");
   registerClientRuntime({
     usePage: () => ({ path: "/", lang: "en", l: Object.assign((key: string) => key, { _: (key: string) => key }) }),

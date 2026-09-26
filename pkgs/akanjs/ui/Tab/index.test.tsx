@@ -3,15 +3,12 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
+import { setTestEnv } from "../testHelpers";
 
 let Tab: typeof import("./index").Tab;
 
-/** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "tabtest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "tabtest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("tabtest");
   ({ Tab } = await import("./index"));
 });
 

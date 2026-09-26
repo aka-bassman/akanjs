@@ -3,14 +3,12 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
+import { setTestEnv } from "./testHelpers";
 
 let DefaultDropdown: typeof import("./Dropdown").DefaultDropdown;
 
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "dropdowntest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "dropdowntest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("dropdowntest");
   ({ DefaultDropdown } = await import("./Dropdown"));
 });
 

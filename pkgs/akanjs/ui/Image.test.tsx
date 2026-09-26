@@ -3,12 +3,10 @@ import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
 import { CsrImage } from "./CsrImage";
 import { Image } from "./Image";
+import { setTestEnv } from "./testHelpers";
 
 beforeAll(() => {
-  process.env.AKAN_PUBLIC_APP_NAME = "imagetest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "imagetest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("imagetest");
   process.env.AKAN_PUBLIC_RENDER_ENV = "ssr";
 });
 

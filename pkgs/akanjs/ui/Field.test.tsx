@@ -4,6 +4,7 @@ import type { Dayjs } from "akanjs/base";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
+import { setTestEnv } from "./testHelpers";
 
 let Field: typeof import("./Field").Field;
 let DraggableList: typeof import("./DraggableList").DraggableList;
@@ -11,12 +12,8 @@ let dayjs: typeof import("akanjs/base").dayjs;
 let actionTagOf: typeof import("akanjs/store").actionTagOf;
 let tagAction: typeof import("akanjs/store").tagAction;
 
-/** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "fieldtest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "fieldtest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("fieldtest");
   ({ dayjs } = await import("akanjs/base"));
   ({ actionTagOf, tagAction } = await import("akanjs/store"));
   ({ Field } = await import("./Field"));

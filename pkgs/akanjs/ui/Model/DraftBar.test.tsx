@@ -1,10 +1,9 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import type { ClientSignal } from "akanjs/fetch";
-import { act, type ReactNode, Suspense } from "react";
-import { createRoot } from "react-dom/client";
+import { act } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
-
+import { l, mountSuspense, setTestEnv } from "../testHelpers";
 import type { AkanUiOverrides } from "../UiOverride";
 
 let DraftBar: typeof import("./DraftBar").default;
@@ -13,19 +12,10 @@ let st: typeof import("akanjs/store").st;
 let makeStore: () => void;
 
 const slice = { refName: "draftBarItem", sliceName: "draftBarItem", argLength: 1 };
-const l = Object.assign((key: string) => key, {
-  _: (key: string) => key,
-  rich: (key: string) => key,
-  trans: (translation: Record<string, string>) => translation.en,
-});
 const SAVED_AT = new Date("2026-01-01T00:00:00.000Z");
 
-/** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "draftbartest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "draftbartest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("draftbartest");
   const { Int, SLICE_META } = await import("akanjs/base");
   const { ConstantRegistry, via } = await import("akanjs/constant");
   const { registerClientRuntime } = await import("akanjs/client");
@@ -65,16 +55,6 @@ beforeAll(async () => {
   ({ UiOverrideProvider } = await import("../UiOverride"));
 });
 
-const mount = async (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => {
-    root.render(<Suspense>{node}</Suspense>);
-  });
-  return { container, unmount: () => act(() => root.unmount()) };
-};
-
 /** The state an editor is in once a saved draft has been read: offered but not in the form. */
 const setConflict = () =>
   st.set({
@@ -92,7 +72,7 @@ describe("DraftBar", () => {
     makeStore();
     const surface = new AgenticSurface();
     setConflict();
-    const { container, unmount } = await mount(
+    const { container, unmount } = await mountSuspense(
       <AgentProvider surface={surface}>
         <DraftBar className="my-density-class" slice={slice} />
       </AgentProvider>,
@@ -112,7 +92,7 @@ describe("DraftBar", () => {
         {refName}:{savedAt.toISOString()}
       </button>
     );
-    const { container, unmount } = await mount(
+    const { container, unmount } = await mountSuspense(
       <AgentProvider surface={surface}>
         <UiOverrideProvider value={{ DraftBar: BrandDraftBar }}>
           <DraftBar className="my-density-class" slice={slice} />

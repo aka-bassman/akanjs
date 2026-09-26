@@ -2,16 +2,13 @@ import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
+import { setTestEnv } from "../testHelpers";
 
 let SelectLanguage: typeof import("./SelectLanguage").SelectLanguage;
 let lib: typeof import("use-agentic");
 
-/** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "selectlanguagetest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "selectlanguagetest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("selectlanguagetest");
   process.env.AKAN_PUBLIC_LOCALES = "en,ko,ja";
   process.env.AKAN_PUBLIC_DEFAULT_LOCALE = "en";
   const { registerClientRuntime } = await import("akanjs/client");

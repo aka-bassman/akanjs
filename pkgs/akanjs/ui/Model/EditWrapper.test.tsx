@@ -1,9 +1,9 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import type { ClientSignal } from "akanjs/fetch";
-import { act, type ReactNode, Suspense } from "react";
-import { createRoot } from "react-dom/client";
+import { act } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
+import { l, mountSuspense, setTestEnv } from "../testHelpers";
 
 let EditWrapper: typeof import("./EditWrapper").default;
 let ViewWrapper: typeof import("./ViewWrapper").default;
@@ -13,18 +13,9 @@ let makeStore: () => void;
 
 const slice = { refName: "rowTestItem", sliceName: "rowTestItem", argLength: 1 };
 const rowIds = ["aaaaaaaaaaaaaaaaaaaaaa01", "aaaaaaaaaaaaaaaaaaaaaa02", "aaaaaaaaaaaaaaaaaaaaaa03"];
-const l = Object.assign((key: string) => key, {
-  _: (key: string) => key,
-  rich: (key: string) => key,
-  trans: (translation: Record<string, string>) => translation.en,
-});
 
-/** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "rowwrappertest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "rowwrappertest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("rowwrappertest");
   const { Int, SLICE_META } = await import("akanjs/base");
   const { ConstantRegistry, via } = await import("akanjs/constant");
   const { registerClientRuntime } = await import("akanjs/client");
@@ -65,16 +56,6 @@ beforeAll(async () => {
   ({ default: RemoveWrapper } = await import("./RemoveWrapper"));
 });
 
-const mount = async (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => {
-    root.render(<Suspense>{node}</Suspense>);
-  });
-  return { container, unmount: () => act(() => root.unmount()) };
-};
-
 describe("Model row wrappers", () => {
   test("every row registers the one verb, and the id it acts on comes from the call", async () => {
     makeStore();
@@ -83,7 +64,7 @@ describe("Model row wrappers", () => {
     const warn = console.warn;
     console.warn = (message: string) => warnings.push(message);
     try {
-      const { container, unmount } = await mount(
+      const { container, unmount } = await mountSuspense(
         <AgentProvider surface={surface}>
           {rowIds.map((id) => (
             <EditWrapper key={id} slice={slice} modelId={id}>
@@ -112,7 +93,7 @@ describe("Model row wrappers", () => {
   test("the detail and removal wrappers publish their own verb, and removal asks first", async () => {
     makeStore();
     const surface = new AgenticSurface();
-    const { unmount } = await mount(
+    const { unmount } = await mountSuspense(
       <AgentProvider surface={surface}>
         <ViewWrapper slice={slice} modelId={rowIds[0]}>
           <span>view</span>

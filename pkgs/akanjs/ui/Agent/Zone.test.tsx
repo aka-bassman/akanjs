@@ -3,24 +3,15 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { AgentRunner, AgentSession, ChatMessage, RunnerRequest } from "use-agentic";
+import { l, setTestEnv } from "../testHelpers";
 
 let Zone: typeof import("./Zone").Zone;
 let History: typeof import("./History").History;
 let st: typeof import("akanjs/store").st;
 let useAgent: typeof import("use-agentic").useAgent;
 
-const l = Object.assign((key: string) => key, {
-  _: (key: string) => key,
-  rich: (key: string) => key,
-  trans: (translation: Record<string, string>) => translation.en,
-});
-
-// Imported after the env is set: `akanjs/store`'s baseSt reads the env while the module evaluates.
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "zonetest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "zonetest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("zonetest");
   const { registerClientRuntime } = await import("akanjs/client");
   registerClientRuntime({ usePage: () => ({ path: "/", lang: "en", l }), fetch: {} });
   ({ Zone } = await import("./Zone"));

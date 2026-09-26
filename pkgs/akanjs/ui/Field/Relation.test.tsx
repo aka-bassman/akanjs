@@ -3,6 +3,7 @@ import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { DataList } from "akanjs/base";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { setTestEnv } from "../testHelpers";
 
 interface Row {
   id: string;
@@ -20,10 +21,7 @@ let LightRefCache: typeof import("./lightRefCache").LightRefCache;
 let seed: (rows: Row[]) => void;
 
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "relationtest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "relationtest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("relationtest");
   const { registerClientRuntime } = await import("akanjs/client");
   registerClientRuntime({
     usePage: () => ({ path: "/", lang: "en", l: Object.assign((key: string) => key, { _: (key: string) => key }) }),

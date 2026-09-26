@@ -1,14 +1,11 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { setTestEnv } from "../testHelpers";
 
 let Markdown: typeof import("./Markdown").default;
 
-// Imported after the env is set: the `akanjs/client` barrel calls `getEnv()` on load.
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "markdowntest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "markdowntest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("markdowntest");
   Markdown = (await import("./Markdown")).default;
 });
 

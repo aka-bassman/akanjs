@@ -4,6 +4,7 @@ import type { ClientSignal, ServerInit, ServerView } from "akanjs/fetch";
 import { act, type ReactNode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
+import { l, setTestEnv } from "../testHelpers";
 
 let Units: typeof import("./Units").default;
 let View: typeof import("./View").default;
@@ -11,18 +12,8 @@ let makeStore: (state?: Record<string, unknown>) => void;
 let calls: Record<string, ReturnType<typeof mock>>;
 let sliceState: { get: () => Record<string, unknown>; set: (state: Record<string, unknown>) => void };
 
-const l = Object.assign((key: string) => key, {
-  _: (key: string) => key,
-  rich: (key: string) => key,
-  trans: (translation: Record<string, string>) => translation.en,
-});
-
-/** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "loadtest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "loadtest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("loadtest");
   const { Int, SLICE_META } = await import("akanjs/base");
   const { ConstantRegistry, via } = await import("akanjs/constant");
   const { registerClientRuntime } = await import("akanjs/client");

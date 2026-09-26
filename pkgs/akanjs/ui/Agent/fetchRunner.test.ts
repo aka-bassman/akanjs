@@ -1,12 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { registerClientRuntime, Translator } from "akanjs/client";
 import type { RunnerEvent, RunnerRequest } from "use-agentic";
+import { setTestEnv } from "../testHelpers";
 import { fetchRunner } from "./fetchRunner";
 
-process.env.AKAN_PUBLIC_APP_NAME = "runnertest";
-process.env.AKAN_PUBLIC_REPO_NAME = "runnertest";
-process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-process.env.AKAN_PUBLIC_ENV = "testing";
+setTestEnv("runnertest");
 
 const handlerHolder: { runAgentTurn?: () => void; instance?: { jwt?: string | null } } = {};
 registerClientRuntime({ fetch: handlerHolder });

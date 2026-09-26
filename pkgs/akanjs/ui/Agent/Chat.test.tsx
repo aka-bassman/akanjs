@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { AgentRunner, AgentSession, ChatMessage, MessageAttachment, ToolCallRequest } from "use-agentic";
+import { l, setTestEnv } from "../testHelpers";
 import type { ChatProps } from "./Chat";
 
 let lib: typeof import("use-agentic");
@@ -13,18 +14,8 @@ let UiOverrideProvider: typeof import("../UiOverride").UiOverrideProvider;
 
 const runtimeFetch: Record<string, unknown> = {};
 
-const l = Object.assign((key: string) => key, {
-  _: (key: string) => key,
-  rich: (key: string) => key,
-  trans: (translation: Record<string, string>) => translation.en,
-});
-
-// Imported after the env is set: `./Chat` reaches the `akanjs/store` barrel, whose `baseSt` calls `getEnv()` on load.
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "chattest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "chattest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("chattest");
   const { registerClientRuntime } = await import("akanjs/client");
   registerClientRuntime({ usePage: () => ({ path: "/", lang: "en", l }), fetch: runtimeFetch });
   const { FetchClient } = await import("akanjs/fetch");

@@ -2,20 +2,12 @@ import "../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { l, setTestEnv } from "./testHelpers";
 
 let DefaultPopconfirm: typeof import("./Popconfirm").DefaultPopconfirm;
 
-const l = Object.assign((key: string) => key, {
-  _: (key: string) => key,
-  rich: (key: string) => key,
-  trans: (translation: Record<string, string>) => translation.en,
-});
-
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "popconfirmtest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "popconfirmtest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("popconfirmtest");
   const { registerClientRuntime } = await import("akanjs/client");
   registerClientRuntime({ usePage: () => ({ path: "/", lang: "en", l }), fetch: {} } as never);
   ({ DefaultPopconfirm } = await import("./Popconfirm"));

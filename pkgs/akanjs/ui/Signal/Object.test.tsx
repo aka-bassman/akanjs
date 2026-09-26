@@ -1,17 +1,14 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import type { ConstantCls, ConstantField, FieldInfoObject } from "akanjs/constant";
 import type { ReactElement } from "react";
+import { setTestEnv } from "../testHelpers";
 
 let UiObject: typeof import("./Object").default;
 let render: (element: ReactElement) => Promise<string>;
 let MapObjectFull: ConstantCls;
 
-/** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "signalobjecttest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "signalobjecttest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("signalobjecttest");
   const { FIELD_META, Int } = await import("akanjs/base");
   const { ConstantRegistry, field } = await import("akanjs/constant");
   const { registerClientRuntime } = await import("akanjs/client");

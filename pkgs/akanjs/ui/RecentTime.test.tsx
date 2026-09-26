@@ -2,16 +2,14 @@ import "../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { setTestEnv } from "./testHelpers";
 
 let RecentTime: typeof import("./RecentTime").RecentTime;
 let dayjs: typeof import("akanjs/base").dayjs;
 let lang = "en";
 
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "recenttimetest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "recenttimetest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("recenttimetest");
   const { registerClientRuntime } = await import("akanjs/client");
   registerClientRuntime({
     usePage: () => ({ path: "/", lang, l: Object.assign((key: string) => key, { _: (key: string) => key }) }),
