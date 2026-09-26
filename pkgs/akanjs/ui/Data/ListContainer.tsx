@@ -50,11 +50,9 @@ export interface ListContainerProps<
   Full extends { id: string },
   Light extends { id: string },
 > {
-  /** Additional classes for the list container. */
   className?: string;
-  /** Additional classes for card-list rendering. */
   cardListClassName?: string;
-  /** Initial rendering mode. The toolbar toggle switches it from here. */
+  /** Initial mode; the toolbar toggle switches it from here. */
   type?: "card" | "list";
   /** Fixed filter query for this listing. Given one, the panel is scoped and offers no query maker. */
   query?: QuerySetting;
@@ -62,19 +60,12 @@ export interface ListContainerProps<
   queryMap?: { [column: string]: QuerySetting };
   /** Initial fetch form: page, limit, sort, and the default values a new model starts from. */
   init?: FetchInitForm<Input, any>;
-  /** Generated slice metadata for the target model. */
   slice: SliceMeta;
-  /** Show create/new-model controls. */
   create?: boolean;
-  /** Optional list title. */
   title?: ReactNode;
-  /** Initial sort value. */
   sort?: unknown;
-  /** Table/list columns. */
   columns?: DataColumn<any>[];
-  /** Toolbar actions or a factory receiving the loaded list. */
   tools?: DataTool[] | ((modelList: Light[]) => DataTool[]);
-  /** Per-row actions or action factory. */
   actions?: DataAction[] | ((item: Light, idx: number) => DataAction[]);
   renderDashboard?: ({
     summary,
@@ -191,8 +182,7 @@ export default function ListContainer<
     void storeDo[namesOfSlice.initModel](...queryArgs, { sort, ...init });
   }, []);
 
-  // Every control in the toolbar, published under the same name its store action already carries. A control the
-  // toolbar does not draw withholds its name instead of registering: an unreachable lever is noise in every turn.
+  // Toolbar controls publish under their store action's name; one the toolbar does not draw registers nothing.
   const sortKeys = fetch.sortKeyMap?.get(refName) ?? [];
   const columnTitle = (column: DataColumn<any>) =>
     typeof column !== "string" && column.title
@@ -238,12 +228,8 @@ export default function ListContainer<
       downloadBlob(toJsonBlob(loadedList()), `${sliceName}.json`);
     });
 
-  // Row verbs, declared once here for the buttons `Data.Item` draws. They are `shared`, so a custom Unit built
-  // from `Model.EditWrapper` and friends registers the same names alongside without clashing — every one of them
-  // takes the id as an argument, and the ids come from the `items` resource opened just below. A `actions`
-  // factory decides per row, so nothing here can tell which verbs the screen actually draws: it publishes none
-  // rather than offering a button some rows do not have. The editor's own verbs are not here — `Model.EditModal`
-  // and `Model.ViewModal` publish those while they are open, which is also the only moment they can be used.
+  // Row verbs for the buttons `Data.Item` draws, taking the id as an argument; an `actions` factory decides per row,
+  // so it publishes none. The editor's own verbs come from `Model.EditModal`/`ViewModal` while they are open.
   const rowActions = Array.isArray(actions) ? actions : [];
   st.tool(rowActions.includes("edit") && renderTemplate ? namesOfSlice.editModel : null)
     .desc(`Open one ${modelName} in the edit form.`)
@@ -269,10 +255,8 @@ export default function ListContainer<
 
   const modelLabel = dictLabel(l._, `${sliceName}.modelName`, refName);
   const RenderTitle = renderTitle ?? ((model: Full) => `${modelLabel} - ${model.id ? model.id : "New"}`);
-  // `summary` is an app-level state key, not a generated one: read it off the state so a store without it renders
-  // nothing instead of calling an accessor that does not exist. Built as a value rather than mounted as
-  // `<ModelDashboard />`, for the same reason the query maker is: a component type this render creates is a new
-  // type every render, so React would remount the dashboard and lose the tile the user just picked.
+  // `summary` is an app-level state key, so it is read off the state; built as a value, not `<ModelDashboard />`,
+  // since a component type created in render remounts every render and loses the picked tile.
   const summary = storeSel<Record<string, unknown> | undefined>(
     (state) => (state as { summary?: Record<string, unknown> }).summary,
   );
@@ -288,9 +272,7 @@ export default function ListContainer<
         queryKey: queryState.setting.queryKey,
       })
     );
-  // Called, not mounted as `<RenderQueryMaker />`: a wrapper this render creates is a new component type every
-  // time, so React would unmount the maker on each parent render and take the filter the user picked with it.
-  // A fixed `query` is the panel's scope, so the maker that would widen it is not drawn at all.
+  // Called, not mounted, for the same remount reason; a fixed `query` is the panel's scope, so no maker is drawn.
   const queryMakerArgs = renderQueryMaker ? (
     renderQueryMaker()
   ) : query ? null : (

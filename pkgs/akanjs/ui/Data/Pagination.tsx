@@ -9,9 +9,7 @@ import { usePageTool } from "akanjs/webkit";
 import { Pagination as Pagn } from "../Pagination";
 
 interface PaginationProps<T extends string> {
-  /** Additional classes for the pagination wrapper. */
   className?: string;
-  /** Generated slice metadata used to read page state and dispatch page changes. */
   slice: SliceMeta;
 }
 export default function Pagination<T extends string>({ className, slice }: PaginationProps<T>) {
@@ -51,7 +49,6 @@ export default function Pagination<T extends string>({ className, slice }: Pagin
     <div className={cn("mt-4 flex flex-wrap justify-center", className)}>
       <Pagn
         currentPage={pageOfModel}
-        // showQuickJumper={lastPageOfModel > 10}
         total={modelInsight.count}
         onPageSelect={setPageOfModel}
         itemsPerPage={limitOfModel || modelInsight.count}
