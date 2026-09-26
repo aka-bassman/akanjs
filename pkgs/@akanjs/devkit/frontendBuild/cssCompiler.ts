@@ -1,13 +1,13 @@
 import path from "node:path";
 import { Logger } from "akanjs/common";
 import { compile } from "tailwindcss";
+import { SOURCE_EXTS } from "../akanApp/devHostPolicy";
 import type { App } from "../commandDecorators";
 import { BarrelAnalyzer } from "../transforms/barrelAnalyzer";
 import { createTsconfigPackageResolver, rewriteBarrelImports } from "../transforms/barrelImportsPlugin";
 import { CssCandidateCache } from "./cssCandidateCache";
 import { CssImportResolver } from "./cssImportResolver";
 
-const SOURCE_EXTS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"] as const;
 const NON_SOURCE_EXT_RE = /\.(json|svg|png|jpe?g|webp|gif|avif|ico|woff2?|ttf|otf|mp3|mp4|wav)$/i;
 const NODE_MODULES_RE = /[\\/]node_modules[\\/]/;
 const AKANJS_NODE_MODULE_RE = /[\\/]node_modules[\\/]akanjs[\\/]/;
@@ -377,7 +377,7 @@ function resolveSourceWithRequire(id: string, fromBase: string): string | null {
 }
 
 function isSourceFile(filePath: string) {
-  return SOURCE_EXTS.includes(path.extname(filePath) as (typeof SOURCE_EXTS)[number]);
+  return SOURCE_EXTS.has(path.extname(filePath));
 }
 
 export function isIgnoredNodeModuleSource(filePath: string): boolean {

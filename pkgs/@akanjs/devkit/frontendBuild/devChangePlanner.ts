@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { ChangeKind, DevChangeAction, DevChangePlan, DevChangeRole } from "akanjs/server";
+import { SOURCE_EXTS } from "../akanApp/devHostPolicy";
 
-const SOURCE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const CONFIG_BASENAMES = new Set(["akan.config.ts", "bunfig.toml", "tsconfig.json", "package.json"]);
 const BARREL_FACETS = new Set(["common", "srvkit", "ui", "webkit", "plugin"]);
 const CLIENT_SUFFIXES = [".Template.tsx", ".Unit.tsx", ".Util.tsx", ".View.tsx", ".Zone.tsx", ".store.ts"];
