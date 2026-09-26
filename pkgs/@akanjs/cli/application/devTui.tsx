@@ -6,26 +6,14 @@ import { DevLogBuffer, type DevLogTarget, HOST_SOURCE, plainTextOf } from "./dev
 import { scrollAnchor, windowOf } from "./devLogWindow";
 import type { DevAppStatus, DevSupervisor, DevSupervisorView } from "./devSupervisor";
 
-/**
- * The full-screen view: a rail of apps and the processes inside them on the left, the selected one's
- * output on the right.
- *
- * Ink repaints a frame per render, and a busy dev server writes hundreds of lines a second, so nothing
- * here renders per line. Output lands in a bounded buffer and listeners are notified on a frame timer;
- * the pane then reads only the rows it can show. The stored text keeps its ANSI — that is the level
- * colour the child already rendered — and only matching strips it.
- *
- * The selection is held as a `{ app, source }` target rather than a rail index, because the rail's own
- * shape depends on it: an app's replica rows are listed only while that app is selected.
- */
+// Ink repaints a frame per render, so output lands in a bounded buffer and listeners are notified on a frame timer.
+// The selection is an `{ app, source }` target, not a rail index: replica rows exist only under the selected app.
 export class DevTui implements DevSupervisorView {
   /** Ink throttles its own writes to `maxFps: 30`, so notifying faster only buys extra reconciles. */
   static readonly frameMs = 34;
-  /** The footer, outside the fixed-height body. */
   static readonly footerRows = 1;
   /** A pane's own border pair plus its title row. */
   static readonly paneChromeRows = 3;
-  /** How long a copy result holds the footer before the key hints come back. */
   static readonly noticeMs = 4_000;
 
   readonly #buffer = new DevLogBuffer();
@@ -99,8 +87,7 @@ export class DevTui implements DevSupervisorView {
     this.#noticeTimer = null;
     process.stdout.off("resize", this.#onResize);
     this.#instance.unmount();
-    // Ink leaves its last frame behind, so the only thing still owed is whatever a child wrote without
-    // a closing newline plus a summary of how the session ended.
+    // Ink leaves its last frame behind; still owed are unterminated child lines and how the session ended.
     for (const line of this.#buffer.flushPartials()) process.stdout.write(`${line.app} │ ${line.text}\n`);
     for (const status of this.#statuses)
       process.stdout.write(
@@ -118,11 +105,7 @@ export class DevTui implements DevSupervisorView {
     };
   };
 
-  /**
-   * `all`, then each app, then the processes that app has actually written from — `host` for the dev
-   * host, gateway and RSC worker, plus one row per replica the gateway forwards. Replica rows appear
-   * only under the selected app, so the rail's height does not track the total replica count.
-   */
+  // Replica rows appear only under the selected app, so the rail's height does not track the replica count.
   #railRows(): DevTuiRailRow[] {
     const rows: DevTuiRailRow[] = [
       { app: null, source: null, label: "all apps", state: null, port: null, depth: 0, appIndex: null },
@@ -171,9 +154,7 @@ export class DevTui implements DevSupervisorView {
     this.#cachedSnapshot = {
       rows,
       selected: this.#indexOfTarget(rows),
-      // The share leads, ahead of the local URL and the state: the title truncates to the pane width, the
-      // rail already carries the state glyph and the port, and the public URL is the one thing this session
-      // has that cannot be read off anything else on screen.
+      // The share leads: the title truncates, and the public URL is shown nowhere else on screen.
       title: status
         ? `${status.name}${this.#target.source ? ` · ${this.#target.source}` : ""}${status.shareUrl ? ` · ◈ ${status.shareUrl}` : ""} · ${status.url} · ${status.state}${status.detail ? ` (${status.detail})` : ""}`
         : this.#mergedTitle(),
@@ -181,8 +162,7 @@ export class DevTui implements DevSupervisorView {
       above: view.above,
       below: view.below,
       following: view.following,
-      // Merged across apps, the app name is what tells two `host` streams apart; inside one app it is
-      // the source; inside one source the title already says which, so nothing is prefixed.
+      // Merged apps need the app name to tell `host` streams apart; inside one source the title says which.
       prefix: this.#target.app === null ? "app" : this.#target.source === null ? "source" : "none",
       prefixWidth: this.#target.app === null ? this.#appWidth() : this.#sourceWidth(),
       grep: this.#grep,
@@ -227,7 +207,6 @@ export class DevTui implements DevSupervisorView {
 
   #onResize = () => this.#renderNow();
 
-  /** `Tab` walks every rail row, replica rows included. */
   #moveSelection = (delta: number) => {
     const rows = this.#railRows();
     const next = (((this.#indexOfTarget(rows) + delta) % rows.length) + rows.length) % rows.length;
@@ -235,10 +214,7 @@ export class DevTui implements DevSupervisorView {
     if (row) this.#setTarget({ app: row.app, source: row.source });
   };
 
-  /**
-   * A digit names an app, not a rail row: the row index shifts as replica rows appear under whichever
-   * app is selected, so `2` would otherwise mean a different thing depending on where you already were.
-   */
+  // A digit names an app, not a rail row: row indexes shift as replica rows appear under the selected app.
   #selectApp = (index: number) => {
     const status = this.#statuses[index];
     if (status) this.#setTarget({ app: status.name, source: null });
@@ -246,8 +222,7 @@ export class DevTui implements DevSupervisorView {
 
   #setTarget(target: DevLogTarget) {
     this.#target = { app: target.app ?? null, source: target.source ?? null };
-    // A different slice has a different tail; carrying the anchor over would land the reader somewhere
-    // arbitrary in it.
+    // A different slice has a different tail, so a carried-over anchor would land somewhere arbitrary.
     this.#anchor = null;
     this.#renderNow();
   }
@@ -285,11 +260,7 @@ export class DevTui implements DevSupervisorView {
     this.#renderNow();
   };
 
-  /**
-   * The pane truncates to its width and the frame carries a border, so a selection dragged off the
-   * screen is neither the whole line nor only the log — and a repaint clears it before it is made.
-   * This copies what the filters already narrowed: every matching line, in full, with no chrome.
-   */
+  // A drag-selection is truncated, bordered and cleared by the next repaint; this copies filtered lines in full.
   #copyLines = () => {
     const lines = this.#filtered(this.#target);
     if (lines.length === 0) {
@@ -302,7 +273,6 @@ export class DevTui implements DevSupervisorView {
     });
   };
 
-  /** The path is what a reader hands to an editor or an agent, which reads it instead of a paste. */
   #copyPath = () => {
     const paths = this.#logPaths();
     void writeClipboard(paths.join("\n")).then((copied) => {
@@ -316,11 +286,7 @@ export class DevTui implements DevSupervisorView {
     return (app ? [app] : log.appNames).map((name) => log.relativePathOf(name));
   }
 
-  /**
-   * The share's whole point is a URL somebody else opens, and this view owns the terminal for the session —
-   * so the line `--share` printed before `render` is gone by the first repaint and there is nothing to select.
-   * The header carries it and this hands it over.
-   */
+  // The line `--share` printed before `render` is gone by the first repaint, so this hands the URL over.
   #copyShareUrl = () => {
     const urls = this.#shareUrls();
     if (urls.length === 0) {
@@ -332,7 +298,6 @@ export class DevTui implements DevSupervisorView {
     });
   };
 
-  /** The selected app's share, or every one of them while the merged view is selected — as `Y` does. */
   #shareUrls(): string[] {
     const app = this.#target.app;
     return this.#statuses

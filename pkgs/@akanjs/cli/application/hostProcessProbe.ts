@@ -8,11 +8,8 @@ export interface HostProcess {
   startedAt: number | null;
 }
 
-/**
- * Who listens on a port, and what a process is, read with what the OS ships: `lsof` and `ps` on macOS,
- * `/proc` on Linux (a slim image carries neither `lsof` nor `ps`), and `netstat` plus one CIM query on
- * Windows. Every lookup answers empty rather than throwing, so a missing tool reads as "nobody there".
- */
+// Reads what the OS ships: `lsof`/`ps` on macOS, `/proc` on Linux (slim images carry neither), `netstat` + CIM on
+// Windows. Every lookup answers empty rather than throwing, so a missing tool reads as "nobody there".
 export class HostProcessProbe {
   static readonly timeoutMs = 3_000;
   //? PowerShell alone takes seconds to start on a small VM, and the CIM query runs behind it.
