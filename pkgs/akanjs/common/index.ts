@@ -125,8 +125,7 @@ export {
   mcpRefusalOf,
 } from "./mcpExposure";
 export { deepObjectify, objectify, plainFieldsOf } from "./objectify";
-export { pathGet, pathSet, toPathSegments } from "./objectPath";
-export { pathGetLoose } from "./pathGetLoose";
+export { pathGet, pathGetLoose, pathSet, toPathSegments } from "./objectPath";
 export { formatPhone, isPhoneNumber } from "./phone";
 export { randomPick, randomPicks } from "./randomPick";
 export { hostFromRequest, isJsonContentType, originFromRequest } from "./requestOrigin";
