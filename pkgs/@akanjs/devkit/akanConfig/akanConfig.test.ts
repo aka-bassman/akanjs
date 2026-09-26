@@ -33,6 +33,22 @@ const baseDevEnv = {
   workspaceRoot: "/workspace",
 };
 
+const loadExtAppConfig = async (tmpPrefix: string, appConfig: string, libConfig: string) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), tmpPrefix));
+  try {
+    fs.mkdirSync(path.join(root, "apps/extapp"), { recursive: true });
+    fs.mkdirSync(path.join(root, "libs/extlib"), { recursive: true });
+    fs.writeFileSync(path.join(root, "apps/extapp/akan.config.ts"), appConfig);
+    fs.writeFileSync(path.join(root, "libs/extlib/akan.config.ts"), libConfig);
+    fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "extrepo", version: "1.0.0" }));
+    fs.writeFileSync(path.join(root, ".env"), "AKAN_PUBLIC_REPO_NAME=extrepo\nAKAN_PUBLIC_SERVE_DOMAIN=ext.test\n");
+    const workspace = WorkspaceExecutor.fromRoot({ workspaceRoot: root, repoName: "extrepo" });
+    return await AppExecutor.from(workspace, "extapp").getConfig();
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+};
+
 describe("AkanAppConfig", () => {
   test("applies defaults for route domains, i18n, image, mobile, and imports", () => {
     const config = new AkanAppConfig(app, ["shared"], packageJson, {}, baseDevEnv);
@@ -491,25 +507,13 @@ describe("AkanAppConfig lib externalLibs", () => {
   });
 
   test("reads them off every workspace lib config on load", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "akan-config-libext-"));
-    try {
-      fs.mkdirSync(path.join(root, "apps/extapp"), { recursive: true });
-      fs.mkdirSync(path.join(root, "libs/extlib"), { recursive: true });
-      fs.writeFileSync(path.join(root, "apps/extapp/akan.config.ts"), "export default { externalLibs: ['shiki'] };\n");
-      fs.writeFileSync(
-        path.join(root, "libs/extlib/akan.config.ts"),
-        "export default { externalLibs: ['puppeteer'] };\n",
-      );
-      fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "extrepo", version: "1.0.0" }));
-      fs.writeFileSync(path.join(root, ".env"), "AKAN_PUBLIC_REPO_NAME=extrepo\nAKAN_PUBLIC_SERVE_DOMAIN=ext.test\n");
+    const config = await loadExtAppConfig(
+      "akan-config-libext-",
+      "export default { externalLibs: ['shiki'] };\n",
+      "export default { externalLibs: ['puppeteer'] };\n",
+    );
 
-      const workspace = WorkspaceExecutor.fromRoot({ workspaceRoot: root, repoName: "extrepo" });
-      const config = await AppExecutor.from(workspace, "extapp").getConfig();
-
-      expect(config.externalLibs).toEqual(["shiki", "puppeteer"]);
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
+    expect(config.externalLibs).toEqual(["shiki", "puppeteer"]);
   });
 });
 
@@ -553,26 +557,14 @@ describe("AkanAppConfig lib docker runs", () => {
   });
 
   test("reads them off every workspace lib config on load", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "akan-config-libdocker-"));
-    try {
-      fs.mkdirSync(path.join(root, "apps/extapp"), { recursive: true });
-      fs.mkdirSync(path.join(root, "libs/extlib"), { recursive: true });
-      fs.writeFileSync(path.join(root, "apps/extapp/akan.config.ts"), "export default {};\n");
-      fs.writeFileSync(
-        path.join(root, "libs/extlib/akan.config.ts"),
-        "export default { docker: { preRuns: ['echo from-lib'], postRuns: [{ arm64: 'echo arm-only' }] } };\n",
-      );
-      fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "extrepo", version: "1.0.0" }));
-      fs.writeFileSync(path.join(root, ".env"), "AKAN_PUBLIC_REPO_NAME=extrepo\nAKAN_PUBLIC_SERVE_DOMAIN=ext.test\n");
+    const config = await loadExtAppConfig(
+      "akan-config-libdocker-",
+      "export default {};\n",
+      "export default { docker: { preRuns: ['echo from-lib'], postRuns: [{ arm64: 'echo arm-only' }] } };\n",
+    );
 
-      const workspace = WorkspaceExecutor.fromRoot({ workspaceRoot: root, repoName: "extrepo" });
-      const config = await AppExecutor.from(workspace, "extapp").getConfig();
-
-      expect(config.dockerfile).toContain("RUN echo from-lib");
-      expect(config.dockerfile).toContain('RUN if [ "$TARGETARCH" = "arm64"');
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
+    expect(config.dockerfile).toContain("RUN echo from-lib");
+    expect(config.dockerfile).toContain('RUN if [ "$TARGETARCH" = "arm64"');
   });
 });
 
