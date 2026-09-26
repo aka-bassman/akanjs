@@ -41,7 +41,7 @@ export type SliceCls<
   mcp: ResolvedSliceMcp;
 };
 
-/** The generated verbs, resolved to a plain answer each. `root` is not here: it rides on the root slice itself. */
+/** `root` is absent: it rides on the root slice itself. */
 export interface ResolvedSliceMcp {
   get: boolean;
   create: boolean;
@@ -59,13 +59,8 @@ interface RootSliceOption {
     remove?: GuardCls | GuardCls[];
   };
   /**
-   * Which of the entries this call generates belong on an agent's shelf. Keyed exactly like `guards` above and
-   * scoped to exactly what `guards` governs — the root slice and the generated CRUD — so `false` here narrows the
-   * catalogue and nothing else. `create`/`update`/`remove` fall back to `cru` the same way their guards do, and
-   * the bare `false` is every key at once.
-   *
-   * A named slice and a custom endpoint declare their own `mcp` in their own signal option, exactly as they
-   * declare their own guards. This is curation, not authorization: HTTP is unchanged.
+   * Keyed like `guards`, for the root slice and generated CRUD only; `create`/`update`/`remove` fall back to `cru`
+   * and a bare boolean sets every key. Curation, not authorization: HTTP is unchanged.
    */
   mcp?:
     | boolean
@@ -102,7 +97,6 @@ type ExtendSliceInfoObj<
     : never;
 };
 
-/** Builds database-backed slice APIs for list, insight, init, view, edit, create, update, and remove flows. */
 export function slice<
   SrvModule extends ServiceModel,
   BuildSlice extends SliceBuilder<SrvModule>,
@@ -148,8 +142,7 @@ export function slice<
   const rootGuards = toGuards(option.guards?.root);
   const getGuards = toGuards(option.guards?.get);
   const cruGuards = toGuards(option.guards?.cru);
-  // create/update/remove override the shared cru guard for their own endpoint; when omitted they
-  // fall back to the same cruGuards reference so serialization can detect "not overridden" by identity.
+  // An omitted override keeps the same `cruGuards` reference: serialization detects "not overridden" by identity.
   const createGuards = option.guards?.create ? toGuards(option.guards.create) : cruGuards;
   const updateGuards = option.guards?.update ? toGuards(option.guards.update) : cruGuards;
   const removeGuards = option.guards?.remove ? toGuards(option.guards.remove) : cruGuards;
@@ -178,8 +171,7 @@ export function slice<
     static mcp = mcp;
     static [SLICE_META] = Object.assign(
       {
-        // The root slice names one of the model's own filters instead of carrying a query: an admin API that
-        // took a raw descriptor let any caller compose a query the model never declared.
+        // Names one of the model's filters rather than taking a raw query, which would let a caller compose any query.
         [""]: init({ guards: rootGuards, ...(mcpOption?.root === false ? { mcp: false } : {}) })
           .search<"queryKey", string>("queryKey", String)
           .search<"args", unknown[]>("args", Any)
@@ -187,8 +179,7 @@ export function slice<
             try {
               return resolveFilterQuery(filterRef, queryKey, args);
             } catch (error) {
-              // A filter this model does not declare, or args it cannot take, is the caller's mistake — the
-              // schema names every key and every argument, so saying which one is wrong leaks nothing.
+              // The schema already names every filter and argument, so saying which one is wrong leaks nothing.
               if (error instanceof FilterQueryError) throw new Exception.BadRequest(error.message);
               throw error;
             }

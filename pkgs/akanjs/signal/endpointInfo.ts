@@ -274,15 +274,8 @@ export class EndpointInfo<
       Nullable
     >;
   }
-  /**
-   * Retypes a slice's own arguments as this room's arguments, keeping each one's nullability.
-   *
-   * Not `_addArgs`, which would route a `search` argument back to `.search()`. And not `.room()` per argument:
-   * that refuses a nullable argument in anything but the last position, which is the right rule for a URL and a
-   * meaningless one for a room — the arguments travel as a positional array with explicit nulls, so a missing one
-   * is unambiguous. Nullability is preserved because dropping it would make an absent optional argument fail to
-   * deserialize on the way in.
-   */
+  // Not `_addArgs` (it routes `search` back to `.search()`) nor `.room()` (it refuses a non-last nullable, which a
+  // positional room array does not need); nullability is kept so an absent optional argument still deserializes.
   _addRoomArgs(args: ArgInfo<EndpointArgProps<boolean>>[]) {
     for (const arg of args) {
       this.argNames.push(arg.name);
@@ -386,10 +379,6 @@ export type EndpointBuilder<SrvModule extends ServiceModel = ServiceModel> = (bu
   [key: string]: EndpointInfo;
 };
 
-// --- Accessors ---
-// Named projections for EndpointInfo's 10 generics. Use these instead of
-// re-inferring the whole shape so that parameter-order refactors only need
-// to be reflected in one place.
 type EndpointInfoEmptyParts = {
   reqType: never;
   srvs: never;
