@@ -109,8 +109,7 @@ const RestApiEndpoint = ({
   const { l } = usePage();
   const [viewStatus, setViewStatus] = useState<"doc" | "test">("doc");
   const path = FetchClient.makeHttpUrl(endpointKey, endpoint, signalPrefix, new Map());
-  // The same fail-closed rules the server runs, so the badge says what the catalogue says. Exposure follows the
-  // guards, so every endpoint is a candidate and the refusal is the whole answer.
+  // The server's own fail-closed rules, so the badge says what the MCP catalogue says.
   const mcpRefusal = mcpRefusalOf(endpoint, { refName, key: endpointKey });
   const guards = guardsOf(endpoint);
   const label = dictText(l, `${refName}.signal.${endpointKey}`);
