@@ -11,7 +11,6 @@ import {
   type WorkflowValidationRunReport,
   workflowStepKey,
 } from "@akanjs/devkit/workflow";
-import { ContextRunner } from "../context/context.runner";
 import { ModuleRunner } from "../module/module.runner";
 import { WorkflowRunner } from "./workflow.runner";
 
@@ -222,7 +221,7 @@ describe("WorkflowRunner", () => {
     const output = await runner.apply(planPath, {
       format: "json",
       workspace,
-      registry: ContextRunner.workflowStepRegistry(workspace),
+      registry: WorkflowRunner.stepRegistry(workspace),
     });
     const report = JSON.parse(output) as WorkflowApplyReport;
 
@@ -272,7 +271,7 @@ describe("WorkflowRunner", () => {
       { field: "status", type: "String" },
       { plan: "task-status" },
     );
-    const registry = ContextRunner.workflowStepRegistry(workspace);
+    const registry = WorkflowRunner.stepRegistry(workspace);
     registry[workflowStepKey("add-field", "update-ui-surfaces")] = async () => {
       await module.writeFile(
         "task.dictionary.ts",
@@ -324,7 +323,7 @@ export const taskDictionary = modelDictionary("task")
       { field: "budget", type: "Int" },
       { plan: "task-budget" },
     );
-    const registry = ContextRunner.workflowStepRegistry(workspace);
+    const registry = WorkflowRunner.stepRegistry(workspace);
     registry[workflowStepKey("add-field", "update-constant")] = async () => {
       await module.writeFile(
         "task.constant.ts",
@@ -421,7 +420,7 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
     const output = await runner.apply(planPath, {
       format: "json",
       workspace,
-      registry: ContextRunner.workflowStepRegistry(workspace),
+      registry: WorkflowRunner.stepRegistry(workspace),
     });
     const report = JSON.parse(output) as WorkflowApplyReport;
 
@@ -461,7 +460,7 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
     const output = await runner.apply(planPath, {
       format: "json",
       workspace,
-      registry: ContextRunner.workflowStepRegistry(workspace),
+      registry: WorkflowRunner.stepRegistry(workspace),
     });
     const report = JSON.parse(output) as WorkflowApplyReport;
 
@@ -498,7 +497,7 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
     tempRoots.push(root);
     await new ModuleRunner().createModuleTemplate(module);
     const runner = new WorkflowRunner();
-    const registry = ContextRunner.workflowStepRegistry(workspace);
+    const registry = WorkflowRunner.stepRegistry(workspace);
     const inputs = {
       app: "demo",
       module: "task",

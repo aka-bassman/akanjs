@@ -1,13 +1,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AkanContextAnalyzer } from "@akanjs/devkit/akanContext";
-import { runner, type Workspace } from "@akanjs/devkit/commandDecorators";
+import { CommandContainer, runner, type Workspace } from "@akanjs/devkit/commandDecorators";
 import {
   compactWorkflowInputs,
   createDryRunWorkflowApplyReport,
   createWorkflowApplyReport,
   createWorkflowBaselineSummary,
   createWorkflowPlan,
+  createWorkflowStepRegistry,
   createWorkflowValidationRunReport,
   getWorkflowSpec,
   jsonText,
@@ -38,7 +39,10 @@ import {
   writeWorkflowRunArtifact,
 } from "@akanjs/devkit/workflow";
 import { capitalize } from "akanjs/common";
+import { ModuleScript } from "../module/module.script";
+import { PrimitiveScript } from "../primitive/primitive.script";
 import { spawnShell } from "../repair/repair.runner";
+import { ScalarScript } from "../scalar/scalar.script";
 import { workflowSpecs } from "../workflows";
 
 const resolvePath = (filePath: string) => (path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath));
@@ -260,6 +264,19 @@ const withBaselineDetailsPolicy = (report: WorkflowValidationRunReport, includeB
 };
 
 export class WorkflowRunner extends runner("workflow") {
+  static stepRegistry(workspace: Workspace) {
+    return createWorkflowStepRegistry({
+      workspace,
+      createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
+      createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
+      createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
+      addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
+      addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
+      addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
+      addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
+    });
+  }
+
   list({ format = "markdown" }: { format?: WorkflowFormat } = {}) {
     const workflows = listWorkflowSpecs(workflowSpecs);
     if (format === "json")
