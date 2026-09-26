@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { AkanRouterStateV1 } from "./routeState";
 import { makePatch, makeRouterState, makeTreeOf } from "./rscNavigation.fixture";
 import {
   applyAkanSegmentCachePatch,
