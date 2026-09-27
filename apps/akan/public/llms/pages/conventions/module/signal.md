@@ -74,7 +74,7 @@ A required URL path segment. One scalar or `enumOf`, never a model or an array.
 
 A query-string value. Always optional, so `exec` may receive `undefined`.
 
-A request-body value, mostly for mutations. `{ nullable: true }` makes it optional.
+A request-body value of a mutation. A query is sent without a body, so give it `.search()` instead. `{ nullable: true }` makes it optional.
 
 A payload field of a `message` or of a `process` job.
 

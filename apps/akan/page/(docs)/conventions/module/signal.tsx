@@ -225,8 +225,8 @@ export default page().render(() => {
     {
       name: ".body(name, Type, options?)",
       desc: l.trans({
-        en: "A request-body value, mostly for mutations. `{ nullable: true }` makes it optional.",
-        ko: "요청 body 값이며 주로 mutation에서 씁니다. `{ nullable: true }`면 선택 인자가 됩니다.",
+        en: "A request-body value of a mutation. A query is sent without a body, so give it `.search()` instead. `{ nullable: true }` makes it optional.",
+        ko: "mutation의 요청 body 값입니다. query는 body 없이 보내므로 query에는 `.search()`를 씁니다. `{ nullable: true }`면 선택 인자가 됩니다.",
       }),
       example: '.body("data", cnst.StoryInput)',
     },
