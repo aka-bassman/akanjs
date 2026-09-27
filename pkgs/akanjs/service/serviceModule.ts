@@ -1,15 +1,18 @@
 import type { MergeAllKeyOfObjects, UnCls } from "akanjs/base";
 import { capitalize, lowerlize } from "akanjs/common";
 import type { ConstantModel, QueryOf } from "akanjs/constant";
-import type {
-  DatabaseModel,
-  DataInputOf,
-  Doc,
-  FindQueryOption,
-  ListQueryOption,
-  SaveEventListener,
-  SaveEventType,
-  UpdateChain,
+import {
+  type DatabaseModel,
+  type DataInputOf,
+  type Doc,
+  documentQueryHelper,
+  type FilterInfo,
+  type FindQueryOption,
+  type ListQueryOption,
+  type SaveEventListener,
+  type SaveEventType,
+  splitFilterArgs,
+  type UpdateChain,
 } from "akanjs/document";
 import type { ServiceCls } from "./serve";
 import type { DatabaseService } from "./types";
@@ -148,78 +151,65 @@ export class ServiceModel<
     };
     return dbServiceMethods;
   }
-  static getFilterServiceMethods(queryKey: string, queryFn: (...args: any[]) => QueryOf<any>) {
-    const capitalizedQueryKey = capitalize(queryKey);
-    const getQueryDataFromKey = (queryKey: string, args: any): { query: any; queryOption: any } => {
-      const lastArg = args.at(-1);
-      const hasQueryOption =
-        lastArg &&
-        typeof lastArg === "object" &&
-        (typeof lastArg.select === "object" ||
-          typeof lastArg.skip === "number" ||
-          typeof lastArg.limit === "number" ||
-          typeof lastArg.sort === "string");
-      const query = queryFn(...(hasQueryOption ? args.slice(0, -1) : args));
-      const queryOption = hasQueryOption ? lastArg : {};
-      return { query, queryOption };
+  static getFilterServiceMethods(queryKey: string, filterInfo: FilterInfo) {
+    const queryFn = filterInfo.queryFn;
+    if (!queryFn) throw new Error(`No query function for key: ${queryKey}`);
+    const queryOf = (args: any): QueryOf<any> =>
+      queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
+    const dataOf = (args: any) => {
+      const { queryArgs, queryOption } = splitFilterArgs(filterInfo, args);
+      return { query: queryFn(...queryArgs, documentQueryHelper), queryOption };
     };
-    const filterServiceMethods = {
-      [`list${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-        const { query, queryOption } = getQueryDataFromKey(queryKey, args);
+    const key = capitalize(queryKey);
+    return {
+      [`list${key}`]: async function (this: DatabaseService, ...args: any) {
+        const { query, queryOption } = dataOf(args);
         return this.__list(query, queryOption);
       },
-      [`listIds${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-        const { query, queryOption } = getQueryDataFromKey(queryKey, args);
+      [`listIds${key}`]: async function (this: DatabaseService, ...args: any) {
+        const { query, queryOption } = dataOf(args);
         return this.__listIds(query, queryOption);
       },
-      [`find${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-        const { query, queryOption } = getQueryDataFromKey(queryKey, args);
+      [`find${key}`]: async function (this: DatabaseService, ...args: any) {
+        const { query, queryOption } = dataOf(args);
         return this.__find(query, queryOption);
       },
-      [`findId${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-        const { query, queryOption } = getQueryDataFromKey(queryKey, args);
+      [`findId${key}`]: async function (this: DatabaseService, ...args: any) {
+        const { query, queryOption } = dataOf(args);
         return this.__findId(query, queryOption);
       },
-      [`pick${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-        const { query, queryOption } = getQueryDataFromKey(queryKey, args);
+      [`pick${key}`]: async function (this: DatabaseService, ...args: any) {
+        const { query, queryOption } = dataOf(args);
         return this.__pick(query, queryOption);
       },
-      [`pickId${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-        const { query, queryOption } = getQueryDataFromKey(queryKey, args);
+      [`pickId${key}`]: async function (this: DatabaseService, ...args: any) {
+        const { query, queryOption } = dataOf(args);
         return this.__pickId(query, queryOption);
       },
-      [`exists${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-        const { query } = getQueryDataFromKey(queryKey, args);
-        return this.__exists(query);
+      [`exists${key}`]: async function (this: DatabaseService, ...args: any) {
+        return this.__exists(queryOf(args));
       },
-      [`count${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-        const { query } = getQueryDataFromKey(queryKey, args);
-        return this.__count(query);
+      [`count${key}`]: async function (this: DatabaseService, ...args: any) {
+        return this.__count(queryOf(args));
       },
-      [`insight${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-        const { query } = getQueryDataFromKey(queryKey, args);
-        return this.__insight(query);
+      [`insight${key}`]: async function (this: DatabaseService, ...args: any) {
+        return this.__insight(queryOf(args));
       },
-      [`query${capitalizedQueryKey}`]: function (this: DatabaseService, ...args: any) {
-        return queryFn(...args);
+      [`query${key}`]: (...args: any) => queryOf(args),
+      [`remove${key}`]: async function (this: DatabaseService, ...args: any) {
+        return this.__removeMany(queryOf(args));
       },
-      [`remove${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-        const { query } = getQueryDataFromKey(queryKey, args);
-        return this.__removeMany(query);
+      [`removeOne${key}`]: async function (this: DatabaseService, ...args: any) {
+        return this.__removeOne(queryOf(args));
       },
-      [`removeOne${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
-        const { query } = getQueryDataFromKey(queryKey, args);
-        return this.__removeOne(query);
-      },
-      [`update${capitalizedQueryKey}`]: function (this: DatabaseService, ...args: any): UpdateChain {
-        const { query } = getQueryDataFromKey(queryKey, args);
+      [`update${key}`]: function (this: DatabaseService, ...args: any): UpdateChain {
+        const query = queryOf(args);
         return { set: (update) => this.__updateMany(query, update) };
       },
-      [`updateOne${capitalizedQueryKey}`]: function (this: DatabaseService, ...args: any): UpdateChain {
-        const { query } = getQueryDataFromKey(queryKey, args);
+      [`updateOne${key}`]: function (this: DatabaseService, ...args: any): UpdateChain {
+        const query = queryOf(args);
         return { set: (update) => this.__updateOne(query, update) };
       },
     };
-    return filterServiceMethods;
   }
 }
