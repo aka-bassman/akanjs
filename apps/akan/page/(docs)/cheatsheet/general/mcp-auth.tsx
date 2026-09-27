@@ -350,13 +350,17 @@ export default page().render(() => {
       en: (
         <>
           <strong>No scope.</strong> Guards already decide what a caller may do, so a scope would only be a second,
-          weaker copy. Neither the metadata nor the token carries one, and the consent page says so to the user.
+          weaker copy. Neither the metadata nor the token carries one, and the consent page says so to the user.{" "}
+          <code>AKAN_MCP_SCOPES</code> is for tokens another issuer mints; set on an app that runs this server, it
+          refuses every token the server issues.
         </>
       ),
       ko: (
         <>
           <strong>scope는 없습니다.</strong> 호출자가 무엇을 할 수 있는지는 이미 guard가 정하므로, scope는 그보다 약한
-          사본일 뿐입니다. 메타데이터도 토큰도 scope를 싣지 않고, 동의 페이지도 사용자에게 그렇게 알립니다.
+          사본일 뿐입니다. 메타데이터도 토큰도 scope를 싣지 않고, 동의 페이지도 사용자에게 그렇게 알립니다.{" "}
+          <code>AKAN_MCP_SCOPES</code>는 다른 issuer가 발급한 토큰용이며, 이 서버를 쓰는 앱에 설정하면 이 서버가 발급한
+          토큰이 모두 거절됩니다.
         </>
       ),
     }),
