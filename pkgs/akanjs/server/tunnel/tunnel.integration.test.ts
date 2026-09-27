@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import net from "node:net";
 import {
   type TunnelFrame,
   type TunnelHeaderList,
@@ -258,6 +259,8 @@ class GatewayStub {
     return {
       head: () => collector.head,
       chunks: collector.chunks,
+      send: (text: string) => socket.send(new TextEncoder().encode(text)),
+      end: () => socket.send(JSON.stringify({ type: "end", streamId })),
       socketClosed: () => !this.busy.has(socket),
       finished,
     };
@@ -447,27 +450,26 @@ describe("tunnel agent against a gateway", () => {
     expect(await until(() => gateway.idle.length >= gateway.idleTarget)).toBe(true);
   });
 
-  test("carries a tcp stream to its end and closes the data socket it owned", async () => {
-    const tcpOrigin = Bun.listen({
-      hostname: "127.0.0.1",
-      port: 0,
-      socket: {
-        open: (socket) => {
-          socket.write("hello");
-          socket.end();
-        },
-        data: () => undefined,
-      },
+  test("carries a tcp stream through each side's end and closes the data socket it owned", async () => {
+    const tcpOrigin = net.createServer({ allowHalfOpen: true }, (socket) => {
+      let got = "";
+      socket.on("data", (data) => {
+        got += data;
+      });
+      socket.on("end", () => socket.end(`reply:${got}`));
     });
+    await new Promise<void>((resolve) => tcpOrigin.listen(0, "127.0.0.1", resolve));
     try {
-      const stream = await gateway.tcp(tcpOrigin.port);
+      const stream = await gateway.tcp((tcpOrigin.address() as net.AddressInfo).port);
+      expect(await until(() => stream.head()?.status === 200)).toBe(true);
+      stream.send("request");
+      stream.end();
       expect(await stream.finished).toBeUndefined();
-      expect(stream.head()?.status).toBe(200);
-      expect(stream.chunks.map((chunk) => textOf(chunk)).join("")).toBe("hello");
+      expect(stream.chunks.map((chunk) => textOf(chunk)).join("")).toBe("reply:request");
       expect(await until(stream.socketClosed)).toBe(true);
       expect(await until(() => gateway.idle.length >= gateway.idleTarget)).toBe(true);
     } finally {
-      tcpOrigin.stop(true);
+      tcpOrigin.close();
     }
   });
 
