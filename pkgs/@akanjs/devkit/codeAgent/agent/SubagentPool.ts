@@ -8,9 +8,16 @@ export interface SubagentPoolOptions {
   cwd: string;
   parent: CodeAgentProfile;
   depth: number;
+  /** What the tree above this pool has spent; a root pool starts its own. */
+  spend?: SubagentSpend;
   onNotice?: (message: string) => void;
   /** The running children, whole, for a host that draws them as a rail beside the prompt. */
   onAgents?: (agents: CodeAgentSubagent[]) => void;
+}
+
+/** Tokens every sub-agent of one tree has spent, one object shared down the tree so a single budget bounds it. */
+export interface SubagentSpend {
+  tokens: number;
 }
 
 const maxResultChars = 8_000;
@@ -42,12 +49,13 @@ export class SubagentPool {
     string,
     { kind: SubagentKind; description: string; startedAt: number; agent?: { tokensUsed: number } }
   >();
+  readonly #spend: SubagentSpend;
   #running = 0;
-  #spent = 0;
   #ticker: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: SubagentPoolOptions) {
     this.#options = options;
+    this.#spend = options.spend ?? { tokens: 0 };
   }
 
   static extensionFor(options: SubagentPoolOptions): InlineExtension | undefined {
@@ -104,7 +112,7 @@ export class SubagentPool {
     if (!budget) return "Sub-agents are disabled by this profile.";
     if (this.#running >= budget.maxConcurrent)
       return `Too many sub-agents are already running (limit ${budget.maxConcurrent}). Wait for one to finish.`;
-    if (this.#spent >= budget.budget)
+    if (this.#spend.tokens >= budget.budget)
       return `The sub-agent token budget (${budget.budget}) is spent. Do the rest of this work yourself.`;
     return undefined;
   }
@@ -161,6 +169,7 @@ export class SubagentPool {
       profile: child,
       apps: [],
       depth: this.#options.depth + 1,
+      subagentSpend: this.#spend,
     });
     const running = this.#children.get(id);
     if (running) running.agent = agent;
@@ -173,10 +182,10 @@ export class SubagentPool {
       });
       await agent.prompt(prompt);
       await agent.waitForIdle();
-      this.#spent += agent.tokensUsed;
+      this.#spend.tokens += agent.tokensUsed;
       const ceiling = budget ? budget.budget : 0;
       this.#options.onNotice?.(
-        `${kind} sub-agent finished, ${agent.tokensUsed} tokens (${this.#spent} of ${ceiling} spent)`,
+        `${kind} sub-agent finished, ${agent.tokensUsed} tokens (${this.#spend.tokens} of ${ceiling} spent)`,
       );
       return answer.length > maxResultChars
         ? `${answer.slice(0, maxResultChars)}\n…(truncated)`

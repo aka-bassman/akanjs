@@ -1,12 +1,13 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { type CodeAgentEvent, type CodeAgentProfile, codeAgentPresets } from "akanjs/common";
 import { WorkspaceExecutor } from "../../executors";
 import { isolateEnv, tempDirs } from "../../testHelpers";
+import { AkanCodePlugins } from "../tools/AkanCodePlugins";
 import { akanCodeDefaultModel } from "./akanCodeModel";
 import { akanCodePaths } from "./akanCodePaths";
-import { CodeAgent } from "./CodeAgent";
+import { CodeAgent, type CodeAgentOptions } from "./CodeAgent";
 import { CodeAgentSuspended } from "./CodeAgentSuspended";
 
 isolateEnv();
@@ -33,7 +34,7 @@ beforeAll(() => {
 });
 afterAll(() => llm.stop(true));
 
-const createAgent = async (root: string) => {
+const createAgent = async (root: string, options: Partial<CodeAgentOptions> = {}) => {
   process.env.AKAN_CODE_HOME = path.join(root, "home");
   process.env.AKAN_CODE_PROXY_URL = `http://127.0.0.1:${llm.port}/llm/{provider}/v1`;
   process.env.AKAN_CODE_PROXY_TOKEN = "test-token";
@@ -46,6 +47,7 @@ const createAgent = async (root: string) => {
   return await CodeAgent.create({
     workspace: new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" }),
     profile,
+    ...options,
   });
 };
 
@@ -67,6 +69,25 @@ describe("CodeAgent", () => {
       expect(existsSync(suspendedFile)).toBe(false);
     } finally {
       agent.dispose();
+    }
+  });
+
+  test("a sub-agent hands its plugins the token tally of the tree that opened it", async () => {
+    const root = await makeTempRoot();
+    const build = AkanCodePlugins.build;
+    const seen: unknown[] = [];
+    const spy = spyOn(AkanCodePlugins, "build").mockImplementation(async (options) => {
+      seen.push(options.subagentSpend);
+      return await build.call(AkanCodePlugins, options);
+    });
+    const subagentSpend = { tokens: 7 };
+    try {
+      const agent = await createAgent(root, { subagentSpend, depth: 1 });
+      agent.dispose();
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toBe(subagentSpend);
+    } finally {
+      spy.mockRestore();
     }
   });
 });

@@ -2,7 +2,7 @@ import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { CodeAgentMcpStatus, CodeAgentProfile, CodeAgentQuestion, CodeAgentSubagent } from "akanjs/common";
 import type { Workspace } from "../../commandDecorators";
 import type { CodeMailbox } from "../agent/CodeMailbox";
-import { SubagentPool } from "../agent/SubagentPool";
+import { SubagentPool, type SubagentSpend } from "../agent/SubagentPool";
 import { DevLogFeedback } from "../feedback/DevLogFeedback";
 import { PreviewFeedback } from "../feedback/PreviewFeedback";
 import { PreviewView } from "../feedback/PreviewView";
@@ -24,6 +24,8 @@ export interface AkanCodePluginsOptions {
   canSeeImages: boolean;
   /** How many `task` levels deep the owning agent is. */
   depth: number;
+  /** The tally of the sub-agent tree the owning agent belongs to, when a `task` opened it. */
+  subagentSpend?: SubagentSpend;
   /** Reading the current session back would spend its own window twice, so it is excluded from search. */
   currentSessionId: () => string;
   /** Late, because the session this announces to its peers does not exist yet when the pack is built. */
@@ -89,6 +91,7 @@ export class AkanCodePlugins {
       cwd: options.cwd,
       parent: options.profile,
       depth: options.depth,
+      ...(options.subagentSpend ? { spend: options.subagentSpend } : {}),
       ...(options.onNotice ? { onNotice: options.onNotice } : {}),
       ...(options.onAgents ? { onAgents: options.onAgents } : {}),
     });

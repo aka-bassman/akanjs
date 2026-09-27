@@ -42,6 +42,7 @@ import { CodeAgentUi } from "./CodeAgentUi";
 import { CodeMailbox } from "./CodeMailbox";
 import { CodeSessionFork } from "./CodeSessionFork";
 import { CodeSessionIndex } from "./CodeSessionIndex";
+import type { SubagentSpend } from "./SubagentPool";
 
 // The engine's run-mode type is not re-exported from its package entry, so the literal set is restated.
 export type CodeAgentHostMode = "tui" | "rpc" | "json" | "print";
@@ -59,6 +60,8 @@ export interface CodeAgentOptions {
   mode?: CodeAgentHostMode;
   /** How many `task` tools deep this agent already is. */
   depth?: number;
+  /** The token tally of the sub-agent tree whose `task` opened this agent. */
+  subagentSpend?: SubagentSpend;
   /** Id of a stored session to continue instead of opening a new one. */
   resume?: string;
 }
@@ -105,6 +108,7 @@ export class CodeAgent {
       apps: options.apps ?? [],
       canSeeImages: akanCodeModelSupportsImages(model),
       depth: options.depth ?? 0,
+      ...(options.subagentSpend ? { subagentSpend: options.subagentSpend } : {}),
       currentSessionId: () => agent.sessionId,
       mailbox: () => agent.#mailbox,
       onNotice: (message) => agent.#emit({ type: "notice", level: "warning", message }),
