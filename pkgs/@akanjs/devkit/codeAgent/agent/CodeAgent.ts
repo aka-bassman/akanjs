@@ -60,7 +60,7 @@ export interface CodeAgentOptions {
   mode?: CodeAgentHostMode;
   /** How many `task` tools deep this agent already is. */
   depth?: number;
-  /** The token tally of the sub-agent tree whose `task` opened this agent. */
+  /** The tally (tokens spent, sub-agents running) of the sub-agent tree whose `task` opened this agent. */
   subagentSpend?: SubagentSpend;
   /** Id of a stored session to continue instead of opening a new one. */
   resume?: string;

@@ -8,16 +8,17 @@ export interface SubagentPoolOptions {
   cwd: string;
   parent: CodeAgentProfile;
   depth: number;
-  /** What the tree above this pool has spent; a root pool starts its own. */
+  /** What the tree above this pool has spent and has running; a root pool starts its own. */
   spend?: SubagentSpend;
   onNotice?: (message: string) => void;
   /** The running children, whole, for a host that draws them as a rail beside the prompt. */
   onAgents?: (agents: CodeAgentSubagent[]) => void;
 }
 
-/** Tokens every sub-agent of one tree has spent, one object shared down the tree so a single budget bounds it. */
+/** One object shared down a sub-agent tree, so a single token budget and a single concurrency limit bound it. */
 export interface SubagentSpend {
   tokens: number;
+  running: number;
 }
 
 const maxResultChars = 8_000;
@@ -50,12 +51,11 @@ export class SubagentPool {
     { kind: SubagentKind; description: string; startedAt: number; agent?: { tokensUsed: number } }
   >();
   readonly #spend: SubagentSpend;
-  #running = 0;
   #ticker: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: SubagentPoolOptions) {
     this.#options = options;
-    this.#spend = options.spend ?? { tokens: 0 };
+    this.#spend = options.spend ?? { tokens: 0, running: 0 };
   }
 
   static extensionFor(options: SubagentPoolOptions): InlineExtension | undefined {
@@ -90,7 +90,7 @@ export class SubagentPool {
         const kind = (params.type ?? SubagentPool.defaultKind) as SubagentKind;
         const refusal = this.#refuse();
         if (refusal) return { content: [{ type: "text", text: refusal }], details: undefined, isError: true };
-        this.#running += 1;
+        this.#spend.running += 1;
         this.#children.set(id, { kind, description: params.description, startedAt: Date.now() });
         this.#report();
         // Announced at start: a turn quiet for a minute while a child reads looks like one that stopped responding.
@@ -99,7 +99,7 @@ export class SubagentPool {
           const text = await this.#run(id, kind, params.prompt, signal);
           return { content: [{ type: "text", text }], details: undefined };
         } finally {
-          this.#running -= 1;
+          this.#spend.running -= 1;
           this.#children.delete(id);
           this.#report();
         }
@@ -110,8 +110,9 @@ export class SubagentPool {
   #refuse() {
     const budget = this.#options.parent.tools.subagent;
     if (!budget) return "Sub-agents are disabled by this profile.";
-    if (this.#running >= budget.maxConcurrent)
-      return `Too many sub-agents are already running (limit ${budget.maxConcurrent}). Wait for one to finish.`;
+    // Refused, never queued: every ancestor keeps its slot while it waits on its child, so a queued child deadlocks.
+    if (this.#spend.running >= budget.maxConcurrent)
+      return `Too many sub-agents are already running (limit ${budget.maxConcurrent} at once, counted across the whole task tree). ${this.#children.size ? "Wait for one of yours to finish, or do" : "Do"} this part yourself.`;
     if (this.#spend.tokens >= budget.budget)
       return `The sub-agent token budget (${budget.budget}) is spent. Do the rest of this work yourself.`;
     return undefined;

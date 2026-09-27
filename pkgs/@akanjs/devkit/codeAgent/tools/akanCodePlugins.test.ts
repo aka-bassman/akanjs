@@ -314,11 +314,11 @@ describe("SubagentPool", () => {
     expect(frames).toEqual([]);
   });
 
-  const budgeted = (budget: number) => {
+  const budgeted = (budget: number, maxConcurrent = 3) => {
     const parent = codeAgentPresets.local("/tmp/akan");
     return {
       ...parent,
-      tools: { ...parent.tools, mcp: "off" as const, subagent: { maxConcurrent: 3, maxDepth: 2, budget } },
+      tools: { ...parent.tools, mcp: "off" as const, subagent: { maxConcurrent, maxDepth: 2, budget } },
     };
   };
   const openFakeAgents = (tokens: number[]) => {
@@ -338,6 +338,17 @@ describe("SubagentPool", () => {
   };
   const runTask = async (extension: unknown, id: string) =>
     await toolsOf(extension).get("task")?.(id, { description: "d", prompt: "p" } as never);
+  const until = async (done: () => boolean) => {
+    for (let tries = 0; tries < 500 && !done(); tries += 1) await Bun.sleep(2);
+  };
+  const poolOf = (child: CodeAgentOptions) =>
+    SubagentPool.extensionFor({
+      workspace,
+      cwd: "/tmp/akan",
+      parent: child.profile,
+      depth: child.depth ?? 0,
+      ...(child.subagentSpend ? { spend: child.subagentSpend } : {}),
+    });
 
   test("every pool of one tree draws on one token budget", async () => {
     const { opened, spy } = openFakeAgents([150, 100]);
@@ -377,7 +388,7 @@ describe("SubagentPool", () => {
         depth: 1,
         currentSessionId: () => "",
         mailbox: () => undefined,
-        subagentSpend: { tokens: 200 },
+        subagentSpend: { tokens: 200, running: 0 },
       });
       const pool = plugins.extensions.find((extension) => extension.name === "akan-subagent");
       const refused = await runTask(pool, "c1");
@@ -385,6 +396,46 @@ describe("SubagentPool", () => {
       expect(opened).toHaveLength(0);
       plugins.dispose();
     } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("maxConcurrent counts every running sub-agent of the tree, and a full tree refuses a child's task instead of queueing it", async () => {
+    const held = Promise.withResolvers<void>();
+    const opened: CodeAgentOptions[] = [];
+    const spy = spyOn(CodeAgent, "create").mockImplementation(async (options) => {
+      opened.push(options);
+      return {
+        on: () => {},
+        prompt: async () => await held.promise,
+        waitForIdle: async () => {},
+        dispose: () => {},
+        tokensUsed: 0,
+      } as never;
+    });
+    try {
+      const root = SubagentPool.extensionFor({
+        workspace,
+        cwd: "/tmp/akan",
+        parent: budgeted(1_000_000, 2),
+        depth: 0,
+      });
+      const running = [runTask(root, "c1"), runTask(root, "c2")];
+      await until(() => opened.length === 2);
+      const [child] = opened;
+      if (!child) throw new Error("no sub-agent was opened");
+      const refused = await Promise.race([runTask(poolOf(child), "c3"), Bun.sleep(500).then(() => undefined)]);
+      expect(refused?.isError).toBe(true);
+      expect(refused?.content[0]?.text).toContain("limit 2 at once");
+      expect(refused?.content[0]?.text).not.toContain("Wait");
+      expect((await runTask(root, "c4"))?.content[0]?.text).toContain("Wait for one of yours");
+      expect(opened).toHaveLength(2);
+      held.resolve();
+      await Promise.all(running);
+      expect((await runTask(poolOf(child), "c5"))?.isError).toBeUndefined();
+      expect(opened).toHaveLength(3);
+    } finally {
+      held.resolve();
       spy.mockRestore();
     }
   });

@@ -80,7 +80,7 @@ describe("CodeAgent", () => {
       seen.push(options.subagentSpend);
       return await build.call(AkanCodePlugins, options);
     });
-    const subagentSpend = { tokens: 7 };
+    const subagentSpend = { tokens: 7, running: 0 };
     try {
       const agent = await createAgent(root, { subagentSpend, depth: 1 });
       agent.dispose();
