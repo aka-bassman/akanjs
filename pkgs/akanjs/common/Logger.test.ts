@@ -106,6 +106,14 @@ describe("Logger sinks", () => {
       removeSink();
     }
   });
+
+  test("an instance's raw writes the text as given and rawLog adds the line break, like the static pair", () =>
+    withSink((entries) => {
+      const logger = new Logger("Banner");
+      logger.raw("progress", "console");
+      logger.rawLog("done", "console");
+      expect(entries.map((entry) => entry.message)).toEqual(["progress", "done\n"]);
+    }));
 });
 
 describe("Logger levels", () => {

@@ -212,7 +212,7 @@ export class Logger {
     if (Logger.#shouldLog("error")) Logger.#write(name, msg, context, "error");
   }
   raw(msg: string, method?: "console" | "process") {
-    Logger.rawLog(msg, method);
+    Logger.raw(msg, method);
   }
   rawLog(msg: string, method?: "console" | "process") {
     Logger.rawLog(msg, method);
