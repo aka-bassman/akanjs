@@ -67,7 +67,6 @@ for (const kind of ConformanceEnv.cacheKinds("user refresh token")) {
       await expect(service.refreshUserToken(browser)).rejects.toThrow("shared.error.revokedRefreshToken");
     });
 
-    // Not Promise.all: two presentations that interleave at the cache both pass even without the option.
     test("with the grace option, a token refreshed twice in a row gives both callers a live session", async () => {
       const cli = refreshTokenOf(await service._issueUserToken(user));
       const first = refreshTokenOf(await service.refreshUserToken(cli, undefined, cloudRotation));

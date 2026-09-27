@@ -112,6 +112,72 @@ for (const kind of ConformanceEnv.cacheKinds("refresh session")) {
       );
     });
 
+    test("presented twice at once, a token rotates once and the second presentation revokes the account", async () => {
+      for (const refreshTokenHash of ["h0", "g0"])
+        await createRefreshSession(cache, {
+          subject: "user",
+          subjectId: "u1",
+          refreshTokenHash,
+          expiresAt: expiresAt(),
+        });
+      const settled = await Promise.allSettled([
+        rotateRefreshSession(cache, "h0", "h1", expiresAt()),
+        rotateRefreshSession(cache, "h0", "h2", expiresAt()),
+      ]);
+      const rotated = settled.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value.refreshTokenHash] : [],
+      );
+      const refused = settled.flatMap((result) =>
+        result.status === "rejected" ? [(result.reason as Error).message] : [],
+      );
+      expect(rotated).toHaveLength(1);
+      expect(refused).toEqual(["shared.error.refreshTokenReuseDetected"]);
+      const [winner] = rotated;
+      await expect(rotateRefreshSession(cache, winner, "h3", expiresAt())).rejects.toThrow(
+        "shared.error.revokedRefreshToken",
+      );
+      await expect(rotateRefreshSession(cache, "g0", "g1", expiresAt())).rejects.toThrow(
+        "shared.error.revokedRefreshToken",
+      );
+      expect(await listRefreshSessions(cache, "user", "u1")).toEqual([]);
+    });
+
+    test("with a grace window, two presentations of one token at once both rotate and both stay live", async () => {
+      await createRefreshSession(cache, {
+        subject: "user",
+        subjectId: "u1",
+        refreshTokenHash: "h0",
+        expiresAt: expiresAt(),
+      });
+      const option = { graceMs: refreshRotationGraceMs, reuseRevokes: "lineage" } as const;
+      const both = await Promise.all([
+        rotateRefreshSession(cache, "h0", "h1", expiresAt(), option),
+        rotateRefreshSession(cache, "h0", "h2", expiresAt(), option),
+      ]);
+      expect(both.map((session) => session.refreshTokenHash)).toEqual(["h1", "h2"]);
+      expect((await rotateRefreshSession(cache, "h1", "h3", expiresAt())).refreshTokenHash).toBe("h3");
+      expect((await rotateRefreshSession(cache, "h2", "h4", expiresAt())).refreshTokenHash).toBe("h4");
+    });
+
+    test("judges a token rotated before rotations were claimed by its rotatedAt, as before", async () => {
+      const session = await createRefreshSession(cache, {
+        subject: "user",
+        subjectId: "u1",
+        refreshTokenHash: "old",
+        expiresAt: expiresAt(),
+      });
+      await cache.set("refreshSessionByTokenHash", "old", {
+        ...session,
+        rotatedAt: dayjs().toISOString(),
+        replacedBy: "new",
+      });
+      const sibling = await rotateRefreshSession(cache, "old", "h1", expiresAt(), { graceMs: refreshRotationGraceMs });
+      expect(sibling.refreshTokenHash).toBe("h1");
+      await expect(rotateRefreshSession(cache, "old", "h2", expiresAt())).rejects.toThrow(
+        "shared.error.refreshTokenReuseDetected",
+      );
+    });
+
     test("still refuses an unknown, revoked or expired token", async () => {
       await expect(rotateRefreshSession(cache, "nope", "h1", expiresAt())).rejects.toThrow(
         "shared.error.invalidRefreshToken",
