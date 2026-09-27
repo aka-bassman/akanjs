@@ -281,6 +281,12 @@ https://partner-main.example.com -> partner`}
             ko: "partner는 도메인을 직접 선언하지 않았는데도 도메인을 갖습니다. Akan이 알고 있는 모든 branch에 대해 basePath별로 <basePath>-<branch>.<serveDomain>을 자동으로 만들기 때문입니다. 그래서 partner-main.example.com과 partner-develop.example.com은 적지 않아도 존재합니다.",
           })}
         </div>
+        <div>
+          {l.trans({
+            en: "A mapped domain serves its own client only. On store.example.com, /en/admin/users is looked up inside store, on a reload and a client-side navigation alike, so link to another client through its own domain.",
+            ko: "클라이언트에 연결된 도메인은 그 클라이언트만 엽니다. store.example.com에서 /en/admin/users는 새로고침이든 클라이언트 쪽 이동이든 store 안에서 찾으므로, 다른 클라이언트로는 그 클라이언트의 도메인으로 링크합니다.",
+          })}
+        </div>
         <Docs.Alert type="info">
           {l.trans({
             en: "Locally the site root has no page of its own, so Akan answers it with a list of every basePath in the build instead of a 404. Deployed hosts never see that list; the matching domain opens its client directly.",
