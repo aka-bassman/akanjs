@@ -56,6 +56,24 @@ describe("ContextRunner", () => {
     );
   });
 
+  test("doctor ignores a malformed workflow artifact instead of throwing", async () => {
+    const { workspace } = track(await createTempApp("demo"));
+    const plan = { schemaVersion: 1, mode: "plan", workflow: "add-field" };
+    const artifacts = [
+      { schemaVersion: 1, mode: "apply" },
+      { schemaVersion: 1, mode: "dry-run", changedFiles: [{ path: "apps/demo/a.ts" }], generatedFiles: [], plan },
+      plan,
+      { schemaVersion: 1, mode: "plan", inputs: {}, predictedChanges: [null] },
+      { schemaVersion: 1, mode: "validate", plan: { ...plan, inputs: null, predictedChanges: [] } },
+    ];
+    for (const [idx, artifact] of artifacts.entries()) {
+      const artifactPath = `.akan/workflows/runs/broken-${idx}.json`;
+      await writeJson(`${workspace.workspaceRoot}/${artifactPath}`, artifact);
+      const result = await AkanContextAnalyzer.doctor(workspace, { runIdOrPlan: artifactPath });
+      expect(result).not.toHaveProperty("workflowDiagnostics");
+    }
+  });
+
   test("reports unknown app root entries as errors", async () => {
     const { workspace, app } = track(await createTempApp("demo"));
     await writeText(`${app.cwdPath}/base.ts`, "export const bad = true;\n");

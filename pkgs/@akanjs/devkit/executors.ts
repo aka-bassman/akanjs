@@ -7,7 +7,7 @@ import {
   type SpawnOptions,
   spawn,
 } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import {
   copyFile,
   cp as cpEntry,
@@ -368,7 +368,7 @@ export class Executor {
     if (this.#tsconfig && !refresh) return this.#tsconfig;
     let tsconfig = (await this.readJson(pathname)) as TsConfigJson;
     if (tsconfig.extends) {
-      const base = await this.getTsConfig(tsconfig.extends);
+      const base = await this.getTsConfig(tsconfig.extends, { refresh });
       tsconfig = { ...base, ...tsconfig, compilerOptions: { ...base.compilerOptions, ...tsconfig.compilerOptions } };
     }
     this.#tsconfig = tsconfig;
@@ -807,7 +807,7 @@ export class WorkspaceExecutor extends Executor {
       );
       return results;
     };
-    return await getDirs(basePath);
+    return (await getDirs(basePath)).sort((a, b) => a.localeCompare(b));
   }
 
   async #fromEverySys<T>(read: (sys: SysExecutor) => Promise<T[]>): Promise<T[]> {
@@ -1004,25 +1004,25 @@ export class SysExecutor extends Executor {
   async getDatabaseModules() {
     return (await this.readdir("lib"))
       .filter((name) => !name.startsWith("_") && !name.endsWith(".ts"))
-      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${name}.constant.ts`).exists());
+      .filter((name) => existsSync(`${this.cwdPath}/lib/${name}/${name}.constant.ts`));
   }
 
   async getServiceModules() {
     return (await this.readdir("lib"))
       .filter((name) => name.startsWith("_") && !name.startsWith("__"))
-      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${name}.service.ts`).exists());
+      .filter((name) => existsSync(`${this.cwdPath}/lib/${name}/${name.slice(1)}.service.ts`));
   }
 
   async getScalarModules() {
     return (await this.readdir("lib/__scalar"))
       .filter((name) => !name.startsWith("_"))
-      .filter((name) => Bun.file(`${this.cwdPath}/lib/__scalar/${name}/${name}.constant.ts`).exists());
+      .filter((name) => existsSync(`${this.cwdPath}/lib/__scalar/${name}/${name}.constant.ts`));
   }
 
   async #getComponentModules(role: "View" | "Unit" | "Template") {
     return (await this.readdir("lib"))
       .filter((name) => !name.startsWith("_") && !name.endsWith(".ts"))
-      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${capitalize(name)}.${role}.tsx`).exists());
+      .filter((name) => existsSync(`${this.cwdPath}/lib/${name}/${capitalize(name)}.${role}.tsx`));
   }
   async #getComponentSources(role: "View" | "Unit" | "Template") {
     const modules = await this.#getComponentModules(role);
@@ -1059,7 +1059,9 @@ export class SysExecutor extends Executor {
   async getScalarDictionaryFiles() {
     const scalarModules = await this.getScalarModules();
     return Promise.all(
-      scalarModules.map((scalarModule) => this.getLocalFile(`lib/${scalarModule}/${scalarModule}.dictionary.ts`)),
+      scalarModules.map((scalarModule) =>
+        this.getLocalFile(`lib/__scalar/${scalarModule}/${scalarModule}.dictionary.ts`),
+      ),
     );
   }
 

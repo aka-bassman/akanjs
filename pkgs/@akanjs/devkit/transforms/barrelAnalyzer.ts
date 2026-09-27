@@ -90,14 +90,11 @@ export class BarrelAnalyzer {
       }
     };
 
-    REEXPORT_RE.lastIndex = 0;
-    let m: RegExpExecArray | null = REEXPORT_RE.exec(source);
-    while (m !== null) {
+    for (const m of source.matchAll(REEXPORT_RE)) {
       const star = m[1];
       const nsAs = m[2];
       const namedList = m[3];
       const spec = m[5] ?? "";
-      m = REEXPORT_RE.exec(source);
       if (!isRelative(spec)) continue;
 
       if (star) {

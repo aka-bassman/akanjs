@@ -24,8 +24,10 @@ export class McpSignIn {
         resource: stored.resource,
       };
       const tokens = await McpOAuth.refresh(server, stored);
+      // `expires_in` is optional (RFC 6749 §5.1): the spent token's expiry must not outlive it on the new one.
+      const { expiresAt: _spent, ...grant } = stored;
       // A server that rotates refresh tokens invalidates the old one, so keeping it would sign us out.
-      McpTokenStore.write(ref.name, { ...stored, ...tokens });
+      McpTokenStore.write(ref.name, { ...grant, ...tokens });
       return tokens.accessToken;
     } catch (error) {
       onNotice?.(`MCP server "${ref.name}" needs signing in again — ${String(error)}`);

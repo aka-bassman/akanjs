@@ -84,6 +84,47 @@ describe("BarrelAnalyzer and rewriteBarrelImports", () => {
     expect(map?.has("ns")).toBe(false);
   });
 
+  test("two analyses that interleave each keep their own place in their barrel", async () => {
+    const root = await makeTempRoot();
+    const barrels = { first: ["a1", "a2", "a3"], second: ["b1", "b2"] } as const;
+    for (const [pkgName, names] of Object.entries(barrels)) {
+      const lines = names.map((name) => `export { ${name} } from "./${name}";`);
+      // Parks the second walk past the end of the first barrel, so a shared regex position would end the first early.
+      const padding = pkgName === "second" ? [`// ${"-".repeat(200)}`] : [];
+      await write(path.join(root, pkgName, "index.ts"), [...padding, ...lines, ""].join("\n"));
+      for (const name of names) await write(path.join(root, pkgName, `${name}.ts`), `export const ${name} = 1;\n`);
+    }
+    const parked = { first: Promise.withResolvers<void>(), second: Promise.withResolvers<void>() };
+    const released = { first: Promise.withResolvers<void>(), second: Promise.withResolvers<void>() };
+    const analyzer = new BarrelAnalyzer({
+      resolvePackage: async (pkgName) => ({
+        pkgName,
+        entryFile: path.join(root, pkgName, "index.ts"),
+        pkgDir: path.join(root, pkgName),
+      }),
+      resolveRelative: async (fromFile, relSpec) => {
+        const pkgName = path.basename(path.dirname(fromFile)) as keyof typeof barrels;
+        if (relSpec === `./${barrels[pkgName][0]}`) {
+          parked[pkgName].resolve();
+          await released[pkgName].promise;
+        }
+        return path.join(path.dirname(fromFile), `${relSpec.slice(2)}.ts`);
+      },
+    });
+
+    const first = analyzer.analyze("first");
+    await parked.first.promise;
+    const second = analyzer.analyze("second");
+    await parked.second.promise;
+    released.first.resolve();
+    const firstMap = await first;
+    released.second.resolve();
+    const secondMap = await second;
+
+    expect(firstMap?.get("a3")).toEqual({ subpath: "first/a3", originalName: "a3" });
+    expect(secondMap?.get("b2")).toEqual({ subpath: "second/b2", originalName: "b2" });
+  });
+
   test("rewrites flattenable named imports and preserves default, type, and unknown imports", async () => {
     const analyzer = fakeAnalyzer([
       ["A", { subpath: "@scope/pkg/leaf", originalName: "A" }],

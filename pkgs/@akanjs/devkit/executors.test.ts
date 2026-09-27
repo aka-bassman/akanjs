@@ -4,7 +4,7 @@ import path from "node:path";
 import { AkanAppConfig } from "./akanConfig";
 import { AppExecutor, CommandExecutionError, Executor, PkgExecutor, WorkspaceExecutor } from "./executors";
 import { AppInfo } from "./scanInfo";
-import { isolateEnv, tempDirs, writeJson } from "./testHelpers";
+import { isolateEnv, tempDirs, writeJson, writeText } from "./testHelpers";
 import type { PackageJson } from "./types";
 
 isolateEnv();
@@ -77,6 +77,31 @@ describe("Executor filesystem helpers", () => {
 
     const entries = await exec.getFilesAndDirs(".");
     expect(entries.dirs).toContain("nested");
+  });
+
+  test("a refreshed tsconfig re-reads the config it extends", async () => {
+    const root = await makeTempRoot();
+    const appDir = path.join(root, "apps/demo");
+    await writeJson(path.join(root, "tsconfig.json"), {
+      compilerOptions: { target: "es2022", paths: { "@libs/*": ["libs/*"] } },
+    });
+    await writeJson(path.join(appDir, "tsconfig.json"), {
+      extends: "../../tsconfig.json",
+      compilerOptions: { target: "esnext" },
+      references: [{ path: "../shared" }],
+    });
+    const exec = new Executor("fixture", appDir);
+    expect(await exec.getTsConfig()).toEqual({
+      extends: "../../tsconfig.json",
+      compilerOptions: { target: "esnext", paths: { "@libs/*": ["libs/*"] } },
+      references: [{ path: "../shared" }],
+    });
+
+    await writeJson(path.join(root, "tsconfig.json"), { compilerOptions: { target: "es2020" } });
+    await writeJson(path.join(appDir, "tsconfig.json"), { extends: "../../tsconfig.json", compilerOptions: {} });
+    const refreshed = { extends: "../../tsconfig.json", compilerOptions: { target: "es2020" } };
+    expect(await exec.getTsConfig("tsconfig.json", { refresh: true })).toEqual(refreshed);
+    expect(await new Executor("fixture", appDir).getTsConfig()).toEqual(refreshed);
   });
 
   test("applies CLI template files with dictionary replacement and overwrite control", async () => {
@@ -920,5 +945,69 @@ describe("scan info construction", () => {
     expect(info.file.constant.databases.has("post")).toBe(true);
     expect(info.file.dictionary.services.has("auth")).toBe(true);
     expect(info.file.document.scalars.has("money")).toBe(true);
+  });
+});
+
+describe("WorkspaceExecutor listing", () => {
+  test("lists apps, libs and pkgs in name order", async () => {
+    const root = await makeTempRoot();
+    for (const app of ["zeta", "alpha", "mid"]) await writeText(path.join(root, "apps", app, "akan.config.ts"), "");
+    for (const lib of ["util", "shared"]) await writeText(path.join(root, "libs", lib, "akan.config.ts"), "");
+    for (const pkg of ["zeta-tool", "@sample/tool", "akanjs"])
+      await writeJson(path.join(root, "pkgs", pkg, "package.json"), { name: pkg });
+
+    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+    expect(await workspace.getExecs()).toEqual([
+      ["alpha", "mid", "zeta"],
+      ["shared", "util"],
+      ["@sample/tool", "akanjs", "zeta-tool"],
+    ]);
+  });
+});
+
+describe("SysExecutor module listing", () => {
+  test("lists only the module folders that hold the module's own file", async () => {
+    const root = await makeTempRoot();
+    const lib = path.join(root, "apps/modlist/lib");
+    for (const file of [
+      "cnst.ts",
+      "post/post.constant.ts",
+      "post/Post.View.tsx",
+      "post/Post.Unit.tsx",
+      "draft/draft.document.ts",
+      "_auth/auth.service.ts",
+      "_notes/notes.md",
+      "__scalar/money/money.constant.ts",
+      "__scalar/stale/stale.dictionary.ts",
+    ])
+      await writeText(path.join(lib, file), "export {};\n");
+
+    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+    const app = AppExecutor.from(workspace, "modlist");
+    expect(await app.getDatabaseModules()).toEqual(["post"]);
+    expect(await app.getServiceModules()).toEqual(["_auth"]);
+    expect(await app.getScalarModules()).toEqual(["money"]);
+    expect(await app.getViewComponents()).toEqual(["post"]);
+    expect(await app.getUnitComponents()).toEqual(["post"]);
+    expect(await app.getTemplateComponents()).toEqual([]);
+    expect((await app.getViewsSourceCode()).map(({ filePath }) => filePath)).toEqual([
+      "apps/modlist/lib/post/Post.View.tsx",
+    ]);
+    expect((await app.getScalarConstantFiles()).map(({ filePath }) => filePath)).toEqual([
+      "apps/modlist/lib/__scalar/money/money.constant.ts",
+    ]);
+  });
+
+  test("reads scalar dictionaries from the scalar folder", async () => {
+    const root = await makeTempRoot();
+    const scalarDir = path.join(root, "apps/scalardict/lib/__scalar/money");
+    await writeText(path.join(scalarDir, "money.constant.ts"), "export {};\n");
+    await writeText(path.join(scalarDir, "money.dictionary.ts"), "export const money = {};\n");
+
+    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+    const app = AppExecutor.from(workspace, "scalardict");
+    expect(await app.getScalarDictionaryFiles()).toEqual([
+      { filePath: "apps/scalardict/lib/__scalar/money/money.dictionary.ts", content: "export const money = {};\n" },
+    ]);
   });
 });

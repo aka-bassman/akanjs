@@ -615,22 +615,24 @@ describe("CodeTui", () => {
   });
 
   test("ZZ down walks history back", async () => {
-    const log: string[] = [];
     const harness = mount();
     await settle();
     await harness.press("one");
     await harness.press("\r");
     await harness.press("two");
     await harness.press("\r");
+    const promptRow = () => {
+      const caret = caretOf(harness.stdout);
+      return caret?.lines[caret.row];
+    };
     await harness.press(`${esc}[A`);
-    log.push(JSON.stringify(harness.stdout.lastFrame.split("\n").filter((l) => l.includes("›"))));
+    expect(promptRow()).toBe("› two");
     await harness.press(`${esc}[A`);
-    log.push(JSON.stringify(harness.stdout.lastFrame.split("\n").filter((l) => l.includes("›"))));
+    expect(promptRow()).toBe("› one");
     await harness.press(`${esc}[B`);
-    log.push(JSON.stringify(harness.stdout.lastFrame.split("\n").filter((l) => l.includes("›"))));
+    expect(promptRow()).toBe("› two");
     await harness.press(`${esc}[B`);
-    log.push(JSON.stringify(harness.stdout.lastFrame.split("\n").filter((l) => l.includes("›"))));
-    await Bun.write("/tmp/hist.json", log.join("\n"));
+    expect(promptRow()).toContain("ask for something");
   });
 
   test("model, window, profile and effort ride the prompt's lower rule", async () => {
