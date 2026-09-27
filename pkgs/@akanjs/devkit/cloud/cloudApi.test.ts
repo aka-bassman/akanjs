@@ -123,6 +123,22 @@ describe("CloudApi.fromHost token refresh", () => {
     expect(await storedToken(home)).toMatchObject({ jwt: "jwt-1", refreshToken: "refresh-1" });
   }, 30_000);
 
+  test("a CLI started while another is mid-refresh waits for that refresh and uses its session", async () => {
+    cloud = new FakeCloud();
+    cloud.delayMs = 1_500;
+    const home = await makeHome();
+    await storeSession(home);
+
+    const first = cliRun(home).then(output);
+    for (let tries = 0; tries < 300 && (await storedToken(home)).refreshToken !== null; tries++) await Bun.sleep(10);
+    expect((await storedToken(home)).refreshToken).toBeNull();
+    const second = await cliRun(home).then(output);
+
+    expect(await first).toEqual(["akan"]);
+    expect(second).toEqual(["akan"]);
+    expect(cloud.refreshes).toEqual(["refresh-0"]);
+  }, 30_000);
+
   test("a CLI killed while its refresh is in flight never lets the next one present that refresh token", async () => {
     cloud = new FakeCloud();
     cloud.hang = true;

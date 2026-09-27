@@ -83,8 +83,8 @@ export class CloudApi {
   static async fromHost(workspace: Workspace, host?: string) {
     const hostConfig = await GlobalConfig.getHostConfig(host);
     const accessToken = hostConfig.auth?.accessToken;
-    if (!accessToken?.refreshToken || !GlobalConfig.needRefreshToken(accessToken))
-      return new CloudApi(workspace, hostConfig);
+    // No refresh token on a session in its last hour can be another process's refresh in flight: wait on its lock.
+    if (!accessToken || !GlobalConfig.needRefreshToken(accessToken)) return new CloudApi(workspace, hostConfig);
     const tokenless = new CloudApi(workspace, hostConfig);
     const refreshed = await GlobalConfig.refreshHostAuth(hostConfig.host, (refreshToken) =>
       tokenless.refreshAuthToken(refreshToken),
