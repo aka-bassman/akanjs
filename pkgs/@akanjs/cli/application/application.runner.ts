@@ -367,8 +367,12 @@ try {
     throw new Error(`${failures.length}/${results.length} mobile targets failed`);
   }
 
-  async codepush(app: App, os: "ios" | "android") {
-    await this.#initCapacitorApp(app);
+  // TODO: implement the OTA deploy; until then this refuses rather than exit 0 having deployed nothing.
+  async codepush(app: App) {
+    throw new Error(
+      `akan codepush is still in development and deploys nothing yet, so ${app.name} was not updated. ` +
+        `To release the app's source with OTA update support, run \`akan release-source ${app.name}\`.`,
+    );
   }
   async #initCapacitorApp(app: App) {
     const [target] = await resolveMobileTargets(app, undefined);

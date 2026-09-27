@@ -166,6 +166,19 @@ describe("ApplicationCommand", () => {
     expect(calls).toEqual([["my-app", { name: "workspace" }, { start: true }]]);
   });
 
+  test("codepush says it deploys nothing yet and fails, without asking for an os", async () => {
+    const prompts = await import("@inquirer/prompts");
+    const select = mock(async () => "ios");
+    mock.module("@inquirer/prompts", () => ({ ...prompts, select }));
+    const { app } = track(await createTempApp("demo"));
+    const command = CommandContainer.get(ApplicationCommand);
+    const handler = getTargetMetas(ApplicationCommand).find((meta) => meta.key === "codepush")?.handler;
+
+    await expect(handler?.call(command, app)).rejects.toThrow("akan codepush is still in development");
+    expect(select).not.toHaveBeenCalled();
+    expect(await Bun.file(path.join(app.cwdPath, "capacitor.config.ts")).exists()).toBe(false);
+  });
+
   test("uses the same mobile target selector metadata across mobile commands", async () => {
     const mobileCommandKeys = ["buildIos", "buildAndroid", "startIos", "startAndroid", "releaseIos", "releaseAndroid"];
     const app = {
