@@ -13,8 +13,9 @@ export const resolveJwt = async <Resolved extends ResolvedToken>(
   authorization: string | undefined,
   defaultResolved: Resolved,
 ): Promise<Resolved> => {
-  const [type, token] = authorization?.split(" ") ?? [undefined, undefined];
-  if (!token || type !== "Bearer") return defaultResolved;
+  // McpAuth's parse, exactly: a token read here that /mcp's gate ignores would skip its aud and expiry checks.
+  const token = /^Bearer +([^ ]+)/i.exec(authorization ?? "")?.[1];
+  if (!token) return defaultResolved;
   try {
     const resolved = (await jwtVerify(token, secret)) as Resolved;
     if (resolved.appName !== getEnv().appName || resolved.environment !== getEnv().environment) return defaultResolved;
