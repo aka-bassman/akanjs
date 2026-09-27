@@ -1,6 +1,7 @@
 import path from "node:path";
 // Module paths, never a barrel: the devkit and `frontendBuild` barrels would hold tailwindcss (~40MB), ssh2, ink
 // and the cloud stack for the whole dev session (`entryModuleGraph.test.ts` enforces it).
+import { ApplicationBuildReporter } from "@akanjs/devkit/applicationBuildReporter";
 import { CodegenLock } from "@akanjs/devkit/codegenLock";
 import type { App } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, type PageRoot, WorkspaceExecutor } from "@akanjs/devkit/executors";
@@ -118,7 +119,7 @@ class IncrementalBuilder {
         } as BuildRouteResultPayload,
       };
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = ApplicationBuildReporter.formatError(err);
       this.#logger.error(`build-route failed routeId=${msg.routeId}: ${errMsg}`);
       this.#sendBuildStatus("route", { generation: msg.generation, ok: false, files: msg.seeds, message: errMsg });
       return { type: "build-route-res", id: msg.id, ok: false, error: errMsg };
