@@ -8,7 +8,7 @@ const posts = [
     eyebrow: { en: "Release Note", ko: "Release Note" },
     title: {
       en: "Akan.js v3: agents join the full stack",
-      ko: "Akan.js v3: 풀스택에 에이전트가 합류합니다",
+      ko: "Akan.js v3: 풀스택에 에이전트까지",
     },
     desc: {
       en: "Every app becomes an MCP server, an in-page agent works the screen, pages become prompts, the UI is rebuilt on native tokens and recipes — and it all runs faster, lighter and starts twice as fast.",
