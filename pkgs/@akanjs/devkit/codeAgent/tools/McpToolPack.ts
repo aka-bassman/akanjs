@@ -34,13 +34,12 @@ export class McpToolPack {
       // Never an interactive sign-in: connect runs inside `CodeAgent.create`, before any screen is drawn.
       const token = ref.transport === "http" ? await McpSignIn.token(ref, options.onNotice) : undefined;
       try {
-        const client = await new McpClient(ref, token).connect();
-        const tools = await client.listTools();
-        pack.#clients.push({ client, tools });
+        const opened = await McpToolPack.#openRefreshing(ref, token, options.onNotice);
+        pack.#clients.push({ client: opened.client, tools: opened.tools });
         pack.#status.push({
           ...base,
-          tools: tools.map((tool) => McpToolPack.#nameOf(ref.name, tool.name)),
-          auth: token ? "authorized" : "none",
+          tools: opened.tools.map((tool) => McpToolPack.#nameOf(ref.name, tool.name)),
+          auth: opened.token ? "authorized" : "none",
         });
       } catch (error) {
         if (error instanceof McpUnauthorized) {
@@ -54,6 +53,27 @@ export class McpToolPack {
       }
     }
     return pack;
+  }
+
+  // A token refused before its stated expiry, or issued with none, gets one refresh before a sign-in is asked for.
+  static async #openRefreshing(
+    ref: CodeAgentMcpServerRef,
+    token: string | undefined,
+    onNotice: ((message: string) => void) | undefined,
+  ) {
+    try {
+      return await McpToolPack.#open(ref, token);
+    } catch (error) {
+      if (!(error instanceof McpUnauthorized) || !token) throw error;
+      const retry = await McpSignIn.retryToken(ref, token, onNotice);
+      if (!retry) throw error;
+      return await McpToolPack.#open(ref, retry);
+    }
+  }
+
+  static async #open(ref: CodeAgentMcpServerRef, token: string | undefined) {
+    const client = await new McpClient(ref, token).connect();
+    return { client, tools: await client.listTools(), token };
   }
 
   get toolNames() {
