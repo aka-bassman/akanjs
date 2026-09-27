@@ -147,7 +147,7 @@ Builds and packages a release for the App Store or the Play Store.
 
 Releases the app source with over-the-air (OTA) update support.
 
-Deploys an over-the-air (OTA) update to the mobile app.
+Over-the-air (OTA) deploy, still in development: it deploys nothing yet and exits with an error.
 
 Library
 

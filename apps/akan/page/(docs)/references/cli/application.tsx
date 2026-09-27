@@ -1157,16 +1157,9 @@ akan release-android myapp --assemble-type aab --target all --env main`,
     //   name: "codepush",
     //   signature: "akan codepush <app>",
     //   desc: l.trans({
-    //     en: "Reserved for over-the-air updates. Today it asks for the OS, then only makes sure the mobile target has its native projects; nothing is deployed.",
-    //     ko: "OTA 업데이트용으로 마련된 명령입니다. 지금은 OS를 물은 뒤 모바일 타깃에 네이티브 프로젝트가 있는지만 확인하며, 실제로 배포하지는 않습니다.",
+    //     en: "Reserved for over-the-air updates, still in development. Today it asks nothing, changes nothing, and exits with an error that points to `akan release-source`.",
+    //     ko: "OTA 업데이트용으로 마련된 명령이며 아직 개발 중입니다. 지금은 아무것도 묻거나 바꾸지 않고, `akan release-source`를 안내하는 오류로 끝납니다.",
     //   }),
-    //   notes: [
-    //     {
-    //       name: l.trans({ en: "interactive", ko: "대화형" }),
-    //       desc: l.trans({ en: "Prompts for the OS: `ios` or `android`.", ko: "OS를 묻습니다: `ios` 또는 `android`." }),
-    //     },
-    //     singleTargetNote,
-    //   ],
     //   examples: "akan codepush myapp",
     // },
   ];
