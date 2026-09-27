@@ -158,15 +158,14 @@ class Router {
   #indexPath = "/";
   #navigation: Promise<void> = Promise.resolve();
   #historyIdx = 0;
-  // FIXME: on the server push/replace only log; the redirect they used to issue is disabled.
   #instance: RouterInstance = {
     push: (href: string) => {
       const { href: fullHref } = this.#getPathInfo(href);
-      Logger.info(`push to:${fullHref}`);
+      Logger.warn(`router.push(${fullHref}) does not navigate on the server; use router.redirect() there`);
     },
     replace: (href: string) => {
-      const { pathname } = this.#getPathInfo(href);
-      Logger.info(`replace to:${pathname}`);
+      const { href: fullHref } = this.#getPathInfo(href);
+      Logger.warn(`router.replace(${fullHref}) does not navigate on the server; use router.redirect() there`);
     },
     back: () => {
       throw new Error("back is only available in client");

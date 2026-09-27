@@ -15,6 +15,7 @@ const requestState = {
   headers: new Map<string, string>(),
 };
 const messages: unknown[] = [];
+const warnings: string[] = [];
 const timeoutCallbacks: Array<() => void> = [];
 
 beforeAll(() => {
@@ -40,7 +41,9 @@ beforeAll(() => {
         log: () => undefined,
         verbose: () => undefined,
         info: () => undefined,
-        warn: () => undefined,
+        warn: (message: string) => {
+          warnings.push(message);
+        },
         error: () => undefined,
       },
     ),
@@ -132,6 +135,7 @@ afterEach(() => {
   requestState.request = undefined;
   requestState.headers = new Map();
   messages.length = 0;
+  warnings.length = 0;
   timeoutCallbacks.length = 0;
   globalThis.__AKAN_ROUTER__ = undefined;
   Object.defineProperty(globalThis, "window", { value: undefined, configurable: true });
@@ -403,5 +407,20 @@ describe("router", () => {
       expect((error as Error & { location: string; method: string }).location).toBe("/en/users?tab=a");
     }
     expect(() => router.notFound()).toThrow(AkanNotFoundError);
+  });
+
+  test("points a server-side push or replace at redirect(), which is what redirects there", async () => {
+    envState.side = "server";
+    const { router } = await import("./router");
+    router.init({ type: "ssr", side: "server", lang: "en" });
+
+    router.push("/users?tab=a");
+    router.replace("/users");
+
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain("router.push");
+    expect(warnings[0]).toContain("/en/users?tab=a");
+    expect(warnings[1]).toContain("router.replace");
+    for (const warning of warnings) expect(warning).toContain("router.redirect()");
   });
 });
