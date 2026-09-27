@@ -216,6 +216,8 @@ Do not narrate code. Do document the thing the code cannot say. Both halves are 
 ## Client / Server Boundaries (`apps/**`, `libs/**`, `pkgs/akanjs/**`)
 
 - Use `"use client";` at the top of client component files.
+- A `"use client"` file re-exports by name (`export { A, B } from "./x"`), never with `export *`: the server knows a
+  client module only by the export names it spells out, so `akan start` and `akan build` stop on a star re-export.
 - Be careful when importing client-only code from page or layout modules.
 - Keep page props serializable unless the existing route pattern clearly allows otherwise.
 - In domain UI the boundary is mechanical, not a judgment call: `Template`, `Zone`, and `Util` are always client components with `"use client"` on line 1; `Unit` and `View` are always server components and never carry the directive.
