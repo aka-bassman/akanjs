@@ -677,7 +677,8 @@ export class SignalResolver {
                 if (liveOption) SignalResolver.#assertNotPaused(key, liveOption, endpointInfo, context);
                 const query = await context.exec();
                 const roomId = liveOption ? context.getLiveRoomId(key) : requestRoomId;
-                if (liveOption)
+                const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws) ?? new Map();
+                if (liveOption && !roomCtxMap.has(roomId))
                   live.syncHub.join({
                     refName: liveOption.refName,
                     roomId,
@@ -686,7 +687,6 @@ export class SignalResolver {
                     fields: SignalResolver.#queryFieldsOf(live, liveOption.refName),
                   });
                 ws.subscribe(roomId);
-                const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws) ?? new Map();
                 roomCtxMap.set(roomId, context);
                 SignalResolver.#liveWsPubsubRoomCtx.set(ws, roomCtxMap);
                 websocket.joinRoom(ws, roomId);
@@ -698,9 +698,9 @@ export class SignalResolver {
               const roomId = liveOption ? context.getLiveRoomId(key) : requestRoomId;
               ws.unsubscribe(roomId);
               const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws);
-              if (roomCtxMap) {
-                const roomCtx = roomCtxMap.get(roomId);
-                if (roomCtx) await SignalResolver.#runLifecycleHandlers([roomCtx], ["unsubscribe"]);
+              const roomCtx = roomCtxMap?.get(roomId);
+              if (roomCtxMap && roomCtx) {
+                await SignalResolver.#runLifecycleHandlers([roomCtx], ["unsubscribe"]);
                 roomCtxMap.delete(roomId);
                 if (roomCtxMap.size === 0) SignalResolver.#liveWsPubsubRoomCtx.delete(ws);
                 if (liveOption) live.syncHub.leave(roomId);
