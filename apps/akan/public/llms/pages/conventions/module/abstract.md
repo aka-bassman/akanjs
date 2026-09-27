@@ -144,6 +144,9 @@ ${l.trans({ en: "<one sentence: what this module owns>", ko: "<이 모듈이 맡
 - active/dormant/restricted 계정의 accountId와 phone은 중복될 수 없다.
 - prepare 사용자는 인증 단계가 끝난 뒤 active로 전환된다.
 - password, phone code, SSO, refresh session은 cache와 security service로 검증한다.
+- refresh token은 한 번만 쓰인다: 회전된 토큰을 다시 내밀면 계정의 모든 세션이 끊긴다(브라우저 세션). 한 토큰을 여러
+  프로세스가 쥐는 호출자(클라우드 CLI)만 `refreshUserToken`에 `{ graceMs, reuseRevokes: "lineage" }`를 넘겨, 창 안의
+  재사용은 새 세션으로 받고 창 밖의 재사용은 그 토큰의 lineage만 끊는다.
 - 제한, 휴면, 탈퇴, 활성화는 summary 집계와 함께 움직인다.
 
 ## Workflow
