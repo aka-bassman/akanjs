@@ -42,7 +42,9 @@ export class HostBasePathWebProxy implements WebProxy {
   }
 
   #getBasePath(request: Request): string | null {
-    const host = normalizeHost(request.headers.get("x-forwarded-host") ?? request.headers.get("host"));
+    const host = normalizeHost(
+      request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? request.headers.get("host"),
+    );
     if (!host) return null;
     const domainMap = this.#getDomainMap();
     return domainMap.get(host) ?? null;
@@ -56,10 +58,7 @@ export class HostBasePathWebProxy implements WebProxy {
       basePaths: metadata.basePaths,
       env: process.env.AKAN_SUB_ROUTE_HOSTS,
     });
-    if (ignoredBasePaths.length)
-      this.#logger.warn(
-        `AKAN_SUB_ROUTE_HOSTS names basePaths this build does not serve, ignoring: ${ignoredBasePaths.join(", ")}`,
-      );
+    warnIgnoredSubRouteBasePaths(this.#logger, ignoredBasePaths);
     const map = new Map<string, string>();
     for (const [basePath, domains] of Object.entries(subRoutes)) {
       for (const domain of domains) map.set(normalizeHost(domain), basePath);
@@ -86,14 +85,23 @@ export function resolveArtifactDir(): string {
   return path.join(process.cwd(), "apps", getEnv().appName, ".akan", "artifact");
 }
 
+const warnedIgnoredBasePaths = new Set<string>();
+
+export function warnIgnoredSubRouteBasePaths(logger: Logger, ignoredBasePaths: string[]) {
+  const list = ignoredBasePaths.join(", ");
+  if (!list || warnedIgnoredBasePaths.has(list)) return;
+  warnedIgnoredBasePaths.add(list);
+  logger.warn(`AKAN_SUB_ROUTE_HOSTS names basePaths this build does not serve, ignoring: ${list}`);
+}
+
 export function normalizeHost(host: string | null): string {
   return (host ?? "").toLowerCase().replace(/:\d+$/, "");
 }
 
 export function getPublicRequestUrl(request: Bun.BunRequest): URL {
   const url = new URL(request.url);
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  const proto = request.headers.get("x-forwarded-proto");
+  const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? request.headers.get("host");
+  const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
   if (host) url.host = host;
   if (host && !host.includes(":")) url.port = "";
   if (proto) url.protocol = proto.endsWith(":") ? proto : `${proto}:`;

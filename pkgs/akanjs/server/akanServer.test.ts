@@ -149,6 +149,25 @@ describe("AkanServer DI lookup", () => {
   });
 });
 
+describe("AkanServer shutdown", () => {
+  test("a second stop() waits for the shutdown already under way instead of returning at once", async () => {
+    const { AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-stop-"));
+    const server = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
+
+    try {
+      await server.start({ listen: false });
+      const first = server.stop();
+      await server.stop();
+      expect(server.status).toBe("stopped");
+      await first;
+    } finally {
+      if (server.status === "running") await server.stop();
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("AkanServer OpenAPI config", () => {
   test("serves OpenAPI only when explicitly enabled", async () => {
     const { AkanServer, createLib } = await loadRuntime();

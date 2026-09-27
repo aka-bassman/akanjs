@@ -8,7 +8,7 @@ export class TunnelTcpStream implements TunnelStream {
   readonly #hostname: string;
   #socket: Bun.Socket | null = null;
   #pending: Uint8Array[] = [];
-  #closed = false;
+  #closed: boolean = false;
 
   constructor(open: TunnelOpenFrame, link: TunnelStreamLink, hostname: string) {
     this.#open = open;
@@ -30,9 +30,9 @@ export class TunnelTcpStream implements TunnelStream {
           port,
           socket: {
             open: () => this.#link.sendFrame({ type: "head", streamId, status: 200, headers: [], body: true }),
-            data: (_socket, data) => {
-              for (let at = 0; at < data.byteLength; at += tunnelWireContract.chunkBytes)
-                void this.#link.sendPayload(data.subarray(at, at + tunnelWireContract.chunkBytes));
+            data: (socket, data) => {
+              socket.pause();
+              void this.#forward(socket, data);
             },
             drain: (socket) => this.#flush(socket),
             close: () => {
@@ -68,6 +68,15 @@ export class TunnelTcpStream implements TunnelStream {
     this.#closed = true;
     this.#socket?.end();
     this.#finish();
+  }
+
+  async #forward(socket: Bun.Socket, data: Uint8Array) {
+    try {
+      for (let at = 0; at < data.byteLength; at += tunnelWireContract.chunkBytes)
+        await this.#link.sendPayload(data.subarray(at, at + tunnelWireContract.chunkBytes));
+    } finally {
+      if (!this.#closed) socket.resume();
+    }
   }
 
   #flush(socket: Bun.Socket) {

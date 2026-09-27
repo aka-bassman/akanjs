@@ -330,7 +330,7 @@ export class LruTtlCache<T> {
 
   #removeOldest(): boolean {
     const oldest = this.#entries.keys().next().value;
-    if (!oldest) return false;
+    if (oldest === undefined) return false;
     return this.#remove(oldest);
   }
 

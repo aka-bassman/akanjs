@@ -93,6 +93,22 @@ describe("HostBasePathWebProxy", () => {
     expect(entries.some((entry) => entry.plainMessage.includes("nope"))).toBe(true);
   });
 
+  test("warns about an ignored basePath once per process, whichever reader resolves the env first", () => {
+    process.env.AKAN_SUB_ROUTE_HOSTS = "gone=gone.try.akanjs.com";
+    const entries: LoggerSinkEntry[] = [];
+    const sink = (entry: LoggerSinkEntry) => void entries.push(entry);
+    Logger.addSink(sink);
+
+    try {
+      new HostBasePathWebProxy().use(request("http://internal/en/home", "gone.try.akanjs.com"));
+      new HostBasePathWebProxy().use(request("http://internal/en/home", "gone.try.akanjs.com"));
+    } finally {
+      Logger.removeSink(sink);
+    }
+
+    expect(entries.filter((entry) => entry.plainMessage.includes("gone")).length).toBe(1);
+  });
+
   test("leaves an unmapped host to the root app", () => {
     expect(new HostBasePathWebProxy().use(request("http://internal/en/home", "akanjs.com"))).toBeUndefined();
   });
@@ -107,5 +123,23 @@ describe("HostBasePathWebProxy", () => {
     expect(result).toBeInstanceOf(Response);
     expect((result as Response).status).toBe(308);
     expect((result as Response).headers.get("location")).toBe("http://soft-angelo.try.akanjs.com/en/home");
+  });
+
+  test("routes and redirects on the first host and proto of a multi-hop forwarded chain", () => {
+    process.env.AKAN_SUB_ROUTE_HOSTS = "soft=soft-angelo.try.akanjs.com";
+    const forwarded = (url: string) =>
+      new Request(url, {
+        headers: {
+          host: "internal",
+          "x-forwarded-host": "soft-angelo.try.akanjs.com, lb.internal:8080",
+          "x-forwarded-proto": "https, http",
+        },
+      }) as unknown as Bun.BunRequest;
+
+    expect(rewriteOf(new HostBasePathWebProxy().use(forwarded("http://internal/en/home"))).pathname).toBe(
+      "/en/soft/home",
+    );
+    const redirect = new HostBasePathWebProxy().use(forwarded("http://internal/en/soft/home"));
+    expect((redirect as Response).headers.get("location")).toBe("https://soft-angelo.try.akanjs.com/en/home");
   });
 });

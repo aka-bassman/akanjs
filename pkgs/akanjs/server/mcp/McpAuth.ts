@@ -176,9 +176,10 @@ export class McpAuth {
     return typeof id === "string" ? `token:${id}` : `token:${createHash("sha256").update(token).digest("base64url")}`;
   }
 
+  // Case-insensitive (RFC 7235), split on spaces and unanchored like the account layer's own parse: a token that
+  // layer accepts but this one missed would skip the expiry, audience and scope checks.
   static #bearer(req: Request): string | null {
-    const [scheme, token] = (req.headers.get("authorization") ?? "").split(" ");
-    return scheme === "Bearer" && token ? token : null;
+    return /^Bearer +([^ ]+)/i.exec(req.headers.get("authorization") ?? "")?.[1] ?? null;
   }
 
   static #claims(token: string): Record<string, unknown> | null {

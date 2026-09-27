@@ -294,6 +294,30 @@ describe("WebRouter sub route host resolution", () => {
     await expect(rscBasePathFor({ host: "soft.example.test", "x-base-path": "nonsense" })).resolves.toBe("soft");
     await expect(rscBasePathFor({ host: "akanjs.example.test", "x-base-path": "soft" })).resolves.toBe("soft");
   });
+
+  test("matches the first host of a multi-hop x-forwarded-host", async () => {
+    await expect(
+      rscBasePathFor({ host: "internal", "x-forwarded-host": "soft.example.test, lb.internal:8080" }),
+    ).resolves.toBe("soft");
+  });
+
+  test("hands an RSC navigation the locale and public path LocaleWebProxy gives a page load of the same URL", async () => {
+    const renderHeaders = await withFullSsrCacheHarness(
+      async ({ renderEnvRoutes, fakeWorker }) => {
+        await renderEnvRoutes["/__rsc"](
+          new Request("http://internal/__rsc?url=%2Fko%2Fdocs%2Fintro", {
+            headers: { host: "soft.example.test", "x-path": "/spoofed" },
+          }),
+        );
+        return fakeWorker.renderCalls[0]?.headers;
+      },
+      { artifact: artifactWithSubRoutes() },
+    );
+
+    expect(renderHeaders?.get("x-base-path")).toBe("soft");
+    expect(renderHeaders?.get("x-locale")).toBe("ko");
+    expect(renderHeaders?.get("x-path")).toBe("/docs/intro");
+  });
 });
 
 describe("WebRouter local sub route index", () => {

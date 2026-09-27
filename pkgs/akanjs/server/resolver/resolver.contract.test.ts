@@ -269,6 +269,22 @@ describe("DatabaseResolver declaration contracts", () => {
     });
   });
 
+  test("keeps multi-field query loader keys apart when their values concatenate alike", async () => {
+    const { instance } = await bootModel<{
+      __store: { find: (query: unknown) => Promise<unknown[]> };
+      byOwnerCategory: { loadMany: (keys: Record<string, string>[]) => Promise<unknown[]> };
+    }>();
+    const first = { id: "doc-1", ownerId: "x", category: "yz" };
+    const second = { id: "doc-2", ownerId: "xy", category: "z" };
+    instance.__store.find = async () => [first, second];
+    expect(
+      await instance.byOwnerCategory.loadMany([
+        { ownerId: "x", category: "yz" },
+        { ownerId: "xy", category: "z" },
+      ]),
+    ).toEqual([first, second]);
+  });
+
   test("hands the facade projection to the store", async () => {
     const { instance } = await bootModel<{
       __store: ReturnType<typeof makeFakeStore>;
@@ -1161,6 +1177,29 @@ describe("SignalResolver declaration contracts", () => {
     expect(live.syncHub.roomCountOf("serverResolverTestItem")).toBe(1);
   });
 
+  test("keeps another socket's live room when a socket leaves a room it does not hold", async () => {
+    const { live, route } = resolveLiveCategoryRoute();
+    const [reader, other] = [makeWs(), makeWs()];
+    await route(reader, ["news"], "subscribe");
+    await route(other, ["news"], "subscribe");
+    await route(other, ["sports"], "subscribe");
+    await route(other, ["news"], "unsubscribe");
+    await route(other, ["news"], "unsubscribe");
+    expect(live.syncHub.roomIds()).toEqual([
+      "serverResolverTestItemLiveInCategory-news",
+      "serverResolverTestItemLiveInCategory-sports",
+    ]);
+  });
+
+  test("lets a live room go when a socket that subscribed to it twice closes", async () => {
+    const { registry, live, route } = resolveLiveCategoryRoute();
+    const ws = makeWs();
+    await route(ws, ["news"], "subscribe");
+    await route(ws, ["news"], "subscribe");
+    await SignalResolver.handleWsClose(ws, registry, live);
+    expect(live.syncHub.roomIds()).toEqual([]);
+  });
+
   test("pauses a live room while a declared argument carries a value", async () => {
     class PausedLiveSlice extends slice(
       serverResolverTestServiceModel,
@@ -1545,6 +1584,35 @@ const withFakeWebsocket = () => {
   const websocket = makeFakeWebsocket();
   registry.adaptor.set(SolidPubSub, websocket.instance);
   return { registry, websocket };
+};
+
+const resolveLiveCategoryRoute = () => {
+  class LiveCategorySlice extends slice(
+    serverResolverTestServiceModel,
+    { guards: { root: Public, get: Public, cru: Public } },
+    (init) => ({
+      inCategory: init()
+        .search("category", String)
+        .live()
+        .exec(function (category) {
+          return this.serverResolverTestItemService.queryInCategory(category ?? "all");
+        }),
+    }),
+  ) {}
+  const SliceEndpoint = SignalResolver.resolveSlice(LiveCategorySlice);
+  const sliceEndpoint = new SliceEndpoint() as InstanceType<typeof SliceEndpoint> & Record<string, unknown>;
+  sliceEndpoint.serverResolverTestItemService = { queryInCategory: (category: string) => ({ category }) };
+  const { registry } = withFakeWebsocket();
+  const live = getDefaultLiveRegistry();
+  live.sliceCls.set(LiveCategorySlice.baseName, LiveCategorySlice as never);
+  live.service.set("serverResolverTestItem", {
+    listenPost: () => undefined,
+    __databaseModel: { __store: makeTextStore() },
+  } as never);
+  SignalResolver.registerLiveSync(LiveCategorySlice, { registry, live });
+  const route = resolveWith(SliceEndpoint, sliceEndpoint as never, { registry, live }).wsRoutes
+    .serverResolverTestItemLiveInCategory;
+  return { registry, live, route };
 };
 
 const resolveWith = (

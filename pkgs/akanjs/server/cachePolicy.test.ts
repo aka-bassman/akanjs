@@ -299,6 +299,16 @@ describe("route cache policy helpers", () => {
     expect(cache.get("delete-me")).toBeNull();
   });
 
+  test("evicts an empty-string key like any other once the cache is full", () => {
+    const cache = new LruTtlCache<string>(2);
+    cache.set("", "empty", 30);
+    cache.set("a", "A", 30);
+    cache.set("b", "B", 30);
+    expect(cache.size).toBe(2);
+    expect(cache.get("")).toBeNull();
+    expect(cache.get("b")).toBe("B");
+  });
+
   test("tracks payload bytes across every path that adds or drops an entry", async () => {
     const cache = new LruTtlCache<string>(2, { sizeOf: (value) => value.length });
     expect(cache.byteSize).toBe(0);

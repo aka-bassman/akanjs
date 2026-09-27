@@ -48,7 +48,7 @@ export class BuilderRpc {
       const ev = msg as BuilderEvent;
       switch (ev.type) {
         case "builder-ready":
-          this.#logger.verbose(`[builder] builder ready buildId=${ev.buildId}`);
+          this.#logger.verbose("[builder] builder ready");
           return;
         case "invalidate":
           handlers.onInvalidate?.({ kinds: ev.kinds, files: ev.files, generation: ev.generation });

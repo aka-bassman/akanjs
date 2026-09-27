@@ -39,7 +39,7 @@ import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import { DevHmrController } from "./hmr/devHmrController";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { ImageOptimizer } from "./imageOptimizer";
-import { normalizeHost, resolveArtifactDir } from "./proxy/hostBasePathWebProxy";
+import { normalizeHost, resolveArtifactDir, warnIgnoredSubRouteBasePaths } from "./proxy/hostBasePathWebProxy";
 import { createDefaultRobotsTxt } from "./robots";
 import {
   AKAN_RSC_PATCH_HEAD_SAFE_HEADER,
@@ -302,10 +302,7 @@ export class WebRouter {
       env: process.env.AKAN_SUB_ROUTE_HOSTS,
     });
     this.#subRoutes = subRoutes;
-    if (ignoredBasePaths.length)
-      this.#logger.warn(
-        `AKAN_SUB_ROUTE_HOSTS names basePaths this build does not serve, ignoring: ${ignoredBasePaths.join(", ")}`,
-      );
+    warnIgnoredSubRouteBasePaths(this.#logger, ignoredBasePaths);
     this.#rsc = rsc;
     this.renderState = {
       buildId: 0,
@@ -463,6 +460,12 @@ export class WebRouter {
           const manifest = await this.#ensureRoute(targetUrl);
           const rscHeaders = new Headers(req.headers);
           if (normalizedTarget.basePath) rscHeaders.set("x-base-path", normalizedTarget.basePath);
+          // No WebProxy runs on /__rsc: these are the headers LocaleWebProxy gives a page load of this URL.
+          const [, targetLocale = "", ...targetPath] = rawTargetUrl.pathname.split("/");
+          if (this.#artifact.i18n.locales.includes(targetLocale)) {
+            rscHeaders.set("x-locale", targetLocale);
+            rscHeaders.set("x-path", `/${targetPath.join("/")}`);
+          }
           const rscReq = new Request(targetUrl, {
             method: "GET",
             headers: rscHeaders,
@@ -754,7 +757,7 @@ export class WebRouter {
   }
 
   static #basePathForRequestHost(req: Request, subRoutes: Record<string, string[]>): string | null {
-    const host = normalizeHost(req.headers.get("x-forwarded-host") ?? req.headers.get("host"));
+    const host = normalizeHost(req.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? req.headers.get("host"));
     if (!host) return null;
     for (const [basePath, domains] of Object.entries(subRoutes)) {
       if (domains.some((domain) => normalizeHost(domain) === host)) return basePath;

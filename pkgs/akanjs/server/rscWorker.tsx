@@ -1414,8 +1414,8 @@ export class RscRenderer {
     const publicUrl = new URL(url);
     const req = untrackedRequest();
     const headers = req?.headers;
-    const host = headers?.get("x-forwarded-host") ?? headers?.get("host");
-    const proto = headers?.get("x-forwarded-proto");
+    const host = headers?.get("x-forwarded-host")?.split(",")[0]?.trim() ?? headers?.get("host");
+    const proto = headers?.get("x-forwarded-proto")?.split(",")[0]?.trim();
     if (host) publicUrl.host = host;
     if (host && !host.includes(":")) publicUrl.port = "";
     if (proto) publicUrl.protocol = proto.endsWith(":") ? proto : `${proto}:`;

@@ -227,6 +227,36 @@ class GatewayStub {
       send: (text: string) => {
         socket.send(tunnelWireContract.encodeWsPayload(tunnelWsPayload.text, new TextEncoder().encode(text)));
       },
+      close: () => {
+        const payload = new TextEncoder().encode(JSON.stringify({ code: 1000, reason: "done" }));
+        socket.send(tunnelWireContract.encodeWsPayload(tunnelWsPayload.close, payload));
+      },
+      finished,
+    };
+  }
+
+  async tcp(port: number) {
+    const socket = await this.#take();
+    this.#streamNum += 1;
+    const streamId = `stream-${this.#streamNum}`;
+    const collector: StreamCollector = { chunks: [], chunkAt: [], settle: () => undefined };
+    const finished = new Promise<string | undefined>((resolve) => {
+      collector.settle = resolve;
+    });
+    this.#collectors.set(socket, collector);
+    socket.send(
+      JSON.stringify({
+        type: "open",
+        streamId,
+        kind: "tcp",
+        hostname: "code.tunnel.akanjs.com",
+        port,
+      } satisfies TunnelOpenFrame),
+    );
+    return {
+      head: () => collector.head,
+      chunks: collector.chunks,
+      socketClosed: () => !this.busy.has(socket),
       finished,
     };
   }
@@ -395,6 +425,40 @@ describe("tunnel agent against a gateway", () => {
     socket.send("ping");
     expect(await until(() => socket.inbound.length > 0)).toBe(true);
     expect(socket.inbound[0]).toBe("echo:ping");
+  });
+
+  test("replaces each data socket a finished websocket takes with it", async () => {
+    for (let round = 0; round < 2; round += 1) {
+      const socket = await gateway.websocket("/ws");
+      expect(await until(() => socket.head()?.status === 101)).toBe(true);
+      socket.close();
+      expect(await socket.finished).toBeUndefined();
+    }
+    expect(await until(() => gateway.idle.length >= gateway.idleTarget)).toBe(true);
+  });
+
+  test("carries a tcp stream to its end and closes the data socket it owned", async () => {
+    const tcpOrigin = Bun.listen({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        open: (socket) => {
+          socket.write("hello");
+          socket.end();
+        },
+        data: () => undefined,
+      },
+    });
+    try {
+      const stream = await gateway.tcp(tcpOrigin.port);
+      expect(await stream.finished).toBeUndefined();
+      expect(stream.head()?.status).toBe(200);
+      expect(stream.chunks.map((chunk) => textOf(chunk)).join("")).toBe("hello");
+      expect(await until(stream.socketClosed)).toBe(true);
+      expect(await until(() => gateway.idle.length >= gateway.idleTarget)).toBe(true);
+    } finally {
+      tcpOrigin.stop(true);
+    }
   });
 
   test("gives up on a refusal instead of retrying a token that will never be accepted", async () => {

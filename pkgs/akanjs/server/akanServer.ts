@@ -166,6 +166,7 @@ export class AkanServer {
   #logStream: LogStreamRoute | null = null;
   #ops: OpsRoute | null | undefined;
   #lastMetrics: AkanMetricsReport = {};
+  #stopping: Promise<void> | null = null;
   constructor(
     name = "AkanServer",
     env: BackendEnv = {},
@@ -495,7 +496,14 @@ export class AkanServer {
     this.#registerParentIpc();
     return this.listen();
   }
-  async stop() {
+  stop(): Promise<void> {
+    this.#stopping ??= this.#stop().finally(() => {
+      this.#stopping = null;
+    });
+    return this.#stopping;
+  }
+
+  async #stop() {
     if (this.status !== "running" && this.status !== "initialized") {
       this.logger.warn("AkanServer is not running. Cannot stop.");
       return;
@@ -717,7 +725,7 @@ export class AkanServer {
     }
     // An ndjson gateway relays records, not text; the forwarder starts at the stdout level before `log.level` arrives.
     if (Logger.isNdjson) Logger.consoleOutput = false;
-    const forwarder = new LogForwarder((message) => process.send?.(message));
+    const forwarder = new LogForwarder((message, onSent) => process.send?.(message, undefined, undefined, onSent));
     this.#logForwarder = forwarder;
     webRouter?.onLogRecords((records) => forwarder.pushMany(records));
   }
@@ -727,7 +735,7 @@ export class AkanServer {
     this.#logControl = null;
     this.#logHub?.close();
     this.#logHub = null;
-    this.#logForwarder?.close();
+    await this.#logForwarder?.close();
     this.#logForwarder = null;
   }
 

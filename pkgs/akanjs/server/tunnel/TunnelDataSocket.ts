@@ -26,7 +26,7 @@ export class TunnelDataSocket {
   #ws: WebSocket | null = null;
   #stream: TunnelStream | null = null;
   #streamId: string | null = null;
-  #gone = false;
+  #gone: boolean = false;
 
   constructor(options: TunnelDataSocketOptions) {
     this.#options = options;
@@ -62,6 +62,16 @@ export class TunnelDataSocket {
     this.#gone = true;
     this.#stream?.reset();
     this.#stream = null;
+    this.#ws = null;
+    this.#options.onGone(this);
+  }
+
+  #retire() {
+    if (this.#gone) return;
+    this.#gone = true;
+    this.#stream = null;
+    this.#streamId = null;
+    this.#ws?.close();
     this.#ws = null;
     this.#options.onGone(this);
   }
@@ -108,7 +118,7 @@ export class TunnelDataSocket {
     const link: TunnelStreamLink = {
       sendFrame: (frame) => this.#send(frame),
       sendPayload: (payload) => this.#sendPayload(payload),
-      closeSocket: () => this.close(),
+      closeSocket: () => this.#retire(),
     };
     this.#streamId = open.streamId;
     this.#stream =
