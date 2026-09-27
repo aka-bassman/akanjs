@@ -5,7 +5,13 @@ import path from "node:path";
 import type { AkanMetricsReport } from "akanjs/service";
 import { LruTtlCache } from "./cachePolicy";
 import { shouldRenderLocaleAlternates } from "./head";
-import type { AkanRouterStateV1, AkanRscPatchMetadata } from "./routeState";
+import {
+  type AkanRouterStateV1,
+  type AkanRscPatchMetadata,
+  appendAkanRouterStateRequestHeaders,
+  createAkanRouterState,
+} from "./routeState";
+import { RouteTreeBuilder } from "./routeTreeBuilder";
 import {
   type CachedRscReplayMessage,
   type CachedRscResult,
@@ -21,6 +27,7 @@ import {
   shouldStoreRscWorkerPatchResult,
   shouldUseRscWorkerFullResultCache,
 } from "./rscWorkerCache";
+import { pages as headFixturePages } from "./rscWorkerHead.fixture";
 import {
   createIdempotentRscRenderCancel,
   createRscHostRenderStream,
@@ -32,6 +39,7 @@ import {
   type RscPending,
   RscWorker,
 } from "./rscWorkerHost";
+import type { RscTraceMetadata } from "./ssrTypes";
 import type { BaseBuildArtifact } from "./types";
 
 const decoder = new TextDecoder();
@@ -717,6 +725,96 @@ describe("RscWorker cached result replay", () => {
     });
     expect(messages[1]).toEqual({ type: "cache-state", requestId: "request-3", state: cacheState });
   });
+});
+
+describe("RscWorker route head", () => {
+  interface HeadWorker {
+    render: (url: string, headers?: Headers) => Promise<{ body: string; trace?: RscTraceMetadata }>;
+    headRuns: (name: string) => number;
+  }
+  const withHeadWorker = async (env: Record<string, string>, run: (worker: HeadWorker) => Promise<void>) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "akan-rsc-head-"));
+    const headLog = path.join(dir, "head.log");
+    const vars: Record<string, string> = {
+      AKAN_RSC_WORKER_PATH: path.join(import.meta.dir, "rscWorker.tsx"),
+      AKAN_TEST_HEAD_LOG: headLog,
+      ...env,
+    };
+    const saved = Object.fromEntries(Object.keys(vars).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, vars);
+    const segmentOutlet = "pkgs/akanjs/server/rscSegmentOutlet.tsx";
+    const rsc = new RscWorker({
+      pagesBundlePath: path.join(import.meta.dir, "rscWorkerHead.fixture.tsx"),
+      pagesBundleBuildId: 1,
+      rscRuntimeClientManifest: {
+        [`${segmentOutlet}#AkanSegmentOutlet`]: { id: segmentOutlet, chunks: [], name: "AkanSegmentOutlet" },
+      },
+    } as unknown as BaseBuildArtifact);
+    try {
+      await rsc.ready;
+      await run({
+        render: async (url, headers) => {
+          const result = await rsc.renderWithMeta(new Request(url, { headers }));
+          if (result.type !== "stream") throw new Error(`expected a stream, got ${result.type}`);
+          return { body: decoder.decode(await new Response(result.stream).arrayBuffer()), trace: result.trace };
+        },
+        headRuns: (name) =>
+          (fs.existsSync(headLog) ? fs.readFileSync(headLog, "utf8").split("\n") : []).filter((line) => line === name)
+            .length,
+      });
+    } finally {
+      rsc.kill();
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  test("runs a route's head once for a full render and not at all for a cached replay", async () => {
+    await withHeadWorker(
+      { AKAN_RSC_RESULT_CACHE: "1", AKAN_RSC_RESULT_CACHE_PATHS: "/en/cached" },
+      async ({ render, headRuns }) => {
+        const first = await render("http://localhost/en/cached");
+        expect(first.trace).toMatchObject({ cache: "miss" });
+        expect(first.body).toContain("cached body");
+        expect(headRuns("cached")).toBe(1);
+
+        const replay = await render("http://localhost/en/cached");
+        expect(replay.trace).toMatchObject({ cache: "hit", partialReason: "cache-hit-full-replay" });
+        expect(replay.body).toBe(first.body);
+        expect(headRuns("cached")).toBe(1);
+      },
+    );
+  }, 20_000);
+
+  test("resolves the head for a patch decision only when the page declares its head patch-safe", async () => {
+    const routes = new RouteTreeBuilder(headFixturePages).build();
+    const stateOf = (name: string, href: string) => {
+      const pathRoute = routes.find((route) => route.path.endsWith(`/${name}`));
+      if (!pathRoute) throw new Error(`no route for ${name}`);
+      const headers = new Headers();
+      appendAkanRouterStateRequestHeaders(headers, createAkanRouterState({ pathRoute, href, buildId: 1 }));
+      return headers;
+    };
+    await withHeadWorker(
+      { AKAN_PUBLIC_RSC_PARTIAL_COMMIT: "1", AKAN_RSC_RESULT_CACHE: "0" },
+      async ({ render, headRuns }) => {
+        const safe = await render("http://localhost/en/safe?tab=2", stateOf("safe", "http://localhost/en/safe?tab=1"));
+        expect(safe.trace).toMatchObject({ partial: "patch", patchHeadSafe: true });
+        expect(headRuns("safe")).toBe(1);
+
+        const unsafe = await render(
+          "http://localhost/en/cached?tab=2",
+          stateOf("cached", "http://localhost/en/cached?tab=1"),
+        );
+        expect(unsafe.trace).toMatchObject({ partial: "full", partialReason: "head-unsafe" });
+        expect(unsafe.body).toContain("cached body");
+        expect(headRuns("cached")).toBe(1);
+      },
+    );
+  }, 20_000);
 });
 
 describe("RscWorker respawn lifecycle", () => {

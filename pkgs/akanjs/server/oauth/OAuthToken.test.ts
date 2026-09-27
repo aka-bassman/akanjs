@@ -50,6 +50,31 @@ describe("OAuthToken parse", () => {
     expect(inBody.params.client.method).toBe("body");
   });
 
+  test("reads a Basic credential whatever the scheme's case, and loosens nothing else", async () => {
+    const encoded = Buffer.from("cursor:s3cret").toString("base64");
+    for (const scheme of ["basic", "BASIC", "bAsIc"]) {
+      const result = await OAuthToken.parse(
+        post({ grant_type: "refresh_token", refresh_token: "r" }, { authorization: `${scheme} ${encoded}` }),
+      );
+      if (!result.ok) throw new Error("expected params");
+      expect(result.params.client).toEqual({ clientId: "cursor", clientSecret: "s3cret", method: "basic" });
+    }
+    const twoCredentials = await OAuthToken.parse(
+      post(
+        { grant_type: "refresh_token", refresh_token: "r", client_secret: "s" },
+        { authorization: `basic ${encoded}` },
+      ),
+    );
+    expect(twoCredentials.ok).toBe(false);
+    for (const authorization of [`Basic\t${encoded}`, `Basic${encoded}`, `Basics ${encoded}`]) {
+      const result = await OAuthToken.parse(
+        post({ grant_type: "refresh_token", refresh_token: "r", client_id: "c" }, { authorization }),
+      );
+      if (!result.ok) throw new Error("expected params");
+      expect(result.params.client).toEqual({ clientId: "c", method: "none" });
+    }
+  });
+
   test("refuses the shapes RFC 6749 rules out", async () => {
     const notForm = await OAuthToken.parse(
       new Request("https://app.example.com/oauth/token", {

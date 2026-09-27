@@ -125,6 +125,45 @@ const writeOkChild = (serverPath: string, body: string) =>
     `,
   );
 
+const writePubsubChild = (serverPath: string) =>
+  Bun.write(
+    serverPath,
+    `
+      export const server = {
+        async start() {
+          const delivered = [];
+          const http = Bun.serve({
+            unix: process.env.AKAN_CHILD_SOCKET,
+            fetch(req) {
+              const url = new URL(req.url);
+              const roomId = url.searchParams.get("room");
+              const socketId = url.searchParams.get("socket") ?? undefined;
+              if (url.pathname === "/subscribe")
+                process.send?.({ type: "pubsub.subscribe", roomId, socketId, pid: process.pid });
+              if (url.pathname === "/unsubscribe")
+                process.send?.({ type: "pubsub.unsubscribe", roomId, socketId, pid: process.pid });
+              if (url.pathname === "/snapshot")
+                process.send?.({ type: "pubsub.snapshot", rooms: url.searchParams.getAll("room"), pid: process.pid });
+              if (url.pathname === "/publish")
+                process.send?.({ type: "pubsub.publish", roomId, data: { n: Number(url.searchParams.get("n")) } });
+              return Response.json(delivered);
+            },
+          });
+          process.on("message", (message) => {
+            if (!message || typeof message !== "object") return;
+            ${answerHealthPing}
+            if (message.type === "pubsub.deliver") delivered.push(message.data.n);
+            if (message.type === "shutdown") {
+              http.stop(true);
+              process.exit(0);
+            }
+          });
+          ${sendReady()}
+        },
+      };
+    `,
+  );
+
 const waitForSocketOpen = (socket: WebSocket) =>
   withTimeout(
     new Promise<void>((resolve, reject) => {
@@ -816,6 +855,53 @@ describe("AkanApp", () => {
       });
       socket.close();
       expect(reply).toBe("echo:hello");
+    });
+  }, 20_000);
+
+  test("keeps delivering a room to a replica while another of its sockets still holds it", async () => {
+    const { serverPath, runtimeDir, port } = await makeRoot("akan-app-pubsub-sockets-");
+    await writePubsubChild(serverPath);
+
+    await withApp(serverPath, { replica: 2, runtimeDir, port }, async () => {
+      await waitFor(async () => {
+        const body = await readHealth(port);
+        return body?.children.length === 2 && body.children.every((child) => child.ready) ? body : null;
+      });
+      const entries = await readdir(runtimeDir);
+      const socketOf = (idx: number) =>
+        path.join(runtimeDir, entries.find((name) => name.endsWith(`-${idx}.sock`)) ?? `missing-${idx}`);
+      const [holder, publisher] = [socketOf(0), socketOf(1)];
+      const call = async (socketPath: string, pathname: string) =>
+        (await (await fetch(`http://child${pathname}`, { unix: socketPath })).json()) as number[];
+      const metrics = async () =>
+        (await (await fetch(`http://127.0.0.1:${port}/_akan/app/metrics`)).json()) as {
+          rooms: number;
+          sockets: number;
+          children: { metrics: { pubsubDropCount?: number } }[];
+        };
+      const until = (check: () => Promise<boolean>, message: string) =>
+        waitFor(async () => ((await check()) ? true : null), 2_000, message);
+
+      await call(holder, "/subscribe?room=r&socket=s1");
+      await call(holder, "/subscribe?room=r&socket=s2");
+      await call(holder, "/snapshot?room=r");
+      await until(async () => (await metrics()).sockets === 2, "the gateway never saw both subscribes");
+      await call(publisher, "/publish?room=r&n=1");
+      await until(async () => (await call(holder, "/")).includes(1), "the room was never delivered");
+
+      await call(holder, "/unsubscribe?room=r&socket=s1");
+      await until(async () => (await metrics()).sockets === 1, "the gateway never saw the unsubscribe");
+      await call(publisher, "/publish?room=r&n=2");
+      await until(async () => (await call(holder, "/")).includes(2), "the replica's remaining socket lost the room");
+
+      await call(holder, "/unsubscribe?room=r&socket=s2");
+      await until(async () => (await metrics()).rooms === 0, "the room outlived its last socket");
+      await call(publisher, "/publish?room=r&n=3");
+      await until(
+        async () => ((await metrics()).children[1]?.metrics.pubsubDropCount ?? 0) > 0,
+        "the last publish was never dropped",
+      );
+      expect(await call(holder, "/")).toEqual([1, 2]);
     });
   }, 20_000);
 

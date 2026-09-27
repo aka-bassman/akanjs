@@ -247,6 +247,33 @@ describe("WebRouter RSC target normalization", () => {
     expect(normalized.url.href).toBe("https://akanjs.com/en/akanjs/docs/intro/quickstart");
     expect(normalized.basePath).toBe("akanjs");
   });
+
+  test("confines a sub-route host to its own basePath, as a page load on that host is", () => {
+    const seedEntries = [
+      { routeId: "/:lang/soft/home", pattern: "/:lang/soft/home", seeds: [] },
+      { routeId: "/:lang/office/admin", pattern: "/:lang/office/admin", seeds: [] },
+    ];
+    const onSoftHost = (
+      pathname: string,
+      basePaths = ["soft", "office"],
+      seeds: typeof seedEntries | undefined = seedEntries,
+    ) => {
+      const normalized = normalizeRscTargetUrlForHostBasePath(new URL(`https://soft.akanjs.com${pathname}?tab=1`), {
+        basePath: "soft",
+        basePaths,
+        i18n: DEFAULT_AKAN_I18N,
+        seedEntries: seeds,
+      });
+      return `${normalized.url.pathname}${normalized.url.search} [${normalized.basePath}]`;
+    };
+
+    expect(onSoftHost("/en/home")).toBe("/en/soft/home?tab=1 [soft]");
+    expect(onSoftHost("/en/soft/home")).toBe("/en/soft/home?tab=1 [soft]");
+    expect(onSoftHost("/en/admin")).toBe("/en/soft/admin?tab=1 [soft]");
+    expect(onSoftHost("/en/office/admin")).toBe("/en/soft/office/admin?tab=1 [soft]");
+    expect(onSoftHost("/en")).toBe("/en/soft?tab=1 [soft]");
+    expect(onSoftHost("/en/soft/foo", ["office", "soft"], undefined)).toBe("/en/soft/foo?tab=1 [soft]");
+  });
 });
 
 describe("WebRouter sub route host resolution", () => {
@@ -317,6 +344,21 @@ describe("WebRouter sub route host resolution", () => {
     expect(renderHeaders?.get("x-base-path")).toBe("soft");
     expect(renderHeaders?.get("x-locale")).toBe("ko");
     expect(renderHeaders?.get("x-path")).toBe("/docs/intro");
+  });
+
+  test("renders an RSC navigation on a sub-route host inside that host's basePath only", async () => {
+    const rendered = await withFullSsrCacheHarness(
+      async ({ renderEnvRoutes, fakeWorker }) => {
+        await renderEnvRoutes["/__rsc"](
+          new Request("http://internal/__rsc?url=%2Fen%2Foffice%2Fadmin", { headers: { host: "soft.example.test" } }),
+        );
+        const call = fakeWorker.renderCalls[0];
+        return call ? `${new URL(call.url).pathname} [${call.headers.get("x-base-path")}]` : null;
+      },
+      { artifact: { ...artifactWithSubRoutes(), basePaths: ["soft", "office"] } },
+    );
+
+    expect(rendered).toBe("/en/soft/office/admin [soft]");
   });
 });
 

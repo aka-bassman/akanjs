@@ -79,7 +79,7 @@ export class OAuthToken {
   static credentialOf(req: Request, form: URLSearchParams): OAuthClientCredential | null {
     const header = req.headers.get("authorization");
     const bodySecret = form.get("client_secret") ?? undefined;
-    if (header?.startsWith("Basic ")) {
+    if (header && /^Basic /i.test(header)) {
       if (bodySecret !== undefined) return null;
       const decoded = Buffer.from(header.slice("Basic ".length).trim(), "base64").toString("utf8");
       const separator = decoded.indexOf(":");

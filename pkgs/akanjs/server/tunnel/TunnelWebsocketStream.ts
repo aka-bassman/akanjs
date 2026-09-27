@@ -98,6 +98,7 @@ export class TunnelWebsocketStream implements TunnelStream {
   reset() {
     this.#closed = true;
     this.#ws?.close();
+    this.#link.closeSocket();
   }
 
   #finish(resolve: () => void) {

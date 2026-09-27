@@ -217,6 +217,13 @@ export function normalizeRscTargetUrlForHostBasePath(
   const segments = targetUrl.pathname.split("/").filter(Boolean);
   const [locale, firstPath] = segments;
   if (!locale || !i18n.locales.includes(locale)) return { url: targetUrl, basePath: null };
+  // A host mapped to a basePath serves nothing else, the way HostBasePathWebProxy rewrites a page load there.
+  if (basePath) {
+    if (firstPath === basePath) return { url: targetUrl, basePath };
+    const normalized = new URL(targetUrl);
+    normalized.pathname = `/${[locale, basePath, ...segments.slice(1)].join("/")}`;
+    return { url: normalized, basePath };
+  }
 
   const targetBasePath = firstPath && basePaths.includes(firstPath) ? firstPath : null;
   if (seedEntries && routeMatches(targetUrl)) return { url: targetUrl, basePath: targetBasePath ?? basePath };
