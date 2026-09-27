@@ -641,6 +641,4 @@ describe("ApplicationRunner", () => {
 
   test("runs bun test through the resolved executor", runsPackageTests);
   test("runs signal target tests with preload resolved from installed akanjs", runsSignalTargetTests);
-  test("runs bun test through the resolved executor", runsPackageTests);
-  test("runs signal target tests with preload resolved from installed akanjs", runsSignalTargetTests);
 });
