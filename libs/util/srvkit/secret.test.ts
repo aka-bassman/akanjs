@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { Logger, type LoggerSinkEntry } from "akanjs/common";
 import { jwtSign } from "./jwt";
 import { assertJwtSecretConfigured, generateJwtSecret, resolveJwt, resolveJwtSecret } from "./secret";
 
@@ -89,6 +90,21 @@ describe("resolveJwt", () => {
       `Bearer ${token} trailing`,
     ])
       expect(await resolveJwt(secret, authorization, anonymous)).toMatchObject({ tokenType: "access" });
+  });
+
+  test("never writes the credential into the log when it fails to verify", async () => {
+    const entries: LoggerSinkEntry[] = [];
+    const removeSink = Logger.addSink((entry) => void entries.push(entry));
+    Logger.setLevel("verbose");
+    try {
+      const forged = `${token.slice(0, -4)}AAAA`;
+      expect(await resolveJwt(secret, `Bearer ${forged}`, anonymous)).toBe(anonymous);
+      expect(entries.length).toBeGreaterThan(0);
+      for (const entry of entries) expect(entry.message).not.toContain(forged);
+    } finally {
+      removeSink();
+      Logger.setLevel("info");
+    }
   });
 
   test("stays anonymous for every header /mcp's bearer check reads no token from", async () => {
