@@ -318,4 +318,25 @@ describe("UiOverride", () => {
     expect(whole).toContain('data-slot="brand-stack"');
     expect(whole).not.toContain('id="toast"');
   });
+
+  test("the shipped Loading.Area hands its props to the LoadingArea slot", async () => {
+    const { Loading } = await import("../Loading");
+    const BrandArea: AkanUiOverrides["LoadingArea"] = ({ className, indicator, children }) => (
+      <div data-slot="brand-area" className={className}>
+        {indicator}
+        {children}
+      </div>
+    );
+    const html = await renderToText(
+      <UiOverrideProvider value={{ LoadingArea: BrandArea }}>
+        <Loading.Area className="cover" indicator={<i>DOT</i>}>
+          SAVING
+        </Loading.Area>
+      </UiOverrideProvider>,
+    );
+    expect(html).toContain('data-slot="brand-area"');
+    expect(html).toContain('class="cover"');
+    expect(html).toContain("<i>DOT</i>");
+    expect(html).toContain("SAVING");
+  });
 });

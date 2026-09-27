@@ -223,6 +223,26 @@ describe("storage", () => {
     await storage.removeItem("jwt");
     expect(await storage.getItem("jwt")).toBeNull();
   });
+
+  test("client csr mode falls back to localStorage when a Preferences call rejects", async () => {
+    envState.side = "client";
+    envState.renderMode = "csr";
+    installBrowserGlobals();
+    const refuse = async () => {
+      throw new Error("Preferences unavailable");
+    };
+    Object.defineProperty(globalThis, "Capacitor", {
+      value: { Plugins: { Preferences: { get: refuse, set: refuse, remove: refuse } } },
+      configurable: true,
+    });
+    const { storage } = await import("./storage");
+
+    await storage.setItem("jwt", "token-3");
+    expect(localStore.get("jwt")).toBe("token-3");
+    expect(await storage.getItem("jwt")).toBe("token-3");
+    await storage.removeItem("jwt");
+    expect(localStore.has("jwt")).toBe(false);
+  });
 });
 
 describe("cookies, headers, and auth", () => {

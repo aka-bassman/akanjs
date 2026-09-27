@@ -49,7 +49,7 @@ export const Reconnect = () => {
 
   useEffect(() => {
     fetch.ws.on("connect", handleConnect);
-    fetch.ws.on("disconnect", () => handleDisconnect());
+    fetch.ws.on("disconnect", handleDisconnect);
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 

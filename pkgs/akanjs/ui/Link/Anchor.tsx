@@ -83,7 +83,7 @@ export const SsrLink = ({
   const path = internalPathInfo.path;
   if (href.startsWith("#"))
     return (
-      <a className={cn(className, currentPath === path && activeClassName)} href={href}>
+      <a className={cn(className, currentPath === path && activeClassName)} href={href} {...props}>
         {children}
       </a>
     );

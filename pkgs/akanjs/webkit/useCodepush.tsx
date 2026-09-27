@@ -22,14 +22,10 @@ export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
     const app = await App.getInfo();
     await CapacitorUpdater.getPluginVersion();
     const { deviceId } = await CapacitorUpdater.getDeviceId();
-    const { bundle: version, native } = await CapacitorUpdater.current();
-    const builtInversion = await CapacitorUpdater.getBuiltinVersion();
+    const { bundle: version } = await CapacitorUpdater.current();
     const appId = app.id;
     const platform = info.platform;
 
-    window.alert(
-      `getBuildinVersion:${builtInversion.version}\ncurrent.bundle:${version.version}\ncurrennt.native:${native}`,
-    );
     const { major, minor, patch } = splitVersion(version.version === "builtin" ? app.version : version.version);
     const appName = process.env.AKAN_PUBLIC_APP_NAME ?? "";
 

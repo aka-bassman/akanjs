@@ -528,6 +528,40 @@ describe("solid sqlite utilities", () => {
     });
   });
 
+  test("gives a projected read of a stored row missing an array its own copy of the default", async () => {
+    await withStore(scalarDefaultConstant, scalarDefaultDatabase, async ({ client, store }) => {
+      const created = await store.create({ title: "Legacy" });
+      await client.execute(`UPDATE "sqliteScalarDefaultTest" SET "_doc" = ? WHERE "id" = ?`, [
+        JSON.stringify({ title: "Legacy" }),
+        created.id,
+      ]);
+
+      const [projected] = await store.find({}, { select: { tags: true } });
+      expect(projected.tags).toEqual([]);
+      projected.tags.push("mutated");
+
+      const [again] = await store.find({}, { select: { tags: true } });
+      expect(again.tags).toEqual([]);
+      expect((await store.create({ title: "Next" })).tags).toEqual([]);
+    });
+  });
+
+  test("fills a nested scalar missing from a stored row on a projected read, as a full read does", async () => {
+    await withStore(scalarDefaultConstant, scalarDefaultDatabase, async ({ client, store }) => {
+      const created = await store.create({ title: "Legacy" });
+      await client.execute(`UPDATE "sqliteScalarDefaultTest" SET "_doc" = ? WHERE "id" = ?`, [
+        JSON.stringify({ title: "Legacy", tags: [] }),
+        created.id,
+      ]);
+
+      const [projected] = await store.find({}, { select: { location: true, spot: true } });
+      const full = await store.pickById(created.id);
+      expect(projected.location).toEqual({ type: "Point", coordinates: [0, 0], altitude: 0 });
+      expect(projected.location).toEqual(full.location);
+      expect(projected.spot).toBeNull();
+    });
+  });
+
   test("still refuses a missing required relation", async () => {
     await withStore(relationRequiredConstant, relationRequiredDatabase, async ({ store }) => {
       await expect(store.create({})).rejects.toThrow("Missing required field: owner");
