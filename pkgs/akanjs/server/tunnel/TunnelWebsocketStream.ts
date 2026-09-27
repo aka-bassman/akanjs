@@ -16,7 +16,8 @@ export class TunnelWebsocketStream implements TunnelStream {
   readonly #link: TunnelStreamLink;
   readonly #origin: string;
   #ws: WebSocket | null = null;
-  #closed = false;
+  #closed: boolean = false;
+  #settle: () => void = () => undefined;
 
   constructor(open: TunnelOpenFrame, link: TunnelStreamLink, origin: string) {
     this.#open = open;
@@ -33,6 +34,7 @@ export class TunnelWebsocketStream implements TunnelStream {
       if (!handshakeHeaders.has(name.toLowerCase())) dialHeaders[name] = value;
     }
     await new Promise<void>((resolve) => {
+      this.#settle = resolve;
       const ws = new WebSocket(url, {
         headers: dialHeaders,
         ...(protocols ? { protocols: protocols.split(",").map((one) => one.trim()) } : {}),
@@ -49,14 +51,14 @@ export class TunnelWebsocketStream implements TunnelStream {
         if (!this.#ws || this.#closed) return;
         const error = (event as unknown as { error?: unknown }).error;
         this.#link.sendFrame({ type: "reset", streamId, code: tunnelResetCodeOf(error), message: "origin websocket" });
-        this.#finish(resolve);
+        this.#finish();
       };
       ws.onclose = (event) => {
         if (this.#closed) return;
         const payload = new TextEncoder().encode(JSON.stringify({ code: event.code, reason: event.reason }));
         void this.#link.sendPayload(tunnelWireContract.encodeWsPayload(tunnelWsPayload.close, payload));
         this.#link.sendFrame({ type: "end", streamId });
-        this.#finish(resolve);
+        this.#finish();
       };
     });
   }
@@ -96,15 +98,15 @@ export class TunnelWebsocketStream implements TunnelStream {
   }
 
   reset() {
-    this.#closed = true;
+    this.#finish();
     this.#ws?.close();
-    this.#link.closeSocket();
   }
 
-  #finish(resolve: () => void) {
+  #finish() {
+    if (this.#closed) return;
     this.#closed = true;
     // A raw stream owns its data socket for its whole life, so the socket goes with it rather than being pooled.
     this.#link.closeSocket();
-    resolve();
+    this.#settle();
   }
 }
