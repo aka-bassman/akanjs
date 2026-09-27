@@ -460,6 +460,12 @@ export class WebRouter {
           const manifest = await this.#ensureRoute(targetUrl);
           const rscHeaders = new Headers(req.headers);
           if (normalizedTarget.basePath) rscHeaders.set("x-base-path", normalizedTarget.basePath);
+          // No WebProxy runs on /__rsc: these are the headers LocaleWebProxy gives a page load of this URL.
+          const [, targetLocale = "", ...targetPath] = rawTargetUrl.pathname.split("/");
+          if (this.#artifact.i18n.locales.includes(targetLocale)) {
+            rscHeaders.set("x-locale", targetLocale);
+            rscHeaders.set("x-path", `/${targetPath.join("/")}`);
+          }
           const rscReq = new Request(targetUrl, {
             method: "GET",
             headers: rscHeaders,
