@@ -285,7 +285,8 @@ const build = async () => {
     await $`rm -rf ${OUT_DIR}`;
     await $`mkdir -p ${OUT_DIR}`;
     await $`cp -R ${PACKAGE_DIR}/. ${OUT_DIR}`;
-    for (const entry of ["build.ts", "build", "tsconfig.json"])
+    //* `local/` is where test runs leave their databases and logs; gitignored, but `cp -R` would ship it.
+    for (const entry of ["build.ts", "build", "tsconfig.json", "local"])
       await rm(`${OUT_DIR}/${entry}`, { recursive: true, force: true });
     await embedPackageSource();
     await removeTestFiles();

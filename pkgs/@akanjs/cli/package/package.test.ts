@@ -254,6 +254,35 @@ describe("PackageRunner", () => {
     );
   });
 
+  test("leaves a package's local/ run artifacts out of the dist it builds", async () => {
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
+    await writeJson(`${root}/package.json`, { name: "repo", version: "1.0.0", description: "repo" });
+    await writeText(`${root}/pkgs/@sample/tool/index.ts`, "export const value = 1;\n");
+    await writeText(`${root}/pkgs/@sample/tool/local/testing.sqlite`, "db\n");
+
+    await new PackageRunner().buildPackage(pkg);
+
+    expect(await Bun.file(`${root}/dist/pkgs/@sample/tool/index.ts`).exists()).toBe(true);
+    expect(await Bun.file(`${root}/dist/pkgs/@sample/tool/local/testing.sqlite`).exists()).toBe(false);
+  });
+
+  test("rejects a dist package that would publish local/ run artifacts", async () => {
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
+    await writeJson(`${root}/dist/pkgs/@sample/tool/package.json`, {
+      name: "@sample/tool",
+      version: "1.2.3",
+      publishConfig: { access: "public" },
+    });
+    await writeText(`${root}/dist/pkgs/@sample/tool/README.md`, "# Tool\n");
+    await writeText(`${root}/dist/pkgs/@sample/tool/README.ko.md`, "# Tool KO\n");
+    pkg.workspace.spawn = (async () =>
+      JSON.stringify([
+        { files: [{ path: "package.json" }, { path: "local/testing.sqlite" }, { path: "local/run.log" }], size: 9 },
+      ])) as never;
+
+    await expect(new PackageRunner().verifyDistPackage(pkg)).rejects.toThrow("local/");
+  });
+
   test("verifies dist package metadata with npm pack dry-run", async () => {
     const { root, pkg } = track(await createTempPackage("@sample/tool"));
     await writeJson(`${root}/dist/pkgs/@sample/tool/package.json`, {

@@ -126,6 +126,7 @@ export class PackageRunner extends runner("package") {
       });
     } else {
       await pkg.dist.cp(pkg.cwdPath, pkg.dist.cwdPath);
+      await $`rm -rf ${pkg.dist.cwdPath}/local`;
       await Promise.all([
         pkg.generateDistPackageJson(packageRuntimeDeps, packageRuntimeDevDeps),
         pkg.generateTsconfigJson(),
@@ -236,7 +237,10 @@ export class PackageRunner extends runner("package") {
     const packOutput = await pkg.workspace.spawn("npm", ["pack", "--dry-run", "--json", pkg.dist.cwdPath], {
       cwd: pkg.workspace.workspaceRoot,
     });
-    const [packResult] = JSON.parse(packOutput) as Array<{ files?: unknown[]; size?: number }>;
+    const [packResult] = JSON.parse(packOutput) as Array<{ files?: { path?: string }[]; size?: number }>;
+    const localFiles = (packResult?.files ?? []).filter((file) => file.path?.startsWith("local/"));
+    if (localFiles.length > 0)
+      throw new Error(`[package] ${pkg.name} would publish ${localFiles.length} test-run files under local/`);
     return {
       name: pkg.name,
       version: pkgJson.version,
