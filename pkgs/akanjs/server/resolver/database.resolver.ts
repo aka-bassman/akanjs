@@ -223,10 +223,10 @@ export class DatabaseResolver {
                   const docs = await timedQuery(() =>
                     this.__store.find(documentQueryHelper.all(loaderInfo.defaultQuery, query)),
                   );
-                  const byKey = new Map(docs.map((doc) => [fields.map((field) => String(doc[field])).join(""), doc]));
-                  return keys.map(
-                    (queryKey) => byKey.get(fields.map((field) => String(queryKey[field])).join("")) ?? null,
-                  );
+                  const keyOf = (row: Record<string, unknown>) =>
+                    JSON.stringify(fields.map((field) => String(row[field])));
+                  const byKey = new Map(docs.map((doc) => [keyOf(doc), doc]));
+                  return keys.map((queryKey) => byKey.get(keyOf(queryKey)) ?? null);
                 }
                 const field = loaderInfo.field as string;
                 const query = {

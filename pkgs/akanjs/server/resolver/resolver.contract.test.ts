@@ -269,6 +269,22 @@ describe("DatabaseResolver declaration contracts", () => {
     });
   });
 
+  test("keeps multi-field query loader keys apart when their values concatenate alike", async () => {
+    const { instance } = await bootModel<{
+      __store: { find: (query: unknown) => Promise<unknown[]> };
+      byOwnerCategory: { loadMany: (keys: Record<string, string>[]) => Promise<unknown[]> };
+    }>();
+    const first = { id: "doc-1", ownerId: "x", category: "yz" };
+    const second = { id: "doc-2", ownerId: "xy", category: "z" };
+    instance.__store.find = async () => [first, second];
+    expect(
+      await instance.byOwnerCategory.loadMany([
+        { ownerId: "x", category: "yz" },
+        { ownerId: "xy", category: "z" },
+      ]),
+    ).toEqual([first, second]);
+  });
+
   test("hands the facade projection to the store", async () => {
     const { instance } = await bootModel<{
       __store: ReturnType<typeof makeFakeStore>;
