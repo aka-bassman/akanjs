@@ -111,6 +111,7 @@ export class SliceInfo<
       [...ServerArgs, arg: _ServerArg]
     >;
   }
+  /** @deprecated Slices are GET queries, which carry no body: `fetch` never sends this argument. Use `.search`. */
   body<
     ArgName extends string,
     ExplicitType = unknown,

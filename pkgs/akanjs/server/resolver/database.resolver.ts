@@ -20,8 +20,6 @@ import {
   type Mdl,
   NoDocumentError,
   type SaveEventType,
-  splitFilterArgs,
-  type UpdateChain,
 } from "akanjs/document";
 import {
   type AdaptorCls,
@@ -30,6 +28,7 @@ import {
   type DatabaseAdaptor,
   DatabaseAdaptorRole,
   type DocumentStore,
+  ServiceModel,
 } from "akanjs/service";
 import { Exception, getCurrentTrace, traceDataLoaderBatch } from "akanjs/signal";
 
@@ -48,65 +47,9 @@ export class DatabaseResolver {
   // The model adaptor and its database service expose the same filter methods over the same `__` primitives.
   static applyFilterMethods(prototype: object, database: DatabaseModel, className: string) {
     Object.entries(getFilterMeta(database.filter).query).forEach(([queryKey, filterInfo]) => {
-      const queryFn = filterInfo.queryFn;
-      if (!queryFn) throw new Error(`No query function for key: ${queryKey}`);
+      const filterMethods = ServiceModel.getFilterServiceMethods(queryKey, filterInfo);
       assertFilterFitsCrud(database.refName, queryKey, className);
-      const queryOf = (args: any) => queryFn(...splitFilterArgs(filterInfo, args).queryArgs, documentQueryHelper);
-      const dataOf = (args: any) => {
-        const { queryArgs, queryOption } = splitFilterArgs(filterInfo, args);
-        return { query: queryFn(...queryArgs, documentQueryHelper), queryOption };
-      };
-      const key = capitalize(queryKey);
-      Object.assign(prototype, {
-        [`list${key}`]: async function (this: DatabaseInstance, ...args: any) {
-          const { query, queryOption } = dataOf(args);
-          return this.__list(query, queryOption);
-        },
-        [`listIds${key}`]: async function (this: DatabaseInstance, ...args: any) {
-          const { query, queryOption } = dataOf(args);
-          return this.__listIds(query, queryOption);
-        },
-        [`find${key}`]: async function (this: DatabaseInstance, ...args: any) {
-          const { query, queryOption } = dataOf(args);
-          return this.__find(query, queryOption);
-        },
-        [`findId${key}`]: async function (this: DatabaseInstance, ...args: any) {
-          const { query, queryOption } = dataOf(args);
-          return this.__findId(query, queryOption);
-        },
-        [`pick${key}`]: async function (this: DatabaseInstance, ...args: any) {
-          const { query, queryOption } = dataOf(args);
-          return this.__pick(query, queryOption);
-        },
-        [`pickId${key}`]: async function (this: DatabaseInstance, ...args: any) {
-          const { query, queryOption } = dataOf(args);
-          return this.__pickId(query, queryOption);
-        },
-        [`exists${key}`]: async function (this: DatabaseInstance, ...args: any) {
-          return this.__exists(queryOf(args));
-        },
-        [`count${key}`]: async function (this: DatabaseInstance, ...args: any) {
-          return this.__count(queryOf(args));
-        },
-        [`insight${key}`]: async function (this: DatabaseInstance, ...args: any) {
-          return this.__insight(queryOf(args));
-        },
-        [`query${key}`]: (...args: any) => queryOf(args),
-        [`remove${key}`]: async function (this: DatabaseInstance, ...args: any) {
-          return this.__removeMany(queryOf(args));
-        },
-        [`removeOne${key}`]: async function (this: DatabaseInstance, ...args: any) {
-          return this.__removeOne(queryOf(args));
-        },
-        [`update${key}`]: function (this: DatabaseInstance, ...args: any): UpdateChain {
-          const query = queryOf(args);
-          return { set: (update) => this.__updateMany(query, update) };
-        },
-        [`updateOne${key}`]: function (this: DatabaseInstance, ...args: any): UpdateChain {
-          const query = queryOf(args);
-          return { set: (update) => this.__updateOne(query, update) };
-        },
-      });
+      Object.assign(prototype, filterMethods);
     });
   }
 

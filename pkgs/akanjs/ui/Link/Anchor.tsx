@@ -16,7 +16,7 @@ export type CommonLinkProps = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "hre
   /** Applied while the current path starts with `href`, or equals it with `activeExact`. */
   activeClassName?: string;
   activeExact?: boolean;
-  /** Bypass route cache for client-side navigation when supported by the renderer. */
+  /** @deprecated Has no effect: neither renderer reads it. */
   noCache?: boolean;
 };
 type AnchorProps = Omit<CommonLinkProps, "href" | "disabled"> & { href: string };

@@ -49,6 +49,9 @@ class TestItemFilter extends from(TestItemFull, (filter) => ({
     withMeta: filter()
       .arg("meta", Any)
       .query((meta) => ({ meta: meta as string })),
+    scoredAbove: filter()
+      .arg("score", Int)
+      .query((score, q) => ({ score: q.gt(score) })),
   },
   sort: {
     scoreHigh: { score: -1 },
@@ -231,11 +234,15 @@ ConstantRegistry.buildScalar("serviceTestCallState", CallStateInput, { CallState
 const dbMethods = ServiceModel.getDefaultDbServiceMethods("ServiceTestItem");
 const filterMethods = ServiceModel.getFilterServiceMethods(
   "inCategory",
-  getFilterInfoByKey(TestItemFilter, "inCategory").queryFn as (...args: unknown[]) => Record<string, unknown>,
+  getFilterInfoByKey(TestItemFilter, "inCategory"),
 );
 const metaFilterMethods = ServiceModel.getFilterServiceMethods(
   "withMeta",
-  getFilterInfoByKey(TestItemFilter, "withMeta").queryFn as (...args: unknown[]) => Record<string, unknown>,
+  getFilterInfoByKey(TestItemFilter, "withMeta"),
+);
+const scoreFilterMethods = ServiceModel.getFilterServiceMethods(
+  "scoredAbove",
+  getFilterInfoByKey(TestItemFilter, "scoredAbove"),
 );
 type ServiceInstance = Service &
   DatabaseService &
@@ -991,5 +998,33 @@ describe("filter query and sort utility methods", () => {
     await service.listWithMeta(meta);
 
     expect(fakeDb.calls).toEqual([{ method: "__list", args: [{ meta }, {}] }]);
+  });
+
+  test("reads a trailing query option the way the runtime filter methods do", async () => {
+    const fakeDb = makeFakeDatabaseModel();
+    const service = { __databaseModel: fakeDb } as unknown as RuntimeServiceInstance;
+    Object.assign(service, dbMethods, filterMethods);
+
+    await service.listInCategory("notice", { sample: 2 });
+    await service.listInCategory({ sort: null, limit: null });
+    await service.countInCategory();
+
+    expect(fakeDb.calls).toEqual([
+      { method: "__list", args: [{ category: "notice" }, { sample: 2 }] },
+      { method: "__list", args: [{ category: undefined }, { sort: null, limit: null }] },
+      { method: "__count", args: [{ category: undefined }] },
+    ]);
+  });
+
+  test("hands a filter's query the query helper", async () => {
+    const fakeDb = makeFakeDatabaseModel();
+    const service = { __databaseModel: fakeDb } as unknown as RuntimeServiceInstance;
+    Object.assign(service, dbMethods, scoreFilterMethods);
+    const scoreAboveThree = { score: { kind: "op", op: "gt", value: 3 } };
+
+    expect(service.queryScoredAbove(3)).toEqual(scoreAboveThree);
+    await service.existsScoredAbove(3);
+
+    expect(fakeDb.calls).toEqual([{ method: "__exists", args: [scoreAboveThree] }]);
   });
 });
