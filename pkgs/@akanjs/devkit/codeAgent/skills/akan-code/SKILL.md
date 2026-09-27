@@ -62,7 +62,9 @@ Sign-in is discovered, not configured: the server's `401` names its resource met
 authorization server, and most hosted servers register a client on demand — so a url is usually the whole
 entry. For a provider that issues client ids by hand, add `"oauth": { "clientId": "…", "scope": "…" }`.
 Tokens are stored per server in `~/.akan/code/mcpAuth.json` at mode 0600, never in the repo, and refreshed
-silently; `/mcp` shows `sign-in needed` when a server wants one.
+silently — at connect when one has expired, and mid-session when a server refuses one, after which the call is
+retried once. When a refresh cannot fix it, `/mcp` shows `sign-in needed` and that server's tools answer with
+`/mcp login <name>` until the user signs in; the sign-in reloads the session, which brings the server back.
 
 ## Sessions
 

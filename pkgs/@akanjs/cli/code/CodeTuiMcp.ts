@@ -2,7 +2,7 @@ import type { McpDeclaredServer, McpServerScope } from "@akanjs/devkit/codeAgent
 import type { CodeAgentMcpServerRef, CodeAgentMcpStatus } from "akanjs/common";
 
 export interface CodeTuiMcpView {
-  status: CodeAgentMcpStatus[]; // what the session connected to, fixed when it was created
+  status: CodeAgentMcpStatus[]; // the servers the session connected to when created, each with its sign-in state now
   declared: McpDeclaredServer[]; // what the files say now
   files: { scope: McpServerScope; file: string }[];
   problem?: string;
@@ -96,6 +96,7 @@ export class CodeTuiMcp {
 
   static tools(status: CodeAgentMcpStatus) {
     if (status.error) return `${status.name} is unreachable — ${status.error}`;
+    if (status.auth === "required") return `${status.name} needs signing in — /mcp login ${status.name}`;
     if (!status.tools.length) return `${status.name} connected and published no tools.`;
     return [`${status.name} · ${status.target}`, "", status.tools.join("\n")].join("\n");
   }

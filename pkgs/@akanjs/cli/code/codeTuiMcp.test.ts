@@ -136,6 +136,12 @@ describe("/mcp", () => {
     expect(CodeTuiMcp.tools(live("x", { tools: [] }))).toContain("published no tools");
   });
 
+  test("one server that needs a sign-in says so instead of listing tools that cannot answer", () => {
+    const refused = live("linear", { transport: "http", target: "https://x", auth: "required" });
+    expect(CodeTuiMcp.tools(refused)).toBe("linear needs signing in — /mcp login linear");
+    expect(CodeTuiMcp.tools({ ...refused, tools: [] })).toBe("linear needs signing in — /mcp login linear");
+  });
+
   test("a name that would collide inside a tool name is refused", () => {
     expect(CodeTuiMcp.namePattern.test("my-server_2")).toBe(true);
     for (const name of ["my server", "a.b", "a/b", ""]) expect(CodeTuiMcp.namePattern.test(name)).toBe(false);

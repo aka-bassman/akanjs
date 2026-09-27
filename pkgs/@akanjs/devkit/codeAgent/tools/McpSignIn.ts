@@ -1,4 +1,5 @@
 import type { CodeAgentMcpServerRef } from "akanjs/common";
+import { ConfigLock } from "../../cloud/configLock";
 import { McpOAuth, type McpOAuthServer } from "./McpOAuth";
 import { McpOAuthLoopback } from "./McpOAuthLoopback";
 import { type McpStoredAuth, McpTokenStore } from "./McpTokenStore";
@@ -10,12 +11,15 @@ export interface McpSignInOptions {
 }
 
 export class McpSignIn {
+  // A server that rotates refresh tokens may revoke the whole grant when one is presented twice.
+  static readonly #refreshing = new Map<string, Promise<string | undefined>>();
+
   /** The token to connect with, or undefined when none is had without asking; a failed refresh is not a throw. */
   static async token(ref: CodeAgentMcpServerRef, onNotice?: (message: string) => void) {
     const stored = McpTokenStore.read(ref.name);
     if (!stored) return undefined;
     if (!McpTokenStore.isExpired(stored)) return stored.accessToken;
-    return await McpSignIn.#refreshed(ref, stored, onNotice);
+    return await McpSignIn.#refreshOnce(ref, stored, onNotice);
   }
 
   /** After a server answered `refused` with 401: a token another session stored since, else one refresh. */
@@ -23,24 +27,40 @@ export class McpSignIn {
     const stored = McpTokenStore.read(ref.name);
     if (!stored) return undefined;
     if (stored.accessToken !== refused && !McpTokenStore.isExpired(stored)) return stored.accessToken;
-    return await McpSignIn.#refreshed(ref, stored, onNotice);
+    return await McpSignIn.#refreshOnce(ref, stored, onNotice);
+  }
+
+  static async #refreshOnce(ref: CodeAgentMcpServerRef, stored: McpStoredAuth, onNotice?: (message: string) => void) {
+    const key = `${ref.name}\n${stored.refreshToken}`;
+    let pending = McpSignIn.#refreshing.get(key);
+    if (!pending) {
+      pending = McpSignIn.#refreshed(ref, stored, onNotice).finally(() => McpSignIn.#refreshing.delete(key));
+      McpSignIn.#refreshing.set(key, pending);
+    }
+    return await pending;
   }
 
   static async #refreshed(ref: CodeAgentMcpServerRef, stored: McpStoredAuth, onNotice?: (message: string) => void) {
     if (!stored.refreshToken) return undefined;
     try {
-      const server: McpOAuthServer = {
-        issuer: stored.issuer,
-        authorizationEndpoint: "",
-        tokenEndpoint: stored.tokenEndpoint,
-        resource: stored.resource,
-      };
-      const tokens = await McpOAuth.refresh(server, stored);
-      // `expires_in` is optional (RFC 6749 §5.1): the spent token's expiry must not outlive it on the new one.
-      const { expiresAt: _spent, ...grant } = stored;
-      // A server that rotates refresh tokens invalidates the old one, so keeping it would sign us out.
-      McpTokenStore.write(ref.name, { ...grant, ...tokens });
-      return tokens.accessToken;
+      return await ConfigLock.run(McpTokenStore.lockFile(), async () => {
+        // Another `akan code` may have refreshed while this one waited: take its token, never its spent refresh token.
+        const current = McpTokenStore.read(ref.name);
+        if (!current) return undefined;
+        if (current.accessToken !== stored.accessToken && !McpTokenStore.isExpired(current)) return current.accessToken;
+        const server: McpOAuthServer = {
+          issuer: current.issuer,
+          authorizationEndpoint: "",
+          tokenEndpoint: current.tokenEndpoint,
+          resource: current.resource,
+        };
+        const tokens = await McpOAuth.refresh(server, current);
+        // `expires_in` is optional (RFC 6749 §5.1): the spent token's expiry must not outlive it on the new one.
+        const { expiresAt: _spent, ...grant } = current;
+        // A server that rotates refresh tokens invalidates the old one, so keeping it would sign us out.
+        McpTokenStore.write(ref.name, { ...grant, ...tokens });
+        return tokens.accessToken;
+      });
     } catch (error) {
       onNotice?.(`MCP server "${ref.name}" needs signing in again — ${String(error)}`);
       return undefined;

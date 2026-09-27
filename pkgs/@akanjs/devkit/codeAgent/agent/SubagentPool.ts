@@ -8,16 +8,17 @@ export interface SubagentPoolOptions {
   cwd: string;
   parent: CodeAgentProfile;
   depth: number;
-  /** What the tree above this pool has spent; a root pool starts its own. */
+  /** What the tree above this pool has spent and has running; a root pool starts its own. */
   spend?: SubagentSpend;
   onNotice?: (message: string) => void;
   /** The running children, whole, for a host that draws them as a rail beside the prompt. */
   onAgents?: (agents: CodeAgentSubagent[]) => void;
 }
 
-/** Tokens every sub-agent of one tree has spent, one object shared down the tree so a single budget bounds it. */
+/** One object shared down a sub-agent tree, so a single token budget and a single concurrency limit bound it. */
 export interface SubagentSpend {
   tokens: number;
+  running: number;
 }
 
 const maxResultChars = 8_000;
@@ -50,12 +51,11 @@ export class SubagentPool {
     { kind: SubagentKind; description: string; startedAt: number; agent?: { tokensUsed: number } }
   >();
   readonly #spend: SubagentSpend;
-  #running = 0;
   #ticker: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: SubagentPoolOptions) {
     this.#options = options;
-    this.#spend = options.spend ?? { tokens: 0 };
+    this.#spend = options.spend ?? { tokens: 0, running: 0 };
   }
 
   static extensionFor(options: SubagentPoolOptions): InlineExtension | undefined {
@@ -90,7 +90,7 @@ export class SubagentPool {
         const kind = (params.type ?? SubagentPool.defaultKind) as SubagentKind;
         const refusal = this.#refuse();
         if (refusal) return { content: [{ type: "text", text: refusal }], details: undefined, isError: true };
-        this.#running += 1;
+        this.#spend.running += 1;
         this.#children.set(id, { kind, description: params.description, startedAt: Date.now() });
         this.#report();
         // Announced at start: a turn quiet for a minute while a child reads looks like one that stopped responding.
@@ -99,7 +99,7 @@ export class SubagentPool {
           const text = await this.#run(id, kind, params.prompt, signal);
           return { content: [{ type: "text", text }], details: undefined };
         } finally {
-          this.#running -= 1;
+          this.#spend.running -= 1;
           this.#children.delete(id);
           this.#report();
         }
@@ -110,8 +110,9 @@ export class SubagentPool {
   #refuse() {
     const budget = this.#options.parent.tools.subagent;
     if (!budget) return "Sub-agents are disabled by this profile.";
-    if (this.#running >= budget.maxConcurrent)
-      return `Too many sub-agents are already running (limit ${budget.maxConcurrent}). Wait for one to finish.`;
+    // Refused, never queued: every ancestor keeps its slot while it waits on its child, so a queued child deadlocks.
+    if (this.#spend.running >= budget.maxConcurrent)
+      return `Too many sub-agents are already running (limit ${budget.maxConcurrent} at once, counted across the whole task tree). ${this.#children.size ? "Wait for one of yours to finish, or do" : "Do"} this part yourself.`;
     if (this.#spend.tokens >= budget.budget)
       return `The sub-agent token budget (${budget.budget}) is spent. Do the rest of this work yourself.`;
     return undefined;
@@ -173,25 +174,40 @@ export class SubagentPool {
     });
     const running = this.#children.get(id);
     if (running) running.agent = agent;
-    const abort = () => void agent.abort();
+    let stopped = false;
+    const abort = () => {
+      stopped = true;
+      void agent.abort();
+    };
     signal?.addEventListener("abort", abort, { once: true });
+    // A listener added to an already-aborted signal never fires: this child was stopped while it was being created.
+    if (signal?.aborted) stopped = true;
+    let finished = false;
     try {
       let answer = "";
       agent.on((event) => {
         if (event.type === "message" && event.role === "assistant") answer = event.text;
+        // The engine drops an abort that lands before its run is live, so a stopped child is stopped again there.
+        if (event.type === "turn_start" && stopped) void agent.abort();
       });
-      await agent.prompt(prompt);
-      await agent.waitForIdle();
-      this.#spend.tokens += agent.tokensUsed;
-      const ceiling = budget ? budget.budget : 0;
-      this.#options.onNotice?.(
-        `${kind} sub-agent finished, ${agent.tokensUsed} tokens (${this.#spend.tokens} of ${ceiling} spent)`,
-      );
+      if (!stopped) {
+        await agent.prompt(prompt);
+        await agent.waitForIdle();
+      }
+      finished = true;
       return answer.length > maxResultChars
         ? `${answer.slice(0, maxResultChars)}\n…(truncated)`
         : answer || "(no answer)";
     } finally {
       signal?.removeEventListener("abort", abort);
+      // Whatever the outcome: a failed or stopped child was billed too, and its own children are counted by its pool.
+      const tokens = agent.tokensUsed;
+      this.#spend.tokens += tokens;
+      const outcome = stopped ? "stopped" : finished ? "finished" : "failed";
+      const ceiling = budget ? budget.budget : 0;
+      this.#options.onNotice?.(
+        `${kind} sub-agent ${outcome}, ${tokens} tokens (${this.#spend.tokens} of ${ceiling} spent)`,
+      );
       agent.dispose();
     }
   }

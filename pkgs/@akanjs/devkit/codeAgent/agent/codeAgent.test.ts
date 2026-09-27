@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 import { type CodeAgentEvent, type CodeAgentProfile, codeAgentPresets } from "akanjs/common";
 import { WorkspaceExecutor } from "../../executors";
 import { isolateEnv, tempDirs } from "../../testHelpers";
@@ -9,6 +10,7 @@ import { akanCodeDefaultModel } from "./akanCodeModel";
 import { akanCodePaths } from "./akanCodePaths";
 import { CodeAgent, type CodeAgentOptions } from "./CodeAgent";
 import { CodeAgentSuspended } from "./CodeAgentSuspended";
+import { SubagentPool } from "./SubagentPool";
 
 isolateEnv();
 const makeTempRoot = tempDirs("akan-code-agent-");
@@ -23,30 +25,40 @@ const chunk = (delta: object, finish: string | null = null) =>
   })}\n\n`;
 
 let llm: ReturnType<typeof Bun.serve>;
+let llmCalls = 0;
 beforeAll(() => {
   llm = Bun.serve({
     port: 0,
-    fetch: () =>
-      new Response(`${chunk({ role: "assistant", content: "ok" })}${chunk({}, "stop")}data: [DONE]\n\n`, {
+    fetch: () => {
+      llmCalls += 1;
+      return new Response(`${chunk({ role: "assistant", content: "ok" })}${chunk({}, "stop")}data: [DONE]\n\n`, {
         headers: { "content-type": "text/event-stream" },
-      }),
+      });
+    },
   });
 });
 afterAll(() => llm.stop(true));
 
-const createAgent = async (root: string, options: Partial<CodeAgentOptions> = {}) => {
+const useProxy = (root: string) => {
   process.env.AKAN_CODE_HOME = path.join(root, "home");
   process.env.AKAN_CODE_PROXY_URL = `http://127.0.0.1:${llm.port}/llm/{provider}/v1`;
   process.env.AKAN_CODE_PROXY_TOKEN = "test-token";
+};
+
+const quietProfile = (root: string): CodeAgentProfile => {
   const web = codeAgentPresets.web(root);
-  const profile: CodeAgentProfile = {
+  return {
     ...web,
     tools: { builtin: [], akan: false, mcp: "off", subagent: false, web: { fetch: false, search: false } },
     context: { projectFiles: false, skills: false },
   };
+};
+
+const createAgent = async (root: string, options: Partial<CodeAgentOptions> = {}) => {
+  useProxy(root);
   return await CodeAgent.create({
     workspace: new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" }),
-    profile,
+    profile: quietProfile(root),
     ...options,
   });
 };
@@ -80,12 +92,85 @@ describe("CodeAgent", () => {
       seen.push(options.subagentSpend);
       return await build.call(AkanCodePlugins, options);
     });
-    const subagentSpend = { tokens: 7 };
+    const subagentSpend = { tokens: 7, running: 0 };
     try {
       const agent = await createAgent(root, { subagentSpend, depth: 1 });
       agent.dispose();
       expect(seen).toHaveLength(1);
       expect(seen[0]).toBe(subagentSpend);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe("a sub-agent its parent stops before the sub-agent's run is live", () => {
+  type ToolExecute = (
+    id: string,
+    params: never,
+    signal?: AbortSignal,
+  ) => Promise<{ content: { text: string }[] } | undefined>;
+
+  const runTask = async (root: string, parent: AbortController, notices: string[]) => {
+    useProxy(root);
+    const profile = quietProfile(root);
+    const pool = SubagentPool.extensionFor({
+      workspace: new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" }),
+      cwd: root,
+      parent: { ...profile, tools: { ...profile.tools, subagent: { maxDepth: 2, maxConcurrent: 3, budget: 1_000 } } },
+      depth: 0,
+      onNotice: (message) => notices.push(message),
+    });
+    let execute: ToolExecute | undefined;
+    if (pool && "factory" in pool)
+      pool.factory({
+        registerTool: (tool: { execute: ToolExecute }) => {
+          execute = tool.execute;
+        },
+      } as never);
+    const result = await execute?.("c1", { description: "d", prompt: "p" } as never, parent.signal);
+    return result?.content[0]?.text;
+  };
+
+  test("stopped while it is being created, it never reaches the model and says it stopped", async () => {
+    const root = await makeTempRoot();
+    const parent = new AbortController();
+    const create = CodeAgent.create;
+    const spy = spyOn(CodeAgent, "create").mockImplementation(async (options) => {
+      const agent = await create.call(CodeAgent, options);
+      parent.abort();
+      return agent;
+    });
+    const notices: string[] = [];
+    try {
+      const calls = llmCalls;
+      expect(await runTask(root, parent, notices)).toBe("(no answer)");
+      expect(llmCalls).toBe(calls);
+      expect(notices.at(-1)).toBe("explore sub-agent stopped, 0 tokens (0 of 1000 spent)");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("stopped after it exists but before its run is live, it is stopped as soon as the run starts", async () => {
+    const root = await makeTempRoot();
+    const parent = new AbortController();
+    const stopBeforeTheRun: InlineExtension = {
+      name: "stop-before-the-run",
+      factory: (pi: ExtensionAPI) => {
+        pi.on("before_agent_start", () => {
+          parent.abort();
+        });
+      },
+    };
+    const create = CodeAgent.create;
+    const spy = spyOn(CodeAgent, "create").mockImplementation(
+      async (options) => await create.call(CodeAgent, { ...options, extensions: [stopBeforeTheRun] }),
+    );
+    const notices: string[] = [];
+    try {
+      expect(await runTask(root, parent, notices)).toBe("(no answer)");
+      expect(notices.at(-1)).toMatch(/^explore sub-agent stopped, /);
     } finally {
       spy.mockRestore();
     }

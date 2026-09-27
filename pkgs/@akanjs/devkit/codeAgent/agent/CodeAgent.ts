@@ -60,7 +60,7 @@ export interface CodeAgentOptions {
   mode?: CodeAgentHostMode;
   /** How many `task` tools deep this agent already is. */
   depth?: number;
-  /** The token tally of the sub-agent tree whose `task` opened this agent. */
+  /** The tally (tokens spent, sub-agents running) of the sub-agent tree whose `task` opened this agent. */
   subagentSpend?: SubagentSpend;
   /** Id of a stored session to continue instead of opening a new one. */
   resume?: string;
@@ -172,7 +172,10 @@ export class CodeAgent {
     return this.#workspaceRoot;
   }
 
-  /** As assembled at creation: the tool allowlist is fixed then, so a server declared later is unreachable. */
+  /**
+   * As assembled at creation: the tool allowlist is fixed then, so a server declared later is unreachable. A
+   * server's `auth` still turns `required` when a call's token cannot be renewed, until a reload.
+   */
   mcpServers(): CodeAgentMcpStatus[] {
     return this.#mcp;
   }
