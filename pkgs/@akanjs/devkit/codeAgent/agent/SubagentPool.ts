@@ -174,8 +174,13 @@ export class SubagentPool {
     });
     const running = this.#children.get(id);
     if (running) running.agent = agent;
-    const abort = () => void agent.abort();
+    let stopped = false;
+    const abort = () => {
+      stopped = true;
+      void agent.abort();
+    };
     signal?.addEventListener("abort", abort, { once: true });
+    let finished = false;
     try {
       let answer = "";
       agent.on((event) => {
@@ -183,16 +188,20 @@ export class SubagentPool {
       });
       await agent.prompt(prompt);
       await agent.waitForIdle();
-      this.#spend.tokens += agent.tokensUsed;
-      const ceiling = budget ? budget.budget : 0;
-      this.#options.onNotice?.(
-        `${kind} sub-agent finished, ${agent.tokensUsed} tokens (${this.#spend.tokens} of ${ceiling} spent)`,
-      );
+      finished = true;
       return answer.length > maxResultChars
         ? `${answer.slice(0, maxResultChars)}\n…(truncated)`
         : answer || "(no answer)";
     } finally {
       signal?.removeEventListener("abort", abort);
+      // Whatever the outcome: a failed or stopped child was billed too, and its own children are counted by its pool.
+      const tokens = agent.tokensUsed;
+      this.#spend.tokens += tokens;
+      const outcome = stopped ? "stopped" : finished ? "finished" : "failed";
+      const ceiling = budget ? budget.budget : 0;
+      this.#options.onNotice?.(
+        `${kind} sub-agent ${outcome}, ${tokens} tokens (${this.#spend.tokens} of ${ceiling} spent)`,
+      );
       agent.dispose();
     }
   }
