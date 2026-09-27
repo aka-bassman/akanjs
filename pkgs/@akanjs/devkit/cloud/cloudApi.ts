@@ -82,7 +82,14 @@ export class CloudApi {
 
   static async fromHost(workspace: Workspace, host?: string) {
     const hostConfig = await GlobalConfig.getHostConfig(host);
-    return new CloudApi(workspace, hostConfig);
+    const accessToken = hostConfig.auth?.accessToken;
+    if (!accessToken?.refreshToken || !GlobalConfig.needRefreshToken(accessToken))
+      return new CloudApi(workspace, hostConfig);
+    const tokenless = new CloudApi(workspace, hostConfig);
+    const refreshed = await GlobalConfig.refreshHostAuth(hostConfig.host, (refreshToken) =>
+      tokenless.refreshAuthToken(refreshToken),
+    );
+    return new CloudApi(workspace, refreshed);
   }
   constructor(workspace: Workspace, hostConfig: HostConfig) {
     this.#workspace = workspace;
@@ -119,7 +126,13 @@ export class CloudApi {
     }
   }
   async refreshAuthToken(refreshToken: string): Promise<AccessToken> {
-    return this.#authorize(await this.#api.post<AccessTokenDto>(`/refreshAuthToken`, { refreshToken }));
+    return this.#authorize(
+      await this.#api.post<AccessTokenDto>(
+        `/refreshAuthToken`,
+        { refreshToken },
+        { signal: AbortSignal.timeout(20_000) },
+      ),
+    );
   }
   // `/tunnel` is the model's refName, which the `_cloud` service routes above lack; dropping it answers 404.
   async requestTunnel(input: { name: string; ttlMinutes?: number }): Promise<TunnelGrant> {

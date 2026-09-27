@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { CloudApi, GlobalConfig } from "@akanjs/devkit/cloud";
 import { CommandContainer, getArgMetas, getTargetMetas } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor } from "@akanjs/devkit/executors";
 import {
@@ -179,6 +180,18 @@ describe("CloudScript platform tests", () => {
 });
 
 describe("CloudRunner", () => {
+  test("login opens its session through CloudApi.fromHost, so one in its last hour is refreshed, not signed in again", async () => {
+    const host = "https://cloud.test";
+    const self = { id: "u1", nickname: "akan" };
+    const fromHost = spyOn(CloudApi, "fromHost").mockResolvedValue({ host, getRemoteSelf: async () => self } as never);
+    spyOn(GlobalConfig, "getHostConfig").mockResolvedValue({ host, auth: {} });
+    spyOn(CloudApi.prototype, "getRemoteSelf").mockResolvedValue(self);
+    const workspace = createFakeExecutor("workspace");
+
+    expect(await new CloudRunner().login(host, workspace as never)).toBe(true);
+    expect(fromHost).toHaveBeenCalledWith(workspace, host);
+  });
+
   test("filters Akan packages from workspace package list", async () => {
     const workspace = {
       getPkgs: async () => ["akanjs", "create-akan-workspace", "@sample/tool"],
