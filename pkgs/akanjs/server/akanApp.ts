@@ -1165,18 +1165,23 @@ export class AkanApp {
   // Unsubscribes arrive per socket, delivery is per replica: a replica leaves with its last socket in the room.
   #removeRoomMembership(childIdx: number, roomId: string, socketId?: string) {
     const childRooms = this.#childRooms.get(childIdx);
+    const roomSockets = childRooms?.get(roomId);
     if (socketId) {
-      const socketRooms = this.#socketRooms.get(socketId);
-      socketRooms?.rooms.delete(roomId);
-      if (!socketRooms || socketRooms.rooms.size === 0) this.#socketRooms.delete(socketId);
-      const roomSockets = childRooms?.get(roomId);
+      this.#forgetSocketRoom(socketId, roomId);
       roomSockets?.delete(socketId);
       if (roomSockets?.size) return;
     }
 
+    for (const staleSocketId of roomSockets ?? []) this.#forgetSocketRoom(staleSocketId, roomId);
     this.#leaveRoom(childIdx, roomId);
     childRooms?.delete(roomId);
     if (childRooms?.size === 0) this.#childRooms.delete(childIdx);
+  }
+
+  #forgetSocketRoom(socketId: string, roomId: string) {
+    const socketRooms = this.#socketRooms.get(socketId);
+    socketRooms?.rooms.delete(roomId);
+    if (!socketRooms || socketRooms.rooms.size === 0) this.#socketRooms.delete(socketId);
   }
 
   // Snapshots name rooms, not sockets: forgetting a kept room's sockets would drop the replica at its next unsubscribe.

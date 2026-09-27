@@ -905,6 +905,47 @@ describe("AkanApp", () => {
     });
   }, 20_000);
 
+  test("stops counting the sockets of a room a snapshot no longer confirms, whose unsubscribes were lost", async () => {
+    const { serverPath, runtimeDir, port } = await makeRoot("akan-app-pubsub-snapshot-sockets-");
+    await writePubsubChild(serverPath);
+
+    await withApp(serverPath, { replica: 2, runtimeDir, port }, async () => {
+      await waitFor(async () => {
+        const body = await readHealth(port);
+        return body?.children.length === 2 && body.children.every((child) => child.ready) ? body : null;
+      });
+      const entries = await readdir(runtimeDir);
+      const socketOf = (idx: number) =>
+        path.join(runtimeDir, entries.find((name) => name.endsWith(`-${idx}.sock`)) ?? `missing-${idx}`);
+      const [holder, publisher] = [socketOf(0), socketOf(1)];
+      const call = async (socketPath: string, pathname: string) =>
+        (await (await fetch(`http://child${pathname}`, { unix: socketPath })).json()) as number[];
+      const metrics = async () =>
+        (await (await fetch(`http://127.0.0.1:${port}/_akan/app/metrics`)).json()) as {
+          rooms: number;
+          sockets: number;
+        };
+      const until = (check: () => Promise<boolean>, message: string) =>
+        waitFor(async () => ((await check()) ? true : null), 2_000, message);
+
+      await call(holder, "/subscribe?room=r&socket=s1");
+      await call(holder, "/subscribe?room=q&socket=s1");
+      await call(holder, "/subscribe?room=r&socket=s2");
+      await call(holder, "/snapshot?room=r&room=q");
+      await until(async () => (await metrics()).sockets === 2, "the gateway never saw the subscribes");
+
+      await call(holder, "/snapshot?room=q");
+      await until(async () => (await metrics()).rooms === 1, "the snapshot never dropped the room");
+      expect(await metrics()).toMatchObject({ rooms: 1, sockets: 1 });
+      await call(publisher, "/publish?room=q&n=1");
+      await until(async () => (await call(holder, "/")).includes(1), "the confirmed room lost its replica");
+
+      await call(holder, "/unsubscribe?room=q&socket=s1");
+      await until(async () => (await metrics()).rooms === 0, "the confirmed room outlived its last socket");
+      expect(await metrics()).toMatchObject({ rooms: 0, sockets: 0 });
+    });
+  }, 20_000);
+
   test("normalizes upstream close codes before relaying them to the client", async () => {
     const { root, serverPath, runtimeDir, port } = await makeRoot("akan-app-ws-upstream-close-");
     const observedPath = path.join(root, "observed.txt");
