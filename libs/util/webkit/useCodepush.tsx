@@ -24,14 +24,10 @@ export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
     const info = await Device.getInfo();
     const app = await App.getInfo();
     const { deviceId } = await CapacitorUpdater.getDeviceId();
-    const { bundle: version, native } = await CapacitorUpdater.current();
-    const builtInversion = await CapacitorUpdater.getBuiltinVersion();
+    const { bundle: version } = await CapacitorUpdater.current();
     const appId = app.id;
     const platform = info.platform;
 
-    window.alert(
-      `getBuildinVersion:${builtInversion.version}\ncurrent.bundle:${version.version}\ncurrennt.native:${native}`,
-    );
     /**
      *  "version_name": "builtin",
      *   "version_code": "1",
