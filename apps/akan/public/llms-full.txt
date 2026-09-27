@@ -1395,9 +1395,9 @@ The type of one font entry in `rootLayout().fonts([...])`.
 
 Used by route loaders. App code never calls them.
 
-Goes to a route and adds a history entry.
+Goes to a route and adds a history entry. Browser only; on the server, use `redirect()`.
 
-Goes to a route in place of the current history entry.
+Goes to a route in place of the current history entry. Browser only; on the server, use `redirect()`.
 
 Goes back one entry. Browser only.
 
