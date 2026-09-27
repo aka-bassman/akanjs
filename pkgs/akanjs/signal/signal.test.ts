@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Any, ENDPOINT_META, ID, INJECT_META, INTERNAL_META, Int, SLICE_META } from "akanjs/base";
+import { Logger, type LoggerSinkEntry } from "akanjs/common";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { by, type DatabaseCls, DatabaseRegistry, from, into, type ModelCls } from "akanjs/document";
 import {
@@ -422,6 +423,30 @@ describe("signal class factories and composition", () => {
     const mainInjects = MainEndpoint[INJECT_META] as Record<string, { type: string }>;
     expect(mainInjects.signalTestItemService?.type).toBe("service");
     expect(mainInjects.signalTestAuxService?.type).toBe("service");
+  });
+
+  test("names a query's body argument at declaration, since fetch sends a query as GET without a body", () => {
+    const entries: LoggerSinkEntry[] = [];
+    const removeSink = Logger.addSink((entry) => void entries.push(entry), { minLevel: "warn" });
+    try {
+      class QueryBodyEndpoint extends endpoint(ServiceModel.from(SignalTestAuxService), (builder) => ({
+        lookup: builder
+          .query(String)
+          .body("filter", String)
+          .exec((filter) => filter),
+        save: builder
+          .mutation(String)
+          .body("data", String)
+          .exec((data) => data),
+      })) {}
+      expect(Object.keys(QueryBodyEndpoint[ENDPOINT_META]).sort()).toEqual(["lookup", "save"]);
+      const warnings = entries.map((entry) => entry.message).filter((message) => message.includes("never arrives"));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("signalTestAux.lookup");
+      expect(warnings[0]).toContain('"filter"');
+    } finally {
+      removeSink();
+    }
   });
 
   test("creates internal classes and merges lib internals", () => {
