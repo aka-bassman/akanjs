@@ -2,6 +2,7 @@ import {
   createRefreshSession,
   hashPassword,
   isPasswordMatch,
+  type RotateRefreshSessionOptions,
   revokeRefreshSessionBySid,
   revokeRefreshSessions,
   rotateRefreshSession,
@@ -158,8 +159,13 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
       clientId,
     });
   }
-  async rotateRefreshSession(refreshTokenHash: string, nextRefreshTokenHash: string, nextExpiresAt: Date) {
-    return await rotateRefreshSession(this.userCache, refreshTokenHash, nextRefreshTokenHash, nextExpiresAt);
+  async rotateRefreshSession(
+    refreshTokenHash: string,
+    nextRefreshTokenHash: string,
+    nextExpiresAt: Date,
+    options: Pick<RotateRefreshSessionOptions, "graceMs" | "reuseRevokes"> = {},
+  ) {
+    return await rotateRefreshSession(this.userCache, refreshTokenHash, nextRefreshTokenHash, nextExpiresAt, options);
   }
   async revokeRefreshSession(userId: string, sessionId?: string) {
     await revokeRefreshSessionBySid(this.userCache, "user", userId, sessionId);
