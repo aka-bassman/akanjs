@@ -176,6 +176,26 @@ describe("MCP server config", () => {
     expect(McpServerConfig.read(root)).toEqual([]);
   });
 
+  test("removing a name both files declare takes the workspace's, and the home file's then applies", () => {
+    globalFile(JSON.stringify({ mcpServers: { shared: { command: "home" } } }));
+    const root = workspace(JSON.stringify({ mcpServers: { shared: { command: "repo" } } }));
+    expect(McpServerConfig.remove(root, "shared")).toBe("workspace");
+    expect(McpServerConfig.declared(root)).toEqual([
+      { ref: { name: "shared", transport: "stdio", command: "home" }, disabled: false, scope: "global" },
+    ]);
+  });
+
+  test("a remove that names a scope touches only that file", () => {
+    globalFile(JSON.stringify({ mcpServers: { office: { command: "x" }, shared: { command: "home" } } }));
+    const root = workspace(JSON.stringify({ mcpServers: { shared: { command: "repo" } } }));
+    expect(McpServerConfig.remove(root, "office", "workspace")).toBe(false);
+    expect(McpServerConfig.remove(root, "shared", "global")).toBe("global");
+    expect(McpServerConfig.declared(root).map((entry) => [entry.ref.name, entry.scope])).toEqual([
+      ["office", "global"],
+      ["shared", "workspace"],
+    ]);
+  });
+
   test("a scope is what a caller names, never guessed from the shape", () => {
     const root = workspace();
     const scopes: McpServerScope[] = ["global", "workspace"];

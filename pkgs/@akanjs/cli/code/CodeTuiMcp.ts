@@ -25,7 +25,8 @@ export class CodeTuiMcp {
     "/mcp add --local <name> …           declare it for this repo only, not every repo",
     "/mcp login <name>                   sign in through the browser (OAuth)",
     "/mcp logout <name>                  forget the token, leaving the server declared",
-    "/mcp remove <name>                  undeclare it",
+    "/mcp remove <name>                  undeclare it, from this repo's file first",
+    "/mcp remove --local <name>          undeclare it from this repo's file only",
     "/mcp reload                         reopen this session so the file takes effect",
   ];
 

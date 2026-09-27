@@ -15,8 +15,9 @@ which command makes it take effect.
 
 ## MCP servers
 
-Declared in **`.akan/code/mcp.json`**, in the same `mcpServers` shape Claude, Cursor and VS Code already
-write, so a block can be pasted across rather than translated. VS Code's `servers` spelling is read too, and
+Declared in **`~/.akan/code/mcp.json`**, which every repo reads, or in this repo's **`.akan/code/mcp.json`**,
+which wins a name both declare — in the same `mcpServers` shape Claude, Cursor and VS Code already write, so a
+block can be pasted across rather than translated. VS Code's `servers` spelling is read too, and
 whichever key the file already uses is the one a write goes back into.
 
 ```jsonc
@@ -41,7 +42,9 @@ From the prompt:
 /mcp <name>               the tools that one server published
 /mcp add <name> <command> [args…]
 /mcp add <name> <https://…>
-/mcp remove <name>
+/mcp add --local <name> … this repo's file only, not ~/.akan/code/mcp.json
+/mcp remove <name>        this repo's file first, else ~/.akan/code/mcp.json
+/mcp remove --local <name>
 /mcp login <name>         OAuth, in the browser
 /mcp logout <name>        forget the token, leaving the server declared
 /mcp reload               reopen this session so the file takes effect
@@ -51,6 +54,9 @@ From the prompt:
 session is created, so `add`, `remove`, `login` and `logout` all reload by themselves — a session that has
 said nothing yet has nothing on disk to reopen, and says so. If you edit `mcp.json` yourself, tell the user to
 run `/mcp reload`.
+
+`/mcp remove` on a name both files declare takes this repo's entry and leaves the home file's in force; its
+notice says so, and running it again removes that one too.
 
 Sign-in is discovered, not configured: the server's `401` names its resource metadata, that names the
 authorization server, and most hosted servers register a client on demand — so a url is usually the whole
