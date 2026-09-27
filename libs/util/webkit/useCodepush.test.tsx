@@ -18,7 +18,7 @@ beforeAll(() => {
   }));
 });
 
-const installCapacitor = () => {
+const installCapacitor = (bundleVersion = "builtin") => {
   globalThis.__AKAN_CAPACITOR_IMPORTS__ = undefined;
   Object.defineProperty(globalThis, "Capacitor", {
     value: {
@@ -27,7 +27,7 @@ const installCapacitor = () => {
         Device: { getInfo: async () => ({ platform: "ios", isVirtual: false, osVersion: "17.0" }) },
         CapacitorUpdater: {
           getDeviceId: async () => ({ deviceId: "device-1" }),
-          current: async () => ({ bundle: { version: "builtin" }, native: "1.2.3" }),
+          current: async () => ({ bundle: { version: bundleVersion }, native: "1.2.3" }),
           getBuiltinVersion: async () => ({ version: "1.2.3" }),
         },
       },
@@ -63,5 +63,22 @@ describe("useCodepush", () => {
     const hook = await renderCodepush();
     expect(await hook.current.checkNewRelease()).toBeUndefined();
     expect(alert).not.toHaveBeenCalled();
+  });
+
+  test("reports the running bundle's version once it has checked", async () => {
+    installCapacitor();
+    globalThis.fetch = mock(async () => Response.json(null)) as unknown as typeof fetch;
+    const hook = await renderCodepush();
+    expect(hook.current.version).toBe("");
+    await hook.current.checkNewRelease();
+    expect(hook.current.version).toBe("1.2.3");
+  });
+
+  test("reports a downloaded bundle's own version rather than the app's", async () => {
+    installCapacitor("1.2.5");
+    globalThis.fetch = mock(async () => Response.json(null)) as unknown as typeof fetch;
+    const hook = await renderCodepush();
+    await hook.current.checkNewRelease();
+    expect(hook.current.version).toBe("1.2.5");
   });
 });

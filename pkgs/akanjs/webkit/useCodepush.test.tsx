@@ -1,12 +1,13 @@
 import "../test/registerDom";
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { act } from "react";
 import { mount } from "../store/mount.fixture";
 import { useCodepush } from "./useCodepush";
 
 const originalFetch = globalThis.fetch;
 const originalAlert = window.alert;
 
-const installCapacitor = () => {
+const installCapacitor = (bundleVersion = "builtin") => {
   globalThis.__AKAN_CAPACITOR_IMPORTS__ = undefined;
   Object.defineProperty(globalThis, "Capacitor", {
     value: {
@@ -16,7 +17,7 @@ const installCapacitor = () => {
         CapacitorUpdater: {
           getPluginVersion: async () => ({ version: "5.6.9" }),
           getDeviceId: async () => ({ deviceId: "device-1" }),
-          current: async () => ({ bundle: { version: "builtin" }, native: "1.2.3" }),
+          current: async () => ({ bundle: { version: bundleVersion }, native: "1.2.3" }),
           getBuiltinVersion: async () => ({ version: "1.2.3" }),
         },
       },
@@ -49,8 +50,35 @@ describe("useCodepush", () => {
     window.alert = alert;
     globalThis.fetch = mock(async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
     const { hook, unmount } = renderCodepush("https://api.example.com");
-    expect(await hook.current?.checkNewRelease()).toBeUndefined();
+    let release: unknown = null;
+    await act(async () => {
+      release = await hook.current?.checkNewRelease();
+    });
+    expect(release).toBeUndefined();
     expect(alert).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  test("reports the running bundle's version once it has checked", async () => {
+    installCapacitor();
+    globalThis.fetch = mock(async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
+    const { hook, unmount } = renderCodepush("https://api.example.com");
+    expect(hook.current?.version).toBe("");
+    await act(async () => {
+      await hook.current?.checkNewRelease();
+    });
+    expect(hook.current?.version).toBe("1.2.3");
+    unmount();
+  });
+
+  test("reports a downloaded bundle's own version rather than the app's", async () => {
+    installCapacitor("1.2.5");
+    globalThis.fetch = mock(async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
+    const { hook, unmount } = renderCodepush("https://api.example.com");
+    await act(async () => {
+      await hook.current?.checkNewRelease();
+    });
+    expect(hook.current?.version).toBe("1.2.5");
     unmount();
   });
 });

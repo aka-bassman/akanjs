@@ -6,7 +6,7 @@ import { useState } from "react";
 
 export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
   const [update, setUpdate] = useState(false);
-  const [version] = useState("");
+  const [version, setVersion] = useState("");
 
   const initialize = async () => {
     const { CapacitorUpdater } = await loadCapacitorUpdater();
@@ -22,11 +22,13 @@ export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
     const app = await App.getInfo();
     await CapacitorUpdater.getPluginVersion();
     const { deviceId } = await CapacitorUpdater.getDeviceId();
-    const { bundle: version } = await CapacitorUpdater.current();
+    const { bundle } = await CapacitorUpdater.current();
     const appId = app.id;
     const platform = info.platform;
 
-    const { major, minor, patch } = splitVersion(version.version === "builtin" ? app.version : version.version);
+    const runningVersion = bundle.version === "builtin" ? app.version : bundle.version;
+    setVersion(runningVersion);
+    const { major, minor, patch } = splitVersion(runningVersion);
     const appName = process.env.AKAN_PUBLIC_APP_NAME ?? "";
 
     const appInfo: ProtoAppInfo = {
