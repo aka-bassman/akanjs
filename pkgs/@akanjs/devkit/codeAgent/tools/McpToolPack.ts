@@ -21,6 +21,7 @@ interface McpToolPackServer {
   client: McpClient;
   tools: McpToolInfo[];
   token: string | undefined;
+  status: CodeAgentMcpStatus;
   renewing: Promise<McpClient | undefined> | undefined;
   refused: McpClient | undefined;
 }
@@ -46,12 +47,13 @@ export class McpToolPack {
       const token = ref.transport === "http" ? await McpSignIn.token(ref, options.onNotice) : undefined;
       try {
         const opened = await McpToolPack.#openRefreshing(ref, token, options.onNotice);
-        pack.#clients.push({ ...opened, renewing: undefined, refused: undefined });
-        pack.#status.push({
+        const status: CodeAgentMcpStatus = {
           ...base,
           tools: opened.tools.map((tool) => McpToolPack.#nameOf(ref.name, tool.name)),
           auth: opened.token ? "authorized" : "none",
-        });
+        };
+        pack.#clients.push({ ...opened, status, renewing: undefined, refused: undefined });
+        pack.#status.push(status);
       } catch (error) {
         if (error instanceof McpUnauthorized) {
           options.onNotice?.(`MCP server "${ref.name}" needs signing in — /mcp login ${ref.name}`);
@@ -141,9 +143,15 @@ export class McpToolPack {
       if (renewed) return await renewed.callTool(tool, args);
     } catch (error) {
       if (!(error instanceof McpUnauthorized)) throw error;
-      server.refused = renewed;
+      McpToolPack.#refuse(server, renewed);
     }
     throw new Error(`MCP server "${client.ref.name}" needs signing in — /mcp login ${client.ref.name}`);
+  }
+
+  // Reported as a failed connect is; only a new pack, after `/mcp login` or `/mcp reload`, reads `authorized` again.
+  static #refuse(server: McpToolPackServer, client: McpClient | undefined) {
+    server.refused = client;
+    server.status.auth = "required";
   }
 
   // One refresh per refused token, shared by every call it refused; a server that refuses every token costs one.
@@ -160,7 +168,7 @@ export class McpToolPack {
     const token = server.token ? await McpSignIn.retryToken(refused.ref, server.token, this.#onNotice) : undefined;
     const client = token ? await McpToolPack.#reopen(refused.ref, token) : undefined;
     if (!client) {
-      server.refused = refused;
+      McpToolPack.#refuse(server, refused);
       return undefined;
     }
     refused.close();

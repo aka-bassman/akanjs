@@ -419,6 +419,41 @@ describe("MCP sign-in", () => {
     }
   });
 
+  test("a server whose token cannot be renewed mid-session reads as a failed connect does, until a sign-in and a reload", async () => {
+    await McpSignIn.run(refOf(), { open: browser });
+    const pack = await connect();
+    try {
+      expect(pack?.status[0]).toMatchObject({ auth: "authorized" });
+      provider.issued.splice(0);
+      provider.refreshable = false;
+      await expect(search(pack)).rejects.toThrow("/mcp login fake");
+      expect(pack?.status[0]).toMatchObject({ auth: "required", tools: ["mcp__fake__search"] });
+    } finally {
+      pack?.close();
+    }
+    provider.refreshable = true;
+    await McpSignIn.run(refOf(), { open: browser });
+    const reloaded = await connect();
+    try {
+      expect(reloaded?.status[0]).toMatchObject({ auth: "authorized" });
+      expect((await search(reloaded)).content[0]?.text).toBe("found");
+    } finally {
+      reloaded?.close();
+    }
+  });
+
+  test("a server that refuses the renewed token too reads as needing a sign-in", async () => {
+    await McpSignIn.run(refOf(), { open: browser });
+    const pack = await connect();
+    try {
+      provider.refusing = true;
+      await expect(search(pack)).rejects.toThrow("/mcp login fake");
+      expect(pack?.status[0]).toMatchObject({ auth: "required" });
+    } finally {
+      pack?.close();
+    }
+  });
+
   test("a refreshed token the server refuses too ends the call in /mcp login after one refresh", async () => {
     await McpSignIn.run(refOf(), { open: browser });
     const pack = await connect();

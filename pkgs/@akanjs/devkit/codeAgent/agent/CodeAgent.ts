@@ -172,7 +172,10 @@ export class CodeAgent {
     return this.#workspaceRoot;
   }
 
-  /** As assembled at creation: the tool allowlist is fixed then, so a server declared later is unreachable. */
+  /**
+   * As assembled at creation: the tool allowlist is fixed then, so a server declared later is unreachable. A
+   * server's `auth` still turns `required` when a call's token cannot be renewed, until a reload.
+   */
   mcpServers(): CodeAgentMcpStatus[] {
     return this.#mcp;
   }
