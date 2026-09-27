@@ -9,7 +9,7 @@ import { Button, Image, Input, Layout } from "akanjs/ui";
 import { useEffect, useRef } from "react";
 import { AiOutlinePlus } from "react-icons/ai";
 
-export * from "../../ui/UserLeave";
+export { LeaveInfo, LeaveTypeStep, Reason, Satisfaction, Voc } from "../../ui/UserLeave";
 
 interface GeneralProps {
   className?: string;

@@ -20,6 +20,7 @@ class FakeProvider {
   registerable = true;
   refreshable = true;
   refreshExpiresIn: number | undefined = 3600;
+  refusing = false;
 
   constructor() {
     this.server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (request) => this.#route(request) });
@@ -58,7 +59,7 @@ class FakeProvider {
 
   async #mcp(request: Request) {
     const token = request.headers.get("authorization")?.replace(/^Bearer /, "");
-    if (!token || !this.issued.includes(token))
+    if (!token || !this.issued.includes(token) || this.refusing)
       return Response.json(
         { error_description: "Authentication is required to use this MCP server." },
         {
@@ -265,6 +266,57 @@ describe("MCP sign-in", () => {
     const notices: string[] = [];
     expect(await McpSignIn.token(refOf(), (message) => notices.push(message))).toBeUndefined();
     expect(notices.join(" ")).toContain("fake");
+  });
+
+  const connect = async (notices: string[] = []) =>
+    await McpToolPack.connect({
+      workspaceRoot: home,
+      profile: { name: "t", tools: { mcp: [refOf()] } } as never,
+      onNotice: (message) => notices.push(message),
+    });
+
+  test("a token refused before its expiry is refreshed once, and the connect goes through with the new one", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    provider.issued.splice(provider.issued.indexOf(auth.accessToken), 1);
+    const notices: string[] = [];
+    const pack = await connect(notices);
+    try {
+      expect(pack?.status[0]).toMatchObject({ auth: "authorized" });
+      expect(pack?.toolNames).toEqual(["mcp__fake__search"]);
+      expect(McpTokenStore.read("fake")).toMatchObject({
+        accessToken: "access-refreshed-1",
+        refreshToken: "refresh-2",
+      });
+      expect(notices).toEqual([]);
+    } finally {
+      pack?.close();
+    }
+  });
+
+  test("a refused token whose refresh fails is a sign-in, not a loop", async () => {
+    await McpSignIn.run(refOf(), { open: browser });
+    provider.issued.splice(0);
+    provider.refreshable = false;
+    const notices: string[] = [];
+    const pack = await connect(notices);
+    try {
+      expect(pack?.status[0]).toMatchObject({ auth: "required", tools: [] });
+      expect(notices.at(-1)).toContain("/mcp login fake");
+    } finally {
+      pack?.close();
+    }
+  });
+
+  test("a refreshed token that is refused too is not refreshed again", async () => {
+    await McpSignIn.run(refOf(), { open: browser });
+    provider.refusing = true;
+    const pack = await connect();
+    try {
+      expect(pack?.status[0]).toMatchObject({ auth: "required", tools: [] });
+      expect(provider.issued).toEqual(["access-1", "access-refreshed-2"]);
+    } finally {
+      pack?.close();
+    }
   });
 
   test("a provider that registers no clients says what to declare instead", async () => {

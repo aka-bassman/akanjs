@@ -3,7 +3,7 @@ import path from "node:path";
 import type { BaseBuildArtifact, ClientManifest, SsrManifest } from "akanjs/server";
 import type { App } from "../commandDecorators";
 import { createBarrelImportsPlugin } from "../transforms/barrelImportsPlugin";
-import { toClientReferencePath } from "../transforms/rscUseClientTransform";
+import { scanUseClientExports, toClientReferencePath } from "../transforms/rscUseClientTransform";
 import type { ClientBundleTarget, ClientEntryDiscovery } from "./clientBuildTypes";
 import { ClientEntriesBundler } from "./clientEntriesBundler";
 import { GraphClientEntryDiscovery } from "./clientEntryDiscovery";
@@ -196,16 +196,7 @@ export class RouteClientBuilder {
   }
 
   async #scanExportNames(absEntry: string): Promise<string[]> {
-    const source = await Bun.file(absEntry).text();
-    const transpiler = new Bun.Transpiler({ loader: this.#loaderFor(absEntry) });
-    return transpiler.scan(source).exports;
-  }
-
-  #loaderFor(absPath: string): "ts" | "tsx" | "js" | "jsx" {
-    if (absPath.endsWith(".tsx")) return "tsx";
-    if (absPath.endsWith(".jsx")) return "jsx";
-    if (absPath.endsWith(".ts")) return "ts";
-    return "js";
+    return scanUseClientExports(await Bun.file(absEntry).text(), absEntry, this.#app.workspace.workspaceRoot);
   }
 
   static normalizeNamedDefaultFunctionForFastRefresh(source: string): string | null {

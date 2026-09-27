@@ -1,11 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import path from "node:path";
 import { codeAgentPresets } from "akanjs/common";
 import { makeCliTempWorkspace, tempRoots, writeText } from "../../testHelpers";
+import { CodeAgent, type CodeAgentOptions } from "../agent/CodeAgent";
 import { SubagentPool } from "../agent/SubagentPool";
 import { DevLogFeedback } from "../feedback/DevLogFeedback";
 import { PreviewView } from "../feedback/PreviewView";
 import { TurnFeedback, type TurnFeedbackSource } from "../feedback/TurnFeedback";
+import { AkanCodePlugins } from "./AkanCodePlugins";
 import { AkanEditScope } from "./AkanEditScope";
 import { AkanEnvKeys } from "./AkanEnvKeys";
 import { AkanVerifier } from "./AkanVerifier";
@@ -310,6 +312,81 @@ describe("SubagentPool", () => {
     const result = await tools[0]?.execute("c0", { description: "d", prompt: "p" } as never);
     expect(result?.isError).toBe(true);
     expect(frames).toEqual([]);
+  });
+
+  const budgeted = (budget: number) => {
+    const parent = codeAgentPresets.local("/tmp/akan");
+    return {
+      ...parent,
+      tools: { ...parent.tools, mcp: "off" as const, subagent: { maxConcurrent: 3, maxDepth: 2, budget } },
+    };
+  };
+  const openFakeAgents = (tokens: number[]) => {
+    const opened: CodeAgentOptions[] = [];
+    const spy = spyOn(CodeAgent, "create").mockImplementation(async (options) => {
+      opened.push(options);
+      const tokensUsed = tokens[opened.length - 1] ?? 0;
+      return {
+        on: () => {},
+        prompt: async () => {},
+        waitForIdle: async () => {},
+        dispose: () => {},
+        tokensUsed,
+      } as never;
+    });
+    return { opened, spy };
+  };
+  const runTask = async (extension: unknown, id: string) =>
+    await toolsOf(extension).get("task")?.(id, { description: "d", prompt: "p" } as never);
+
+  test("every pool of one tree draws on one token budget", async () => {
+    const { opened, spy } = openFakeAgents([150, 100]);
+    try {
+      const root = SubagentPool.extensionFor({ workspace, cwd: "/tmp/akan", parent: budgeted(200), depth: 0 });
+      expect((await runTask(root, "c1"))?.isError).toBeUndefined();
+      const [child] = opened;
+      if (!child) throw new Error("no sub-agent was opened");
+      const inner = SubagentPool.extensionFor({
+        workspace,
+        cwd: "/tmp/akan",
+        parent: child.profile,
+        depth: child.depth ?? 0,
+        ...(child.subagentSpend ? { spend: child.subagentSpend } : {}),
+      });
+      expect((await runTask(inner, "c2"))?.isError).toBeUndefined();
+      for (const pool of [root, inner]) {
+        const refused = await runTask(pool, "c3");
+        expect(refused?.isError).toBe(true);
+        expect(refused?.content[0]?.text).toContain("token budget (200) is spent");
+      }
+      expect(opened).toHaveLength(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("the plugins a sub-agent builds hand its pool the tree's tally", async () => {
+    const { opened, spy } = openFakeAgents([]);
+    try {
+      const plugins = await AkanCodePlugins.build({
+        workspace,
+        cwd: "/tmp/akan",
+        profile: budgeted(200),
+        apps: [],
+        canSeeImages: false,
+        depth: 1,
+        currentSessionId: () => "",
+        mailbox: () => undefined,
+        subagentSpend: { tokens: 200 },
+      });
+      const pool = plugins.extensions.find((extension) => extension.name === "akan-subagent");
+      const refused = await runTask(pool, "c1");
+      expect(refused?.isError).toBe(true);
+      expect(opened).toHaveLength(0);
+      plugins.dispose();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test("a child keeps no session and cannot ask a human", () => {

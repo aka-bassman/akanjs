@@ -69,9 +69,10 @@ export class McpServerConfig {
     return McpServerConfig.#refOf(name, entry);
   }
 
-  /** Removes it from the workspace file, else the global one, and returns that scope; false when neither has it. */
-  static remove(workspaceRoot: string, name: string): McpServerScope | false {
-    for (const { scope } of [...McpServerConfig.files(workspaceRoot)].reverse()) {
+  /** Removes it from the file `only` names, else the workspace file and then the global one; false when none has it. */
+  static remove(workspaceRoot: string, name: string, only?: McpServerScope): McpServerScope | false {
+    const candidates = McpServerConfig.files(workspaceRoot).filter(({ scope }) => !only || scope === only);
+    for (const { scope } of candidates.reverse()) {
       const { file, key, map } = McpServerConfig.#parse(workspaceRoot, scope);
       if (!(name in map)) continue;
       const next = { ...map };

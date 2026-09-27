@@ -162,9 +162,8 @@ export class CloudRunner extends runner("cloud") {
   }
 
   async login(host: string, workspace: Workspace) {
-    const config = await GlobalConfig.getHostConfig(host);
-    const cloudApi = new CloudApi(workspace, config);
-    const self = config.auth ? await cloudApi.getRemoteSelf() : null;
+    const cloudApi = await CloudApi.fromHost(workspace, host);
+    const self = await cloudApi.getRemoteSelf();
     if (self) {
       Logger.rawLog(chalk.green(`\n✓ Already logged in akan cloud as ${self.nickname}\n`));
       return true;
@@ -196,7 +195,7 @@ export class CloudRunner extends runner("cloud") {
       const accessToken = await cloudApi.getRemoteAuthToken(remoteId);
       const self = await cloudApi.getRemoteSelf();
       if (accessToken && self) {
-        await GlobalConfig.setHostConfig({ host: config.host, auth: { accessToken, self } });
+        await GlobalConfig.setHostConfig({ host: cloudApi.host, auth: { accessToken, self } });
         Logger.rawLog(chalk.green(`\r✓ Authentication successful!`));
         Logger.rawLog(chalk.green.bold(`\n✨ Welcome aboard, ${self.nickname ?? "anonymous"}!`));
         Logger.rawLog(chalk.dim("You're now ready to use Akan CLI!\n"));

@@ -15,6 +15,18 @@ export class McpSignIn {
     const stored = McpTokenStore.read(ref.name);
     if (!stored) return undefined;
     if (!McpTokenStore.isExpired(stored)) return stored.accessToken;
+    return await McpSignIn.#refreshed(ref, stored, onNotice);
+  }
+
+  /** After a server answered `refused` with 401: a token another session stored since, else one refresh. */
+  static async retryToken(ref: CodeAgentMcpServerRef, refused: string, onNotice?: (message: string) => void) {
+    const stored = McpTokenStore.read(ref.name);
+    if (!stored) return undefined;
+    if (stored.accessToken !== refused && !McpTokenStore.isExpired(stored)) return stored.accessToken;
+    return await McpSignIn.#refreshed(ref, stored, onNotice);
+  }
+
+  static async #refreshed(ref: CodeAgentMcpServerRef, stored: McpStoredAuth, onNotice?: (message: string) => void) {
     if (!stored.refreshToken) return undefined;
     try {
       const server: McpOAuthServer = {

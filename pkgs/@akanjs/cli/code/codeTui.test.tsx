@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CodeAgent } from "@akanjs/devkit/codeAgent";
 import { akanCodePaths } from "@akanjs/devkit/codeAgent/agent/akanCodePaths";
+import { McpServerConfig } from "@akanjs/devkit/codeAgent/tools/McpServerConfig";
 import type {
   CodeAgentAnswer,
   CodeAgentEvent,
@@ -294,6 +295,37 @@ describe("CodeTui", () => {
     };
     expect(file.mcpServers.repobot).toEqual({ command: "bun", args: ["run", "bot.ts"] });
     expect(existsSync(akanCodePaths.globalMcpFile())).toBe(false);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("/mcp remove says when the home file still declares the name it took from this repo", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "akan-tui-mcp-"));
+    McpServerConfig.add(root, "shared", ["home"], "global");
+    McpServerConfig.add(root, "shared", ["repo"], "workspace");
+    const harness = mount(root);
+    harness.agent.stored = [{ id: "s1", opening: "hi", updatedAt: Date.now(), turns: 1 }];
+    await settle();
+    await harness.press("/mcp remove shared");
+    await harness.press("\r");
+    const exit = await harness.done;
+    expect(exit?.notice).toStartWith("removed shared from the workspace file");
+    expect(exit?.notice).toContain("the global file still declares it, so it still applies");
+    expect(McpServerConfig.declared(root).map((entry) => entry.scope)).toEqual(["global"]);
+    rmSync(akanCodePaths.globalMcpFile(), { force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("/mcp remove --local leaves a name only the home file declares where it is", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "akan-tui-mcp-"));
+    McpServerConfig.add(root, "office", ["https://office.example/mcp"], "global");
+    const harness = mount(root);
+    harness.agent.stored = [{ id: "s1", opening: "hi", updatedAt: Date.now(), turns: 1 }];
+    await settle();
+    await harness.press("/mcp remove --local office");
+    await harness.press("\r");
+    expect(harness.stdout.lastFrame).toContain(`"office" is not declared in this repo's file`);
+    expect(McpServerConfig.declared(root).map((entry) => entry.scope)).toEqual(["global"]);
+    rmSync(akanCodePaths.globalMcpFile(), { force: true });
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -806,12 +838,20 @@ describe("CodeTui", () => {
     await harness.press("\r");
     await harness.press("two");
     await harness.press("\r");
+    // The transcript echoes each entry as ` › …`, so only the rows from the prompt's `› ` down to the caret are read.
+    const prompt = () => {
+      const caret = caretOf(harness.stdout);
+      let top = caret?.row ?? 0;
+      while (top > 0 && !caret?.lines[top]?.startsWith("› ")) top -= 1;
+      return caret ? caret.lines.slice(top, caret.row + 1) : [];
+    };
     await harness.press(`${esc}[A`);
     await harness.press(`${esc}[A`);
-    expect(harness.stdout.lastFrame).toContain("one long");
+    expect(prompt()[0]).toStartWith("› one long");
+    expect(prompt().length).toBeGreaterThan(1);
     await harness.press(`${esc}[B`);
-    expect(harness.stdout.lastFrame).toContain("› two");
+    expect(prompt()).toEqual(["› two"]);
     await harness.press(`${esc}[B`);
-    expect(harness.stdout.lastFrame).toContain("ask for something");
+    expect(prompt().join("\n")).toContain("ask for something");
   });
 });

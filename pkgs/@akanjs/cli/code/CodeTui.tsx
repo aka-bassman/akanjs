@@ -921,9 +921,19 @@ export class CodeTui {
       return this.#open("mcp", `"${name}" cannot name a server: letters, digits, dash and underscore only.`);
     try {
       if (verb === "remove") {
-        const scope = McpServerConfig.remove(root, name);
-        if (!scope) return this.#open("mcp", `No server named "${name}" is declared.`);
-        return this.#reload(`removed ${name} from the ${scope} file`);
+        const scope = McpServerConfig.remove(root, name, local ? "workspace" : undefined);
+        const remaining = McpServerConfig.declared(root).find((entry) => entry.ref.name === name);
+        if (!scope)
+          return this.#open(
+            "mcp",
+            remaining
+              ? `"${name}" is not declared in this repo's file; the ${remaining.scope} file declares it — /mcp remove ${name} removes it there.`
+              : `No server named "${name}" is declared.`,
+          );
+        if (!remaining) return this.#reload(`removed ${name} from the ${scope} file`);
+        return this.#reload(
+          `removed ${name} from the ${scope} file — the ${remaining.scope} file still declares it, so it still applies; /mcp remove ${name} again to remove it there`,
+        );
       }
       const scope = local ? "workspace" : "global";
       const ref = McpServerConfig.add(root, name, rest, scope);

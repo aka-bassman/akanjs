@@ -1,7 +1,6 @@
 import type { DatabaseMode } from "@akanjs/devkit/akanConfig";
 import { App, Apps, command, Exec, Sys, Workspace } from "@akanjs/devkit/commandDecorators";
 import { getMobileTargetChoices } from "@akanjs/devkit/mobile";
-import { select } from "@inquirer/prompts";
 
 import { ApplicationScript } from "./application.script";
 
@@ -237,17 +236,10 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app, rebuild, buildNum, environment, local) {
       await this.applicationScript.releaseSource(app, { rebuild, buildNum, environment, local });
     }),
-  codepush: target({ desc: "Deploy over-the-air (OTA) update for mobile app" })
+  codepush: target({ desc: "Over-the-air (OTA) update for a mobile app — in development, deploys nothing yet" })
     .with(App)
     .exec(async function (app) {
-      const os: "ios" | "android" = await select({
-        message: "Select os",
-        choices: [
-          { value: "ios", name: "ios", description: "ios" },
-          { value: "android", name: "android", description: "android" },
-        ],
-      });
-      await this.applicationScript.codepush(app, os);
+      await this.applicationScript.codepush(app);
     }),
   dbup: target({ desc: "Start local database services for a database mode" })
     .with(Workspace)

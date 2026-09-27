@@ -1,4 +1,5 @@
 import path from "node:path";
+import { ApplicationBuildReporter } from "@akanjs/devkit/applicationBuildReporter";
 import type { App } from "@akanjs/devkit/commandDecorators";
 // Subpath imports only, as few as possible: spawned per generation, this process pays every import on every save.
 import { AppExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
@@ -53,8 +54,9 @@ class BuildBatch {
     });
   }
 
+  // `Bun.build` rejects with an AggregateError whose own message is only "Bundle failed"; the reasons are nested.
   #fail(need: keyof BuildBatchResult["errors"], label: string, err: unknown): void {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = ApplicationBuildReporter.formatError(err);
     this.#logger.error(`${label} failed: ${message}`);
     this.#result.errors[need] = message;
     if (need !== "base") this.#emitStatus(need, message);

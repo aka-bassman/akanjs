@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { SsrManifest, SsrManifestEntry } from "akanjs/server";
 import type { BunPlugin } from "bun";
-import { toClientReferencePath } from "../transforms/rscUseClientTransform";
+import { scanUseClientExports, toClientReferencePath } from "../transforms/rscUseClientTransform";
 import { bundleDefine } from "./bundleDefine";
 import {
   type BundleClientEntriesInternalOptions,
@@ -125,16 +125,7 @@ export class ClientEntriesBundler {
   }
 
   async #scanEntryExportNames(absEntry: string): Promise<string[]> {
-    const source = await Bun.file(absEntry).text();
-    const transpiler = new Bun.Transpiler({ loader: this.#loaderForEntry(absEntry) });
-    return transpiler.scan(source).exports;
-  }
-
-  #loaderForEntry(absPath: string): "ts" | "tsx" | "js" | "jsx" {
-    if (absPath.endsWith(".tsx")) return "tsx";
-    if (absPath.endsWith(".jsx")) return "jsx";
-    if (absPath.endsWith(".ts")) return "ts";
-    return "js";
+    return scanUseClientExports(await Bun.file(absEntry).text(), absEntry, this.#app.workspace.workspaceRoot);
   }
 
   // `onResolve` rather than `Bun.build({ external })`, so macro-time imports still resolve normally.

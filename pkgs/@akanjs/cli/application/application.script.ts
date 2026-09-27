@@ -406,8 +406,8 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   async releaseSource(app: App, options: ReleaseSourceOptions) {
     await this.applicationRunner.releaseSource(app, options);
   }
-  async codepush(app: App, os: "ios" | "android") {
-    await this.applicationRunner.codepush(app, os);
+  async codepush(app: App) {
+    await this.applicationRunner.codepush(app);
   }
   async transferDatabase(app: App, direction: "export" | "import", dir: string) {
     await this.applicationRunner.transferDatabase(app, direction, dir);

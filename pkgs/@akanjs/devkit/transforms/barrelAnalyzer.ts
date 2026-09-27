@@ -90,6 +90,8 @@ export class BarrelAnalyzer {
       }
     };
 
+    // A module's own exports shadow the names its stars bring (ES), so every one is mapped before a star is walked.
+    const starSpecs: string[] = [];
     for (const m of source.matchAll(REEXPORT_RE)) {
       const star = m[1];
       const nsAs = m[2];
@@ -98,14 +100,9 @@ export class BarrelAnalyzer {
       if (!isRelative(spec)) continue;
 
       if (star) {
-        if (nsAs) {
-          // A namespace re-export cannot be flattened into subpath imports, nor is it a local declaration.
-          authoritative.delete(nsAs);
-          continue;
-        }
-        const targetAbs = await this.#resolveRel(absFile, spec);
-        if (!targetAbs) continue;
-        await this.#walk(targetAbs, pkg, map, visited);
+        // A namespace re-export cannot be flattened into subpath imports, nor is it a local declaration.
+        if (nsAs) authoritative.delete(nsAs);
+        else starSpecs.push(spec);
         continue;
       }
 
@@ -129,6 +126,11 @@ export class BarrelAnalyzer {
       if (attributed.has(name)) continue;
       if (map.has(name)) continue;
       map.set(name, { subpath: currentSubpath, originalName: name });
+    }
+
+    for (const spec of starSpecs) {
+      const targetAbs = await this.#resolveRel(absFile, spec);
+      if (targetAbs) await this.#walk(targetAbs, pkg, map, visited);
     }
   }
 
