@@ -19,6 +19,7 @@ class FakeProvider {
   methods: string[] = ["S256"];
   registerable = true;
   refreshable = true;
+  refreshExpiresIn: number | undefined = 3600;
 
   constructor() {
     this.server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (request) => this.#route(request) });
@@ -106,7 +107,7 @@ class FakeProvider {
       if (!this.refreshable) return Response.json({ error: "invalid_grant" }, { status: 400 });
       const access = `access-refreshed-${this.issued.length + 1}`;
       this.issued.push(access);
-      return Response.json({ access_token: access, refresh_token: "refresh-2", expires_in: 3600 });
+      return Response.json({ access_token: access, refresh_token: "refresh-2", expires_in: this.refreshExpiresIn });
     }
     const issued = this.#codes.get(form.get("code") ?? "");
     if (!issued) return Response.json({ error: "invalid_grant" }, { status: 400 });
@@ -246,6 +247,15 @@ describe("MCP sign-in", () => {
     McpTokenStore.write("fake", { ...auth, expiresAt: Date.now() - 1 });
     expect(await McpSignIn.token(refOf())).toBe("access-refreshed-2");
     expect(McpTokenStore.read("fake")?.refreshToken).toBe("refresh-2");
+  });
+
+  test("a refreshed token the server gave no lifetime is kept until refused, not refreshed on every connect", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    McpTokenStore.write("fake", { ...auth, expiresAt: Date.now() - 1 });
+    provider.refreshExpiresIn = undefined;
+    expect(await McpSignIn.token(refOf())).toBe("access-refreshed-2");
+    expect(await McpSignIn.token(refOf())).toBe("access-refreshed-2");
+    expect(McpTokenStore.read("fake")?.expiresAt).toBeUndefined();
   });
 
   test("a refresh the server refuses reports no token rather than throwing", async () => {
