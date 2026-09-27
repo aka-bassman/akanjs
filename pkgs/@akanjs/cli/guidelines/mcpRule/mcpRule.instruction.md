@@ -189,11 +189,13 @@ export default page()
 - OAuth resource metadata is published at `/.well-known/oauth-protected-resource` (and at that path plus the mount
   path, the spelling most clients try first). `auth.authorizationServers` / `AKAN_MCP_AUTH_SERVERS`,
   `auth.scopes` / `AKAN_MCP_SCOPES`, `auth.resource` / `AKAN_MCP_RESOURCE` and `auth.verify` configure it;
-  `insufficient_scope` is enforced only once scopes are declared. Naming an issuer changes three things at once: a
-  request with no credential is answered 401 from `initialize` on (an MCP client starts its OAuth flow on nothing
-  else), a token carrying no `aud` is refused (that issuer mints for its other resources too), and the challenge
-  carries no `error` code (RFC 6750 §3.1 reserves it for a credential that was presented). A server naming no
-  issuer keeps anonymous access and accepts a first-party token, which is bound by app and environment instead.
+  `insufficient_scope` is enforced only once scopes are declared. Declare them only for tokens an external issuer
+  mints: the built-in authorization server's tokens carry no scope, so beside it every one of them would be refused
+  with 403. Naming an issuer changes three things at once: a request with no credential is answered 401 from
+  `initialize` on (an MCP client starts its OAuth flow on nothing else), a token carrying no `aud` is refused (that
+  issuer mints for its other resources too), and the challenge carries no `error` code (RFC 6750 §3.1 reserves it
+  for a credential that was presented). A server naming no issuer keeps anonymous access and accepts a first-party
+  token, which is bound by app and environment instead.
 - **The boot log names every published entry with no dictionary `.desc()`.** An agent picks a tool by its
   description, so a missing one is a broken tool. What the framework generates has no text of its own and borrows
   the model's: the generated list reads the `.of()` label, and the base CRUD tools append the model's `.desc()` to

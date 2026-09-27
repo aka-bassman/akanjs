@@ -1753,14 +1753,18 @@ export default page()
             {l.trans({
               en: (
                 <span>
-                  <code>slice()</code> declares the lists pages show. Each entry starts with <code>init()</code>, takes
-                  arguments like an endpoint, and returns a service query.
+                  <code>slice()</code> declares the lists pages show. Each entry starts with <code>init()</code>, takes{" "}
+                  <code>.param()</code>, <code>.search()</code> and <code>.with()</code> arguments like an endpoint, and
+                  returns a service query. <code>.body()</code> is deprecated there: a list is loaded with no request
+                  body, so its value never arrives.
                 </span>
               ),
               ko: (
                 <span>
                   <code>slice()</code>에는 페이지가 보여 줄 목록을 선언합니다. 각 항목은 <code>init()</code>으로 시작해
-                  endpoint처럼 인자를 받고, service query를 반환합니다.
+                  endpoint처럼 <code>.param()</code>, <code>.search()</code>, <code>.with()</code> 인자를 받고, service
+                  query를 반환합니다. slice의 <code>.body()</code>는 지원이 중단되었습니다. 목록은 요청 body 없이
+                  불러오므로 그 값이 전달되지 않습니다.
                 </span>
               ),
             })}

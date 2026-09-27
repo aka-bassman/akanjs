@@ -77,8 +77,8 @@ export default page().render(() => {
     {
       name: "WebProxy",
       desc: l.trans({
-        en: "Runs before a page request is routed, to redirect, rewrite, or add headers.",
-        ko: "페이지 요청이 라우팅되기 전에 실행되어 redirect, rewrite, header 추가를 처리합니다.",
+        en: "Runs before a page load is routed, to redirect, rewrite, or add headers.",
+        ko: "페이지 로드가 라우팅되기 전에 실행되어 redirect, rewrite, header 추가를 처리합니다.",
       }),
     },
     {
@@ -108,7 +108,7 @@ export default page().render(() => {
   ];
 
   const pathColumns = [
-    { key: "page", label: l.trans({ en: "Page request", ko: "페이지 요청" }), caption: "/ko/docs" },
+    { key: "page", label: l.trans({ en: "Page load", ko: "페이지 로드" }), caption: "/ko/docs" },
     { key: "signal", label: l.trans({ en: "Signal call", ko: "Signal 호출" }), caption: "HTTP · WS · MCP" },
   ];
   const onPage = { page: true, signal: false };
@@ -375,8 +375,8 @@ export default page().render(() => {
           </Docs.SubSubTitle>
           <div>
             {l.trans({
-              en: "A page request and a signal call take different paths, and each piece sits on only one of them:",
-              ko: "페이지 요청과 signal 호출은 서로 다른 길로 들어오고, 네 가지는 각각 그중 한 길에만 있습니다:",
+              en: "A page load and a signal call take different paths, and each piece sits on only one of them:",
+              ko: "페이지 로드와 signal 호출은 서로 다른 길로 들어오고, 네 가지는 각각 그중 한 길에만 있습니다:",
             })}
           </div>
           <Docs.Matrix
@@ -400,15 +400,15 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Both are registered once in the option chain and apply to every request of their kind. A WebProxy acts on page requests before routing; a Middleware wraps every signal call.",
-              ko: "둘 다 option chain에 한 번 등록하면 해당 종류의 모든 요청에 적용됩니다. WebProxy는 라우팅 전에 페이지 요청을 다루고, Middleware는 모든 signal 호출을 감쌉니다.",
+              en: "Both are registered once in the option chain and apply to every request of their kind. A WebProxy acts on page loads before routing; a Middleware wraps every signal call.",
+              ko: "둘 다 option chain에 한 번 등록하면 해당 종류의 모든 요청에 적용됩니다. WebProxy는 라우팅 전에 페이지 로드를 다루고, Middleware는 모든 signal 호출을 감쌉니다.",
             })}
           </div>
 
           <Docs.SubSubTitle>WebProxy</Docs.SubSubTitle>
           <Docs.Flow
             nodes={{
-              pageRequest: { label: l.trans({ en: "Page request", ko: "페이지 요청" }), tone: "muted" },
+              pageRequest: { label: l.trans({ en: "Page load", ko: "페이지 로드" }), tone: "muted" },
               webProxy: { label: "WebProxy", lines: ["redirect · rewrite · headers"] },
               render: { label: l.trans({ en: "Page render", ko: "page 렌더링" }) },
             }}
@@ -476,16 +476,38 @@ export class LegacyPageRedirect implements WebProxy {
               {l.trans({
                 en: (
                   <>
-                    <strong>Page requests only.</strong> API routes, the websocket and <code>/_akan/*</code> paths never
+                    <strong>Page loads only.</strong> API routes, the websocket and <code>/_akan/*</code> paths never
                     pass through a WebProxy. Static files (a path with an extension) skip it too, unless a matcher names
                     them.
                   </>
                 ),
                 ko: (
                   <>
-                    <strong>페이지 요청에만 적용됩니다.</strong> API 경로, websocket, <code>/_akan/*</code> 경로는
+                    <strong>페이지 로드에만 적용됩니다.</strong> API 경로, websocket, <code>/_akan/*</code> 경로는
                     WebProxy를 거치지 않습니다. 정적 파일(확장자가 붙은 경로)도 matcher로 직접 지정하지 않으면
                     건너뜁니다.
+                  </>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>A client-side navigation skips it.</strong> A <code>{"<Link>"}</code> to{" "}
+                    <code>/ko/old-docs</code> or a <code>router.push</code> there is not redirected and renders{" "}
+                    <code>/ko/old-docs</code> itself, usually a 404; the built-in locale and basePath handling still
+                    applies. Link to the new page directly, and keep access control out of proxies: guards on the
+                    endpoints, and <code>{"getSelf({ unauthorize })"}</code> in a <code>_layout.tsx</code>.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>클라이언트 쪽 이동은 WebProxy를 건너뜁니다.</strong> <code>/ko/old-docs</code>로 가는{" "}
+                    <code>{"<Link>"}</code>나 <code>router.push</code>는 redirect되지 않고 <code>/ko/old-docs</code>{" "}
+                    자체를 그리며, 대개 404가 됩니다. 기본 locale·basePath 처리는 그대로 적용됩니다. 새 페이지로 바로
+                    링크하고, 접근 제어는 proxy가 아니라 endpoint의 guard와 <code>_layout.tsx</code>의{" "}
+                    <code>{"getSelf({ unauthorize })"}</code>로 합니다.
                   </>
                 ),
               })}

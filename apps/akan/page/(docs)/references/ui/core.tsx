@@ -152,8 +152,8 @@ export default page().render(() => {
       key: "noCache",
       type: "boolean",
       desc: l.trans({
-        en: "Meant to bypass the route cache, but neither renderer reads it yet.",
-        ko: "route cache를 건너뛰려는 prop이지만, 아직 어느 렌더러도 읽지 않습니다.",
+        en: "Deprecated: it has no effect, so leave it out.",
+        ko: "지원이 중단되었고 아무 효과가 없으므로 넘기지 않습니다.",
       }),
     },
     {

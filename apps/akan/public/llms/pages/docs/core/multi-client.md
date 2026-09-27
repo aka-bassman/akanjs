@@ -83,6 +83,8 @@ Production domains
 
 partner declares no domain of its own, and still has one. Akan derives <basePath>-<branch>.<serveDomain> for every basePath on every branch it knows, so partner-main.example.com and partner-develop.example.com exist without being written down.
 
+A mapped domain serves its own client only. On store.example.com, /en/admin/users is looked up inside store, on a reload and a client-side navigation alike, so link to another client through its own domain.
+
 Locally the site root has no page of its own, so Akan answers it with a list of every basePath in the build instead of a 404. Deployed hosts never see that list; the matching domain opens its client directly.
 
 CSR And Mobile Builds

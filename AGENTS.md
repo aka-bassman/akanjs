@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-beta.18 -->
+<!-- akan:agent:version 3.0.0-beta.19 -->
 
 ## Workspace
 
 - Repo: akanjs
-- Apps: minimal, akan
-- Libraries: util, shared
-- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
+- Apps: akan, minimal
+- Libraries: shared, util
+- Packages: @akanjs/cli, @akanjs/devkit, akanjs, create-akan-workspace, use-agentic
 
 ## Repo Overview
 
@@ -234,6 +234,8 @@ Do not narrate code. Do document the thing the code cannot say. Both halves are 
 ## Client / Server Boundaries (`apps/**`, `libs/**`, `pkgs/akanjs/**`)
 
 - Use `"use client";` at the top of client component files.
+- A `"use client"` file re-exports by name (`export { A, B } from "./x"`), never with `export *`: the server knows a
+  client module only by the export names it spells out, so `akan start` and `akan build` stop on a star re-export.
 - Be careful when importing client-only code from page or layout modules.
 - Keep page props serializable unless the existing route pattern clearly allows otherwise.
 - In domain UI the boundary is mechanical, not a judgment call: `Template`, `Zone`, and `Util` are always client components with `"use client"` on line 1; `Unit` and `View` are always server components and never carry the directive.
@@ -697,7 +699,9 @@ it.
   (RFC 7591; Cursor's `cursor://` redirect admitted) plus the consent page `libs/shared/page/oauth/consent` — and
   names itself as the issuer, so `/mcp` demands a bearer token, verifies its signature, and refuses one carrying no
   `aud`. A token is the app's own access JWT plus `aud`/`iss`/`client_id`, so `AccountMiddleware` and the guards
-  judge it unchanged; there is no scope. Per-app knobs live in `env.server.*` under `oauth` (`consentPath` and
+  judge it unchanged. The tokens this built-in server mints carry no scope; `auth.scopes` / `AKAN_MCP_SCOPES` are for
+  tokens an external issuer mints, and declared beside this server they refuse every one of its tokens with 403
+  `insufficient_scope`. Per-app knobs live in `env.server.*` under `oauth` (`consentPath` and
   `signinPath` with the basePath, `clients`, `dynamicRegistration`, `allowedRedirectSchemes`, `accessTokenSeconds`,
   `clientIdMetadata`, `enabled`, plus `issuer` / `resource` — set those when a tunnel or an edge makes the derived
   origin wrong, because an MCP client compares the issuer byte for byte). `/mcp` reads the `Authorization` header only — a cookie is dropped at the door — and `JWT_SECRET` (or
