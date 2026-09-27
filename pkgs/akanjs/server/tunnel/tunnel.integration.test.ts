@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import net from "node:net";
 import {
   type TunnelFrame,
@@ -10,6 +10,7 @@ import {
   tunnelWsPayload,
 } from "akanjs/common";
 import { TunnelAgent } from "./TunnelAgent";
+import { TunnelWebsocketStream } from "./TunnelWebsocketStream";
 
 interface StreamCollector {
   head?: TunnelHeadFrame;
@@ -233,6 +234,7 @@ class GatewayStub {
         socket.send(tunnelWireContract.encodeWsPayload(tunnelWsPayload.close, payload));
       },
       reset: () => socket.send(JSON.stringify({ type: "reset", streamId, code: "canceled" })),
+      drop: () => socket.close(),
       socketClosed: () => !this.busy.has(socket),
       finished,
     };
@@ -272,6 +274,14 @@ const until = async (check: () => boolean, ms = 2000) => {
   const deadline = Date.now() + ms;
   while (!check() && Date.now() < deadline) await Bun.sleep(5);
   return check();
+};
+const settledOf = (promise: Promise<unknown>) => {
+  let settled = false;
+  const mark = () => {
+    settled = true;
+  };
+  void promise.then(mark, mark);
+  return () => settled;
 };
 
 describe("tunnel agent against a gateway", () => {
@@ -448,6 +458,51 @@ describe("tunnel agent against a gateway", () => {
     socket.reset();
     expect(await until(socket.socketClosed)).toBe(true);
     expect(await until(() => gateway.idle.length >= gateway.idleTarget)).toBe(true);
+  });
+
+  test("finishes a websocket stream's run however the gateway ends it: a close, a reset or a drop", async () => {
+    const run = spyOn(TunnelWebsocketStream.prototype, "run");
+    try {
+      for (const [end, finish] of [
+        ["close", undefined],
+        ["reset", "socket closed"],
+        ["drop", "socket closed"],
+      ] as const) {
+        const socket = await gateway.websocket("/ws");
+        expect(await until(() => socket.head()?.status === 101)).toBe(true);
+        const running = run.mock.results.at(-1)?.value as Promise<void>;
+        socket[end]();
+        expect([end, await until(settledOf(running))]).toEqual([end, true]);
+        expect([end, await socket.finished]).toEqual([end, finish]);
+      }
+    } finally {
+      run.mockRestore();
+    }
+    expect(await until(() => gateway.idle.length >= gateway.idleTarget)).toBe(true);
+  });
+
+  test("finishes the run of a websocket still open when the agent stops", async () => {
+    const own = new GatewayStub(1);
+    const stopping = new TunnelAgent({
+      gatewayUrl: own.url,
+      token: "test-token",
+      hostnames: ["stop.tunnel.akanjs.com"],
+      origin: `http://localhost:${origin.port}`,
+    });
+    const run = spyOn(TunnelWebsocketStream.prototype, "run");
+    try {
+      await stopping.start();
+      await until(() => own.idle.length >= 1);
+      const socket = await own.websocket("/ws");
+      expect(await until(() => socket.head()?.status === 101)).toBe(true);
+      const running = run.mock.results.at(-1)?.value as Promise<void>;
+      await stopping.stop();
+      expect(await until(settledOf(running))).toBe(true);
+    } finally {
+      run.mockRestore();
+      await stopping.stop();
+      own.stop();
+    }
   });
 
   test("carries a tcp stream through each side's end and closes the data socket it owned", async () => {

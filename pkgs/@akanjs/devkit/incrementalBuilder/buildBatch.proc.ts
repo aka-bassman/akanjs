@@ -56,7 +56,7 @@ class BuildBatch {
 
   // `Bun.build` rejects with an AggregateError whose own message is only "Bundle failed"; the reasons are nested.
   #fail(need: keyof BuildBatchResult["errors"], label: string, err: unknown): void {
-    const message = ApplicationBuildReporter.formatError(err);
+    const message = ApplicationBuildReporter.formatError(err, this.#request.workspaceRoot);
     this.#logger.error(`${label} failed: ${message}`);
     this.#result.errors[need] = message;
     if (need !== "base") this.#emitStatus(need, message);
