@@ -160,6 +160,15 @@ describe("McpAuth token rejection", () => {
   test("leaves scopes unenforced until a deployment declares them", async () => {
     expect(await auth().reject(request(`Bearer ${token({ appName: "probe" })}`))).toBeNull();
   });
+
+  test("judges a bearer whatever the scheme's case or the spacing before it", async () => {
+    const foreign = token({ aud: ["https://other.example.com/mcp"] });
+    for (const authorization of [`bearer ${foreign}`, `BEARER ${foreign}`, `Bearer  ${foreign}`, `Bearer ${foreign} x`])
+      expect((await auth().reject(request(authorization)))?.status).toBe(401);
+    expect(McpAuth.callerKey(request("Bearer opaque\tx"))).not.toBe(McpAuth.callerKey(request("Bearer opaque")));
+    const federated = auth({ authorizationServers: ["https://auth.example.com"] });
+    expect(federated.challengeAnonymous(request(`bearer ${token({ aud: "https://app.example.com/mcp" })}`))).toBeNull();
+  });
 });
 
 describe("McpAuth verification hook", () => {
