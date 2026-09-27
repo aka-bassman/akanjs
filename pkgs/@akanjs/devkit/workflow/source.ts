@@ -121,8 +121,6 @@ export const titleize = (value: string) =>
     .replace(/[-_]+/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-export { lowerlize };
-
 const koLabels: Record<string, string> = {
   amount: "금액",
   budget: "예산",
