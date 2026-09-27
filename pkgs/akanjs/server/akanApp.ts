@@ -124,7 +124,7 @@ export class AkanApp {
   readonly #solo: boolean;
   readonly #children = new Map<number, ChildState>();
   readonly #roomChildren = new Map<string, Set<number>>();
-  readonly #childRooms = new Map<number, Set<string>>();
+  readonly #childRooms = new Map<number, Map<string, Set<string>>>();
   readonly #socketRooms = new Map<string, { childIdx: number; rooms: Set<string> }>();
   #nextBuilderReqId = 1;
   readonly #builderReqMap = new Map<number, { childIdx: number; childLocalId: number }>();
@@ -1143,11 +1143,13 @@ export class AkanApp {
     roomChildren.add(childIdx);
     this.#roomChildren.set(roomId, roomChildren);
 
-    const childRooms = this.#childRooms.get(childIdx) ?? new Set<string>();
-    childRooms.add(roomId);
+    const childRooms = this.#childRooms.get(childIdx) ?? new Map<string, Set<string>>();
+    const roomSockets = childRooms.get(roomId) ?? new Set<string>();
+    childRooms.set(roomId, roomSockets);
     this.#childRooms.set(childIdx, childRooms);
 
     if (socketId) {
+      roomSockets.add(socketId);
       const socketRooms = this.#socketRooms.get(socketId) ?? { childIdx, rooms: new Set<string>() };
       socketRooms.rooms.add(roomId);
       this.#socketRooms.set(socketId, socketRooms);
@@ -1160,28 +1162,33 @@ export class AkanApp {
     if (roomChildren?.size === 0) this.#roomChildren.delete(roomId);
   }
 
+  // Unsubscribes arrive per socket, delivery is per replica: a replica leaves with its last socket in the room.
   #removeRoomMembership(childIdx: number, roomId: string, socketId?: string) {
-    this.#leaveRoom(childIdx, roomId);
-
     const childRooms = this.#childRooms.get(childIdx);
-    childRooms?.delete(roomId);
-    if (childRooms?.size === 0) this.#childRooms.delete(childIdx);
-
     if (socketId) {
       const socketRooms = this.#socketRooms.get(socketId);
       socketRooms?.rooms.delete(roomId);
       if (!socketRooms || socketRooms.rooms.size === 0) this.#socketRooms.delete(socketId);
+      const roomSockets = childRooms?.get(roomId);
+      roomSockets?.delete(socketId);
+      if (roomSockets?.size) return;
     }
+
+    this.#leaveRoom(childIdx, roomId);
+    childRooms?.delete(roomId);
+    if (childRooms?.size === 0) this.#childRooms.delete(childIdx);
   }
 
+  // Snapshots name rooms, not sockets: forgetting a kept room's sockets would drop the replica at its next unsubscribe.
   #replaceRoomSnapshot(childIdx: number, rooms: string[]) {
-    for (const roomId of this.#childRooms.get(childIdx) ?? []) this.#leaveRoom(childIdx, roomId);
-    this.#childRooms.set(childIdx, new Set());
-    for (const roomId of rooms) this.#addRoomMembership(childIdx, roomId);
+    const held = new Set(rooms);
+    for (const roomId of [...(this.#childRooms.get(childIdx)?.keys() ?? [])])
+      if (!held.has(roomId)) this.#removeRoomMembership(childIdx, roomId);
+    for (const roomId of held) this.#addRoomMembership(childIdx, roomId);
   }
 
   #removeChildRooms(childIdx: number) {
-    for (const roomId of this.#childRooms.get(childIdx) ?? []) this.#leaveRoom(childIdx, roomId);
+    for (const roomId of this.#childRooms.get(childIdx)?.keys() ?? []) this.#leaveRoom(childIdx, roomId);
     this.#childRooms.delete(childIdx);
     for (const [socketId, socket] of this.#socketRooms.entries()) {
       if (socket.childIdx === childIdx) this.#socketRooms.delete(socketId);
