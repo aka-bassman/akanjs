@@ -93,6 +93,22 @@ describe("HostBasePathWebProxy", () => {
     expect(entries.some((entry) => entry.plainMessage.includes("nope"))).toBe(true);
   });
 
+  test("warns about an ignored basePath once per process, whichever reader resolves the env first", () => {
+    process.env.AKAN_SUB_ROUTE_HOSTS = "gone=gone.try.akanjs.com";
+    const entries: LoggerSinkEntry[] = [];
+    const sink = (entry: LoggerSinkEntry) => void entries.push(entry);
+    Logger.addSink(sink);
+
+    try {
+      new HostBasePathWebProxy().use(request("http://internal/en/home", "gone.try.akanjs.com"));
+      new HostBasePathWebProxy().use(request("http://internal/en/home", "gone.try.akanjs.com"));
+    } finally {
+      Logger.removeSink(sink);
+    }
+
+    expect(entries.filter((entry) => entry.plainMessage.includes("gone")).length).toBe(1);
+  });
+
   test("leaves an unmapped host to the root app", () => {
     expect(new HostBasePathWebProxy().use(request("http://internal/en/home", "akanjs.com"))).toBeUndefined();
   });

@@ -39,7 +39,7 @@ import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import { DevHmrController } from "./hmr/devHmrController";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { ImageOptimizer } from "./imageOptimizer";
-import { normalizeHost, resolveArtifactDir } from "./proxy/hostBasePathWebProxy";
+import { normalizeHost, resolveArtifactDir, warnIgnoredSubRouteBasePaths } from "./proxy/hostBasePathWebProxy";
 import { createDefaultRobotsTxt } from "./robots";
 import {
   AKAN_RSC_PATCH_HEAD_SAFE_HEADER,
@@ -302,10 +302,7 @@ export class WebRouter {
       env: process.env.AKAN_SUB_ROUTE_HOSTS,
     });
     this.#subRoutes = subRoutes;
-    if (ignoredBasePaths.length)
-      this.#logger.warn(
-        `AKAN_SUB_ROUTE_HOSTS names basePaths this build does not serve, ignoring: ${ignoredBasePaths.join(", ")}`,
-      );
+    warnIgnoredSubRouteBasePaths(this.#logger, ignoredBasePaths);
     this.#rsc = rsc;
     this.renderState = {
       buildId: 0,

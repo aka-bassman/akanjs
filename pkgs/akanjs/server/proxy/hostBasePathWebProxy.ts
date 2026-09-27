@@ -58,10 +58,7 @@ export class HostBasePathWebProxy implements WebProxy {
       basePaths: metadata.basePaths,
       env: process.env.AKAN_SUB_ROUTE_HOSTS,
     });
-    if (ignoredBasePaths.length)
-      this.#logger.warn(
-        `AKAN_SUB_ROUTE_HOSTS names basePaths this build does not serve, ignoring: ${ignoredBasePaths.join(", ")}`,
-      );
+    warnIgnoredSubRouteBasePaths(this.#logger, ignoredBasePaths);
     const map = new Map<string, string>();
     for (const [basePath, domains] of Object.entries(subRoutes)) {
       for (const domain of domains) map.set(normalizeHost(domain), basePath);
@@ -86,6 +83,15 @@ export function resolveArtifactDir(): string {
   const localArtifactDir = path.join(process.cwd(), ".akan", "artifact");
   if (fs.existsSync(path.join(localArtifactDir, "base-artifact.json"))) return localArtifactDir;
   return path.join(process.cwd(), "apps", getEnv().appName, ".akan", "artifact");
+}
+
+const warnedIgnoredBasePaths = new Set<string>();
+
+export function warnIgnoredSubRouteBasePaths(logger: Logger, ignoredBasePaths: string[]) {
+  const list = ignoredBasePaths.join(", ");
+  if (!list || warnedIgnoredBasePaths.has(list)) return;
+  warnedIgnoredBasePaths.add(list);
+  logger.warn(`AKAN_SUB_ROUTE_HOSTS names basePaths this build does not serve, ignoring: ${list}`);
 }
 
 export function normalizeHost(host: string | null): string {
