@@ -185,8 +185,7 @@ export class SsrBaseArtifactBuilder {
   }> {
     const cssCompiler = new CssCompiler(this.#app);
     const cssByBasePath = await cssCompiler.getCssByBasePath();
-    // 스타일 계약(어휘 폐쇄 + WCAG)은 빌드가 아니라 lint 가 강제한다: 어휘 폐쇄는 biome grit 플러그인
-    // (devkit/lint/no-raw-palette-class.grit 외 3종), 콘트라스트는 `akan lint` 의 themeValidator.
+    // The style contract (vocabulary closure, WCAG contrast) is enforced by `akan lint`, not by the build.
     const optimizedFonts = await new FontOptimizer(this.#app, this.#command).optimize();
     const cssAssets = Object.fromEntries(
       await Promise.all(
@@ -216,12 +215,7 @@ export class SsrBaseArtifactBuilder {
     return [basePath, { cssUrl, cssRelPath }] as const;
   }
 
-  /**
-   * Checked against the file written here rather than against the compiled text, because this is the stylesheet
-   * `base-artifact.json` points at and therefore the only one an SSR render serves. A declaration can survive
-   * the compile and still be missing from the asset — a build that ships CSS to the CSR bundle and not to the
-   * server is indistinguishable, in the browser, from a theme that was never written.
-   */
+  // Checked against the written asset, not the compiled text: it is the only stylesheet an SSR render serves.
   static #warnDroppedImports(app: App, cssRelPath: string, css: string, imported: ImportedStylesheet[]) {
     for (const { cssPath, declaredNames } of imported) {
       if (declaredNames.length === 0 || declaredNames.some((name) => css.includes(`${name}:`))) continue;

@@ -55,7 +55,7 @@ describe("AgentSession", () => {
     const seen: string[] = [];
     const session = new AgentSession(surface, runner, {
       onTurn: (running) => seen.push(running ? "turn:start" : "turn:end"),
-      onActivity: (event) => seen.push(`call:${event.phase}`),
+      onActivity: (event) => void seen.push(`call:${event.phase}`),
     });
     await session.send("save it");
     expect(seen).toEqual(["turn:start", "call:start", "call:end", "turn:end"]);
@@ -1341,7 +1341,7 @@ describe("AgentSession long tools", () => {
   test("a tool that ignores the signal is left running rather than having its result thrown away", async () => {
     const surface = new AgenticSurface();
     let finished = false;
-    let release: (() => void) | null = null;
+    let release = null as (() => void) | null;
     surface.registerTool([], {
       name: "stubborn",
       run: () =>

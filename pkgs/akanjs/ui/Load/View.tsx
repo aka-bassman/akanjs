@@ -12,25 +12,19 @@ import { Loading } from "../Loading";
 import Stream from "./Stream";
 
 interface DefaultProps<T extends string, M> {
-  /** Additional classes for the default wrapping div. */
   className?: string;
-  /** Render the model directly without the default wrapper div. */
+  /** Renders the model without the default wrapper div. */
   noDiv?: boolean;
-  /** Custom fallback shown while the client view is loading. */
   loading?: ReactNode;
-  /** Placeholder for a view whose model came back empty. */
   empty?: ReactNode;
-  /** Render callback invoked with the loaded full model. */
   renderView: (model: M) => ReactNode;
 }
 
 interface ViewProps<T extends string, Full extends { id: string }> extends DefaultProps<T, Full> {
-  /** Client view promise returned by Akan fetch helpers. */
   view: ClientView<T, Full>;
 }
 
 interface RenderProps<T extends string, Full extends { id: string }> extends DefaultProps<T, Full> {
-  /** Resolved server view payload used to hydrate the client store. */
   view: ServerView<T, Full>;
 }
 
@@ -77,9 +71,8 @@ function Render<T extends string, Full extends { id: string }>({
   }, [modelViewAt, modelObj.id]);
 
   useEffect(() => {
-    // A payload older than the last local write is one the RSC navigation cache replayed from before it, so the
-    // model just hydrated above is the pre-write one. `<refName>StaleAt` is the root slice's stamp, absent only on
-    // a model whose signal declares no slice at all.
+    // A payload older than the last local write is an RSC-cache replay, so the model hydrated above is stale.
+    // `<refName>StaleAt` is the root slice's stamp, absent only when the signal declares no slice.
     const modelStaleAt = storeGet<Date | undefined>()[`${refName}StaleAt`];
     if (!modelStaleAt || storeGet<Date>()[`${refName}ViewAt`].getTime() >= modelStaleAt.getTime()) return;
     if (storeGet<string | boolean>()[`${refName}Loading`]) return;
@@ -103,31 +96,20 @@ function Render<T extends string, Full extends { id: string }>({
 }
 
 export default function View<T extends string, Full extends { id: string }>({
-  className,
   view,
-  noDiv,
-  loading,
   empty,
-  renderView,
+  ...props
 }: ViewProps<T, Full>) {
-  //get Props
-  const props: ViewProps<T, Full> = {
-    className,
-    view,
-    noDiv,
-    loading,
-    renderView,
-  };
   return (
     <Stream
       of={view}
       fallback={
-        loading === undefined ? (
+        props.loading === undefined ? (
           <div className="size-full">
             <Loading.Skeleton active />
           </div>
         ) : (
-          loading
+          props.loading
         )
       }
     >

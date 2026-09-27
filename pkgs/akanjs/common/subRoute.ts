@@ -14,13 +14,11 @@ export const parseBasePaths = (value: string | string[] | Set<string> | undefine
 
 const normalizeSubRouteHost = (host: string): string => host.trim().toLowerCase().replace(/:\d+$/, "");
 
-/** A hostname never contains these; a fragment carrying one is a malformed entry, not a host we failed to match. */
 const isSubRouteHost = (host: string): boolean => host.length > 0 && !/[\s/=]/.test(host);
 
 /**
- * `"soft=a.com,b.com;office=c.com"` -> `{ soft: ["a.com", "b.com"], office: ["c.com"] }`. A deployment platform
- * renders this value, so a malformed entry is skipped rather than thrown: one bad character must not CrashLoop
- * every pod that received it.
+ * `"soft=a.com,b.com;office=c.com"` -> `{ soft: ["a.com", "b.com"], office: ["c.com"] }`. A malformed entry is
+ * skipped, not thrown: a deployment platform renders this value, and one bad character must not CrashLoop pods.
  */
 export const parseSubRouteHosts = (value: string | undefined | null): Record<string, string[]> => {
   const hostsByBasePath: Record<string, string[]> = {};
@@ -44,9 +42,8 @@ export const parseSubRouteHosts = (value: string | undefined | null): Record<str
 };
 
 /**
- * Unions the env mapping onto the one baked into the build artifact, never replacing it — dropping the env is the
- * rollback path. A basePath the build does not serve is reported back instead of honoured: the route tree is a
- * build output, so accepting one would answer every request under it with a 404 and nothing to explain why.
+ * Unions the env mapping onto the build's own, never replacing it (dropping the env is the rollback path). A basePath
+ * the build does not serve is reported back, not honoured: the route tree is a build output.
  */
 export const resolveSubRouteHosts = ({
   subRoutes,

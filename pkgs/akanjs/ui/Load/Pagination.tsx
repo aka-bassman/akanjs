@@ -1,6 +1,6 @@
 "use client";
 import { cn } from "akanjs/client";
-import { capitalize, type DynamicRecord, lowerlize } from "akanjs/common";
+import { type DynamicRecord, lowerlize } from "akanjs/common";
 import type { BaseInsight } from "akanjs/constant";
 import type { ClientInit, ServerInit } from "akanjs/fetch";
 import { st } from "akanjs/store";
@@ -9,6 +9,7 @@ import { useRef } from "react";
 
 import { Empty } from "../Empty";
 import { Pagination as Pagn } from "../Pagination";
+import { sliceNamesOf } from "../sliceNamesOf";
 import Stream from "./Stream";
 
 interface PaginationProps<RefName extends string, Light> {
@@ -27,26 +28,10 @@ function Render<RefName extends string, Light>({ className, init, scrollToTop }:
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
   const storeGet = st.get as unknown as <T>() => { [key: string]: T };
   const { refName, sliceName } = init;
-  const [modelName, ModelName] = [lowerlize(refName), capitalize(refName)];
+  const modelName = lowerlize(refName);
   const initModelInitAt = (init as DynamicRecord)[`${modelName}InitAt`] as Date;
   const loaded = useRef(storeGet<Date>()[`${refName}InitAt`].getTime() >= initModelInitAt.getTime());
-  const names = {
-    model: modelName,
-    modelInsight: `${modelName}Insight`,
-    modelInitAt: `${modelName}InitAt`,
-    modelObjInsight: `${modelName}ObjInsight`,
-    pageOfModel: `pageOf${ModelName}`,
-    lastPageOfModel: `lastPageOf${ModelName}`,
-    limitOfModel: `limitOf${ModelName}`,
-    setPageOfModel: `setPageOf${ModelName}`,
-  };
-  const namesOfSlice = {
-    modelInsight: sliceName.replace(names.model, names.modelInsight),
-    limitOfModel: sliceName.replace(names.model, names.limitOfModel),
-    lastPageOfModel: sliceName.replace(names.model, names.lastPageOfModel),
-    pageOfModel: sliceName.replace(names.model, names.pageOfModel),
-    setPageOfModel: sliceName.replace(names.model, names.setPageOfModel),
-  };
+  const { names, namesOfSlice } = sliceNamesOf(modelName, sliceName);
   const modelInsight = storeUse[namesOfSlice.modelInsight]() as BaseInsight;
   const limitOfModel = storeUse[namesOfSlice.limitOfModel]() as number;
   const pageOfModel = storeUse[namesOfSlice.pageOfModel]() as number;

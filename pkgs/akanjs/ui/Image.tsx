@@ -3,7 +3,6 @@ import { cn } from "akanjs/client";
 import type { ProtoLightFile } from "akanjs/constant";
 import type { ImgHTMLAttributes } from "react";
 import { preload as preloadResource } from "react-dom";
-// import NextImage, { ImageProps } from "next/image";
 
 import { CsrImage } from "./CsrImage";
 
@@ -19,80 +18,53 @@ const DEFAULT_IMAGE_QUALITY = 75;
 const EMPTY_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
 type NativeImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "alt" | "src" | "srcSet"> & {
-  /** Fill the parent box when the renderer supports fill-style images. */
   fill?: boolean;
-  /** Placeholder mode passed through to image renderers. */
   placeholder?: string;
-  /** Base64 or low-quality preview data used for blur placeholders. */
   blurDataURL?: string;
 };
 
 type AkanImageProps = NativeImageProps & {
-  /** Direct image URL. Takes precedence over file.url. */
+  /** Takes precedence over `file.url`. */
   src?: string;
-  /** Akan file object or file-like value with url and imageSize metadata. */
   file?: ImageLikeFile;
-  /** Low-quality preview data. Overrides file.abstractData when provided. */
+  /** Overrides `file.abstractData`. */
   abstractData?: string | null;
-  /** Accessible alt text. Defaults to "image" when omitted. */
+  /** Defaults to "image". */
   alt?: string;
-  /** Image optimizer quality. Defaults to 75. */
+  /** Optimizer quality, 75 by default. */
   quality?: number;
-  /** Mark image as high priority and eager-loading. */
+  /** Loads eagerly at high fetch priority, and preloads during SSR. */
   priority?: boolean;
-  /** Preload image resource in SSR mode. */
+  /** Preloads the resource during SSR. */
   preload?: boolean;
-  /** Skip Akan image optimization and use the original src. */
+  /** Serves the original `src`, skipping the optimizer. */
   unoptimized?: boolean;
 };
 
-export const Image = ({
-  src,
-  file,
-  className,
-  abstractData,
-  alt,
-  quality,
-  priority,
-  preload,
-  unoptimized,
-  ...props
-}: AkanImageProps &
-  (
-    | {
-        src?: string;
-        file?: ProtoLightFile;
-        abstractData?: string | null;
-        alt?: string;
-      }
-    | {
-        src?: undefined;
-        abstractData?: string | null;
-        file: { url: string; imageSize: [number, number]; abstractData?: string | null } | null;
-        alt?: string;
-      }
-  )) => {
+export const Image = (
+  imageProps: AkanImageProps &
+    (
+      | {
+          src?: string;
+          file?: ProtoLightFile;
+          abstractData?: string | null;
+          alt?: string;
+        }
+      | {
+          src?: undefined;
+          abstractData?: string | null;
+          file: { url: string; imageSize: [number, number]; abstractData?: string | null } | null;
+          alt?: string;
+        }
+    ),
+) => {
+  if (getEnv().renderMode === "csr") return <CsrImage {...imageProps} />;
+  const { src, file, className, abstractData, alt, quality, priority, preload, unoptimized, ...props } = imageProps;
   const url = src || file?.url || null;
   const [width, height] = [props.width ?? file?.imageSize[0], props.height ?? file?.imageSize[1]];
 
   const blurDataURL = abstractData ?? file?.abstractData;
   const isPriority = Boolean(priority || preload);
-
-  if (getEnv().renderMode === "csr")
-    return (
-      <CsrImage
-        src={src}
-        alt={alt}
-        file={file}
-        abstractData={abstractData}
-        className={className}
-        priority={priority}
-        preload={preload}
-        quality={quality}
-        unoptimized={unoptimized}
-        {...props}
-      />
-    );
 
   const optimized = url
     ? getOptimizedImageAttrs({ src: url, width, sizes: props.sizes, quality, unoptimized })
@@ -111,11 +83,9 @@ export const Image = ({
 
   return (
     <img
-      // <NextImage
       src={optimized.src}
       srcSet={optimized.srcSet}
       sizes={props.sizes}
-      // fill={props.fill ?? (!width && !height)}
       width={width}
       height={height}
       className={cn("object-cover", !url && "bg-muted", className)}

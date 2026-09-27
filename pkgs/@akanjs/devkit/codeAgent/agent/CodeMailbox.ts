@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { parseJsonLine, readJsonLines } from "./jsonLines";
 
 export interface CodePeer {
   id: string;
@@ -26,18 +27,9 @@ export interface CodeMail {
   text: string;
 }
 
-/**
- * How two `akan code` sessions in one workspace reach each other.
- *
- * A directory, not a socket or a daemon: the sessions already share a checkout and already write their
- * transcripts there, and a mailbox on disk survives one end restarting, needs nothing listening to accept a
- * message, and is inspectable with `cat` when a message does not arrive.
- *
- * Presence is a heartbeat file rather than a registration, because the interesting failure is a session that
- * died without saying so — a registry would keep listing it forever, while a stale mtime says it is gone.
- */
+// A directory, not a socket or daemon: it survives either end restarting and needs nothing listening.
+// Presence is a heartbeat file, not a registration, so a session that died silently goes stale on its own.
 export class CodeMailbox {
-  /** A session older than this said nothing for four heartbeats, so it is not there to answer. */
   static readonly staleMs = 20_000;
   static readonly beatMs = 5_000;
   static readonly pollMs = 1_500;
@@ -66,9 +58,8 @@ export class CodeMailbox {
   open(cwd: string, onMail: (mail: CodeMail) => void) {
     mkdirSync(path.join(this.#dir, "live"), { recursive: true });
     mkdirSync(path.join(this.#dir, "inbox"), { recursive: true });
-    // Whatever was already in the inbox belongs to an earlier run of this session, which has read it or is
-    // never going to; delivering it now would replay a conversation that already happened.
-    this.#read = CodeMailbox.#lines(this.inbox).length;
+    // What is already in the inbox belongs to an earlier run; delivering it would replay a past conversation.
+    this.#read = readJsonLines(this.inbox).length;
     this.beat(cwd);
     this.#beat = setInterval(() => this.beat(cwd), CodeMailbox.beatMs);
     this.#poll = setInterval(() => {
@@ -137,12 +128,12 @@ export class CodeMailbox {
   }
 
   #drain(): CodeMail[] {
-    const lines = CodeMailbox.#lines(this.inbox);
+    const lines = readJsonLines(this.inbox);
     if (lines.length <= this.#read) return [];
     const fresh = lines.slice(this.#read);
     this.#read = lines.length;
     return fresh
-      .map((line) => CodeMailbox.#parse(line))
+      .map((line) => parseJsonLine<CodeMail>(line))
       .filter((mail): mail is CodeMail => !!mail?.text && typeof mail.from === "string");
   }
 
@@ -150,24 +141,6 @@ export class CodeMailbox {
     try {
       const peer = JSON.parse(readFileSync(file, "utf8")) as CodePeer;
       return typeof peer.id === "string" ? { ...peer, at: peer.at || statSync(file).mtimeMs } : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  static #lines(file: string) {
-    try {
-      return readFileSync(file, "utf8")
-        .split("\n")
-        .filter((line) => !!line.trim());
-    } catch {
-      return [];
-    }
-  }
-
-  static #parse(line: string) {
-    try {
-      return JSON.parse(line) as CodeMail;
     } catch {
       return undefined;
     }

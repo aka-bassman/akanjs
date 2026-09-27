@@ -2,13 +2,9 @@ import type { McpDeclaredServer, McpServerScope } from "@akanjs/devkit/codeAgent
 import type { CodeAgentMcpServerRef, CodeAgentMcpStatus } from "akanjs/common";
 
 export interface CodeTuiMcpView {
-  /** What the session actually connected to, fixed when it was created. */
-  status: CodeAgentMcpStatus[];
-  /** What the files say now, which is not the same list once something has been added or removed. */
-  declared: McpDeclaredServer[];
-  /** Both declaration files, global first — which one a server came from is on its row. */
+  status: CodeAgentMcpStatus[]; // the servers the session connected to when created, each with its sign-in state now
+  declared: McpDeclaredServer[]; // what the files say now
   files: { scope: McpServerScope; file: string }[];
-  /** Why a file yielded nothing, when it exists and yielded nothing. */
   problem?: string;
 }
 
@@ -19,14 +15,6 @@ interface McpRow {
   live?: CodeAgentMcpStatus;
 }
 
-/**
- * What `/mcp` puts on screen.
- *
- * The two lists it reads are deliberately different: the session's tool allowlist is built once, at creation,
- * so a server added to the file five seconds ago is declared and unreachable at the same time. Showing only
- * one of the lists makes that state look like a server that is broken, or like one that took effect when it
- * did not — which is the whole reason a reload has to be offered rather than assumed.
- */
 export class CodeTuiMcp {
   /** Written into a tool name as `mcp__<name>__<tool>`, so two names that sanitize alike shadow each other. */
   static readonly namePattern = /^[a-zA-Z0-9_-]+$/;
@@ -37,11 +25,11 @@ export class CodeTuiMcp {
     "/mcp add --local <name> …           declare it for this repo only, not every repo",
     "/mcp login <name>                   sign in through the browser (OAuth)",
     "/mcp logout <name>                  forget the token, leaving the server declared",
-    "/mcp remove <name>                  undeclare it",
+    "/mcp remove <name>                  undeclare it, from this repo's file first",
+    "/mcp remove --local <name>          undeclare it from this repo's file only",
     "/mcp reload                         reopen this session so the file takes effect",
   ];
 
-  /** Where each file is, said once under the table rather than on every row that came from it. */
   static #where(view: CodeTuiMcpView) {
     return view.files.map(({ scope, file }) => `${scope.padEnd(11)}${file}`);
   }
@@ -76,12 +64,6 @@ export class CodeTuiMcp {
     ].join("\n");
   }
 
-  /**
-   * One row per server, by name, over the union of the two lists.
-   *
-   * A server drops out of the file while this session still holds its connection — `/mcp remove` without a
-   * reload — and one appears in the file that the session never saw. Both are real, and neither is an error.
-   */
   static #rows(view: CodeTuiMcpView) {
     const byName = new Map<string, McpRow>();
     for (const entry of view.declared)
@@ -99,8 +81,7 @@ export class CodeTuiMcp {
   static #stateOf(entry: McpRow) {
     if (entry.disabled) return "disabled in the file";
     if (!entry.live) return "declared · /mcp reload to connect";
-    // Before the error branch: a 401 is a server answering correctly, and calling it broken sends somebody to
-    // debug one that is working exactly as its owner intended.
+    // Before the error branch: a 401 is a server answering correctly, not a broken one.
     if (entry.live.auth === "required") return `sign-in needed · /mcp login ${entry.live.name}`;
     if (entry.live.error) return `unreachable — ${entry.live.error}`;
     const tools = `${entry.live.tools.length} tool${entry.live.tools.length === 1 ? "" : "s"}`;
@@ -113,9 +94,9 @@ export class CodeTuiMcp {
     return ref.url ?? [ref.command, ...(ref.args ?? [])].filter(Boolean).join(" ");
   }
 
-  /** The tools one server published, which is the only answer to "did it actually come up". */
   static tools(status: CodeAgentMcpStatus) {
     if (status.error) return `${status.name} is unreachable — ${status.error}`;
+    if (status.auth === "required") return `${status.name} needs signing in — /mcp login ${status.name}`;
     if (!status.tools.length) return `${status.name} connected and published no tools.`;
     return [`${status.name} · ${status.target}`, "", status.tools.join("\n")].join("\n");
   }

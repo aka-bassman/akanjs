@@ -4,7 +4,7 @@ import { cn, msg, router, usePage } from "akanjs/client";
 import { capitalize } from "akanjs/common";
 import type { SliceMeta } from "akanjs/fetch";
 import { st } from "akanjs/store";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { agentAttrs } from "../agentAttrs";
 import { Button } from "../Button";
@@ -17,9 +17,7 @@ interface RemoveProps {
   slice: SliceMeta;
   modal?: string | null;
   redirect?: string;
-  /** Confirmation heading. */
   title?: ReactNode;
-  /** Confirmation body. */
   description?: ReactNode;
   /** Confirmation footer. Replacing it takes over the removal — call nothing else and the record stays. */
   action?: ReactNode;
@@ -40,14 +38,8 @@ export default function Remove({
   const { l } = usePage();
   const [modalOpen, setModalOpen] = useState(false);
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
-  const { refName, sliceName } = slice;
-  const modelName = refName;
-  const names = useMemo(
-    () => ({
-      removeModel: `remove${capitalize(modelName)}`,
-    }),
-    [],
-  );
+  const { refName: modelName } = slice;
+  const names = { removeModel: `remove${capitalize(modelName)}` };
   const removeModel = async (id: string, { onError }: { onError?: (e: string) => void } = {}) => {
     await storeDo[names.removeModel](id, { onError, modal });
     msg.success("base.removeSuccess", { data: { model: l(`${modelName}.modelName` as "base.new") } });
@@ -56,8 +48,7 @@ export default function Remove({
     if (redirect === "back") router.back();
     else router.push(redirect);
   };
-  // The confirmation this draws is a modal; the agent's is the approval card the `remove` prefix turns on. Both
-  // land on the same removal, and the id rides in the argument so a per-row copy of this stays interchangeable.
+  // The agent's confirmation is the approval card the `remove` prefix turns on; the id rides in the argument.
   const removeTool = st
     .tool(names.removeModel)
     .desc(`Remove one ${modelName}.`)

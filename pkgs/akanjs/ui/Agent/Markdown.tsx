@@ -1,10 +1,44 @@
 "use client";
 import { cn } from "akanjs/client";
-import type { Align, MarkdownBlock, MarkdownItem, TableBlock } from "akanjs/common";
-import { MarkdownBlocks } from "akanjs/common";
+import type { Align, MarkdownBlock, MarkdownItem, MarkdownSpan, TableBlock } from "akanjs/common";
+import { MarkdownBlocks, MarkdownSpans } from "akanjs/common";
 import type { ReactNode } from "react";
 import { createOverridable } from "../UiOverride";
-import { spans } from "./markdownSpans";
+
+const spans = (text: string): ReactNode[] => MarkdownSpans.of(text).map((span, at) => node(span, at));
+
+const node = (span: MarkdownSpan, at: number): ReactNode => {
+  switch (span.kind) {
+    case "link":
+      return (
+        <a className="underline" href={span.href} key={at} rel="noreferrer" target="_blank">
+          {spans(span.text)}
+        </a>
+      );
+    case "code":
+      return (
+        <code className="rounded-field bg-muted px-1 font-mono text-[11px]" key={at}>
+          {span.text}
+        </code>
+      );
+    case "strong":
+      return (
+        <strong className="font-semibold" key={at}>
+          {spans(span.text)}
+        </strong>
+      );
+    case "em":
+      return <em key={at}>{spans(span.text)}</em>;
+    case "del":
+      return (
+        <del className="opacity-60" key={at}>
+          {span.text}
+        </del>
+      );
+    default:
+      return span.text;
+  }
+};
 
 const alignClass: { [key in Align]: string } = { left: "text-left", center: "text-center", right: "text-right" };
 
@@ -13,8 +47,7 @@ interface ListProps {
   items: MarkdownItem[];
 }
 
-/** Folds the scanner's flat depth-scored items back into real nested lists, so a nested run carries its own
- *  marker and leaves the outer numbering alone — a hidden `li` still advances an `ol`'s counter. */
+// Real nested lists, not hidden rows: a hidden `li` still advances an `ol`'s counter.
 const List = ({ className, items }: ListProps) => {
   const rows: ReactNode[] = [];
   for (let at = 0; at < items.length; ) {
@@ -48,8 +81,6 @@ const Table = ({ block }: TableProps) => {
     return align ? alignClass[align] : "";
   });
   return (
-    // The panel is narrower than most tables a model writes, so the overflow is the table's own rather than the
-    // bubble's, and `min-w-full` lets columns size to content before they start wrapping.
     <div className="overflow-x-auto">
       <table className="min-w-full border-collapse">
         <thead>
@@ -79,7 +110,7 @@ const Table = ({ block }: TableProps) => {
 
 export interface CodeProps {
   className?: string;
-  /** The fence's info word, kept so a highlighter bound to this slot knows what it was handed. */
+  /** The fence's info word. */
   lang?: string;
   text: string;
 }
@@ -93,7 +124,6 @@ export const DefaultCode = ({ className, lang, text }: CodeProps) => (
   </pre>
 );
 
-/** The one place a fenced block is drawn, so an app binds its highlighter here instead of replacing the renderer. */
 const Code = createOverridable("AgentCode", DefaultCode);
 
 interface BlockProps {
@@ -104,8 +134,7 @@ const Block = ({ block }: BlockProps) => {
   switch (block.kind) {
     case "code":
       return <Code lang={block.lang} text={block.text} />;
-    // A heading renders as weighted text, not as `h1`-`h6`: model output would otherwise write its own outline
-    // into the host page's heading structure, which assistive technology reads as the page's own.
+    // Not `h1`-`h6`: model output would otherwise join the host page's outline, which assistive technology reads.
     case "heading":
       return <p className={cn("font-semibold", block.level <= 2 && "text-base")}>{spans(block.text)}</p>;
     case "list":
@@ -128,11 +157,7 @@ export interface MarkdownProps {
   children: string;
 }
 
-/**
- * The chat's own markdown renderer: React elements, never `dangerouslySetInnerHTML`, and no parser dependency.
- * `Bun.markdown` is the obvious candidate and cannot serve this — it is a runtime API the bundler passes through
- * verbatim, so it is undefined in the browser, and assistant text arrives here as SSE deltas the client accrues.
- */
+/** React elements, never `dangerouslySetInnerHTML`; not `Bun.markdown`, which is undefined in the browser. */
 export const DefaultMarkdown = ({ className, children }: MarkdownProps) => (
   <div className={cn("flex flex-col gap-2 break-words", className)}>
     {MarkdownBlocks.of(children).map((block, idx) => (

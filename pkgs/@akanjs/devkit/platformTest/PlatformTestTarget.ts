@@ -36,6 +36,15 @@ export interface PlatformRunContext {
 export abstract class PlatformTestTarget {
   static readonly installIdleMs = 5 * 60_000;
   static readonly testIdleMs = 2 * 60_000;
+  protected static readonly gitIdentityEnv = {
+    GIT_AUTHOR_NAME: "akan-test",
+    GIT_AUTHOR_EMAIL: "akan-test@localhost",
+    GIT_COMMITTER_NAME: "akan-test",
+    GIT_COMMITTER_EMAIL: "akan-test@localhost",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "init.defaultBranch",
+    GIT_CONFIG_VALUE_0: "main",
+  };
 
   abstract readonly platform: RemoteTestPlatform;
   abstract readonly policy: PlatformGatePolicy;
@@ -103,8 +112,7 @@ export abstract class PlatformTestTarget {
     const tolerable =
       failedScripts.length > 0 && failedScripts.every((pkg) => this.tolerateScriptFailures.includes(pkg));
     if (!tolerable) throw new Error(`bun install failed — see ${logPath}`);
-    //* A failed lifecycle script makes bun skip linking the workspace root's `.bin`, so every tool the suites
-    //* spawn from there disappears; a second pass without scripts links them.
+    //* A failed lifecycle script makes bun skip linking the root `.bin`; a second pass without scripts links it.
     envWarnings.push(`install script failed for ${failedScripts.join(", ")} — tolerated on ${this.platform}`);
     const relink = await this.exec(
       "bun install --frozen-lockfile --ignore-scripts",
@@ -116,5 +124,19 @@ export abstract class PlatformTestTarget {
 
   #logPath(context: PlatformRunContext, name: string) {
     return path.join(context.logDir, this.platform, `${name}.log`);
+  }
+
+  protected static async spawnText(command: string[], stdin?: string) {
+    const proc = Bun.spawn(command, {
+      stdin: stdin === undefined ? "ignore" : new Response(stdin),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { stdout, stderr, exitCode };
   }
 }

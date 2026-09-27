@@ -1,15 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { describe, expect, test } from "bun:test";
+import { readFile, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CodegenLock } from "./codegenLock";
+import { tempDirs } from "./testHelpers";
 
-const roots: string[] = [];
-const makeRoot = async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "akan-codegen-lock-"));
-  roots.push(root);
-  return root;
-};
+const makeRoot = tempDirs("akan-codegen-lock-");
 const seedHolder = async (root: string, holder: unknown) => {
   const lockPath = CodegenLock.pathIn(root);
   await Bun.write(lockPath, typeof holder === "string" ? holder : JSON.stringify(holder));
@@ -17,10 +12,6 @@ const seedHolder = async (root: string, holder: unknown) => {
 };
 /** A pid that cannot be alive: `kill(0)` on it is ESRCH on every platform this runs on. */
 const deadPid = 0x7ffffff;
-
-afterEach(async () => {
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
-});
 
 describe("CodegenLock", () => {
   test("serializes concurrent callers in the same process", async () => {

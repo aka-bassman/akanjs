@@ -1,9 +1,8 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
-import type { ClientSignal } from "akanjs/fetch";
-import { act, type ReactNode, Suspense } from "react";
-import { createRoot } from "react-dom/client";
+import { act, type ReactNode } from "react";
 import { AgenticSurface, AgentProvider } from "use-agentic";
+import { itemFixtureOf, l, mountSuspense, rootSliceArgs, setTestEnv, waitFor } from "../testHelpers.fixture";
 
 let AdminPanel: typeof import("./AdminPanel").default;
 let makeStore: (state?: Record<string, unknown>) => void;
@@ -12,31 +11,16 @@ let setState: (state: Record<string, unknown>) => void;
 
 const slice = { refName: "adminTestItem", sliceName: "adminTestItem", argLength: 2 };
 const components = { Template: {}, Unit: {}, View: {} };
-const l = Object.assign((key: string) => key, {
-  _: (key: string) => key,
-  rich: (key: string) => key,
-  trans: (translation: Record<string, string>) => translation.en,
-});
 
-/** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "adminpaneltest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "adminpaneltest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
-  const { Int, SLICE_META } = await import("akanjs/base");
+  setTestEnv("adminpaneltest");
+  const { Int } = await import("akanjs/base");
   const { ConstantRegistry, via } = await import("akanjs/constant");
+  const { Light, Insight, storeMaker } = await itemFixtureOf("adminTestItem");
   const { registerClientRuntime } = await import("akanjs/client");
-  const { st, store, StoreRegistry } = await import("akanjs/store");
+  const { st } = await import("akanjs/store");
   setState = (state) => (st as unknown as { set: (state: Record<string, unknown>) => void }).set(state);
-
-  const Input = via((f) => ({ title: f(String) }));
-  const Obj = via(Input, () => ({}));
-  const Light = via(Obj, ["title"] as const, () => ({}));
-  const Full = via(Obj, Light, () => ({}));
-  const Insight = via(Full, (f) => ({ count: f(Int, { default: 0 }) }));
-  // Mirrors a real `summary` model: the counter field names the query it counts, which is where a tile without
-  // an entry in `queryMap` finds its filter.
+  // A counter names the query it counts, which is where a tile with no `queryMap` entry finds its filter.
   const SummaryInput = via((f) => ({
     pendingItem: f(Int, { default: 0 }).meta({
       refName: "adminTestItem",
@@ -55,17 +39,10 @@ beforeAll(async () => {
   const SummaryFull = via(SummaryObj, SummaryLight, () => ({}));
   const SummaryInsight = via(SummaryFull, (f) => ({ count: f(Int, { default: 0 }) }));
   ConstantRegistry.buildModel("summary", SummaryInput, SummaryObj, SummaryFull, SummaryLight, SummaryInsight, {});
-  const cnst = ConstantRegistry.buildModel("adminTestItem", Input, Obj, Full, Light, Insight, {});
   calls = {
     adminTestItemList: mock(async () => [new Light({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada" })]),
     adminTestItemInsight: mock(async () => new Insight({ count: 1 })),
   };
-  const signalFetch = new Proxy(calls, {
-    get(target, key: string) {
-      target[key] ??= mock(async () => null);
-      return target[key];
-    },
-  });
   registerClientRuntime({
     usePage: () => ({ path: "/", lang: "en", l }),
     fetch: {
@@ -82,51 +59,15 @@ beforeAll(async () => {
       ]),
     },
   } as never);
-  const signal = {
-    refName: "adminTestItem",
-    _slice: { [SLICE_META]: {} },
-    cnst,
-    fetch: signalFetch,
-    serializedSignal: {
-      prefix: "adminTestItem",
-      endpoint: {},
-      slice: {
-        "": {
-          args: [
-            { type: "search", name: "queryKey", refName: "String", nullable: true },
-            { type: "search", name: "args", refName: "Any", nullable: true },
-          ],
-        },
-      },
-    },
-    slices: [],
-  } as unknown as ClientSignal<"adminTestItem">;
-  makeStore = (state: Record<string, unknown> = {}) => {
-    for (const call of Object.values(calls)) call.mockClear();
-    class ItemStore extends store(signal, () => state) {}
-    StoreRegistry.register(ItemStore);
-    StoreRegistry.build(StoreRegistry.merge("adminPanelRoot", ItemStore));
-  };
+  makeStore = storeMaker({ root: "adminPanelRoot", calls, sliceArgs: rootSliceArgs });
   ({ default: AdminPanel } = await import("./AdminPanel"));
 });
 
 /** The Data barrel is a React.lazy over a real dynamic import, so the first paint is the suspense fallback. */
-const waitFor = async (done: () => boolean) => {
-  for (let i = 0; i < 200 && !done(); i += 1)
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-};
-
 const mount = async (node: ReactNode, ready: () => boolean) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => {
-    root.render(<Suspense>{node}</Suspense>);
-  });
+  const mounted = await mountSuspense(node);
   await waitFor(ready);
-  return { container, unmount: () => act(() => root.unmount()) };
+  return mounted;
 };
 
 /** A tile's label span sits directly under whatever element the tile is — a button when it carries a filter. */
@@ -142,7 +83,6 @@ describe("Model.AdminPanel", () => {
     );
 
     expect(container.textContent).toContain("Admin Test Item");
-    // The dashboard reads `summary`, which only an app store declares — a panel without one still renders.
     expect(container.querySelector("[data-akan-error]")).toBeNull();
     expect(calls.adminTestItemList).toHaveBeenCalled();
     unmount();
@@ -189,8 +129,6 @@ describe("Model.AdminPanel", () => {
       () => calls.adminTestItemList.mock.calls.length > 0,
     );
 
-    // The filter select sits in the toolbar, left of the sort select. Rendering it through a wrapper this
-    // render creates would remount it on every store update and reset the filter the user picked.
     const filterSelect = container.querySelector("[data-open]");
     expect(filterSelect).not.toBeNull();
     await act(async () => {
@@ -208,8 +146,7 @@ describe("Model.AdminPanel", () => {
       () => calls.adminTestItemList.mock.calls.length > 0,
     );
 
-    // Read off the document, not the panel: the sort Select portals its options to `document.body` so no
-    // overflow ancestor clips them, and only the field itself is left inside the container.
+    // Off the document: the sort Select portals its options to `document.body`.
     expect(container.textContent ?? "").toContain("Latest");
     expect(document.body.textContent ?? "").toContain("Title Asc");
     unmount();
@@ -225,7 +162,6 @@ describe("Model.AdminPanel", () => {
       () => calls.adminTestItemList.mock.calls.length > 0,
     );
 
-    // The same names reach `readScreen`, so the agent can tie a control it reads to the tool that works it.
     expect(container.querySelector('[data-akan-action="refreshAdminTestItem"]')).not.toBeNull();
     expect(container.querySelector('[data-akan-action="setSortOfAdminTestItem"]')).not.toBeNull();
     const tools = surface.snapshot().tools;
@@ -238,10 +174,7 @@ describe("Model.AdminPanel", () => {
       "setSortOfAdminTestItem",
       "setViewOfAdminTestItem",
     ]);
-    // No Template and no View component, so the panel draws neither editor nor detail and neither is published —
-    // the row's remove button is the one action it does draw.
     expect(tools.some((tool) => tool.name.endsWith("AdminTestItem") && tool.name.startsWith("edit"))).toBe(false);
-    // Row tools take an id, and this is where an agent reads one.
     expect(surface.read("adminTestItem.items")).toEqual({
       total: 1,
       items: [{ id: "aaaaaaaaaaaaaaaaaaaaaaaa", label: "Ada" }],
@@ -268,10 +201,8 @@ describe("Model.AdminPanel", () => {
     const names = () => surface.snapshot().tools.map((tool) => tool.name);
     expect(names()).toContain("newAdminTestItem");
     expect(names()).toContain("editAdminTestItem");
-    // The editor owns its own verbs, and no editor is on screen until one is opened.
     expect(names()).not.toContain("submitAdminTestItem");
     expect(names()).not.toContain("cancelEditOfAdminTestItem");
-    // Still no View component, so the detail verbs stay unpublished.
     expect(names()).not.toContain("viewAdminTestItem");
     expect(names()).not.toContain("closeViewOfAdminTestItem");
 
@@ -298,8 +229,6 @@ describe("Model.AdminPanel", () => {
 
     expect(container.textContent).toContain("Total Item");
     expect(container.textContent).toContain("7");
-    // The tag is what says whether the tile applies a filter. `plainItem` is named by neither the map nor a
-    // field declaration, so it counts something this listing cannot narrow to and stays inert.
     expect(tileOf(container, "Total Item")?.tagName).toBe("BUTTON");
     expect(tileOf(container, "Plain Item")?.tagName).toBe("DIV");
     unmount();
@@ -317,7 +246,6 @@ describe("Model.AdminPanel", () => {
         queryMap={{
           recentItem: {
             queryKey: "byTitle",
-            // A thunk is how an arg relative to now stays current; it must be read on click, not at declaration.
             args: () => {
               readAt += 1;
               return [`Ada-${readAt}`];
@@ -336,11 +264,8 @@ describe("Model.AdminPanel", () => {
     });
     await waitFor(() => calls.adminTestItemList.mock.calls.length > 0);
 
-    // The resolved array reaches the wire — a thunk would have serialized to the literal "undefined".
     expect(calls.adminTestItemList.mock.calls[0]?.slice(0, 5)).toEqual(["byTitle", ["Ada-1"], 0, 20, "latest"]);
     expect(readAt).toBe(1);
-    // The tile the filter came from reads as the active one, which needs the dashboard to survive the re-render
-    // the request causes.
     expect(tileOf(container, "Recent Item")?.className).toContain("border-primary");
     unmount();
     setState({ summary: undefined });
@@ -377,7 +302,6 @@ describe("Model.AdminPanel", () => {
       () => calls.adminTestItemList.mock.calls.length > 0,
     );
     const inputValues = () => [...container.querySelectorAll("input")].map((input) => input.value);
-    // Nothing to fill yet: the toolbar shows arg controls only once a filter that takes args is applied.
     expect(inputValues()).toEqual([]);
 
     await act(async () => {
@@ -385,7 +309,6 @@ describe("Model.AdminPanel", () => {
     });
     await waitFor(() => calls.adminTestItemList.mock.calls.length > 1);
 
-    // The filter is applied to the listing in place, and its args are visible and editable rather than opaque.
     expect(calls.adminTestItemList.mock.calls.at(-1)?.slice(0, 3)).toEqual(["byStatuses", [["prepare"]], 0]);
     expect(inputValues()).toEqual(["prepare"]);
     unmount();
@@ -405,7 +328,6 @@ describe("Model.AdminPanel", () => {
       () => calls.adminTestItemList.mock.calls.length > 0,
     );
 
-    // `otherItem` counts another model's rows, so it narrows nothing here and stays inert.
     expect(tileOf(container, "Pending Item")?.tagName).toBe("BUTTON");
     expect(tileOf(container, "Other Item")?.tagName).toBe("DIV");
 
@@ -470,7 +392,6 @@ describe("Model.AdminPanel", () => {
         slice={slice}
         components={components}
         summaryColumns={["pendingItem"]}
-        // The shape a `.meta(...)` declaration already has: forwarding one needs no renaming at the call site.
         queryMap={{ pendingItem: { queryKey: "byTitle", queryArgs: () => ["FromMeta"] } }}
         init={{ limit: 20 }}
       />,

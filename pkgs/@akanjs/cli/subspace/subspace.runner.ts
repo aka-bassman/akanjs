@@ -61,8 +61,7 @@ export class SubspaceRunner extends runner("subspace") {
 
   async status(workspace: Workspace, names: string[]) {
     const { subspaces, branch } = await this.subspaces(workspace, names);
-    //? Sequentially: every one of these fetches into the same object store, and concurrent fetches
-    //? contend on the same index lock.
+    //? Sequential: every one fetches into the same object store, and concurrent fetches contend on its index lock.
     const statuses = [];
     for (const subspace of subspaces) statuses.push(await subspace.status(branch));
     return statuses;
@@ -90,13 +89,8 @@ export class SubspaceRunner extends runner("subspace") {
     return await subspace.pull(branch, { adoptLibs });
   }
 
-  /**
-   * This workspace's env values for one subspace's slice, sent to that subspace's own cloud workspace.
-   *
-   * The slice is the one a push ships — the declared apps and the libraries their closure pulls in — because
-   * an archive is replaced whole: uploading the workspace's other apps would hand one customer every other
-   * customer's secrets, and uploading less than the slice would leave the deployment short of a value.
-   */
+  // The slice a push ships: an archive is replaced whole, so more would hand one customer every other customer's
+  // secrets, and less would leave the deployment short of a value.
   async uploadEnv(
     workspace: Workspace,
     name: string,
@@ -124,8 +118,7 @@ export class SubspaceRunner extends runner("subspace") {
     );
     if (!asked) return { name: subspace.name, workspaceId, host, apps, libs: [], outcome: "cancelled", files: [] };
     const { libs } = await subspace.slice();
-    // Loaded here rather than declared as a dependency: CloudScript reaches the ai and build stacks, which
-    // every other `akan subspace` action would then pay for at import.
+    // Lazy: CloudScript reaches the ai and build stacks, which every other `akan subspace` action would pay for.
     const { CloudScript } = await import("../cloud/cloud.script");
     const { files } = await CommandContainer.get(CloudScript).uploadEnv(workspace, {
       host,

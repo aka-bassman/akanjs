@@ -5,10 +5,8 @@ describe("CodeTuiCommands", () => {
   test("the menu opens only while a bare command is being typed", () => {
     expect(CodeTuiCommands.prefixOf("/mo", 3)).toBe("mo");
     expect(CodeTuiCommands.prefixOf("/", 1)).toBe("");
-    // Once the command is chosen the rest is its argument, and a menu there covers the transcript for nothing.
     expect(CodeTuiCommands.prefixOf("/model deepseek/x", 17)).toBeUndefined();
     expect(CodeTuiCommands.prefixOf("add a comment module", 5)).toBeUndefined();
-    // The caret is what decides, not the text: editing back into the command reopens the menu.
     expect(CodeTuiCommands.prefixOf("/model deepseek/x", 3)).toBe("mo");
   });
 

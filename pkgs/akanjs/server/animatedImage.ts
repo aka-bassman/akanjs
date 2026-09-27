@@ -1,9 +1,4 @@
-/**
- * `Bun.Image.metadata()` reports only `{ width, height, format }` — there is no frame count — and an
- * animated GIF decodes to its first frame without erroring. So an optimizer that re-encodes whatever
- * decodes would silently drop the animation. These readers answer the question from the container bytes
- * instead, so an animated source can be passed through untouched.
- */
+// Bun.Image.metadata() has no frame count and decodes an animated GIF to frame 1, so read the container bytes.
 
 /** Sub-blocks are a `[length][bytes]…[0]` chain, so a frame's payload cannot be skipped by size alone. */
 const skipGifSubBlocks = (buffer: Buffer, start: number): number => {
@@ -19,10 +14,7 @@ const skipGifSubBlocks = (buffer: Buffer, start: number): number => {
 
 const colorTableSize = (packed: number): number => ((packed & 0x80) === 0 ? 0 : 3 * 2 ** ((packed & 0x07) + 1));
 
-/**
- * Walks the GIF block stream to count image descriptors. Counting raw `0x2C` bytes would overcount —
- * the byte occurs freely inside colour tables and LZW payloads — so every block has to be stepped over.
- */
+// Raw `0x2C` counts overcount (the byte occurs in colour tables and LZW data), so every block is stepped over.
 const hasMultipleGifFrames = (buffer: Buffer): boolean => {
   if (buffer.length < 13) return false;
   let offset = 6;
@@ -77,8 +69,7 @@ export const isAnimatedImage = (buffer: Buffer, contentType: string): boolean =>
     if (contentType === "image/png") return hasPngAnimationControl(buffer);
     return false;
   } catch {
-    // A malformed container is not something to answer confidently — treat it as animated so the
-    // optimizer passes the original through instead of re-encoding a file it failed to read.
+    // Malformed: report animated so the optimizer passes the original through instead of re-encoding it.
     return true;
   }
 };

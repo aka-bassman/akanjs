@@ -4,9 +4,18 @@ import type { AgentRefusal } from "akanjs/signal";
 import { databaseStateModelTypes, databaseStateNames } from "../databaseStateNames";
 import type { SliceStateKey } from "../state";
 import type { StoreInstance } from "../storeInstance";
-import type { SerializedStoreState } from "./types";
 
-/** Which of the model's classes each slice state key holds. The rest hold a primitive or a query descriptor. */
+export interface SerializedStoreState {
+  /** Read off the live value — stores declare no types — so a `null`-initialized key says nothing. */
+  type: "string" | "number" | "boolean" | "date" | "list" | "map" | "object" | "unknown";
+  /** The model a read of this key is masked by. */
+  refName?: string;
+  modelType?: "input" | "full" | "light" | "insight";
+  /** A `search()` or `computed()` key; writing it throws. */
+  derived: boolean;
+  role?: SliceStateKey;
+}
+
 const sliceStateModelTypes: { [key in SliceStateKey]?: SerializedStoreState["modelType"] } = {
   defaultModel: "full",
   modelList: "light",
@@ -15,21 +24,7 @@ const sliceStateModelTypes: { [key in SliceStateKey]?: SerializedStoreState["mod
   modelInsight: "insight",
 };
 
-/**
- * Every store key an in-page agent may read, derived on the client from the store the browser is already running.
- *
- * Keys only — nothing here becomes a tool. What an agent may *do* is declared where the screen declares it, with
- * `st.tool` beside the control that does the same thing for the user; a store method nobody declared is the app's
- * own vocabulary and says nothing about what this screen offers. Deriving tools from the store published the
- * bundle rather than the screen, and every lever the screen did not have was noise the model paid for.
- *
- * Reads stay store-derived because a read has to be masked and only the store declares which model masks it. Which
- * of these keys is readable at a given moment is liveness rather than this catalogue — the keys the mounted
- * components subscribe. Plumbing in the base store opts out at the call site with `{ agent: false }`.
- *
- * It is derived on the client rather than shipped from the server: the store classes are in the bundle already,
- * and a second copy over the wire is a second thing to keep in step.
- */
+/** Every store key an agent may read and the model its reads are masked by. Keys only: tools come from `st.tool`. */
 export class StoreCatalogue {
   readonly state: { [key: string]: SerializedStoreState };
   readonly refusals: AgentRefusal[] = [];
@@ -64,12 +59,6 @@ export class StoreCatalogue {
     return Object.fromEntries(entries);
   }
 
-  /**
-   * The model each generated state key holds, taken from the declaration rather than from the value.
-   *
-   * A read has to be masked by the model, and the value cannot supply it: `immerify` copies a form into a plain
-   * object, so `<model>Form` — an `Input` holding whatever the user typed — arrives with its class already gone.
-   */
   static #declaredStateModels() {
     const declared = new Map<string, { refName: string; modelType: SerializedStoreState["modelType"] }>();
     for (const refName of ConstantRegistry.database.keys()) {
@@ -103,7 +92,6 @@ export class StoreCatalogue {
     }
   }
 
-  /** `DataList` and `dayjs` are the two objects a store holds that are not what `typeof` says they are. */
   static #isList(value: object) {
     return "values" in value && Array.isArray((value as { values: unknown }).values);
   }

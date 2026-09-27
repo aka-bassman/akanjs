@@ -1,7 +1,7 @@
 import { getApiPrefix } from "akanjs/base";
 import { parseAkanI18nEnv } from "akanjs/common";
-import { AkanResponse } from "./akanResponse";
-import type { WebProxy } from "./types";
+import { getPublicRequestUrl, isInternalProxyRequest } from "./hostBasePathWebProxy";
+import { AkanResponse, type WebProxy } from "./types";
 
 function getLocale(request: Bun.BunRequest): string {
   const i18n = parseAkanI18nEnv();
@@ -74,32 +74,16 @@ export class LocaleWebProxy implements WebProxy {
 }
 
 function getProxyTargetUrl(requestUrl: URL): URL {
-  if (requestUrl.pathname !== "/__rsc") return requestUrl;
+  if (!isInternalProxyRequest(requestUrl)) return requestUrl;
   const target = requestUrl.searchParams.get("url");
   return target ? new URL(target, requestUrl.origin) : requestUrl;
-}
-
-function getPublicRequestUrl(request: Bun.BunRequest): URL {
-  const url = new URL(request.url);
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  const proto = request.headers.get("x-forwarded-proto");
-  if (host) url.host = host;
-  if (host && !host.includes(":")) url.port = "";
-  if (proto) url.protocol = proto.endsWith(":") ? proto : `${proto}:`;
-  return url;
-}
-
-function isInternalProxyRequest(requestUrl: URL): boolean {
-  return requestUrl.pathname === "/__rsc";
 }
 
 function isWellKnownRequest(pathname: string): boolean {
   return pathname === "/.well-known" || pathname.startsWith("/.well-known/");
 }
 
-// API routes must not be locale-redirected: `POST /api/x` should hit the endpoint, not 307 to `/en/api/x`
-// (which 404s and makes raw HTTP endpoint checks impossible). Read from the env rather than taken from the
-// server, the way this proxy already reads its locales — it runs per request with no handle on either.
+// Read from the env, not the server: this proxy runs per request with no handle on it.
 function isApiRequest(pathname: string): boolean {
   const prefix = getApiPrefix();
   return pathname === prefix || pathname.startsWith(`${prefix}/`);

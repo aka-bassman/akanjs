@@ -1,31 +1,18 @@
 import type { RecipeInfo, RecipeSource } from "./recipeScanner";
 
-// recipeScanner 는 상단에서 typescript(~65MB)를 끌어온다. 이 모듈은 executors(CLI 엔트리 그래프)에
-// 상주하므로 스캔 스택은 첫 사용 시점에 지연 로드한다 — 정적 import 로 되돌리면 entryModuleGraph 테스트가 깨진다.
+// Lazy: recipeScanner loads `typescript` (~65MB) and this module sits in the CLI entry graph (entryModuleGraph test).
 let recipeScannerLoad: Promise<typeof import("./recipeScanner")> | null = null;
 const loadRecipeScanner = () => (recipeScannerLoad ??= import("./recipeScanner"));
 
-/**
- * agentsIndex — 스코프별 에이전트 색인의 단일 렌더러.
- *
- * 색인은 소유 경계로 쪼갠다: 루트 AGENTS.md 는 프레임워크(akanjs/ui) 레시피만 싣고, 각 앱/lib 은
- * 자기 스코프에서 import 가능한 레시피(own + 의존 lib)를 자기 AGENTS.md 에 싣는다. 항상 로드되는
- * 컨텍스트가 앱 수에 비례해 커지는 것과, import 불가능한 이웃 앱 레시피가 환상을 유발하는 것을 막는다.
- *
- * 신선도는 두 지점이 보장한다: `SysExecutor.scan(write)` 가 재생성하고(akan sync/build/start 가 전부
- * 지나가는 길목), `akan lint` 가 스캔 결과와 커밋된 블록을 비교해 stale 이면 실패시킨다.
- */
+//* Split by ownership (root: framework recipes; each app/lib: what it may import), so always-loaded context does not
+//* grow with the app count and no unimportable neighbour recipe is listed.
 
 export const AGENT_BLOCK_START = "<!-- akan:agent:start -->";
 export const AGENT_BLOCK_END = "<!-- akan:agent:end -->";
 
 const AGENT_VERSION_PREFIX = "<!-- akan:agent:version ";
 
-/**
- * The generating release, stamped into the workspace block. Nothing re-runs `akan agent install` on its own, so
- * without a stamp a workspace carrying conventions from four releases ago is indistinguishable from a current one —
- * `akan doctor` compares this against the installed devkit and says so.
- */
+/** Nothing re-runs `akan agent install` on its own, so `akan doctor` compares this stamp against the installed devkit. */
 export const stampBlockVersion = (block: string, version: string): string =>
   `${AGENT_VERSION_PREFIX}${version} -->\n\n${block}`;
 
@@ -36,7 +23,7 @@ export const extractBlockVersion = (content: string): string | null =>
 /** The running `@akanjs/devkit` version; null when its package.json is unreadable, which must not fail a doctor run. */
 export const readDevkitVersion = async (): Promise<string | null> => {
   const { readFile } = await import("node:fs/promises");
-  const { getDirname } = await import("./getDirname");
+  const { getDirname } = await import("./fileSys");
   try {
     const raw = await readFile(`${getDirname(import.meta.url)}/package.json`, "utf-8");
     return (JSON.parse(raw) as { version?: string }).version ?? null;
@@ -97,10 +84,7 @@ export const renderRecipeEntries = (recipes: RecipeInfo[]): string => {
     .join("\n\n");
 };
 
-/**
- * Every recipe source importable from the scope: its own `ui/Recipe/` plus each dependency lib's.
- * Framework recipes are excluded on purpose — they live in the root AGENTS.md, valid for every scope.
- */
+/** Own `ui/Recipe/` plus each dependency lib's; framework recipes live in the root AGENTS.md instead. */
 export const collectScopeRecipeSources = async (
   workspaceRoot: string,
   scope: AgentsIndexScope,

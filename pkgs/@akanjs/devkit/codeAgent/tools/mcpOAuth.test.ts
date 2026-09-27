@@ -4,30 +4,31 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CodeAgentMcpServerRef } from "akanjs/common";
+import { ConfigLock } from "../../cloud/configLock";
 import { McpOAuth } from "./McpOAuth";
 import { McpSignIn } from "./McpSignIn";
 import { McpTokenStore } from "./McpTokenStore";
 import { McpToolPack } from "./McpToolPack";
 
-/**
- * One process playing the whole other side: an MCP resource server, its RFC 9728 metadata, the authorization
- * server named by it, dynamic client registration, and the token endpoint.
- *
- * Built as a real server rather than as stubbed fetches because what is being tested is a wire contract — the
- * challenge header, the well-known paths, the PKCE round trip — and a stub can only ever assert the shape this
- * code already believes in.
- */
+// A real server, not stubbed fetches: the wire contract (challenge header, well-known paths, PKCE) is under test.
 class FakeProvider {
   readonly server: ReturnType<typeof Bun.serve>;
   readonly issued: string[] = [];
   readonly registrations: { redirect_uris?: string[] }[] = [];
-  /** code -> the challenge it was issued against, which the token endpoint checks the verifier against. */
+  readonly sessions: string[] = [];
+  readonly calls: { token: string; session: string | null }[] = [];
   readonly #codes = new Map<string, { challenge: string; resource: string | null }>();
   #next = 0;
-  /** Set to refuse S256, which a client must treat as "do not send a code" rather than downgrade. */
   methods: string[] = ["S256"];
   registerable = true;
   refreshable = true;
+  refreshExpiresIn: number | undefined = 3600;
+  refusing = false;
+  refreshes = 0;
+  refreshDelayMs = 0;
+  rotating: boolean = false;
+  reused = false;
+  readonly #spent = new Set<string>();
 
   constructor() {
     this.server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (request) => this.#route(request) });
@@ -66,7 +67,7 @@ class FakeProvider {
 
   async #mcp(request: Request) {
     const token = request.headers.get("authorization")?.replace(/^Bearer /, "");
-    if (!token || !this.issued.includes(token))
+    if (!token || !this.issued.includes(token) || this.refusing)
       return Response.json(
         { error_description: "Authentication is required to use this MCP server." },
         {
@@ -77,8 +78,14 @@ class FakeProvider {
         },
       );
     const body = (await request.json()) as { id?: number; method?: string };
-    if (body.method === "initialize")
-      return Response.json({ jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-06-18" } });
+    if (body.method === "initialize") {
+      const session = `session-${this.sessions.length + 1}`;
+      this.sessions.push(session);
+      return Response.json(
+        { jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-06-18" } },
+        { headers: { "mcp-session-id": session } },
+      );
+    }
     if (body.method === "tools/list")
       return Response.json({
         jsonrpc: "2.0",
@@ -87,6 +94,10 @@ class FakeProvider {
           tools: [{ name: "search", description: "search it", inputSchema: { type: "object", properties: {} } }],
         },
       });
+    if (body.method === "tools/call") {
+      this.calls.push({ token, session: request.headers.get("mcp-session-id") });
+      return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: "found" }] } });
+    }
     return Response.json({ jsonrpc: "2.0", id: body.id, result: {} });
   }
 
@@ -97,7 +108,6 @@ class FakeProvider {
     return Response.json({ client_id: `client-${this.#next}`, redirect_uris: body.redirect_uris });
   }
 
-  /** Stands in for the consent screen: it redirects straight back, which is what a browser would end up doing. */
   #authorize(url: URL) {
     const redirect = url.searchParams.get("redirect_uri") ?? "";
     const challenge = url.searchParams.get("code_challenge") ?? "";
@@ -113,10 +123,17 @@ class FakeProvider {
   async #token(request: Request) {
     const form = new URLSearchParams(await request.text());
     if (form.get("grant_type") === "refresh_token") {
-      if (!this.refreshable) return Response.json({ error: "invalid_grant" }, { status: 400 });
+      this.refreshes += 1;
+      const presented = form.get("refresh_token") ?? "";
+      const reuse = this.rotating && this.#spent.has(presented);
+      if (this.rotating) this.#spent.add(presented);
+      await Bun.sleep(this.refreshDelayMs);
+      if (reuse) this.reused = true;
+      if (!this.refreshable || reuse) return Response.json({ error: "invalid_grant" }, { status: 400 });
       const access = `access-refreshed-${this.issued.length + 1}`;
       this.issued.push(access);
-      return Response.json({ access_token: access, refresh_token: "refresh-2", expires_in: 3600 });
+      const refresh = this.rotating ? `refresh-for-${access}` : "refresh-2";
+      return Response.json({ access_token: access, refresh_token: refresh, expires_in: this.refreshExpiresIn });
     }
     const issued = this.#codes.get(form.get("code") ?? "");
     if (!issued) return Response.json({ error: "invalid_grant" }, { status: 400 });
@@ -140,16 +157,9 @@ const refOf = (patch: Partial<CodeAgentMcpServerRef> = {}): CodeAgentMcpServerRe
   ...patch,
 });
 
-/** A browser, reduced to what the flow needs of one: visit the url and follow where it points. */
 const browser = (url: string) => void fetch(url).catch(() => undefined);
 
-/**
- * The credential directory is moved off the real home for the whole file.
- *
- * Through `AKAN_CODE_HOME` rather than `HOME`: Bun resolves `os.homedir()` once and caches it, so `HOME`
- * written after anything in the import graph has read it changes nothing — and a test that quietly fell back
- * would write its tokens into the developer's own `~/.akan/code`.
- */
+// AKAN_CODE_HOME, not HOME: Bun caches os.homedir(), so a late HOME write would land tokens in the real ~/.akan/code.
 beforeAll(() => {
   realHome = process.env.AKAN_CODE_HOME;
   home = mkdtempSync(path.join(tmpdir(), "akan-mcpauth-"));
@@ -206,7 +216,6 @@ describe("MCP OAuth discovery", () => {
     });
   });
 
-  /** OAuth 2.1 drops `plain`; a downgrade here is one a network attacker would pick on the client's behalf. */
   test("a server that will not do S256 is refused rather than downgraded", async () => {
     provider.methods = ["plain"];
     await expect(McpOAuth.discover(provider.mcpUrl)).rejects.toThrow(/S256/);
@@ -228,7 +237,6 @@ describe("MCP sign-in", () => {
     expect(auth.accessToken).toBe("access-1");
     expect(auth.issuer).toBe(provider.origin);
     expect(auth.resource).toBe(provider.mcpUrl);
-    // The client was registered on demand, against the loopback the flow actually bound.
     expect(provider.registrations).toHaveLength(1);
     expect(provider.registrations[0]?.redirect_uris?.[0]).toBe(auth.redirectUri);
     expect(McpTokenStore.read("fake")?.accessToken).toBe("access-1");
@@ -264,8 +272,16 @@ describe("MCP sign-in", () => {
     const auth = await McpSignIn.run(refOf(), { open: browser });
     McpTokenStore.write("fake", { ...auth, expiresAt: Date.now() - 1 });
     expect(await McpSignIn.token(refOf())).toBe("access-refreshed-2");
-    // The rotated refresh token replaced the spent one, or the next refresh would be refused.
     expect(McpTokenStore.read("fake")?.refreshToken).toBe("refresh-2");
+  });
+
+  test("a refreshed token the server gave no lifetime is kept until refused, not refreshed on every connect", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    McpTokenStore.write("fake", { ...auth, expiresAt: Date.now() - 1 });
+    provider.refreshExpiresIn = undefined;
+    expect(await McpSignIn.token(refOf())).toBe("access-refreshed-2");
+    expect(await McpSignIn.token(refOf())).toBe("access-refreshed-2");
+    expect(McpTokenStore.read("fake")?.expiresAt).toBeUndefined();
   });
 
   test("a refresh the server refuses reports no token rather than throwing", async () => {
@@ -275,6 +291,189 @@ describe("MCP sign-in", () => {
     const notices: string[] = [];
     expect(await McpSignIn.token(refOf(), (message) => notices.push(message))).toBeUndefined();
     expect(notices.join(" ")).toContain("fake");
+  });
+
+  const connect = async (notices: string[] = []) =>
+    await McpToolPack.connect({
+      workspaceRoot: home,
+      profile: { name: "t", tools: { mcp: [refOf()] } } as never,
+      onNotice: (message) => notices.push(message),
+    });
+
+  test("a token refused before its expiry is refreshed once, and the connect goes through with the new one", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    provider.issued.splice(provider.issued.indexOf(auth.accessToken), 1);
+    const notices: string[] = [];
+    const pack = await connect(notices);
+    try {
+      expect(pack?.status[0]).toMatchObject({ auth: "authorized" });
+      expect(pack?.toolNames).toEqual(["mcp__fake__search"]);
+      expect(McpTokenStore.read("fake")).toMatchObject({
+        accessToken: "access-refreshed-1",
+        refreshToken: "refresh-2",
+      });
+      expect(notices).toEqual([]);
+    } finally {
+      pack?.close();
+    }
+  });
+
+  test("a refused token whose refresh fails is a sign-in, not a loop", async () => {
+    await McpSignIn.run(refOf(), { open: browser });
+    provider.issued.splice(0);
+    provider.refreshable = false;
+    const notices: string[] = [];
+    const pack = await connect(notices);
+    try {
+      expect(pack?.status[0]).toMatchObject({ auth: "required", tools: [] });
+      expect(notices.at(-1)).toContain("/mcp login fake");
+    } finally {
+      pack?.close();
+    }
+  });
+
+  test("a refreshed token that is refused too is not refreshed again", async () => {
+    await McpSignIn.run(refOf(), { open: browser });
+    provider.refusing = true;
+    const pack = await connect();
+    try {
+      expect(pack?.status[0]).toMatchObject({ auth: "required", tools: [] });
+      expect(provider.issued).toEqual(["access-1", "access-refreshed-2"]);
+    } finally {
+      pack?.close();
+    }
+  });
+
+  type McpExecute = (id: string, params: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
+  const search = async (pack: McpToolPack | undefined) => {
+    const tools = new Map<string, McpExecute>();
+    const extension = pack?.extension();
+    if (extension && "factory" in extension)
+      extension.factory({
+        registerTool: (tool: { name: string; execute: McpExecute }) => tools.set(tool.name, tool.execute),
+      } as never);
+    const execute = tools.get("mcp__fake__search");
+    if (!execute) throw new Error("the pack published no search tool");
+    return await execute("call", {});
+  };
+
+  test("a token refused mid-session is refreshed once, and the call is retried on a new session with the new token", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    const pack = await connect();
+    try {
+      provider.issued.splice(provider.issued.indexOf(auth.accessToken), 1);
+      expect((await search(pack)).content[0]?.text).toBe("found");
+      expect(provider.refreshes).toBe(1);
+      expect(provider.calls).toEqual([{ token: "access-refreshed-1", session: "session-2" }]);
+      expect(McpTokenStore.read("fake")).toMatchObject({
+        accessToken: "access-refreshed-1",
+        refreshToken: "refresh-2",
+      });
+    } finally {
+      pack?.close();
+    }
+  });
+
+  test("calls refused together share one refresh and one new session", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    const pack = await connect();
+    try {
+      provider.issued.splice(provider.issued.indexOf(auth.accessToken), 1);
+      const answers = await Promise.all([search(pack), search(pack), search(pack)]);
+      expect(answers.map((answer) => answer.content[0]?.text)).toEqual(["found", "found", "found"]);
+      expect(provider.refreshes).toBe(1);
+      expect(provider.sessions).toEqual(["session-1", "session-2"]);
+    } finally {
+      pack?.close();
+    }
+  });
+
+  test("a sub-agent's pack refused at the same moment waits on the same refresh", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    const [parent, child] = [await connect(), await connect()];
+    try {
+      provider.issued.splice(provider.issued.indexOf(auth.accessToken), 1);
+      provider.refreshDelayMs = 100;
+      const answers = await Promise.all([search(parent), search(child)]);
+      expect(answers.map((answer) => answer.content[0]?.text)).toEqual(["found", "found"]);
+      expect(provider.refreshes).toBe(1);
+    } finally {
+      parent?.close();
+      child?.close();
+    }
+  });
+
+  test("a session connecting with an expired token while a call is refused shares one refresh with it", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    McpTokenStore.write("fake", { ...auth, expiresAt: Date.now() - 1 });
+    provider.refreshDelayMs = 50;
+    const tokens = await Promise.all([McpSignIn.token(refOf()), McpSignIn.retryToken(refOf(), auth.accessToken)]);
+    expect(tokens).toEqual(["access-refreshed-2", "access-refreshed-2"]);
+    expect(provider.refreshes).toBe(1);
+  });
+
+  test("a mid-session refusal whose refresh fails names /mcp login, and the next call does not refresh again", async () => {
+    await McpSignIn.run(refOf(), { open: browser });
+    const notices: string[] = [];
+    const pack = await connect(notices);
+    try {
+      provider.issued.splice(0);
+      provider.refreshable = false;
+      await expect(search(pack)).rejects.toThrow("/mcp login fake");
+      await expect(search(pack)).rejects.toThrow("/mcp login fake");
+      expect(provider.refreshes).toBe(1);
+      expect(notices.join(" ")).toContain("needs signing in again");
+    } finally {
+      pack?.close();
+    }
+  });
+
+  test("a server whose token cannot be renewed mid-session reads as a failed connect does, until a sign-in and a reload", async () => {
+    await McpSignIn.run(refOf(), { open: browser });
+    const pack = await connect();
+    try {
+      expect(pack?.status[0]).toMatchObject({ auth: "authorized" });
+      provider.issued.splice(0);
+      provider.refreshable = false;
+      await expect(search(pack)).rejects.toThrow("/mcp login fake");
+      expect(pack?.status[0]).toMatchObject({ auth: "required", tools: ["mcp__fake__search"] });
+    } finally {
+      pack?.close();
+    }
+    provider.refreshable = true;
+    await McpSignIn.run(refOf(), { open: browser });
+    const reloaded = await connect();
+    try {
+      expect(reloaded?.status[0]).toMatchObject({ auth: "authorized" });
+      expect((await search(reloaded)).content[0]?.text).toBe("found");
+    } finally {
+      reloaded?.close();
+    }
+  });
+
+  test("a server that refuses the renewed token too reads as needing a sign-in", async () => {
+    await McpSignIn.run(refOf(), { open: browser });
+    const pack = await connect();
+    try {
+      provider.refusing = true;
+      await expect(search(pack)).rejects.toThrow("/mcp login fake");
+      expect(pack?.status[0]).toMatchObject({ auth: "required" });
+    } finally {
+      pack?.close();
+    }
+  });
+
+  test("a refreshed token the server refuses too ends the call in /mcp login after one refresh", async () => {
+    await McpSignIn.run(refOf(), { open: browser });
+    const pack = await connect();
+    try {
+      provider.refusing = true;
+      await expect(search(pack)).rejects.toThrow("/mcp login fake");
+      expect(provider.refreshes).toBe(1);
+      expect(provider.issued).toEqual(["access-1", "access-refreshed-2"]);
+    } finally {
+      pack?.close();
+    }
   });
 
   test("a provider that registers no clients says what to declare instead", async () => {
@@ -321,4 +520,93 @@ describe("the token file", () => {
     expect(McpTokenStore.read("fake")).toBeUndefined();
     expect(McpTokenStore.names()).toEqual([]);
   });
+});
+
+describe("two akan code processes", () => {
+  const lines = (stream: ReadableStream<Uint8Array>) => {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    return async () => {
+      while (!buffer.includes("\n")) {
+        const chunk = await reader.read();
+        if (chunk.done) return buffer;
+        buffer += decoder.decode(chunk.value, { stream: true });
+      }
+      const [line = "", ...rest] = buffer.split("\n");
+      buffer = rest.join("\n");
+      return line;
+    };
+  };
+
+  // A separate `bun` per session, pointed at this file's AKAN_CODE_HOME so both read and write the one token file.
+  const session = async () => {
+    const script = path.join(home, `session-${crypto.randomUUID()}.ts`);
+    await Bun.write(
+      script,
+      `import { McpToolPack } from ${JSON.stringify(path.resolve(import.meta.dir, "McpToolPack.ts"))};
+import { McpTokenStore } from ${JSON.stringify(path.resolve(import.meta.dir, "McpTokenStore.ts"))};
+if (!McpTokenStore.file().startsWith(${JSON.stringify(home)})) throw new Error("refusing to touch " + McpTokenStore.file());
+const pack = await McpToolPack.connect({
+  workspaceRoot: ${JSON.stringify(home)},
+  profile: { name: "t", tools: { mcp: [${JSON.stringify(refOf())}] } },
+});
+let execute;
+const extension = pack?.extension();
+if (extension && "factory" in extension)
+  extension.factory({ registerTool: (tool) => { if (tool.name === "mcp__fake__search") execute = tool.execute; } });
+process.stdout.write("ready\\n");
+for await (const line of console) if (line.trim() === "go") break;
+const answer = await execute("call", {}).then((result) => result.content[0].text, (error) => "error: " + String(error));
+process.stdout.write(JSON.stringify(answer) + "\\n");
+pack?.close();
+process.exit(0);
+`,
+    );
+    const proc = Bun.spawn(["bun", script], {
+      env: { ...process.env, AKAN_CODE_HOME: home },
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return { proc, line: lines(proc.stdout) };
+  };
+
+  test("a refresh waits for the lock another session holds, then takes the token that session stored", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    const taken = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    const elsewhere = ConfigLock.run(McpTokenStore.lockFile(), async () => {
+      taken.resolve();
+      await released.promise;
+    });
+    await taken.promise;
+    const retried = McpSignIn.retryToken(refOf(), auth.accessToken);
+    McpTokenStore.write("fake", { ...auth, accessToken: "access-elsewhere", refreshToken: "refresh-elsewhere" });
+    released.resolve();
+    await elsewhere;
+    expect(await retried).toBe("access-elsewhere");
+    expect(provider.refreshes).toBe(0);
+  });
+
+  test("refused at the same moment, they make one refresh between them, and both calls go through", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    provider.rotating = true;
+    provider.refreshDelayMs = 300;
+    const sessions = [await session(), await session()];
+    try {
+      expect(await Promise.all(sessions.map(({ line }) => line()))).toEqual(["ready", "ready"]);
+      provider.issued.splice(provider.issued.indexOf(auth.accessToken), 1);
+      for (const { proc } of sessions) {
+        proc.stdin.write("go\n");
+        await proc.stdin.flush();
+      }
+      const answers = await Promise.all(sessions.map(({ line }) => line()));
+      expect(answers).toEqual(['"found"', '"found"']);
+      expect(provider.refreshes).toBe(1);
+      expect(provider.reused).toBe(false);
+    } finally {
+      for (const { proc } of sessions) proc.kill();
+    }
+  }, 30_000);
 });

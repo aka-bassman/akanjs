@@ -9,16 +9,8 @@ interface ClientState {
   decoder: TextDecoder;
 }
 
-/**
- * `akan code --rpc-listen <unix:PATH | tcp:[HOST:]PORT>` — the RPC host on a socket instead of stdio, so the agent
- * outlives the process driving it. A control plane that restarts reconnects and resumes with
- * `get_state { sinceSeq }`; the turn it was watching kept running in the meantime.
- *
- * One client at a time: a new connection replaces the old one, which is what a reconnecting control plane whose
- * previous socket has not timed out yet needs. TCP binds 127.0.0.1 unless a host is named, because the wire has
- * no authentication of its own — reach a pod through its unix socket and whatever the orchestrator already
- * authenticates.
- */
+// One client at a time: a reconnecting control plane replaces a socket that has not timed out yet.
+// TCP binds 127.0.0.1 unless a host is named, because the wire has no authentication of its own.
 export class CodeAgentRpcListener {
   readonly #host: CodeAgentRpcHost;
   readonly #address: CodeAgentRpcAddress;

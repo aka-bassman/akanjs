@@ -35,10 +35,6 @@ function subscribeSegment(segmentKey: string, listener: () => void): () => void 
   };
 }
 
-function getSegmentThenable(segmentKey: string): RscSegmentThenable | null {
-  return getStore().entries.get(segmentKey) ?? null;
-}
-
 export function hasAkanSegmentOutlet(segmentKey: string): boolean {
   return Boolean(getStore().listeners.get(segmentKey)?.size);
 }
@@ -62,7 +58,7 @@ export function resetAkanSegmentOutletPatches(): void {
 export function AkanSegmentOutlet({ segmentKey, children }: { segmentKey: string; children: ReactNode }): ReactNode {
   const patchedThenable = useSyncExternalStore(
     (listener) => subscribeSegment(segmentKey, listener),
-    () => getSegmentThenable(segmentKey),
+    () => getStore().entries.get(segmentKey) ?? null,
     () => null,
   );
   return patchedThenable ? use(patchedThenable) : children;

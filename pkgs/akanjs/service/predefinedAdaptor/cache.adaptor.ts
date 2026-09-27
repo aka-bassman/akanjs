@@ -50,9 +50,7 @@ export class RedisCache
   extends adapt("redisCache", ({ env }) => ({
     redis: env(async ({ redis = {} }: RedisEnv): Promise<Redis> => {
       const { Redis } = await import("ioredis");
-      // Credentials the app named in `option.ts` win over anything embedded in the URL, and are simply
-      // absent when it named none — an unauthenticated Redis is the local and in-cluster shape. They used
-      // to be declared on the env and read by nothing, so a password set here silently did not apply.
+      // `option.ts` credentials win over the URL's; none named is an unauthenticated (local, in-cluster) Redis.
       const client = new Redis(RedisCache.resolveUrl(), {
         lazyConnect: true,
         ...(redis.username ? { username: redis.username } : {}),
@@ -61,8 +59,7 @@ export class RedisCache
       await client.connect();
       return client;
     }),
-    // Every key, and the pubsub channels that read this, sit under the app and environment: one Redis shared by
-    // two apps, or by an app's debug and main, would otherwise hand each other sessions and room events.
+    // Keys and channels sit under app and environment, or two apps sharing a Redis would swap sessions and events.
     keyPrefix: env(() => {
       const { repoName, appName, environment } = getEnv();
       return `${repoName}:${appName}:${environment}:`;
@@ -70,11 +67,7 @@ export class RedisCache
   }))
   implements CacheAdaptor
 {
-  /**
-   * `REDIS_URI` names the server — `rediss://` for TLS, the account and the database number ride the URL. Only a
-   * development machine may go without: every instance of a deployed app must reach the same Redis, and a guessed
-   * host is a split brain that boots.
-   */
+  /** `REDIS_URI` (`rediss://` for TLS) is required outside local: a guessed host is a split brain that boots. */
   static resolveUrl() {
     if (process.env.REDIS_URI) return process.env.REDIS_URI;
     const { environment, operationMode, databaseMode } = getEnv();
@@ -86,8 +79,7 @@ export class RedisCache
     );
   }
 
-  //* Redis keeps bytes, so a value's type rides in front of it: `\0` and a type letter. A string that does not start
-  //* with `\0` is stored as itself — the common case, and the one anything else reading the key understands.
+  //* A value's type rides in front as `\0` plus a type letter; a string not starting with `\0` is stored as itself.
   static #encode(value: CacheValue): string | Buffer {
     if (typeof value === "string") return value.startsWith("\0") ? `\0s${value}` : value;
     if (typeof value === "number") return `\0n${value}`;
@@ -186,9 +178,8 @@ return 0`;
     await this.redis.eval(RedisCache.#releaseScript, 1, this.#key(topic, key), owner);
   }
 
-  //* A hash field's expiry is a score in a sorted set beside the hash: `PEXPIREAT` on the hash would expire every
-  //* entry with the last one written, and per-field `HPEXPIREAT` needs Redis 7.4. Expired fields are dropped by
-  //* the script below on every write and every listing, and read as missing until then.
+  //* A field's expiry is a sorted-set score: `PEXPIREAT` would expire the whole hash and `HPEXPIREAT` needs Redis 7.4.
+  //* Expired fields are purged on every write and listing, and read as missing until then.
   static readonly #purgeScript = `
 local expired = redis.call("ZRANGEBYSCORE", KEYS[2], "-inf", ARGV[1], "LIMIT", 0, 500)
 if #expired > 0 then
@@ -232,8 +223,7 @@ if not live then
   if ARGV[4] ~= "" then redis.call("ZADD", KEYS[2], ARGV[4], ARGV[1]) else redis.call("ZREM", KEYS[2], ARGV[1]) end
 end
 return sum`;
-  // The scripts touch a hash and its expiry set together, so both keys share a hash tag and would land on one slot of
-  // a Redis Cluster.
+  // One hash tag keeps a hash and its expiry set on one Redis Cluster slot, as the scripts touch both.
   #hashKeys(topic: string, key: string) {
     const hashKey = `${this.keyPrefix}{${topic}:${key}}`;
     return { hashKey, ttlKey: `${hashKey}:__ttl` };

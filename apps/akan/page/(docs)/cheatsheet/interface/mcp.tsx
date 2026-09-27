@@ -1053,14 +1053,16 @@ export default page().render(() => {
     l.trans({
       en: (
         <>
-          <strong>Scopes.</strong> <code>insufficient_scope</code> is enforced only once <code>AKAN_MCP_SCOPES</code> is
-          set, because first-party Akan tokens carry no scope claim.
+          <strong>Scopes are for somebody else's issuer.</strong> <code>insufficient_scope</code> is enforced only once{" "}
+          <code>AKAN_MCP_SCOPES</code> is set. Tokens an app mounting <code>libs/shared</code> issues itself carry no
+          scope claim, so setting it there refuses every one of them with <code>403</code>.
         </>
       ),
       ko: (
         <>
-          <strong>scope 검사.</strong> <code>insufficient_scope</code>는 <code>AKAN_MCP_SCOPES</code>를 설정했을 때만
-          검사합니다. Akan이 직접 발급한 토큰에는 scope claim이 없기 때문입니다.
+          <strong>scope는 외부 issuer용입니다.</strong> <code>insufficient_scope</code>는 <code>AKAN_MCP_SCOPES</code>를
+          설정했을 때만 검사합니다. <code>libs/shared</code>를 마운트한 앱이 직접 발급하는 토큰에는 scope claim이
+          없으므로, 그런 앱에 설정하면 그 토큰이 모두 <code>403</code>으로 거절됩니다.
         </>
       ),
     }),

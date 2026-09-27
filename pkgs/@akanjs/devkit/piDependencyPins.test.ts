@@ -2,18 +2,8 @@ import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import type { PackageJson } from "@akanjs/devkit/types";
 
-// Guards the published dependency closure of the code agent, which the monorepo cannot exercise on its own.
-//
-// `@earendil-works/pi-coding-agent` asks for `^0.80.6` of its three sibling packages and ships an
-// `npm-shrinkwrap.json` pinning them to the exact version it was built against. Bun reads neither that file nor
-// this workspace's `overrides` when somebody installs the published CLI, so `^0.80.6` resolved to the newest
-// 0.80.x — 0.80.10, which dropped `getOAuthApiKey` from `pi-ai/oauth` while the pinned coding agent still
-// imports it. A global install died on its first import:
-//
-//   Export named 'getOAuthApiKey' not found in module '.../@earendil-works/pi-ai/dist/oauth.js'.
-//
-// `PackageRunner` therefore re-declares pi's own pins as dependencies of what we publish; this keeps the two
-// equal, so bumping the coding agent without moving the pins fails here rather than at a user's first run.
+//? A published install reads neither pi's npm-shrinkwrap.json nor our overrides, so PackageRunner re-declares pi's
+//? sibling pins (a floating 0.80.x once broke every global install); this keeps them equal to the shrinkwrap.
 
 const repoRoot = path.resolve(import.meta.dir, "../../..");
 const piName = "@earendil-works/pi-coding-agent";
@@ -28,8 +18,7 @@ const readJson = async <T>(file: string) => (await Bun.file(file).json()) as T;
 
 const shrinkwrappedPins = async () => {
   const { packages } = await readJson<Shrinkwrap>(`${piDir}/npm-shrinkwrap.json`);
-  // Top-level entries only: a key with a second `node_modules/` in it is a *nested placement* of some other
-  // package's dependency, which a consumer's resolver reaches on its own and we have no business pinning.
+  // Top-level entries only: a nested `node_modules/` key is another package's placement, not ours to pin.
   const entries = Object.entries(packages)
     .filter(([key]) => /^node_modules\/@earendil-works\/[^/]+$/.test(key))
     .map(([key, entry]) => [key.replace(/^node_modules\//, ""), entry.version ?? ""] as const);

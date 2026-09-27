@@ -19,10 +19,7 @@ export interface OpsRouteEnvOptions {
   sources?: () => SnapshotSources;
 }
 
-/**
- * `/_akan/ops/*` — the control plane's door into one running app. Mounted only when AKAN_OPS_PUBLIC_KEY is set,
- * served by the process that owns `/_akan/app/*`, and never a signal: nothing here reaches MCP or the in-page agent.
- */
+// Security: deliberately not a signal, so nothing here reaches MCP or the in-page agent.
 export class OpsRoute {
   static readonly prefix = "/_akan/ops/";
 
@@ -56,8 +53,7 @@ export class OpsRoute {
       logger.error(`Ops channel disabled: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }
-    const resolved = sources();
-    const snapshotDir = SqliteFiles.snapshotDir(resolved);
+    const snapshotDir = SqliteFiles.snapshotDir(sources());
     const jobs = new SnapshotJobs({
       snapshotDir,
       capture: (request) => OpsRoute.captureInChild(request, sources(), snapshotDir),
@@ -66,8 +62,7 @@ export class OpsRoute {
     return new OpsRoute({ verifier, detail, jobs });
   }
 
-  //* In a child process because VACUUM INTO, integrity_check and gzip are synchronous or CPU-bound work that would
-  //* otherwise stall every request this process serves for as long as the database takes to copy.
+  //* In a child: VACUUM INTO, integrity_check and gzip are sync or CPU-bound and would stall every request meanwhile.
   static async captureInChild(request: SnapshotJobRequest, sources: SnapshotSources, dir: string) {
     const args = ["ops", "snapshot", "--id", request.id, "--out", dir, "--db", sources.main, "--json"];
     if (sources.solid) args.push("--solid-db", sources.solid);
@@ -117,7 +112,8 @@ export class OpsRoute {
       uploadUrls?: { main?: unknown; solid?: unknown; manifest?: unknown };
     } | null;
     const id = typeof body?.id === "string" ? body.id : "";
-    if (!SqliteSnapshot.idPattern.test(id)) return OpsRoute.#json({ error: "id must match [A-Za-z0-9._-]{1,64}" }, 400);
+    if (!SqliteSnapshot.idPattern.test(id))
+      return OpsRoute.#json({ error: `id must match ${SqliteSnapshot.idPattern.source}` }, 400);
     const includeSolid = body?.includeSolid === true;
     const main = OpsRoute.#uploadUrl(body?.uploadUrls?.main);
     const manifest = OpsRoute.#uploadUrl(body?.uploadUrls?.manifest);
@@ -131,8 +127,7 @@ export class OpsRoute {
     return OpsRoute.#json(started, 202);
   }
 
-  //* Plain http only to loopback, which is what a local test bucket is; anything else would put the database in
-  //* cleartext on the path the tunnel exists to protect.
+  //* Plain http only to loopback (a local test bucket): anywhere else it would carry the database in cleartext.
   static #uploadUrl(value: unknown): string | null {
     if (typeof value !== "string") return null;
     try {

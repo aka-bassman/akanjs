@@ -20,20 +20,10 @@ export interface LibStatus {
   hash: string;
 }
 
-/**
- * A library's origin, recorded in its own `package.json` under an `akan.source` key.
- *
- * The key rides `package.json` rather than a file of its own because every akan write to a library's
- * manifest is a spread of the existing object (`LibExecutor.syncPackageJson`), so an unknown top-level
- * key survives — while a new root file would have to be added to `libRootAllowedFiles` before
- * `akan sync` stopped rejecting it.
- */
+// In package.json, not a file of its own: every akan manifest write spreads the existing object, so the key survives.
 export class LibSource {
   static readonly manifestKey = "akan";
-  /**
-   * Left out of the hash. `env/` holds per-deployment values that belong to the workspace the library
-   * was installed into, not to the origin, so an env edit is not drift.
-   */
+  // `env/` holds the installing workspace's per-deployment values, so an env edit is not drift.
   static readonly unhashedDirs = ["env"];
 
   #lib: LibExecutor;
@@ -50,31 +40,33 @@ export class LibSource {
     return !LibSource.unhashedDirs.includes(relative.split("/")[0] ?? "");
   }
 
-  /** `package.json` cannot hash the stamp it carries, so the key comes off before hashing. */
-  async #hashableContent(file: string) {
-    const content = await this.#lib.workspace.readFile(file);
-    if (file !== `${this.#prefix}package.json`) return content;
-    const manifest = JSON.parse(content) as PackageJson;
+  static unstamped(manifestContent: string) {
+    const manifest = JSON.parse(manifestContent) as PackageJson;
     delete manifest[LibSource.manifestKey];
     return JSON.stringify(manifest);
   }
 
-  /**
-   * Hash over the library's own files. Untracked files count: a freshly copied library is not committed
-   * yet, and its hash has to be the same one a later `status` recomputes.
-   */
+  //* `package.json` cannot hash the stamp it carries, so the key comes off before hashing.
+  static async hashFiles(files: string[], manifestFile: string, read: (file: string) => Promise<string>) {
+    const hasher = new Bun.CryptoHasher("sha256");
+    for (const file of files) {
+      const content = await read(file);
+      hasher.update(file);
+      hasher.update("\0");
+      hasher.update(file === manifestFile ? LibSource.unstamped(content) : content);
+      hasher.update("\0");
+    }
+    return hasher.digest("hex").slice(0, 32);
+  }
+
+  // Untracked files count: a freshly copied library is not committed yet.
   async computeHash() {
     const files = (await this.#lib.workspace.listGitFiles([`libs/${this.#lib.name}`], { untracked: true })).filter(
       (file) => this.#isHashed(file),
     );
-    const hasher = new Bun.CryptoHasher("sha256");
-    for (const file of files) {
-      hasher.update(file);
-      hasher.update("\0");
-      hasher.update(await this.#hashableContent(file));
-      hasher.update("\0");
-    }
-    return hasher.digest("hex").slice(0, 32);
+    return await LibSource.hashFiles(files, `${this.#prefix}package.json`, (file) =>
+      this.#lib.workspace.readFile(file),
+    );
   }
 
   async read(): Promise<LibSourceStamp | null> {
@@ -91,11 +83,7 @@ export class LibSource {
     return stamp;
   }
 
-  /**
-   * Writes the stamp only when it would change. `syncedAt` moves on every write, so an unconditional
-   * write leaves the manifest dirty and defeats an idempotent caller — the hash is computed with the
-   * stamp removed, so comparing it first is sound.
-   */
+  // `syncedAt` moves on every write, so an unchanged stamp is left alone (the hash excludes the stamp itself).
   async syncStamp({ origin, sha }: Pick<LibSourceStamp, "origin" | "sha">) {
     const [current, hash] = await Promise.all([this.read(), this.computeHash()]);
     if (current?.origin === origin && current.sha === sha && current.hash === hash)

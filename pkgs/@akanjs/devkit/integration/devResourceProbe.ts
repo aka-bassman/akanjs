@@ -3,58 +3,51 @@ import path from "node:path";
 
 export type DevResourceRole = "host" | "builder" | "batch" | "gateway" | "replica" | "rsc" | "other";
 
-export interface DevResourceProc {
+export interface DevResourceProc<Role extends string = DevResourceRole> {
   pid: number;
   ppid: number;
   rssMb: number;
   cpuSec: number;
-  role: DevResourceRole;
+  role: Role;
   command: string;
 }
 
 export interface DevResourceProbeOptions {
   appName: string;
-  /** Must be the workspace root: package resolution has to match the real dev processes. */
+  // Must be the workspace root: package resolution has to match the real dev processes.
   workspaceRoot: string;
-  /** A tenant runs `node_modules/@akanjs/cli`; this repo runs its own `dist` build. */
   cliEntry: string;
   port: number;
   edits: number;
   idleSeconds: number;
-  /** `0` leaves idle suspend at its default; any other value also arms the suspend phase. */
+  // `0` leaves idle suspend at its default; any other value also arms the suspend phase.
   suspendSeconds: number;
-  /** App-relative file to append a comment to, once per edit. */
   editPath: string;
   logPath: string;
 }
 
-/**
- * Process-tree RSS over boot, browse, edits and idle-suspend — probe #1 of
- * `04-measurement-harness.md`, and the source of every idle/warm/suspended number in the
- * `optimize-resource` docs.
- *
- *   bun pkgs/@akanjs/devkit/integration/devResourceProbe.ts <app> [--idle=120] [--edits=3] [--suspend=60]
- *
- * Run it from the workspace root. Two things it exists to get right, both learned the hard way:
- * it walks the process tree to a **fixpoint** (the tree is seven levels deep in places, so a
- * fixed-depth walk silently misses the workers), and it **restores the edited file** in a `finally`
- * so a killed probe cannot leave a comment in the tree.
- *
- * On macOS, a plateau that drops with no activity is the OS trimming idle pages, not convergence —
- * report both numbers rather than the lower one.
- */
+// Usage, from the workspace root:
+//   bun pkgs/@akanjs/devkit/integration/devResourceProbe.ts <app> [--idle=120] [--edits=3] [--suspend=60]
+// On macOS a plateau that drops with no activity is the OS trimming idle pages, not convergence; report both.
 export class DevResourceProbe {
   static readonly #columns: DevResourceRole[] = ["host", "builder", "batch", "gateway", "replica", "rsc"];
 
-  static parseArgs(argv: string[]): DevResourceProbeOptions {
+  static parseArgMap(argv: string[]) {
     const args = new Map(
       argv.slice(1).map((arg) => {
         const [key, value] = arg.replace(/^--/, "").split("=");
         return [key ?? "", value ?? "1"];
       }),
     );
-    const appName = argv[0] ?? "akan";
-    const num = (key: string, fallback: number) => Number(args.get(key) ?? fallback);
+    return {
+      appName: argv[0] ?? "akan",
+      args,
+      num: (key: string, fallback: number) => Number(args.get(key) ?? fallback),
+    };
+  }
+
+  static parseArgs(argv: string[]): DevResourceProbeOptions {
+    const { appName, args, num } = DevResourceProbe.parseArgMap(argv);
     return {
       appName,
       workspaceRoot: args.get("root") ?? process.cwd(),
@@ -108,7 +101,7 @@ export class DevResourceProbe {
           .catch(() => "")) !== original
       )
         await Bun.write(target, original);
-      await this.#cleanup(host);
+      await DevResourceProbe.killTree(host, () => this.#sampleTree());
     }
   }
 
@@ -128,7 +121,7 @@ export class DevResourceProbe {
     console.info(`[probe] IDLE BASELINE ${idleTotal.toFixed(0)}MB`);
     await this.#reportMetrics("idle");
 
-    // 4.2: every idle number understates, because route modules are evaluated on first request.
+    // Every idle number understates: route modules are evaluated on first request.
     const routes = await this.#staticRoutes();
     const first = await this.#browse(routes);
     console.info(`[probe] browsed ${routes.length} static route(s): ok=${first.ok} failed=${first.failed}`);
@@ -169,8 +162,14 @@ export class DevResourceProbe {
     return "other";
   }
 
-  /** One `ps`, then walk from the host pid to a fixpoint — the tree is seven levels deep in places. */
-  async #sampleTree(): Promise<DevResourceProc[]> {
+  #sampleTree(): Promise<DevResourceProc[]> {
+    return DevResourceProbe.sampleTree(this.#hostPid, (command) => this.#roleOf(command));
+  }
+
+  static async sampleTree<Role extends string>(
+    rootPid: number,
+    roleOf: (command: string) => Role,
+  ): Promise<DevResourceProc<Role>[]> {
     const proc = Bun.spawn(["ps", "-eo", "pid=,ppid=,rss=,time=,command="], { stdout: "pipe" });
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -192,20 +191,36 @@ export class DevResourceProbe {
           ppid: Number(ppid),
           rssMb: Number(rss) / 1024,
           cpuSec,
-          role: this.#roleOf(command ?? ""),
+          role: roleOf(command ?? ""),
           command: command ?? "",
-        } satisfies DevResourceProc;
+        } satisfies DevResourceProc<Role>;
       })
-      .filter((proc): proc is DevResourceProc => proc !== null);
-    const kept = new Map<number, DevResourceProc>();
-    const root = all.find((proc) => proc.pid === this.#hostPid);
-    if (root) kept.set(this.#hostPid, root);
+      .filter((proc): proc is DevResourceProc<Role> => proc !== null);
+    const kept = new Map<number, DevResourceProc<Role>>();
+    const root = all.find((proc) => proc.pid === rootPid);
+    if (root) kept.set(rootPid, root);
     for (let pass = 0; pass < 12; pass++) {
       const before = kept.size;
       for (const proc of all) if (kept.has(proc.ppid) && !kept.has(proc.pid)) kept.set(proc.pid, proc);
       if (kept.size === before) break;
     }
-    return [...kept.values()].filter((proc) => proc.role !== "other" || proc.pid === this.#hostPid);
+    return [...kept.values()].filter((proc) => proc.role !== "other" || proc.pid === rootPid);
+  }
+
+  static async killTree(
+    root: { kill: (signal: NodeJS.Signals) => void },
+    sampleTree: () => Promise<{ pid: number }[]>,
+  ): Promise<void> {
+    for (const proc of (await sampleTree()).reverse()) {
+      try {
+        process.kill(proc.pid, "SIGKILL");
+      } catch {}
+    }
+    try {
+      root.kill("SIGKILL");
+    } catch {}
+    await Bun.sleep(1_000);
+    console.info(`[probe] survivors after kill: ${(await sampleTree()).length}`);
   }
 
   #row(label: string, procs: DevResourceProc[]): number {
@@ -221,10 +236,6 @@ export class DevResourceProbe {
     return total;
   }
 
-  /**
-   * Static route urls from the page tree: `(group)` segments are stripped, and a route with a
-   * `[dynamic]` segment is skipped because it needs a real id to render.
-   */
   async #staticRoutes(): Promise<string[]> {
     const glob = new Bun.Glob("**/_index.tsx");
     const cwd = path.join(this.#options.workspaceRoot, "apps", this.#options.appName, "page");
@@ -258,7 +269,6 @@ export class DevResourceProbe {
     return { ok, failed };
   }
 
-  /** Only the counters 4.2 asks for; the raw payload is hundreds of fields. */
   async #reportMetrics(label: string): Promise<void> {
     const child = await (async () => {
       try {
@@ -285,9 +295,6 @@ export class DevResourceProbe {
       "rscWorkerRecycleCount",
       "httpFullSsrCount",
     ];
-    // `rssBytes` is the replica's own; the RSC worker is a separate process reporting under
-    // `rscWorker*`. These used to be the same field, because the worker's report shadowed the
-    // replica's — so this line printed the worker's RSS labelled as the child's.
     const toMb = (bytes: unknown) => (Number(bytes ?? 0) / 1024 / 1024).toFixed(0);
     const parts = keys.map((key) => `${key}=${child[key] ?? "?"}`);
     console.info(
@@ -305,19 +312,6 @@ export class DevResourceProbe {
       await Bun.sleep(500);
     }
     return false;
-  }
-
-  async #cleanup(host: { kill: (signal: NodeJS.Signals) => void }): Promise<void> {
-    for (const proc of (await this.#sampleTree()).reverse()) {
-      try {
-        process.kill(proc.pid, "SIGKILL");
-      } catch {}
-    }
-    try {
-      host.kill("SIGKILL");
-    } catch {}
-    await Bun.sleep(1_000);
-    console.info(`[probe] survivors after kill: ${(await this.#sampleTree()).length}`);
   }
 }
 

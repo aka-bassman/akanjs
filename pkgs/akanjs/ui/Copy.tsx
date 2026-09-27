@@ -4,11 +4,10 @@ import { st } from "akanjs/store";
 import { cloneElement, isValidElement, type MouseEvent, type ReactElement, type ReactNode } from "react";
 
 export interface CopyProps {
-  /** Text copied to the clipboard. Defaults to an empty string. */
+  /** Defaults to an empty string. */
   text?: string;
-  /** Success message shown through the global store message helper. */
+  /** Defaults to a localized "Copied". */
   copyMessage?: string;
-  /** Copy trigger element. */
   children: ReactNode;
 }
 

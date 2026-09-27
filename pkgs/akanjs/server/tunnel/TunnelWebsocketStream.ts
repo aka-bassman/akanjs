@@ -1,12 +1,8 @@
 import { type TunnelHeaderList, type TunnelOpenFrame, tunnelWireContract, tunnelWsPayload } from "akanjs/common";
 import { type TunnelStream, type TunnelStreamLink, tunnelResetCodeOf, wsBytes } from "./tunnelStream";
 
-/**
- * Handshake headers that belong to the public caller's upgrade and not to this one: the key, the version and
- * the extension list are negotiated per connection, and replaying them makes the local server answer a
- * handshake that was never asked of it. The subprotocol is the exception — it is the caller's choice and
- * travels as `protocols` instead.
- */
+// Negotiated per connection: replayed, they make the local server answer a handshake never asked of it.
+// The subprotocol is the caller's choice, so it travels as `protocols` instead.
 const handshakeHeaders = new Set([
   "sec-websocket-key",
   "sec-websocket-version",
@@ -20,7 +16,8 @@ export class TunnelWebsocketStream implements TunnelStream {
   readonly #link: TunnelStreamLink;
   readonly #origin: string;
   #ws: WebSocket | null = null;
-  #closed = false;
+  #closed: boolean = false;
+  #settle: () => void = () => undefined;
 
   constructor(open: TunnelOpenFrame, link: TunnelStreamLink, origin: string) {
     this.#open = open;
@@ -37,6 +34,7 @@ export class TunnelWebsocketStream implements TunnelStream {
       if (!handshakeHeaders.has(name.toLowerCase())) dialHeaders[name] = value;
     }
     await new Promise<void>((resolve) => {
+      this.#settle = resolve;
       const ws = new WebSocket(url, {
         headers: dialHeaders,
         ...(protocols ? { protocols: protocols.split(",").map((one) => one.trim()) } : {}),
@@ -47,22 +45,20 @@ export class TunnelWebsocketStream implements TunnelStream {
         const accepted: TunnelHeaderList = ws.protocol ? [["sec-websocket-protocol", ws.protocol]] : [];
         this.#link.sendFrame({ type: "head", streamId, status: 101, headers: accepted });
       };
-      ws.onmessage = (event) => {
-        void this.#forward(event.data);
-      };
+      ws.onmessage = (event) => void this.#forward(event.data);
       ws.onerror = (event) => {
         // A failed dial never opens, so this is the only place a refused local origin is reported.
         if (!this.#ws || this.#closed) return;
         const error = (event as unknown as { error?: unknown }).error;
         this.#link.sendFrame({ type: "reset", streamId, code: tunnelResetCodeOf(error), message: "origin websocket" });
-        this.#finish(resolve);
+        this.#finish();
       };
       ws.onclose = (event) => {
         if (this.#closed) return;
         const payload = new TextEncoder().encode(JSON.stringify({ code: event.code, reason: event.reason }));
         void this.#link.sendPayload(tunnelWireContract.encodeWsPayload(tunnelWsPayload.close, payload));
         this.#link.sendFrame({ type: "end", streamId });
-        this.#finish(resolve);
+        this.#finish();
       };
     });
   }
@@ -102,14 +98,15 @@ export class TunnelWebsocketStream implements TunnelStream {
   }
 
   reset() {
-    this.#closed = true;
+    this.#finish();
     this.#ws?.close();
   }
 
-  #finish(resolve: () => void) {
+  #finish() {
+    if (this.#closed) return;
     this.#closed = true;
     // A raw stream owns its data socket for its whole life, so the socket goes with it rather than being pooled.
     this.#link.closeSocket();
-    resolve();
+    this.#settle();
   }
 }

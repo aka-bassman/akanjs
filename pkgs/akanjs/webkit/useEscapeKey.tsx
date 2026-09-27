@@ -1,14 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 
-/**
- * Escape belongs to the topmost dismissable surface only.
- *
- * A per-component `window` listener cannot know that: every open surface hears the same keydown, so a
- * dialog opened from another dialog took both down at once, and a confirm popover inside a modal would
- * have closed the modal under it. One shared stack keeps the order surfaces actually opened in and
- * hands the key to the last one.
- */
+// One stack for every surface: per-component listeners all hear one Escape and close nested surfaces together.
 const stack: (() => void)[] = [];
 
 const onKeyDown = (event: KeyboardEvent) => {
@@ -19,10 +12,7 @@ const onKeyDown = (event: KeyboardEvent) => {
   topmost();
 };
 
-/**
- * Close `onEscape` on Escape while `active`, but only while this surface is the topmost active one.
- * The callback is read through a ref, so a fresh closure per render does not reshuffle the stack.
- */
+/** Calls `onEscape` on Escape while `active` and this surface is the topmost active one. */
 export const useEscapeKey = (active: boolean, onEscape: () => void) => {
   const callbackRef = useRef(onEscape);
   useEffect(() => {

@@ -11,7 +11,6 @@ interface RegisteredTool {
   ) => Promise<{ content: { text?: string }[]; isError?: boolean }>;
 }
 
-/** Runs the pack's extension and hands back the one tool it registered, plus the questions it went on to ask. */
 const mount = (
   profile: CodeAgentProfile,
   answer: (question: Omit<CodeAgentQuestion, "questionId">) => string | undefined,
@@ -43,7 +42,6 @@ const one = (patch: Record<string, unknown> = {}) => ({
 describe("ask_user", () => {
   test("it is published only where somebody can answer", () => {
     expect(mount(local, () => "x").pack.names()).toEqual(["ask_user"]);
-    // A pod and a sub-agent both set `canPrompt` false; the tool is never constructed there.
     expect(mount(pod, () => "x").pack.names()).toEqual([]);
     expect(mount(pod, () => "x").tool).toBeUndefined();
   });
@@ -84,7 +82,6 @@ describe("ask_user", () => {
     expect(asked).toHaveLength(AskToolPack.maxQuestions);
   });
 
-  /** A blank answer reads to a model as "the user wanted nothing", which is the one thing a skip never means. */
   test("a skipped question says so, and says what to do about it", async () => {
     const { tool } = mount(local, () => undefined);
     const result = await tool?.execute("t", { questions: [one()] });

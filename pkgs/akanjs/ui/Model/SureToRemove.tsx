@@ -4,7 +4,7 @@ import { cn, msg, router, usePage } from "akanjs/client";
 import { capitalize } from "akanjs/common";
 import type { SliceMeta } from "akanjs/fetch";
 import { st } from "akanjs/store";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { AiOutlineDelete } from "react-icons/ai";
 
 import { agentAttrs } from "../agentAttrs";
@@ -21,11 +21,8 @@ interface SureToRemoveProps {
   typeNameToRemove?: boolean;
   /** Element that opens the confirmation. Defaults to the framework's delete label. */
   trigger?: ReactNode;
-  /** Confirmation heading. */
   title?: ReactNode;
-  /** Confirmation body above the name field. */
   description?: ReactNode;
-  /** Label of the button that performs the removal. */
   confirmLabel?: ReactNode;
 }
 export default function SureToRemove({
@@ -44,14 +41,8 @@ export default function SureToRemove({
   const [repeatName, setRepeatName] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
-  const { refName, sliceName } = slice;
-  const modelName = refName;
-  const names = useMemo(
-    () => ({
-      removeModel: `remove${capitalize(modelName)}`,
-    }),
-    [],
-  );
+  const { refName: modelName } = slice;
+  const names = { removeModel: `remove${capitalize(modelName)}` };
 
   const removeModel = async (id: string) => {
     await storeDo[names.removeModel](id);
@@ -61,8 +52,7 @@ export default function SureToRemove({
     if (redirect === "back") router.back();
     else router.push(redirect);
   };
-  // `typeNameToRemove` makes a person retype the name before the button unlocks. An approval card is one click,
-  // so it is not that gate — the lever is withheld rather than offered at a friction the screen does not have.
+  // `typeNameToRemove` gates a person behind retyping the name; a one-click approval card is no such gate, so no tool.
   const removeTool = st
     .tool(typeNameToRemove ? null : names.removeModel)
     .desc(`Remove one ${modelName}.`)

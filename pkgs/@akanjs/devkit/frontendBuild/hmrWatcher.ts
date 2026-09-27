@@ -12,24 +12,12 @@ export interface WatcherOptions {
   debounceMs?: number;
   logger: Logger;
   onBatch: (batch: ChangeBatch) => void | Promise<void>;
-  /**
-   * Delay before re-checking mtimes for changes `fs.watch` never reported. Must clear Bun's ~200ms
-   * coalescing window, or a write late in the same window as a delivered event stays invisible.
-   */
+  /** Delay (ms, default 250) before the mtime re-check; must outlast Bun's ~200ms fs.watch coalescing window. */
   verifyDelayMs?: number;
 }
 
-/**
- * Recursive filesystem watcher with debounced batching. We deliberately keep
- * classification coarse (`code` / `css` / `config`) so the orchestrator can
- * decide whether a full rebuild-and-reload or a narrower action (e.g. CSS
- * hot-swap) is sufficient.
- *
- * Bun's event payloads are treated as a hint, not the answer: its recursive `fs.watch` reports about one
- * path per coalescing window and silently discards the rest, so what changed is resolved against a
- * `SourceMtimeIndex` instead (see that class for the measurements). Events still drive *when* to look,
- * which is what keeps this cheap — Bun does reliably deliver at least one event per window.
- */
+// Bun delivers at least one fs.watch event per coalescing window but drops the other paths, so events decide
+// when to look and the SourceMtimeIndex decides what changed.
 export class HmrWatcher {
   readonly #roots: string[];
   readonly #debounceMs: number;
@@ -38,7 +26,6 @@ export class HmrWatcher {
   readonly #logger: Logger;
   readonly #watchers: fs.FSWatcher[] = [];
   readonly #pending = new Map<string, Exclude<ChangeKind, "ignore">>();
-  /** Paths the watcher's own events named since the last batch — diagnostics only, see `#queue`. */
   readonly #hinted = new Set<string>();
   readonly #classifier = new HmrChangeClassifier();
   readonly #index: SourceMtimeIndex;
@@ -59,19 +46,12 @@ export class HmrWatcher {
     this.#index = new SourceMtimeIndex({ roots: this.#roots, classifier: this.#classifier });
   }
 
-  /**
-   * How many changes the mtime scan found that `fs.watch` never reported. Non-zero means this watcher is
-   * compensating for the Bun defect rather than the defect being absent, which is the number to watch if
-   * it is ever fixed upstream.
-   */
+  /** Changes the mtime scan found that fs.watch never reported; non-zero means it is compensating for Bun. */
   get unreportedChanges(): number {
     return this.#unreportedChanges;
   }
 
-  /**
-   * Watchers are installed before the baseline is taken, so an edit made during priming is reported by
-   * the event side even though the baseline already reflects it.
-   */
+  /** Installs the watchers before priming, so an edit made while priming is still reported by the event side. */
   async start(): Promise<void> {
     for (const root of this.#roots) {
       try {
@@ -88,8 +68,7 @@ export class HmrWatcher {
     }
     try {
       await this.#index.prime();
-      // Before the first batch, because a root that is unreadable at boot blinds the whole session and
-      // waiting for a save to surface it means waiting for a save that never rebuilds.
+      // At boot: edits under an unreadable root never rebuild, so no later save would surface it.
       this.#reportCoverageGaps();
       this.#logger.verbose(`[hmr] tracking ${this.#index.trackedFileCount} source files for change verification`);
     } catch (err) {
@@ -112,23 +91,14 @@ export class HmrWatcher {
     }
   }
 
-  /**
-   * Adopt writes the batch handler made itself (regenerated barrels, inserted imports) so the
-   * verification scan does not spend a second generation rebuilding content this one already consumed.
-   */
+  /** Baseline the batch handler's own writes so the verification scan does not rebuild them a second time. */
   async absorb(paths: string[]): Promise<void> {
     if (paths.length === 0) return;
     await this.#index.absorb(paths);
   }
 
-  /**
-   * An event says only *that* something happened, never reliably *what*. So with a baseline in hand it is
-   * used purely to decide when to look, and the mtime scan names the files.
-   *
-   * Taking the payload as well would double-report: Bun does deliver a real event for some of the paths a
-   * scan has already emitted, and adding it back here produced a second batch for the same save — one more
-   * generation and one more build for no change.
-   */
+  // Once primed, a payload only schedules a scan: Bun also delivers events for paths the scan already emitted,
+  // so adding payloads to the batch double-reports a save.
   #queue(abs: string): void {
     const kind = this.#classifier.classify(abs);
     if (!this.#index.primed) {
@@ -138,15 +108,12 @@ export class HmrWatcher {
       this.#scheduleFlush();
       return;
     }
-    // An ignored path still means a window happened. That is the shape of the original bug — every build
-    // ends in a burst under `.akan/`, and the burst is what Bun reports instead of the save beside it.
-    // Rescheduling on each one folds a build's whole burst into a single scan once it goes quiet.
+    // An ignored path (a build's .akan/ burst) still marks a coalescing window that may hide a real save.
     if (kind === "ignore") {
       this.#scheduleVerify();
       return;
     }
-    // Recorded only so `unreportedChanges` can tell which changes the events did name; it never decides
-    // what is in a batch.
+    // Diagnostics only, for `unreportedChanges`; it never decides what is in a batch.
     this.#hinted.add(abs);
     this.#scheduleFlush();
   }
@@ -186,10 +153,6 @@ export class HmrWatcher {
     }
   }
 
-  /**
-   * Fold in everything the mtime index has seen change, since a delivered event names at most one of the
-   * paths that moved in its window.
-   */
   async #mergeDetectedChanges(): Promise<void> {
     const detected = await this.#index.collectChanges().catch((err) => {
       this.#logger.error(`[hmr] mtime scan failed: ${(err as Error).message}`);
@@ -205,8 +168,6 @@ export class HmrWatcher {
     }
     if (unreported === 0) return;
     this.#unreportedChanges += unreported;
-    // Once at info, so it is visible that the watcher is compensating rather than the defect being absent;
-    // per-batch detail stays at verbose because a save-all trips this on every save.
     if (!this.#reportedCompensating) {
       this.#reportedCompensating = true;
       this.#logger.verbose(
@@ -218,13 +179,6 @@ export class HmrWatcher {
     );
   }
 
-  /**
-   * Say so when part of the tree cannot be read, and say so again when it recovers.
-   *
-   * A blind spot here means edits under that path are not rebuilt at all, which is indistinguishable from
-   * the dev server being broken. Keyed on the gap list itself so a persistent failure logs once rather than
-   * once per save, while a *different* gap appearing still gets its own line.
-   */
   #reportCoverageGaps(): void {
     const gaps = this.#index.coverageGaps;
     const key = gaps
@@ -247,10 +201,7 @@ export class HmrWatcher {
     );
   }
 
-  /**
-   * One scan after the coalescing window closes. A write that lands in the same window as an already
-   * delivered event produces no further event of its own, so nothing else would ever look for it.
-   */
+  // A write in the same window as a delivered event raises no event of its own, so one scan follows each window.
   #scheduleVerify(): void {
     if (this.#stopped || this.#verifyDelayMs <= 0) return;
     if (this.#verifyTimer) clearTimeout(this.#verifyTimer);
@@ -260,16 +211,8 @@ export class HmrWatcher {
     }, this.#verifyDelayMs);
   }
 
-  /**
-   * Terminates rather than looping: a scan that finds nothing schedules nothing, and the build writes its
-   * artifacts under `.akan/` — which the classifier ignores — while codegen writes are content-guarded,
-   * so a rebuild does not move a tracked mtime.
-   *
-   * The one case that does schedule another is a directory the index could not date reliably (Linux stamps
-   * directory mtimes on a 1ms clock, see `SourceMtimeIndex`). That still terminates: the next scan is
-   * `verifyDelayMs` later, by which point the timestamp has settled unless something is writing to that
-   * directory right now — in which case looking again is the right answer anyway.
-   */
+  // Terminates: build output lands in ignored .akan/ and codegen writes are content-guarded, so a rebuild moves no
+  // tracked mtime; only an unsettled directory schedules another scan.
   async #verify(): Promise<void> {
     if (this.#stopped || this.#flushing) return;
     await this.#mergeDetectedChanges();

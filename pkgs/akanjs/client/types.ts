@@ -105,7 +105,6 @@ const slugFontPart = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || "font";
 
-/** Common props for list/zone components that render many model records. */
 export interface ModelsProps<M extends { id: string }> {
   className?: string;
   slice?: SliceMeta;
@@ -114,7 +113,6 @@ export interface ModelsProps<M extends { id: string }> {
   onClickItem?: (model: M) => unknown;
 }
 
-/** Common props for unit/view components that render one named model record. */
 export type ModelProps<T extends string, L extends { id: string }> = { [key in T]: L } & {
   className?: string;
   slice?: SliceMeta;
@@ -213,7 +211,6 @@ export interface ReactFont {
   optimize?: boolean;
 }
 
-/** Font declaration consumed by Akan layout modules and font optimization. */
 export type Font = ReactFont;
 
 export interface RootLayoutProps {

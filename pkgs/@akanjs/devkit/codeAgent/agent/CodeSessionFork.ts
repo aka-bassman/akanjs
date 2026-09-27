@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { codeAgentSessionName } from "akanjs/common";
 import { CodeSessionIndex } from "./CodeSessionIndex";
+import { parseJsonLine } from "./jsonLines";
 
 interface CodeSessionRecord {
   [key: string]: unknown;
@@ -10,14 +11,7 @@ interface CodeSessionRecord {
   id?: string;
 }
 
-/**
- * Copies a session's file so one conversation can continue two ways.
- *
- * A fork is a file copy because that is exactly what a session is: an append-only log the engine replays. The
- * copy is rewritten in one place — the `session` record's id — and then the two files know nothing about each
- * other, which is the property that matters. Sharing an id instead would give two live agents one inbox, one
- * presence entry and one resume target, and the second one to write would win silently.
- */
+// Only the `session` record's id is rewritten: a shared id would give two agents one inbox and one resume target.
 export class CodeSessionFork {
   static fork(dir: string, id: string, name?: string) {
     const source = CodeSessionIndex.fileOf(dir, id);
@@ -29,15 +23,14 @@ export class CodeSessionFork {
     const at = new Date();
     const forked = Bun.randomUUIDv7();
     const records = lines
-      .map((line) => CodeSessionFork.#parse(line))
+      .map((line) => parseJsonLine<CodeSessionRecord>(line))
       .filter((record): record is CodeSessionRecord => !!record);
     const first = records.find((record) => record.type === "session");
     if (!first) throw new Error(`Session ${id} carries no session record`);
     first.id = forked;
     first.timestamp = at.toISOString();
     records.push(CodeSessionFork.#named(records, name ?? CodeSessionFork.#nameOf(records), at));
-    // The name is the timestamp the file was created plus the id, which is the shape the engine writes and
-    // what `CodeSessionIndex` matches on when a resume names one.
+    // The engine's own file-name shape, which `CodeSessionIndex.fileOf` matches a resume against.
     const file = path.join(dir, `${at.toISOString().replace(/[:.]/g, "-")}_${forked}.jsonl`);
     writeFileSync(file, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
     return { id: forked, file };
@@ -59,13 +52,5 @@ export class CodeSessionFork {
     const named = records.filter((record) => record.type === "session_info").at(-1);
     const current = typeof named?.name === "string" ? named.name : "";
     return codeAgentSessionName(current ? `${current} fork` : "fork");
-  }
-
-  static #parse(line: string) {
-    try {
-      return JSON.parse(line) as CodeSessionRecord;
-    } catch {
-      return undefined;
-    }
   }
 }

@@ -5,18 +5,15 @@ import { resolveSsrPageEntriesForApp } from "../artifact/implicitRootLayout";
 import type { App } from "../commandDecorators";
 import { createBarrelImportsPlugin } from "../transforms/barrelImportsPlugin";
 import { createExternalizeFrameworkPlugin } from "../transforms/externalizeFrameworkPlugin";
+import { loaderFor } from "../transforms/moduleSyntax";
 import { transformUseClient } from "../transforms/rscUseClientTransform";
 import { createUseClientBundlePlugin } from "../transforms/useClientBundlePlugin";
+import { bundleDefine } from "./bundleDefine";
 import { PagesEntrySourceGenerator } from "./pagesEntrySourceGenerator";
 
 export interface BuildPagesBundleResult {
-  /** Absolute path to the emitted `pages-[hash].js`. */
   bundlePath: string;
-  /**
-   * Monotonic build identifier. Bun.build emits a fresh filename whenever
-   * any input changes, but importers still benefit from a `?v=<buildId>`
-   * query-string cache bust — `buildId` is that value.
-   */
+  /** Cache-bust value for `import(bundlePath?v=<buildId>)`. */
   buildId: number;
   splitting: boolean;
   entryBytes: number;
@@ -27,10 +24,6 @@ export interface BuildPagesBundleResult {
 
 const VIRTUAL_PAGES_ENTRY = "akan-pages-entry";
 
-/**
- * Build the server-side pages bundle. The RSC worker loads the result with
- * `await import(bundlePath?v=buildId)`.
- */
 export class PagesBundleBuilder {
   #app: App;
   #command: "build" | "start";
@@ -61,7 +54,7 @@ export class PagesBundleBuilder {
         chunk: "chunks/[name]-[hash].[ext]",
         asset: "assets/[name]-[hash].[ext]",
       },
-      define: this.#define(),
+      define: bundleDefine(this.#app, this.#command, "ssr"),
       plugins: [
         PagesBundleBuilder.createPagesEntryPlugin(entrySource),
         PagesBundleBuilder.createCssStubPlugin(),
@@ -108,17 +101,6 @@ export class PagesBundleBuilder {
 
   get #splitting(): boolean {
     return process.env.AKAN_SERVER_PAGES_SPLITTING === "1";
-  }
-
-  #define(): Record<string, string> {
-    const nodeEnv = this.#command === "build" ? "production" : (process.env.NODE_ENV ?? "development");
-    return {
-      "process.env.NODE_ENV": JSON.stringify(nodeEnv),
-      "process.env.AKAN_PUBLIC_RENDER_ENV": JSON.stringify("ssr"),
-      ...Object.fromEntries(
-        Object.entries(this.#app.getPublicEnv()).map(([key, value]) => [`process.env.${key}`, JSON.stringify(value)]),
-      ),
-    };
   }
 
   static createPagesEntryPlugin(source: string): BunPlugin {
@@ -175,11 +157,4 @@ export class PagesBundleBuilder {
         "const fetchProto = FetchClient.build<typeof signal>(cnst, serverFetch.serializedSignal, { Err: pageProto.Err, base: serverFetch });",
       );
   }
-}
-
-function loaderFor(absPath: string): "ts" | "tsx" | "js" | "jsx" {
-  if (absPath.endsWith(".tsx")) return "tsx";
-  if (absPath.endsWith(".jsx")) return "jsx";
-  if (absPath.endsWith(".ts")) return "ts";
-  return "js";
 }

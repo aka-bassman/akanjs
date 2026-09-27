@@ -16,7 +16,6 @@ export interface LabelProps {
 export const Label = ({ className, label, desc, unit, nullable, mode = "edit" }: LabelProps) => {
   return (
     <span className={cn("flex shrink-0 items-center gap-1", className)}>
-      {/* {!nullable && mode === "edit" ? <span>* </span> : null} */}
       {typeof label === "string" ? capitalize(label) : label}
       {unit ? <span className="animate-fadeIn"> ({unit})</span> : null}
       {desc ? (

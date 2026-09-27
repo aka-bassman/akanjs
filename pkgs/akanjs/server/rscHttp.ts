@@ -47,7 +47,7 @@ export function getRscPayloadStream(res: Response): ReadableStream<Uint8Array> |
   return res.body;
 }
 
-function concatBytes(left: Uint8Array, right: Uint8Array): Uint8Array<ArrayBuffer> {
+export function concatBytes(left: Uint8Array, right: Uint8Array): Uint8Array<ArrayBuffer> {
   const combined = new Uint8Array(left.byteLength + right.byteLength);
   combined.set(left, 0);
   combined.set(right, left.byteLength);

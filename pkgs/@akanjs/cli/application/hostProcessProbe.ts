@@ -8,11 +8,8 @@ export interface HostProcess {
   startedAt: number | null;
 }
 
-/**
- * Who listens on a port, and what a process is, read with what the OS ships: `lsof` and `ps` on macOS,
- * `/proc` on Linux (a slim image carries neither `lsof` nor `ps`), and `netstat` plus one CIM query on
- * Windows. Every lookup answers empty rather than throwing, so a missing tool reads as "nobody there".
- */
+// Reads what the OS ships: `lsof`/`ps` on macOS, `/proc` on Linux (slim images carry neither), `netstat` + CIM on
+// Windows. Every lookup answers empty rather than throwing, so a missing tool reads as "nobody there".
 export class HostProcessProbe {
   static readonly timeoutMs = 3_000;
   //? PowerShell alone takes seconds to start on a small VM, and the CIM query runs behind it.
@@ -183,7 +180,8 @@ export class HostProcessProbe {
     for (const entry of HostProcessProbe.#listDir("/proc")) {
       if (!/^\d+$/.test(entry)) continue;
       const holds = HostProcessProbe.#listDir(`/proc/${entry}/fd`).some((fd) => {
-        const inode = /^socket:\[(\d+)\]$/.exec(HostProcessProbe.#readLink(`/proc/${entry}/fd/${fd}`))?.[1];
+        const link = HostProcessProbe.#orElse(() => readlinkSync(`/proc/${entry}/fd/${fd}`), "");
+        const inode = /^socket:\[(\d+)\]$/.exec(link)?.[1];
         return !!inode && inodes.has(inode);
       });
       if (holds) pids.push(Number(entry));
@@ -192,26 +190,18 @@ export class HostProcessProbe {
   }
 
   static #readProc(pid: number | "net", file: string): string | null {
-    try {
-      return readFileSync(`/proc/${pid}/${file}`, "utf8");
-    } catch {
-      return null;
-    }
+    return HostProcessProbe.#orElse(() => readFileSync(`/proc/${pid}/${file}`, "utf8"), null);
   }
 
   static #listDir(dir: string): string[] {
-    try {
-      return readdirSync(dir);
-    } catch {
-      return [];
-    }
+    return HostProcessProbe.#orElse(() => readdirSync(dir), []);
   }
 
-  static #readLink(link: string): string {
+  static #orElse<T>(read: () => T, fallback: T): T {
     try {
-      return readlinkSync(link);
+      return read();
     } catch {
-      return "";
+      return fallback;
     }
   }
 }

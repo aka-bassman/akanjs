@@ -1,17 +1,8 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { EntryModuleGraph } from "./entryModuleGraph";
 
-/**
- * Guard #4 of `local/optimize-resource/04-measurement-harness.md`: the barrel split has to stay split.
- *
- * Every process here lives for the whole dev session (the host and the builder watcher) or is spawned
- * per build (the workers), so one accidental barrel import is worth 15-236 MB — measured, that is how
- * `commandDecorators` came to cost 236 MB through a single `from ".."`.
- *
- * Each expectation is an exact list rather than "nothing heavy", because these entries legitimately
- * need *some* heavy dependency and a blanket ban would have to be suppressed rather than read.
- * **Shrinking a list is a win: update it here and say so in the results doc.**
- */
+// These processes live for the whole dev session or spawn per build, so one stray barrel import costs 15-236 MB.
+// Exact lists, not "nothing heavy": some entries legitimately need a heavy dependency. Shrinking a list is a win.
 describe("dev entry module graphs", () => {
   let graph: EntryModuleGraph;
   beforeAll(async () => {
@@ -19,23 +10,17 @@ describe("dev entry module graphs", () => {
   });
 
   test("the cli entry pulls nothing heavy at all", () => {
-    // It used to reach `@inquirer/prompts` (~24 MB) through one chunk hop, because `runCommands` shares a
-    // module with the interactive argument fallbacks; those now `import()` the prompt stack on first use.
-    // `akan start` never prompts, and it holds this process for the whole session.
+    // `akan start` never prompts and holds this process for the whole session; prompts are `import()`ed on first use.
     expect(graph.eagerHeavyDependencies("index.js")).toEqual([]);
   });
 
   test("the builder watcher pulls typescript and nothing else", () => {
     // `typescript` is expected: `getPageKeys` validates route exports in the watcher.
-    // The tailwind pair that used to sit here was `frontendBuild`'s barrel reaching `cssCompiler` and
-    // `ssrBaseArtifactBuilder` — dead weight since phase 2 moved css compilation into the batch worker,
-    // and ~40 MB in a process that idles at ~134-202 MB. The proc imports by module path now.
     expect(graph.eagerHeavyDependencies("incrementalBuilder.proc.js")).toEqual(["typescript"]);
   });
 
   test("the batch worker pulls the build stack but not the font subsetters", () => {
-    // The worker exits per generation, so its imports are reclaimed — the property worth guarding is
-    // that font subsetting stays lazy, which is what makes a cache hit cost ~66 MB less (3.3).
+    // The worker exits per generation; what matters is that font subsetting stays lazy for a cache hit.
     expect(graph.eagerHeavyDependencies("buildBatch.proc.js")).toEqual([
       "@tailwindcss/node",
       "tailwindcss",

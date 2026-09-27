@@ -11,6 +11,23 @@ async function renderToText(node: ReactNode): Promise<string> {
   return new Response(await renderToReadableStream(node)).text();
 }
 
+const pageInput = ({ pathRoute, params }: NonNullable<ReturnType<typeof RouteTreeBuilder.match>>) => ({
+  pathRoute,
+  params,
+  searchParams: {},
+});
+
+const buildDocsApiRoutes = () =>
+  new RouteTreeBuilder({
+    "./__root_layout.tsx": async () => ({
+      default: ({ children }: { children: ReactNode }) => <main>root:{children}</main>,
+    }),
+    "./docs/_layout.tsx": async () => ({
+      default: ({ children }: { children: ReactNode }) => <section>docs:{children}</section>,
+    }),
+    "./docs/api.tsx": async () => ({ default: () => <article>api</article> }),
+  }).build();
+
 function containsElementType(node: ReactNode, type: unknown): boolean {
   if (Array.isArray(node)) return node.some((child) => containsElementType(child, type));
   if (!isValidElement(node)) return false;
@@ -71,14 +88,8 @@ describe("RouteTreeBuilder implicit locale", () => {
 
       const bar = RouteTreeBuilder.match("/ko/foo/bar", routes);
       const baz = RouteTreeBuilder.match("/ko/foo/baz", routes);
-      expect(
-        bar &&
-          (await RouteElementComposer.resolveHead({ pathRoute: bar.pathRoute, params: bar.params, searchParams: {} })),
-      ).toBe("foo-root");
-      expect(
-        baz &&
-          (await RouteElementComposer.resolveHead({ pathRoute: baz.pathRoute, params: baz.params, searchParams: {} })),
-      ).toBe("baz-page");
+      expect(bar && (await RouteElementComposer.resolveHead(pageInput(bar)))).toBe("foo-root");
+      expect(baz && (await RouteElementComposer.resolveHead(pageInput(baz)))).toBe("baz-page");
     } finally {
       process.env.AKAN_PUBLIC_BASE_PATHS = prevBasePaths;
     }
@@ -95,14 +106,7 @@ describe("RouteTreeBuilder implicit locale", () => {
     }).build();
     const matched = RouteTreeBuilder.match("/ko/foo", routes);
 
-    expect(
-      matched &&
-        (await RouteElementComposer.resolveHead({
-          pathRoute: matched.pathRoute,
-          params: matched.params,
-          searchParams: {},
-        })),
-    ).toBe("root");
+    expect(matched && (await RouteElementComposer.resolveHead(pageInput(matched)))).toBe("root");
   });
 
   test("resolves SSR frame state from layout and page config chain", async () => {
@@ -147,11 +151,7 @@ describe("RouteTreeBuilder implicit locale", () => {
     const matched = RouteTreeBuilder.match("/ko/foo", routes);
     if (!matched) throw new Error("route did not match");
 
-    const head = await RouteElementComposer.resolveHead({
-      pathRoute: matched.pathRoute,
-      params: matched.params,
-      searchParams: {},
-    });
+    const head = await RouteElementComposer.resolveHead(pageInput(matched));
 
     await expect(renderToText(head)).resolves.toBe("");
   });
@@ -188,20 +188,8 @@ describe("RouteTreeBuilder implicit locale", () => {
     const reference = RouteTreeBuilder.match("/ko/docs/reference", routes);
     if (!guide || !reference) throw new Error("route did not match");
 
-    const guideHtml = await renderToText(
-      await RouteElementComposer.resolveHead({
-        pathRoute: guide.pathRoute,
-        params: guide.params,
-        searchParams: {},
-      }),
-    );
-    const referenceHtml = await renderToText(
-      await RouteElementComposer.resolveHead({
-        pathRoute: reference.pathRoute,
-        params: reference.params,
-        searchParams: {},
-      }),
-    );
+    const guideHtml = await renderToText(await RouteElementComposer.resolveHead(pageInput(guide)));
+    const referenceHtml = await renderToText(await RouteElementComposer.resolveHead(pageInput(reference)));
 
     expect(guideHtml).toContain("Guide</title>");
     expect(guideHtml).not.toContain("Docs layout description");
@@ -227,22 +215,8 @@ describe("RouteTreeBuilder implicit locale", () => {
       sort: "latest",
     });
 
-    expect(
-      matched &&
-        (await RouteElementComposer.resolveHead({
-          pathRoute: matched.pathRoute,
-          params: matched.params,
-          searchParams: {},
-        })),
-    ).toBe("about");
-    expect(
-      matched &&
-        (await RouteElementComposer.resolveHead({
-          pathRoute: matched.pathRoute,
-          params: matched.params,
-          searchParams: {},
-        })),
-    ).toBe("about");
+    expect(matched && (await RouteElementComposer.resolveHead(pageInput(matched)))).toBe("about");
+    expect(matched && (await RouteElementComposer.resolveHead(pageInput(matched)))).toBe("about");
     expect(loadCount).toBe(1);
     expect(RouteTreeBuilder.getCacheStats()).toMatchObject({
       moduleCount: 2,
@@ -265,36 +239,25 @@ describe("RouteTreeBuilder implicit locale", () => {
     }).build();
     const matched = RouteTreeBuilder.match("/ko/bad", routes);
 
-    expect(
-      matched &&
-        RouteElementComposer.resolveHead({ pathRoute: matched.pathRoute, params: matched.params, searchParams: {} }),
-    ).rejects.toThrow('[route-convention] unsupported export "loader"');
+    expect(matched && RouteElementComposer.resolveHead(pageInput(matched))).rejects.toThrow(
+      '[route-convention] unsupported export "loader"',
+    );
 
     const routesWithBadFallback = new RouteTreeBuilder({
       "./bad-fallback.tsx": async () => ({ default: () => null, NotFound: () => null }) as never,
     }).build();
     const badFallback = RouteTreeBuilder.match("/ko/bad-fallback", routesWithBadFallback);
-    expect(
-      badFallback &&
-        RouteElementComposer.resolveHead({
-          pathRoute: badFallback.pathRoute,
-          params: badFallback.params,
-          searchParams: {},
-        }),
-    ).rejects.toThrow('[route-convention] unsupported export "NotFound"');
+    expect(badFallback && RouteElementComposer.resolveHead(pageInput(badFallback))).rejects.toThrow(
+      '[route-convention] unsupported export "NotFound"',
+    );
 
     const routesWithMetadata = new RouteTreeBuilder({
       "./with-metadata.tsx": async () => ({ default: () => null, metadata: { title: "x" } }) as never,
     }).build();
     const withMetadata = RouteTreeBuilder.match("/ko/with-metadata", routesWithMetadata);
-    expect(
-      withMetadata &&
-        RouteElementComposer.resolveHead({
-          pathRoute: withMetadata.pathRoute,
-          params: withMetadata.params,
-          searchParams: {},
-        }),
-    ).rejects.toThrow('[route-convention] unsupported export "metadata"');
+    expect(withMetadata && RouteElementComposer.resolveHead(pageInput(withMetadata))).rejects.toThrow(
+      '[route-convention] unsupported export "metadata"',
+    );
   });
 
   test("composes nearest layout NotFound and Error fallbacks", async () => {
@@ -362,30 +325,11 @@ describe("RouteTreeBuilder implicit locale", () => {
   });
 
   test("composes route suffix renders", async () => {
-    const routes = new RouteTreeBuilder({
-      "./__root_layout.tsx": async () => ({
-        default: ({ children }: { children: ReactNode }) => <main>root:{children}</main>,
-      }),
-      "./docs/_layout.tsx": async () => ({
-        default: ({ children }: { children: ReactNode }) => <section>docs:{children}</section>,
-      }),
-      "./docs/api.tsx": async () => ({ default: () => <article>api</article> }),
-    }).build();
-    const matched = RouteTreeBuilder.match("/ko/docs/api", routes);
+    const matched = RouteTreeBuilder.match("/ko/docs/api", buildDocsApiRoutes());
     if (!matched) throw new Error("route did not match");
 
-    const suffix = RouteElementComposer.composeSuffix({
-      pathRoute: matched.pathRoute,
-      params: matched.params,
-      searchParams: {},
-      patchStartIndex: 2,
-    });
-    const invalidSuffix = RouteElementComposer.composeSuffix({
-      pathRoute: matched.pathRoute,
-      params: matched.params,
-      searchParams: {},
-      patchStartIndex: 99,
-    });
+    const suffix = RouteElementComposer.composeSuffix({ ...pageInput(matched), patchStartIndex: 2 });
+    const invalidSuffix = RouteElementComposer.composeSuffix({ ...pageInput(matched), patchStartIndex: 99 });
 
     expect(await renderToText(suffix)).toContain("api");
     expect(await renderToText(suffix)).not.toContain("docs:");
@@ -395,36 +339,14 @@ describe("RouteTreeBuilder implicit locale", () => {
   test("wraps full page renders in a guarded segment outlet without wrapping suffix renders", () => {
     const previous = process.env.AKAN_PUBLIC_RSC_PARTIAL_COMMIT;
     try {
-      const routes = new RouteTreeBuilder({
-        "./__root_layout.tsx": async () => ({
-          default: ({ children }: { children: ReactNode }) => <main>root:{children}</main>,
-        }),
-        "./docs/_layout.tsx": async () => ({
-          default: ({ children }: { children: ReactNode }) => <section>docs:{children}</section>,
-        }),
-        "./docs/api.tsx": async () => ({ default: () => <article>api</article> }),
-      }).build();
-      const matched = RouteTreeBuilder.match("/ko/docs/api", routes);
+      const matched = RouteTreeBuilder.match("/ko/docs/api", buildDocsApiRoutes());
       if (!matched) throw new Error("route did not match");
 
       process.env.AKAN_PUBLIC_RSC_PARTIAL_COMMIT = "0";
-      const guardOff = RouteElementComposer.compose({
-        pathRoute: matched.pathRoute,
-        params: matched.params,
-        searchParams: {},
-      });
+      const guardOff = RouteElementComposer.compose(pageInput(matched));
       process.env.AKAN_PUBLIC_RSC_PARTIAL_COMMIT = "1";
-      const guardOn = RouteElementComposer.compose({
-        pathRoute: matched.pathRoute,
-        params: matched.params,
-        searchParams: {},
-      });
-      const suffix = RouteElementComposer.composeSuffix({
-        pathRoute: matched.pathRoute,
-        params: matched.params,
-        searchParams: {},
-        patchStartIndex: 2,
-      });
+      const guardOn = RouteElementComposer.compose(pageInput(matched));
+      const suffix = RouteElementComposer.composeSuffix({ ...pageInput(matched), patchStartIndex: 2 });
 
       expect(containsElementType(guardOff, AkanSegmentOutletReference)).toBe(false);
       expect(containsElementType(guardOn, AkanSegmentOutletReference)).toBe(true);
@@ -441,11 +363,9 @@ describe("RouteTreeBuilder _overrides", () => {
   const DefaultModal: AkanModalComponent = ({ title }) => <div data-skin="default">{title}</div>;
   const BrandModal: AkanModalComponent = ({ title }) => <div data-skin="brand">{title}</div>;
   const InnerModal: AkanModalComponent = ({ title }) => <div data-skin="inner">{title}</div>;
-  // The page renders through the real "Modal" override slot, exactly like a shipped `<Modal>` call site.
   const Widget = createOverridable("Modal", DefaultModal);
 
-  // Mirrors the build: a `_overrides.tsx` manifest's default is `override({ ... })` (a plain slot map), served
-  // through a generated `"use client"` wrapper whose default mounts the provider with that map.
+  // Mirrors the generated "use client" wrapper: its default mounts UiOverrideProvider with the manifest's slot map.
   const overridesWrapperModule = (slots: { Modal: AkanModalComponent }) => {
     const value = override(slots);
     return {
@@ -467,9 +387,7 @@ describe("RouteTreeBuilder _overrides", () => {
   async function renderMatched(routes: ReturnType<typeof buildOverrideTree>, pathname: string): Promise<string> {
     const matched = RouteTreeBuilder.match(pathname, routes);
     if (!matched) throw new Error(`route did not match: ${pathname}`);
-    return renderToText(
-      RouteElementComposer.compose({ pathRoute: matched.pathRoute, params: matched.params, searchParams: {} }),
-    );
+    return renderToText(RouteElementComposer.compose(pageInput(matched)));
   }
 
   test("a root _overrides.tsx activates the override for the whole subtree", async () => {
@@ -486,10 +404,7 @@ describe("RouteTreeBuilder _overrides", () => {
     expect(html).toContain("PANEL");
   });
 
-  // What a root layout renders beside `{children}` — the agent chat, a dock, a shell control — is the position a
-  // manifest used to miss: the override rode the non-root layout stream, so the root layout wrapped the provider
-  // instead of sitting inside it, and every slot silently resolved to its default. Asserting on the resolved
-  // output rather than on the provider being present is what makes this catch it: the provider was there.
+  // Assert the resolved skin, not provider presence: in the regression the provider existed, inside the root layout.
   const shellLayoutModule = (title: string) => ({
     default: ({ children }: { children: ReactNode }) => (
       <>

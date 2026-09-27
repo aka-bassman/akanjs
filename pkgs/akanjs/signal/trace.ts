@@ -7,40 +7,20 @@ import {
   type LogRecord,
   logSeverity,
   registerLogContextReader,
+  round,
 } from "akanjs/common";
-
-/**
- * Request tracing for Akan signals, in two modes.
- *
- * `context` is on by default, production included: it carries only the identity a log record needs
- * (`traceId`, endpoint, origin) and costs one `als.run` per call (~25ns measured). `AKAN_LOG_CONTEXT=0` is
- * the emergency exit. `full` adds the per-stage spans, query counts and cache ratio the metrics endpoint
- * aggregates, and stays behind `AKAN_TRACE=1` because those are for performance work, not for every request.
- *
- * Two opt-ins ride the same trace: the canonical request line (`AKAN_LOG_CANONICAL`) summarizes every call as
- * one record at its end, and the flight recorder (`AKAN_LOG_FLIGHT`) keeps the call's own sub-level records
- * and promotes them only when the call failed or ran long.
- */
 
 let traceEnabledCache: boolean | null = null;
 let logContextEnabledCache: boolean | null = null;
 
-/** Whether full request tracing (`AKAN_TRACE=1`) is enabled. Cached after first read. */
-export const isTraceEnabled = (): boolean => {
-  if (traceEnabledCache === null) traceEnabledCache = process.env.AKAN_TRACE === "1";
-  return traceEnabledCache;
-};
+export const isTraceEnabled = (): boolean => (traceEnabledCache ??= process.env.AKAN_TRACE === "1");
 
-/** Override the trace flag at runtime (tests / harness control). */
 export const setTraceEnabled = (enabled: boolean): void => {
   traceEnabledCache = enabled;
 };
 
-export const isLogContextEnabled = (): boolean => {
-  if (logContextEnabledCache === null)
-    logContextEnabledCache = !(process.env.AKAN_LOG_CONTEXT === "0" || process.env.AKAN_LOG_CONTEXT === "false");
-  return logContextEnabledCache;
-};
+export const isLogContextEnabled = (): boolean =>
+  (logContextEnabledCache ??= !(process.env.AKAN_LOG_CONTEXT === "0" || process.env.AKAN_LOG_CONTEXT === "false"));
 
 export const setLogContextEnabled = (enabled: boolean): void => {
   logContextEnabledCache = enabled;
@@ -64,10 +44,7 @@ export const setCanonicalLineMode = (mode: CanonicalLineMode): void => {
 };
 
 let flightEnabledCache: boolean | null = null;
-export const isFlightRecorderEnabled = (): boolean => {
-  if (flightEnabledCache === null) flightEnabledCache = isOn(process.env.AKAN_LOG_FLIGHT);
-  return flightEnabledCache;
-};
+export const isFlightRecorderEnabled = (): boolean => (flightEnabledCache ??= isOn(process.env.AKAN_LOG_FLIGHT));
 export const setFlightRecorderEnabled = (enabled: boolean): void => {
   flightEnabledCache = enabled;
   refreshLoggerContextGate();
@@ -86,11 +63,8 @@ export const setFlightThresholdMs = (ms: number): void => {
   flightThresholdCache = ms;
 };
 
-/**
- * `x-akan-debug` lowers one request's log floor to `trace`. Honoured in `local` unconditionally, and elsewhere only
- * when the header carries the value of `AKAN_LOG_DEBUG_HEADER`: a client that can lower a server's log level is a
- * log-volume vector, so outside development it has to prove it was told the secret.
- */
+// `x-akan-debug` lowers one request's log floor to `trace`; outside `local` it must carry `AKAN_LOG_DEBUG_HEADER`,
+// since a client that can lower the log level is a log-volume vector.
 export const isDebugHeaderAllowed = (): boolean =>
   process.env.AKAN_PUBLIC_ENV === "local" || !!process.env.AKAN_LOG_DEBUG_HEADER;
 
@@ -108,7 +82,6 @@ export type TraceOrigin = "http" | "websocket" | "mcp" | "internal" | "page";
 export type TraceOutcome = "ok" | "error";
 
 const MAX_SPANS_PER_TRACE = 64;
-/** Per call; 64 lines is a whole request at `trace` for anything short of a loop that logs per row. */
 const FLIGHT_RING_SIZE = 64;
 const CANONICAL_ERROR_CHARS = 200;
 
@@ -117,7 +90,6 @@ interface FlightEntry {
   written: boolean;
 }
 
-/** Per-request trace context. Threaded via {@link AsyncLocalStorage}. */
 export class SignalTrace {
   /** Total captured records the process holds at once (`AKAN_LOG_FLIGHT_MAX`); a call past it runs unrecorded. */
   static readonly defaultFlightMaxRecords = 65_536;
@@ -131,7 +103,6 @@ export class SignalTrace {
   readonly mode: TraceMode;
   readonly startedAt: number;
   readonly spans: SpanRecord[] = [];
-  /** What the canonical line carries beyond timing — `userId` once the caller is known. */
   readonly attrs: LogAttrs = {};
   dbQueryCount = 0;
   dbQueryMs = 0;
@@ -161,7 +132,7 @@ export class SignalTrace {
     this.traceId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
-  /** The trace a call runs under given what is switched on, or `null` when both modes are off. */
+  /** `null` when both modes are off. */
   static create(endpointKey: string, endpointType: string, origin: TraceOrigin): SignalTrace | null {
     const trace = isTraceEnabled()
       ? new SignalTrace(endpointKey, endpointType, { mode: "full", origin })
@@ -189,7 +160,6 @@ export class SignalTrace {
     return `${this.endpointType}:${this.endpointKey}`;
   }
 
-  /** Attaches the ring unless the process is already holding its cap; a trace past the cap simply is not recorded. */
   startFlightRecorder(): boolean {
     if (this.#flightRing || this.#finalized) return !!this.#flightRing;
     if (SignalTrace.#activeFlights >= SignalTrace.#flightMaxTracesFromEnv()) return false;
@@ -309,34 +279,21 @@ export class SignalTrace {
   }
 }
 
-// Shared across bundle chunks (see traceAggregator note) so that span/db/cache helpers
-// invoked from other modules (database.resolver, middleware) observe the active trace.
-// Shared store pinned to `process`. The akan worker loads the app server bundle and the
-// framework runtime in separate module realms (each with its own `globalThis`), so the
-// signal layer that records spans and the metrics collector that reads them would otherwise
-// hold different singletons. `process` is the one object shared across realms in a single OS
-// process, so we hang the trace ALS + aggregator off it to guarantee a single instance.
+// Pinned to `process`: the app bundle and the framework runtime may load in separate realms and bundle chunks, and
+// `process` is the one object they share, so the ALS and the aggregator stay single instances.
 const traceProcessStore = process as unknown as {
   __akanTraceAls?: AsyncLocalStorage<SignalTrace>;
   __akanTraceAggregator?: TraceAggregator;
 };
 
-let alsInstance = traceProcessStore.__akanTraceAls;
-if (!alsInstance) {
-  alsInstance = new AsyncLocalStorage<SignalTrace>();
-  traceProcessStore.__akanTraceAls = alsInstance;
-}
-const als = alsInstance;
+traceProcessStore.__akanTraceAls ??= new AsyncLocalStorage<SignalTrace>();
+const als = traceProcessStore.__akanTraceAls;
 
 export const getCurrentTrace = (): SignalTrace | undefined => als.getStore();
 
-/** Run `fn` with `trace` as the ambient request trace. */
 export const runWithTrace = <T>(trace: SignalTrace, fn: () => T): T => als.run(trace, fn);
 
-/**
- * Run `fn` as the whole life of `trace`: a throw marks the outcome before it propagates, and the trace is
- * finalized after the caller's own catch has run — which is what lets an error log carry the traceId.
- */
+/** Finalizes `trace` after the caller's own catch has run, which is what lets an error log carry the traceId. */
 export const runTraced = async <T>(trace: SignalTrace | null, fn: () => Promise<T>): Promise<T> => {
   if (!trace) return await fn();
   return await als.run(trace, async () => {
@@ -364,10 +321,6 @@ registerLogContextReader(() => {
 });
 refreshLoggerContextGate();
 
-/**
- * Time an async stage under the current trace. When tracing is off (or no trace is
- * active) this is a thin passthrough with no measurement overhead.
- */
 export const traceSpan = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
   const trace = getCurrentTrace();
   if (trace?.mode !== "full") return await fn();
@@ -379,17 +332,14 @@ export const traceSpan = async <T>(name: string, fn: () => Promise<T>): Promise<
   }
 };
 
-/** Record a DB query duration against the current trace (no-op when untraced). */
 export const traceDbQuery = (durationMs: number): void => {
   getCurrentTrace()?.countDbQuery(durationMs);
 };
 
-/** Record a cache hit/miss against the current trace (no-op when untraced). */
 export const traceCache = (hit: boolean): void => {
   getCurrentTrace()?.countCache(hit);
 };
 
-/** Record a DataLoader batch against the current trace (no-op when untraced). */
 export const traceDataLoaderBatch = (keyCount: number): void => {
   getCurrentTrace()?.countDataLoaderBatch(keyCount);
 };
@@ -422,11 +372,6 @@ const percentile = (sorted: number[], p: number): number => {
   return sorted[idx] ?? 0;
 };
 
-/**
- * Process-wide aggregator. Keeps rolling per-endpoint, per-span statistics with a
- * bounded sample ring per span so percentiles stay representative of steady state
- * without unbounded memory growth.
- */
 class TraceAggregator {
   #endpoints = new Map<string, EndpointStat>();
 
@@ -473,7 +418,6 @@ class TraceAggregator {
     this.#endpoints.clear();
   }
 
-  /** Summarized snapshot suitable for JSON exposure on the metrics endpoint. */
   snapshot() {
     const endpoints = [...this.#endpoints.values()].map((stat) => {
       const spans = [...stat.spans.entries()].map(([name, s]) => {
@@ -507,35 +451,12 @@ class TraceAggregator {
   }
 }
 
-const round = (value: number, digits = 3): number => {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
-};
+traceProcessStore.__akanTraceAggregator ??= new TraceAggregator();
+export const traceAggregator: TraceAggregator = traceProcessStore.__akanTraceAggregator;
 
-// The akan build can bundle this module into more than one chunk (e.g. the signal layer
-// that writes spans vs. the metrics collector that reads them). A plain module-level
-// singleton would then diverge per chunk, so pin it to `process` (see above) to guarantee
-// that every copy of this module shares one aggregator within the process.
-let aggregatorInstance = traceProcessStore.__akanTraceAggregator;
-if (!aggregatorInstance) {
-  aggregatorInstance = new TraceAggregator();
-  traceProcessStore.__akanTraceAggregator = aggregatorInstance;
-}
-export const traceAggregator: TraceAggregator = aggregatorInstance;
-
-/** Snapshot of all aggregated trace stats. Safe to call when tracing is disabled. */
 export const getTraceSnapshot = () => traceAggregator.snapshot();
 
-/**
- * Optional file sink for the aggregated snapshot.
- *
- * The akan worker loads the app-server bundle and the framework metrics collector in
- * separate module realms that share neither `globalThis` nor `process`, so the in-realm
- * aggregator that records spans cannot be read by the metrics endpoint's collector. When
- * `AKAN_TRACE_FILE` is set, the recording realm instead flushes the cumulative snapshot to
- * that path (throttled), where any external reader (e.g. the benchmark harness) can pick it
- * up. This is a benchmarking/diagnostics aid, not a production hot-path concern.
- */
+// `AKAN_TRACE_FILE` flushes the snapshot (throttled) for a reader in a realm that cannot reach this aggregator.
 const traceFilePath = process.env.AKAN_TRACE_FILE;
 let lastTraceFlushAt = 0;
 const TRACE_FLUSH_INTERVAL_MS = 1_000;

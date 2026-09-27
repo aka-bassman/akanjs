@@ -9,23 +9,14 @@ const POINTER_INSET = 16;
 export interface OverlayPosition {
   top: number;
   left: number;
-  /** Placed above the trigger, because there was no room below. */
   above: boolean;
   /** The trigger's centre relative to the panel's left edge, held clear of the panel's rounded corners. */
   anchorOffset: number;
-  /** The trigger's own width, for a panel that lines up with the control it drops out of. */
   anchorWidth: number;
 }
 
-/**
- * Places a portalled panel against its trigger in viewport coordinates.
- *
- * A panel positioned inside its own tree is clipped by every `overflow` ancestor it has — the modal
- * surface, the modal's scrolling body, a table's scroll container, the dropdown menu a row verb sits in —
- * so overlay panels portal out to `document.body` and are placed here instead of by CSS.
- * `position: fixed` in place would not do it either: a fixed element inside a transformed ancestor is laid
- * out and clipped by that ancestor, and the modal surface animates a transform.
- */
+// Placed here, not by CSS: in its own tree a panel is clipped by every `overflow` ancestor, and `fixed` in place is
+// clipped by the modal surface's transform.
 export const useOverlayPosition = ({
   opened,
   triggerRef,
@@ -37,7 +28,6 @@ export const useOverlayPosition = ({
   triggerRef: RefObject<HTMLElement | null>;
   panelRef: RefObject<HTMLElement | null>;
   align: "start" | "end";
-  /** Distance from the trigger. Raise it for a panel whose pointer sticks out past its own edge. */
   gap?: number;
 }) => {
   const [position, setPosition] = useState<OverlayPosition | null>(null);
@@ -66,8 +56,7 @@ export const useOverlayPosition = ({
       anchorOffset: clamp((trigger.left + trigger.right) / 2 - left, POINTER_INSET, width - POINTER_INSET),
       anchorWidth: trigger.width,
     };
-    // Same-value writes are dropped rather than re-rendering, which is also what keeps the size observer
-    // below from re-entering: the width it hands the panel measures back to the position it came from.
+    // Dropping same-value writes is also what keeps the ResizeObserver below from re-entering.
     setPosition((prev) =>
       prev &&
       prev.top === next.top &&
@@ -89,8 +78,7 @@ export const useOverlayPosition = ({
     // Capture phase: the trigger may sit in a scroll container, whose scroll never reaches window by bubbling.
     window.addEventListener("scroll", measure, true);
     window.addEventListener("resize", measure);
-    // A panel that eases open, or one whose list a search narrows, is a different size each frame — and a
-    // panel placed above its trigger is anchored by its bottom edge, so its top moves as it grows.
+    // A panel placed above is anchored by its bottom edge, so its top moves whenever it resizes.
     const panel = panelRef.current;
     const observer = panel ? new ResizeObserver(measure) : null;
     if (panel && observer) observer.observe(panel);

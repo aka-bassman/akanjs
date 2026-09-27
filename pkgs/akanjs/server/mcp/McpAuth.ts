@@ -4,26 +4,17 @@ import { clientAddressFromHeaders } from "akanjs/common";
 import type { HttpRoutes } from "../types";
 
 export interface McpAuthOption {
-  /**
-   * Where a client may obtain a token, published in the metadata document for it to discover. Naming one also
-   * makes a credential mandatory: an MCP client begins its OAuth flow only on a 401, so a server that let an
-   * anonymous `initialize` succeed would leave it connected to the anonymous shelf and never asking.
-   */
+  /** Naming any makes a credential mandatory: an MCP client starts its OAuth flow only on a 401. */
   authorizationServers?: string[];
-  /** Scopes every call must carry. Declaring any turns `insufficient_scope` enforcement on. */
+  /** Declaring any turns `insufficient_scope` enforcement on. */
   scopes?: string[];
   /** Overrides the resource identifier when the public URL differs from what the request reports. */
   resource?: string;
-  /**
-   * Verifies a bearer token's signature and returns its claims, or `null` for one this server did not mint. The
-   * framework holds no signing key, so the module that issues tokens supplies this through `option.setMcp`; without
-   * it the claims are read unverified and a forged token degrades to an anonymous caller instead of being refused.
-   */
+  /** Claims, or `null` to refuse. Unset: claims are read unverified, so a forged token degrades to anonymous. */
   verify?: (token: string) => PromiseOrObject<Record<string, unknown> | null>;
 }
 
 export interface McpAuthProps extends McpAuthOption {
-  /** Path the MCP endpoint is mounted at. Its absolute URL is this server's OAuth resource identifier. */
   path: string;
 }
 
@@ -33,13 +24,7 @@ interface McpAuthFailure {
   description: string;
 }
 
-/**
- * The OAuth 2.1 protected-resource half of the MCP authorization spec: the RFC 9728 metadata document, the
- * `WWW-Authenticate` challenge that points at it, and the token checks that can be made without an issuer.
- *
- * The authorization server itself is a separate project. What lives here is what a resource server owes a
- * client regardless of who mints the tokens, so wiring one up later needs no change on this side.
- */
+// The OAuth 2.1 protected-resource half of MCP auth (RFC 9728); the authorization server lives elsewhere.
 export class McpAuth {
   static readonly wellKnownPath = "/.well-known/oauth-protected-resource";
 
@@ -49,10 +34,7 @@ export class McpAuth {
     this.#props = props;
   }
 
-  /**
-   * Both spellings of the metadata path. RFC 9728 inserts the resource's path into the well-known URL, and MCP
-   * clients try that form first and the bare one second; serving only one leaves half the clients at a 404.
-   */
+  // RFC 9728 inserts the resource path into the well-known URL; clients try that form first, then the bare one.
   createRoutes(): HttpRoutes {
     const handler = { GET: (req: Request) => this.#metadata(req) };
     return {
@@ -61,11 +43,7 @@ export class McpAuth {
     };
   }
 
-  /**
-   * A request that carried no credential at all gets a challenge with no `error` code — RFC 6750 §3.1 reserves
-   * the code for a credential that was presented and found wanting — so a client reads it as "authenticate",
-   * not as "your token is bad".
-   */
+  // No credential, no `error` code: RFC 6750 §3.1 reserves it for a presented credential found wanting.
   unauthorized(req: Request, failure?: McpAuthFailure) {
     const status = failure?.status ?? 401;
     const description = failure?.description ?? "Authentication is required to use this MCP server.";
@@ -75,16 +53,8 @@ export class McpAuth {
     );
   }
 
-  /**
-   * Refuses a bearer token that is already provably unusable, before the signal pipeline sees it.
-   *
-   * With a `verify` hook the token is checked end to end and one that fails is refused outright. Without one the
-   * claims are read **without verifying the signature**, which is sound only because every branch below can deny
-   * and none can grant: a forged token still has to pass the app's own middleware afterwards, so the worst a
-   * crafted payload achieves is refusing itself. What this buys is the failure mode it removes — an expired or
-   * foreign token otherwise degrades to an anonymous caller, and the agent is told a tool does not exist rather
-   * than that it needs to authenticate.
-   */
+  // Without `verify` the claims are read unverified — sound only because every branch here can deny and none grant;
+  // it turns an expired or foreign token into a challenge instead of an anonymous caller.
   async reject(req: Request): Promise<Response | null> {
     const token = McpAuth.#bearer(req);
     if (!token) return null;
@@ -101,17 +71,12 @@ export class McpAuth {
     return failure ? this.unauthorized(req, failure) : null;
   }
 
-  /**
-   * The 401 a credential-less request gets once an authorization server is named. A server naming none keeps
-   * anonymous access, which is what a public catalogue wants; the public tools of a server naming one are still
-   * reachable, with the token the challenge sends the client off to obtain.
-   */
   challengeAnonymous(req: Request): Response | null {
     if (!this.#props.authorizationServers?.length || McpAuth.#bearer(req)) return null;
     return this.unauthorized(req);
   }
 
-  /** A verifier that throws has said no: the token is refused, never let through as an anonymous caller. */
+  // A verifier that throws has said no: the token is refused, never let through as an anonymous caller.
   async #verified(token: string): Promise<Record<string, unknown> | null> {
     try {
       return (await this.#props.verify?.(token)) ?? null;
@@ -127,10 +92,8 @@ export class McpAuth {
     const audience = (Array.isArray(aud) ? aud : typeof aud === "string" ? [aud] : []).filter(
       (value): value is string => typeof value === "string",
     );
-    // An absent `aud` is not a violation while this server mints its own tokens: those are bound to the app and
-    // environment rather than to a resource URI, and refusing them would lock out every internal caller. Naming an
-    // authorization server changes that — the same issuer mints tokens for its other resources, and one that
-    // reaches this server carrying no audience at all is the confused-deputy case RFC 8707 is a MUST for.
+    // Own tokens bind app and environment, not a resource URI, so no `aud` passes — until an authorization server is
+    // named: its tokens for other resources could then arrive audience-less (RFC 8707 confused deputy).
     if (this.#props.authorizationServers?.length && !audience.length)
       return { status: 401, error: "invalid_token", description: "The access token names no resource." };
     if (audience.length && !audience.includes(this.#resource(req)))
@@ -142,10 +105,7 @@ export class McpAuth {
     return null;
   }
 
-  /**
-   * Enforced only when `scopes` is configured, because this server's own tokens carry no scope claim at all —
-   * declaring one is how a deployment says its issuer mints them.
-   */
+  // Only when `scopes` is configured: this server's own tokens carry no scope claim at all.
   #missingScopes(claims: Record<string, unknown>) {
     const required = this.#props.scopes ?? [];
     if (!required.length) return [];
@@ -186,12 +146,7 @@ export class McpAuth {
     return this.#props.resource ?? new URL(this.#props.path, this.publicOrigin(req)).href;
   }
 
-  /**
-   * The origin this server is known by. A configured `resource` settles it — that URL is what an authorization
-   * server issued `aud` for, so nothing a request says can be more authoritative — and only a server with none
-   * falls back to what the request reports. Every place that names the server to a client reads this: the
-   * resource identifier, the `resource_metadata` URL in the challenge, and `McpRouter`'s same-origin check.
-   */
+  // A configured `resource` wins: it is what the authorization server issued `aud` for, so no request outranks it.
   publicOrigin(req: Request) {
     if (this.#props.resource) {
       try {
@@ -203,19 +158,8 @@ export class McpAuth {
     return McpAuth.origin(req);
   }
 
-  /**
-   * The public origin as the request reports it, not the one the request arrived on. Behind a proxy `req.url`
-   * names the internal host the proxy dialed, and publishing that as the resource identifier is not cosmetic: an
-   * authorization server issues `aud` for the URL the *client* used, so every correctly-issued token would then
-   * fail the audience check.
-   *
-   * `x-forwarded-host` is a request header, so this is exactly as trustworthy as the edge that overwrites it, and
-   * a deployment whose edge merely appends leaves both the same-origin comparison and the audience a token is
-   * checked against to the caller. A browser cannot reach it — a custom header is not on a preflight, and the
-   * `OPTIONS` is judged on the real host — but a direct caller can. That is why `publicOrigin` prefers a
-   * configured `resource` (`AKAN_MCP_RESOURCE`, or what `libs/shared` derives from its issuer) and reads this only
-   * for a server that pinned nothing.
-   */
+  // Behind a proxy `req.url` is the internal host, while `aud` names the URL the client used. `x-forwarded-host` is
+  // only as trustworthy as the edge (a direct caller can forge it), hence `publicOrigin` prefers a pinned resource.
   static origin(req: Request) {
     const url = new URL(req.url);
     const forwarded = (header: string) => req.headers.get(header)?.split(",")[0]?.trim();
@@ -223,15 +167,7 @@ export class McpAuth {
     return `${forwarded("x-forwarded-proto") ?? url.protocol.replace(":", "")}://${host}`;
   }
 
-  /**
-   * Who a rate limit counts. A bearer token is one caller however many connections it opens: its session id,
-   * failing that its token id or subject, failing that the token itself hashed — an opaque token has nothing else.
-   * With no token the caller is the address a proxy recorded, and callers with no recorded address share one
-   * bucket, which is the right shape for a server that nothing fronts and that admits anonymous calls.
-   *
-   * Read unverified on purpose: this runs after `reject`, so a token that reaches it has already passed whatever
-   * verification the server has, and a key needs no more than that.
-   */
+  // Read unverified on purpose: this runs after `reject`, so the token already passed whatever verification exists.
   static callerKey(req: Request): string {
     const token = McpAuth.#bearer(req);
     if (!token) return `ip:${clientAddressFromHeaders(req.headers) ?? "anonymous"}`;
@@ -240,15 +176,15 @@ export class McpAuth {
     return typeof id === "string" ? `token:${id}` : `token:${createHash("sha256").update(token).digest("base64url")}`;
   }
 
+  // Case-insensitive (RFC 7235), split on spaces and unanchored like the account layer's own parse: a token that
+  // layer accepts but this one missed would skip the expiry, audience and scope checks.
   static #bearer(req: Request): string | null {
-    const [scheme, token] = (req.headers.get("authorization") ?? "").split(" ");
-    return scheme === "Bearer" && token ? token : null;
+    return /^Bearer +([^ ]+)/i.exec(req.headers.get("authorization") ?? "")?.[1] ?? null;
   }
 
   static #claims(token: string): Record<string, unknown> | null {
     const segments = token.split(".");
-    // An opaque token carries nothing to read, and judging one on shape alone would lock out a deployment that
-    // does not use JWTs at all.
+    // Opaque tokens carry nothing to read; judging them on shape would lock out deployments without JWTs.
     if (segments.length !== 3) return null;
     try {
       const claims: unknown = JSON.parse(Buffer.from(segments[1], "base64url").toString("utf8"));

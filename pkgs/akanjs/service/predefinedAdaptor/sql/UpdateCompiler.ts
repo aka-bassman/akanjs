@@ -4,9 +4,8 @@ import {
   type DocumentUpdateOperator,
   isDocumentUpdateNode,
 } from "akanjs/document";
-import { quoteIdent } from "../sqlDescriptor";
 import { BASE_COLUMNS, type FieldMap, type SqlDialect } from "./types";
-import { encodeSqlValue } from "./values";
+import { encodeSqlValue, quoteIdent } from "./values";
 
 export class UpdateCompiler {
   constructor(
@@ -60,8 +59,3 @@ export class UpdateCompiler {
     if (!this.fields[root]) throw new Error(`Unknown document field path: ${path}`);
   }
 }
-
-/**
- * Per-document modification state, attached only when a document is hydrated for writing.
- * Non-enumerable so `{ ...doc }` in `toRow` and `Object.entries` in `sanitizeJson` never see it.
- */

@@ -2,10 +2,9 @@ import "../../test/registerDom";
 import { describe, expect, test } from "bun:test";
 import { enumOf, Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
-import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AgenticSurface, AgentProvider } from "use-agentic";
+import { mount } from "../mount.fixture";
 import { store } from "../store";
 import { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
@@ -51,17 +50,6 @@ StoreRegistry.register(FormStore);
 const instance = new StoreInstance(StoreRegistry.merge("formRoot", FormStore));
 const dispatch = instance.do as unknown as { [key: string]: (value: unknown) => void };
 
-const mount = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  act(() => root.render(node));
-  return () => {
-    act(() => root.unmount());
-    container.remove();
-  };
-};
-
 interface ScreenOptions {
   agent?: boolean;
   controls?: unknown[];
@@ -105,7 +93,6 @@ describe("useFormTools", () => {
       properties: {
         title: { type: "string" },
         role: { type: "string", enum: ["owner", "guest"] },
-        // Reaching a list of embedded objects is the whole reason this tool exists beside the per-field ones.
         payments: {
           type: "array",
           items: {
@@ -139,8 +126,6 @@ describe("useFormTools", () => {
     written.length = 0;
     const unmount = mount(screen(surface));
 
-    // Rows of a list are written through `writeOn<Model>(path, value)`, which carries no annotation, so the
-    // guard has nothing to check and lets the whole list through.
     await surface.call("fillFormTestItemForm", { payments: [{ name: "deposit", amount: 100 }] });
     expect(written).toEqual([["payments", [{ name: "deposit", amount: 100 }]]]);
     await expect(
@@ -205,8 +190,6 @@ describe("useFormTools", () => {
     unmount();
   });
 
-  // A tool schema is built from the effect, never from the render, so a field nothing can describe can never cost
-  // a route its server rendering — the surface simply has no tools until the client commits.
   test("server rendering a form builds no schema", () => {
     const surface = new AgenticSurface();
     expect(() => renderToStaticMarkup(screen(surface))).not.toThrow();

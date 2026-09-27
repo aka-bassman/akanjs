@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import type { DevLogLine } from "../application/devLogBuffer";
 import type { DevAppStatus } from "../application/devSupervisor";
 
-/** One selectable row of the rail: the merged view, an app, or one source inside an app. */
 export interface DevTuiRailRow {
   app: string | null;
   source: string | null;
@@ -11,8 +10,7 @@ export interface DevTuiRailRow {
   state: DevAppStatus["state"] | null;
   port: number | null;
   depth: number;
-  /** The digit that jumps to this app, shown so the shortcut is visible. Only apps 1-9 have one. */
-  appIndex: number | null;
+  appIndex: number | null; // the 1-9 digit that jumps to this app; null past the ninth
 }
 
 export interface DevTuiSnapshot {
@@ -23,15 +21,12 @@ export interface DevTuiSnapshot {
   above: number;
   below: number;
   following: boolean;
-  /** Which field prefixes each line: the app when apps are merged, the source within one app. */
   prefix: "app" | "source" | "none";
   prefixWidth: number;
   grep: string;
   errorsOnly: boolean;
   editingGrep: boolean;
-  /** A copy result, holding the footer in place of the key hints until it expires. */
   notice: string;
-  /** Whether any app has a public share, which is what puts the `s` hint in the footer. */
   hasShare: boolean;
   readyCount: number;
   appCount: number;

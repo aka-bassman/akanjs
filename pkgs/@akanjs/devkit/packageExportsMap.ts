@@ -7,17 +7,9 @@ export interface UnreachableSubpath {
   target: string | null;
 }
 
-/**
- * The subset of Node's `exports` resolution that Bun applies to a published package.
- *
- * Exports targets are matched **exactly**: no extension is appended and no `index.ts` is probed. That
- * is invisible inside this monorepo, where `@akanjs/devkit/*` and `akanjs/*` resolve through the root
- * tsconfig `paths` instead — a resolver that *does* probe both. A map of `{"./*": "./*"}` therefore
- * type-checks, builds, and passes every test while every subpath import fails for anyone who installs
- * the tarball. This class exists so that gap can be asserted against before publishing.
- */
+// Bun matches exports targets exactly (no extension, no index.ts), while this monorepo resolves `akanjs/*` through
+// tsconfig paths, which probe both — so a broken map passes every in-repo test and fails for every installer.
 export class PackageExportsMap {
-  /** Reads `<packageDir>/package.json` and builds the map from its `exports` field. */
   static async from(packageDir: string) {
     const manifest = (await Bun.file(path.join(packageDir, "package.json")).json()) as { exports?: unknown };
     return new PackageExportsMap(packageDir, manifest.exports);
@@ -60,7 +52,6 @@ export class PackageExportsMap {
     // wins over `./*`, which is what keeps an already-suffixed specifier from gaining a second `.ts`.
     this.#patterns.sort((a, b) => b.prefix.length - a.prefix.length || b.suffix.length - a.suffix.length);
   }
-  /** Returns the target an `exports` lookup yields, or null when the subpath is unexported. */
   resolve(subpath: string): string | null {
     const literal = this.#literals.get(subpath);
     if (literal) return literal;
@@ -71,20 +62,13 @@ export class PackageExportsMap {
     }
     return null;
   }
-  /**
-   * Resolves a subpath and reports whether the target it yields is a readable file.
-   *
-   * A directory does not count. `{"./*": "./*"}` maps `./commandDecorators` onto the directory of
-   * that name, which exists but is not a module — an `existsSync` check here reports such a subpath
-   * as reachable while the import still fails.
-   */
+  // A directory does not count: `{"./*": "./*"}` maps `./commandDecorators` onto a folder, which is not importable.
   resolveToFile(subpath: string): { target: string | null; exists: boolean } {
     const target = this.resolve(subpath);
     if (!target) return { target: null, exists: false };
     const stat = statSync(path.join(this.#packageDir, target), { throwIfNoEntry: false });
     return { target, exists: !!stat?.isFile() };
   }
-  /** Returns the given subpaths that no consumer could import, in input order. */
   findUnreachable(subpaths: Iterable<string>): UnreachableSubpath[] {
     const unreachable: UnreachableSubpath[] = [];
     for (const subpath of subpaths) {

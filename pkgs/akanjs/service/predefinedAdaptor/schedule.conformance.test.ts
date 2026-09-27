@@ -7,9 +7,8 @@ import type { InjectInfo } from "../injectInfo";
 import { ScheduleAdaptorRole } from "./role.adaptor";
 import { Scheduler } from "./schedule.adaptor";
 
-// Two schedulers sharing one cache stand in for two instances of one app. Ids are from
-// `local/database-modes/01-multiple-redis.md` §4 and `03-single-instance-assumptions.md` §3; an id on a plain `test` is
-// a fixed defect.
+// Two schedulers sharing one cache stand in for two instances of one app. Ids are from `local/database-modes/`
+// (`01-multiple-redis.md` §4, `03-single-instance-assumptions.md` §3); an id on a plain `test` is a fixed defect.
 
 const quiet = { debug: () => undefined, warn: () => undefined, error: () => undefined, verbose: () => undefined };
 

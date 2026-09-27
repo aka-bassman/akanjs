@@ -19,12 +19,8 @@ export class None implements Guard {
 }
 
 /**
- * Gate for the `runAgentTurn` relay. Every tool runs in the caller's own browser session, so the LLM key is the
- * one thing this endpoint spends — ungated, any visitor can bill the app's provider through fetch alone.
- *
- * The framework has no account model to gate on, so with no guard registered it refuses every call — the same
- * answer `None` gives. An app names its own at boot, e.g. `AgentRelayAccess.use(Every)`, usually through
- * `option.setAgentAccess(...)`. Several are ANDed, as an endpoint's own `guards` array is.
+ * Gates the `runAgentTurn` relay, which spends the app's LLM key. Refuses every call until the app registers guards
+ * (`option.setAgentAccess(...)`); several are ANDed.
  */
 export class AgentRelayAccess implements Guard {
   // fetch serializes guard names and the API explorer filters on them; deleting this breaks that UI.
@@ -40,10 +36,6 @@ export class AgentRelayAccess implements Guard {
     return !!AgentRelayAccess.#guards.length;
   }
 
-  /**
-   * Whatever the registered guards need, since this one only forwards to them. With none registered it reads the
-   * caller and nothing else — the refusal is unconditional — so a listing may still evaluate it argument-free.
-   */
   static get scope(): GuardScope {
     return AgentRelayAccess.#guards.some((GuardCls) => GuardCls.scope === "resource") ? "resource" : "account";
   }

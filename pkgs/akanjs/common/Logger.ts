@@ -79,32 +79,22 @@ const colorizeMap: { [key in LogLevel]: (text: string) => string } = {
 };
 
 const ansiPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
-// An attribute under one of these names is masked before the record exists, so no sink, socket or stdout
-// line can carry it — the record may leave the process over the network.
+// Masked before the record exists: a record may leave the process over the network.
 const redactedAttrKey = /password|passwd|token|jwt|authorization|cookie|secret|api[-_]?key|private[-_]?key/i;
 
-/**
- * `process.env?.X` guards only `env` being absent, never `process` itself — an undeclared `process` is a
- * ReferenceError, and at module scope that takes the whole client bundle with it. This is the most widely
- * imported file in `common/`, and the unguarded form works today only because the browser build ships a shim.
- */
+// `process.env?.X` does not guard an undeclared `process`: its ReferenceError at module scope kills the client bundle.
 const envValue = (key: string): string | undefined => (typeof process === "undefined" ? undefined : process.env?.[key]);
 
-/** Log-level aware logger used by Akan runtime, CLI, and application services. */
 export class Logger {
-  /** `AKAN_LOG_STDOUT_LEVEL` names what the container's stdout carries; without it the console level is that. */
   static level: LogLevel = Logger.#levelFromEnv(
     envValue("AKAN_LOG_STDOUT_LEVEL"),
     Logger.#levelFromEnv(envValue("AKAN_PUBLIC_LOG_LEVEL"), "info"),
   );
   static fileLevel: LogLevel = Logger.#levelFromEnv(envValue("AKAN_LOG_FILE_LEVEL"), "trace");
   static format: LogFormat = Logger.#formatFromEnv(envValue("AKAN_LOG_FORMAT"));
-  /** Which process this is (`gateway`, `all`, `batch`, `rsc-worker`); the owner sets it at boot. */
+  /** `gateway`, `all`, `batch` or `rsc-worker`; the owner sets it at boot. */
   static role: string | null = envValue("SERVER_MODE") ?? null;
-  /**
-   * Whether this process writes its own lines to the terminal. Off in every server process of an ndjson
-   * deployment: the hub owner writes the one JSON stream, and a text line from anyone would corrupt it.
-   */
+  /** Off in every server process of an ndjson deployment but the hub owner, whose JSON stream a text line corrupts. */
   static consoleOutput = true;
   /** Set by the trace layer when a flight recorder or a per-request debug floor can be active. */
   static contextGate = false;
@@ -138,14 +128,12 @@ export class Logger {
   static get isNdjson() {
     return Logger.format !== "text";
   }
-  /** For hot-path callers that would otherwise build a message the level is about to discard. */
   static shouldLog(logLevel: LogLevelInput) {
     return Logger.#shouldLog(Logger.normalizeLevel(logLevel));
   }
   static normalizeLevel(level: LogLevelInput): LogLevel {
     return level === "log" ? "info" : level;
   }
-  /** The lowest named level whose severity is at least `sev`. */
   static levelAtOrAbove(sev: number): LogLevel {
     return logLevels.find((level) => logSeverity[level] >= sev) ?? "error";
   }
@@ -153,16 +141,15 @@ export class Logger {
     const level = record.level;
     if (level === null) return record.message;
     const replicaMsg = record.replicaIdx === null ? "" : `#${record.replicaIdx} `;
-    const processMsg = Logger.#colorize(`[${record.name}] ${replicaMsg}${record.pid ?? "window"} -`, level);
+    const processMsg = colorizeMap[level](`[${record.name}] ${replicaMsg}${record.pid ?? "window"} -`);
     const timestampMsg = dayjs(record.at).format("MM/DD/YYYY, HH:mm:ss A");
-    const logLevelMsg = Logger.#colorize(level.toUpperCase().padStart(7, " "), level);
+    const logLevelMsg = colorizeMap[level](level.toUpperCase().padStart(7, " "));
     const contextMsg = record.context ? clc.yellow(`[${record.context}] `) : "";
-    const contentMsg = Logger.#colorize(record.message, level);
+    const contentMsg = colorizeMap[level](record.message);
     const attrsMsg = record.attrs ? Logger.formatAttrs(record.attrs) : "";
     const timeDiffMsg = clc.yellow(`+${record.elapsedMs}ms`);
     return `${processMsg} ${timestampMsg} ${logLevelMsg} ${contextMsg} ${contentMsg}${attrsMsg ? ` ${attrsMsg}` : ""} ${timeDiffMsg}\n`;
   }
-  /** `key=value` pairs; a string with whitespace is quoted so the line stays splittable. */
   static formatAttrs(attrs: LogAttrs): string {
     return Object.entries(attrs)
       .map(
@@ -171,10 +158,7 @@ export class Logger {
       )
       .join(" ");
   }
-  /**
-   * A record somebody asked for below the level — a failed call's flight recorder, a request carrying
-   * `x-akan-debug` — passes every floor between here and the reader; the floors exist to drop what nobody asked for.
-   */
+  /** A flight-recorder or `x-akan-debug` record passes every floor between here and the reader. */
   static isPromoted(record: LogRecord) {
     return record.attrs?.flight === true || record.attrs?.debug === true;
   }
@@ -187,15 +171,10 @@ export class Logger {
     }
     return redacted ?? attrs;
   }
-  /** A structured record from a caller that has more than a sentence to say — the canonical request line. */
   static emit({ level, name, message, context = "", attrs }: LoggerEmitInput) {
     if (Logger.#shouldLog(level)) Logger.#write(name, message, context, level, attrs);
   }
-  /**
-   * Writes records that were captured below the gate and are now promoted — a failed request's flight
-   * recorder. They bypass the console level, since not showing them is what the recorder was for, and reach
-   * sinks under their own floors; each is marked `flight` so a reader knows why a trace line appears at info.
-   */
+  /** Writes a failed request's flight-recorder records past the console level, each marked `flight`. */
   static replay(records: LogRecord[], { evicted = 0 }: { evicted?: number } = {}) {
     records.forEach((record, idx) => {
       const attrs: LogAttrs = { ...record.attrs, flight: true };
@@ -233,7 +212,7 @@ export class Logger {
     if (Logger.#shouldLog("error")) Logger.#write(name, msg, context, "error");
   }
   raw(msg: string, method?: "console" | "process") {
-    Logger.rawLog(msg, method);
+    Logger.raw(msg, method);
   }
   rawLog(msg: string, method?: "console" | "process") {
     Logger.rawLog(msg, method);
@@ -272,9 +251,6 @@ export class Logger {
     for (const minSev of Logger.#sinks.values()) floor = Math.min(floor, minSev ?? Logger.#fileSev);
     Logger.#sinkFloorSev = floor;
   }
-  static #colorize(msg: string, logLevel: LogLevel) {
-    return colorizeMap[logLevel](msg);
-  }
   static stripAnsi(msg: string) {
     return msg.replace(ansiPattern, "");
   }
@@ -288,7 +264,6 @@ export class Logger {
   static #shouldEmitSink(logLevel: LogLevel) {
     return logSeverity[logLevel] >= Logger.#sinkFloorSev;
   }
-  /** The lowest severity the ambient request wants captured or shown, or +∞ outside one. */
   static #contextFloor(ctx: LogContextSnapshot | undefined) {
     if (!ctx) return Number.POSITIVE_INFINITY;
     return Math.min(ctx.flight?.minSev ?? Number.POSITIVE_INFINITY, ctx.debugSev ?? Number.POSITIVE_INFINITY);
@@ -342,7 +317,7 @@ export class Logger {
   }
   static #emit(entry: LoggerSinkEntry) {
     for (const [sink, minSev] of Logger.#sinks) {
-      // A raw line (CLI banner, spinner) carries no level and reaches every sink, as it did before sink floors.
+      // A raw line (CLI banner, spinner) carries no level and reaches every sink.
       if (
         entry.record.level !== null &&
         entry.record.sev < (minSev ?? Logger.#fileSev) &&
@@ -368,8 +343,7 @@ export class Logger {
     const ctx = readLogContext();
     const sev = logSeverity[logLevel];
     const debug = ctx?.debugSev !== undefined && ctx.debugSev !== null && sev >= ctx.debugSev;
-    // Marked when the request's floor, not the process level, is what admits it — the mark is what carries it
-    // past every later floor (a forwarder's, the stdout writer's) that would otherwise drop it as unasked-for.
+    // The mark carries a record the request's floor admitted past every later floor (forwarder, stdout writer).
     const promoted = debug && sev < Logger.#consoleSev;
     const record = Logger.#buildRecord(
       name,

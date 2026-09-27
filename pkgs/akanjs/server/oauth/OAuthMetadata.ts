@@ -5,19 +5,15 @@ export interface OAuthMetadataProps {
   registrationEndpoint?: string;
   revocationEndpoint?: string;
   scopesSupported?: string[];
-  /** Whether a `client_id` that is an HTTPS URL is read as a metadata document. Advertised as true unless a deployment turned it off. */
+  /** Whether an HTTPS `client_id` is read as a metadata document; defaults to `true`. */
   clientIdMetadataDocumentSupported?: boolean;
 }
 
 export class OAuthMetadata {
   static readonly wellKnownSuffix = "/.well-known/oauth-authorization-server";
 
-  /**
-   * The RFC 8414 document. Three fixed fields are load-bearing for MCP clients: `code_challenge_methods_supported`
-   * (a client MUST refuse to proceed without it), `client_id_metadata_document_supported` (the registration path the
-   * spec prefers), and `authorization_response_iss_parameter_supported` (which is what obliges the client to check
-   * `iss` on the way back).
-   */
+  // RFC 8414. Load-bearing for MCP clients: `code_challenge_methods_supported` (without it a client MUST refuse),
+  // `client_id_metadata_document_supported` (preferred registration), and the `iss` flag (obliges clients to check it).
   static document({
     issuer,
     authorizationEndpoint,

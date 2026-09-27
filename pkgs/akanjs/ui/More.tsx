@@ -33,8 +33,6 @@ export const More = ({
     setIsMobile(isMobileDevice());
   }, []);
 
-  // The two modes are not two looks on one list: infinite scroll accumulates pages `1..N` while the pager swaps
-  // one window, so they read different state and drive different actions.
   if (isMobile)
     return (
       <InfiniteScroll hasMore={hasMore} onLoadMore={onLoadMore} reverse={reverse}>

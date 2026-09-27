@@ -8,58 +8,29 @@ import { agentAttrs } from "./agentAttrs";
 import { type ButtonVariants, buttonRecipe } from "./recipe";
 import { useUiOverride, useUiRecipe } from "./UiOverride";
 
-// buttonRecipe/ButtonVariants live in the server-safe ./recipe layer (no "use client") so server
-// components can compose classNames. Re-exported here so `from "./Button"` relative importers keep resolving.
 export { type ButtonVariants, buttonRecipe };
 
 export type ButtonProps<Result> = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onClick"> &
   ButtonVariants & {
-    /**
-     * Click handler. Returning a promise is what opts this button into the async states — a plain
-     * synchronous handler renders as an ordinary button with no spinner. Call onError to show the
-     * localized error state without throwing.
-     */
+    /** Returning a promise opts into the pending/success states; `onError` shows a localized error without throwing. */
     onClick?: (
       e: React.MouseEvent<HTMLButtonElement>,
       { onError }: { onError: (error: string) => void },
     ) => Promise<Result> | Result;
-    /** Called after the button briefly enters success state. */
+    /** Called after the brief success state. */
     onSuccess?: (result: Result) => void;
-    /**
-     * How the pending/success indicator is drawn. Both modes keep the button's box fixed — CSS cannot
-     * animate an auto width, so a resizing button can only ever snap.
-     *
-     * `hold` (default) fades a bare indicator over the children, so the box stays exactly the children's
-     * size. `replace` cross-fades to a labelled indicator ("Processing…"); both labels stay stacked in the
-     * DOM, so the box is the wider of the two from the start and still never moves — at the cost of an idle
-     * button that is as wide as its longest state.
-     */
+    /** `hold` (default) fades a bare indicator over the children; `replace` cross-fades to a labelled one and sizes
+     *  the box to the wider label. Either way the box never resizes. */
     loadingMode?: "hold" | "replace";
     /** Whether a message passed to `onError` renders under the button. A thrown error is left to its thrower. */
     showError?: boolean;
   };
 
-/**
- * Success mark, entering with `checkIn` (akanjs/ui/styles.css — a 340ms fade plus a 6% overshoot; `pop`'s 1.5x
- * overshoot from zero reads as cartoonish on a glyph this small).
- *
- * The colour is derived from the button, never named — any fixed token fails somewhere: `text-success` vanishes
- * on a `success` button, and a `bg-success` disc lands an unrelated hue on every other fill.
- *
- * `AiFillCheckCircle` is a solid disc with the tick punched out, which is why it is used instead of an outline
- * glyph plus a tinted halo. The disc is `currentColor` (the button's foreground) and the tick is the fill
- * showing through, so the mark reuses the variant's own foreground/background pair — already contrast-checked
- * by themeValidator — at full strength. An earlier attempt put an outline tick on a low-alpha current-colour
- * halo, which did the opposite: tinting the local background toward the glyph's own colour *lowered* the
- * contrast that made the tick readable. (Do not name the class here — Tailwind's source scanner reads comments
- * too, so a class literal in prose compiles to a dead rule.)
- *
- * Sizing is in `em`, so one class covers `xs` through `lg`.
- */
+// A solid `currentColor` disc with the tick punched out, so it takes the variant's own foreground/background pair:
+// any fixed token vanishes on some variant, and a tinted halo lowered the tick's contrast.
 const successIconClass = "animate-checkIn text-[1.15em]";
 
-// The success state must outlast its 340ms entrance. At the previous 300ms the animation was cut off
-// mid-overshoot, which is what made a completed action read as "nothing happened".
+// Must outlast the 340ms `checkIn` entrance, or a completed action reads as "nothing happened".
 const successDwellMs = 700;
 
 const DefaultButton = <Result = unknown>({
@@ -77,11 +48,8 @@ const DefaultButton = <Result = unknown>({
   ...rest
 }: ButtonProps<Result>) => {
   const { l } = usePage();
-  // Route-scoped look swap (recipe slot). Behavior below is untouched by a swap.
   const recipe = useUiRecipe("button") ?? buttonRecipe;
-  // `shown` is which indicator the overlay holds, tracked apart from `mode` because the overlay stays mounted
-  // and fades on opacity. Deriving it from `mode` swapped the check back to the spinner the instant the state
-  // went idle, so the 200ms fade-out played as a flash of "loading" after a completed action.
+  // `shown` is tracked apart from `mode`: the overlay fades on opacity, and deriving it flashed the spinner after success.
   const [state, setState] = useState<{
     mode: "idle" | "loading" | "success" | "error";
     error: string | null;
@@ -94,12 +62,8 @@ const DefaultButton = <Result = unknown>({
         type={type}
         className={recipe(
           { variant, size, shape, outline },
-          // `relative` is the hold overlay's containing block — the component's need, so it is not baked into
-          // the recipe, where it would also land on every raw `buttonRecipe()` call site.
-          //
-          // While busy the button is disabled only to swallow duplicate clicks, so the recipe's
-          // `disabled:opacity-50` has to be cancelled: an action in flight — and especially one that just
-          // succeeded — must not read as greyed-out/unavailable. A caller-supplied `disabled` keeps the dim.
+          // `relative` stays out of the recipe (raw `buttonRecipe()` calls need none); busy disables only to
+          // swallow clicks, so the recipe's dim is cancelled unless the caller disabled it.
           cn(loadingMode === "hold" && "relative", busy && !rest.disabled && "disabled:opacity-100", className),
         )}
         {...rest}
@@ -119,7 +83,6 @@ const DefaultButton = <Result = unknown>({
           void (async () => {
             try {
               const awaited = (await result) as Result;
-              // onError already reported a failure — do not paint success over it.
               if (errored) return;
               setState({ mode: "success", error: null, shown: "success" });
               setTimeout(() => {
@@ -128,21 +91,14 @@ const DefaultButton = <Result = unknown>({
                 onSuccess?.(awaited);
               }, successDwellMs);
             } catch {
-              // The thrower (store action / fetch) already surfaced the error; reset so the button
-              // cannot stay disabled in `loading` forever. `shown` stays "loading", so the fade-out
-              // is the spinner — a failed action must never flash a success check.
+              // The thrower already surfaced the error; `shown` stays "loading" so a failure never flashes a check.
               setState((s) => ({ ...s, mode: "idle", error: null }));
             }
           })();
         }}
       >
         {loadingMode === "replace" ? (
-          // Both labels sit in the same grid cell, so the track is the wider of the two and the box is fixed
-          // from first paint. Cross-fading between them is what CSS can actually animate here.
-          // `place-items-center` centers each label in the cell explicitly. Without it the items rely on
-          // grid's default `stretch` plus their own `justify-center`, which lands the label off-centre in the
-          // track whenever the two labels differ in width — the visible symptom being a label that hugs the
-          // left of an otherwise correct box.
+          // One grid cell for both labels fixes the box at the wider one; `place-items-center` keeps the narrower centred.
           <span className="grid place-items-center">
             <span
               className={cn(
@@ -201,13 +157,7 @@ const DefaultButton = <Result = unknown>({
   );
 };
 
-/**
- * Button whose async states are driven by the handler's return value: return a promise and it shows a
- * pending indicator, then a brief success state; return nothing and it behaves as a plain button. Resolves
- * to a route-scoped override when a `page/**\/_overrides.tsx` in the route's ancestry declares one,
- * otherwise renders {@link DefaultButton}. The public generic signature is preserved, so
- * `<Button<Todo> onSuccess={(r: Todo) => …} />` still infers.
- */
+/** A promise returned from `onClick` shows a pending indicator, then a brief success state. */
 export const Button = <Result = unknown>(props: ButtonProps<Result>) => {
   const Override = useUiOverride("Button");
   const Impl = (Override ?? DefaultButton) as unknown as ComponentType<ButtonProps<Result>>;

@@ -1,21 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
 import { ModuleExecutor } from "@akanjs/devkit/executors";
-import { cleanupCliTempWorkspace, createCallRecorder, createTempModule } from "@akanjs/devkit/testHelpers";
+import { createCallRecorder, createTempModule, tempRoots } from "@akanjs/devkit/testHelpers";
 import { ModuleRunner } from "./module.runner";
 import { ModuleScript } from "./module.script";
 
-const tempRoots: string[] = [];
-
-afterEach(async () => {
-  CommandContainer.clear();
-  await Promise.all(tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)));
-});
+afterEach(() => CommandContainer.clear());
+const track = tempRoots();
 
 describe("ModuleRunner", () => {
   test("creates full module template files in the target module directory", async () => {
-    const { root, module } = await createTempModule("post");
-    tempRoots.push(root);
+    const { module } = track(await createTempModule("post"));
     const runner = new ModuleRunner();
 
     const files = await runner.createModuleTemplate(module);
@@ -46,8 +41,7 @@ describe("ModuleRunner", () => {
   });
 
   test("guards the scaffolded slice with libs/shared's Admin when the system mounts it", async () => {
-    const { root, app, module } = await createTempModule("post");
-    tempRoots.push(root);
+    const { app, module } = track(await createTempModule("post"));
     await app.writeFile("lib/srv.ts", 'export * as shared from "@libs/shared/lib/srv";\n');
 
     const files = await new ModuleRunner().createModuleTemplate(module);
@@ -59,8 +53,7 @@ describe("ModuleRunner", () => {
   });
 
   test("creates service module template files without database files", async () => {
-    const { root, app } = await createTempModule("unused");
-    tempRoots.push(root);
+    const { app } = track(await createTempModule("unused"));
     const service = ModuleExecutor.from(app, "_localBuild");
     const runner = new ModuleRunner();
 
@@ -83,8 +76,7 @@ describe("ModuleRunner", () => {
   });
 
   test("creates individual component templates through the parent system", async () => {
-    const { root, module } = await createTempModule("comment");
-    tempRoots.push(root);
+    const { module } = track(await createTempModule("comment"));
     const runner = new ModuleRunner();
 
     const { component } = await runner.createComponentTemplate(module, "view");

@@ -409,7 +409,7 @@ export default page().render(() => {
           <h1 className="font-black text-4xl leading-tight tracking-tight md:text-5xl">
             {l.trans({
               en: "Akan.js v3: agents join the full stack",
-              ko: "Akan.js v3: 풀스택에 에이전트가 합류합니다",
+              ko: "Akan.js v3: 풀스택에 에이전트까지",
             })}
           </h1>
           <p className="mt-6 text-foreground/70 text-lg leading-8">
@@ -664,8 +664,8 @@ export default page().render(() => {
           <h2 className="font-bold text-2xl">{l.trans({ en: "What comes next", ko: "다음은" })}</h2>
           <p className="mt-4 text-foreground/75 leading-7">
             {l.trans({
-              en: "v3 is the stage where agents came aboard. The next burns take the same business code to native desktop apps, to a production-grade mobile runtime, and into a network of agents that works across sessions, people and apps.",
-              ko: "v3는 에이전트가 탑승한 단계입니다. 다음 점화는 같은 비즈니스 코드를 네이티브 데스크톱 앱으로, 프로덕션급 모바일 런타임으로, 그리고 세션과 사람, 앱을 넘나드는 에이전트 네트워크로 데려갑니다.",
+              en: "v3 is the stage where agents joined the full stack. What comes next is the agent network across sessions, people and apps, Akan Cloud for deployment, context-side rendering as the agentic rendering step after SSR and CSR, and a repository engine that changes and extends the app itself.",
+              ko: "v3는 에이전트가 풀스택에 합류한 단계입니다. 다음은 세션과 사람, 앱을 넘나드는 에이전트 네트워크, 배포를 맡는 Akan Cloud, SSR·CSR 다음의 에이전틱 렌더링인 컨텍스트사이드 렌더링, 그리고 앱을 직접 변경·확장하는 레포지토리 엔진입니다.",
             })}
           </p>
           <Link

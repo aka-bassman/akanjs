@@ -32,40 +32,15 @@ import {
 
 const DEFAULT_BARREL_IMPORTS = ["akanjs/webkit", "akanjs/common", "akanjs/ui", "akanjs/server"];
 const DEFAULT_OPTIMIZE_IMPORTS = [
-  "lucide-react",
-  "date-fns",
-  "lodash-es",
-  "ramda",
-  "antd",
-  "react-bootstrap",
-  "ahooks",
-  "@ant-design/icons",
-  "@headlessui/react",
-  "@headlessui-float/react",
-  "@heroicons/react/20/solid",
-  "@heroicons/react/24/solid",
-  "@heroicons/react/24/outline",
-  "@visx/visx",
-  "@tremor/react",
-  "rxjs",
-  "@mui/material",
-  "@mui/icons-material",
-  "recharts",
-  "react-use",
-  "@material-ui/core",
-  "@material-ui/icons",
-  "@tabler/icons-react",
-  "mui-core",
-  "react-icons/*",
-];
+  "lucide-react date-fns lodash-es ramda antd react-bootstrap ahooks @ant-design/icons @headlessui/react",
+  "@headlessui-float/react @heroicons/react/20/solid @heroicons/react/24/solid @heroicons/react/24/outline",
+  "@visx/visx @tremor/react rxjs @mui/material @mui/icons-material recharts react-use @material-ui/core",
+  "@material-ui/icons @tabler/icons-react mui-core react-icons/*",
+].flatMap((line) => line.split(" "));
 const WORKSPACE_BARREL_FACETS = ["ui", "webkit", "common", "client", "server"] as const;
 const DEFAULT_DOCKER_IMAGE = "oven/bun:1-slim";
 const SSR_RUNTIME_PACKAGES = ["react", "react-dom", "react-server-dom-webpack"] as const;
-// The firebase client (push tokens) and the Capacitor toolchain — `@capacitor/cli` (`npx cap`),
-// `@capacitor/assets` (`npx @capacitor/assets`) plus the `@capacitor/core`/`ios`/`android` runtime
-// and native-platform packages that `npx cap add`/`sync` resolve from the workspace node_modules.
-// All are declared only as optional peers, so a fresh workspace never auto-installs them; the mobile
-// preflight installs them (together with MOBILE_APP_CAPACITOR_PLUGINS) at the workspace root.
+// Optional peers only, so a fresh workspace never installs them; the mobile preflight adds them at the root.
 const MOBILE_RUNTIME_PACKAGES = [
   "@capacitor/cli",
   "@capacitor/core",
@@ -73,27 +48,14 @@ const MOBILE_RUNTIME_PACKAGES = [
   "@capacitor/android",
   "@capacitor/assets",
 ] as const;
-// Capacitor plugins that must additionally be declared in the *app's* package.json
-// (apps/<app>/package.json): `npx cap sync` discovers plugins by scanning the app directory's
-// dependencies and registers their native code into the iOS/Android projects; packages present only
-// at the workspace root are never registered, so the JS bridge throws
-// `Capacitor plugin "Device" is not available.` at runtime. They are installed at the workspace root
-// alongside MOBILE_RUNTIME_PACKAGES (pinned via optional peers) and declared in the app with a "*"
-// range so bun dedupes them to that hoisted version instead of pinning a second source of truth.
+// `npx cap sync` registers only plugins the app's own package.json declares (else the bridge throws `Capacitor plugin
+// "Device" is not available.`), so they are declared there with "*" and deduped to the root-installed version.
 const MOBILE_APP_CAPACITOR_PLUGINS = [
-  "@capacitor/app",
-  "@capacitor/browser",
-  "@capacitor/camera",
-  "@capacitor/core",
-  "@capacitor/device",
-  "@capacitor/geolocation",
-  "@capacitor/haptics",
-  "@capacitor/inappbrowser",
-  "@capacitor/keyboard",
-  "@capacitor/preferences",
-  "@capacitor/push-notifications",
+  ..."app browser camera core device geolocation haptics inappbrowser keyboard preferences push-notifications"
+    .split(" ")
+    .map((name) => `@capacitor/${name}`),
   "capacitor-plugin-safe-area",
-] as const;
+];
 const DEFAULT_AKAN_IMAGE_CONFIG: AkanImageConfig = {
   deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
   imageSizes: [32, 48, 64, 96, 128, 256, 384],
@@ -121,18 +83,14 @@ const normalizeStringList = (values: string[] | undefined) => {
   return normalized.length > 0 ? [...new Set(normalized)] : undefined;
 };
 
-// Reduce a free-form name to a valid reverse-DNS / Android package segment: lowercase, alphanumerics
-// only (hyphens/spaces dropped), never empty, never starting with a digit.
+// A reverse-DNS / Android package segment: lowercase alphanumerics, never empty, never starting with a digit.
 const sanitizeAppIdSegment = (value: string): string => {
   const cleaned = value.toLowerCase().replace(/[^a-z0-9]+/g, "");
   if (!cleaned) return "app";
   return /^[a-z]/.test(cleaned) ? cleaned : `app${cleaned}`;
 };
 
-// The default mobile bundle id for an app that has not pinned `mobile.appId`. Uses the workspace
-// (repo) name as the org segment so the default is far less collision-prone than a bare
-// `com.<appName>.app`, which Apple's portal routinely already has claimed. Apps that ship pin an
-// explicit appId, so this only affects unconfigured/dev apps.
+// The repo name is the org segment: a bare `com.<appName>.app` is routinely already claimed on Apple's portal.
 export const deriveDefaultAppId = (orgName: string, appName: string): string =>
   `com.${sanitizeAppIdSegment(orgName)}.${sanitizeAppIdSegment(appName)}`;
 
@@ -165,13 +123,11 @@ const normalizeDeepLinks = (deepLinks: DeepPartial<AkanMobileTargetConfig["deepL
   } satisfies AkanMobileTargetConfig["deepLinks"];
 };
 
-/** What `akan.config.ts` may write: the resolved shape made partial, with `docker` and `web` in their unions. */
 type AppConfigDeclaration = Omit<DeepPartial<AppConfigResult>, "docker" | "web"> & {
   docker?: DockerOption;
   web?: AkanWebOption;
 };
 
-/** What the workspace's libs add to an app's build, read off each `libs/<lib>/akan.config.ts`. */
 export interface LibContributions {
   externalLibs: string[];
   docker: LibDockerConfig;
@@ -216,7 +172,7 @@ export class AkanAppConfig implements AppConfigResult {
   hasMobileConfig: boolean;
   secrets: string[];
   assets: AkanAssetsConfig;
-  /** Raw setting; resolved against the app's lib deps at sync time (see `AppExecutor.syncPages`). */
+  /** Raw setting, resolved against the app's lib deps at sync time. */
   syncPageLibs: string[] | boolean;
   baseDevEnv: BaseDevEnv;
   libs: string[];
@@ -356,24 +312,12 @@ export class AkanAppConfig implements AppConfigResult {
   }
   #applyRoutes(routes: AkanRouteConfig[] = []) {
     for (const route of routes) {
-      if (route.basePath) {
-        const basePath = route.basePath.replace(/^\/+|\/+$/g, "");
-        this.basePaths.add(basePath);
-        const domains = this.subRoutes.getOrInsert(basePath, new Set());
-        Object.keys(route.domains).forEach((branch) => void this.branches.add(branch));
-        Object.values(route.domains)
-          .flat()
-          .forEach((domain) => {
-            if (domain) domains.add(domain.toLowerCase().replace(/:\d+$/, ""));
-          });
-      } else {
-        Object.keys(route.domains).forEach((branch) => void this.branches.add(branch));
-        Object.values(route.domains)
-          .flat()
-          .forEach((domain) => {
-            if (domain) this.domains.add(domain.toLowerCase().replace(/:\d+$/, ""));
-          });
-      }
+      const basePath = route.basePath ? route.basePath.replace(/^\/+|\/+$/g, "") : null;
+      if (basePath !== null) this.basePaths.add(basePath);
+      const domains = basePath !== null ? this.subRoutes.getOrInsert(basePath, new Set()) : this.domains;
+      for (const branch of Object.keys(route.domains)) this.branches.add(branch);
+      for (const domain of Object.values(route.domains).flat())
+        if (domain) domains.add(domain.toLowerCase().replace(/:\d+$/, ""));
     }
     const appName = this.app.name.toLowerCase();
     const serveDomain = this.baseDevEnv.serveDomain.toLowerCase();
@@ -417,11 +361,8 @@ export class AkanAppConfig implements AppConfigResult {
     const preRunScripts = this.#getDockerRunScripts(preRuns);
     const postRunScripts = this.#getDockerRunScripts(postRuns);
     const imageScript = this.#getDockerImageScript(image, DEFAULT_DOCKER_IMAGE);
-    // The image default matches what the build actually produced; a deployment narrows it further with its
-    // own env, and can never widen it past the artifacts that are in the image.
-    // File logging is off in the image: a container's writable layer is ephemeral and nothing collects a
-    // file from it, so the rotating files would only fill the node disk (50MB x 100 at `trace`). stdout is
-    // the collection path; a deployment that wants the files back sets `AKAN_LOG_TO_FILE=1`.
+    // The web env matches what was built (a deployment can only narrow it). File logging is off: a container's
+    // writable layer is ephemeral and stdout is the collection path.
     const webEnvLines = [
       ...(this.web.ssr ? [] : ["ENV AKAN_SSR=false"]),
       ...(this.web.csr ? [] : ["ENV AKAN_CSR=false"]),
@@ -455,11 +396,7 @@ ${webEnvLines}
 CMD [${command.map((c) => `"${c}"`).join(",")}]`;
   }
   static #importGeneration = 0;
-  /**
-   * Bun caches dynamic imports by path, so a plain re-import after the user edits the config file
-   * returns the stale module. `bustImportCache` appends a fresh query string to force re-evaluation
-   * of the config module itself; modules it imports keep their cached instances.
-   */
+  // Bun caches dynamic imports by path; a fresh query string re-evaluates the config module (its imports stay cached).
   static async importConfigModule<T = unknown>(
     cwdPath: string,
     { bustImportCache = false }: { bustImportCache?: boolean } = {},
@@ -511,11 +448,11 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
   #resolveProductionDependencyVersion(lib: string) {
     const rootVersion = this.rootPackageJson.dependencies?.[lib] ?? this.rootPackageJson.devDependencies?.[lib];
     if (rootVersion) return rootVersion;
-    // Fall back to the framework package's own (peer)dependencies so plugin-declared runtime
-    // packages (e.g. firebase for the push plugin) resolve a version without the framework
-    // hardcoding a per-feature package list.
+    // The framework's own (peer)dependencies resolve plugin runtime packages without a hardcoded list.
     const akanPackageJson = getAkanPackageJson();
-    return akanPackageJson.dependencies?.[lib] ?? akanPackageJson.peerDependencies?.[lib];
+    const version = akanPackageJson.dependencies?.[lib] ?? akanPackageJson.peerDependencies?.[lib];
+    if (!version) throw new Error(`Dependency ${lib} not found in package.json`);
+    return version;
   }
   #getProductionRuntimePackages() {
     return [
@@ -544,8 +481,7 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
     return { modes: DatabaseModes.parseList(modes.join(","), `database.modes in apps/${app.name}/akan.config.ts`) };
   }
   getMobileRuntimePackages() {
-    // The app Capacitor plugins are installed at the workspace root too, so bun can resolve the
-    // app's "*" declarations to a hoisted, peer-pinned version instead of fetching latest.
+    // Installed at the root too, so the app's "*" declarations resolve to the hoisted, peer-pinned version.
     return [...new Set([...MOBILE_RUNTIME_PACKAGES, ...MOBILE_APP_CAPACITOR_PLUGINS])];
   }
   getMissingMobileDependencySpecs() {
@@ -561,11 +497,7 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
     };
     return libs
       .filter((lib) => !rootDependencies[lib])
-      .map((lib) => {
-        const version = this.#resolveProductionDependencyVersion(lib);
-        if (!version) throw new Error(`Dependency ${lib} not found in package.json`);
-        return `${lib}@${version}`;
-      });
+      .map((lib) => `${lib}@${this.#resolveProductionDependencyVersion(lib)}`);
   }
   get akanVersion() {
     return getAkanPackageJson().version;
@@ -577,11 +509,10 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
       version: "1.0.0",
       main: "./main.js",
       dependencies: Object.fromEntries(
-        [...new Set(this.#getProductionRuntimePackages())].map((lib) => {
-          const version = this.#resolveProductionDependencyVersion(lib);
-          if (!version) throw new Error(`Dependency ${lib} not found in package.json`);
-          return [lib, version];
-        }),
+        [...new Set(this.#getProductionRuntimePackages())].map((lib) => [
+          lib,
+          this.#resolveProductionDependencyVersion(lib),
+        ]),
       ),
       ...data,
     };
@@ -655,41 +586,14 @@ export class AkanLibConfig implements LibConfigResult {
   }
 }
 
-// export const getCapacitorConfig = (configImp: AppConfig, appInfo: AppScanResult, tsconfig: TsConfigJson) => {
-//   const props: RunnerProps = {
-//     type: "app",
-//     name: appInfo.name,
-//     repoName: appInfo.repoName,
-//     serveDomain: appInfo.serveDomain,
-//     env: (process.env.AKAN_PUBLIC_ENV ?? "debug") as "testing" | "local" | "debug" | "develop" | "main",
-//     libs: appInfo.libDeps,
-//     tsconfig,
-//   };
-//   const config = typeof configImp === "function" ? configImp(props) : configImp;
-//   const akanConfig = makeAppConfig(config, props);
-//   return akanConfig;
-// };
-
 //! need to refactor
-export const increaseBuildNum = async (app: App) => {
-  const appConfig = await AkanAppConfig.from(app);
+const shiftBuildNum = async (app: App, delta: number) => {
+  const { buildNum } = (await AkanAppConfig.from(app)).mobile;
   const akanConfigPath = path.join(app.cwdPath, "akan.config.ts");
   const akanConfig = fs.readFileSync(akanConfigPath, "utf8");
-  const akanConfigContent = akanConfig.replace(
-    `buildNum: ${appConfig.mobile.buildNum}`,
-    `buildNum: ${appConfig.mobile.buildNum + 1}`,
-  );
-  //? 개선할 여지가 있는지 확인
-  fs.writeFileSync(akanConfigPath, akanConfigContent);
+  fs.writeFileSync(akanConfigPath, akanConfig.replace(`buildNum: ${buildNum}`, `buildNum: ${buildNum + delta}`));
 };
 
-export const decreaseBuildNum = async (app: App) => {
-  const appConfig = await AkanAppConfig.from(app);
-  const akanConfigPath = path.join(app.cwdPath, "akan.config.ts");
-  const akanConfig = fs.readFileSync(akanConfigPath, "utf8");
-  const akanConfigContent = akanConfig.replace(
-    `buildNum: ${appConfig.mobile.buildNum}`,
-    `buildNum: ${appConfig.mobile.buildNum - 1}`,
-  );
-  fs.writeFileSync(akanConfigPath, akanConfigContent);
-};
+export const increaseBuildNum = async (app: App) => await shiftBuildNum(app, 1);
+
+export const decreaseBuildNum = async (app: App) => await shiftBuildNum(app, -1);

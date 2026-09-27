@@ -43,8 +43,8 @@ export default page().render(() => {
     {
       name: "web proxy",
       desc: l.trans({
-        en: "A class that sees each page request before the router and can redirect, rewrite or answer it.",
-        ko: "라우터보다 먼저 페이지 요청을 받아 redirect하거나, rewrite하거나, 직접 응답하는 class입니다.",
+        en: "A class that sees each page load before the router and can redirect, rewrite or answer it.",
+        ko: "라우터보다 먼저 페이지 로드를 받아 redirect하거나, rewrite하거나, 직접 응답하는 class입니다.",
       }),
     },
   ];
@@ -712,8 +712,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "`akanjs/server` is the server half of Akan: it starts the app, holds the server settings, and sees page requests before the router. Import it only from server files — `main.ts`, `lib/option.ts` and `srvkit/`.",
-              ko: "`akanjs/server`는 Akan의 서버 쪽 패키지입니다. 앱을 띄우고, 서버 설정을 담고, 라우터보다 먼저 페이지 요청을 봅니다. `main.ts`, `lib/option.ts`, `srvkit/` 같은 서버 파일에서만 import합니다.",
+              en: "`akanjs/server` is the server half of Akan: it starts the app, holds the server settings, and sees page loads before the router. Import it only from server files — `main.ts`, `lib/option.ts` and `srvkit/`.",
+              ko: "`akanjs/server`는 Akan의 서버 쪽 패키지입니다. 앱을 띄우고, 서버 설정을 담고, 라우터보다 먼저 페이지 로드를 봅니다. `main.ts`, `lib/option.ts`, `srvkit/` 같은 서버 파일에서만 import합니다.",
             })}
           </div>
           <Docs.SubSubTitle>{l.trans({ en: "Words Used On This Page", ko: "이 페이지에서 쓰는 말" })}</Docs.SubSubTitle>
@@ -1354,6 +1354,24 @@ export class DocsRoutingProxy implements WebProxy {
                 ),
               })}
             </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>A client-side navigation gets none of it.</strong> A <code>{"<Link>"}</code> to{" "}
+                    <code>/en/help</code> renders <code>/en/help</code> itself, neither redirected nor rewritten, so
+                    link to the page the proxy would have chosen.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>클라이언트 쪽 이동에는 하나도 적용되지 않습니다.</strong> <code>/en/help</code>로 가는{" "}
+                    <code>{"<Link>"}</code>는 redirect도 rewrite도 없이 <code>/en/help</code> 자체를 그리므로, proxy가
+                    골랐을 페이지로 바로 링크합니다.
+                  </span>
+                ),
+              })}
+            </li>
           </ul>
         </Docs.Description>
       </Scroll.Slide>
@@ -1364,8 +1382,8 @@ export class DocsRoutingProxy implements WebProxy {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A `WebProxy` is a class with one `use(request)` method. It sees every page request before the router, so it suits redirects, host-based routing and headers a page reads.",
-              ko: "`WebProxy`는 `use(request)` 메서드 하나를 가진 class입니다. 라우터보다 먼저 모든 페이지 요청을 보므로, redirect, host 기반 라우팅, page가 읽을 header 설정에 알맞습니다.",
+              en: "A `WebProxy` is a class with one `use(request)` method. It sees every page load before the router, so it suits redirects, host-based routing and headers a page reads. A client-side navigation, a `<Link>` click or `router.push`, is not a page load and never reaches it.",
+              ko: "`WebProxy`는 `use(request)` 메서드 하나를 가진 class입니다. 라우터보다 먼저 모든 페이지 로드를 보므로, redirect, host 기반 라우팅, page가 읽을 header 설정에 알맞습니다. `<Link>` 클릭이나 `router.push` 같은 클라이언트 쪽 이동은 페이지 로드가 아니어서 proxy에 닿지 않습니다.",
             })}
           </div>
           <div>
@@ -1413,19 +1431,41 @@ export const option = new AkanOption<ModulesOptions>().applyWebProxy({
 });`}
         />
         <Docs.Description>
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: (
+                <span>
+                  <strong>A client-side navigation into the shop still opens it.</strong> The proxy answers page loads,
+                  so a visitor already in the app reaches the shop through a <code>{"<Link>"}</code>. Block content with
+                  guards on the endpoints it reads, and require sign-in with <code>{"getSelf({ unauthorize })"}</code>{" "}
+                  in the section's <code>_layout.tsx</code>; both apply to a client-side navigation too.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <strong>클라이언트 쪽 이동으로는 shop에 그대로 들어갑니다.</strong> proxy는 페이지 로드에만
+                  응답하므로, 이미 앱 안에 있는 방문자는 <code>{"<Link>"}</code>로 shop에 들어갑니다. 콘텐츠는 그
+                  페이지가 읽는 endpoint의 guard로 막고, 로그인은 해당 구역 <code>_layout.tsx</code>의{" "}
+                  <code>{"getSelf({ unauthorize })"}</code>로 요구합니다. 둘 다 클라이언트 쪽 이동에도 적용됩니다.
+                </span>
+              ),
+            })}
+          </Docs.Alert>
           <ul className={bulletList}>
             <li>
               {l.trans({
                 en: (
                   <span>
-                    <strong>Page requests only.</strong> Endpoints under the API prefix, the WebSocket,{" "}
-                    <code>/__rsc</code> and <code>/_akan/*</code> never reach a proxy.
+                    <strong>Page loads only.</strong> Endpoints under the API prefix, the WebSocket,{" "}
+                    <code>/_akan/*</code> and client-side navigations, which load from <code>/__rsc</code>, never reach
+                    a proxy. A navigation still gets the built-in locale and basePath handling.
                   </span>
                 ),
                 ko: (
                   <span>
-                    <strong>페이지 요청에만 적용됩니다.</strong> API prefix 아래 endpoint, WebSocket,{" "}
-                    <code>/__rsc</code>, <code>/_akan/*</code>는 proxy를 거치지 않습니다.
+                    <strong>페이지 로드에만 적용됩니다.</strong> API prefix 아래 endpoint, WebSocket,{" "}
+                    <code>/_akan/*</code>, 그리고 <code>/__rsc</code>로 불러오는 클라이언트 쪽 이동은 proxy를 거치지
+                    않습니다. 이동에도 기본 locale·basePath 처리는 그대로 적용됩니다.
                   </span>
                 ),
               })}

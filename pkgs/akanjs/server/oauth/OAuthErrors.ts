@@ -15,10 +15,7 @@ export class OAuthErrors {
   // RFC 6749 §5.1 makes both mandatory on a token response; every other answer here carries a credential too.
   static readonly noStore = { "cache-control": "no-store", pragma: "no-cache" } as const;
 
-  /**
-   * RFC 6749 §5.2. `invalid_client` is 401, and when the client authenticated with the `Authorization` header the
-   * answer names that scheme back — the one case the RFC requires a `WWW-Authenticate` on a token response.
-   */
+  // RFC 6749 §5.2: `invalid_client` is 401, with `WWW-Authenticate` only when the client used the Authorization header.
   static token(
     error: OAuthTokenErrorCode,
     description: string,
@@ -37,11 +34,7 @@ export class OAuthErrors {
     return Response.json({ error, error_description: description }, { status: 400, headers: OAuthErrors.noStore });
   }
 
-  /**
-   * An authorization error that travels back through the redirect URI (RFC 6749 §4.1.2.1) — legal only once that
-   * URI has been matched against the client's registration, which is why `OAuthAuthorize` answers the client and
-   * redirect checks with a page instead.
-   */
+  // RFC 6749 §4.1.2.1: legal only once the redirect URI matched the client's registration; before that, `page`.
   static redirect(
     redirectUri: string,
     { error, description, state, iss }: OAuthRedirectParams & { error: OAuthAuthorizeErrorCode; description?: string },
@@ -53,10 +46,6 @@ export class OAuthErrors {
     return OAuthErrors.#located(redirectUri, { code, state, iss });
   }
 
-  /**
-   * The answer when nothing may be redirected to: an unknown client or an unregistered redirect URI, where the
-   * destination the request named is the one thing that cannot be trusted with the user (RFC 6749 §4.1.2.1).
-   */
   static page(status: number, title: string, detail: string) {
     const body = `<!doctype html><meta charset="utf-8"><title>${OAuthErrors.#escape(title)}</title><main style="font:16px system-ui;max-width:32rem;margin:4rem auto"><h1>${OAuthErrors.#escape(title)}</h1><p>${OAuthErrors.#escape(detail)}</p></main>`;
     return new Response(body, {

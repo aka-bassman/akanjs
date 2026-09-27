@@ -7,7 +7,7 @@ import type { PagePromptEntry, PagePromptRecord, PagePromptRun } from "../../sig
 
 interface PagePromptComposerProps {
   document: McpDocument;
-  /** Characters of attached data one prompt may carry; the largest list is cut first and the cut is said. */
+  /** Characters of attached data one prompt may carry. */
   budget: number;
   /** The tool names this caller may see, so the tools line offers nothing the listing would not. */
   visibleTools: (names: string[]) => Promise<string[]>;
@@ -20,13 +20,6 @@ interface Attachment {
   model?: MaskModel;
 }
 
-/**
- * Turns what a page fetched into the messages `prompts/get` answers.
- *
- * The instruction is the page's own description and nothing more: the screen's data rides as embedded resources
- * masked by the model each endpoint declares, and the tools named at the end are the published ones of the same
- * modules — a model that reads a ticket board is told the ticket tools, not all three hundred.
- */
 export class PagePromptComposer {
   static readonly logger = new Logger("PagePromptComposer");
   static readonly defaultBudget = 60_000;
@@ -37,11 +30,7 @@ export class PagePromptComposer {
     this.#props = props;
   }
 
-  /**
-   * A required argument nobody filled in gets one message pointing at the tool that finds the id, not a guess.
-   * A prompt cannot re-run itself, so pre-filled context would never be used; the model finds the id with the
-   * search tool and proceeds with the tools from there.
-   */
+  // A pointer to the finding tool, not a guess: a prompt cannot re-run itself, so pre-filled context would go unused.
   missing(entry: PagePromptEntry, names: string[]): PromptMessage[] {
     return names.map((name) => {
       const finder = this.#finderFor(name);
@@ -74,11 +63,7 @@ export class PagePromptComposer {
     return messages;
   }
 
-  /**
-   * One document in two shapes — a layout's `project` and a page's `lightProject` — travels once, as the larger.
-   * `light<Model>` is refused from the tool shelf for reading the same document as `<Model>`, and attaching both
-   * spent the budget on the same rows twice.
-   */
+  // One document read in two shapes (a layout's `project`, a page's `lightProject`) travels once, as the larger.
   static #dedupe(records: PagePromptRecord[]): PagePromptRecord[] {
     const kept: PagePromptRecord[] = [];
     const byDocument = new Map<string, number>();
@@ -126,12 +111,7 @@ export class PagePromptComposer {
     }
   }
 
-  /**
-   * Keeps the attachments inside the budget by shortening lists, largest first, and says what was cut. A page
-   * with `{ limit: 0 }` is right for a screen and a disaster for a model's window, so the cap is the framework's.
-   * Only a list is cut: a single document rides whole, so the budget is what the lists are trimmed to fit under
-   * and a screen of large documents can still exceed it.
-   */
+  // Only lists are cut (largest first); a single document rides whole, so large documents can exceed the budget.
   #fit(attachments: Attachment[]): PromptMessage[] {
     const items = attachments.map((attachment) => ({
       attachment,
@@ -158,7 +138,6 @@ export class PagePromptComposer {
     return [...items.map((item) => item.message), ...notes];
   }
 
-  /** The published tools of the modules the screen fetched from, minus the reads whose answers are attached above. */
   async #toolsFor(keys: string[], attached: Set<string>): Promise<string[]> {
     const document = this.#props.document;
     const refNames = new Set(
@@ -171,7 +150,6 @@ export class PagePromptComposer {
     return await this.#props.visibleTools(names);
   }
 
-  /** `projectId` → the published list tool of `project`, a search slice first — what a person would use to find one. */
   #finderFor(argName: string): string | undefined {
     const refName = argName.replace(/Id$/, "");
     if (!refName || refName === argName) return undefined;
@@ -195,7 +173,6 @@ export class PagePromptComposer {
     return content.type === "resource" ? content.resource.text.length : 0;
   }
 
-  /** A tool with no `akan://` template still gets an address a reader can trace back to the call that made it. */
   static #callUri(key: string, args: Record<string, unknown>): string {
     const search = new URLSearchParams();
     for (const [name, value] of Object.entries(args)) {

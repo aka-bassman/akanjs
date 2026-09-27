@@ -1,7 +1,7 @@
 import { ACTION_META, ACTION_OWNER_META, getEnv, STATE_DERIVED_META, STATE_INIT_META } from "akanjs/base";
 import { Translator } from "akanjs/client";
 import { loadCapacitorApp } from "akanjs/client/capacitor";
-import { capitalize, type DynamicRecord, Logger, parseAkanI18nEnv } from "akanjs/common";
+import { capitalize, type DynamicRecord, isRecord, Logger, parseAkanI18nEnv } from "akanjs/common";
 import { ConstantRegistry } from "akanjs/constant";
 import type { SerializedArg } from "akanjs/signal";
 import { enableMapSet, produce } from "immer";
@@ -12,6 +12,7 @@ import { useFormTools } from "./agentic/useFormTools";
 import { DraftStore } from "./draftStore";
 import { useEffect, useRef, useSyncExternalStore } from "./hooks";
 import type { RootStoreCls } from "./rootStore";
+import { sliceKeysOf } from "./sliceKeys";
 import type { SliceActionKey, SliceActionRole, SliceStateRole } from "./sliceRole";
 import type { DraftState, SliceStateKey } from "./state";
 import { evaluateInitializers, type SearchParamsState, type StateDerivedMeta } from "./stateBuilder";
@@ -21,13 +22,9 @@ enableMapSet();
 
 type StoreStateRecord = Record<string, unknown>;
 
-/** Long enough that a burst of typing is one write, short enough that a route change lands what came before it. */
 const DRAFT_DEBOUNCE_MS = 400;
 type StoreAction = (...args: unknown[]) => unknown;
 type TranslationParam = Record<string, string | number>;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value && typeof value === "object" && !Array.isArray(value));
 
 const getActionErrorKey = (error: unknown) => {
   if (typeof error === "string") return error;
@@ -193,11 +190,7 @@ export class StoreInstance {
     }, [key, count, scopeKey]);
   }
 
-  /**
-   * `sel` and `ref` take an opaque selector, so the keys it reads are learned by running it once over a recording
-   * proxy. Captured at mount, like every surface declaration: the retained set must equal the released set, and a
-   * selector is a new closure every render.
-   */
+  // Keys are learned by running the selector over a recording proxy, once at mount: retained must equal released.
   #useLiveSelector(selector: (state: StoreStateRecord) => unknown) {
     const scopeKey = useScopePath().join(".");
     useEffect(() => {
@@ -249,18 +242,12 @@ export class StoreInstance {
   readonly #liveKeys = new Map<string, Map<string, number>>();
   readonly #generatedSetters = new Set<string>();
 
-  /**
-   * How many mounted components are reading each state key right now. `st.use.*` is a hook, so subscription is
-   * presence — this is how an agent context knows which keys the screen is actually built from.
-   */
+  /** How many mounted components read each state key right now. */
   get liveKeys(): ReadonlyMap<string, number> {
     return this.liveKeysIn("");
   }
 
-  /**
-   * The live keys as one zone view sees them: retentions tagged at the view's scope or below. The empty view is the
-   * whole screen. Zones are views, not walls — a key read inside a zone counts for that zone and for the root alike.
-   */
+  /** Live keys retained at `viewKey`'s scope or below; `""` is the whole screen. */
   liveKeysIn(viewKey: string): ReadonlyMap<string, number> {
     const keys = new Map<string, number>();
     for (const [key, scopes] of this.#liveKeys) {
@@ -274,23 +261,15 @@ export class StoreInstance {
     return keys;
   }
 
-  /** Which module declared each action. See `ActionOwner`. */
   get actionOwners(): ReadonlyMap<string, ActionOwner> {
     return this.#actionOwners;
   }
 
-  /**
-   * How many arguments each action declares.
-   *
-   * Recorded because `do[key]` is a rest-argument wrapper around the real method, so its own `length` is zero for
-   * everything — the arity is gone by the time anyone holding the instance could ask. A rest parameter on the method
-   * itself still reads as zero; nothing can recover that.
-   */
+  /** Each method's own `length`: `do[key]` is a rest-argument wrapper whose `length` is 0. */
   get actionArity(): ReadonlyMap<string, number> {
     return this.#actionArity;
   }
 
-  /** What each generated slice key is, for a reader that has only the finished store. See `SliceActionRole`. */
   get sliceActionRoles(): ReadonlyMap<string, SliceActionRole> {
     return this.#sliceActionRoles;
   }
@@ -299,12 +278,12 @@ export class StoreInstance {
     return this.#sliceStateRoles;
   }
 
-  /** Keys the store materializes from a computation, the URL, or storage. `set` throws on them. */
+  /** `search()` and `computed()` keys; `set` throws on them. */
   get derivedKeys(): ReadonlySet<string> {
     return this.#derivedMeta.derivedKeys;
   }
 
-  /** The `set<Key>` conveniences `#extendAccessors` writes for every plain state key. Their value is untyped. */
+  /** The generated `set<Key>` setters for plain state keys; their value is untyped. */
   get generatedSetters(): ReadonlySet<string> {
     return this.#generatedSetters;
   }
@@ -334,7 +313,6 @@ export class StoreInstance {
     return this;
   }
 
-  /** `<model>Form` for a model this client knows, or null — the only state key whose setters are worth publishing. */
   static #formRefNameOf(key: string) {
     if (!key.endsWith("Form")) return null;
     const refName = key.slice(0, -"Form".length);
@@ -351,8 +329,7 @@ export class StoreInstance {
   #extendAccessors(state: StoreStateRecord, actions: { [key: string]: StoreAction }) {
     for (const k of Object.keys(state)) {
       if (typeof state[k] !== "function") {
-        // Reading a form is what publishes its field setters: the component that put the form on screen is the
-        // one saying an agent may fill it, and no app writes `st.tool` once per field to say the same thing.
+        // Subscribing a `<model>Form` publishes its fill tool: the component that shows the form opts it in.
         const formRefName = StoreInstance.#formRefNameOf(k);
         this.use[k] = formRefName
           ? (options?: StoreUseOptions) => {
@@ -381,7 +358,6 @@ export class StoreInstance {
         Logger.verbose(`${k} action loading...`);
         const start = Date.now();
         try {
-          // An action's return is unreachable by design (`no-return-in-store-action.grit`), so it is not read.
           await (this.#ctx[k] as StoreAction)(...args);
           Logger.verbose(`=> ${k} action dispatched (${Date.now() - start}ms)`);
         } catch (error) {
@@ -390,8 +366,7 @@ export class StoreInstance {
           throw error;
         }
       };
-      // Carried over from the method rather than rebuilt, because a generated setter knows the state path it writes
-      // and this wrapper does not. Everything else at least knows its own name.
+      // Carried over, not rebuilt: a generated setter's tag holds the state path this wrapper cannot know.
       this.do[k] = tagAction(dispatch, actionTagOf(actions[k]) ?? { action: k });
     }
   }
@@ -416,74 +391,15 @@ export class StoreInstance {
   #buildSlices(store: RootStoreCls) {
     Object.entries(store.slice).forEach(([refName, sliceObj]) => {
       Object.entries(sliceObj).forEach(([suffix, serializedSlice]) => {
-        const sliceName = `${refName}${capitalize(suffix)}`;
-        this.#buildSlice(refName, sliceName, serializedSlice);
+        this.#buildSlice(refName, suffix, serializedSlice);
       });
     });
   }
 
-  #buildSlice(refName: string, sliceName: string, serializedSlice: { args?: SerializedArg[] }) {
-    const [fieldName, className] = [refName, capitalize(refName)];
-    const names: { [key in SliceStateKey | SliceActionKey | "model" | "Model"]: string } = {
-      model: fieldName,
-      Model: className,
-      defaultModel: `default${className}`,
-      modelInsight: `${fieldName}Insight`,
-      modelList: `${fieldName}List`,
-      modelListLoading: `${fieldName}ListLoading`,
-      modelInitList: `${fieldName}InitList`,
-      modelInitAt: `${fieldName}InitAt`,
-      modelStaleAt: `${fieldName}StaleAt`,
-      pageOfModel: `pageOf${className}`,
-      limitOfModel: `limitOf${className}`,
-      hasMoreOfModel: `hasMoreOf${className}`,
-      isCumulativeOfModel: `isCumulativeOf${className}`,
-      queryArgsOfModel: `queryArgsOf${className}`,
-      sortOfModel: `sortOf${className}`,
-      modelSelection: `${fieldName}Selection`,
-      initModel: `init${className}`,
-      refreshModel: `refresh${className}`,
-      selectModel: `select${className}`,
-      setPageOfModel: `setPageOf${className}`,
-      loadMoreOfModel: `loadMoreOf${className}`,
-      setLimitOfModel: `setLimitOf${className}`,
-      setQueryArgsOfModel: `setQueryArgsOf${className}`,
-      setSortOfModel: `setSortOf${className}`,
-      applyLiveModel: `applyLive${className}`,
-      watchLiveModel: `watchLive${className}`,
-      lastPageOfModel: `lastPageOf${className}`,
-    };
-    const SliceName = capitalize(sliceName);
-    const namesOfSliceState: { [key in SliceStateKey]: string } = {
-      defaultModel: SliceName.replace(names.Model, names.defaultModel),
-      modelInitList: SliceName.replace(names.Model, names.modelInitList),
-      modelInsight: sliceName.replace(names.model, names.modelInsight),
-      modelList: sliceName.replace(names.model, names.modelList),
-      modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-      modelInitAt: SliceName.replace(names.Model, names.modelInitAt),
-      modelStaleAt: SliceName.replace(names.Model, names.modelStaleAt),
-      lastPageOfModel: SliceName.replace(names.Model, names.lastPageOfModel),
-      pageOfModel: SliceName.replace(names.Model, names.pageOfModel),
-      limitOfModel: SliceName.replace(names.Model, names.limitOfModel),
-      hasMoreOfModel: SliceName.replace(names.Model, names.hasMoreOfModel),
-      isCumulativeOfModel: SliceName.replace(names.Model, names.isCumulativeOfModel),
-      queryArgsOfModel: SliceName.replace(names.Model, names.queryArgsOfModel),
-      sortOfModel: SliceName.replace(names.Model, names.sortOfModel),
-      modelSelection: SliceName.replace(names.Model, names.modelSelection),
-    };
-    const namesOfSliceAction: { [key in SliceActionKey]: string } = {
-      initModel: SliceName.replace(names.Model, names.initModel),
-      refreshModel: SliceName.replace(names.Model, names.refreshModel),
-      selectModel: SliceName.replace(names.Model, names.selectModel),
-      setPageOfModel: SliceName.replace(names.Model, names.setPageOfModel),
-      loadMoreOfModel: SliceName.replace(names.Model, names.loadMoreOfModel),
-      setLimitOfModel: SliceName.replace(names.Model, names.setLimitOfModel),
-      setQueryArgsOfModel: SliceName.replace(names.Model, names.setQueryArgsOfModel),
-      setSortOfModel: SliceName.replace(names.Model, names.setSortOfModel),
-      applyLiveModel: SliceName.replace(names.Model, names.applyLiveModel),
-      watchLiveModel: SliceName.replace(names.Model, names.watchLiveModel),
-    };
-
+  #buildSlice(refName: string, suffix: string, serializedSlice: { args?: SerializedArg[] }) {
+    const sliceName = `${refName}${capitalize(suffix)}`;
+    const names = sliceKeysOf(refName);
+    const { state: namesOfSliceState, action: namesOfSliceAction } = sliceKeysOf(refName, suffix);
     const targetSlice: {
       do: { [key: string]: (...args: any[]) => void };
       use: { [key: string]: () => any };
@@ -504,18 +420,18 @@ export class StoreInstance {
     for (const key of Object.keys(namesOfSliceAction) as SliceActionKey[]) {
       const rootActionKey = namesOfSliceAction[key];
       if (!this.do[rootActionKey]) continue;
-      targetSlice.do[names[key]] = this.do[rootActionKey];
+      targetSlice.do[names.action[key]] = this.do[rootActionKey];
       this.#sliceActionRoles.set(rootActionKey, { role: key, refName, sliceName, args });
     }
 
     for (const key of Object.keys(namesOfSliceState) as SliceStateKey[]) {
       const rootStateKey = namesOfSliceState[key];
       if (this.use[rootStateKey]) {
-        targetSlice.use[names[key]] = this.use[rootStateKey];
+        targetSlice.use[names.state[key]] = this.use[rootStateKey];
         this.#sliceStateRoles.set(rootStateKey, { role: key, refName, sliceName });
       }
       const setRootKey = `set${capitalize(rootStateKey)}`;
-      const setLocalKey = `set${capitalize(names[key])}`;
+      const setLocalKey = `set${capitalize(names.state[key])}`;
       if (this.do[setRootKey]) targetSlice.do[setLocalKey] = this.do[setRootKey];
     }
 
@@ -523,7 +439,7 @@ export class StoreInstance {
       const state = this.get();
       return Object.fromEntries(
         (Object.entries(namesOfSliceState) as [SliceStateKey, string][]).map(([key, value]) => [
-          names[key],
+          names.state[key],
           state[value],
         ]),
       );
@@ -576,16 +492,7 @@ export class StoreInstance {
     }
   }
 
-  /**
-   * Schedules a save of every open form whose value moved.
-   *
-   * A form is only saved while `<model>Draft.key` is armed — `new<Model>` / `edit<Model>` arm it and a submit or
-   * reset disarms it — so a store that never opened a form writes nothing. The dirty comparison happens in the
-   * flush rather than here: it encodes the whole form, and a keystroke is not worth that.
-   *
-   * The debounce belongs to the store, not to a component, so an editor that unmounts mid-window still lands its
-   * last write. Only a closing tab can outrun it, which is what the flush listeners answer.
-   */
+  // The debounce lives in the store, not a component, so an editor unmounting mid-window still lands its last write.
   #syncDrafts(prev: StoreStateRecord, next: StoreStateRecord) {
     if (typeof window === "undefined") return;
     for (const meta of Object.values(this.#derivedMeta.drafts)) {
@@ -595,9 +502,7 @@ export class StoreInstance {
         continue;
       }
       if (Object.is(prev[meta.formKey], next[meta.formKey])) continue;
-      // Opening a form, applying a draft, restoring one and discarding one all write the form and the draft slot
-      // in a single `set`. None of them is the user typing: scheduling them would re-stamp `savedAt` on a draft
-      // nobody touched, and the one at open would race the read that is about to offer the saved form back.
+      // A `set` that also moves the draft slot (open, apply, restore, discard) is not typing, so it schedules nothing.
       if (!Object.is(prev[meta.draftKey], next[meta.draftKey])) continue;
       this.#armDraftFlush();
       this.#cancelDraftTimer(meta.formKey);
@@ -624,8 +529,7 @@ export class StoreInstance {
     if (!draft?.key || !form) return;
     try {
       const hash = DraftStore.formHash(refName, form);
-      // Back at the value it was opened with — including a restored draft the user then undid — so there is
-      // nothing to come back to and a leftover record would offer to restore what is already on screen.
+      // Back at the opened value: a leftover record would offer to restore what is already on screen.
       if (hash === draft.baseHash) {
         await DraftStore.remove(draft.key);
         return;
@@ -641,7 +545,7 @@ export class StoreInstance {
     }
   }
 
-  /** Lands every pending write before the page or the app goes away. */
+  /** Writes every pending draft now, cancelling its debounce. */
   flushDrafts = () => {
     for (const [formKey, timer] of this.#draftTimers) {
       clearTimeout(timer);

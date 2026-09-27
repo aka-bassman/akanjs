@@ -2,10 +2,8 @@ import { Logger, RestClient } from "akanjs/common";
 
 import { Spinner } from "./spinner";
 
-const spinning = (message: string) => {
-  const spinner = new Spinner(message, { prefix: message, enableSpin: true }).start();
-  return spinner;
-};
+const spinning = (message: string) => new Spinner(message, { prefix: message, enableSpin: true }).start();
+
 export const uploadRelease = async (
   appName: string,
   {
@@ -27,33 +25,20 @@ export const uploadRelease = async (
   const logger = new Logger("uploadRelease");
   const basePath = local ? "http://localhost:8282/backend" : "https://cloud.akanjs.com/backend";
   const httpClient = new RestClient(basePath);
-  const buildPath = `${workspaceRoot}/releases/builds/${appName}-release.tar.gz`;
-  const appBuildPath = `${workspaceRoot}/releases/builds/${appName}-appBuild.zip`;
-  const sourcePath = `${workspaceRoot}/releases/sources/${appName}-source.tar.gz`;
-
   const readingFilesSpinner = spinning("Reading files...");
   try {
-    const buildFile = Bun.file(buildPath);
-    const sourceFile = Bun.file(sourcePath);
-    const appBuildFile = Bun.file(appBuildPath);
-    const buildStat = { mtime: new Date(buildFile.lastModified), size: buildFile.size };
-    const sourceStat = { mtime: new Date(sourceFile.lastModified), size: sourceFile.size };
-    const appBuildStat = { mtime: new Date(appBuildFile.lastModified), size: appBuildFile.size };
+    const uploads = [
+      [`builds/${appName}-release.tar.gz`, `${appName}-release.tar.gz`],
+      [`sources/${appName}-source.tar.gz`, `${appName}-source.tar.gz`],
+      [`builds/${appName}-appBuild.zip`, `${appName}-appBuild.zip`],
+    ].map(([relativePath, name]) => ({ file: Bun.file(`${workspaceRoot}/releases/${relativePath}`), name }));
+    const metas = uploads.map(({ file }) => ({ lastModifiedAt: new Date(file.lastModified), size: file.size }));
     readingFilesSpinner.succeed("Reading files... done");
 
     const preparingFormSpinner = spinning("Preparing form data...");
     const formData = new FormData();
-    formData.append("files", buildFile, `${appName}-release.tar.gz`);
-    formData.append("files", sourceFile, `${appName}-source.tar.gz`);
-    formData.append("files", appBuildFile, `${appName}-appBuild.zip`);
-    formData.append(
-      "metas",
-      JSON.stringify([
-        { lastModifiedAt: buildStat.mtime, size: buildStat.size },
-        { lastModifiedAt: sourceStat.mtime, size: sourceStat.size },
-        { lastModifiedAt: appBuildStat.mtime, size: appBuildStat.size },
-      ]),
-    );
+    for (const { file, name } of uploads) formData.append("files", file, name);
+    formData.append("metas", JSON.stringify(metas));
     formData.append("type", "release");
     preparingFormSpinner.succeed("Preparing form data... done");
 

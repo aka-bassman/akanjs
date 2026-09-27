@@ -42,15 +42,13 @@ function getStoreRegistryState(): StoreRegistryState {
 
 export class StoreRegistry {
   static #state = getStoreRegistryState();
-  /** The one store every `st.use` / `st.do` in the process goes through. What an agent bridge drives. */
   static get instance(): StoreInstance {
     return StoreRegistry.#state.instance;
   }
   static register<StrCls extends StoreCls>(store: StrCls): StrCls {
     const parentStore = Object.getPrototypeOf(store) as StoreCls | null;
     const actions = { ...(parentStore?.[ACTION_META] ?? {}) };
-    // A subclass body is the only place a module's own action names the module that wrote it: `store()` stamped
-    // the generated ones before this class existed.
+    // Own methods are stamped here; `store()` stamped the generated ones before this class existed.
     const owners = { ...(parentStore?.[ACTION_OWNER_META] ?? {}) };
     Object.entries(Object.getOwnPropertyDescriptors(store.prototype)).forEach(([key, descriptor]) => {
       if (key === "constructor") return;
@@ -65,11 +63,7 @@ export class StoreRegistry {
     return store;
   }
 
-  /**
-   * A `_postSet<Field>` hook cannot be typed — the generated setters live in a mapped type, so every name the base
-   * declares is a property a subclass method may not redeclare (TS2425), and the hook only compiles because the base
-   * declares nothing under it. A misspelled field would therefore never fire and never complain, so say so here.
-   */
+  // A `_postSet<Field>` hook cannot be typed (TS2425), so a misspelled one would silently never run.
   static #warnUnknownPostSetHooks(store: StoreCls) {
     const hooks = Object.keys(Object.getOwnPropertyDescriptors(store.prototype)).filter((key) =>
       key.startsWith("_postSet"),
@@ -86,7 +80,6 @@ export class StoreRegistry {
   static get(refName: string) {
     return StoreRegistry.#state.store.get(refName);
   }
-  /** Every registered module store by refName. What the agent surface derives key ownership and exposure from. */
   static get stores(): ReadonlyMap<string, StoreCls> {
     return StoreRegistry.#state.store;
   }

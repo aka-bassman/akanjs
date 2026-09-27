@@ -410,8 +410,8 @@ export default page().render(() => {
         {
           name: "codepush <app>",
           desc: l.trans({
-            en: "Deploys an over-the-air (OTA) update to the mobile app.",
-            ko: "모바일 앱에 OTA 업데이트를 배포합니다.",
+            en: "Over-the-air (OTA) deploy, still in development: it deploys nothing yet and exits with an error.",
+            ko: "개발 중인 OTA 배포 명령입니다. 아직 아무것도 배포하지 않고 오류로 끝납니다.",
           }),
         },
       ],

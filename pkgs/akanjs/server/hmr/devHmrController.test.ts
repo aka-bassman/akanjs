@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import type { DevBuildStatus } from "../artifact";
+import type { RscWorker } from "../rscWorkerHost";
 import {
+  DevHmrController,
   devBuildStatusToHmrMessage,
   isAkanRuntimeMetadataFile,
   manifestClientEntriesForFiles,
 } from "./devHmrController";
+import type { HmrMessage } from "./wsHub";
 
 describe("DevHmrController runtime metadata detection", () => {
   test("detects generated app client runtime metadata files", () => {
@@ -108,5 +111,71 @@ describe("DevHmrController build status HMR messages", () => {
       message: "Build failed",
       files: 1,
     });
+  });
+});
+
+describe("DevHmrController pages-updated broadcast", () => {
+  const broadcastTypesFor = async (changedFile: string) => {
+    const originalSend = process.send;
+    process.send = ((): boolean => true) as typeof process.send;
+    const controller = new DevHmrController({
+      renderState: { buildId: 0, cssAssets: {}, cssBytesByUrl: {} },
+      rsc: { reload: async () => undefined, updateCssAssets: () => undefined } as unknown as RscWorker,
+      seedIndex: { entries: [], globalLayoutFiles: [] },
+      upgradeHmrWs: () => true,
+    });
+    const messages: HmrMessage[] = [];
+    controller.hub.setPublisher((_topic, payload) => messages.push(JSON.parse(payload) as HmrMessage));
+    try {
+      process.emit("message", {
+        type: "pages-updated",
+        data: { bundlePath: "/repo/pages.js", buildId: 7, changedFiles: [changedFile] },
+      });
+      for (let tick = 0; tick < 100 && messages.length === 0; tick++) await Bun.sleep(1);
+      return messages.map((message) => message.type);
+    } finally {
+      controller.dispose();
+      process.send = originalSend;
+    }
+  };
+
+  test("fully reloads when the framework's HMR client, RSC client or SSR renderer source changes", async () => {
+    for (const file of ["hmr/clientScript.ts", "rscClient.tsx", "ssrFromRscRenderer.tsx"]) {
+      expect(await broadcastTypesFor(`/repo/pkgs/akanjs/server/${file}`)).toEqual(["reload"]);
+    }
+  });
+
+  test("refreshes RSC in place for an ordinary non-client source change", async () => {
+    expect(await broadcastTypesFor("/repo/apps/demo/lib/task/task.service.ts")).toEqual(["rsc-refresh"]);
+  });
+});
+
+describe("DevHmrController route ensure", () => {
+  test("builds the nearest layout route for a path only a route prefix matches", async () => {
+    const originalSend = process.send;
+    const requestedRouteIds: string[] = [];
+    process.send = ((message: { type?: string; id?: number; routeId?: string }): boolean => {
+      if (message.type !== "build-route" || !message.routeId) return true;
+      requestedRouteIds.push(message.routeId);
+      const data = { manifestDelta: {}, ssrManifestDelta: {}, newEntries: [], clientDeps: [] };
+      queueMicrotask(() => process.emit("message", { type: "build-route-res", id: message.id, ok: true, data }));
+      return true;
+    }) as typeof process.send;
+    const controller = new DevHmrController({
+      renderState: { buildId: 0, cssAssets: {}, cssBytesByUrl: {} },
+      rsc: { reload: async () => undefined, updateCssAssets: () => undefined } as unknown as RscWorker,
+      seedIndex: {
+        entries: [{ routeId: "/:lang/blog", pattern: "/:lang/blog", seeds: ["/repo/apps/demo/page/blog/_layout.tsx"] }],
+        globalLayoutFiles: [],
+      },
+      upgradeHmrWs: () => true,
+    });
+    try {
+      await controller.ensureRoute(new URL("https://example.test/ko/blog/missing"));
+      expect(requestedRouteIds).toEqual(["/:lang/blog"]);
+    } finally {
+      controller.dispose();
+      process.send = originalSend;
+    }
   });
 });

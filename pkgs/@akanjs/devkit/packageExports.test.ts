@@ -3,30 +3,17 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { PackageExportsMap } from "@akanjs/devkit/packageExportsMap";
 
-// Guards the published shape of this package, which the monorepo cannot exercise on its own.
-//
-// Inside the monorepo Bun resolves `@akanjs/devkit/executors` through the root tsconfig `paths`
-// (`@akanjs/devkit/*` -> `pkgs/@akanjs/devkit/*`), and that resolver probes extensions and directory
-// indexes. A published consumer has no such mapping: it goes through this package's `exports` map,
-// whose targets are matched *exactly*. So `"./*": "./*"` type-checked, built, and passed every test
-// here while every subpath import failed at runtime for anyone installing the tarball:
-//
-//   error: Cannot find module '@akanjs/devkit/executors' from
-//     '<consumer>/node_modules/@akanjs/devkit/incrementalBuilder/incrementalBuilder.proc.ts'
-//
-// `PackageRunner.verifyDistPackage` runs the same check against the built dist tree of every
-// publishable package at release time; these tests keep this package honest on every run.
+//? The monorepo resolves subpaths through tsconfig `paths`, which probe extensions; a published consumer goes through
+//? the exports map, matched exactly — so `"./*": "./*"` passed every test here and broke every installed subpath.
 
 const packageDir = import.meta.dir;
 const exportsMap = await PackageExportsMap.from(packageDir);
 
-/** Every facet the root barrel re-exports, as the subpath a consumer would import. */
 const barrelFacets = async (): Promise<string[]> => {
   const barrel = await Bun.file(path.join(packageDir, "index.ts")).text();
   return [...barrel.matchAll(/^export (?:type )?\* from "\.\/([^"]+)";$/gm)].map((match) => `./${match[1]}`);
 };
 
-/** Every `@akanjs/devkit/<subpath>` specifier written anywhere in the two packages that use them. */
 const importedSubpaths = async (): Promise<string[]> => {
   const repoRoot = path.resolve(packageDir, "../../..");
   const glob = new Bun.Glob("pkgs/@akanjs/{cli,devkit}/**/*.{ts,tsx}");
@@ -53,9 +40,7 @@ describe("published exports map", () => {
   });
 
   test("covers both facet shapes and keeps explicit extensions intact", () => {
-    // A single wildcard cannot serve all three: `./*` -> `./*.ts` reaches bare files, directory
-    // facets need their own literal entry, and `./*.ts` -> `./*.ts` keeps an already-suffixed
-    // specifier from becoming `./cloud/cloudApi.ts.ts`.
+    // One wildcard cannot serve bare files, directory facets and already-suffixed specifiers (no `.ts.ts`) at once.
     expect(exportsMap.resolve("./executors")).toBe("./executors.ts");
     expect(exportsMap.resolve("./frontendBuild")).toBe("./frontendBuild/index.ts");
     expect(exportsMap.resolve("./cloud/cloudApi.ts")).toBe("./cloud/cloudApi.ts");

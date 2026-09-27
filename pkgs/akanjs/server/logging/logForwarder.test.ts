@@ -1,27 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { Logger, type LogRecord, logSeverity } from "akanjs/common";
 import type { AkanIpcMessage } from "akanjs/service";
 import { LogForwarder } from "./logForwarder";
+import { makeLogRecord } from "./logRecord.fixture";
 
 type LogBatch = Extract<AkanIpcMessage, { type: "log.records" }>;
 
-const record = (message: string, overrides: Partial<LogRecord> = {}): LogRecord => ({
-  at: 1,
-  elapsedMs: 0,
-  level: "info",
-  sev: logSeverity.info,
-  name: "Svc",
-  context: "",
-  message,
-  stream: "stdout",
-  pid: 1,
-  replicaIdx: 0,
-  role: "all",
-  origin: null,
-  traceId: null,
-  endpoint: null,
-  ...overrides,
-});
+const record = (message: string, overrides: Partial<LogRecord> = {}) => makeLogRecord(message, { at: 1, ...overrides });
 
 const collect = () => {
   const sent: LogBatch[] = [];
@@ -167,4 +155,36 @@ describe("LogForwarder promoted records", () => {
       forwarder.close();
     }
   });
+});
+
+describe("LogForwarder over Bun IPC", () => {
+  test("delivers the last batch before close() resolves, so an exit right after keeps it", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "akan-log-forwarder-"));
+    const childPath = path.join(dir, "child.ts");
+    fs.writeFileSync(
+      childPath,
+      `import { LogForwarder } from ${JSON.stringify(path.join(import.meta.dir, "logForwarder.ts"))};
+import { makeLogRecord } from ${JSON.stringify(path.join(import.meta.dir, "logRecord.fixture.ts"))};
+const forwarder = new LogForwarder((message, onSent) => process.send?.(message, undefined, undefined, onSent));
+forwarder.setMinSev(0);
+forwarder.push(makeLogRecord("x".repeat(12 * 1024)));
+await forwarder.close();
+process.exit(0);
+`,
+    );
+    const received: number[] = [];
+    const proc = Bun.spawn(["bun", childPath], {
+      ipc: (message: AkanIpcMessage) => {
+        if (message.type === "log.records") received.push(...message.records.map((entry) => entry.message.length));
+      },
+      stdio: ["ignore", "ignore", "inherit"],
+    });
+    try {
+      await proc.exited;
+      await Bun.sleep(50);
+      expect(received).toEqual([12 * 1024]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 20_000);
 });

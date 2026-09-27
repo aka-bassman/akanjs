@@ -5,24 +5,7 @@ const controlAttrs = ["data-akan-action", "data-akan-state"] as const;
 const headingSelector = "h1, h2, h3, h4, h5, h6";
 const nameCap = 40;
 
-/**
- * Resolves a name the agent read on screen to the element it names.
- *
- * Four vocabularies, every one of them something already on the screen rather than a selector the model invented:
- * the `data-akan-action` / `data-akan-state` annotation a control carries and `readScreen` prints beside it, a
- * container — an `Agent.Zone`, a `useScreenScope` scope, or an `Agent.Skip` region named by the marker left in its
- * place — a plain element id, what a docs slide is addressed by, and, last, a **heading by its own text**.
- *
- * A heading is matched on letters and digits alone, so the slug an agent naturally writes for a heading it read
- * ("images-and-public-env") finds "Images And Public Env". That tolerance is for headings only: a heading is a
- * landmark and scrolling to the wrong one costs nothing, while two buttons reading "Save" are not the same control
- * and matching a *control* by its label would drive the wrong one.
- *
- * Nothing hidden ever resolves, by the same rule `readScreen` skips it. A collapsed panel or an off-variant
- * duplicate is not what the user is looking at, and scrolling to one flashes a ring nobody can see — which reads
- * as the tool being broken rather than as a miss. A `display: contents` wrapper does not resolve either, even
- * though the reader now reads through it: it has no box, so `scrollIntoView` has nothing to scroll to.
- */
+/** Resolves an on-screen name to a visible element. Only headings match loosely: a loose control match is unsafe. */
 export class ScreenTarget {
   static container(name: string, root?: HTMLElement | null): HTMLElement | null {
     const scope = root ?? ScreenTarget.#body();
@@ -30,9 +13,7 @@ export class ScreenTarget {
     if (ScreenTarget.#named(scope, containerAttrs, name)) return scope;
     const escaped = CSS.escape(name);
     const selector = containerAttrs.map((attr) => `[${attr}="${escaped}"]`).join(", ");
-    // The id is compared rather than selected: `section` carries whatever the agent read on screen, and a name
-    // holding a space escapes to a `#site\ footer` selector that some engines reject outright — a throw where a
-    // miss belongs, since `readScreen` owes the model the list of sections that do exist.
+    // Compared, not selected: an id holding a space escapes to a selector some engines reject with a throw.
     return (
       ScreenTarget.#first(scope, selector) ??
       [...scope.querySelectorAll<HTMLElement>("[id]")].find((el) => el.id === name && ScreenTarget.visible(el)) ??
@@ -44,10 +25,6 @@ export class ScreenTarget {
     return ScreenTarget.controls(name, root)[0] ?? null;
   }
 
-  /**
-   * Every visible control carrying the name, not just the first — a row component registers one tool per row, so
-   * a caller that must not act on the wrong row is the one that needs to know there were several.
-   */
   static controls(name: string, root?: HTMLElement | null): HTMLElement[] {
     const scope = root ?? ScreenTarget.#body();
     if (!scope || !name) return [];
@@ -69,15 +46,10 @@ export class ScreenTarget {
     );
   }
 
-  /** A control first — an annotated button is the most specific match — then a container, then a heading. */
   static find(name: string, root?: HTMLElement | null): HTMLElement | null {
     return ScreenTarget.control(name, root) ?? ScreenTarget.container(name, root) ?? ScreenTarget.heading(name, root);
   }
 
-  /**
-   * The names a refusal can honestly offer for a region: the scope paths, plus every heading anchor on screen.
-   * Leaving the anchors out is what let a page of twenty named sections answer "nothing carries a name".
-   */
   static containerNames(root?: HTMLElement | null): string[] {
     return [...new Set([...ScreenTarget.#names(containerAttrs, root), ...ScreenTarget.anchorNames(root)])].slice(
       0,
@@ -126,7 +98,6 @@ export class ScreenTarget {
     return [...scope.querySelectorAll<HTMLElement>(selector)].find(ScreenTarget.visible) ?? null;
   }
 
-  /** The one rule for whether an element is something the user is actually looking at. */
   static visible(el: HTMLElement) {
     if (el.hasAttribute("hidden") || el.getAttribute("aria-hidden") === "true") return false;
     if (el.closest("[data-agent-ui]")) return false;

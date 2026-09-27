@@ -11,11 +11,7 @@ export interface SoloAppStatus {
   metrics: AkanMetricsReport;
 }
 
-/**
- * The gateway's `/_akan/app/*` surface, answered by a process nothing is proxying. The payload keeps the
- * gateway's own shape — a `children` array with this process as its only entry — so a probe, a k8s check and
- * `akan` tooling read one contract whether or not a gateway is in front.
- */
+// Answers in the gateway's `/_akan/app/*` shape (one-entry `children`) so probes and tooling read one contract.
 export const createSoloAppRoutes = (
   read: () => SoloAppStatus,
   logStream: { handle(req: Request): Response } | null = null,

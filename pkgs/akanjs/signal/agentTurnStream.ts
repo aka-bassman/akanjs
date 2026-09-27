@@ -11,20 +11,14 @@ interface StreamedTurn {
 
 type RunTurn = (onDelta: (delta: string) => void) => Promise<StreamedTurn>;
 
-/**
- * The streaming half of the agent turn wire (use-agentic WIRE.md): the same endpoint answers `text/event-stream`
- * when the request asks for it, one RunnerEvent JSON per SSE `data:` line, ending with `done`. The signal layer
- * passes a raw `Response` through untouched, which is what lets one mutation serve both shapes.
- */
+// use-agentic WIRE.md: one RunnerEvent JSON per SSE `data:` line, ending with `done`. The signal layer passes a raw
+// `Response` through untouched, which is what lets one mutation serve both shapes.
 export class AgentTurnStream {
   static wants(request: Bun.BunRequest): boolean {
     return !!request.headers.get("accept")?.includes("text/event-stream");
   }
 
-  /**
-   * A domain `Err` carries its dictionary key as the message and the values its text interpolates as `data`, so
-   * both travel: the key alone would reach the chat as `agent.error.…` with its placeholders unfilled.
-   */
+  /** A domain `Err`'s `data` travels with its key, or the chat could not fill the text's placeholders. */
   static failure(error: unknown): {
     message: string;
     data?: Record<string, string | number>;
@@ -34,8 +28,7 @@ export class AgentTurnStream {
     const raw = (error as { data?: unknown } | null)?.data;
     const data =
       raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, string | number>) : null;
-    // The flag is the wire's, not the key's: a browser session answers it by compacting and asking again, and a
-    // client that is not akan's cannot be expected to know what `agent.error.contextOverflow` means.
+    // A wire flag, since a non-akan client cannot be expected to know `agent.error.contextOverflow`.
     const overflow =
       message === "agent.error.contextOverflow" ? (typeof data?.limit === "number" ? { limit: data.limit } : {}) : null;
     return { message, ...(data ? { data } : {}), ...(overflow ? { overflow } : {}) };
@@ -60,13 +53,12 @@ export class AgentTurnStream {
       if (!streamed && turn.text) stream.write({ type: "text", delta: turn.text });
       const toolCalls = turn.toolCalls ?? [];
       for (const call of toolCalls) stream.write({ type: "toolCall", id: call.id, name: call.name, args: call.args });
-      // `length` travels as itself: the browser is the only side that can tell the user an answer was cut off.
       const stop = turn.stop === "length" ? "length" : turn.stop === "toolUse" || toolCalls.length ? "toolUse" : "end";
       const usage = turn.usage ? { input: turn.usage.inputTokens, output: turn.usage.outputTokens } : null;
       const limits = turn.limits && (turn.limits.window || turn.limits.output) ? turn.limits : null;
       stream.write({ type: "done", stop, ...(usage ? { usage } : {}), ...(limits ? { limits } : {}) });
     } catch (error) {
-      // The status line is long gone once the stream is open, so a failure travels as the wire's error event.
+      // The status line is long gone once the stream is open.
       stream.write({ type: "error", ...AgentTurnStream.failure(error) });
     } finally {
       stream.close();

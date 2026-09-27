@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
 import { interpolateTranslation } from "../common/interpolateTranslation";
-import { pathGetLoose } from "../common/pathGetLoose";
+import { pathGetLoose } from "../common/objectPath";
 
 type EnvMode = "browser" | "server";
 
@@ -140,8 +140,7 @@ describe("makePageProto", () => {
     expect(page.lang).toBe("zhChs");
     expect(page.l("user.hello" as never, { name: "Ada" })).toBe("Hello Ada");
     expect(page.l.trans({ en: "English", ko: "Korean" })).toBe("English");
-    // `l.trans` types `en` and `ko` as required, so only a locale-widened app reaches the last resort — the
-    // default locale is one the record never names.
+    // `l.trans` requires `en` and `ko`; only a locale-widened app reaches this last resort.
     expect(page.l.trans({ ko: "Korean" } as unknown as Record<"en" | "ko", string>)).toBe("Korean");
   });
 

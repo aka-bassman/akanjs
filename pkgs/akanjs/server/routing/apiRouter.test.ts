@@ -2,37 +2,53 @@ import { describe, expect, test } from "bun:test";
 import { getDefaultInjectRegistry } from "akanjs/service";
 import { AkanResponse, WebProxyRunner } from "../proxy";
 import type { HttpRoutes, WebsocketRoutes } from "../types";
+import type { ApiRouter as ApiRouterType } from "./apiRouter";
 import type { AppWsData as AppWsDataType } from "./appWsData";
 
 type RouteFn = (req: Request) => Response | Promise<Response>;
 const get = (path: string, acceptEncoding = "") =>
   new Request(`http://localhost${path}`, acceptEncoding ? { headers: { "accept-encoding": acceptEncoding } } : {});
 
+const loadApiRouter = async () => {
+  process.env.AKAN_PUBLIC_APP_NAME = "test";
+  return (await import("./apiRouter")).ApiRouter;
+};
+
+const buildRoutes = async (props: Partial<Parameters<typeof ApiRouterType.buildRoutes>[0]>) =>
+  (await loadApiRouter()).buildRoutes({
+    prefix: "/api",
+    websocketPrefix: "/ws",
+    routes: {} as HttpRoutes,
+    renderEnvRoutes: {},
+    upgradeAppWs: () => false,
+    ...props,
+  });
+
+const buildWebsocketHandlers = async (props: Partial<Parameters<typeof ApiRouterType.buildWebsocketHandlers>[0]>) =>
+  (await loadApiRouter()).buildWebsocketHandlers({
+    wsRoutes: {} as WebsocketRoutes,
+    registry: getDefaultInjectRegistry(),
+    hmrHub: null,
+    hmrState: null,
+    logger: { error: () => undefined } as never,
+    ...props,
+  });
+
+const fakeWs = (data: unknown, send: (message: string) => unknown = () => undefined) =>
+  ({ data, send }) as unknown as Bun.ServerWebSocket<{ kind?: string }>;
+
 describe("ApiRouter.buildRoutes", () => {
   test("keeps the global prefix by default", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "test";
-    const { ApiRouter } = await import("./apiRouter");
-    const routes = ApiRouter.buildRoutes({
-      prefix: "/api",
-      websocketPrefix: "/ws",
-      routes: { "/admin/ping": () => new Response("ok") } as HttpRoutes,
-      renderEnvRoutes: {},
-      upgradeAppWs: () => false,
-    });
+    const routes = await buildRoutes({ routes: { "/admin/ping": () => new Response("ok") } as HttpRoutes });
 
     expect(Object.keys(routes)).toContain("/api/admin/ping");
   });
 
   test("allows selected endpoints to skip the global prefix", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "test";
-    const { ApiRouter } = await import("./apiRouter");
-    const routes = ApiRouter.buildRoutes({
-      prefix: "/api",
-      websocketPrefix: "/ws",
+    const routes = await buildRoutes({
       routes: { "/sitemap.xml": () => new Response("ok") } as HttpRoutes,
       routeOptions: { "/sitemap.xml": { globalPrefix: false } },
       renderEnvRoutes: { "/*": () => new Response("fallback") } as HttpRoutes,
-      upgradeAppWs: () => false,
     });
 
     expect(Object.keys(routes)).toContain("/sitemap.xml");
@@ -40,15 +56,10 @@ describe("ApiRouter.buildRoutes", () => {
   });
 
   test("keeps builtin routes before render catch-all without API prefix", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "test";
-    const { ApiRouter } = await import("./apiRouter");
-    const routes = ApiRouter.buildRoutes({
-      prefix: "/api",
-      websocketPrefix: "/ws",
+    const routes = await buildRoutes({
       routes: { "/ping": () => new Response("api") } as HttpRoutes,
       builtinRoutes: { "/openapi.json": () => Response.json({ openapi: "3.1.0" }) } as HttpRoutes,
       renderEnvRoutes: { "/*": () => new Response("fallback") } as HttpRoutes,
-      upgradeAppWs: () => false,
     });
 
     expect(Object.keys(routes)).toContain("/openapi.json");
@@ -59,23 +70,18 @@ describe("ApiRouter.buildRoutes", () => {
   });
 
   test("wraps only render routes with the web proxy runner", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "test";
-    const { ApiRouter } = await import("./apiRouter");
     class RewriteRenderProxy {
       static refName = "rewriteRenderProxy";
       use() {
         return AkanResponse.rewrite("http://localhost/rendered", { request: { headers: { "x-proxy": "1" } } });
       }
     }
-    const routes = ApiRouter.buildRoutes({
-      prefix: "/api",
-      websocketPrefix: "/ws",
+    const routes = await buildRoutes({
       routes: { "/ping": () => Response.json("api") } as HttpRoutes,
       builtinRoutes: { "/openapi.json": () => Response.json({ openapi: "3.1.0" }) } as HttpRoutes,
       renderEnvRoutes: {
         "/*": (req) => Response.json({ url: req.url, proxy: req.headers.get("x-proxy") }),
       } as HttpRoutes,
-      upgradeAppWs: () => false,
       webProxyRunner: new WebProxyRunner([RewriteRenderProxy]),
     });
 
@@ -92,21 +98,13 @@ describe("ApiRouter.buildRoutes", () => {
 
 describe("ApiRouter.buildWebsocketHandlers", () => {
   test("dispatches app websocket messages and returns route errors", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "test";
-    const { ApiRouter } = await import("./apiRouter");
     const sent: string[] = [];
     const loggerErrors: string[] = [];
-    const ws = {
-      data: {},
-      send: (message: string) => sent.push(message),
-    } as unknown as Bun.ServerWebSocket<{ kind?: string }>;
-    const handlers = ApiRouter.buildWebsocketHandlers({
+    const ws = fakeWs({}, (message) => sent.push(message));
+    const handlers = await buildWebsocketHandlers({
       wsRoutes: {
         echo: async (_ws, data, event) => ({ event, data }),
       } as WebsocketRoutes,
-      registry: getDefaultInjectRegistry(),
-      hmrHub: null,
-      hmrState: null,
       logger: { error: (message: string) => loggerErrors.push(message) } as never,
     });
 
@@ -120,30 +118,23 @@ describe("ApiRouter.buildWebsocketHandlers", () => {
     }
 
     expect(JSON.parse(sent[0] ?? "{}")).toEqual({ event: "message", data: ["hello"] });
-    // Detailed outside a production build, and generalized inside one — `SignalFailure` owns that split.
+    // Detailed outside production, generalized inside (SignalFailure owns the split); the log keeps the stack.
     expect(JSON.parse(sent[1] ?? "{}").error).toBe('WebSocket route "missing" is not registered');
-    // The log keeps the stack the response no longer carries, which is why generalizing the response loses nothing.
     expect(loggerErrors).toHaveLength(1);
     expect(loggerErrors[0]).toContain('WebSocket route "missing" is not registered');
   });
 
   test("keeps HMR websocket traffic separate from app signal routes", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "test";
-    const { ApiRouter } = await import("./apiRouter");
     const sent: string[] = [];
     let attached = false;
     let detached = false;
-    const ws = {
-      data: { kind: "akan-hmr" },
-      send: (message: string) => sent.push(message),
-    } as unknown as Bun.ServerWebSocket<{ kind?: string }>;
-    const handlers = ApiRouter.buildWebsocketHandlers({
+    const ws = fakeWs({ kind: "akan-hmr" }, (message) => sent.push(message));
+    const handlers = await buildWebsocketHandlers({
       wsRoutes: {
         hmrShouldNotRun: () => {
           throw new Error("should not run");
         },
       } as WebsocketRoutes,
-      registry: getDefaultInjectRegistry(),
       hmrHub: {
         attach: () => {
           attached = true;
@@ -153,7 +144,6 @@ describe("ApiRouter.buildWebsocketHandlers", () => {
         },
       } as never,
       hmrState: { state: { buildId: 7, cssAssets: {} } },
-      logger: { error: () => undefined } as never,
     });
 
     handlers.open?.(ws);
@@ -169,14 +159,8 @@ describe("ApiRouter.buildWebsocketHandlers", () => {
 
 describe("ApiRouter websocket authentication", () => {
   test("hands the handshake credential to the upgrade instead of dropping it", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "test";
-    const { ApiRouter } = await import("./apiRouter");
     const upgraded: AppWsDataType[] = [];
-    const routes = ApiRouter.buildRoutes({
-      prefix: "/api",
-      websocketPrefix: "/ws",
-      routes: {} as HttpRoutes,
-      renderEnvRoutes: {},
+    const routes = await buildRoutes({
       upgradeAppWs: (_req, data) => {
         upgraded.push(data);
         return true;
@@ -197,27 +181,18 @@ describe("ApiRouter websocket authentication", () => {
   });
 
   test("applies an auth frame before the frames queued behind it and acks the revoked rooms", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "test";
-    const { ApiRouter } = await import("./apiRouter");
     const { AppWsData } = await import("./appWsData");
     const { websocketAuthContract } = await import("akanjs/common");
     const sent: string[] = [];
     const seenCredentials: (string | null)[] = [];
-    const ws = {
-      data: AppWsData.fromRequest(new Request("http://localhost/api/ws")),
-      send: (message: string) => sent.push(message),
-    } as unknown as Bun.ServerWebSocket<{ kind?: string }>;
-    const handlers = ApiRouter.buildWebsocketHandlers({
+    const ws = fakeWs(AppWsData.fromRequest(new Request("http://localhost/api/ws")), (message) => sent.push(message));
+    const handlers = await buildWebsocketHandlers({
       wsRoutes: {
         room: (socket: Bun.ServerWebSocket<unknown>) => {
           seenCredentials.push(AppWsData.of(socket).headers.get("authorization"));
           return { ok: true };
         },
       } as unknown as WebsocketRoutes,
-      registry: getDefaultInjectRegistry(),
-      hmrHub: null,
-      hmrState: null,
-      logger: { error: () => undefined } as never,
     });
 
     const auth = handlers.message?.(ws, JSON.stringify(websocketAuthContract.makeRequest("signed-in-token")));
@@ -230,22 +205,11 @@ describe("ApiRouter websocket authentication", () => {
   });
 
   test("answers a heartbeat frame instead of rejecting it as an unregistered route", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "test";
-    const { ApiRouter } = await import("./apiRouter");
     const { AppWsData } = await import("./appWsData");
     const { websocketHeartbeatContract } = await import("akanjs/common");
     const sent: string[] = [];
-    const ws = {
-      data: AppWsData.fromRequest(new Request("http://localhost/api/ws")),
-      send: (message: string) => sent.push(message),
-    } as unknown as Bun.ServerWebSocket<{ kind?: string }>;
-    const handlers = ApiRouter.buildWebsocketHandlers({
-      wsRoutes: {} as WebsocketRoutes,
-      registry: getDefaultInjectRegistry(),
-      hmrHub: null,
-      hmrState: null,
-      logger: { error: () => undefined } as never,
-    });
+    const ws = fakeWs(AppWsData.fromRequest(new Request("http://localhost/api/ws")), (message) => sent.push(message));
+    const handlers = await buildWebsocketHandlers({});
 
     await handlers.message?.(ws, JSON.stringify(websocketHeartbeatContract.makeRequest()));
 
@@ -254,22 +218,13 @@ describe("ApiRouter websocket authentication", () => {
   });
 
   test("signing out over the socket clears the credential it was upgraded with", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "test";
-    const { ApiRouter } = await import("./apiRouter");
     const { AppWsData } = await import("./appWsData");
     const { websocketAuthContract } = await import("akanjs/common");
-    const ws = {
-      data: AppWsData.fromRequest(new Request("http://localhost/api/ws", { headers: { cookie: "jwt=cookie-token" } })),
-      send: () => undefined,
-    } as unknown as Bun.ServerWebSocket<{ kind?: string }>;
+    const ws = fakeWs(
+      AppWsData.fromRequest(new Request("http://localhost/api/ws", { headers: { cookie: "jwt=cookie-token" } })),
+    );
     AppWsData.of(ws).account = { role: "user" };
-    const handlers = ApiRouter.buildWebsocketHandlers({
-      wsRoutes: {} as WebsocketRoutes,
-      registry: getDefaultInjectRegistry(),
-      hmrHub: null,
-      hmrState: null,
-      logger: { error: () => undefined } as never,
-    });
+    const handlers = await buildWebsocketHandlers({});
 
     await handlers.message?.(ws, JSON.stringify(websocketAuthContract.makeRequest(null)));
 
@@ -280,18 +235,10 @@ describe("ApiRouter websocket authentication", () => {
 
 describe("ApiRouter endpoint responses over a real socket", () => {
   test("compresses a signal endpoint's JSON, and leaves the decoded body identical", async () => {
-    process.env.AKAN_PUBLIC_APP_NAME = "test";
-    const { ApiRouter } = await import("./apiRouter");
     const payload = { rows: Array.from({ length: 200 }, (_, i) => ({ id: i, title: "repeated title" })) };
     const server = Bun.serve({
       port: 0,
-      routes: ApiRouter.buildRoutes({
-        prefix: "/api",
-        websocketPrefix: "/ws",
-        routes: { "/rows": () => Response.json(payload) } as HttpRoutes,
-        renderEnvRoutes: {},
-        upgradeAppWs: () => false,
-      }) as never,
+      routes: (await buildRoutes({ routes: { "/rows": () => Response.json(payload) } as HttpRoutes })) as never,
     });
 
     const compressed = await fetch(`http://localhost:${server.port}/api/rows`, {

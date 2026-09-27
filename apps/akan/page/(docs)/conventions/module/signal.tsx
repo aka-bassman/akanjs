@@ -225,8 +225,8 @@ export default page().render(() => {
     {
       name: ".body(name, Type, options?)",
       desc: l.trans({
-        en: "A request-body value, mostly for mutations. `{ nullable: true }` makes it optional.",
-        ko: "요청 body 값이며 주로 mutation에서 씁니다. `{ nullable: true }`면 선택 인자가 됩니다.",
+        en: "A request-body value of a mutation. A query is sent without a body, so give it `.search()` instead. `{ nullable: true }` makes it optional.",
+        ko: "mutation의 요청 body 값입니다. query는 body 없이 보내므로 query에는 `.search()`를 씁니다. `{ nullable: true }`면 선택 인자가 됩니다.",
       }),
       example: '.body("data", cnst.StoryInput)',
     },
@@ -1753,14 +1753,18 @@ export default page()
             {l.trans({
               en: (
                 <span>
-                  <code>slice()</code> declares the lists pages show. Each entry starts with <code>init()</code>, takes
-                  arguments like an endpoint, and returns a service query.
+                  <code>slice()</code> declares the lists pages show. Each entry starts with <code>init()</code>, takes{" "}
+                  <code>.param()</code>, <code>.search()</code> and <code>.with()</code> arguments like an endpoint, and
+                  returns a service query. <code>.body()</code> is deprecated there: a list is loaded with no request
+                  body, so its value never arrives.
                 </span>
               ),
               ko: (
                 <span>
                   <code>slice()</code>에는 페이지가 보여 줄 목록을 선언합니다. 각 항목은 <code>init()</code>으로 시작해
-                  endpoint처럼 인자를 받고, service query를 반환합니다.
+                  endpoint처럼 <code>.param()</code>, <code>.search()</code>, <code>.with()</code> 인자를 받고, service
+                  query를 반환합니다. slice의 <code>.body()</code>는 지원이 중단되었습니다. 목록은 요청 body 없이
+                  불러오므로 그 값이 전달되지 않습니다.
                 </span>
               ),
             })}

@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
-import { createSubRouteIndexDocument, getSubRouteIndexHref, type SubRouteIndexOptions } from "./subRouteIndexDocument";
 import {
+  createSubRouteIndexDocument,
   createSystemPageDocument,
+  getSubRouteIndexHref,
+  type SubRouteIndexOptions,
   SYSTEM_PAGE_STATUS_COPY,
   type SystemPageKind,
   type SystemPageOptions,
@@ -15,7 +17,7 @@ export interface SubRouteIndexResponseOptions extends SubRouteIndexOptions {
   method?: string;
 }
 
-export { createSystemPageDocument, getSystemPageHomeHref } from "./systemPageDocument";
+export { getSystemPageHomeHref } from "./systemPageDocument";
 
 export async function createSystemPageResponse(options: SystemPageResponseOptions): Promise<Response> {
   return await renderDocumentResponse({

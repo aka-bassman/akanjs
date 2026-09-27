@@ -8,6 +8,7 @@ import {
   codeAgentLabelChars,
   codeAgentOutputChars,
 } from "akanjs/common";
+import { stringArg } from "./stringArg";
 
 const toolOps: { [key: string]: CodeAgentToolOp } = {
   read: "read",
@@ -19,13 +20,7 @@ const toolOps: { [key: string]: CodeAgentToolOp } = {
   bash: "execute",
 };
 
-/**
- * Narrows the engine's event stream into the akan wire.
- *
- * One turn here is one user prompt, not one LLM round trip: the engine's `turn_start` fires once per round trip
- * inside a run, which is an engine detail no host should have to fold. `agent_start`/`agent_end` are the
- * boundaries a person perceives, so they become our `turn_start`/`turn_end`.
- */
+// A turn is one prompt: the engine's `turn_start` fires per LLM round trip, so `agent_start`/`agent_end` bound it.
 export class CodeAgentEventMapper {
   #turn = 0;
   #turnId = "";
@@ -46,8 +41,7 @@ export class CodeAgentEventMapper {
         this.#outcome = undefined;
         return [{ type: "turn_start", turnId: this.#turnId }];
       case "agent_end":
-        // `turn_end` is last by contract. The engine finalizes the assistant message before the run ends even
-        // when the run was aborted, so a host that closes the turn on this frame has already seen it.
+        // `turn_end` is last by contract; the engine finalizes the message before the run ends, even on abort.
         return [
           ...this.flushBlocked(),
           { type: "turn_end", turnId: this.#turnId, stopReason: this.#stopReason(event) },
@@ -103,14 +97,7 @@ export class CodeAgentEventMapper {
     }
   }
 
-  /**
-   * Records that a call was refused before it ran.
-   *
-   * The refusal arrives in the `tool_call` hook, which fires **before** `tool_execution_start` — measured: a
-   * blocked call produces no start event at all, and then a `tool_execution_end` carrying `isError`. So the
-   * start frame is synthesised here and the engine's own end frame is relabelled `blocked`, rather than
-   * synthesising a terminal frame that would arrive twice.
-   */
+  // The engine sends a blocked call no start event, only an `isError` end: synthesise the start, relabel the end.
   markBlocked(toolCallId: string, toolName: string, args: unknown, reason: string): CodeAgentEventBody[] {
     this.#blocked.set(toolCallId, reason);
     if (this.#openTools.has(toolCallId)) return [];
@@ -155,25 +142,12 @@ export class CodeAgentEventMapper {
     };
   }
 
-  /**
-   * Records how this turn is ending, from the side that actually knows.
-   *
-   * Consumed once, by the next `agent_end`. See {@link CodeAgentEventMapper.#stopReason} for why the engine's
-   * own report cannot be trusted for this.
-   */
+  /** Consumed once, by the next `agent_end`, and wins over the engine's own stop reason. */
   noteOutcome(reason: CodeAgentStopReason) {
     this.#outcome = reason;
   }
 
-  /**
-   * **The engine does not report an abort.** Measured: interrupting a streaming turn finalizes the partial
-   * assistant message with `stopReason: "stop"` — the provider stream was cut, and from the engine's side that
-   * is an ordinary stop. Trusting it reports `done` for every interrupt, and a host then has no way to tell a
-   * finished answer from a truncated one.
-   *
-   * So the core's own record wins: it is the party that called `abort()`, and the party that suspended the
-   * turn to ask a question. The engine's report is only the fallback.
-   */
+  // The engine reports an interrupted stream as `stop`, so the core's own note wins and the engine's is a fallback.
   #stopReason(event: Extract<AgentSessionEvent, { type: "agent_end" }>): CodeAgentStopReason {
     const noted = this.#outcome;
     this.#outcome = undefined;
@@ -182,15 +156,13 @@ export class CodeAgentEventMapper {
     const last = event.messages.at(-1) as { stopReason?: string } | undefined;
     if (last?.stopReason === "aborted") return "aborted";
     if (last?.stopReason === "error") return "error";
-    // The engine's vocabulary is `stop | length | toolUse | error | aborted`. Branching on only the two that
-    // read as failures lets `length` — the model hitting its output cap — leave as `done`, and a half-written
-    // answer is then stored, and replayed to the next turn, as a finished one.
+    // `length` is the model hitting its output cap: a half-written answer must not be stored as `done`.
     if (last?.stopReason === "length") return "truncated";
     return "done";
   }
 
   #summary(toolCallId: string, name: string, args: unknown): CodeAgentToolSummary {
-    const path = CodeAgentEventMapper.#pathOf(args);
+    const path = stringArg(args, "path");
     return {
       toolCallId,
       name,
@@ -215,16 +187,6 @@ export class CodeAgentEventMapper {
     return [{ type: "message", turnId: this.#turnId, role: message.role, text }];
   }
 
-  static #pathOf(args: unknown) {
-    if (!args || typeof args !== "object") return undefined;
-    const value = (args as { path?: unknown }).path;
-    return typeof value === "string" && value ? value : undefined;
-  }
-
-  /**
-   * A one-line rendering, never the values themselves: a `write` call's argument is the whole new file body and
-   * an `edit` call's is every replacement in it.
-   */
   static #renderArgs(args: unknown) {
     if (!args || typeof args !== "object") return "";
     const entries = Object.entries(args as Record<string, unknown>).filter(([, value]) => value !== undefined);
@@ -233,12 +195,7 @@ export class CodeAgentEventMapper {
     return `(${codeAgentClip(rendered, 120)})`;
   }
 
-  /**
-   * A structured argument is described by its shape, not stringified.
-   *
-   * `String({})` is `"[object Object]"` and an array of them is that repeated — which is where an `edit` call's
-   * replacement list ends up, so the row says nothing about a call that changed three places in a file.
-   */
+  // By shape, not `String()`, which renders an `edit` call's replacement list as `[object Object]`s.
   static #renderArgValue(value: unknown) {
     if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`;
     if (value && typeof value === "object") {

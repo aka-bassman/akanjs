@@ -11,8 +11,12 @@ import type {
 import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode, Suspense } from "react";
 import { getExplicitPageConfigKeys, resolvePageState } from "../client/frameConfig";
 import { resolveHeadResult } from "./head";
-import { type AkanRouteSegmentState, createAkanRouteSegments, createAkanSegmentOutletKey } from "./routeState";
-import { isAkanRscPartialCommitEnabled } from "./rscPartialCommit";
+import {
+  type AkanRouteSegmentState,
+  createAkanRouteSegments,
+  createAkanSegmentOutletKey,
+  isAkanRscPartialCommitEnabled,
+} from "./routeState";
 import { AkanSegmentOutletReference } from "./rscSegmentOutletReference";
 
 export class RouteElementComposer {
@@ -26,14 +30,7 @@ export class RouteElementComposer {
     const pageConfigChain = await RouteElementComposer.#resolvePageConfigChain(pathRoute);
     return {
       ...pathRoute,
-      pageState: resolvePageState({
-        configChain: pageConfigChain,
-        path: pathRoute.path,
-        basePath: basePath ?? undefined,
-        platform: "web",
-        deviceSafeArea: { top: 0, bottom: 0 },
-        cssSafeArea: { top: 0, bottom: 0 },
-      }),
+      pageState: RouteElementComposer.#webPageState(pageConfigChain, pathRoute.path, basePath),
       pageConfigChain,
       explicitPageConfigKeys: getExplicitPageConfigKeys(pageConfigChain),
     };
@@ -47,9 +44,13 @@ export class RouteElementComposer {
     basePath?: string | null;
   }) {
     const pageConfigChain = await RouteElementComposer.#resolveLayoutPageConfigChain(route);
+    return RouteElementComposer.#webPageState(pageConfigChain, route.path, basePath);
+  }
+
+  static #webPageState(configChain: PageConfig[], path: string, basePath?: string | null) {
     return resolvePageState({
-      configChain: pageConfigChain,
-      path: route.path,
+      configChain,
+      path,
       basePath: basePath ?? undefined,
       platform: "web",
       deviceSafeArea: { top: 0, bottom: 0 },
@@ -100,10 +101,8 @@ export class RouteElementComposer {
     });
   }
 
-  // The suffix (patch) compose path never runs `resolveHead`, which is what
-  // otherwise populates `routeRender.Loading` as a side effect. Load the modules
-  // for the patched render stack explicitly so `#composeLoadingFallback` has a
-  // real fallback to emit for client navigation.
+  // The patch path never runs `resolveHead`, whose side effect fills `routeRender.Loading`; without this the
+  // client-navigation fallback is empty.
   static async resolveSuffixLoadings(pathRoute: PathRoute, patchStartIndex: number): Promise<void> {
     const renders = RouteElementComposer.#getRenderStack(pathRoute).slice(Math.max(patchStartIndex, 0));
     // A failed Loading load must degrade to an empty fallback, never abort the navigation.
@@ -168,15 +167,7 @@ export class RouteElementComposer {
       if (!fallback) continue;
       const renders = [
         ...layoutStack.slice(0, index + 1),
-        RouteElementComposer.#makeFallbackRouteRender({
-          kind,
-          fallback,
-          params,
-          searchParams,
-          pathname,
-          error,
-          digest,
-        }),
+        RouteElementComposer.#makeFallbackRouteRender({ kind, fallback, pathname, error, digest }),
       ];
       return RouteElementComposer.composeRenders({ renders, params, searchParams });
     }
@@ -211,12 +202,10 @@ export class RouteElementComposer {
         </Suspense>
       );
       const segment = segments?.[i];
-      if (segment?.kind === "page") {
-        const routeSegments = segments;
-        if (!routeSegments) continue;
+      if (segments && segment?.kind === "page") {
         const outletKey =
           createAkanSegmentOutletKey(
-            routeSegments.slice(0, i + 1).map((item) => item.key),
+            segments.slice(0, i + 1).map((item) => item.key),
             i,
           ) ?? segment.key;
         element = <AkanSegmentOutletReference segmentKey={outletKey}>{element}</AkanSegmentOutletReference>;
@@ -225,7 +214,7 @@ export class RouteElementComposer {
     return element;
   }
 
-  static async renderAsync({
+  static AsyncRender = async ({
     routeRender,
     children,
     params,
@@ -235,17 +224,7 @@ export class RouteElementComposer {
     children: ReactNode;
     params: Record<string, string>;
     searchParams: Record<string, string | string[]>;
-  }) {
-    const node = await routeRender.render({ children, params, searchParams } as never);
-    return RouteElementComposer.#normalizeReactNode(node);
-  }
-
-  static AsyncRender = (props: {
-    routeRender: RouteRender;
-    children: ReactNode;
-    params: Record<string, string>;
-    searchParams: Record<string, string | string[]>;
-  }) => RouteElementComposer.renderAsync(props);
+  }) => RouteElementComposer.#normalizeReactNode(await routeRender.render({ children, params, searchParams } as never));
 
   static #makeFallbackRouteRender({
     kind,
@@ -256,18 +235,13 @@ export class RouteElementComposer {
   }: {
     kind: "not-found" | "error";
     fallback: LayoutNotFoundRender | LayoutErrorRender;
-    params: Record<string, string>;
-    searchParams: Record<string, string | string[]>;
     pathname: string;
     error?: unknown;
     digest?: string;
   }): RouteRender {
     return {
       render: (props: { params: Record<string, string>; searchParams: Record<string, string | string[]> }) => {
-        const { params, searchParams } = props as {
-          params: Record<string, string>;
-          searchParams: Record<string, string | string[]>;
-        };
+        const { params, searchParams } = props;
         return kind === "not-found"
           ? (fallback as LayoutNotFoundRender)({ params, searchParams, pathname })
           : (fallback as LayoutErrorRender)({ params, searchParams, pathname, error, digest });
@@ -282,15 +256,10 @@ export class RouteElementComposer {
     const props = node.props as { children?: ReactNode };
     if (!("children" in props)) return node;
 
-    const normalizedChildren = RouteElementComposer.#normalizeReactChildren(props.children);
+    const normalizedChildren = RouteElementComposer.#normalizeReactNode(props.children);
     if (normalizedChildren === props.children) return node;
 
     return cloneElement(node as ReactElement<{ children?: ReactNode }>, undefined, normalizedChildren);
-  }
-
-  static #normalizeReactChildren(children: ReactNode): ReactNode {
-    if (Array.isArray(children)) return Children.toArray(children).map(RouteElementComposer.#normalizeReactNode);
-    return RouteElementComposer.#normalizeReactNode(children);
   }
 
   static #getRenderStack(pathRoute: PathRoute): RouteRender[] {

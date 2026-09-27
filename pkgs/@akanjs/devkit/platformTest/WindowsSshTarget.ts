@@ -48,7 +48,7 @@ export class WindowsSshTarget extends PlatformTestTarget {
       [context.snapshot.tarPath, "src.tar"],
       [context.envPath, "env"],
     ] as const) {
-      const copied = await WindowsSshTarget.#run([
+      const copied = await WindowsSshTarget.spawnText([
         ...this.#scpBase(),
         local,
         this.#remoteScpPath(`${runDir}\\${remoteName}`),
@@ -71,13 +71,7 @@ export class WindowsSshTarget extends PlatformTestTarget {
       "$ProgressPreference = 'SilentlyContinue'",
       "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
       "'PID=' + $PID",
-      "$env:GIT_AUTHOR_NAME = 'akan-test'",
-      "$env:GIT_AUTHOR_EMAIL = 'akan-test@localhost'",
-      "$env:GIT_COMMITTER_NAME = 'akan-test'",
-      "$env:GIT_COMMITTER_EMAIL = 'akan-test@localhost'",
-      "$env:GIT_CONFIG_COUNT = '1'",
-      "$env:GIT_CONFIG_KEY_0 = 'init.defaultBranch'",
-      "$env:GIT_CONFIG_VALUE_0 = 'main'",
+      ...Object.entries(PlatformTestTarget.gitIdentityEnv).map(([key, value]) => `$env:${key} = '${value}'`),
       `Set-Location -LiteralPath '${runDir}\\w'`,
       `cmd /c "${command} 2>&1"`,
       "exit $LASTEXITCODE",
@@ -112,10 +106,10 @@ export class WindowsSshTarget extends PlatformTestTarget {
     const vm = this.#config.utmVm;
     if (!vm || !existsSync(WindowsSshTarget.utmctlPath))
       throw new Error(`cannot reach ${this.#config.user}@${this.#host} over ssh`);
-    const status = (await WindowsSshTarget.#run([WindowsSshTarget.utmctlPath, "status", vm])).stdout.trim();
-    if (status !== "started") await WindowsSshTarget.#run([WindowsSshTarget.utmctlPath, "start", vm]);
+    const status = (await WindowsSshTarget.spawnText([WindowsSshTarget.utmctlPath, "status", vm])).stdout.trim();
+    if (status !== "started") await WindowsSshTarget.spawnText([WindowsSshTarget.utmctlPath, "start", vm]);
     for (let attempt = 0; attempt < 24; attempt++) {
-      const addresses = (await WindowsSshTarget.#run([WindowsSshTarget.utmctlPath, "ip-address", vm])).stdout;
+      const addresses = (await WindowsSshTarget.spawnText([WindowsSshTarget.utmctlPath, "ip-address", vm])).stdout;
       const ipv4 = addresses.split(/\s+/).find((address) => /^\d+\.\d+\.\d+\.\d+$/.test(address));
       if (ipv4) this.#host = ipv4;
       if ((await this.#ssh("exit 0")).exitCode === 0) return;
@@ -152,16 +146,6 @@ export class WindowsSshTarget extends PlatformTestTarget {
   }
 
   async #ssh(script: string) {
-    return await WindowsSshTarget.#run([...this.#sshBase(), script]);
-  }
-
-  static async #run(command: string[]) {
-    const proc = Bun.spawn(command, { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-    return { stdout, stderr, exitCode };
+    return await WindowsSshTarget.spawnText([...this.#sshBase(), script]);
   }
 }

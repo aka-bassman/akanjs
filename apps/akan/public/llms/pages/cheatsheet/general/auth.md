@@ -85,7 +85,7 @@ The whole account, for a handler that branches on both identities at once.
 
 `true` when an agent drives the call. It narrows what the call does, not who may make it.
 
-The workspace scaffold writes it to `srvkit/SessionInternalArg.ts`, for handlers needing only an id.
+The workspace scaffold writes it to `srvkit/internalArgs.ts`, for handlers needing only an id.
 
 From `akanjs/signal`: the caller's IP, the websocket, and the raw HTTP request and response.
 

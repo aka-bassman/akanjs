@@ -26,6 +26,7 @@ import {
   type RouteModuleSource,
   resolveRouteModule,
 } from "../client/route/resolveRouteModule";
+import { matchRoutePrefix } from "../common/routeConvention";
 
 type RouteModuleKindWithOverrides = "page" | "layout" | "overrides";
 
@@ -115,7 +116,7 @@ export class RouteTreeBuilder {
     const candidates = fallbackRoutes
       .map((fallbackRoute) => ({
         fallbackRoute,
-        params: RouteTreeBuilder.#matchRoutePrefix(fallbackRoute.path, pathname),
+        params: matchRoutePrefix(fallbackRoute.path, pathname),
       }))
       .filter((entry): entry is { fallbackRoute: LayoutFallbackRoute; params: Record<string, string> } =>
         Boolean(entry.params),
@@ -152,7 +153,6 @@ export class RouteTreeBuilder {
       if (!children) throw new Error("No children");
       return children;
     }, this.#routeMap);
-    if (!targetRouteMap) return;
 
     const targetPath = pathSegments[pathSegments.length - 1];
     if (!targetPath) return;
@@ -193,10 +193,8 @@ export class RouteTreeBuilder {
     const pathSegments = [...parentPaths, ...(currentPathSegment ? [currentPathSegment] : [])];
     const currentRootLayout = isRoot && route.renderLayout ? route.renderLayout : null;
     const currentLayout = !isRoot && route.renderLayout ? route.renderLayout : null;
-    // Overrides wrap the whole stack, root layouts included. Riding the non-root stream instead left a root
-    // layout wrapping the provider, so its own JSX — and the overlay host it mounts, which portalled Modals
-    // render into — sat outside every manifest and silently took the framework default. Nested manifests still
-    // stack in node order, and `parentRootLayouts` stays override-free because the root-boundary test counts it.
+    // Overrides wrap root layouts too, or a root layout's own UI (the overlay host portalled Modals use) misses them.
+    // `parentRootLayouts` stays override-free: the isRoot test counts its length.
     const currentOverrideRenders = route.renderOverrides ? [route.renderOverrides] : [];
     const overrideRenders = [...parentOverrides, ...currentOverrideRenders];
     const rootLayoutStack = [...parentRootLayouts, ...(currentRootLayout ? [currentRootLayout] : [])];
@@ -263,10 +261,6 @@ export class RouteTreeBuilder {
     };
   }
 
-  /**
-   * A `page()` / `layout()` chain is unfolded into the named-export shape the rest of this file reads. The legacy
-   * shape still loads, and is named once per module so an app finds every file the migration guide covers.
-   */
   static #resolveModule(key: string, kind: RouteModuleKindWithOverrides, mod: RouteModuleSource): ResolvedRouteModule {
     if (kind === "overrides") return { module: mod as RouteModule };
     const parsed = parseRouteModuleKey(key);
@@ -282,7 +276,6 @@ export class RouteTreeBuilder {
 
   static #validateRouteModuleExports(key: string, kind: RouteModuleKindWithOverrides, mod: RouteModule) {
     if (kind === "overrides") {
-      // The loaded module is the generated `"use client"` override wrapper, whose default mounts the provider.
       if (!mod.default) throw new Error(`[route-convention] ${key} generated override wrapper has no default export`);
       return;
     }
@@ -301,6 +294,21 @@ export class RouteTreeBuilder {
 
   static #makeRouteRender(key: string, kind: "page" | "layout", loader: () => Promise<RouteModuleSource>): RouteRender {
     const loadModule = RouteTreeBuilder.#makeLazyModule(key, kind, loader);
+    const syncFallbacks = (mod: LayoutModule) => {
+      routeRender.NotFound = mod.NotFound;
+      routeRender.Error = mod.Error;
+      return mod;
+    };
+    const loadSynced = async () => {
+      const { module: mod } = await loadModule();
+      routeRender.Loading = mod.Loading as never;
+      if (kind === "layout") syncFallbacks(mod as LayoutModule);
+      return mod;
+    };
+    const pageConfigOf = async () => {
+      const { module: mod } = await loadModule();
+      return "pageConfig" in mod ? mod.pageConfig : undefined;
+    };
     const routeRender: RouteRender = {
       isAsync: true,
       resolveLoading: async () => {
@@ -308,57 +316,27 @@ export class RouteTreeBuilder {
         routeRender.Loading = mod.Loading as never;
       },
       render: async (props: LayoutProps | PageProps) => {
-        const { module: mod } = await loadModule();
-        routeRender.Loading = mod.Loading as never;
-        if (kind === "layout") {
-          const layoutMod = mod as LayoutModule;
-          routeRender.NotFound = layoutMod.NotFound;
-          routeRender.Error = layoutMod.Error;
-        }
+        const mod = await loadSynced();
         if (!mod.default) throw new Error(`[route-convention] ${key} has no default export`);
         return mod.default(props as never);
       },
       resolveHead: async (props: PageProps) => {
-        const { module: mod } = await loadModule();
-        routeRender.Loading = mod.Loading as never;
-        if (kind === "layout") {
-          const layoutMod = mod as LayoutModule;
-          routeRender.NotFound = layoutMod.NotFound;
-          routeRender.Error = layoutMod.Error;
-        }
+        const mod = await loadSynced();
         return mod.generateHead ? await mod.generateHead(props) : mod.head;
       },
     };
     if (kind === "page") {
-      routeRender.getPageConfig = async () => {
-        const { module: mod } = await loadModule();
-        return "pageConfig" in mod ? mod.pageConfig : undefined;
-      };
+      routeRender.getPageConfig = pageConfigOf;
       routeRender.getRouteDefinition = async () => (await loadModule()).definition;
     } else {
-      routeRender.getLayoutPageConfig = async () => {
-        const { module: mod } = await loadModule();
-        return "pageConfig" in mod ? mod.pageConfig : undefined;
-      };
-      routeRender.resolveNotFound = async () => {
-        const mod = (await loadModule()).module as LayoutModule;
-        routeRender.NotFound = mod.NotFound;
-        routeRender.Error = mod.Error;
-        return mod.NotFound;
-      };
-      routeRender.resolveError = async () => {
-        const mod = (await loadModule()).module as LayoutModule;
-        routeRender.NotFound = mod.NotFound;
-        routeRender.Error = mod.Error;
-        return mod.Error;
-      };
+      routeRender.getLayoutPageConfig = pageConfigOf;
+      routeRender.resolveNotFound = async () => syncFallbacks((await loadModule()).module as LayoutModule).NotFound;
+      routeRender.resolveError = async () => syncFallbacks((await loadModule()).module as LayoutModule).Error;
     }
     return routeRender;
   }
 
-  // A `_overrides.tsx` renders through its generated `"use client"` wrapper layout: the wrapper's default mounts
-  // the `UiOverrideProvider` (with the manifest's slot bindings) around the subtree. On the server the wrapper is
-  // a client reference, on the client the real component — `createElement` handles both. No head/config/fallback.
+  // `_overrides.tsx` renders via its generated "use client" wrapper, a client reference on the server: createElement.
   #makeOverridesRender(key: string, loader: () => Promise<RouteModuleSource>): RouteRender {
     const loadModule = RouteTreeBuilder.#makeLazyModule(key, "overrides", loader);
     return {
@@ -381,23 +359,5 @@ export class RouteTreeBuilder {
       }
       return undefined;
     };
-  }
-
-  static #matchRoutePrefix(pattern: string, pathname: string): Record<string, string> | null {
-    const patternParts = pattern.split("/").filter(Boolean);
-    const pathParts = pathname.split("/").filter(Boolean);
-    if (patternParts.length > pathParts.length) return null;
-    const params: Record<string, string> = {};
-    for (let index = 0; index < patternParts.length; index++) {
-      const patternPart = patternParts[index];
-      const pathPart = pathParts[index];
-      if (!patternPart || !pathPart) return null;
-      if (patternPart.startsWith(":")) {
-        params[patternPart.slice(1)] = decodeURIComponent(pathPart);
-        continue;
-      }
-      if (patternPart !== pathPart) return null;
-    }
-    return params;
   }
 }

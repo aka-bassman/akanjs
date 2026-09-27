@@ -1,5 +1,9 @@
 import { lstat, rename, rm, stat } from "node:fs/promises";
+import nodePath from "node:path";
+import { fileURLToPath } from "node:url";
 import { Logger } from "akanjs/common";
+
+export const getDirname = (url: string) => nodePath.dirname(fileURLToPath(url));
 
 export class FileSys {
   static logger = new Logger("FileSys");
@@ -39,14 +43,8 @@ export class FileSys {
   static async writeText(path: string, content: string) {
     return await Bun.file(path).write(content);
   }
-  /**
-   * Replaces a file in one `rename`, so a concurrent reader sees either the old bytes or the new ones.
-   * Generated barrels are written by every dev server watching the same `libs/` tree while those same
-   * servers' watchers are reading them, and a half-written barrel reads back as a user edit.
-   *
-   * The temp file is a sibling because `rename` is only atomic within a filesystem, and it lands in a
-   * watched directory — the `.tmp` suffix is what `HmrChangeClassifier` ignores it by.
-   */
+  // One `rename`, so a watcher never reads a half-written barrel as a user edit. The temp is a sibling (rename is atomic
+  // only within a filesystem), and its `.tmp` suffix is what `HmrChangeClassifier` ignores it by.
   static async writeTextAtomic(filePath: string, content: string) {
     const temp = `${filePath}.${process.pid}.${Date.now().toString(36)}.tmp`;
     try {

@@ -1395,9 +1395,9 @@ The type of one font entry in `rootLayout().fonts([...])`.
 
 Used by route loaders. App code never calls them.
 
-Goes to a route and adds a history entry.
+Goes to a route and adds a history entry. Browser only; on the server, use `redirect()`.
 
-Goes to a route in place of the current history entry.
+Goes to a route in place of the current history entry. Browser only; on the server, use `redirect()`.
 
 Goes back one entry. Browser only.
 
@@ -1691,7 +1691,7 @@ A single replica running inside the `main.ts` process itself, with no gateway in
 
 A separate process that renders pages on the server. Each replica serving pages has one.
 
-A class that sees each page request before the router and can redirect, rewrite or answer it.
+A class that sees each page load before the router and can redirect, rewrite or answer it.
 
 Starts the app from `main.ts`: one process, or a gateway with replicas.
 
@@ -3239,7 +3239,7 @@ Reads a trusted value, such as the caller's account, and hands it to exec as an 
 
 Wraps every signal call and attaches server context before the endpoint's guards run.
 
-Runs before a page request is routed, to redirect, rewrite, or add headers.
+Runs before a page load is routed, to redirect, rewrite, or add headers.
 
 Server helper
 

@@ -42,10 +42,6 @@ export class SnapshotJobs {
     return this.#jobs.get(id) ?? null;
   }
 
-  get busy() {
-    return this.#running !== null;
-  }
-
   start(request: SnapshotJobRequest): SnapshotJobState | "busy" | "exists" {
     if (this.#jobs.has(request.id)) return "exists";
     if (this.#running) return "busy";

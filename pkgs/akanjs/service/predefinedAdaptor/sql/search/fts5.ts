@@ -1,7 +1,7 @@
 import { type ConstantModel, textFieldRoles } from "akanjs/constant";
 import { type DatabaseModel, type SearchColumn, searchColumns } from "akanjs/document";
-import { descriptorHash, jsonPath, quoteIdent } from "../../sqlDescriptor";
 import type { SqlFrag } from "../types";
+import { descriptorHash, jsonPath, quoteIdent } from "../values";
 import { type MirrorSegment, SearchMirror } from "./mirror";
 import {
   DOC_TABLE,
@@ -14,9 +14,8 @@ import {
 } from "./types";
 
 const MIRROR_META_KEY = "search:mirror";
-// fts5 appends a segment on every write and never merges them on its own, so a write-heavy table's search keeps
-// getting slower with nothing to stop it. `merge` does a bounded amount of work per call, which is what makes it
-// safe on a timer — `optimize` rewrites the whole index and would stall a large database.
+// fts5 appends a segment per write and never merges on its own; `merge` does bounded work per call, so it is safe on a
+// timer, where `optimize` rewrites the whole index.
 const MERGE_PAGES = 64;
 
 /** The SQLite/libsql index: an fts5 table with `search_doc` as its external content. */
@@ -31,12 +30,7 @@ export class Fts5SearchEngine implements SearchEngine {
     this.#tokenizer = tokenizer;
   }
 
-  /**
-   * Turns raw user input into an fts5 MATCH expression.
-   *
-   * Raw text cannot be passed through: `-`, `:`, `*`, `"` and a trailing `AND` are all fts5 syntax and each
-   * raises `SQLiteError` instead of returning no rows. Quoting every term makes the whole input literal.
-   */
+  /** Quotes every term: a raw `-`, `:`, `*`, `"` or trailing `AND` is fts5 syntax that raises instead of matching. */
   static matchExpression(
     text: string,
     { prefix = false, columns }: { prefix?: boolean; columns?: readonly SearchColumn[] } = {},
@@ -48,8 +42,7 @@ export class Fts5SearchEngine implements SearchEngine {
     if (!terms.length) return null;
     if (prefix) terms[terms.length - 1] = `${terms[terms.length - 1]}*`;
     const expression = terms.join(" ");
-    // A column filter binds tighter than the implicit AND between terms, so an unparenthesised list would scope
-    // only the first term and search every column for the rest.
+    // A column filter binds tighter than the implicit AND; unparenthesised it would scope only the first term.
     return columns?.length ? `{${columns.join(" ")}} : (${expression})` : expression;
   }
 
@@ -68,24 +61,14 @@ export class Fts5SearchEngine implements SearchEngine {
         UNIQUE("ref", "refId")
       )`,
     );
-    // A matching hash is not proof the table is there. Nothing writes the hash until the create below succeeds, so
-    // a boot that failed on the create leaves the previous hash naming a table that no longer exists; taking the
-    // fast path then recreates the mirror triggers over the hole and every write on this database fails again.
+    // A matching hash is no proof the table exists: a boot that failed on the create keeps the previous hash.
     if (current && (await this.#ftsExists())) {
       await this.#ensureMirrorTriggers();
       return [];
     }
     const added = await this.#addMissingDocColumns();
-    // Swapping the tokenizer only rebuilds the index from `search_doc`; the mirror itself is never re-read from
-    // the model tables. A new column is different — nothing ever wrote it — so that case reconciles every ref.
-    //
-    // Only the first process of a fleet restarted at once rebuilds when the owner runs this in its write transaction:
-    // the rest wait for it and read the hash it wrote. Without one, each process reads the old hash and repeats it.
-    //
-    // The mirror triggers come down before the table they write to. Left up, they turn a failed create into a
-    // database where every write to an indexed model raises "no such table" — for every process on it, not just
-    // this one. Down, a write only misses the index, and the model triggers keep filling `search_doc`, so the
-    // `rebuild` below still recovers it in full.
+    // A tokenizer swap only rebuilds from `search_doc`; a new column reconciles every ref. Mirror triggers drop first:
+    // left up, a failed create makes every indexed write raise "no such table"; down, `rebuild` still recovers it all.
     await this.#dropMirrorTriggers();
     await conn.execute(`DROP TABLE IF EXISTS ${quoteIdent(FTS_TABLE)}`);
     try {
@@ -95,9 +78,7 @@ export class Fts5SearchEngine implements SearchEngine {
           content='${DOC_TABLE}', content_rowid='fid', tokenize='${SearchMirror.sqlString(this.#tokenizer)}')`,
       );
     } catch (error) {
-      // The two ways this fails are a tokenizer this build does not have and a SQLite without fts5. Both stay
-      // fatal on purpose: carrying on would leave `q.search()` raising on every request instead of once at boot,
-      // and turning the feature off is a decision for the operator to make explicitly.
+      // An unknown tokenizer or a SQLite without fts5 stays fatal: `q.search()` would otherwise raise per request.
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(
         `Failed to create the search index with tokenizer "${this.#tokenizer}": ${message}. Fix AKAN_SEARCH_TOKENIZER, or set AKAN_SEARCH_ENABLED=0 to run without text search.`,
@@ -120,8 +101,7 @@ export class Fts5SearchEngine implements SearchEngine {
     const upsert = `INSERT INTO ${doc}("ref", "refId", ${SearchMirror.docColumns})
       VALUES ('${ref}', NEW."id", ${SearchMirror.columnList(next)}) ${SearchMirror.upsertTail}`;
     const purge = `DELETE FROM ${doc} WHERE "ref" = '${ref}' AND "refId" = %ID%`;
-    // Every write rewrites `_doc`, so an unconditional AFTER UPDATE would re-index on an `updatedAt` bump alone.
-    // A revived row (`OLD."removedAt"` set) must re-index even when no indexed value changed.
+    // Every write rewrites `_doc`, so only a changed indexed value re-indexes — or a revived row (`OLD."removedAt"`).
     const changed = prev ? textFieldRoles.map((role) => `${next[role]} IS NOT ${prev[role]}`).join(" OR ") : "1 = 1";
     const triggers: ModelTriggers = [
       [`${ref}_search_ai`, `AFTER INSERT ON ${table} WHEN NEW."removedAt" IS NULL BEGIN ${upsert}; END`],
@@ -173,11 +153,7 @@ export class Fts5SearchEngine implements SearchEngine {
     };
   }
 
-  /**
-   * Widens an existing mirror to a column this build knows about but the database predates. Without it a release
-   * that adds a role fails every boot on `rebuild`, which is the migration step the descriptor hash exists to
-   * avoid. A column dropped from a later build is left in place; it defaults to empty and costs nothing.
-   */
+  /** Without it a release adding a role fails every boot on `rebuild`; a dropped role's column stays, empty. */
   async #addMissingDocColumns() {
     const conn = this.#owner.getConnection();
     const existing = new Set(
@@ -209,10 +185,8 @@ export class Fts5SearchEngine implements SearchEngine {
   }
 
   /**
-   * Only replaces these when their definition actually changed. A mirror row written while `search_doc_au` is
-   * missing leaves fts5 holding the previous text: the current value stops matching, the old one returns a ghost
-   * hit, and `integrity-check` still passes — so the damage is both silent and invisible to the usual check.
-   * The replacing path resyncs the index afterwards, unless the caller is about to rebuild it anyway.
+   * Replaced only when changed: a write while `search_doc_au` is missing leaves ghost hits `integrity-check` passes.
+   * Replacing resyncs the index, unless the caller is about to rebuild it.
    */
   async #ensureMirrorTriggers({ resync = true } = {}) {
     const conn = this.#owner.getConnection();
@@ -244,8 +218,7 @@ export class Fts5SearchEngine implements SearchEngine {
   async #createTriggers(triggers: ModelTriggers) {
     const conn = this.#owner.getConnection();
     for (const [name, sql] of triggers) {
-      // `IF NOT EXISTS` rather than a bare create: every store calls `ensure()` on its own, so two runs for one
-      // ref overlap on boot and the second would otherwise abort the whole `ensure` on "trigger already exists".
+      // Two stores' `ensure()` overlap on boot, and a bare create would abort on "trigger already exists".
       await conn.execute(`CREATE TRIGGER IF NOT EXISTS ${quoteIdent(name)} ${sql}`);
     }
   }
@@ -253,8 +226,7 @@ export class Fts5SearchEngine implements SearchEngine {
   #roleExpression(segments: MirrorSegment[], path: string, role: string, alias: "NEW" | "OLD") {
     const doc = `${alias}.${quoteIdent("_doc")}`;
     const arrayAt = segments.findIndex((segment) => segment.arrDepth > 0);
-    // `filter` stores `key_value` pairs so a search can be scoped to one owner; the value is slugified because
-    // unicode61 treats punctuation as a separator, which would split the pair into two useless tokens.
+    // `filter` stores slugified `key_value` pairs: unicode61 splits on punctuation, which would break the pair.
     const wrap = (value: string) => (role === "filter" ? SearchMirror.filterToken(path, value) : value);
     const rows = (column: string, from: string, where = "") =>
       `COALESCE((SELECT group_concat(${wrap(column)}, ' ') FROM ${from}${where}), '')`;
@@ -268,9 +240,8 @@ export class Fts5SearchEngine implements SearchEngine {
     if (arrayAt === segments.length - 1) return rows("value", `json_each(${doc}, ${array})`);
     const leaf = SearchMirror.sqlString(segments[segments.length - 1].name);
     const tree = `json_tree(${doc}, ${array})`;
-    // An object inside an array (`works[*].name`): json_tree walks the whole subtree, so the leaf key selects it.
-    // An array leaf (`works[*].tags`) holds no atom of its own — its values hang off it under numeric keys, so
-    // they are reached by parent link instead. Without that second branch such a field indexes as empty, silently.
+    // json_tree walks the subtree, so the leaf key selects `works[*].name`; an array leaf (`works[*].tags`) has no atom
+    // of its own and is reached by parent link, or it would index as empty.
     return rows(
       `t."atom"`,
       `${tree} AS t`,

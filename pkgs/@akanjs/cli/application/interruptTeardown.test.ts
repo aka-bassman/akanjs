@@ -25,8 +25,7 @@ const harness = () => {
   };
 };
 
-// A macrotask, not a few microtask ticks: the exit runs in the `finally` of a `Promise.all` over the
-// teardowns, so the chain is several ticks deep and a fixed count silently under-waits.
+// A macrotask: the exit runs in a `Promise.all`'s `finally`, too many microtask ticks deep to count.
 const settle = async () => await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe("InterruptTeardown", () => {

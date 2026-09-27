@@ -5,12 +5,11 @@ import type { ReactNode } from "react";
 import { createOverridable } from "./UiOverride";
 
 export interface TooltipProps {
-  /** 툴팁에 표시할 내용. 비어 있으면 트리거만 그대로 렌더한다. */
+  /** Empty renders the trigger alone. */
   content?: ReactNode;
   children: ReactNode;
   side?: "top" | "right" | "bottom" | "left";
   className?: string;
-  /** 색상 변형. daisyui `tooltip-primary/info` 대체. */
   variant?: "default" | "primary" | "info";
 }
 
@@ -40,16 +39,11 @@ const sideClass = {
   right: "left-full top-1/2 ml-1.5 -translate-y-1/2",
 };
 
-/**
- * 순수 CSS 툴팁 (hover/focus-within). daisyui `tooltip` 및 Radix Tooltip 대체.
- * 트리거를 감싸 hover 또는 키보드 포커스 시 표시한다. 뷰포트 엣지 flip은 없다(힌트 UI 한정).
- * `page/**\/_overrides.tsx`로 라우트별 교체 가능(slot `Tooltip`).
- */
+// Pure CSS on hover/focus-within, with no viewport-edge flip.
 const DefaultTooltip = ({ content, children, side = "top", className, variant = "default" }: TooltipProps) => {
   if (content === undefined || content === null || content === "") return <>{children}</>;
   return (
-    // `w-fit` because `inline-flex` alone still stretches when the trigger is an item of a column
-    // flex container, and the bubble's `left-1/2` would then centre on that full width, far from it.
+    // `w-fit`: `inline-flex` alone still stretches in a column flex container, centring the bubble far from it.
     <span className="group/tooltip relative inline-flex w-fit">
       {children}
       <span

@@ -28,8 +28,6 @@ async function drain(stream: ReadableStream<Uint8Array>): Promise<string> {
   return html + decoder.decode();
 }
 
-// A page whose `render` stays pending until `gate` resolves, with a `Loading`
-// export wired the way `RouteTreeBuilder` wires it onto the RouteRender.
 function suspendingPageRender(gate: Promise<void>): RouteRender {
   return {
     render: (async () => {
@@ -40,26 +38,29 @@ function suspendingPageRender(gate: Promise<void>): RouteRender {
   };
 }
 
+const composePage = (gate: Promise<void>, navKey?: string) =>
+  RouteElementComposer.composeRenders({
+    renders: [suspendingPageRender(gate)],
+    params: {},
+    searchParams: {},
+    navKey,
+  }) as ReactElement;
+
+const renderDocument = (body: ReactNode) =>
+  renderToReadableStream(
+    <html lang="en">
+      <body>{body}</body>
+    </html>,
+  );
+
 describe("RouteElementComposer streaming", () => {
   test("streams the page Loading fallback as the shell before the delayed page resolves", async () => {
     const gate = createDeferred();
-    const body = RouteElementComposer.composeRenders({
-      renders: [suspendingPageRender(gate.promise)],
-      params: {},
-      searchParams: {},
-    });
-    const stream = await renderToReadableStream(
-      <html lang="en">
-        <body>{body}</body>
-      </html>,
-    );
+    const stream = await renderDocument(composePage(gate.promise));
 
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let html = "";
-    // The shell (with the Loading fallback) must flush while `render` is still
-    // pending. If the runtime instead buffered until completion, the read below
-    // would only resolve after we release the gate — never within the timeout.
     while (!html.includes("PAGE_LOADING")) {
       const next = await Promise.race([reader.read(), sleep(1000).then(() => null)]);
       if (!next) throw new Error("shell was not flushed before the page resolved");
@@ -83,24 +84,13 @@ describe("RouteElementComposer streaming", () => {
 
   test("blocking (allReady) withholds the whole document until the page resolves", async () => {
     const gate = createDeferred();
-    const body = RouteElementComposer.composeRenders({
-      renders: [suspendingPageRender(gate.promise)],
-      params: {},
-      searchParams: {},
-    });
-    const stream = await renderToReadableStream(
-      <html lang="en">
-        <body>{body}</body>
-      </html>,
-    );
+    const stream = await renderDocument(composePage(gate.promise));
 
     let allReadySettled = false;
     const allReady = stream.allReady.then(() => {
       allReadySettled = true;
     });
 
-    // `stream.allReady` is exactly what `pageConfig.ssr: "block"` awaits. It must
-    // not settle while the page render is still pending.
     await sleep(50);
     expect(allReadySettled).toBe(false);
 
@@ -116,30 +106,15 @@ const pending = new Promise<void>(() => {});
 
 describe("RouteElementComposer navigation keying", () => {
   test("keys the leaf page Suspense by navKey when it has a Loading", () => {
-    const el = RouteElementComposer.composeRenders({
-      renders: [suspendingPageRender(pending)],
-      params: {},
-      searchParams: {},
-      navKey: "/loadingtest/bbb",
-    }) as ReactElement;
+    const el = composePage(pending, "/loadingtest/bbb");
 
     expect(isValidElement(el)).toBe(true);
     expect(el.key).toBe("akan-loading:/loadingtest/bbb");
   });
 
   test("different navKeys produce different keys so the boundary remounts on navigation", () => {
-    const aaa = RouteElementComposer.composeRenders({
-      renders: [suspendingPageRender(pending)],
-      params: {},
-      searchParams: {},
-      navKey: "/loadingtest/aaa",
-    }) as ReactElement;
-    const bbb = RouteElementComposer.composeRenders({
-      renders: [suspendingPageRender(pending)],
-      params: {},
-      searchParams: {},
-      navKey: "/loadingtest/bbb",
-    }) as ReactElement;
+    const aaa = composePage(pending, "/loadingtest/aaa");
+    const bbb = composePage(pending, "/loadingtest/bbb");
 
     expect(aaa.key).not.toBe(bbb.key);
   });
@@ -156,11 +131,7 @@ describe("RouteElementComposer navigation keying", () => {
   });
 
   test("does not key when navKey is absent", () => {
-    const el = RouteElementComposer.composeRenders({
-      renders: [suspendingPageRender(pending)],
-      params: {},
-      searchParams: {},
-    }) as ReactElement;
+    const el = composePage(pending);
 
     expect(el.key).toBeNull();
   });
@@ -180,7 +151,6 @@ describe("RouteElementComposer.resolveSuffixLoadings", () => {
       renderPage: pageRender,
     } as unknown as PathRoute;
 
-    // The suffix path never runs resolveHead, so Loading starts unset.
     expect(pageRender.Loading).toBeUndefined();
     await RouteElementComposer.resolveSuffixLoadings(pathRoute, 0);
     expect(pageRender.Loading).toBeDefined();

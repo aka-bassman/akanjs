@@ -25,19 +25,13 @@ interface RefRow {
 
 const pageSize = 20;
 
-/**
- * Picks one row of a referenced model instead of asking for its hex id. Rows are held here rather than in the
- * ref model's store: that store is a singleton, so a picker loading into it would overwrite whatever listing of
- * the same model is already on the screen — and a picker opened from inside a picker would overwrite itself.
- *
- * The search is the ref model's own root slice, which is Admin-guarded, so this belongs to admin surfaces.
- */
+// Rows stay local, not in the ref model's singleton store, which would overwrite the listing on screen (or a picker
+// inside a picker). The search is the ref's Admin-guarded root slice, so this is for admin surfaces.
 export default function RefPicker({ className, refName, value, onChange }: RefPickerProps) {
   const { l } = usePage();
   const slice = fetch.slice[refName];
   const filterQuery = fetch.filterQueryMap?.get(refName) ?? {};
-  // The conventional name for a model's text search. Opening on it puts the one control a picker wants in front
-  // of the user; a model without one opens on the newest rows.
+  // `bySearch` is the conventional text-search filter; a model without one opens on the newest rows.
   const initialKey = filterQuery.bySearch ? "bySearch" : "any";
   const initialQuery: ResolvedQuerySetting = { queryKey: initialKey, args: [] };
 

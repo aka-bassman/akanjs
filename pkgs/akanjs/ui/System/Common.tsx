@@ -1,43 +1,31 @@
 import "dayjs/locale/ko";
 
-import type { RootLayoutProps, WebAppManifest } from "akanjs/client";
+import type { PageState, RootLayoutProps, WebAppManifest } from "akanjs/client";
 import type { AkanTheme } from "akanjs/fetch";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 export interface ProviderProps {
-  /** Additional classes for the app frame/root wrapper. */
   className?: string;
-  /** Public application name used by client routing and metadata. */
   appName: string;
-  /** Route params passed from the app root layout. */
   params: RootLayoutProps["params"];
-  /** Additional head content rendered by the app shell. */
   head?: ReactNode;
-  /** Web app manifest emitted as a data URL. */
+  /** Emitted as a data URL. */
   manifest?: WebAppManifest;
   /** App-specific public client config (`env/env.client.ts`) merged over the framework's own `getEnv()`. */
   env?: object;
-  /** Initial Akan theme configuration. */
   theme?: AkanTheme;
-  /** Optional route prefix/base path. */
   prefix?: string;
-  /** App content rendered inside the system provider. */
   children: ReactNode | ReactNode[];
-  /** Select mobile-style frame behavior or normal web layout. */
   layoutStyle?: "mobile" | "web";
-  /** Enable reconnect helper. Defaults to local operation mode in CSR. */
+  /** Defaults to local operation mode in CSR. */
   reconnect?: boolean;
-  /** Connect the client WebSocket runtime after the browser loads. */
+  /** Connects the client WebSocket runtime once the browser loads. */
   wsConnect?: boolean;
-  /** Active-locale dictionary injected by the server (SSR only) to seed the client Translator. */
+  /** SSR only: the active-locale dictionary that seeds the client Translator. */
   dictionary?: Record<string, Record<string, unknown>>;
-  /**
-   * Full lang-keyed dictionary snapshot (SSR server-only). The provider seeds every locale into
-   * the RSC-worker Translator (free on the server, never shipped to the browser) and serializes only
-   * the request's active locale to the client, so translations resolve regardless of locale routing.
-   */
+  /** SSR server only: every locale seeds the RSC-worker Translator, and only the active one reaches the client. */
   allDictionary?: Record<string, Record<string, Record<string, unknown>>>;
-  /** Root route component used by CSR page loading. */
+  /** Root route component for CSR page loading. */
   of: (props: unknown) => ReactNode | null;
 }
 
@@ -91,4 +79,27 @@ function encodeBase64Utf8(value: string): string {
   ).Buffer;
   if (buffer) return buffer.from(bytes).toString("base64");
   throw new Error("Base64 encoding is not available in this runtime");
+}
+
+export type AkanFrameCssVarName =
+  | "--akan-top-safe-area"
+  | "--akan-bottom-safe-area"
+  | "--akan-top-inset"
+  | "--akan-bottom-inset"
+  | "--akan-page-padding-top"
+  | "--akan-page-padding-bottom";
+
+export type AkanFrameCssVars = CSSProperties & Record<AkanFrameCssVarName, string>;
+
+const px = (value: number) => `${Math.max(0, value)}px`;
+
+export function getFrameCssVars(pageState: PageState): AkanFrameCssVars {
+  return {
+    "--akan-top-safe-area": px(pageState.topSafeArea),
+    "--akan-bottom-safe-area": px(pageState.bottomSafeArea),
+    "--akan-top-inset": px(pageState.topInset),
+    "--akan-bottom-inset": px(pageState.bottomInset),
+    "--akan-page-padding-top": px(pageState.topSafeArea + pageState.topInset),
+    "--akan-page-padding-bottom": px(pageState.bottomSafeArea + pageState.bottomInset),
+  };
 }

@@ -1,7 +1,7 @@
 "use client";
 import { loadCapacitorGeolocation } from "akanjs/client/capacitor";
 
-/** Capacitor geolocation hook with permission checks and current position lookup. */
+/** `getPosition` opens the app settings instead of resolving when location permission is denied. */
 export const useGeoLocation = () => {
   const checkPermission = async (): Promise<{ geolocation: string; coarseLocation: string }> => {
     const { Geolocation } = await loadCapacitorGeolocation();

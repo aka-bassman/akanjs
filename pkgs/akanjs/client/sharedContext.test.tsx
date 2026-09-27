@@ -11,16 +11,13 @@ const sources = (dir: string): string[] =>
 
 describe("sharedContext", () => {
   test("a second evaluation of the same module gets the object the first one made", () => {
-    // What two bundled copies of a module do: each runs it, and only one context may survive that.
     expect(sharedContext("interningTest", 0)).toBe(sharedContext("interningTest", 0));
     expect(sharedContext("interningTest", 0)).not.toBe(sharedContext("otherTest", 0));
   });
 
   test("a module reaching for a client-only react API declares itself a client module", () => {
-    // The directive is what makes the bundler emit a client reference for the module instead of pulling it into
-    // an app's server graph, where `react` resolves to `react.react-server.js` and exports none of these.
-    // It does not help the RSC worker, which runs the sources directly and where Bun honours no directive —
-    // `server/rscWorkerBoot.test.ts` is the guard for that graph, and it is reachability, not this list.
+    // The directive keeps the module out of an app's server graph, where `react` is `react.react-server.js`; the RSC
+    // worker honours no directive, so `server/rscWorkerBoot.test.ts` guards that graph instead.
     const root = `${import.meta.dir}/..`;
     const clientOnly =
       /^(createContext|useState|useEffect|useLayoutEffect|useContext|useRef|useReducer|useSyncExternalStore|useImperativeHandle)$/;
@@ -39,8 +36,7 @@ describe("sharedContext", () => {
   });
 
   test("nothing in the client or ui facet makes a context the plain way", () => {
-    // A plain `createContext` works in the monorepo, where there is one copy of every module, and breaks only
-    // once an app bundles it into more than one chunk — so using the feature cannot catch it. This can.
+    // A plain `createContext` breaks only once an app bundles it into several chunks, so only a scan catches it.
     const root = `${import.meta.dir}/..`;
     const offenders = [...sources(`${root}/client`), ...sources(`${root}/ui`)]
       .filter((path) => !path.endsWith("/client/sharedContext.ts"))

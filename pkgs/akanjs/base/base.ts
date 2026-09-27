@@ -23,10 +23,10 @@ export type EnumInstance<RefName extends string = string, T = string | number> =
   }
 >;
 
-/** Returns true when a class was created by `enumOf`. */
+/** True for a `class X extends enumOf(...) {}`, not for the bare `enumOf(...)` result. */
 export const isEnum = (enumRef: Cls) => Object.getPrototypeOf(Object.getPrototypeOf(enumRef) ?? {}) === EnumPrototype;
 
-/** Creates a typed scalar enum class from a readonly list of string or number values. */
+/** `type` is `String` for string values, else `Int` when every value is an integer, else `Float`. */
 export const enumOf = <RefName extends string, T = string | number>(
   refName: RefName,
   values: readonly T[],
@@ -78,9 +78,7 @@ export const enumOf = <RefName extends string, T = string | number>(
   return Enum as unknown as EnumInstance<RefName, T>;
 };
 
-/** Id-keyed list helper used for light model collections and immutable-style list updates. */
 export class DataList<Light extends { id: string }> {
-  // [immerable] = true;
   #idMap: Map<string, number>;
   length: number;
   values: Light[];
@@ -125,8 +123,7 @@ export class DataList<Light extends { id: string }> {
   }
   get(id: string) {
     const idx = this.#idMap.get(id);
-    if (idx === undefined) return undefined;
-    return this.values[idx];
+    return idx === undefined ? undefined : this.values[idx];
   }
   at(idx: number) {
     return this.values.at(idx);
@@ -143,12 +140,10 @@ export class DataList<Light extends { id: string }> {
     return this.#idMap.has(id);
   }
   find(fn: (value: Light, idx: number) => boolean) {
-    const val = this.values.find(fn);
-    return val;
+    return this.values.find(fn);
   }
   findIndex(fn: (value: Light, idx: number) => boolean) {
-    const val = this.values.findIndex(fn);
-    return val;
+    return this.values.findIndex(fn);
   }
   some(fn: (value: Light, idx: number) => boolean) {
     return this.values.some(fn);

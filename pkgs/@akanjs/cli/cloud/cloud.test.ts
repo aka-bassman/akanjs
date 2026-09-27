@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { CloudApi, GlobalConfig } from "@akanjs/devkit/cloud";
 import { CommandContainer, getArgMetas, getTargetMetas } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor } from "@akanjs/devkit/executors";
-import { createCallRecorder, createFakeExecutor, makeCliTempWorkspace, writeText } from "@akanjs/devkit/testHelpers";
+import {
+  createCallRecorder,
+  createFakeExecutor,
+  makeCliTempWorkspace,
+  tempRoots,
+  writeText,
+} from "@akanjs/devkit/testHelpers";
 import { CloudCommand } from "./cloud.command";
 import { CloudRunner } from "./cloud.runner";
 import { CloudScript } from "./cloud.script";
@@ -18,6 +25,8 @@ afterEach(() => {
   CommandContainer.clear();
   mock.restore();
 });
+const track = tempRoots();
+const makeTempRoot = async () => track(await makeCliTempWorkspace()).root;
 
 describe("CloudCommand", () => {
   test("selects npm or local registry target instead of accepting raw registry URLs", async () => {
@@ -171,6 +180,18 @@ describe("CloudScript platform tests", () => {
 });
 
 describe("CloudRunner", () => {
+  test("login opens its session through CloudApi.fromHost, so one in its last hour is refreshed, not signed in again", async () => {
+    const host = "https://cloud.test";
+    const self = { id: "u1", nickname: "akan" };
+    const fromHost = spyOn(CloudApi, "fromHost").mockResolvedValue({ host, getRemoteSelf: async () => self } as never);
+    spyOn(GlobalConfig, "getHostConfig").mockResolvedValue({ host, auth: {} });
+    spyOn(CloudApi.prototype, "getRemoteSelf").mockResolvedValue(self);
+    const workspace = createFakeExecutor("workspace");
+
+    expect(await new CloudRunner().login(host, workspace as never)).toBe(true);
+    expect(fromHost).toHaveBeenCalledWith(workspace, host);
+  });
+
   test("filters Akan packages from workspace package list", async () => {
     const workspace = {
       getPkgs: async () => ["akanjs", "create-akan-workspace", "@sample/tool"],
@@ -242,8 +263,6 @@ describe("CloudRunner", () => {
       version: "2.1.0-rc.11",
       dependencies: { akanjs: "2.1.0-rc.11" },
     });
-    // No `npm login`: it takes no registry argument, so it would ask for npmjs.org credentials to authorize a
-    // publish that never reaches npmjs.org — and being interactive, it makes the local-registry flow unscriptable.
     expect(recorder.calls.filter((call) => call.name === "workspace.spawn").map((call) => call.args)).toEqual([
       [
         "npm",
@@ -286,16 +305,23 @@ describe("CloudRunner", () => {
     ]);
   });
 
-  const createEnvWorkspace = (root: string, recorder = createCallRecorder()) =>
+  const createEnvWorkspace = (
+    root: string,
+    recorder = createCallRecorder(),
+    {
+      execs = [["demo"], [], []],
+      envFiles = (dirPath: string) =>
+        dirPath === "apps/demo/env"
+          ? ["env.client.local.ts", "env.server.local.ts", "env.client.type.ts", "env.client.example.ts"]
+          : [],
+    }: { execs?: string[][]; envFiles?: (dirPath: string) => string[] } = {},
+  ) =>
     createFakeExecutor(
       "workspace",
       {
         workspaceRoot: root,
-        getExecs: async () => [["demo"], [], []],
-        readdir: async (dirPath: string) =>
-          dirPath === "apps/demo/env"
-            ? ["env.client.local.ts", "env.server.local.ts", "env.client.type.ts", "env.client.example.ts"]
-            : [],
+        getExecs: async () => execs,
+        readdir: async (dirPath: string) => envFiles(dirPath),
         mkdir: async (...args: unknown[]) => recorder.record("workspace.mkdir", ...args),
         remove: async (...args: unknown[]) => recorder.record("workspace.remove", ...args),
         exists: async (filePath: string) => existsSync(path.join(root, filePath)),
@@ -308,58 +334,40 @@ describe("CloudRunner", () => {
       recorder,
     );
 
-  const createSlicedEnvWorkspace = (root: string, recorder = createCallRecorder()) =>
-    createFakeExecutor(
-      "workspace",
-      {
-        workspaceRoot: root,
-        getExecs: async () => [["demo", "other"], ["kit", "unused"], []],
-        readdir: async (dirPath: string) =>
-          ["apps/demo/env", "apps/other/env", "libs/kit/env", "libs/unused/env"].includes(dirPath)
-            ? ["env.server.local.ts"]
-            : [],
-        mkdir: async (...args: unknown[]) => recorder.record("workspace.mkdir", ...args),
-        remove: async (...args: unknown[]) => recorder.record("workspace.remove", ...args),
-        exists: async (filePath: string) => existsSync(path.join(root, filePath)),
-        readFile: async (filePath: string) => readFile(path.join(root, filePath), "utf8"),
-        writeFile: async (filePath: string, content: string) => writeText(path.join(root, filePath), content),
-      },
-      recorder,
-    );
-
   test("archives one subspace's slice while the managed .gitignore block still names every app", async () => {
-    const { root } = await makeCliTempWorkspace();
+    const root = await makeTempRoot();
     await writeText(`${root}/apps/demo/secrets/token.json`, "{}");
     await writeText(`${root}/apps/other/secrets/other.json`, "{}");
     stubAppConfigs({ demo: ["secrets/**/*"], other: ["secrets/**/*"] });
     const recorder = createCallRecorder();
-    const workspace = createSlicedEnvWorkspace(root, recorder);
+    const workspace = createEnvWorkspace(root, recorder, {
+      execs: [["demo", "other"], ["kit", "unused"], []],
+      envFiles: (dirPath) =>
+        ["apps/demo/env", "apps/other/env", "libs/kit/env", "libs/unused/env"].includes(dirPath)
+          ? ["env.server.local.ts"]
+          : [],
+    });
 
-    try {
-      const result = await new CloudRunner().gatherEnvFiles(workspace as never, {
-        scope: { apps: ["demo"], libs: ["kit"] },
-        archivePath: "local/env.acme.tar",
-      });
+    const result = await new CloudRunner().gatherEnvFiles(workspace as never, {
+      scope: { apps: ["demo"], libs: ["kit"] },
+      archivePath: "local/env.acme.tar",
+    });
 
-      const expectedFiles = [
-        "apps/demo/env/env.server.local.ts",
-        "apps/demo/secrets/token.json",
-        "libs/kit/env/env.server.local.ts",
-      ];
-      expect(result).toEqual({ files: expectedFiles, path: "local/env.acme.tar" });
-      const tarCall = recorder.calls.find((call) => call.name === "workspace.spawn");
-      expect(tarCall?.args).toEqual(["tar", ["-cf", "local/env.acme.tar", ...expectedFiles], { cwd: root }]);
-      // The slice never narrows the workspace's own .gitignore: the other app's secrets stay ignored.
-      const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
-      expect(gitignore).toContain("apps/demo/secrets/**/*");
-      expect(gitignore).toContain("apps/other/secrets/**/*");
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    const expectedFiles = [
+      "apps/demo/env/env.server.local.ts",
+      "apps/demo/secrets/token.json",
+      "libs/kit/env/env.server.local.ts",
+    ];
+    expect(result).toEqual({ files: expectedFiles, path: "local/env.acme.tar" });
+    const tarCall = recorder.calls.find((call) => call.name === "workspace.spawn");
+    expect(tarCall?.args).toEqual(["tar", ["-cf", "local/env.acme.tar", ...expectedFiles], { cwd: root }]);
+    const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
+    expect(gitignore).toContain("apps/demo/secrets/**/*");
+    expect(gitignore).toContain("apps/other/secrets/**/*");
   });
 
   test("archives custom secret files resolved from app config globs alongside default env files", async () => {
-    const { root } = await makeCliTempWorkspace();
+    const root = await makeTempRoot();
     await writeText(`${root}/apps/demo/secrets/token.json`, "{}");
     await writeText(`${root}/apps/demo/secrets/nested/key.pem`, "key");
     // A duplicate glob and a glob overlapping the first ensure results are deduped.
@@ -367,74 +375,61 @@ describe("CloudRunner", () => {
     const recorder = createCallRecorder();
     const workspace = createEnvWorkspace(root, recorder);
 
-    try {
-      const result = await new CloudRunner().gatherEnvFiles(workspace as never);
+    const result = await new CloudRunner().gatherEnvFiles(workspace as never);
 
-      const expectedFiles = [
-        "apps/demo/env/env.client.local.ts",
-        "apps/demo/env/env.server.local.ts",
-        "apps/demo/secrets/nested/key.pem",
-        "apps/demo/secrets/token.json",
-      ];
-      expect(result).toEqual({ files: expectedFiles, path: "local/env.tar" });
-      const tarCall = recorder.calls.find((call) => call.name === "workspace.spawn");
-      expect(tarCall?.args).toEqual(["tar", ["-cf", "local/env.tar", ...expectedFiles], { cwd: root }]);
-      // Secret globs are synced (not the resolved files) so newly added secrets stay ignored.
-      const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
-      expect(gitignore).toContain("# akan:secrets (managed by akan.config.ts — do not edit)");
-      expect(gitignore).toContain("apps/demo/secrets/**/*");
-      expect(gitignore).toContain("apps/demo/secrets/token.json");
-      expect(gitignore).toContain("# akan:secrets:end");
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    const expectedFiles = [
+      "apps/demo/env/env.client.local.ts",
+      "apps/demo/env/env.server.local.ts",
+      "apps/demo/secrets/nested/key.pem",
+      "apps/demo/secrets/token.json",
+    ];
+    expect(result).toEqual({ files: expectedFiles, path: "local/env.tar" });
+    const tarCall = recorder.calls.find((call) => call.name === "workspace.spawn");
+    expect(tarCall?.args).toEqual(["tar", ["-cf", "local/env.tar", ...expectedFiles], { cwd: root }]);
+    // Secret globs are synced (not the resolved files) so newly added secrets stay ignored.
+    const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
+    expect(gitignore).toContain("# akan:secrets (managed by akan.config.ts — do not edit)");
+    expect(gitignore).toContain("apps/demo/secrets/**/*");
+    expect(gitignore).toContain("apps/demo/secrets/token.json");
+    expect(gitignore).toContain("# akan:secrets:end");
   });
 
   test("syncs secret globs into an existing .gitignore without clobbering user entries", async () => {
-    const { root } = await makeCliTempWorkspace();
+    const root = await makeTempRoot();
     await writeText(`${root}/.gitignore`, "node_modules\ndist\n");
     await writeText(`${root}/apps/demo/secrets/token.json`, "{}");
     stubAppConfigs({ demo: ["secrets/**/*"] });
     const workspace = createEnvWorkspace(root);
 
-    try {
-      await new CloudRunner().gatherEnvFiles(workspace as never);
+    await new CloudRunner().gatherEnvFiles(workspace as never);
 
-      const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
-      expect(gitignore).toBe(
-        "node_modules\ndist\n\n# akan:secrets (managed by akan.config.ts — do not edit)\napps/demo/secrets/**/*\n# akan:secrets:end\n",
-      );
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
+    expect(gitignore).toBe(
+      "node_modules\ndist\n\n# akan:secrets (managed by akan.config.ts — do not edit)\napps/demo/secrets/**/*\n# akan:secrets:end\n",
+    );
   });
 
   test("re-running upload-env leaves the managed .gitignore block unchanged (idempotent)", async () => {
-    const { root } = await makeCliTempWorkspace();
+    const root = await makeTempRoot();
     await writeText(`${root}/.gitignore`, "node_modules\n");
     await writeText(`${root}/apps/demo/secrets/token.json`, "{}");
     stubAppConfigs({ demo: ["secrets/**/*"] });
 
-    try {
-      const first = createCallRecorder();
-      await new CloudRunner().gatherEnvFiles(createEnvWorkspace(root, first) as never);
-      const afterFirst = await readFile(path.join(root, ".gitignore"), "utf8");
+    const first = createCallRecorder();
+    await new CloudRunner().gatherEnvFiles(createEnvWorkspace(root, first) as never);
+    const afterFirst = await readFile(path.join(root, ".gitignore"), "utf8");
 
-      const second = createCallRecorder();
-      await new CloudRunner().gatherEnvFiles(createEnvWorkspace(root, second) as never);
-      const afterSecond = await readFile(path.join(root, ".gitignore"), "utf8");
+    const second = createCallRecorder();
+    await new CloudRunner().gatherEnvFiles(createEnvWorkspace(root, second) as never);
+    const afterSecond = await readFile(path.join(root, ".gitignore"), "utf8");
 
-      expect(afterSecond).toBe(afterFirst);
-      // The first run writes .gitignore; the second is a no-op since nothing changed.
-      expect(first.names()).toContain("workspace.writeFile");
-      expect(second.names()).not.toContain("workspace.writeFile");
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    expect(afterSecond).toBe(afterFirst);
+    expect(first.names()).toContain("workspace.writeFile");
+    expect(second.names()).not.toContain("workspace.writeFile");
   });
 
   test("removes the managed .gitignore block when no secrets are configured", async () => {
-    const { root } = await makeCliTempWorkspace();
+    const root = await makeTempRoot();
     await writeText(
       `${root}/.gitignore`,
       "node_modules\n\n# akan:secrets (managed by akan.config.ts — do not edit)\napps/demo/secrets/**/*\n# akan:secrets:end\n",
@@ -442,73 +437,44 @@ describe("CloudRunner", () => {
     stubAppConfigs({ demo: [] });
     const workspace = createEnvWorkspace(root);
 
-    try {
-      await new CloudRunner().gatherEnvFiles(workspace as never);
+    await new CloudRunner().gatherEnvFiles(workspace as never);
 
-      const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
-      expect(gitignore).toBe("node_modules\n");
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
+    expect(gitignore).toBe("node_modules\n");
   });
 
   test("archives only default env files when no secrets are configured", async () => {
-    const { root } = await makeCliTempWorkspace();
+    const root = await makeTempRoot();
     stubAppConfigs({ demo: [] });
     const recorder = createCallRecorder();
     const workspace = createEnvWorkspace(root, recorder);
 
-    try {
-      const result = await new CloudRunner().gatherEnvFiles(workspace as never);
+    const result = await new CloudRunner().gatherEnvFiles(workspace as never);
 
-      expect(result.files).toEqual(["apps/demo/env/env.client.local.ts", "apps/demo/env/env.server.local.ts"]);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    expect(result.files).toEqual(["apps/demo/env/env.client.local.ts", "apps/demo/env/env.server.local.ts"]);
   });
 
   test("ignores secret globs that match no files", async () => {
-    const { root } = await makeCliTempWorkspace();
+    const root = await makeTempRoot();
     await writeText(`${root}/apps/demo/package.json`, "{}");
     stubAppConfigs({ demo: ["secrets/**/*"] });
     const recorder = createCallRecorder();
     const workspace = createEnvWorkspace(root, recorder);
 
-    try {
-      const result = await new CloudRunner().gatherEnvFiles(workspace as never);
+    const result = await new CloudRunner().gatherEnvFiles(workspace as never);
 
-      expect(result.files).toEqual(["apps/demo/env/env.client.local.ts", "apps/demo/env/env.server.local.ts"]);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    expect(result.files).toEqual(["apps/demo/env/env.client.local.ts", "apps/demo/env/env.server.local.ts"]);
   });
 
   test("throws when no env files and no secret matches exist", async () => {
-    const { root } = await makeCliTempWorkspace();
+    const root = await makeTempRoot();
     await writeText(`${root}/apps/demo/package.json`, "{}");
     stubAppConfigs({ demo: ["secrets/**/*"] });
     const recorder = createCallRecorder();
-    const workspace = createFakeExecutor(
-      "workspace",
-      {
-        workspaceRoot: root,
-        getExecs: async () => [["demo"], [], []],
-        readdir: async () => [],
-        mkdir: async (...args: unknown[]) => recorder.record("workspace.mkdir", ...args),
-        remove: async (...args: unknown[]) => recorder.record("workspace.remove", ...args),
-        exists: async (filePath: string) => existsSync(path.join(root, filePath)),
-        readFile: async (filePath: string) => readFile(path.join(root, filePath), "utf8"),
-        writeFile: async (filePath: string, content: string) => writeText(path.join(root, filePath), content),
-      },
-      recorder,
-    );
+    const workspace = createEnvWorkspace(root, recorder, { envFiles: () => [] });
 
-    try {
-      await expect(new CloudRunner().gatherEnvFiles(workspace as never)).rejects.toThrow(
-        "No environment files found to archive",
-      );
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    await expect(new CloudRunner().gatherEnvFiles(workspace as never)).rejects.toThrow(
+      "No environment files found to archive",
+    );
   });
 });

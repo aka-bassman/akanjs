@@ -16,8 +16,7 @@ import { FontCss } from "../fontCss";
 import { Load } from "../Load";
 import { createServerPortalStore, ServerPortalOutlet, setActiveServerPortalStore } from "../ServerPortal";
 import { ClientBridge, ClientInner, ClientPathWrapper, ClientSsrBridge, ClientWrapper } from "./Client";
-import { ManifestLink, type ProviderProps } from "./Common";
-import { getFrameCssVars } from "./frameCssVars";
+import { getFrameCssVars, ManifestLink, type ProviderProps } from "./Common";
 
 export const SSR = () => {
   return <></>;
@@ -48,15 +47,13 @@ const SSRProvider = ({
   setRequestTheme(theme);
   Translator.markHydrated();
 
-  // Resolve the active locale exactly like `l()` does (getPageInfo / request), not via `params.lang`,
-  // which is only populated when the matched route pattern contains `:lang` and can otherwise diverge.
+  // Resolved like `l()` does, not via `params.lang`, which is set only when the matched pattern has `:lang`.
   const { lang: activeLocale, path: activePath } = usePage();
 
-  // Server (RSC worker) renders server components: replace every locale with the latest snapshot. This is
-  // free on the server (it never reaches the browser bundle) and avoids stale keys after dictionary edits.
+  // Every locale, fresh, on the server (never shipped): no stale keys after a dictionary edit.
   if (allDictionary) for (const [lng, dict] of Object.entries(allDictionary)) Translator.replace(lng, dict);
 
-  // Only the active locale is serialized to the client (Flight payload) to keep the browser bundle lean.
+  // Only the active locale is serialized to the client.
   const activeDictionary = allDictionary?.[activeLocale] ?? dictionary;
   const pageState = getRequestFrameState<PageState>() ?? defaultPageState;
 

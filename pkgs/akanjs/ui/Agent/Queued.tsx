@@ -9,16 +9,11 @@ import type { QueuedMessage } from "./useChatQueue";
 export interface QueuedProps {
   className?: string;
   message: QueuedMessage;
-  /** Hands the message back to the composer to be changed — the only way to edit what is already out of it. */
+  /** Hands the message back to the composer. */
   onEdit: () => void;
   onCancel: () => void;
 }
 
-/**
- * The message waiting for the running turn to end, parked above the composer where the question card sits. It is
- * shown rather than silently held because a send that vanished from the composer and has not appeared in the
- * transcript reads as lost, and because taking it back or dropping it needs somewhere to click.
- */
 export const DefaultQueued = ({ className, message, onEdit, onCancel }: QueuedProps) => {
   const { l } = usePage();
   return (

@@ -14,19 +14,12 @@ import {
 import { Reference } from "use-agentic";
 import { $createMentionNode, $isMentionNode } from "./MentionNode";
 
-/**
- * The two directions between the composer's draft string and what the editor holds. The string stays the source
- * of truth for the rest of the chat — it is what carries the `@[…](mention:…)` tokens onto the message — and the
- * editor is one way of drawing it, so every offset here is an offset into **that string**, never into what the
- * screen shows.
- */
+// Call inside an editor read or update like any Lexical `$` function; offsets index the draft string, tokens included.
 export class MentionDraft {
-  /** Runs inside an editor read or update, like every `$` function. */
   static read(): string {
     return $getRoot().getTextContent();
   }
 
-  /** Rebuilds the whole content from a draft string — the path every write that is not a keystroke takes. */
   static write(text: string, caretAt?: number) {
     const paragraph = $createParagraphNode();
     paragraph.append(...MentionDraft.nodesOf(text));
@@ -37,8 +30,7 @@ export class MentionDraft {
   static nodesOf(text: string): LexicalNode[] {
     const nodes: LexicalNode[] = [];
     let at = 0;
-    // A copy rather than the shared pattern: this walks positions with `exec`, which leaves `lastIndex` behind on
-    // whatever regex it was given.
+    // A copy, not the shared pattern: `exec` leaves `lastIndex` behind on whatever regex it walks.
     const pattern = new RegExp(Reference.pattern.source, "g");
     for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
       const [token, label, refName, refId, path] = match;
@@ -50,14 +42,13 @@ export class MentionDraft {
     return nodes;
   }
 
-  /** Where the caret sits in the draft string, or `null` when there is no collapsed caret to report. */
   static caret(): number | null {
     const selection = $getSelection();
     if (!$isRangeSelection(selection)) return null;
     const anchor = selection.anchor;
     const node = anchor.getNode();
     if ($isTextNode(node)) {
-      // A mention is one thing, so a caret Lexical reports inside one belongs at whichever end it is nearer.
+      // A caret Lexical reports inside a mention snaps to one of its ends.
       const inner = $isMentionNode(node) ? (anchor.offset ? node.getTextContent().length : 0) : anchor.offset;
       return MentionDraft.#before(node) + inner;
     }
@@ -66,7 +57,6 @@ export class MentionDraft {
     return MentionDraft.#before(node) + within;
   }
 
-  /** Puts the caret at a draft-string offset. Past the end, or inside a mention, it lands on the nearest edge. */
   static place(at: number) {
     const paragraph = $getRoot().getLastChild();
     if (!$isElementNode(paragraph)) return;
@@ -74,8 +64,7 @@ export class MentionDraft {
     for (const child of paragraph.getChildren()) {
       const length = child.getTextContent().length;
       if (at <= seen + length) {
-        // `selectNext()` and `select()` without offsets both mean "the end of that node" in Lexical, which for a
-        // pointer is the end of whatever follows it — an offset off by a whole word.
+        // Offsets are explicit: Lexical's bare `selectNext()` / `select()` mean the end of the following node.
         if ($isTextNode(child) && !$isMentionNode(child)) child.select(at - seen, at - seen);
         else if (at > seen) child.selectNext(0, 0);
         else if (child.getPreviousSibling()) child.selectPrevious();

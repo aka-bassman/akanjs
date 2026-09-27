@@ -31,7 +31,7 @@ A single replica running inside the `main.ts` process itself, with no gateway in
 
 A separate process that renders pages on the server. Each replica serving pages has one.
 
-A class that sees each page request before the router and can redirect, rewrite or answer it.
+A class that sees each page load before the router and can redirect, rewrite or answer it.
 
 Starts the app from `main.ts`: one process, or a gateway with replicas.
 
@@ -215,7 +215,7 @@ A path prefix `string`, a `RegExp`, or `(request) => boolean`.
 
 What `next` and `rewrite` return, and the `{ request: { headers } }` they take.
 
-`akanjs/server` is the server half of Akan: it starts the app, holds the server settings, and sees page requests before the router. Import it only from server files — `main.ts`, `lib/option.ts` and `srvkit/`.
+`akanjs/server` is the server half of Akan: it starts the app, holds the server settings, and sees page loads before the router. Import it only from server files — `main.ts`, `lib/option.ts` and `srvkit/`.
 
 Words Used On This Page
 
@@ -313,7 +313,7 @@ A proxy that uses all three:
 
 WebProxy
 
-A `WebProxy` is a class with one `use(request)` method. It sees every page request before the router, so it suits redirects, host-based routing and headers a page reads.
+A `WebProxy` is a class with one `use(request)` method. It sees every page load before the router, so it suits redirects, host-based routing and headers a page reads. A client-side navigation, a `<Link>` click or `router.push`, is not a page load and never reaches it.
 
 A proxy that closes the shop pages during maintenance:
 

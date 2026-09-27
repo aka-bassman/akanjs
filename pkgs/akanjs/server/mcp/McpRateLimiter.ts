@@ -1,16 +1,15 @@
 import { type Dayjs, dayjs } from "akanjs/base";
 import { Logger } from "akanjs/common";
 
-/** The part of the app's cache the window is counted in. */
 export interface McpSharedCounter {
   incr(topic: string, key: string, by?: number, option?: { expireAt?: Dayjs }): Promise<number>;
 }
 
 export interface McpRateLimitOption {
-  /** Calls one caller may make per window. `0` turns the counter off. */
+  /** Per caller per window; `0` turns the counter off. */
   calls?: number;
   windowMs?: number;
-  /** Calls one caller may have running at the same time. `0` turns the cap off. */
+  /** Per caller at once; `0` turns the cap off. */
   concurrent?: number;
 }
 
@@ -24,18 +23,8 @@ interface McpRateBucket {
   inFlight: number;
 }
 
-/**
- * Per-caller budget for the MCP methods that execute an endpoint.
- *
- * Two limits because they stop two different loops. A fixed window of `calls` stops a model that re-reads a list
- * slice as fast as the client lets it; a cap on `concurrent` calls stops one that fans out a ten-second query in
- * parallel, which the window alone would admit until the window filled. Keyed by the caller the router derives.
- *
- * Given the app's cache, the window is counted there — windows aligned to the epoch, so every instance counts into
- * the same one and N instances grant one budget, not N. The in-flight cap stays this process's: a slot a crashed
- * process held would never be handed back. A cache that fails is warned about and the window falls back to this
- * process's count, so an outage loosens the limit rather than refusing every call.
- */
+// With the app's cache, epoch-aligned windows make N instances share one budget. In-flight stays per process (a
+// crashed process never returns its slot), and a failing cache falls back to local counting rather than refusing.
 export class McpRateLimiter {
   static readonly defaults = { calls: 120, windowMs: 60_000, concurrent: 8 } as const;
   static readonly #logger = new Logger("McpRateLimiter");
@@ -92,7 +81,6 @@ export class McpRateLimiter {
     return `${window}, ${inFlight}, per caller`;
   }
 
-  /** Spends one call of the window: `null` when it fit, otherwise how long until the window ends. */
   async #spend(key: string, bucket: McpRateBucket, now: number): Promise<number | null> {
     if (this.#shared) {
       const window = Math.floor(now / this.windowMs);
@@ -124,7 +112,6 @@ export class McpRateLimiter {
     return bucket;
   }
 
-  /** Buckets are dropped once idle for a window, so the map is bounded by the callers of the last window, not ever. */
   #sweep(now: number) {
     if (now - this.#sweptAt < this.windowMs) return;
     this.#sweptAt = now;

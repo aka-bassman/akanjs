@@ -31,7 +31,7 @@ export const PageCSR = <Return,>({ of, loader, render, loading, noCache = false 
         setFetchState({ fulfilled: true, value: ret });
         setFetchedData(of, ret, location.pathname);
       } catch {
-        // onError?.(content);
+        // A failed load keeps the loading state; this wrapper has no error surface.
       }
     })();
   }, []);

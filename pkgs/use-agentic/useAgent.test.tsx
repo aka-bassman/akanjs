@@ -4,7 +4,7 @@ import { AgenticSurface } from "./AgenticSurface";
 import { AgentProvider } from "./AgentProvider";
 import { AgentSession } from "./AgentSession";
 import { mount } from "./test/mount";
-import type { AgentRunner } from "./types";
+import type { AgentRunner, SurfaceView } from "./types";
 import { useAgent } from "./useAgent";
 
 describe("useAgent", () => {
@@ -43,7 +43,7 @@ describe("useAgent", () => {
       },
     };
     const session = new AgentSession(surface, runner);
-    const seen: { surface: AgenticSurface | null } = { surface: null };
+    const seen: { surface: SurfaceView | null } = { surface: null };
     const Probe = () => {
       seen.surface = useAgent().surface;
       return null;

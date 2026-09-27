@@ -9,10 +9,8 @@ interface SlashMenuSetup {
   onCommand: (command: ChatCommand) => void;
 }
 
-/** Only a bare `/name` opens the menu: once an argument is being typed, the list has nothing left to offer. */
 const slashQuery = /^\/[A-Za-z0-9_-]*$/;
 
-/** The `/` menu's rows — this chat's own commands — and which one the keys are on. */
 export const useSlashMenu = ({ draft, l, onCommand }: SlashMenuSetup) => {
   const [cursor, setCursor] = useState(0);
   const [hidden, setHidden] = useState(false);
@@ -30,7 +28,6 @@ export const useSlashMenu = ({ draft, l, onCommand }: SlashMenuSetup) => {
   return {
     rows,
     selected,
-    /** Reset when the draft is written to: a new query has a new first row, and Escape only hides the old one. */
     reopen: () => {
       setHidden(false);
       setCursor(0);

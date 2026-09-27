@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { dayjs, Int, resetEnvCache } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { DraftStore } from "./draftStore";
+import { MemoryStorage, setTestEnv } from "./store.fixture";
 
 const DraftTestFileInput = via((f) => ({
   filename: f(String),
@@ -44,28 +45,6 @@ ConstantRegistry.buildModel(
   { DraftTestInput, DraftTestObject, DraftTestFull, DraftTestLight, DraftTestInsight },
 );
 
-class MemoryStorage implements Storage {
-  #values = new Map<string, string>();
-  get length() {
-    return this.#values.size;
-  }
-  clear() {
-    this.#values.clear();
-  }
-  getItem(key: string) {
-    return this.#values.get(key) ?? null;
-  }
-  key(index: number) {
-    return [...this.#values.keys()][index] ?? null;
-  }
-  removeItem(key: string) {
-    this.#values.delete(key);
-  }
-  setItem(key: string, value: string) {
-    this.#values.set(key, value);
-  }
-}
-
 const jwtOf = (payload: Record<string, unknown>) => `x.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.y`;
 
 let storage: MemoryStorage;
@@ -75,10 +54,7 @@ const setCookie = (jwt: string | null) => {
 };
 
 beforeEach(() => {
-  process.env.AKAN_PUBLIC_APP_NAME = "drafttest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "drafttest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("drafttest");
   resetEnvCache();
   storage = new MemoryStorage();
   Object.defineProperty(globalThis, "window", {

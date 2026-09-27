@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  combineMinRevalidate,
   createRouteCacheEntry,
   createRouteCacheKey,
   getClientFacingOrigin,
@@ -10,7 +9,6 @@ import {
   normalizeRouteCacheTtl,
   parsePositiveInt,
   resolveAutoRouteCacheTtl,
-  resolvePublicRouteCacheEntry,
   resolvePublicRouteCacheEntryDecision,
   resolveRouteCacheStoreTtl,
   shouldInvalidateRouteCacheEntry,
@@ -34,12 +32,6 @@ describe("route cache policy helpers", () => {
     expect(resolveAutoRouteCacheTtl({ enabled: "1" })).toBe(30);
     expect(resolveAutoRouteCacheTtl({ enabled: "1", ttl: "60" })).toBe(60);
     expect(resolveAutoRouteCacheTtl({ enabled: "1", ttl: "0" })).toBeNull();
-  });
-
-  test("uses min lifetime semantics for revalidate values", () => {
-    expect(combineMinRevalidate(120, 60, undefined)).toBe(60);
-    expect(combineMinRevalidate(undefined, null)).toBeUndefined();
-    expect(combineMinRevalidate(120, false, 60)).toBe(false);
   });
 
   test("creates a normalized route cache key shared by RSC and HTML caches", () => {
@@ -154,13 +146,13 @@ describe("route cache policy helpers", () => {
       deny: "/docs/private",
     };
 
-    const entry = resolvePublicRouteCacheEntry({ request, url, theme: "dark", env });
+    const entry = resolvePublicRouteCacheEntryDecision({ request, url, theme: "dark", env }).entry;
     expect(entry).toEqual({
       key: createRouteCacheKey({ request, url, theme: "dark" }),
       ttl: 45,
     });
-    expect(resolvePublicRouteCacheEntry({ request, url, theme: "light", env })?.key).not.toBe(entry?.key);
-    expect(resolvePublicRouteCacheEntry({ request, url, env: { ...env, enabled: "0" } })).toBeNull();
+    expect(resolvePublicRouteCacheEntryDecision({ request, url, theme: "light", env }).entry?.key).not.toBe(entry?.key);
+    expect(resolvePublicRouteCacheEntryDecision({ request, url, env: { ...env, enabled: "0" } }).entry).toBeNull();
     expect(
       resolvePublicRouteCacheEntryDecision({
         request,
@@ -193,25 +185,25 @@ describe("route cache policy helpers", () => {
       reason: "path-excluded",
     });
     expect(
-      resolvePublicRouteCacheEntry({
+      resolvePublicRouteCacheEntryDecision({
         request,
         url: new URL("https://example.test/docs/private/secret"),
         env,
-      }),
+      }).entry,
     ).toBeNull();
     expect(
-      resolvePublicRouteCacheEntry({
+      resolvePublicRouteCacheEntryDecision({
         request: new Request(request.url, { headers: { authorization: "Bearer token" } }),
         url,
         env,
-      }),
+      }).entry,
     ).toBeNull();
     expect(
-      resolvePublicRouteCacheEntry({
+      resolvePublicRouteCacheEntryDecision({
         request: new Request(request.url, { headers: { cookie: "session=secret" } }),
         url,
         env,
-      }),
+      }).entry,
     ).toBeNull();
   });
 
@@ -307,6 +299,16 @@ describe("route cache policy helpers", () => {
     expect(cache.get("delete-me")).toBeNull();
   });
 
+  test("evicts an empty-string key like any other once the cache is full", () => {
+    const cache = new LruTtlCache<string>(2);
+    cache.set("", "empty", 30);
+    cache.set("a", "A", 30);
+    cache.set("b", "B", 30);
+    expect(cache.size).toBe(2);
+    expect(cache.get("")).toBeNull();
+    expect(cache.get("b")).toBe("B");
+  });
+
   test("tracks payload bytes across every path that adds or drops an entry", async () => {
     const cache = new LruTtlCache<string>(2, { sizeOf: (value) => value.length });
     expect(cache.byteSize).toBe(0);
@@ -369,7 +371,6 @@ describe("route cache policy helpers", () => {
     expect(cache.byteSize).toBe(9);
 
     await new Promise((resolve) => setTimeout(resolve, 5));
-    // No `get` of the expired key, which is the only thing that used to reclaim it.
     expect(cache.sweepExpired()).toBe(1);
     expect(cache.size).toBe(1);
     expect(cache.byteSize).toBe(4);
@@ -377,8 +378,6 @@ describe("route cache policy helpers", () => {
   });
 
   test("sweeps entries whose expiry does not follow map order", async () => {
-    // `get` reinserts, and TTLs differ per entry, so the oldest map entry can outlive a newer one.
-    // A sweep that stopped at the first live entry would leave the expired one behind.
     const cache = new LruTtlCache<string>(10);
     cache.set("long", "L", 30);
     cache.set("short", "S", 0.001);

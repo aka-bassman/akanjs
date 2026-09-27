@@ -1,13 +1,7 @@
 import { type TunnelOpenFrame, tunnelWireContract } from "akanjs/common";
 import { type TunnelStream, type TunnelStreamLink, tunnelResetCodeOf } from "./tunnelStream";
 
-/**
- * Headers that describe how the agent's own `fetch` framed the body, not what the body is.
- *
- * Bun's `fetch` decompresses a response and leaves `content-encoding: gzip` with the *compressed*
- * `content-length` on the headers — forwarding those verbatim hands the browser plain bytes labelled gzip and
- * a length off by an order of magnitude, which fails at the first read rather than at the source.
- */
+// Bun's fetch decodes the body but keeps content-encoding and the compressed content-length, so both are dropped.
 const reframedHeaders = new Set(["content-encoding", "content-length"]);
 
 export class TunnelHttpStream implements TunnelStream {

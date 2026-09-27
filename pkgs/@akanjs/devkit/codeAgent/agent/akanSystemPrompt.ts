@@ -1,12 +1,6 @@
 import type { CodeAgentProfile } from "akanjs/common";
 
-/**
- * What the agent has to know that `AGENTS.md` does not say.
- *
- * The workspace guide is already loaded whole — 104KB, roughly 26k tokens, on every turn — so this stays short
- * and carries only what is about *this* runtime: which tools exist, what the profile refuses, and the one rule
- * the guide states for editors but not for an agent that can run commands itself.
- */
+// Only what `AGENTS.md` does not say: the guide is already loaded whole on every turn.
 export const akanSystemPrompt = (profile: CodeAgentProfile) => {
   const lines = [
     "You are the akan coding agent, running inside an Akan.js workspace.",
@@ -40,8 +34,6 @@ export const akanSystemPrompt = (profile: CodeAgentProfile) => {
   lines.push(
     "- Secrets are refused at the tool boundary. If you need a value from `.env`, ask the user for it rather than looking for another way to read the file.",
     "",
-    // The answer lands in a terminal pane, not a document: a preamble scrolls the thing being read off the
-    // screen, and a summary of tool calls repeats rows the host already drew above the answer.
     "## How to answer",
     "",
     "- Answer in as few words as carry the answer. A short question gets one sentence with no heading.",

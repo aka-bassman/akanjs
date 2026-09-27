@@ -3,20 +3,12 @@ import path from "node:path";
 import type { BaseBuildArtifact, ClientManifest, SsrManifest } from "akanjs/server";
 import type { App } from "../commandDecorators";
 import { createBarrelImportsPlugin } from "../transforms/barrelImportsPlugin";
-import { toClientReferencePath } from "../transforms/rscUseClientTransform";
+import { scanUseClientExports, toClientReferencePath } from "../transforms/rscUseClientTransform";
 import type { ClientBundleTarget, ClientEntryDiscovery } from "./clientBuildTypes";
 import { ClientEntriesBundler } from "./clientEntriesBundler";
 import { GraphClientEntryDiscovery } from "./clientEntryDiscovery";
 import { VENDOR_SPECIFIERS } from "./vendorSpecifiers";
 
-const SSR_CLIENT_EXTERNALS = [
-  "react",
-  "react-dom",
-  "react-dom/client",
-  "react/jsx-runtime",
-  "react/jsx-dev-runtime",
-  "akanjs/fetch",
-] as const;
 const SSR_CLIENT_ALIAS_EXTERNALS = [
   "react",
   "react-dom",
@@ -24,47 +16,28 @@ const SSR_CLIENT_ALIAS_EXTERNALS = [
   "react/jsx-runtime",
   "react/jsx-dev-runtime",
 ] as const;
+const SSR_CLIENT_EXTERNALS = [...SSR_CLIENT_ALIAS_EXTERNALS, "akanjs/fetch"] as const;
 
 export interface BuildRouteClientOptions {
   app: App;
   seeds: string[];
-  /**
-   * Seeds of every route, so a build that has to run at all bundles the whole app's client entries.
-   *
-   * A page loads entries first built for other routes, and entries from two `Bun.build` runs each carry
-   * their own copy of every app and lib module — one page evaluated a lib's module-scope registration
-   * twice. The whole app costs about what one route did, since every entry already imports the client
-   * barrel, and content-hashed chunk names keep unchanged chunks at the URLs the browser already holds.
-   */
+  /** Every route's seeds: a build that runs at all bundles the whole app, since two builds each copy shared modules. */
   graphSeeds?: string[];
   artifact: BaseBuildArtifact;
   knownEntries?: Set<string>;
   routeId?: string;
   command?: "build" | "start";
   discovery?: ClientEntryDiscovery;
-  /**
-   * Client entries resolved by the caller, which skips discovery and bundles exactly this list.
-   *
-   * `AllRoutesBuilder` passes every route's entries at once so they share one `Bun.build`. Chunk
-   * splitting is scoped to a single invocation, so a dependency reachable from entries spread across
-   * several invocations is emitted once per invocation — mermaid landed in `apps/akan` four times that
-   * way. Dev passes `graphSeeds` instead, for the same reason.
-   */
+  /** Pre-resolved client entries: skips discovery and bundles exactly this list. */
   entries?: string[];
 }
 
 export interface BuildRouteClientResult {
-  /** Newly-emitted manifest rows keyed by `${absEntry}#${exportName}`, for every entry this build bundled. */
   manifestDelta: ClientManifest;
-  /** Newly-emitted ssrManifest rows keyed by entry URL. */
   ssrManifestDelta: SsrManifest;
-  /** Absolute paths of the `"use client"` leaves this build added. */
   newEntries: string[];
-  /** Absolute paths of all `"use client"` leaves discovered from this route's seeds. */
   discoveredEntries?: string[];
-  /** Absolute source files included in the browser bundles for this route's bundled entries. */
   clientDeps: string[];
-  /** Absolute source files included in the browser bundle, grouped by original client entry. */
   clientDepsByEntry?: Record<string, string[]>;
 }
 
@@ -223,16 +196,7 @@ export class RouteClientBuilder {
   }
 
   async #scanExportNames(absEntry: string): Promise<string[]> {
-    const source = await Bun.file(absEntry).text();
-    const transpiler = new Bun.Transpiler({ loader: this.#loaderFor(absEntry) });
-    return transpiler.scan(source).exports;
-  }
-
-  #loaderFor(absPath: string): "ts" | "tsx" | "js" | "jsx" {
-    if (absPath.endsWith(".tsx")) return "tsx";
-    if (absPath.endsWith(".jsx")) return "jsx";
-    if (absPath.endsWith(".ts")) return "ts";
-    return "js";
+    return scanUseClientExports(await Bun.file(absEntry).text(), absEntry, this.#app.workspace.workspaceRoot);
   }
 
   static normalizeNamedDefaultFunctionForFastRefresh(source: string): string | null {
@@ -255,12 +219,8 @@ export class RouteClientBuilder {
     return { [Bun.resolveSync("akanjs/fetch", serverEntry)]: "akanjs/fetch" };
   }
 
-  /**
-   * `target: "bun"` is load-bearing: these chunks are `await import()`-ed by the SSR renderer, so a dependency
-   * resolved through its `browser` export condition can touch `document` at module scope and throw mid-render,
-   * degrading the whole document to client rendering. Bun's `conditions` only adds to the target's defaults —
-   * `browser` still wins — so the target itself has to say server.
-   */
+  // `target: "bun"` is load-bearing: a `browser` export condition can touch `document` at module scope mid-SSR, and
+  // Bun's `conditions` only add to the target's defaults, so the target itself must say server.
   static resolveSsrClientBundleOptions(command: "build" | "start"): {
     target: ClientBundleTarget;
     external: readonly string[];

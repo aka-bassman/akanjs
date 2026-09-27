@@ -24,15 +24,8 @@ const readRemoteName = (workspaceRoot: string): string | null => {
   }
 };
 
-/**
- * The repository's own name.
- *
- * Deriving it from the working directory made every generated file that names the repo — the AGENTS.md title, its
- * `- Repo:` line — depend on what each person happened to call the folder they cloned into, so one commit rendered
- * a different guide per developer and the diff never settled. The origin remote is the one identity every clone
- * shares. `AKAN_PUBLIC_REPO_NAME` is deliberately not consulted: that is a deployment namespace (queue prefixes,
- * cache keys, secret paths) which a monorepo hosting several products legitimately points somewhere else.
- */
+// The origin remote, not the clone's folder name, so generated files agree across clones. `AKAN_PUBLIC_REPO_NAME` is a
+// deployment namespace (queue prefixes, cache keys) and deliberately not consulted.
 export const resolveRepoName = (workspaceRoot: string): string => {
   const cached = resolved.get(workspaceRoot);
   if (cached) return cached;

@@ -1,11 +1,13 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import path from "node:path";
 import { codeAgentPresets } from "akanjs/common";
-import { cleanupCliTempWorkspace, makeCliTempWorkspace, writeText } from "../../testHelpers";
+import { makeCliTempWorkspace, tempRoots, writeText } from "../../testHelpers";
+import { CodeAgent, type CodeAgentOptions } from "../agent/CodeAgent";
 import { SubagentPool } from "../agent/SubagentPool";
 import { DevLogFeedback } from "../feedback/DevLogFeedback";
 import { PreviewView } from "../feedback/PreviewView";
 import { TurnFeedback, type TurnFeedbackSource } from "../feedback/TurnFeedback";
+import { AkanCodePlugins } from "./AkanCodePlugins";
 import { AkanEditScope } from "./AkanEditScope";
 import { AkanEnvKeys } from "./AkanEnvKeys";
 import { AkanVerifier } from "./AkanVerifier";
@@ -14,11 +16,22 @@ import { McpToolPack } from "./McpToolPack";
 import { SessionToolPack } from "./SessionToolPack";
 import { WebToolPack } from "./WebToolPack";
 
-const tempRoots: string[] = [];
+const track = tempRoots();
+const tempRoot = async () => track(await makeCliTempWorkspace()).root;
 
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)));
-});
+type ToolExecute = (
+  id: string,
+  params: never,
+  signal?: AbortSignal,
+) => Promise<{ content: { text: string }[]; isError?: boolean }>;
+
+const toolsOf = (extension: unknown) => {
+  const tools = new Map<string, ToolExecute>();
+  (extension as { factory: (pi: unknown) => void }).factory({
+    registerTool: (tool: { name: string; execute: ToolExecute }) => tools.set(tool.name, tool.execute),
+  });
+  return tools;
+};
 
 const source = (key: string, findings: (string | undefined)[]): TurnFeedbackSource => {
   let call = 0;
@@ -52,8 +65,6 @@ describe("TurnFeedback", () => {
     expect(await feedback.collect()).toContain("still broken");
     expect(await feedback.collect()).toContain("still broken");
     expect(await feedback.collect()).toBeUndefined();
-    // Every reopen is announced: a turn nobody asked for looks, on the transcript, like an agent that will
-    // not stop — more tool calls after the answer and nothing naming who sent it back to work.
     expect(notices[0]).toContain("a reopened the turn");
     expect(notices.at(-1)).toContain("still failing after 2 attempts");
   });
@@ -136,8 +147,7 @@ describe("AkanVerifier.summarize", () => {
 
 describe("AkanEditScope", () => {
   test("derives apps, libs, sync need and tsx from a git status diff", async () => {
-    const { root } = await makeCliTempWorkspace();
-    tempRoots.push(root);
+    const root = await tempRoot();
     await Bun.spawn(["git", "init", "-q"], { cwd: root, stdout: "ignore", stderr: "ignore" }).exited;
     const baseline = await AkanEditScope.baseline(root);
     await writeText(path.join(root, "apps", "demo", "lib", "post", "post.service.ts"), "export {};\n");
@@ -150,8 +160,7 @@ describe("AkanEditScope", () => {
   });
 
   test("an unchanged tree implicates no target", async () => {
-    const { root } = await makeCliTempWorkspace();
-    tempRoots.push(root);
+    const root = await tempRoot();
     await Bun.spawn(["git", "init", "-q"], { cwd: root, stdout: "ignore", stderr: "ignore" }).exited;
     const baseline = await AkanEditScope.baseline(root);
     const scope = await AkanEditScope.since(root, baseline);
@@ -162,10 +171,6 @@ describe("AkanEditScope", () => {
 describe("DevLogFeedback", () => {
   const logPath = (root: string, app: string) => path.join(root, "local", "apps", app, "runtime", "dev.log");
 
-  /**
-   * A turn that wrote nothing cannot have broken the running app, so the source is gated on the working tree
-   * moving — which makes a repo with one edit in it the minimum a test has to set up.
-   */
   const armed = async (root: string, feedback: DevLogFeedback) => {
     Bun.spawnSync(["git", "init", "-q"], { cwd: root });
     await feedback.begin();
@@ -173,8 +178,7 @@ describe("DevLogFeedback", () => {
   };
 
   test("reports only the errors written after the watermark", async () => {
-    const { root } = await makeCliTempWorkspace();
-    tempRoots.push(root);
+    const root = await tempRoot();
     await writeText(logPath(root, "demo"), "[demo] boot ok\n");
     const feedback = new DevLogFeedback({ workspaceRoot: root, cwd: root, apps: ["demo"], graceMs: 0 });
     await armed(root, feedback);
@@ -185,8 +189,7 @@ describe("DevLogFeedback", () => {
   });
 
   test("stays quiet when the new lines are only debug noise", async () => {
-    const { root } = await makeCliTempWorkspace();
-    tempRoots.push(root);
+    const root = await tempRoot();
     await writeText(logPath(root, "demo"), "start\n");
     const feedback = new DevLogFeedback({ workspaceRoot: root, cwd: root, apps: ["demo"], graceMs: 0 });
     await armed(root, feedback);
@@ -195,16 +198,14 @@ describe("DevLogFeedback", () => {
   });
 
   test("no dev server means nothing to say, not an error", async () => {
-    const { root } = await makeCliTempWorkspace();
-    tempRoots.push(root);
+    const root = await tempRoot();
     const feedback = new DevLogFeedback({ workspaceRoot: root, cwd: root, apps: ["demo"], graceMs: 0 });
     await armed(root, feedback);
     expect(await feedback.observe()).toBeUndefined();
   });
 
   test("a turn that changed nothing is not told about a dev server somebody else is driving", async () => {
-    const { root } = await makeCliTempWorkspace();
-    tempRoots.push(root);
+    const root = await tempRoot();
     Bun.spawnSync(["git", "init", "-q"], { cwd: root });
     await writeText(logPath(root, "demo"), "[demo] boot ok\n");
     const feedback = new DevLogFeedback({ workspaceRoot: root, cwd: root, apps: ["demo"], graceMs: 0 });
@@ -214,8 +215,7 @@ describe("DevLogFeedback", () => {
   });
 
   test("reads the dev server's allocated URL back out of its own log", async () => {
-    const { root } = await makeCliTempWorkspace();
-    tempRoots.push(root);
+    const root = await tempRoot();
     await writeText(
       logPath(root, "demo"),
       "[demo] demo ready (pid=1) — http://localhost:3000\n[demo] demo ready (pid=2) — http://localhost:8282\n",
@@ -227,8 +227,7 @@ describe("DevLogFeedback", () => {
 
 describe("AkanEnvKeys", () => {
   test("maps <PROVIDER>_API_KEY onto the engine's provider id without persisting it", async () => {
-    const { root } = await makeCliTempWorkspace();
-    tempRoots.push(root);
+    const root = await tempRoot();
     await writeText(path.join(root, ".env"), '# comment\nDEEPSEEK_API_KEY="sk-test"\nSOMETHING_ELSE=1\n');
     const applied: [string, string][] = [];
     const fake = {
@@ -295,16 +294,11 @@ describe("SubagentPool", () => {
   test("a code child keeps the parent's tools, and never more than them", () => {
     const full = SubagentPool.childOf(codeAgentPresets.local("/tmp/akan"), "code");
     expect(full.tools.builtin).toContain("write");
-    // A read-only parent stays read-only through the kind that is allowed to write: narrowing only narrows.
     const reader = SubagentPool.childOf(codeAgentPresets.review("/tmp/akan"), "code");
     expect(reader.tools.builtin).not.toContain("write");
     expect(reader.tools.builtin).not.toContain("bash");
   });
 
-  /**
-   * A refused call opens no child, so it must leave no row behind either — a rail that shows a sub-agent the
-   * pool never started reads as work in flight, and the budget it was refused over says the opposite.
-   */
   test("a refusal reports no running sub-agent", async () => {
     const parent = codeAgentPresets.local("/tmp/akan");
     const spent = { ...parent, tools: { ...parent.tools, subagent: { maxConcurrent: 0, maxDepth: 2, budget: 0 } } };
@@ -324,7 +318,202 @@ describe("SubagentPool", () => {
     expect(frames).toEqual([]);
   });
 
-  /** Nothing a sub-agent does belongs in the workspace's session tree, and nobody is there to answer it. */
+  const budgeted = (budget: number, maxConcurrent = 3) => {
+    const parent = codeAgentPresets.local("/tmp/akan");
+    return {
+      ...parent,
+      tools: { ...parent.tools, mcp: "off" as const, subagent: { maxConcurrent, maxDepth: 2, budget } },
+    };
+  };
+  const openFakeAgents = (tokens: number[]) => {
+    const opened: CodeAgentOptions[] = [];
+    const spy = spyOn(CodeAgent, "create").mockImplementation(async (options) => {
+      opened.push(options);
+      const tokensUsed = tokens[opened.length - 1] ?? 0;
+      return {
+        on: () => {},
+        prompt: async () => {},
+        waitForIdle: async () => {},
+        dispose: () => {},
+        tokensUsed,
+      } as never;
+    });
+    return { opened, spy };
+  };
+  const runTask = async (extension: unknown, id: string, signal?: AbortSignal) =>
+    await toolsOf(extension).get("task")?.(id, { description: "d", prompt: "p" } as never, signal);
+  const until = async (done: () => boolean) => {
+    for (let tries = 0; tries < 500 && !done(); tries += 1) await Bun.sleep(2);
+  };
+  const poolOf = (child: CodeAgentOptions) =>
+    SubagentPool.extensionFor({
+      workspace,
+      cwd: "/tmp/akan",
+      parent: child.profile,
+      depth: child.depth ?? 0,
+      ...(child.subagentSpend ? { spend: child.subagentSpend } : {}),
+    });
+
+  test("every pool of one tree draws on one token budget", async () => {
+    const { opened, spy } = openFakeAgents([150, 100]);
+    try {
+      const root = SubagentPool.extensionFor({ workspace, cwd: "/tmp/akan", parent: budgeted(200), depth: 0 });
+      expect((await runTask(root, "c1"))?.isError).toBeUndefined();
+      const [child] = opened;
+      if (!child) throw new Error("no sub-agent was opened");
+      const inner = SubagentPool.extensionFor({
+        workspace,
+        cwd: "/tmp/akan",
+        parent: child.profile,
+        depth: child.depth ?? 0,
+        ...(child.subagentSpend ? { spend: child.subagentSpend } : {}),
+      });
+      expect((await runTask(inner, "c2"))?.isError).toBeUndefined();
+      for (const pool of [root, inner]) {
+        const refused = await runTask(pool, "c3");
+        expect(refused?.isError).toBe(true);
+        expect(refused?.content[0]?.text).toContain("token budget (200) is spent");
+      }
+      expect(opened).toHaveLength(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("the plugins a sub-agent builds hand its pool the tree's tally", async () => {
+    const { opened, spy } = openFakeAgents([]);
+    try {
+      const plugins = await AkanCodePlugins.build({
+        workspace,
+        cwd: "/tmp/akan",
+        profile: budgeted(200),
+        apps: [],
+        canSeeImages: false,
+        depth: 1,
+        currentSessionId: () => "",
+        mailbox: () => undefined,
+        subagentSpend: { tokens: 200, running: 0 },
+      });
+      const pool = plugins.extensions.find((extension) => extension.name === "akan-subagent");
+      const refused = await runTask(pool, "c1");
+      expect(refused?.isError).toBe(true);
+      expect(opened).toHaveLength(0);
+      plugins.dispose();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("maxConcurrent counts every running sub-agent of the tree, and a full tree refuses a child's task instead of queueing it", async () => {
+    const held = Promise.withResolvers<void>();
+    const opened: CodeAgentOptions[] = [];
+    const spy = spyOn(CodeAgent, "create").mockImplementation(async (options) => {
+      opened.push(options);
+      return {
+        on: () => {},
+        prompt: async () => await held.promise,
+        waitForIdle: async () => {},
+        dispose: () => {},
+        tokensUsed: 0,
+      } as never;
+    });
+    try {
+      const root = SubagentPool.extensionFor({
+        workspace,
+        cwd: "/tmp/akan",
+        parent: budgeted(1_000_000, 2),
+        depth: 0,
+      });
+      const running = [runTask(root, "c1"), runTask(root, "c2")];
+      await until(() => opened.length === 2);
+      const [child] = opened;
+      if (!child) throw new Error("no sub-agent was opened");
+      const refused = await Promise.race([runTask(poolOf(child), "c3"), Bun.sleep(500).then(() => undefined)]);
+      expect(refused?.isError).toBe(true);
+      expect(refused?.content[0]?.text).toContain("limit 2 at once");
+      expect(refused?.content[0]?.text).not.toContain("Wait");
+      expect((await runTask(root, "c4"))?.content[0]?.text).toContain("Wait for one of yours");
+      expect(opened).toHaveLength(2);
+      held.resolve();
+      await Promise.all(running);
+      expect((await runTask(poolOf(child), "c5"))?.isError).toBeUndefined();
+      expect(opened).toHaveLength(3);
+    } finally {
+      held.resolve();
+      spy.mockRestore();
+    }
+  });
+
+  test("a sub-agent that fails still spends from the tree's budget, once, and the notice says it failed", async () => {
+    const opened: CodeAgentOptions[] = [];
+    const spy = spyOn(CodeAgent, "create").mockImplementation(async (options) => {
+      opened.push(options);
+      return {
+        on: () => {},
+        prompt: async () => {
+          throw new Error("provider went away");
+        },
+        waitForIdle: async () => {},
+        dispose: () => {},
+        tokensUsed: 150,
+      } as never;
+    });
+    const notices: string[] = [];
+    try {
+      const root = SubagentPool.extensionFor({
+        workspace,
+        cwd: "/tmp/akan",
+        parent: budgeted(100),
+        depth: 0,
+        onNotice: (message) => notices.push(message),
+      });
+      await expect(runTask(root, "c1")).rejects.toThrow("provider went away");
+      expect(notices.at(-1)).toBe("explore sub-agent failed, 150 tokens (150 of 100 spent)");
+      expect((await runTask(root, "c2"))?.content[0]?.text).toContain("token budget (100) is spent");
+      expect(opened).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("a sub-agent its parent stops is counted once, and the notice says it stopped", async () => {
+    const prompted = Promise.withResolvers<void>();
+    const stopped = Promise.withResolvers<void>();
+    const spy = spyOn(CodeAgent, "create").mockImplementation(
+      async () =>
+        ({
+          on: () => {},
+          prompt: async () => {
+            prompted.resolve();
+            await stopped.promise;
+          },
+          waitForIdle: async () => {},
+          abort: async () => stopped.resolve(),
+          dispose: () => {},
+          tokensUsed: 120,
+        }) as never,
+    );
+    const notices: string[] = [];
+    try {
+      const root = SubagentPool.extensionFor({
+        workspace,
+        cwd: "/tmp/akan",
+        parent: budgeted(1_000),
+        depth: 0,
+        onNotice: (message) => notices.push(message),
+      });
+      const parent = new AbortController();
+      const task = runTask(root, "c1", parent.signal);
+      await prompted.promise;
+      parent.abort();
+      await task;
+      expect(notices.at(-1)).toBe("explore sub-agent stopped, 120 tokens (120 of 1000 spent)");
+    } finally {
+      stopped.resolve();
+      spy.mockRestore();
+    }
+  });
+
   test("a child keeps no session and cannot ask a human", () => {
     const child = SubagentPool.childOf(codeAgentPresets.local("/tmp/akan"), "explore");
     expect(child.session).toEqual({ store: "memory", crossSession: false });
@@ -334,7 +523,6 @@ describe("SubagentPool", () => {
 });
 
 describe("McpToolPack", () => {
-  /** A minimal stdio MCP server, written at test time so the suite carries no extra source file. */
   const serverSource = `
 const reply = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result }) + "\\n");
 for await (const line of console) {
@@ -349,8 +537,7 @@ for await (const line of console) {
 `;
 
   const withServer = async () => {
-    const { root } = await makeCliTempWorkspace();
-    tempRoots.push(root);
+    const root = await tempRoot();
     const script = path.join(root, "echo-mcp.ts");
     await writeText(script, serverSource);
     await writeText(
@@ -383,8 +570,7 @@ for await (const line of console) {
   });
 
   test("a server that cannot start costs its own tools and nothing else", async () => {
-    const { root } = await makeCliTempWorkspace();
-    tempRoots.push(root);
+    const root = await tempRoot();
     await writeText(
       path.join(root, ".akan", "code", "mcp.json"),
       JSON.stringify({ mcpServers: { broken: { command: "/nonexistent/binary" } } }),
@@ -397,8 +583,6 @@ for await (const line of console) {
     });
     expect(pack?.toolNames).toEqual([]);
     expect(notices.join(" ")).toContain("broken");
-    // The pack survives the failure so `/mcp` can say what went wrong; a pack that dissolved would leave the
-    // server indistinguishable from one nobody declared.
     expect(pack?.status).toEqual([
       { name: "broken", transport: "stdio", target: "/nonexistent/binary", tools: [], error: expect.any(String) },
     ]);
@@ -448,28 +632,16 @@ describe("WebToolPack", () => {
     });
     try {
       const profile = codeAgentPresets.local(root);
-      const pack = new WebToolPack({ profile });
-      const tools = new Map<
-        string,
-        (id: string, params: never) => Promise<{ content: { text: string }[]; isError?: boolean }>
-      >();
-      const factory = (pack.extension() as { factory: (pi: unknown) => void }).factory;
-      factory({ registerTool: (tool: { name: string; execute: never }) => tools.set(tool.name, tool.execute) });
-      const fetchTool = tools.get("web_fetch");
+      const fetchTool = toolsOf(new WebToolPack({ profile }).extension()).get("web_fetch");
       const ok = await fetchTool?.("1", { url: `http://localhost:${server.port}/` } as never);
       expect(ok?.content[0]?.text).toContain("Akan");
       expect(ok?.content[0]?.text).toContain("Hello & welcome");
       expect(ok?.content[0]?.text).not.toContain("<h1>");
 
       const narrowed = new WebToolPack({ profile: { ...profile, network: { allowHosts: ["docs.akanjs.com"] } } });
-      const narrowedTools = new Map<
-        string,
-        (id: string, params: never) => Promise<{ content: { text: string }[]; isError?: boolean }>
-      >();
-      (narrowed.extension() as { factory: (pi: unknown) => void }).factory({
-        registerTool: (tool: { name: string; execute: never }) => narrowedTools.set(tool.name, tool.execute),
-      });
-      const refused = await narrowedTools.get("web_fetch")?.("1", { url: `http://localhost:${server.port}/` } as never);
+      const refused = await toolsOf(narrowed.extension()).get("web_fetch")?.("1", {
+        url: `http://localhost:${server.port}/`,
+      } as never);
       expect(refused?.isError).toBe(true);
       expect(refused?.content[0]?.text).toContain("docs.akanjs.com");
     } finally {
@@ -497,12 +669,8 @@ describe("SessionToolPack", () => {
   });
 
   test("says so plainly when nothing earlier matches", async () => {
-    const { root } = await makeCliTempWorkspace();
-    tempRoots.push(root);
-    const tools = new Map<string, (id: string, params: never) => Promise<{ content: { text: string }[] }>>();
-    (new SessionToolPack(options(root)).extension() as { factory: (pi: unknown) => void }).factory({
-      registerTool: (tool: { name: string; execute: never }) => tools.set(tool.name, tool.execute),
-    });
+    const root = await tempRoot();
+    const tools = toolsOf(new SessionToolPack(options(root)).extension());
     const result = await tools.get("session_search")?.("1", { query: "tunnel wire" } as never);
     expect(result?.content[0]?.text).toContain("No earlier session");
   });

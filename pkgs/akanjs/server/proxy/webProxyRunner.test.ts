@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AkanResponse } from "./akanResponse";
-import type { WebProxyReturn } from "./types";
+import { AkanResponse, type WebProxyReturn } from "./types";
 import { WebProxyRunner } from "./webProxyRunner";
 
 describe("WebProxyRunner", () => {

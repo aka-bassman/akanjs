@@ -6,20 +6,12 @@ import { type VoiceEngine, type VoiceListener, VoiceReader } from "./voice";
 interface ChatVoiceSetup {
   session: AgentSession;
   engine?: VoiceEngine;
-  /** The chat's own version snapshot — every transcript change re-runs the reading policy. */
   version: number;
   onTranscript: (text: string) => void;
   onFailed: () => void;
 }
 
-/**
- * The chat's speech policy, which is the framework's and not the engine's: one utterance per press, the
- * transcript landing in the composer to be corrected, barge-in on the next press or on Stop, and a reply read
- * aloud **only when the ask arrived by voice** — a typed question never turns the speakers on.
- *
- * A question or an approval the loop parked on is read too, and only in that same case: the loop stops there,
- * and a voice user staring at a card they were never told about is a conversation that simply ends.
- */
+// A reply, and a question or approval the loop parked on, is read aloud only when the ask arrived by voice.
 export const useChatVoice = ({ session, engine, version, onTranscript, onFailed }: ChatVoiceSetup) => {
   const [listening, setListening] = useState(false);
   // Always-latest: the engine a hook returns may be a new object each render, and the reader outlives them all.
@@ -28,11 +20,9 @@ export const useChatVoice = ({ session, engine, version, onTranscript, onFailed 
   const listener = useRef<VoiceListener | null>(null);
   const reader = useRef<VoiceReader | null>(null);
   reader.current ??= new VoiceReader(() => held.current);
-  /** Set while the draft came from the microphone, consumed by the send that carries it. */
   const byVoice = useRef(false);
-  /** The assistant message being read aloud, and where its turn began. Null means this turn is not one to read. */
+  // The assistant message being read aloud and where its turn began; null when this turn is not read.
   const spoken = useRef<{ at: number; from: number } | null>(null);
-  /** The parked card already announced, so a question is not re-read on every transcript change. */
   const announced = useRef<string | null>(null);
   const heard = useRef(0);
   useEffect(() => {
@@ -56,7 +46,6 @@ export const useChatVoice = ({ session, engine, version, onTranscript, onFailed 
       (message, idx) => idx >= reading.from && message.role === "assistant" && !message.local && !!message.text,
     );
     if (at < 0) return;
-    // A later answer in the same turn is a new one to read from the start; a tool row between them is skipped.
     if (at !== reading.at) {
       speaker.reset();
       reading.at = at;
@@ -75,7 +64,7 @@ export const useChatVoice = ({ session, engine, version, onTranscript, onFailed 
     },
     [],
   );
-  /** One press is one utterance, so the engine is told to stop even when it reported a final result itself. */
+  // One press is one utterance, so the engine is told to stop even after it reported a final result itself.
   const endListening = () => {
     const running = listener.current;
     listener.current = null;
@@ -86,10 +75,6 @@ export const useChatVoice = ({ session, engine, version, onTranscript, onFailed 
     reader.current?.cancel();
     spoken.current = null;
   };
-  /**
-   * Whether the draft came from the microphone, cleared as it is read: the send consuming the draft takes it, and
-   * an ask parked behind a running turn carries it to the send that finally opens with it.
-   */
   const lift = () => {
     const was = byVoice.current;
     byVoice.current = false;
@@ -97,15 +82,12 @@ export const useChatVoice = ({ session, engine, version, onTranscript, onFailed 
   };
   return {
     listening,
-    /** A screen that cannot listen renders no microphone — the rule that publishes no tool for a missing control. */
     canListen: !!engine && (engine.available?.() ?? true),
     silence,
     lift,
-    /** Puts a lifted flag back, for a parked ask that returned to the composer instead of opening a turn. */
     hold: (spokenAsk: boolean) => {
       byVoice.current ||= spokenAsk;
     },
-    /** Called by the send that opens a turn: only an ask that arrived by voice is answered out loud. */
     take: (spokenAsk = lift()) => {
       // From the transcript's current end: the last answer on screen belongs to the previous ask, not this one.
       spoken.current = spokenAsk ? { at: -1, from: session.messages.length } : null;
@@ -117,7 +99,6 @@ export const useChatVoice = ({ session, engine, version, onTranscript, onFailed 
       }
       const voiceEngine = held.current;
       if (!voiceEngine) return;
-      // Pressing the microphone is barge-in: what is being read stops, so the two are never heard at once.
       silence();
       listener.current = voiceEngine.listen({
         onInterim: onTranscript,
@@ -127,7 +108,6 @@ export const useChatVoice = ({ session, engine, version, onTranscript, onFailed 
           endListening();
         },
         onError: (message) => {
-          // The reason is for whoever is debugging a permission prompt; the user gets one sentence they can act on.
           console.warn(`[akan] voice input failed: ${message}`);
           onFailed();
           endListening();

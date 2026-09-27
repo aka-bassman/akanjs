@@ -1,50 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { EventEmitter } from "node:events";
-import { PassThrough } from "node:stream";
 import { render } from "ink";
 import type { CodeTuiLine } from "../code/CodeTuiLines";
 import { type CodeTuiActions, CodeTuiApp, type CodeTuiSnapshot } from "./CodeTuiApp";
+import { esc, FakeStdout, makeStdin, nextFrame } from "./fakeTerminal.spec";
 
-/** Ink writes frames here and reads its size from `columns`/`rows`; nothing else of a tty is used. */
-class FakeStdout extends EventEmitter {
-  columns = 90;
-  rows = 16;
-  readonly frames: string[] = [];
-  write = (frame: string) => {
-    this.frames.push(frame);
-    return true;
-  };
-  /**
-   * The last frame that drew something.
-   *
-   * With a cursor position set, Ink follows a content frame with a cursor-only write, so the literal last
-   * frame is a move sequence and nothing else.
-   */
-  get lastFrame() {
-    const csi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[a-zA-Z]`, "g");
-    for (let at = this.frames.length - 1; at >= 0; at -= 1) {
-      const text = (this.frames[at] ?? "").replace(csi, "");
-      if (text.trim()) return text;
-    }
-    return "";
-  }
-}
-
-const makeStdin = () => {
-  const stdin = new PassThrough() as PassThrough & {
-    isTTY: boolean;
-    setRawMode: (raw: boolean) => void;
-    ref: () => void;
-    unref: () => void;
-  };
-  stdin.isTTY = true;
-  stdin.setRawMode = () => undefined;
-  stdin.ref = () => undefined;
-  stdin.unref = () => undefined;
-  return stdin;
-};
-
-const esc = String.fromCharCode(27);
 const keys = {
   up: `${esc}[A`,
   down: `${esc}[B`,
@@ -64,13 +23,10 @@ interface Harness {
   press: (input: string) => Promise<void>;
 }
 
-/** Ink throttles frame writes to `maxFps: 30`; anything shorter reads the previous frame. */
-const nextFrame = () => Bun.sleep(80);
-
 const harnesses: Harness[] = [];
 
 const mount = (patch: Partial<CodeTuiSnapshot> = {}): Harness => {
-  const stdout = new FakeStdout();
+  const stdout = new FakeStdout(90, 16);
   const stdin = makeStdin();
   const calls: string[] = [];
   const snapshot: CodeTuiSnapshot = {
@@ -154,7 +110,6 @@ describe("CodeTuiApp", () => {
     const { stdout } = mount();
     await nextFrame();
     const frame = stdout.lastFrame;
-    // The prompt's own frame carries the session and the model, so neither costs a row of conversation.
     expect(frame).toContain("01a0bcae");
     expect(frame).toContain("4% of 1000k");
     expect(frame).toContain("add a comment module");
@@ -162,10 +117,6 @@ describe("CodeTuiApp", () => {
     expect(frame).toContain("enter send");
   });
 
-  /**
-   * The rail is under the prompt and above the model line, which is what makes it a status rather than a row
-   * of conversation: it stays put while the transcript scrolls past it.
-   */
   test("running sub-agents draw between the prompt and the model line", async () => {
     const { stdout } = mount({
       subagents: [

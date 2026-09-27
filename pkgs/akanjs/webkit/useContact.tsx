@@ -7,17 +7,10 @@ type PermissionStatus = {
   contacts: CapacitorPermissionState;
 };
 
-/** Capacitor contacts hook with permission checks and contact loading helpers. */
+/** `checkPermission` opens the app settings when contacts access is denied. */
 export const useContact = () => {
   const [permissions, setPermissions] = useState<PermissionStatus>({ contacts: "prompt" });
 
-  /**
-   * 최초로 킬 경우 권한은 prompt 상태이다.
-   * prompt 상태일 경우 권한을 요청한다.
-   * 권한이 denied 상태일 경우 설정으로 이동한다.
-   * 이후 state의 permission을 업데이트해야한다.
-   *
-   */
   const checkPermission = async () => {
     try {
       const { Contacts } = await loadCapacitorContacts();

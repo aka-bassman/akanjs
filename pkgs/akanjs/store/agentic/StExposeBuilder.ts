@@ -8,13 +8,7 @@ export interface StExposeMeta {
   report?: boolean;
 }
 
-/**
- * A read-only value past its description, waiting for the value itself. `.value()` is the one hook.
- *
- * The declared type is what makes the read safe: it typechecks what the component hands over and it decides how
- * the value is rendered, so a model's `hidden` and `secret` fields are stripped by the model that was named
- * rather than by whatever class the value still happens to carry.
- */
+/** `.value()` is the hook; the declared type, not the value's class, decides what the read masks. */
 export class StExposeBuilder<T extends AgentFieldType> {
   readonly #name: string | null;
   readonly #type: T;
@@ -28,15 +22,10 @@ export class StExposeBuilder<T extends AgentFieldType> {
     this.#meta = meta;
   }
 
-  /**
-   * A thunk is read when the agent reads, which is the difference that matters for a value assembled out of a ref
-   * the children fill in after this render — computing it here would publish whatever was there before they ran.
-   */
+  /** A thunk is evaluated when the agent reads, not at render. */
   value(value: AgentValueOf<T> | (() => AgentValueOf<T>) | null | undefined): void {
     const declared = useRef<{ key: string | null; name: string | null } | null>(null);
-    // Keyed on the name, not frozen: withholding it is how a conditional surface is written, so a value that
-    // becomes readable later has to publish and one that goes away has to stop. `publishable` still reports once
-    // per name rather than once per render.
+    // Re-resolved on a name change, not frozen: a withheld name that appears later must publish, and vice versa.
     if (declared.current?.key !== this.#name)
       declared.current = {
         key: this.#name,

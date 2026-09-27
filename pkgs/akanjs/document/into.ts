@@ -10,6 +10,7 @@ import type { DocumentProjection } from "./types";
 
 export type CRUDEventType = "create" | "update" | "remove";
 export type SaveEventType = "save" | CRUDEventType;
+export type SaveEventListener<Doc> = (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>;
 
 interface DefaultMdlStats<
   TDocument,
@@ -24,14 +25,8 @@ interface DefaultMdlStats<
   pickById: (docId: string | undefined, projection?: _Projection) => Promise<TDocument>;
   sample: (query: _FilterQuery, size?: number) => Promise<TDocument[]>;
   sampleOne: (query: _FilterQuery) => Promise<TDocument | null>;
-  listenPre: (
-    eventType: SaveEventType,
-    listener: (doc: TDocument, type: CRUDEventType, previous?: TDocument) => PromiseOrObject<void>,
-  ) => () => void;
-  listenPost: (
-    eventType: SaveEventType,
-    listener: (doc: TDocument, type: CRUDEventType, previous?: TDocument) => PromiseOrObject<void>,
-  ) => () => void;
+  listenPre: (eventType: SaveEventType, listener: SaveEventListener<TDocument>) => () => void;
+  listenPost: (eventType: SaveEventType, listener: SaveEventListener<TDocument>) => () => void;
 }
 export interface UpdateResult {
   acknowledged: boolean;
@@ -143,10 +138,7 @@ export const into = <
   cnst: IntoConstantModel<T, _CapitalizedRefName, Raw, Insight>,
   loaderBuilder: _LoaderBuilder,
   ...addMdls: [...AddDbModels]
-): ModelCls<
-  IntoModelActions<T, _CapitalizedRefName, Doc, Raw, Insight, _Query, _Sort, _QueryOfDoc>,
-  ReturnType<_LoaderBuilder>
-> => {
+) => {
   const loaderInfoMap = loaderBuilder(makeLoaderBuilder<Doc>());
   const libsOnSchemaFns = addMdls.map((mdl) => mdl._onSchema);
   const DefaultModel = Object.assign(class DefaultModel {}, {
@@ -159,12 +151,10 @@ export const into = <
     },
   });
   applyMixins(DefaultModel, addMdls);
-  addMdls.forEach((mdl) => {
-    Object.entries(Object.getOwnPropertyDescriptors(mdl)).forEach(([name, descriptor]) => {
-      if (["length", "name", "prototype"].includes(name)) return;
-      Object.defineProperty(DefaultModel, name, { ...descriptor, configurable: true });
-    });
-  });
+  for (const mdl of addMdls)
+    for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(mdl)))
+      if (!["length", "name", "prototype"].includes(name))
+        Object.defineProperty(DefaultModel, name, { ...descriptor, configurable: true });
   return DefaultModel as unknown as ModelCls<
     IntoModelActions<T, _CapitalizedRefName, Doc, Raw, Insight, _Query, _Sort, _QueryOfDoc>,
     ReturnType<_LoaderBuilder>

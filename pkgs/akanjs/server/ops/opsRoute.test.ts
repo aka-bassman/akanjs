@@ -137,6 +137,13 @@ describe("OpsRoute", () => {
     expect((await call(route, "/_akan/ops/snapshot", { method: "POST", body: snapshotBody("../c") })).status).toBe(400);
   });
 
+  test("states the leading-character rule when it refuses an id", async () => {
+    const { route } = setup();
+    const res = await call(route, "/_akan/ops/snapshot", { method: "POST", body: snapshotBody(".c1") });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("^[A-Za-z0-9]");
+  });
+
   test("rate limits before verifying anything", async () => {
     const { route } = setup({ rateLimitPerMinute: 2 });
     await call(route, "/_akan/ops/info", { auth: false });

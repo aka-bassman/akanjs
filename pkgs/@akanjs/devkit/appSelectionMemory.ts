@@ -5,10 +5,7 @@ interface StoredSelection {
   apps: string[];
 }
 
-/**
- * The apps the last interactive pick chose, so `akan start` + Enter repeats a multi-app session instead
- * of re-ticking it. Advisory only: a missing, unreadable or stale file just means nothing is pre-ticked.
- */
+// Advisory only: a missing, unreadable or stale file just means nothing is pre-ticked.
 export class AppSelectionMemory {
   static pathIn(workspaceRoot: string) {
     return path.join(workspaceRoot, "local", ".akan", "lastStart.json");

@@ -1,33 +1,22 @@
-import { cn } from "akanjs/client";
+import { cn, usePage } from "akanjs/client";
 import type { ReactNode } from "react";
 import { AiOutlineLoading3Quarters } from "react-icons/ai";
 
 export interface SpinProps {
   className?: string;
-  /**
-   * Replaces the built-in icon. It carries its own color; the rotation is the wrapper's
-   * (`[&>svg]:animate-spin`), so the node needs no `animate-spin` of its own.
-   */
+  /** Replaces the built-in icon; the wrapper spins it, so it needs no `animate-spin` of its own. */
   indicator?: ReactNode;
   isCenter?: boolean;
   /** A named step, or the pixel size the icon is drawn at. */
   size?: "sm" | "md" | "lg" | number;
-  /**
-   * What the built-in icon is colored with. `"current"` inherits the surface's own foreground, which is what a
-   * filled surface needs — `text-primary/70` is legible on the app background and vanishes on a `bg-info` badge
-   * or a primary button. Every tone loses to a `text-*` in `className`.
-   */
+  /** `"current"` inherits the surface's foreground, for a filled surface; a `text-*` in `className` beats any tone. */
   tone?: "primary" | "current" | "muted";
 }
 
 const sizeClass = { sm: "text-sm", md: "text-xl", lg: "text-3xl" } as const;
 const toneClass = { primary: "text-primary/70", current: "", muted: "text-muted-foreground" } as const;
 
-/**
- * The color and the size sit on the wrapper, not on the icon: the icon is drawn at `1em` in `currentColor`, so
- * both cascade to it — and `className`, which is also the wrapper's, is merged last and therefore wins. On the
- * icon they would have been unreachable, which is what made every `text-*` and `size-*` a caller passed a no-op.
- */
+// Color and size sit on the wrapper and cascade to the `1em`/`currentColor` icon, so a caller's `className` wins.
 export const Spin = ({ className, indicator, isCenter, size = "md", tone = "primary" }: SpinProps) => (
   <div
     className={cn(
@@ -46,3 +35,24 @@ export const Spin = ({ className, indicator, isCenter, size = "md", tone = "prim
     )}
   </div>
 );
+
+export interface AreaProps {
+  className?: string;
+  indicator?: ReactNode;
+  children?: ReactNode;
+}
+
+export const Area = ({ className, indicator, children }: AreaProps) => {
+  const { l } = usePage();
+  return (
+    <div
+      className={cn(
+        "absolute inset-0 flex size-full flex-col items-center justify-center gap-2 rounded-[inherit] bg-background/60 backdrop-blur-sm",
+        className,
+      )}
+    >
+      {indicator ?? <Spin />}
+      <div className="text-foreground/60 text-sm">{children ?? l("base.processing")}</div>
+    </div>
+  );
+};

@@ -7,25 +7,21 @@ import { buttonRecipe } from "./Button";
 import { createOverridable, useUiRecipe } from "./UiOverride";
 
 export interface PaginationProps {
-  /** Current 1-based page number. */
+  /** 1-based. */
   currentPage: number;
-  /** Total number of items. */
   total: number;
-  /** Called with the selected 1-based page number. */
+  /** Called with the 1-based page. */
   onPageSelect: (page: number) => void;
-  /** Number of items per page. Used to calculate total pages. */
   itemsPerPage: number;
   /** Placeholder for a pager with no pages. */
   empty?: ReactNode;
   /** @deprecated Renamed to `empty` — it is a node, not a render function. */
   renderEmpty?: ReactNode;
-  /** The mark inside the step-back control. The button, its disabled state and its label stay the framework's. */
+  /** The mark inside the step-back control; the button itself stays the framework's. */
   prev?: ReactNode;
-  /** The mark inside the step-forward control. */
   next?: ReactNode;
-  /** The mark standing in for the pages a long pager skips. */
+  /** Stands in for the pages a long pager skips. */
   ellipsis?: ReactNode;
-  /** Class overrides for wrapper and page buttons. */
   classNames?: {
     className?: string;
     activePageNumClassName?: string;
@@ -121,8 +117,4 @@ export const DefaultPagination = ({
   );
 };
 
-/**
- * Pager. Resolves to a route-scoped override when a `page/**\/_overrides.tsx` in
- * the route's ancestry declares one, otherwise renders {@link DefaultPagination}.
- */
 export const Pagination = createOverridable("Pagination", DefaultPagination);

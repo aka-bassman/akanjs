@@ -72,7 +72,7 @@ export class InternalInfo<
     if (this.execFn) throw new Error("Query function is already set");
     this.internalArgs.push({
       argRef,
-      option: { ...option, ...(this.type === "resolveField" ? { nullable: true } : {}) }, //? for resolveField, nullable is true by default
+      option: { ...option, ...(this.type === "resolveField" ? { nullable: true } : {}) },
     });
     return this as unknown as InternalInfo<
       ReqType,

@@ -11,25 +11,15 @@ export interface AkanContextFilesOptions {
   cwd: string;
 }
 
-/**
- * The workspace-authored rules the engine's own discovery leaves behind.
- *
- * It walks the ancestors of `cwd` and takes **one** file per directory, first match of
- * `AGENTS.override.md · AGENTS.md · AGENTS.MD · CLAUDE.md · CLAUDE.MD` — so a repo carrying both an `AGENTS.md`
- * and a `CLAUDE.md` has the second one silently dropped, and a `.cursor/rules` tree is never looked at. Both
- * are files a developer wrote expecting an agent to obey them, and an agent that reads one editor's copy and
- * not another's follows rules that disagree with the repo it is in.
- *
- * Added rather than replaced: the base list keeps its order and its precedence, and these land after it.
- */
+// The engine takes only the first of `AGENTS.override.md · AGENTS.md · CLAUDE.md` per directory and never reads
+// `.cursor/rules`; this appends what it drops, after the engine's own list.
 export class AkanContextFiles {
   /** Cursor's frontmatter block, which is metadata for its own rule picker and not instruction for a model. */
   static readonly #frontmatter = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
   static extend(base: AkanContextFile[], options: AkanContextFilesOptions): AkanContextFile[] {
     const seen = new Set(base.map((file) => file.path));
-    // Keyed by content as well as by path, because the usual way to carry both names is to make one a symlink
-    // to the other or a one-line pointer at it — and the same guide twice is the same guide twice.
+    // Keyed by content too: the usual way to carry both names is a symlink or a one-line pointer.
     const contents = new Set(base.map((file) => file.content.trim()));
     const added: AkanContextFile[] = [];
     for (const file of [...AkanContextFiles.#claude(base), ...AkanContextFiles.#cursor(options)]) {
@@ -41,12 +31,7 @@ export class AkanContextFiles {
     return [...base, ...added];
   }
 
-  /**
-   * The `CLAUDE.md` beside an `AGENTS.md` the engine already took.
-   *
-   * Not beside an `AGENTS.override.md`: that name means "ignore what this directory would otherwise say", so
-   * reinstating the file it was written to displace is the one case where loading both is wrong.
-   */
+  // Not beside an `AGENTS.override.md`: that file exists to displace the others in its directory.
   static #claude(base: AkanContextFile[]) {
     const files: AkanContextFile[] = [];
     for (const file of base) {
@@ -60,14 +45,7 @@ export class AkanContextFiles {
     return files;
   }
 
-  /**
-   * Cursor's always-on rules, from the workspace root and from the session's own directory.
-   *
-   * Only `alwaysApply: true` is taken. Cursor's other three kinds are conditional — `globs` attaches a rule to
-   * the files it names, a bare `description` offers it for the model to ask for, and neither means the rule is
-   * loaded manually — so putting them in a system prompt applies rules their author scoped away. A file with
-   * no frontmatter at all is the `.cursorrules` shape, which was never conditional.
-   */
+  // Only `alwaysApply: true` or frontmatter-less rules: Cursor's `globs`/`description`/manual kinds are scoped.
   static #cursor(options: AkanContextFilesOptions) {
     const files: AkanContextFile[] = [];
     const roots = [...new Set([options.workspaceRoot, options.cwd])];
@@ -84,7 +62,6 @@ export class AkanContextFiles {
     return files;
   }
 
-  /** The rule body when the rule applies unconditionally, and nothing when its author scoped it. */
   static #applied(raw: string) {
     const match = AkanContextFiles.#frontmatter.exec(raw);
     if (!match) return raw;

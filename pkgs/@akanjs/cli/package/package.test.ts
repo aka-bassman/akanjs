@@ -1,23 +1,21 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
 import {
-  cleanupCliTempWorkspace,
   createCallRecorder,
   createFakeExecutor,
   createTempPackage,
+  tempRoots,
   writeJson,
   writeText,
 } from "@akanjs/devkit/testHelpers";
 import { PackageRunner } from "./package.runner";
 import { PackageScript } from "./package.script";
 
-const tempRoots: string[] = [];
-
-afterEach(async () => {
+afterEach(() => {
   CommandContainer.clear();
   mock.restore();
-  await Promise.all(tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)));
 });
+const track = tempRoots();
 
 describe("PackageScript", () => {
   test("returns package version through runner", async () => {
@@ -64,8 +62,7 @@ describe("PackageScript", () => {
 
 describe("PackageRunner", () => {
   test("builds package without build.ts by copying source and generating package metadata", async () => {
-    const { root, pkg } = await createTempPackage("@sample/tool");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
     await writeJson(`${root}/package.json`, {
       name: "repo",
       version: "1.0.0",
@@ -116,8 +113,7 @@ describe("PackageRunner", () => {
   });
 
   test("updates source package metadata before running custom build.ts", async () => {
-    const { root, pkg } = await createTempPackage("@sample/tool");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
     await writeJson(`${root}/package.json`, {
       name: "repo",
       version: "1.0.0",
@@ -156,8 +152,7 @@ describe("PackageRunner", () => {
   });
 
   test("keeps framework optional peers out of generated runtime dependencies", async () => {
-    const { root, pkg } = await createTempPackage("akanjs");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("akanjs"));
     await writeJson(`${root}/package.json`, {
       name: "repo",
       version: "1.0.0",
@@ -212,8 +207,7 @@ describe("PackageRunner", () => {
   });
 
   test("keeps an embedded workspace package out of generated dependencies", async () => {
-    const { root, pkg } = await createTempPackage("akanjs");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("akanjs"));
     await writeJson(`${root}/package.json`, {
       name: "repo",
       version: "1.0.0",
@@ -251,8 +245,7 @@ describe("PackageRunner", () => {
   });
 
   test("fails when a scanned dependency is missing from the root package.json", async () => {
-    const { root, pkg } = await createTempPackage("@sample/tool");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
     await writeText(`${root}/pkgs/@sample/tool/index.ts`, 'import "missing-package";\nexport const value = 1;\n');
     const runner = new PackageRunner();
 
@@ -261,9 +254,37 @@ describe("PackageRunner", () => {
     );
   });
 
+  test("leaves a package's local/ run artifacts out of the dist it builds", async () => {
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
+    await writeJson(`${root}/package.json`, { name: "repo", version: "1.0.0", description: "repo" });
+    await writeText(`${root}/pkgs/@sample/tool/index.ts`, "export const value = 1;\n");
+    await writeText(`${root}/pkgs/@sample/tool/local/testing.sqlite`, "db\n");
+
+    await new PackageRunner().buildPackage(pkg);
+
+    expect(await Bun.file(`${root}/dist/pkgs/@sample/tool/index.ts`).exists()).toBe(true);
+    expect(await Bun.file(`${root}/dist/pkgs/@sample/tool/local/testing.sqlite`).exists()).toBe(false);
+  });
+
+  test("rejects a dist package that would publish local/ run artifacts", async () => {
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
+    await writeJson(`${root}/dist/pkgs/@sample/tool/package.json`, {
+      name: "@sample/tool",
+      version: "1.2.3",
+      publishConfig: { access: "public" },
+    });
+    await writeText(`${root}/dist/pkgs/@sample/tool/README.md`, "# Tool\n");
+    await writeText(`${root}/dist/pkgs/@sample/tool/README.ko.md`, "# Tool KO\n");
+    pkg.workspace.spawn = (async () =>
+      JSON.stringify([
+        { files: [{ path: "package.json" }, { path: "local/testing.sqlite" }, { path: "local/run.log" }], size: 9 },
+      ])) as never;
+
+    await expect(new PackageRunner().verifyDistPackage(pkg)).rejects.toThrow("local/");
+  });
+
   test("verifies dist package metadata with npm pack dry-run", async () => {
-    const { root, pkg } = await createTempPackage("@sample/tool");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
     await writeJson(`${root}/dist/pkgs/@sample/tool/package.json`, {
       name: "@sample/tool",
       version: "1.2.3",
@@ -283,8 +304,7 @@ describe("PackageRunner", () => {
   });
 
   test("rejects dist package bins that still point at TypeScript sources", async () => {
-    const { root, pkg } = await createTempPackage("@sample/tool");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
     await writeJson(`${root}/dist/pkgs/@sample/tool/package.json`, {
       name: "@sample/tool",
       version: "1.2.3",
@@ -299,14 +319,9 @@ describe("PackageRunner", () => {
     );
   });
 
-  /**
-   * Writes a dist tree that imports its own subpaths, the way `@akanjs/devkit` does. `exports` targets
-   * are matched exactly by Bun, so a wildcard of `"./*": "./*"` reaches neither `executors.ts` nor
-   * `frontendBuild/index.ts` — invisible in the monorepo, where tsconfig `paths` probes both.
-   */
+  // Imports its own subpaths like `@akanjs/devkit`; Bun matches `exports` exactly, so `"./*": "./*"` reaches neither.
   const writeSelfImportingDist = async (exports: Record<string, unknown>) => {
-    const { root, pkg } = await createTempPackage("@sample/tool");
-    tempRoots.push(root);
+    const { root, pkg } = track(await createTempPackage("@sample/tool"));
     const dist = `${root}/dist/pkgs/@sample/tool`;
     await writeJson(`${dist}/package.json`, {
       name: "@sample/tool",
@@ -352,8 +367,7 @@ describe("PackageRunner", () => {
       "./*": "./*.ts",
     });
 
-    // Passing means the comment and the `.test.ts` fixture above were both ignored: each names a
-    // subpath that resolves to nothing, and neither is an import a consumer would ever run.
+    // Passing means the comment and the `.test.ts` fixture above, which name unresolvable subpaths, were ignored.
     await expect(new PackageRunner().verifyDistPackage(pkg)).resolves.toMatchObject({ name: "@sample/tool" });
   });
 });

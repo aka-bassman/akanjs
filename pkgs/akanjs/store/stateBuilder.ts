@@ -41,12 +41,6 @@ export interface ComputedMeta {
   equals: (a: any, b: any) => boolean;
 }
 
-/**
- * One model's form-draft wiring, keyed by the form state key.
- *
- * The draft is not a builder-declared state — it comes with every model store — so the metadata is registered
- * where `createDatabaseState` runs rather than resolved out of a `persist()` marker.
- */
 export interface DraftMeta {
   refName: string;
   formKey: string;
@@ -158,14 +152,7 @@ export interface DerivedStateBuilder<WritableState> {
 
 const draftMetaByRefName = new Map<string, DraftMeta>();
 
-/**
- * The one `DraftMeta` for a model, memoized.
- *
- * Every field of it is derived from the refName, so two stores for the same model describe the same thing. They
- * have to describe it with the *same object*, though: an app store that extends a lib store for one model carries
- * the lib's copy and registers its own, and both reach `mergeDerivedMeta` — where an entry is a conflict only when
- * two declarations disagree, which is decided by identity.
- */
+// Memoized: `mergeDerivedMeta` decides a conflict by identity, and a lib and an app store register one model twice.
 export const draftMetaOf = (refName: string): DraftMeta => {
   const cached = draftMetaByRefName.get(refName);
   if (cached) return cached;
@@ -192,20 +179,12 @@ export const mergeDerivedMeta = (...metas: (StateDerivedMeta | undefined)[]): St
     mergeMetaRecord(merged.search, meta.search);
     mergeMetaRecord(merged.computed, meta.computed);
   }
-  // Derived by construction rather than unioned: `derivedKeys` is exactly the keys of these two records, and
-  // rebuilding it here is what keeps an entry that merged cleanly above from being rejected as a duplicate below.
+  // Rebuilt from the two records rather than unioned, so a cleanly merged entry is never read as a duplicate.
   for (const key of [...Object.keys(merged.search), ...Object.keys(merged.computed)]) merged.derivedKeys.add(key);
   return merged;
 };
 
-/**
- * Copies `source` over `target`, rejecting only a genuine conflict.
- *
- * The same key arriving twice is normal: a store lists another as a lib store, so it already carries that store's
- * metadata when both are registered and `StoreRegistry.merge` sees each of them. What arrives then is the very
- * object the first declaration produced, because merging copies the reference. Two *different* objects under one
- * key are two declarations claiming the same state, which is the mistake this is here to catch.
- */
+// The same object twice is a lib store merged again (merging copies references); a different one is a real conflict.
 const mergeMetaRecord = <T>(target: Record<string, T>, source: Record<string, T>) => {
   for (const [key, value] of Object.entries(source)) {
     if (key in target) {

@@ -6,14 +6,12 @@ export interface InternalArg<ArgType = unknown> {
 }
 export type InternalArgCls<ArgType = unknown> = Cls<InternalArg<ArgType>>;
 
-/** Injects the current Bun request into an endpoint/internal handler. */
 export class Req implements InternalArg {
   getArg(context: SignalContext): Bun.BunRequest {
     const httpContext = context.getHttpContext();
     return httpContext.req;
   }
 }
-/** Injects the current mutable response context into an endpoint/internal handler. */
 export class Res implements InternalArg {
   getArg(context: SignalContext) {
     const httpContext = context.getHttpContext();
@@ -21,20 +19,14 @@ export class Res implements InternalArg {
   }
 }
 
-/** Injects whatever the account middleware resolved for this call, or `null` for an anonymous one. */
+/** Whatever the account middleware resolved for this call, or `null` for an anonymous one. */
 export class CallerAccount implements InternalArg<unknown> {
   getArg(context: SignalContext): unknown {
     return context.get("account") ?? null;
   }
 }
 
-/**
- * Injects the caller's IP, as the nearest proxy recorded it rather than as the socket peer reports it.
- * Behind the federation gateway every peer is the gateway, so an endpoint that reads `remoteAddress` sees
- * `127.0.0.1` for every caller — this reads the forwarded headers first and falls back to the peer only
- * when nothing proxied the call. IPv4 comes back unwrapped from `::ffff:`, so it can address a `udp4`
- * socket. `null` when no proxy recorded one and the transport has no peer.
- */
+/** The caller's IP as the nearest proxy recorded it (see `SignalContext.getClientIp`), `null` when unknown. */
 export class Ip implements InternalArg<string | null> {
   getArg(context: SignalContext): string | null {
     return context.getClientIp();
@@ -42,10 +34,8 @@ export class Ip implements InternalArg<string | null> {
 }
 
 /**
- * Injects websocket state, this connection's id, and subscription hooks into message/pubsub handlers.
- * `socketId` is the one `AppWsData` minted at the handshake, so a handler never reads `ws.data` to
- * tell two callers apart — and never mints an id of its own, which would not match the room bookkeeping.
- * `on`/`off` register cleanup that runs when the room is unsubscribed or the socket closes.
+ * `socketId` is the one minted at the handshake — never mint your own, it would not match the room bookkeeping.
+ * `on`/`off` register cleanup for unsubscribe or socket close.
  */
 export class Ws implements InternalArg {
   getArg(context: SignalContext) {

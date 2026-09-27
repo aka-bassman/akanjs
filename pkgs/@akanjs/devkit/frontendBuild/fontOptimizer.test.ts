@@ -1,17 +1,16 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { App } from "../commandDecorators";
+import { tempDirs } from "../testHelpers";
 import { FontOptimizer } from "./fontOptimizer";
 
 const SOURCE_FONT = path.resolve(import.meta.dir, "../../../../libs/shared/public/fonts/Assistant-Regular.woff2");
 
-const tempRoots: string[] = [];
+const tempRoot = tempDirs("akan-devkit-font-");
 
 const makeApp = async (layoutSource: string) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-devkit-font-"));
-  tempRoots.push(root);
+  const root = await tempRoot();
   const cwdPath = path.join(root, "apps/demo");
   await mkdir(path.join(cwdPath, "page"), { recursive: true });
   await mkdir(path.join(cwdPath, "public/fonts"), { recursive: true });
@@ -59,10 +58,6 @@ const chainFontList = (extra = "") => `[\n    ${chainFontEntry(extra)},\n  ]`;
 
 const optimize = (app: App) => new FontOptimizer(app, "start").optimize();
 
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
-
 describe("FontOptimizer cache", () => {
   test("reuses subset output instead of resubsetting an unchanged font", async () => {
     const { app } = await makeApp(layoutWith());
@@ -76,7 +71,6 @@ describe("FontOptimizer cache", () => {
     expect(second.files).toEqual(first.files);
     expect(second.css).toBe(first.css);
     expect(second.fonts).toEqual(first.fonts);
-    // The output was reused, not rewritten — the whole point of the cache.
     expect((await stat(second.files[0])).mtimeMs).toBe(writtenAt);
   });
 
@@ -160,8 +154,6 @@ describe("FontOptimizer discovery", () => {
     expect(second.css).toContain(".font-brand");
   });
 
-  // A list the build cannot read subsets nothing while the runtime still preloads /_akan/fonts, so the 404s
-  // have to be announced at build time rather than found in a browser console.
   test("warns when the chain is handed a font list it cannot read", async () => {
     const { app, warnings } = await makeApp(chainLayoutWith("brandFonts"));
 

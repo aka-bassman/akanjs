@@ -12,9 +12,8 @@ import { type PostgresDatabase, SqlDocumentStore, type SqliteDatabase } from "./
 import { searchConfConstant, searchConfDatabase } from "./search.conformance.fixture";
 import { DEFAULT_TOKENIZER, Fts5SearchEngine, PostgresSearchEngine, SearchIndex } from "./searchIndex";
 
-// Every case states what fts5 answers, which is the contract: SQLite is the mode text search was built on, and a
-// Postgres app must find the same documents for the same text. Rank may differ — `ts_rank` has no document-frequency
-// term — so order is asserted only where the column weights alone decide it.
+// fts5's answers are the contract Postgres must match document for document; rank may differ (`ts_rank` has no
+// document-frequency term), so order is asserted only where the column weights alone decide it.
 
 const instanceEntry = path.join(import.meta.dir, "search.conformance.instance.ts");
 

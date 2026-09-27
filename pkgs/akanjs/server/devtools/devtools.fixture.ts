@@ -6,6 +6,7 @@ import { AkanLib } from "../akanLib";
 import { AkanOption } from "../akanOption";
 import type { DiLifecycle } from "../di/diLifecycle";
 import {
+  makeSqliteEnv,
   ServerResolverTestEndpoint,
   ServerResolverTestInternal,
   ServerResolverTestServerSignal,
@@ -15,7 +16,6 @@ import {
   serverResolverTestServiceModel,
 } from "../resolver/resolver.contract.fixture";
 
-/** Boots a real `DiLifecycle` over the resolver contract fixture so the devtools serializers see live wiring. */
 export class DevtoolsFixture {
   static async boot(serverMode: "federation" | "batch" | "all" = "all"): Promise<DevtoolsFixture> {
     process.env.AKAN_PUBLIC_APP_NAME = "devtools";
@@ -28,27 +28,7 @@ export class DevtoolsFixture {
     const { DiLifecycle } = await import("../di/diLifecycle");
 
     const workspaceRoot = await mkdtemp(join(tmpdir(), "akan-devtools-"));
-    const env = {
-      workspaceRoot,
-      database: {
-        sqlite: {
-          filePath: join(workspaceRoot, "akan.db"),
-          journalMode: "WAL",
-          busyTimeoutMs: 1000,
-          synchronous: "NORMAL",
-          foreignKeys: true,
-        },
-      },
-      solid: {
-        filePath: join(workspaceRoot, "solid.db"),
-        journalMode: "WAL",
-        busyTimeoutMs: 1000,
-        synchronous: "NORMAL",
-        cleanupIntervalMs: 60_000,
-        queuePollIntervalMs: 60_000,
-        queueLeaseMs: 30_000,
-      },
-    } satisfies BackendEnv & { workspaceRoot: string };
+    const env = makeSqliteEnv(workspaceRoot);
 
     const lib = new AkanLib("devtoolsTest", {
       databases: [
@@ -96,5 +76,4 @@ export class DevtoolsFixture {
   }
 }
 
-/** The refName every fixture model, service, and signal is registered under. */
 export const fixtureRefName = "serverResolverTestItem";

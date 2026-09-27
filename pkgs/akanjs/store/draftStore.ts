@@ -11,13 +11,9 @@ const MAX_DRAFT_CHARS = 256_000;
 const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_DRAFTS_PER_IDENTITY = 30;
 
-/**
- * The claims a re-issued token rewrites. Hashing them would rotate the identity on every silent refresh and
- * orphan the draft the user is still typing into.
- */
+// Rewritten by every silent token refresh; hashing them would orphan the draft being typed.
 const VOLATILE_CLAIMS = ["iat", "exp", "nbf", "jti"] as const;
 
-/** The fields a form carries from its row rather than from what the user typed. */
 const RECORD_STAMPS = new Set(["createdAt", "updatedAt", "removedAt"]);
 
 export interface DraftRecord {
@@ -37,12 +33,7 @@ interface NewScopeInput {
   routePath: string;
 }
 
-/**
- * Where a form draft lives and what identifies it.
- *
- * Every method that touches storage is async even though localStorage is not, so the backend can move to
- * IndexedDB — which a model with a large `visual` field will eventually force — without a caller changing.
- */
+/** Storage methods are async although localStorage is not, so the backend can move to IndexedDB unchanged. */
 export class DraftStore {
   static #warnedKeys = new Set<string>();
   static #persistenceRequested = false;
@@ -63,7 +54,6 @@ export class DraftStore {
     return (hash >>> 0).toString(16).padStart(8, "0");
   }
 
-  /** Key-sorted JSON, so two objects that differ only in insertion order hash the same. */
   static #stableStringify(value: unknown): string {
     if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
     if (Array.isArray(value)) return `[${value.map((item) => DraftStore.#stableStringify(item)).join(",")}]`;
@@ -74,13 +64,7 @@ export class DraftStore {
     return `{${entries.join(",")}}`;
   }
 
-  /**
-   * A seed reduced to what actually names a context: primitive leaves and relation ids.
-   *
-   * Dates are dropped because a `default: () => dayjs()` in the seed would give the same form a different key on
-   * every open, and a relation collapses to its id because the rest of the object is display data the caller may
-   * or may not have hydrated.
-   */
+  // Dates are dropped (a date default would rotate the key) and relations collapse to ids (the rest is display data).
   static #canonicalSeed(value: unknown, depth = 0): unknown {
     if (value === null || value === undefined || typeof value === "function") return undefined;
     if (value instanceof Date || isDayjs(value)) return undefined;
@@ -96,13 +80,7 @@ export class DraftStore {
     return Object.fromEntries(entries);
   }
 
-  /**
-   * Who this browser is holding a draft for, derived from the auth token rather than from a domain field.
-   *
-   * `Account` guarantees `appName` and `environment` and nothing else — `userId` lives in the app's own `AddData`,
-   * so naming it here would key the draft on a field that may not exist and silently share one scope between two
-   * signed-in users. Hashing the whole payload picks up whatever the app did put there under whatever name.
-   */
+  /** Hashes the whole JWT payload: the claim naming the user lives in the app's own `AddData`, not in `Account`. */
   static identity(): string {
     if (typeof window === "undefined") return "anon";
     const jwt = getAuthToken();
@@ -112,7 +90,6 @@ export class DraftStore {
       for (const claim of VOLATILE_CLAIMS) delete payload[claim];
       return DraftStore.#hash8(DraftStore.#stableStringify(payload));
     } catch {
-      // An unparseable token is no worse than none: both mean "we cannot tell who this is".
       return "anon";
     }
   }
@@ -141,17 +118,11 @@ export class DraftStore {
     return immerify(modelRef, new modelRef().set(plain) as object);
   }
 
-  /** What the dirty check compares. Cheap enough to take once per debounce window, not once per keystroke. */
   static formHash(refName: string, form: object): string {
     return DraftStore.#hash8(DraftStore.#stableStringify(DraftStore.encodeForm(refName, form)));
   }
 
-  /**
-   * What two encoded forms holding the same values hash to, whatever record stamps they carry.
-   *
-   * The stamps come from the row rather than from the user, so a save the form made itself moves `updatedAt` and
-   * would otherwise make a draft look different from the record that already holds it.
-   */
+  /** Ignores the record stamps, which a form's own save moves. */
   static contentHash(encoded: Record<string, unknown>): string {
     const content = Object.fromEntries(Object.entries(encoded).filter(([key]) => !RECORD_STAMPS.has(key)));
     return DraftStore.#hash8(DraftStore.#stableStringify(content));
@@ -176,7 +147,6 @@ export class DraftStore {
       }
       return record;
     } catch {
-      // A draft that cannot be parsed is gone; leaving it behind only fails again on every open.
       await DraftStore.remove(key);
       return null;
     }
@@ -195,7 +165,7 @@ export class DraftStore {
       DraftStore.#requestPersistence();
       return;
     } catch {
-      // Quota. This feature is entitled to reclaim its own oldest draft and nothing else on the origin.
+      // Quota: this may evict its own oldest draft and nothing else on the origin.
     }
     if (!(await DraftStore.#evictOldest(key))) return;
     try {
@@ -245,16 +215,7 @@ export class DraftStore {
     }
   }
 
-  /**
-   * Clears what a previous user left on this device, on noticing that the signed-in user changed.
-   *
-   * Called at boot and whenever a form arms a draft, which covers both a reload and a sign-out followed by a
-   * sign-in inside the same page session. The gap is a sign-out with no sign-in and no reload after it: those
-   * drafts sit under a key the next user's identity cannot address, and the TTL sweep takes them.
-   *
-   * A sign-out on its own reads as `anon`, and `anon` is never wiped — nothing distinguishes two anonymous
-   * users, so there is no previous one to clear.
-   */
+  /** Removes the previous identity's drafts once the signed-in identity changes; `anon`'s are never removed. */
   static async reconcileIdentity(): Promise<void> {
     const storage = DraftStore.#storage();
     if (!storage) return;
@@ -266,26 +227,19 @@ export class DraftStore {
       if (last === current) return;
       storage.setItem(key, current);
     } catch {
-      // Without the bookkeeping key there is nothing to compare, so there is nothing to reconcile.
       return;
     }
     if (last && last !== "anon") await DraftStore.removeIdentity(last);
   }
 
-  /**
-   * Asks the browser to stop counting this origin as evictable.
-   *
-   * A WKWebView drops "best effort" storage under pressure, which is exactly the moment a user's unsaved work
-   * would disappear. Requested once, after a write has actually succeeded — asking before there is anything to
-   * protect can surface a permission prompt for nothing.
-   */
+  // WKWebView evicts best-effort storage under pressure; asked after a real write, since asking can prompt.
   static #requestPersistence() {
     if (DraftStore.#persistenceRequested) return;
     DraftStore.#persistenceRequested = true;
     try {
       void navigator.storage?.persist?.().catch(() => undefined);
     } catch {
-      // Neither webview guarantees the API; a draft that can be evicted is still better than no draft.
+      // Neither webview guarantees the API.
     }
   }
 
@@ -317,7 +271,6 @@ export class DraftStore {
       const time = new Date((JSON.parse(raw) as DraftRecord).savedAt).getTime();
       return Number.isNaN(time) ? null : time;
     } catch {
-      // Unreadable means unrestorable, and the caller treats null as expired.
       return null;
     }
   }

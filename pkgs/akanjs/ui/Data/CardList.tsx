@@ -1,7 +1,6 @@
 "use client";
 import type { DataList } from "akanjs/base";
 import { cn, type DataAction, type DataColumn } from "akanjs/client";
-import { capitalize } from "akanjs/common";
 import type { FilterInstance } from "akanjs/document";
 import type { FetchInitForm, SliceMeta } from "akanjs/fetch";
 import { st } from "akanjs/store";
@@ -9,6 +8,7 @@ import { type ReactNode, useEffect } from "react";
 import { Empty } from "../Empty";
 import { Loading } from "../Loading";
 import { Model } from "../Model";
+import { sliceNamesOf } from "../sliceNamesOf";
 import DataItem from "./Item";
 import DataPagination from "./Pagination";
 
@@ -58,23 +58,8 @@ export default function CardList<
 }: CardListProps<T, Input, Full, Light, Filter>) {
   const storeUse = st.use as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
-  const storeGet = st.get as unknown as <T>() => { [key: string]: T };
   const { refName, sliceName } = slice;
-  const [modelName, modelClassName] = [refName, capitalize(refName)];
-  const names = {
-    model: modelName,
-    modelId: `${modelName}Id`,
-    modelList: `${modelName}List`,
-    modelListLoading: `${modelName}ListLoading`,
-    limitOfModel: `limitOf${modelClassName}`,
-    initModel: `init${modelClassName}`,
-  };
-  const namesOfSlice = {
-    modelList: sliceName.replace(names.model, names.modelList),
-    modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-    limitOfModel: sliceName.replace(names.model, names.limitOfModel),
-    initModel: sliceName.replace(names.model, names.initModel),
-  };
+  const { names, namesOfSlice } = sliceNamesOf(refName, sliceName);
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
   const limitOfModel = storeUse[namesOfSlice.limitOfModel]() as number;

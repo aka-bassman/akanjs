@@ -6,15 +6,41 @@ import type {
   CapacitorKeyboardInfo,
   CapacitorKeyboardModule,
 } from "./capacitor";
-import { debugFrame } from "./frameDebug";
 
 type DeviceInfo = CapacitorDeviceInfo;
 type Keyboard = CapacitorKeyboardModule["Keyboard"];
 type Haptics = CapacitorHapticsModule["Haptics"];
 type ImpactStyle = CapacitorHapticsModule["ImpactStyle"];
 type ProcessEnvLike = { env?: Record<string, string | undefined> };
+type DebugPayload = Record<string, unknown>;
 
 const globalWithProcess = globalThis as typeof globalThis & { process?: ProcessEnvLike };
+
+const debugSessionId = Math.random().toString(36).slice(2, 8);
+let debugSeq = 0;
+
+const isFrameDebugEnabled = () => {
+  if (typeof window === "undefined") return false;
+  const windowWithTarget = window as typeof window & { __AKAN_MOBILE_TARGET__?: unknown };
+  const search = new URLSearchParams(window.location.search);
+  return (
+    Boolean(windowWithTarget.__AKAN_MOBILE_TARGET__) ||
+    search.has("akanMobileTarget") ||
+    search.get("akanFrameDebug") === "1" ||
+    window.localStorage.getItem("akan:debug:frame") === "1"
+  );
+};
+
+export function debugFrame(event: string, payload: DebugPayload = {}) {
+  if (!isFrameDebugEnabled()) return;
+  debugSeq += 1;
+  const details = {
+    href: window.location.href,
+    now: Math.round(performance.now()),
+    ...payload,
+  };
+  console.info(`[akan:frame:${debugSessionId}:${debugSeq}] ${event}`, details, JSON.stringify(details));
+}
 
 interface DeviceInitOption {
   lang: string;
@@ -62,6 +88,11 @@ export const isMobileDevice = () => {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 };
 
+const langInPath = (pathname: string, supportLanguages: string[] | readonly string[]) => {
+  const predefinedLangPath = pathname.split("/")[1]?.split("?")[0];
+  return supportLanguages.find((language) => language === predefinedLangPath);
+};
+
 const createWebDevice = ({
   lang,
   supportLanguages,
@@ -70,10 +101,8 @@ const createWebDevice = ({
   supportLanguages: string[] | readonly string[];
 }) => {
   const pathname = typeof window === "undefined" ? "" : window.location.pathname;
-  const predefinedLangPath = pathname.split("/")[1]?.split("?")[0];
-  const predefinedLang = supportLanguages.find((language) => language === predefinedLangPath);
   return new Device({
-    lang: lang ?? predefinedLang ?? getBrowserLanguage(),
+    lang: lang ?? langInPath(pathname, supportLanguages) ?? getBrowserLanguage(),
     info: { platform: "web", isVirtual: false, osVersion: "" },
     topSafeArea: 0,
     bottomSafeArea: 0,
@@ -83,7 +112,6 @@ const createWebDevice = ({
   });
 };
 
-/** Capacitor-aware device helper for platform info, safe areas, keyboard, haptics, and scroll state. */
 export class Device {
   static instance: Device | null = null;
   static async load({
@@ -95,9 +123,8 @@ export class Device {
   }) {
     if (Device.instance) return Device.instance;
     if (getRenderMode() !== "csr" || !isNativeTarget()) {
-      const device = createWebDevice({ lang, supportLanguages });
-      Device.instance = device;
-      return device;
+      Device.instance = createWebDevice({ lang, supportLanguages });
+      return Device.instance;
     }
     const { loadCapacitorDevice, loadCapacitorHaptics, loadCapacitorKeyboard, loadCapacitorSafeArea } = await import(
       "./capacitor"
@@ -116,10 +143,8 @@ export class Device {
       },
     ] = await Promise.all([CapacitorDevice.getInfo(), CapacitorDevice.getLanguageCode(), SafeArea.getSafeAreaInsets()]);
     if (info.platform === "ios") await Keyboard.setResizeMode?.({ mode: "none" });
-    const predefinedLangPath = window.location.pathname.split("/")[1]?.split("?")[0];
-    const predefinedLang = supportLanguages.find((language) => language === predefinedLangPath);
-    const device = new Device({
-      lang: lang ?? predefinedLang ?? languageCode,
+    Device.instance = new Device({
+      lang: lang ?? langInPath(window.location.pathname, supportLanguages) ?? languageCode,
       info,
       topSafeArea,
       bottomSafeArea,
@@ -127,8 +152,7 @@ export class Device {
       haptics: Haptics,
       impactStyle: ImpactStyle,
     });
-    Device.instance = device;
-    return device;
+    return Device.instance;
   }
   static getDevice() {
     if (!Device.instance) throw new Error("Device is not loaded yet");
@@ -174,18 +198,14 @@ export class Device {
       currentHeight = height;
       onKeyboardChanged(height);
     };
-    void this.#keyboard.addListener("keyboardWillShow", (keyboard: CapacitorKeyboardInfo) => {
-      emitKeyboardHeight("keyboardWillShow", keyboard.keyboardHeight);
-    });
-    void this.#keyboard.addListener("keyboardDidShow", (keyboard: CapacitorKeyboardInfo) => {
-      emitKeyboardHeight("keyboardDidShow", keyboard.keyboardHeight);
-    });
-    void this.#keyboard.addListener("keyboardWillHide", () => {
-      emitKeyboardHeight("keyboardWillHide", 0);
-    });
-    void this.#keyboard.addListener("keyboardDidHide", () => {
-      emitKeyboardHeight("keyboardDidHide", 0);
-    });
+    for (const event of ["keyboardWillShow", "keyboardDidShow"])
+      void this.#keyboard.addListener(event, (keyboard: CapacitorKeyboardInfo) => {
+        emitKeyboardHeight(event, keyboard.keyboardHeight);
+      });
+    for (const event of ["keyboardWillHide", "keyboardDidHide"])
+      void this.#keyboard.addListener(event, () => {
+        emitKeyboardHeight(event, 0);
+      });
   }
   unlistenKeyboardChanged() {
     if (this.info.platform === "web") return;
@@ -197,24 +217,12 @@ export class Device {
       return;
     }
     const handleImpact = {
-      light: async () => {
-        await this.#haptics.impact({ style: this.#impactStyle.Light });
-      },
-      medium: async () => {
-        await this.#haptics.impact({ style: this.#impactStyle.Medium });
-      },
-      heavy: async () => {
-        await this.#haptics.impact({ style: this.#impactStyle.Heavy });
-      },
-      selectionStart: async () => {
-        await this.#haptics.selectionStart();
-      },
-      selectionChanged: async () => {
-        await this.#haptics.selectionChanged();
-      },
-      selectionEnd: async () => {
-        await this.#haptics.selectionEnd();
-      },
+      light: () => this.#haptics.impact({ style: this.#impactStyle.Light }),
+      medium: () => this.#haptics.impact({ style: this.#impactStyle.Medium }),
+      heavy: () => this.#haptics.impact({ style: this.#impactStyle.Heavy }),
+      selectionStart: () => this.#haptics.selectionStart(),
+      selectionChanged: () => this.#haptics.selectionChanged(),
+      selectionEnd: () => this.#haptics.selectionEnd(),
     };
     await handleImpact[type]();
   }

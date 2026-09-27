@@ -1,9 +1,19 @@
 import { describe, expect, test } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { AkanMetricsReport } from "akanjs/service";
 import { LruTtlCache } from "./cachePolicy";
 import { shouldRenderLocaleAlternates } from "./head";
-import type { AkanRouterStateV1, AkanRscPatchMetadata } from "./routeState";
 import {
+  type AkanRouterStateV1,
+  type AkanRscPatchMetadata,
+  appendAkanRouterStateRequestHeaders,
+  createAkanRouterState,
+} from "./routeState";
+import { RouteTreeBuilder } from "./routeTreeBuilder";
+import {
+  type CachedRscReplayMessage,
   type CachedRscResult,
   createCachedRscPatchMetadata,
   createRscPatchCacheEntry,
@@ -11,11 +21,13 @@ import {
   invalidateCachedRscResults,
   isCachedRscPatchMetadataCompatible,
   isRscPatchResultCacheEligible,
+  replayCachedRscResult,
   resolveRscWorkerPatchCacheEntry,
   shouldCollectRscWorkerRenderChunks,
   shouldStoreRscWorkerPatchResult,
   shouldUseRscWorkerFullResultCache,
 } from "./rscWorkerCache";
+import { pages as headFixturePages } from "./rscWorkerHead.fixture";
 import {
   createIdempotentRscRenderCancel,
   createRscHostRenderStream,
@@ -25,8 +37,10 @@ import {
   nextRscHostPendingChunkCount,
   projectRscWorkerProcessMetrics,
   type RscPending,
+  RscWorker,
 } from "./rscWorkerHost";
-import { type CachedRscReplayMessage, replayCachedRscResult } from "./rscWorkerReplay";
+import type { RscTraceMetadata } from "./ssrTypes";
+import type { BaseBuildArtifact } from "./types";
 
 const decoder = new TextDecoder();
 
@@ -95,9 +109,14 @@ function createHostRenderHarness(options: { maxPendingChunks?: number; signal?: 
   };
 }
 
+const streamResultOf = async (harness: ReturnType<typeof createHostRenderHarness>) => {
+  const result = await harness.result;
+  expect(result.type).toBe("stream");
+  if (result.type !== "stream") throw new Error("expected stream result");
+  return result;
+};
+
 describe("RscWorker process metric projection", () => {
-  // Every field `ProcessMetricsCollector.collect` samples from the live process. None may survive
-  // the projection under its own name, or it overwrites the replica's when `AkanServer` merges.
   const processLevelKeys = [
     "role",
     "pid",
@@ -147,8 +166,6 @@ describe("RscWorker process metric projection", () => {
 
   test("leaves the replica's own process sample intact through the merge AkanServer performs", () => {
     const projected = projectRscWorkerProcessMetrics({ role: "rsc-worker", pid: 4242, rssBytes: 999 });
-    // Mirrors `collect({ role, ...webRouter.getMetrics() })` — `extra` is spread last, so anything
-    // the worker leaks here wins over the replica's live sample.
     const replicaReport: AkanMetricsReport = { pid: 1, rssBytes: 100, role: "federation", ...projected };
     expect(replicaReport.pid).toBe(1);
     expect(replicaReport.rssBytes).toBe(100);
@@ -191,9 +208,7 @@ describe("RscWorker host render stream", () => {
 
     expect(harness.sendCount()).toBe(1);
     harness.pending().onMeta?.({ theme: "dark", status: 404 });
-    const result = await harness.result;
-    expect(result.type).toBe("stream");
-    if (result.type !== "stream") throw new Error("expected stream result");
+    const result = await streamResultOf(harness);
 
     harness.pending().onChunk(new TextEncoder().encode("flight"));
     harness.pending().onEnd();
@@ -208,9 +223,7 @@ describe("RscWorker host render stream", () => {
     const harness = createHostRenderHarness();
 
     harness.pending().onChunk(new TextEncoder().encode("early"));
-    const result = await harness.result;
-    expect(result.type).toBe("stream");
-    if (result.type !== "stream") throw new Error("expected stream result");
+    const result = await streamResultOf(harness);
 
     harness.pending().onEnd();
 
@@ -225,9 +238,7 @@ describe("RscWorker host render stream", () => {
     const reason = new Error("client disconnected");
 
     harness.pending().onMeta?.({});
-    const result = await harness.result;
-    expect(result.type).toBe("stream");
-    if (result.type !== "stream") throw new Error("expected stream result");
+    const result = await streamResultOf(harness);
 
     await result.stream.cancel(reason);
     result.cancel(new Error("duplicate cancel"));
@@ -253,9 +264,7 @@ describe("RscWorker host render stream", () => {
     const harness = createHostRenderHarness({ maxPendingChunks: 1 });
 
     harness.pending().onChunk(new Uint8Array([1]));
-    const result = await harness.result;
-    expect(result.type).toBe("stream");
-    if (result.type !== "stream") throw new Error("expected stream result");
+    const result = await streamResultOf(harness);
     const reader = result.stream.getReader();
     const closed = reader.closed.catch((streamError: unknown) => streamError);
 
@@ -293,9 +302,7 @@ describe("RscWorker host render stream", () => {
     const harness = createHostRenderHarness();
 
     harness.pending().onChunk(new TextEncoder().encode("shell"));
-    const result = await harness.result;
-    expect(result.type).toBe("stream");
-    if (result.type !== "stream") throw new Error("expected stream result");
+    const result = await streamResultOf(harness);
 
     harness.pending().onLateRedirect?.("/target", "push", 308);
     harness.pending().onEnd();
@@ -313,9 +320,7 @@ describe("RscWorker host render stream", () => {
     const harness = createHostRenderHarness();
 
     harness.pending().onMeta?.({});
-    const result = await harness.result;
-    expect(result.type).toBe("stream");
-    if (result.type !== "stream") throw new Error("expected stream result");
+    const result = await streamResultOf(harness);
 
     harness.pending().onCacheState?.({
       cacheable: true,
@@ -364,24 +369,8 @@ describe("RscWorker cache invalidation", () => {
   });
 
   test("creates patch cache keys that distinguish route and patch variants", () => {
-    const routerState: AkanRouterStateV1 = {
-      version: 1,
-      buildId: 7,
-      href: "https://example.test/docs?page=1",
-      routeId: "/docs",
-      segments: [
-        { kind: "root-layout", path: "/", key: "root:/:0" },
-        { kind: "layout", path: "/docs", key: "layout:/docs:1" },
-        { kind: "page", path: "/docs", key: "page:/docs:2" },
-      ],
-    };
-    const patch: AkanRscPatchMetadata = {
-      patchStartIndex: 2,
-      patchStartSegmentKey: "page:/docs:2",
-      segmentPath: ["root:/:0", "layout:/docs:1", "page:/docs:2"],
-      headSafe: true,
-      headSnapshot: { version: 1, nodes: [{ tag: "title", text: "Docs" }] },
-    };
+    const routerState = makePatchRouterState();
+    const patch = makeHeadSafePatch();
     const baseEntry = { key: "https://example.test\n\n\n\n/docs\n?page=1\n\ndark", ttl: 30 };
 
     const entry = createRscPatchCacheEntry({ baseEntry, targetRouterState: routerState, patch });
@@ -736,4 +725,147 @@ describe("RscWorker cached result replay", () => {
     });
     expect(messages[1]).toEqual({ type: "cache-state", requestId: "request-3", state: cacheState });
   });
+});
+
+describe("RscWorker route head", () => {
+  interface HeadWorker {
+    render: (url: string, headers?: Headers) => Promise<{ body: string; trace?: RscTraceMetadata }>;
+    headRuns: (name: string) => number;
+  }
+  const withHeadWorker = async (env: Record<string, string>, run: (worker: HeadWorker) => Promise<void>) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "akan-rsc-head-"));
+    const headLog = path.join(dir, "head.log");
+    const vars: Record<string, string> = {
+      AKAN_RSC_WORKER_PATH: path.join(import.meta.dir, "rscWorker.tsx"),
+      AKAN_TEST_HEAD_LOG: headLog,
+      ...env,
+    };
+    const saved = Object.fromEntries(Object.keys(vars).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, vars);
+    const segmentOutlet = "pkgs/akanjs/server/rscSegmentOutlet.tsx";
+    const rsc = new RscWorker({
+      pagesBundlePath: path.join(import.meta.dir, "rscWorkerHead.fixture.tsx"),
+      pagesBundleBuildId: 1,
+      rscRuntimeClientManifest: {
+        [`${segmentOutlet}#AkanSegmentOutlet`]: { id: segmentOutlet, chunks: [], name: "AkanSegmentOutlet" },
+      },
+    } as unknown as BaseBuildArtifact);
+    try {
+      await rsc.ready;
+      await run({
+        render: async (url, headers) => {
+          const result = await rsc.renderWithMeta(new Request(url, { headers }));
+          if (result.type !== "stream") throw new Error(`expected a stream, got ${result.type}`);
+          return { body: decoder.decode(await new Response(result.stream).arrayBuffer()), trace: result.trace };
+        },
+        headRuns: (name) =>
+          (fs.existsSync(headLog) ? fs.readFileSync(headLog, "utf8").split("\n") : []).filter((line) => line === name)
+            .length,
+      });
+    } finally {
+      rsc.kill();
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  test("runs a route's head once for a full render and not at all for a cached replay", async () => {
+    await withHeadWorker(
+      { AKAN_RSC_RESULT_CACHE: "1", AKAN_RSC_RESULT_CACHE_PATHS: "/en/cached" },
+      async ({ render, headRuns }) => {
+        const first = await render("http://localhost/en/cached");
+        expect(first.trace).toMatchObject({ cache: "miss" });
+        expect(first.body).toContain("cached body");
+        expect(headRuns("cached")).toBe(1);
+
+        const replay = await render("http://localhost/en/cached");
+        expect(replay.trace).toMatchObject({ cache: "hit", partialReason: "cache-hit-full-replay" });
+        expect(replay.body).toBe(first.body);
+        expect(headRuns("cached")).toBe(1);
+      },
+    );
+  }, 20_000);
+
+  test("resolves the head for a patch decision only when the page declares its head patch-safe", async () => {
+    const routes = new RouteTreeBuilder(headFixturePages).build();
+    const stateOf = (name: string, href: string) => {
+      const pathRoute = routes.find((route) => route.path.endsWith(`/${name}`));
+      if (!pathRoute) throw new Error(`no route for ${name}`);
+      const headers = new Headers();
+      appendAkanRouterStateRequestHeaders(headers, createAkanRouterState({ pathRoute, href, buildId: 1 }));
+      return headers;
+    };
+    await withHeadWorker(
+      { AKAN_PUBLIC_RSC_PARTIAL_COMMIT: "1", AKAN_RSC_RESULT_CACHE: "0" },
+      async ({ render, headRuns }) => {
+        const safe = await render("http://localhost/en/safe?tab=2", stateOf("safe", "http://localhost/en/safe?tab=1"));
+        expect(safe.trace).toMatchObject({ partial: "patch", patchHeadSafe: true });
+        expect(headRuns("safe")).toBe(1);
+
+        const unsafe = await render(
+          "http://localhost/en/cached?tab=2",
+          stateOf("cached", "http://localhost/en/cached?tab=1"),
+        );
+        expect(unsafe.trace).toMatchObject({ partial: "full", partialReason: "head-unsafe" });
+        expect(unsafe.body).toContain("cached body");
+        expect(headRuns("cached")).toBe(1);
+      },
+    );
+  }, 20_000);
+});
+
+describe("RscWorker respawn lifecycle", () => {
+  const workerSource = `import fs from "node:fs";
+const spawnsFile = process.env.AKAN_TEST_RSC_SPAWNS ?? "";
+const spawn = (fs.existsSync(spawnsFile) ? Number(fs.readFileSync(spawnsFile, "utf8")) : 0) + 1;
+fs.writeFileSync(spawnsFile, String(spawn));
+process.on("disconnect", () => process.exit(0));
+process.on("message", (message) => {
+  if (message.type === "init") {
+    if (spawn === 2) {
+      process.send?.({ type: "error", requestId: "__init__", message: "pages bundle failed to import" });
+      fs.writeFileSync(spawnsFile + ".init-failed", "1");
+      return;
+    }
+    process.send?.({ type: "ready" });
+    if (spawn === 1) setTimeout(() => process.exit(1), 20);
+    return;
+  }
+  if (message.type === "render") process.send?.({ type: "not-found", requestId: message.requestId });
+});
+process.send?.({ type: "hello" });
+`;
+
+  test("replaces a respawned worker whose init fails instead of queueing renders behind it forever", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "akan-rsc-respawn-"));
+    const spawnsFile = path.join(dir, "spawns");
+    fs.writeFileSync(path.join(dir, "worker.ts"), workerSource);
+    const saved = { workerPath: process.env.AKAN_RSC_WORKER_PATH, spawns: process.env.AKAN_TEST_RSC_SPAWNS };
+    process.env.AKAN_RSC_WORKER_PATH = path.join(dir, "worker.ts");
+    process.env.AKAN_TEST_RSC_SPAWNS = spawnsFile;
+    const rsc = new RscWorker({
+      pagesBundlePath: path.join(dir, "pages.js"),
+      pagesBundleBuildId: 1,
+    } as unknown as BaseBuildArtifact);
+    const eventually = async (done: () => boolean) => {
+      for (let waited = 0; waited < 8_000 && !done(); waited += 20) await Bun.sleep(20);
+      return done();
+    };
+    try {
+      await rsc.ready;
+      expect(await eventually(() => fs.existsSync(`${spawnsFile}.init-failed`))).toBe(true);
+      expect(await eventually(() => rsc.getMetrics().rscWorkerStatus === "ready")).toBe(true);
+      expect((await rsc.renderWithMeta(new Request("http://localhost/en"))).type).toBe("not-found");
+    } finally {
+      rsc.kill();
+      if (saved.workerPath === undefined) delete process.env.AKAN_RSC_WORKER_PATH;
+      else process.env.AKAN_RSC_WORKER_PATH = saved.workerPath;
+      if (saved.spawns === undefined) delete process.env.AKAN_TEST_RSC_SPAWNS;
+      else process.env.AKAN_TEST_RSC_SPAWNS = saved.spawns;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 20_000);
 });

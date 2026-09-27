@@ -27,7 +27,6 @@ describe("CodeSessionIndex", () => {
       assistant("done"),
       user("now wire it up"),
       { type: "session_info", name: "add-a-comment-module" },
-      // A rename appends rather than editing, so the last entry has to win.
       { type: "session_info", name: "comment-module" },
     ]);
     const [entry] = CodeSessionIndex.list(dir);
@@ -45,11 +44,19 @@ describe("CodeSessionIndex", () => {
     expect(CodeSessionIndex.list(dir).map((entry) => entry.id)).toEqual(["s3"]);
   });
 
+  test("a session past the read limit is still listed, from its opening lines", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "akan-sessions-"));
+    const filler = assistant("x".repeat(64 * 1024));
+    write(dir, "big", [session("big"), user("port the dashboard"), ...Array.from({ length: 10 }, () => filler)]);
+    const [entry] = CodeSessionIndex.list(dir);
+    expect(entry?.id).toBe("big");
+    expect(entry?.opening).toBe("port the dashboard");
+  });
+
   test("an id resolves to its file, and an unknown one to nothing", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "akan-sessions-"));
     const file = write(dir, "s4", [session("s4"), user("hi")]);
     expect(CodeSessionIndex.fileOf(dir, "s4")).toBe(file);
-    // Resuming a typo has to fail rather than open a new session that looks like one that lost its history.
     expect(CodeSessionIndex.fileOf(dir, "s5")).toBeUndefined();
   });
 
@@ -61,12 +68,10 @@ describe("CodeSessionIndex", () => {
 describe("codeAgentSessionName", () => {
   test("names a session after what it was asked, in one glanceable line", () => {
     expect(codeAgentSessionName("Add a comment module to apps/minimal")).toBe("add-a-comment-module-to-apps-minimal");
-    // Cut on a word, never mid-word: half a word reads as a typo rather than a shortening.
     expect(codeAgentSessionName("Add a comment module to apps/minimal and wire up its dictionary")).toBe(
       "add-a-comment-module-to-apps-minimal-and",
     );
     expect(codeAgentSessionName("안녕, 모듈 하나 만들어줘")).toBe("안녕-모듈-하나-만들어줘");
-    // A prompt that is all code says nothing about itself; a name is still better than none.
     expect(codeAgentSessionName("```ts\nconst a = 1;\n```")).toBe("session");
   });
 });

@@ -2,25 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { Logger, type LogRecord, logSeverity } from "akanjs/common";
 import { isCompressibleContentType } from "../contentEncoding";
 import { LogHub } from "./logHub";
+import { makeLogRecord } from "./logRecord.fixture";
 import { LogStreamRoute } from "./logStreamRoute";
 
-const record = (message: string, overrides: Partial<LogRecord> = {}): LogRecord => ({
-  at: 1_000,
-  elapsedMs: 0,
-  level: "info",
-  sev: logSeverity.info,
-  name: "Svc",
-  context: "",
-  message,
-  stream: "stdout",
-  pid: 1,
-  replicaIdx: 0,
-  role: "all",
-  origin: "http",
-  traceId: null,
-  endpoint: "mutation:refund",
-  ...overrides,
-});
+const record = (message: string, overrides: Partial<LogRecord> = {}) =>
+  makeLogRecord(message, { origin: "http", endpoint: "mutation:refund", ...overrides });
 
 interface Frame {
   id: number | null;
@@ -30,7 +16,6 @@ interface Frame {
 const request = (query = "", headers: { [key: string]: string } = {}) =>
   new Request(`http://app/_akan/app/logs${query}`, { headers: { authorization: "Bearer tok", ...headers } });
 
-/** Reads the body until `predicate` holds or the deadline passes, then cancels — a stream never ends on its own. */
 const readUntil = async (res: Response, predicate: (text: string) => boolean, timeoutMs = 2_000) => {
   const reader = res.body?.getReader();
   if (!reader) throw new Error("no body");

@@ -43,8 +43,7 @@ describe("CascadePaths removeRef", () => {
   });
 
   test("names the field when the action is unknown", () => {
-    // A macro import and a bundled build both reach the collector without a typecheck, so the union alone is not
-    // enough: an unknown action would otherwise be dropped and the field would look wired up.
+    // A macro import or bundled build skips the typecheck, and a dropped unknown action would look wired up.
     expect(() => via((f) => ({ cover: f(AssetFull, { cascade: "detach" as never }) }))).toThrow(
       'Cascade field "cover" declares cascade: "detach", which is not one of removeRef,removeWith,removeWithAny',
     );
@@ -149,8 +148,7 @@ describe("CascadePaths removeWith", () => {
   });
 
   test("rejects removeWithAny with nothing to read the owner refName from", () => {
-    // The option type pairs the action with its refPath, so this shape only reaches the collector through the
-    // macro and bundled paths that skip the typecheck — the same ones `#assertKnownAction` covers.
+    // The option type refuses this shape, so it only arrives through the macro and bundled paths.
     const anyAction = "removeWithAny" as "removeWith";
     expect(() => via((f) => ({ owner: f(ID, { ref: "cascadeTestAsset", cascade: anyAction }) }))).toThrow(
       'Cascade field "owner" declares cascade: "removeWithAny" and must name the field holding the owner\'s refName',

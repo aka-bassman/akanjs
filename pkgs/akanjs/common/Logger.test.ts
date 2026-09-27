@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import dayjs from "dayjs";
-import { Logger, type LoggerSinkEntry, type LogRecord, logSeverity } from "./Logger";
+import { Logger, type LoggerSinkEntry, type LoggerSinkOptions, type LogRecord, logSeverity } from "./Logger";
 import { type LogContextSnapshot, registerLogContextReader } from "./logContext";
 
 const resetLoggerLevels = () => {
@@ -8,12 +8,38 @@ const resetLoggerLevels = () => {
   Logger.setFileLevel("trace");
 };
 
-describe("Logger sinks", () => {
-  test("emits file sink entries independently from terminal log level", () => {
-    const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => void entries.push(entry));
+const withSink = (run: (entries: LoggerSinkEntry[]) => void, options?: LoggerSinkOptions) => {
+  const entries: LoggerSinkEntry[] = [];
+  const removeSink = Logger.addSink((entry) => void entries.push(entry), options);
+  try {
+    run(entries);
+  } finally {
+    removeSink();
+    resetLoggerLevels();
+  }
+};
 
-    try {
+const makeRecord = (over: Partial<LogRecord>): LogRecord => ({
+  at: 1,
+  elapsedMs: 0,
+  level: "info",
+  sev: logSeverity.info,
+  name: "Flight",
+  context: "",
+  message: "",
+  stream: "stdout",
+  pid: 1,
+  replicaIdx: null,
+  role: null,
+  origin: null,
+  traceId: "t-1",
+  endpoint: null,
+  ...over,
+});
+
+describe("Logger sinks", () => {
+  test("emits file sink entries independently from terminal log level", () =>
+    withSink((entries) => {
       Logger.setLevel("error");
       Logger.setFileLevel("trace");
       Logger.trace("file only", "sink-test", "LoggerTest");
@@ -21,17 +47,10 @@ describe("Logger sinks", () => {
       expect(entries.length).toBe(1);
       expect(entries[0]?.level).toBe("trace");
       expect(entries[0]?.plainMessage.includes("file only")).toBe(true);
-    } finally {
-      removeSink();
-      resetLoggerLevels();
-    }
-  });
+    }));
 
-  test("filters sink entries with AKAN_LOG_FILE_LEVEL semantics", () => {
-    const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => void entries.push(entry));
-
-    try {
+  test("filters sink entries with AKAN_LOG_FILE_LEVEL semantics", () =>
+    withSink((entries) => {
       Logger.setLevel("error");
       Logger.setFileLevel("warn");
       Logger.info("skip file", "sink-test", "LoggerTest");
@@ -39,11 +58,7 @@ describe("Logger sinks", () => {
 
       expect(entries.map((entry) => entry.level)).toEqual(["warn"]);
       expect(entries[0]?.plainMessage.includes("keep file")).toBe(true);
-    } finally {
-      removeSink();
-      resetLoggerLevels();
-    }
-  });
+    }));
 
   test("a sink's own minLevel floors it independently of the file level", () => {
     const fileEntries: LoggerSinkEntry[] = [];
@@ -66,20 +81,16 @@ describe("Logger sinks", () => {
     }
   });
 
-  test("nothing is built when every sink and the console reject the level", () => {
-    const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => void entries.push(entry), { minLevel: "warn" });
-
-    try {
-      Logger.setLevel("error");
-      expect(Logger.shouldLog("info")).toBe(false);
-      Logger.info("dropped", "", "LoggerTest");
-      expect(entries).toEqual([]);
-    } finally {
-      removeSink();
-      resetLoggerLevels();
-    }
-  });
+  test("nothing is built when every sink and the console reject the level", () =>
+    withSink(
+      (entries) => {
+        Logger.setLevel("error");
+        expect(Logger.shouldLog("info")).toBe(false);
+        Logger.info("dropped", "", "LoggerTest");
+        expect(entries).toEqual([]);
+      },
+      { minLevel: "warn" },
+    ));
 
   test("raw lines reach every sink regardless of its floor", () => {
     const entries: LoggerSinkEntry[] = [];
@@ -95,14 +106,19 @@ describe("Logger sinks", () => {
       removeSink();
     }
   });
+
+  test("an instance's raw writes the text as given and rawLog adds the line break, like the static pair", () =>
+    withSink((entries) => {
+      const logger = new Logger("Banner");
+      logger.raw("progress", "console");
+      logger.rawLog("done", "console");
+      expect(entries.map((entry) => entry.message)).toEqual(["progress", "done\n"]);
+    }));
 });
 
 describe("Logger levels", () => {
-  test("log() emits at info and the legacy level name normalizes", () => {
-    const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => void entries.push(entry));
-
-    try {
+  test("log() emits at info and the legacy level name normalizes", () =>
+    withSink((entries) => {
       Logger.setLevel("error");
       Logger.setFileLevel("log");
       expect(Logger.fileLevel).toBe("info");
@@ -111,11 +127,7 @@ describe("Logger levels", () => {
 
       expect(entries.map((entry) => entry.level)).toEqual(["info"]);
       expect(entries[0]?.record.sev).toBe(logSeverity.info);
-    } finally {
-      removeSink();
-      resetLoggerLevels();
-    }
-  });
+    }));
 
   test("isVerbose follows the console level", () => {
     try {
@@ -132,7 +144,7 @@ describe("Logger levels", () => {
 describe("Logger records", () => {
   test("renders the record into the historical console line", () => {
     const at = dayjs("2026-01-02T15:04:05.000").valueOf();
-    const record: LogRecord = {
+    const record = makeRecord({
       at,
       elapsedMs: 4_200,
       level: "warn",
@@ -140,14 +152,10 @@ describe("Logger records", () => {
       name: "LoggerTest",
       context: "ctx",
       message: "hello",
-      stream: "stdout",
       pid: 123,
       replicaIdx: 2,
-      role: null,
-      origin: null,
       traceId: null,
-      endpoint: null,
-    };
+    });
     const yellow = (text: string) => `\x1B[33m${text}\x1B[39m`;
     const rendered = Logger.render(record);
     const [head, tail] = rendered.split(" \x1B[33m+");
@@ -157,11 +165,8 @@ describe("Logger records", () => {
     expect(tail).toBe(`4200ms${"\x1B"}[39m\n`);
   });
 
-  test("sink entries expose the record and render text on demand", () => {
-    const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => void entries.push(entry));
-
-    try {
+  test("sink entries expose the record and render text on demand", () =>
+    withSink((entries) => {
       Logger.setLevel("error");
       Logger.info("structured", "ctx", "LoggerTest");
       const entry = entries[0];
@@ -177,11 +182,7 @@ describe("Logger records", () => {
       expect(entry?.message).toBe(Logger.render(entry?.record as LogRecord));
       expect(entry?.plainMessage).toContain("[LoggerTest]");
       expect(entry?.plainMessage).not.toContain("\x1B");
-    } finally {
-      removeSink();
-      resetLoggerLevels();
-    }
-  });
+    }));
 
   test("records carry whatever the registered context reader returns", () => {
     const entries: LoggerSinkEntry[] = [];
@@ -223,10 +224,8 @@ const snapshot = (over: Partial<LogContextSnapshot>): LogContextSnapshot => ({
 });
 
 describe("Logger attrs", () => {
-  test("emit renders attrs as key=value after the message and redacts secret-named keys", () => {
-    const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => void entries.push(entry));
-    try {
+  test("emit renders attrs as key=value after the message and redacts secret-named keys", () =>
+    withSink((entries) => {
       Logger.setLevel("error");
       Logger.emit({
         level: "info",
@@ -238,25 +237,15 @@ describe("Logger attrs", () => {
       expect(entries[0]?.plainMessage).toContain(
         'ok mutation:refund ms=12.5 status=200 err="not now" apiKey=[redacted] +',
       );
-    } finally {
-      removeSink();
-      resetLoggerLevels();
-    }
-  });
+    }));
 
-  test("a record without attrs keeps the historical line", () => {
-    const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => void entries.push(entry));
-    try {
+  test("a record without attrs keeps the historical line", () =>
+    withSink((entries) => {
       Logger.setLevel("error");
       Logger.info("plain", "", "LoggerTest");
       expect(entries[0]?.record.attrs).toBeUndefined();
       expect(entries[0]?.plainMessage).toMatch(/ plain \+\d+ms\n$/);
-    } finally {
-      removeSink();
-      resetLoggerLevels();
-    }
-  });
+    }));
 });
 
 describe("Logger context gate", () => {
@@ -328,22 +317,8 @@ describe("Logger context gate", () => {
 });
 
 describe("Logger replay", () => {
-  const record = (level: "trace" | "verbose", message: string): LogRecord => ({
-    at: 1,
-    elapsedMs: 0,
-    level,
-    sev: logSeverity[level],
-    name: "Flight",
-    context: "",
-    message,
-    stream: "stdout",
-    pid: 1,
-    replicaIdx: null,
-    role: null,
-    origin: null,
-    traceId: "t-1",
-    endpoint: null,
-  });
+  const record = (level: "trace" | "verbose", message: string) =>
+    makeRecord({ level, sev: logSeverity[level], message });
 
   test("promoted records bypass the console level and every sink floor, and are marked flight", () => {
     const entries: LoggerSinkEntry[] = [];

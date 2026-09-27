@@ -22,11 +22,8 @@ type Aead = (
   decrypt(data: Uint8Array): Uint8Array;
 };
 
-/**
- * age v1 (age-encryption.org/v1) with X25519 recipients, so an operator restores with `age -d -i key.txt`.
- * ChaCha20-Poly1305 comes from @noble/ciphers because Bun exposes it through neither node:crypto nor WebCrypto;
- * it is loaded only when a recipient is configured.
- */
+// age v1 with X25519 recipients, so an operator restores with `age -d -i key.txt`.
+// ChaCha20-Poly1305 comes from @noble/ciphers, loaded lazily: Bun has it in neither node:crypto nor WebCrypto.
 export class AgeEncryption {
   static readonly intro = "age-encryption.org/v1";
   static readonly chunkSize = 64 * 1024;
@@ -124,8 +121,7 @@ export class AgeEncryption {
           started = true;
         }
         pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
-        //* A full chunk is sealed only once more data follows it: the final chunk carries the last flag, and a
-        //* payload that is an exact multiple of 64KiB must end on a full chunk flagged last, not an empty one.
+        //* A full chunk waits for more data: an exact 64KiB multiple ends on a full last chunk, never an empty one.
         while (pending.length > AgeEncryption.chunkSize) {
           this.push(seal(pending.subarray(0, AgeEncryption.chunkSize), false));
           pending = pending.subarray(AgeEncryption.chunkSize);

@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { type TunnelHeaderList, tunnelWireContract, tunnelWsPayload } from "./tunnelWire";
 
 describe("tunnelWireContract headers", () => {
-  /**
-   * Also the canary for the runtime behaviour this relies on: `Headers.forEach` yields `set-cookie` one at a
-   * time while combining every other repeat. If a Bun release ever stops doing that, this test fails before a
-   * tunnelled sign-in starts dropping cookies in production.
-   */
+  // Canary for Bun's `Headers.forEach` yielding `set-cookie` one at a time; tunnelled sign-ins depend on it.
   test("carries every set-cookie across, which a record keyed by name could not", () => {
     const headers = new Headers();
     headers.append("set-cookie", "jwt=a; Path=/");
@@ -53,8 +49,7 @@ describe("tunnelWireContract.stripForwarded", () => {
     tunnelWireContract.stripForwarded(headers);
     headers.set("x-forwarded-host", "code.tunnel.akanjs.com");
 
-    // `hostFromRequest` reads the first comma-separated value, so appending instead of deleting would have left
-    // the caller's host ahead of the gateway's and handed the app an origin the caller chose.
+    // Appending instead of deleting would leave the caller's host first, which is what `hostFromRequest` reads.
     expect(headers.get("x-forwarded-host")).toBe("code.tunnel.akanjs.com");
     expect(headers.get("forwarded")).toBeNull();
     expect(headers.get("x-real-ip")).toBeNull();

@@ -3,12 +3,15 @@ import { command, Exec, Workspace } from "@akanjs/devkit/commandDecorators";
 import { defaultMaxDiagnostics } from "./workspace.runner";
 import { WorkspaceScript } from "./workspace.script";
 
+const maxDiagnosticsOption = {
+  desc: "How many diagnostics Biome prints before truncating (0 for no limit)",
+  default: defaultMaxDiagnostics,
+};
+
 export class WorkspaceCommand extends command("workspace", [WorkspaceScript], ({ public: target }) => ({
   createWorkspace: target({ desc: "Create a new Akan.js workspace", runsOnWorkspaceRoot: false })
     .arg("workspaceName", String, { desc: "what is the name of your organization?" })
-    .option("app", String, {
-      desc: "what is the codename of your first application? (e.g. myapp)",
-    })
+    .option("app", String, { desc: "what is the codename of your first application? (e.g. myapp)" })
     .option("dir", String, {
       desc: "directory of workspace",
       default: process.env.USE_AKANJS_PKGS === "true" ? "local" : ".",
@@ -24,19 +27,12 @@ export class WorkspaceCommand extends command("workspace", [WorkspaceScript], ({
       ],
       default: false,
     })
-    .option("init", Boolean, {
-      desc: "Do you want to initialize the workspace? (Recommended)",
-      default: true,
-    })
+    .option("init", Boolean, { desc: "Do you want to initialize the workspace? (Recommended)", default: true })
     .option("registry", String, {
       desc: "npm registry URL for installing Akan packages",
       default: process.env.AKAN_NPM_REGISTRY ?? "https://registry.npmjs.org",
     })
-    .option("owner", String, {
-      desc: "owner of the workspace",
-      default: process.env.GITHUB_OWNER,
-      nullable: true,
-    })
+    .option("owner", String, { desc: "owner of the workspace", default: process.env.GITHUB_OWNER, nullable: true })
     .option("mcpInstall", Boolean, {
       desc: "Install the Akan MCP server config for Cursor, Claude Code, and Codex? (Recommended)",
       default: true,
@@ -74,20 +70,14 @@ export class WorkspaceCommand extends command("workspace", [WorkspaceScript], ({
   lint: target({ desc: "Lint and fix code in a specific app/lib/pkg" })
     .with(Exec)
     .option("fix", Boolean, { default: true })
-    .option("maxDiagnostics", Number, {
-      desc: "How many diagnostics Biome prints before truncating (0 for no limit)",
-      default: defaultMaxDiagnostics,
-    })
+    .option("maxDiagnostics", Number, maxDiagnosticsOption)
     .with(Workspace)
     .exec(async function (exec, fix, maxDiagnostics, workspace) {
       await this.workspaceScript.lint(exec, workspace, { fix, maxDiagnostics });
     }),
   lintAll: target({ desc: "Lint and fix code in all apps and libraries" })
     .option("fix", Boolean, { default: true })
-    .option("maxDiagnostics", Number, {
-      desc: "How many diagnostics Biome prints before truncating (0 for no limit)",
-      default: defaultMaxDiagnostics,
-    })
+    .option("maxDiagnostics", Number, maxDiagnosticsOption)
     .with(Workspace)
     .exec(async function (fix, maxDiagnostics, workspace) {
       await this.workspaceScript.lintAll(workspace, { fix, maxDiagnostics });

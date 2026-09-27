@@ -1,7 +1,6 @@
 import { FIELD_META, ID } from "akanjs/base";
 import { type DocumentQuery, type DocumentQueryNode, searchColumns } from "akanjs/document";
 import { DEFAULT_SEARCH_WEIGHTS, type SearchIndex } from "../searchIndex";
-import { quoteIdent } from "../sqlDescriptor";
 import {
   BASE_COLUMNS,
   type CompileContext,
@@ -14,7 +13,7 @@ import {
   type SearchJoin,
   type SqlDialect,
 } from "./types";
-import { BASE_COLUMN_LEAF } from "./values";
+import { BASE_COLUMN_LEAF, quoteIdent } from "./values";
 
 export class QueryCompiler {
   constructor(
@@ -70,9 +69,8 @@ export class QueryCompiler {
     return BASE_COLUMNS.has(path) ? quoteIdent(path) : this.dialect.projectExpr(path);
   }
 
-  // A search node compiles to a JOIN rather than a WHERE fragment, so it contributes no SQL here and instead
-  // accumulates into `ctx.joins`. `conjunctive` tracks whether the node is still reachable by AND alone — a JOIN
-  // cannot express OR or NOT, so anything below `any`/`not` must be rejected instead of silently widening the result.
+  // A search node accumulates into `ctx.joins`; a JOIN cannot express OR/NOT, so one below `any`/`not` (`conjunctive`
+  // false) is rejected rather than silently widening the result.
   private compileNode(query: DocumentQuery, ctx: CompileContext): { sql: string; params: unknown[] } {
     if (this.isQueryNode(query)) {
       if (query.kind === "search") {
@@ -127,19 +125,16 @@ export class QueryCompiler {
     if (node.columns?.length && !columns?.length)
       throw new Error(`Unknown search column on "${this.ref}": ${node.columns.join(", ")}`);
     const weights = node.weights ?? DEFAULT_SEARCH_WEIGHTS;
-    // Weights are interpolated into the SQL text — bm25 takes no bind parameters — so they must be proven numeric. A
-    // negative one has no meaning a Postgres rank can hold, so no engine takes one.
+    // Interpolated (bm25 takes no bind parameters), so proven numeric; a negative means nothing to a Postgres rank.
     if (weights.length !== searchColumns.length || weights.some((weight) => !Number.isFinite(weight) || weight < 0))
       throw new Error(
         `Search weights on "${this.ref}" must be ${searchColumns.length} finite, non-negative numbers: ${JSON.stringify(node.weights)}`,
       );
     const subquery = search.join({ ref: this.ref, text: node.text, prefix: !!node.prefix, columns, weights });
-    // Blank input matches nothing rather than everything: an unscoped fallthrough would turn a search endpoint
-    // into a full listing, which is the failure that leaks rows.
+    // Blank input matches nothing: an unscoped fallthrough would turn a search endpoint into a full listing.
     if (!subquery) return null;
-    // The subquery exposes only `rid`/`score`: `search_doc` carries a `title` column of its own, so joining it
-    // unwrapped raises `ambiguous column name` against any model that also has one. Aliasing `refId` to `rid`
-    // keeps `"id"` in the outer WHERE unambiguous, which is what lets the base table stay un-aliased.
+    // Only `rid`/`score` are exposed: `search_doc`'s own `title` would be ambiguous against a model's, and `rid` keeps
+    // the outer `"id"` unambiguous so the base table stays un-aliased.
     const alias = `__s${index}`;
     return {
       alias,
@@ -230,21 +225,14 @@ export class QueryCompiler {
   }
 
   /**
-   * The root segment only, deliberately.
-   *
-   * Everything past it reaches the escaped JSON-path literal and nothing else, so a deep typo is a query that
-   * matches nothing rather than a query that does something else. Validating it would mean walking the field
-   * graph through array indices (`payments.3.name`), array-of-object leaves (`works.tags`) and `Map` keys, which
-   * have no fixed path to check against — a validator that guessed there would refuse working queries, which is
-   * worse than the silence. Deep paths are written by the model's own filter code, where the first test catches
-   * a typo; the root is the one segment a caller can reach.
+   * The root segment only: a deeper typo reaches only the escaped JSON-path literal and matches nothing, while checking
+   * indices, array leaves and `Map` keys would refuse working queries.
    */
   private assertPath(path: string) {
     const root = path.split(".")[0];
     if (BASE_COLUMNS.has(root)) return;
     if (!this.fields[root]) {
-      // A numeric root path means an array was passed where a query descriptor was expected —
-      // almost always a slice `exec` that returned an executed list (listBy...) instead of a query.
+      // A numeric root means an executed list (a slice `exec` returning `listBy…`) was passed as a query.
       if (/^\d+$/.test(root))
         throw new Error(
           `Query received an array instead of a query object (field path "${path}"). ` +
@@ -258,7 +246,3 @@ export class QueryCompiler {
     return !!value && typeof value === "object" && "kind" in value;
   }
 }
-
-// Folds a path-keyed `DocumentUpdate` into SET assignments the database applies atomically: JSON-path operators
-// collapse into a single nested `_doc` expression via the dialect, while base-column paths become plain assignments.
-// `setOnInsert` values are returned separately for the upsert-insert path (they only apply when a new row is created).

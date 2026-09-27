@@ -22,20 +22,13 @@ interface RichInputProps {
   draft: string;
   placeholder: string;
   onDraft: (text: string) => void;
-  /** The textarea's own handler, unchanged: the chat reads a key off the draft and the caret, not off the DOM. */
+  /** The textarea's own handler, fed a synthetic event: the chat reads keys off the draft and caret, not the DOM. */
   onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   onFiles: (files: File[]) => void;
   handleRef?: RefObject<ComposerHandle | null>;
 }
 
-/**
- * The composer's input when the chat has `@` sources: the same draft string, drawn with each pointer as the name
- * it points at instead of as the token that carries it.
- *
- * Lexical rather than a contenteditable of our own, for one reason — a Korean or Japanese IME composing into a
- * contenteditable React also re-renders is the bug class the library exists to own, and it is not one an app can
- * work around from outside.
- */
+// Lexical, not a hand-rolled contenteditable: IME composition under React re-renders is the bug class it owns.
 export const RichInput = ({
   className,
   draft,
@@ -55,8 +48,7 @@ export const RichInput = ({
   const rootRef = useRef<HTMLDivElement>(null);
   const live = useRef({ draft, onDraft, onKeyDown, onFiles });
   live.current = { draft, onDraft, onKeyDown, onFiles };
-  // What the editor and the draft prop last agreed on. A keystroke's own round trip comes back through the prop,
-  // and rebuilding the tree from it would drop the caret in the middle of typing.
+  // A keystroke's own round trip returns through the prop, and rebuilding the tree from it would drop the caret.
   const settled = useRef(draft);
   useEffect(() => {
     const root = rootRef.current;
@@ -78,9 +70,7 @@ export const RichInput = ({
       } as unknown as ReactKeyboardEvent<HTMLTextAreaElement>);
       return prevented;
     };
-    // Above the plain-text handlers, so a key the chat claims — Enter to send, Tab to complete a mention — never
-    // also lands in the text. One the chat leaves alone falls through to them, which is what keeps Shift+Enter a
-    // line break.
+    // Above the plain-text handlers: a claimed key never lands in the text; the rest (Shift+Enter) fall through.
     const onKey = <T extends KeyboardEvent | null>(command: LexicalCommand<T>, key: string) =>
       editor.registerCommand<T>(command, (event) => forward(key, event), COMMAND_PRIORITY_HIGH);
     const teardowns = [
@@ -88,8 +78,7 @@ export const RichInput = ({
       editor.registerUpdateListener(({ editorState }) => {
         const text = editorState.read(() => MentionDraft.read());
         if (text === settled.current) return;
-        // Marked before it is handed over, so the draft coming back through the prop is recognised as this very
-        // edit and never rebuilds the tree the caret is sitting in.
+        // Marked before handing over, so the draft returning through the prop is recognised as this very edit.
         settled.current = text;
         live.current.onDraft(text);
       }),

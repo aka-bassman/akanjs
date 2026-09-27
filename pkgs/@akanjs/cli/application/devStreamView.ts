@@ -5,15 +5,8 @@ import type { DevAppStatus, DevSupervisorView } from "./devSupervisor";
 /** Distinguishable in both light and dark terminals, and none of them is the level colour Logger uses. */
 const appColors = ["cyan", "magenta", "yellow", "green", "blue", "red"] as const;
 
-/**
- * Interleaves several children into one terminal behind a per-app prefix — the shape `turbo` and `nx`
- * use, and the fallback whenever the TUI cannot draw (a pipe, a redirect, CI).
- *
- * Children write already-rendered `Logger` lines, so the text is passed through untouched: re-rendering
- * would double the timestamp and stripping ANSI would throw away the level colour. Only the prefix is
- * added, and only at a real line start — a chunk that ends mid-line keeps its remainder until the rest
- * arrives, so a stack trace does not grow a prefix in the middle of a word.
- */
+// Children write already-rendered `Logger` lines, so text passes through untouched; the prefix is added only at a
+// real line start, so a chunk ending mid-line waits for the rest.
 export class DevStreamView implements DevSupervisorView {
   readonly #logger = new Logger("akan start");
   readonly #partial = new Map<string, string>();

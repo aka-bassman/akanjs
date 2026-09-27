@@ -6,19 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { Linter } from "../linter";
 
-/**
- * Fixture tests for the GritQL plugins in this folder.
- *
- * These rules break the apps/libs build, and a rule that stops matching reports **zero diagnostics** rather
- * than an error — so a biome upgrade can retire one silently. GritQL has known sharp edges here (escaped
- * quotes, argument-position matching), which is what makes the quiet failure plausible rather than
- * theoretical.
- *
- * Each rule runs alone, against a config this test writes, so a diagnostic can only have come from that
- * plugin. The path scoping in `biome.base.json` is deliberately not exercised — what is under test is
- * whether the pattern still matches. A rule that reads `$filename` needs a real path anyway, which is what
- * a case's `fixture.json` supplies.
- */
+//? A rule that stops matching reports zero diagnostics, not an error, so a biome upgrade can retire one silently.
+//? Each rule runs alone against a config written here; the path scoping in biome.base.json is deliberately not tested.
 const lintDir = import.meta.dir;
 const fixturesDir = path.join(lintDir, "__fixtures__");
 const workspaceRoot = path.resolve(lintDir, "../../../..");
@@ -31,13 +20,10 @@ interface BiomeDiagnostic {
   location?: { start?: { line?: number } };
 }
 
-/**
- * `path` is where the source is written inside the temp workspace, for a rule that gates on `$filename`;
- * its extension also decides whether the file may hold JSX. `expect: "file"` is for a rule whose span is
- * the whole module (`JsModule()`), where there is no per-line diagnostic to match.
- */
 interface FixtureMeta {
+  /** Where the source is written, for a rule that gates on `$filename`; its extension decides whether JSX parses. */
   path?: string;
+  /** `"file"`: the rule's span is the whole module (`JsModule()`), so there is no per-line diagnostic to match. */
   expect?: "lines" | "file";
 }
 
@@ -65,7 +51,6 @@ const runBiome = (args: string[], cwd: string) =>
     proc.on("close", () => resolve(stdout || stderr));
   });
 
-/** Every directory holding a `bad.*`, named `<rule>` or `<rule>/<case>`. */
 const collectCases = async (): Promise<FixtureCase[]> => {
   const cases: FixtureCase[] = [];
   const walk = async (dir: string, rule: string, name: string) => {
@@ -93,7 +78,6 @@ const sourceName = (fixture: FixtureCase, kind: "bad" | "good") => {
 const readFixture = async (fixture: FixtureCase, kind: "bad" | "good") =>
   await readFile(path.join(fixture.dir, sourceName(fixture, kind).read), "utf-8");
 
-/** Diagnostics from one plugin against one fixture, keyed by the 1-based line each was reported on. */
 const lintFixture = async (fixture: FixtureCase, kind: "bad" | "good") => {
   const dir = await mkdtemp(path.join(os.tmpdir(), `grit-${fixture.rule}-`));
   tempDirs.push(dir);
@@ -128,7 +112,7 @@ const lintFixture = async (fixture: FixtureCase, kind: "bad" | "good") => {
   };
 };
 
-/** The 1-based line of every line carrying `marker`. One case per line is the fixture contract. */
+//? One case per line is the fixture contract.
 const markedLines = async (fixture: FixtureCase, kind: "bad" | "good", marker: string) =>
   (await readFixture(fixture, kind))
     .split("\n")
@@ -165,8 +149,7 @@ describe("grit lint rules", () => {
       }
       const expected = await markedLines(fixture, "bad", "// @flag");
       expect(expected.length).toBeGreaterThan(0);
-      // Set equality, not containment: a marked line nobody reported is a pattern that stopped matching,
-      // and a reported line nobody marked is the rule reaching further than the fixture claims.
+      // Set equality: an unreported mark is a pattern that stopped matching, an unmarked report is overreach.
       expect(lines).toEqual(expected);
     });
 

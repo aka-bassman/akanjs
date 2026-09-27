@@ -12,9 +12,7 @@ import { MemoryLimit } from "./memoryLimit";
 import type { RscTraceMetadata, SsrLateRedirect } from "./ssrTypes";
 import type { BaseBuildArtifact, CssAsset } from "./types";
 
-// This is a bounded queue guard, not a pause/resume backpressure protocol.
-// If the host stream cannot drain IPC chunks quickly enough, the render fails
-// fast and the worker is cancelled instead of buffering unbounded Flight data.
+// A bounded queue guard, not backpressure: a host that cannot drain IPC chunks fails the render instead of buffering.
 const DEFAULT_RSC_HOST_MAX_PENDING_CHUNKS = 256;
 
 export interface RscPending {
@@ -99,18 +97,8 @@ export function createRscWorkerInvalidateCacheMessage(
   };
 }
 
-/**
- * The RSC worker samples its own process with the same `ProcessMetricsCollector.collect` its host
- * replica uses, so its report carries `pid` / `rssBytes` / `role` / … under the identical names.
- * `AkanServer` spreads the host's report into its own `collect({ role, ...webRouter.getMetrics() })`
- * and `collect` spreads `extra` last (`processMetricsCollector.ts:122`) — so passing these through
- * unprefixed silently overwrote the replica's own process fields, and the replica's RSS was reported
- * nowhere. Rename them onto `rscWorker*`; the `rsc*` render counters, which only the worker
- * produces, pass through untouched.
- *
- * XXX A new process-level field in `ProcessMetricsCollector.collect` must be added here too, or it
- * starts shadowing the replica again.
- */
+// `collect` spreads `extra` last, so the worker's own pid/rss/… would overwrite the replica's: rename them.
+// XXX A new process-level field in `ProcessMetricsCollector.collect` must be added here too, or it shadows the replica.
 export function projectRscWorkerProcessMetrics(metrics: AkanMetricsReport): AkanMetricsReport {
   const {
     role: _role,
@@ -237,8 +225,7 @@ export function createRscHostRenderStream(input: {
             settleStream();
             pendingChunks = nextRscHostPendingChunkCount(pendingChunks, controller.desiredSize);
             if (isRscHostPendingChunkOverflow(pendingChunks, maxPendingChunks)) {
-              const msg = `rsc worker host queue exceeded ${maxPendingChunks} pending chunks`;
-              const error = new Error(msg);
+              const error = new Error(`rsc worker host queue exceeded ${maxPendingChunks} pending chunks`);
               input.onPendingChunkOverflow?.();
               cancelRender(error);
               controller.error(error);
@@ -276,12 +263,9 @@ export function createRscHostRenderStream(input: {
             }
             controller.error(new Error(`redirect after stream started: ${location}`));
           },
-          onLateRedirect: (location, method, status) => {
-            settleLateControl({ type: "redirect", location, method, status });
-          },
-          onCacheState: (state) => {
-            settleCacheState(state);
-          },
+          onLateRedirect: (location, method, status) =>
+            settleLateControl({ type: "redirect", location, method, status }),
+          onCacheState: settleCacheState,
           onNotFound: () => {
             settleLateControl(null);
             settleCacheState({ cacheable: false, reason: "not-found" });
@@ -305,9 +289,7 @@ export function createRscHostRenderStream(input: {
         }
         input.sendRenderOrQueue();
       },
-      cancel: (reason) => {
-        cancelRender(reason);
-      },
+      cancel: cancelRender,
       pull: () => {
         pendingChunks = Math.max(0, pendingChunks - 1);
       },
@@ -342,46 +324,11 @@ export interface RscWorkerReloadInput {
   clientManifest: ClientManifest;
   cssAssets?: Record<string, CssAsset>;
   buildId: number;
-  /**
-   * When the builder emits a freshly bundled `pages-*.js` the host forwards
-   * the new absolute path here so the worker re-imports the new bundle.
-   * Undefined means "keep using the current bundle" (e.g. client-manifest-only
-   * reload after a lazy route build).
-   */
+  /** Undefined keeps the current bundle (e.g. a client-manifest-only reload after a lazy route build). */
   pagesBundlePath?: string;
 }
 
-export interface RscWorkerRestartOptions {
-  /** Initial delay before the first restart attempt. Default: 200ms. */
-  baseDelayMs?: number;
-  /** Upper bound for the exponential backoff. Default: 30s. */
-  maxDelayMs?: number;
-  /**
-   * Give up after this many consecutive failed restarts. `undefined` (default)
-   * means retry forever so a short-lived supervisor outage doesn't wedge the
-   * SSR path permanently.
-   */
-  maxAttempts?: number;
-}
-
-export interface RscWorkerOptions {
-  clientManifest: ClientManifest;
-  /**
-   * Absolute path to the pre-built server pages bundle. Produced by
-   * `akanjs/devkit`'s `PagesBundleBuilder`; the RSC worker imports it with
-   * `await import(bundlePath?v=<buildId>)` — no runtime transforms.
-   */
-  pagesBundlePath: string;
-  /** Initial build id for the pages bundle (see `pagesBundlePath`). */
-  pagesBundleBuildId: number;
-  cssAssets?: Record<string, CssAsset>;
-  i18n?: AkanI18nConfig;
-  /** Exponential-backoff settings for automatic crash recovery. */
-  restart?: RscWorkerRestartOptions;
-}
-
 type WorkerStatus = "starting" | "ready" | "restarting" | "stopped";
-/** Piped only in an ndjson deployment, where an inherited stdout would put text lines into the JSON stream. */
 type RscProcess = Bun.Subprocess;
 
 export class RscWorker {
@@ -406,9 +353,6 @@ export class RscWorker {
 
   #status: WorkerStatus = "starting";
   #killed = false;
-  // Render sends issued while the worker is starting / restarting are queued
-  // here and flushed on the next `ready`. Each closure re-checks `#pending` so
-  // cancelled streams don't forward a stale request to the new worker.
   #queuedSends: Array<() => void> = [];
   #restartAttempts = 0;
   #restartCount = 0;
@@ -417,16 +361,12 @@ export class RscWorker {
   #lastRecycleAtMono: number | null = null;
   #lastRecycleReason: string | undefined;
   #lastWorkerMetrics: AkanMetricsReport = {};
-  /** Set by the replica: where the worker's forwarded log records go (its hub, or up to the gateway). */
   onLogRecords: ((records: LogRecord[], dropped: number) => void) | null = null;
   #logLevel: number | null = null;
   #hostPendingChunkOverflowCount = 0;
   #restartTimer: ReturnType<typeof setTimeout> | null = null;
   #recycleTimer: ReturnType<typeof setTimeout> | null = null;
   #rollingRecycle: { oldProc: RscProcess; reason: string } | null = null;
-  readonly #restartOpts: Required<Pick<RscWorkerRestartOptions, "baseDelayMs" | "maxDelayMs">> & {
-    maxAttempts: number | undefined;
-  };
 
   readonly #failBeforeReady: boolean;
 
@@ -438,7 +378,6 @@ export class RscWorker {
     this.#cssAssets = artifact.cssAssets ?? {};
     this.#basePaths = artifact.basePaths ?? [];
     this.#i18n = artifact.i18n ?? DEFAULT_AKAN_I18N;
-    this.#restartOpts = { baseDelayMs: 200, maxDelayMs: 30_000, maxAttempts: undefined };
     this.ready = new Promise<void>((resolve, reject) => {
       this.#resolveReady = () => {
         if (this.#readyResolved) return;
@@ -455,69 +394,16 @@ export class RscWorker {
     this.#proc = this.#spawn();
   }
 
-  render(req: Request): ReadableStream<Uint8Array> {
-    const requestId = crypto.randomUUID();
-    // Serialize headers so the worker can rebuild a Request mirror inside its
-    // own `requestStorage` scope. Without this, server components running in
-    // the worker cannot read cookies/auth headers of the incoming request.
-    const headers: Array<[string, string]> = [];
-    req.headers.forEach((value, key) => {
-      headers.push([key, value]);
-    });
-
-    return new ReadableStream<Uint8Array>({
-      start: (controller) => {
-        this.#pending.set(requestId, {
-          onChunk: (data) => controller.enqueue(data),
-          onEnd: () => controller.close(),
-          onError: (msg) => controller.error(new Error(msg)),
-        });
-        const send = () => {
-          // The stream may have been cancelled, or the worker may have died
-          // again between queueing and flushing — both cases drop silently
-          // (the pending entry is already gone / will be handled by the exit
-          // path).
-          if (!this.#pending.has(requestId)) return;
-          try {
-            this.#proc.send({ type: "render", requestId, url: req.url, method: req.method, headers });
-          } catch (err) {
-            this.#resolvePending(requestId, (p) =>
-              p.onError(`rsc worker send failed: ${err instanceof Error ? err.message : String(err)}`),
-            );
-          }
-        };
-        if (this.#status === "ready") send();
-        else if (this.#status === "stopped") {
-          this.#resolvePending(requestId, (p) => p.onError("rsc worker is stopped"));
-        } else {
-          this.#queuedSends.push(send);
-        }
-      },
-      cancel: () => {
-        this.#pending.delete(requestId);
-        this.#cancelRender(requestId);
-      },
-    });
-  }
-
   renderWithMeta(
     req: Request,
     options: { clientManifest?: ClientManifest; signal?: AbortSignal } = {},
   ): Promise<RscRenderResult> {
     const requestId = crypto.randomUUID();
     return createRscHostRenderStream({
-      setPending: (pending) => {
-        this.#pending.set(requestId, pending);
-      },
-      deletePending: () => {
-        this.#pending.delete(requestId);
-      },
-      sendRenderOrQueue: () => {
-        this.#sendRenderOrQueue(requestId, req, options.clientManifest);
-      },
-      cancelRender: () => {
-        this.#cancelRender(requestId);
-      },
+      setPending: (pending) => this.#pending.set(requestId, pending),
+      deletePending: () => this.#pending.delete(requestId),
+      sendRenderOrQueue: () => this.#sendRenderOrQueue(requestId, req, options.clientManifest),
+      cancelRender: () => this.#cancelRender(requestId),
       signal: options.signal,
       onPendingChunkOverflow: () => {
         this.#hostPendingChunkOverflowCount += 1;
@@ -533,7 +419,6 @@ export class RscWorker {
     return this.#call<PagePromptRun>((requestId) => ({ type: "page-prompt.run", requestId, input }));
   }
 
-  /** One request, one reply: the answer is a JSON value rather than a stream, so it rides a promise. */
   #call<T>(message: (requestId: string) => object): Promise<T> {
     const requestId = crypto.randomUUID();
     return new Promise<T>((resolve, reject) => {
@@ -577,14 +462,10 @@ export class RscWorker {
   kill(): void {
     this.#killed = true;
     this.#status = "stopped";
-    if (this.#restartTimer) {
-      clearTimeout(this.#restartTimer);
-      this.#restartTimer = null;
-    }
-    if (this.#recycleTimer) {
-      clearTimeout(this.#recycleTimer);
-      this.#recycleTimer = null;
-    }
+    if (this.#restartTimer) clearTimeout(this.#restartTimer);
+    if (this.#recycleTimer) clearTimeout(this.#recycleTimer);
+    this.#restartTimer = null;
+    this.#recycleTimer = null;
     this.#rollingRecycle?.oldProc.kill();
     this.#rollingRecycle = null;
     this.#proc.kill();
@@ -623,7 +504,7 @@ export class RscWorker {
     }
     if (this.#pending.size > 0 || this.#queuedSends.length > 0) {
       if (!this.#recycleTimer) {
-        const graceMs = RscWorker.#getRscRecycleGraceMs();
+        const graceMs = MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_RECYCLE_GRACE_MS") ?? 5_000;
         this.#recycleTimer = setTimeout(() => {
           this.#recycleTimer = null;
           this.restartWhenIdle(reason);
@@ -634,61 +515,38 @@ export class RscWorker {
     this.#lastRecycleReason = reason;
     this.#recycleCount += 1;
     this.#lastRecycleAtMono = performance.now();
-    const oldPid = this.#proc.pid;
-    this.#logger.info(`[rsc] rolling recycle worker reason=${reason} oldPid=${oldPid}`);
+    this.#logger.info(`[rsc] rolling recycle worker reason=${reason} oldPid=${this.#proc.pid}`);
     this.#status = "restarting";
-    const oldProc = this.#proc;
-    this.#rollingRecycle = { oldProc, reason };
+    this.#rollingRecycle = { oldProc: this.#proc, reason };
     this.#proc = this.#spawn();
     return true;
   }
 
-  /**
-   * Update just the CSS assets the worker inlines into rendered HTML, without
-   * re-importing any pages. Cheap enough to use for CSS-only HMR cycles so
-   * a subsequent hard refresh serves the latest hashed stylesheet.
-   */
   updateCssAssets(cssAssets: Record<string, CssAsset>): void {
     this.#cssAssets = cssAssets;
     if (this.#status !== "ready") return;
     try {
       this.#proc.send({ type: "updateCssAssets", cssAssets });
     } catch {
-      // If the worker died mid-send we'll pick up the new value on the next
-      // `hello` after restart; nothing to do here.
+      // A worker that died mid-send gets the new value from the init reply to its next hello.
     }
   }
 
-  /**
-   * Apply a new client manifest + CSS assets and instruct the worker to re-import
-   * the pages bundle with a bumped cache-bust token. When `pagesBundlePath`
-   * is provided the worker switches to the new bundle URL too (the builder
-   * emits a fresh hashed filename on every rebundle). Resolves once the
-   * worker has acknowledged via `reloaded`.
-   */
   reload(input: RscWorkerReloadInput): Promise<void> {
     this.#clientManifest = input.clientManifest;
     this.#cssAssets = input.cssAssets ?? this.#cssAssets;
     this.#pagesBundleBuildId = input.buildId;
     if (input.pagesBundlePath) this.#pagesBundlePath = input.pagesBundlePath;
-    // While restarting / starting, the new worker will pick up the latest
-    // `#clientManifest` / `#cssAssets` / `#pagesBundlePath` via the `init` reply
-    // to its first `hello`, so callers don't need to wait on an explicit
-    // `reloaded` ack.
+    // A starting worker receives all of this through the init reply to its hello; there is no reloaded ack to await.
     if (this.#status !== "ready") return Promise.resolve();
-    // Every in-place reload re-imports the pages bundle under a fresh `?v=<buildId>` token, and Bun's
-    // ESM registry never evicts the previous version — so reloads ratchet RSS upward for the life of
-    // the worker (~37MB per save on a 27MB bundle). Recycle once enough have piled up: the recycle is
-    // rolling, so the old worker keeps serving until the replacement reports ready. Recycling on
-    // *every* reload would instead throw away every lazily-warmed route module, hence a threshold.
+    // Bun's ESM registry never evicts an old `?v=<buildId>` import, so in-place reloads ratchet RSS; recycle (rolling)
+    // past a threshold — recycling on every reload would throw away every lazily-warmed route module.
     if (this.#shouldRecycleForReloadAccumulation() && this.restartWhenIdle("pages-reload-accumulation")) {
       return Promise.resolve();
     }
     this.#reloadsSinceSpawn += 1;
     return new Promise<void>((resolve, reject) => {
-      // If a previous reload was still in flight, supersede it — the latest
-      // build strictly implies the earlier one completed from the caller's
-      // perspective.
+      // Supersede an in-flight reload: to its caller, the latest build implies the earlier one.
       if (this.#pendingReload) this.#pendingReload.resolve();
       this.#pendingReload = { resolve, reject, targetBuildId: input.buildId };
       try {
@@ -712,6 +570,7 @@ export class RscWorker {
     const workerPath = this.#resolveWorkerPath();
     let proc!: RscProcess;
     const earlyMessages: RscInMsg[] = [];
+    // Piped only under ndjson, where an inherited stdout would put text lines into the JSON stream.
     const piped = Logger.isNdjson;
     proc = Bun.spawn(["bun", "--conditions", "react-server", workerPath], {
       ipc: (message: RscInMsg) => {
@@ -735,7 +594,6 @@ export class RscWorker {
     return proc;
   }
 
-  /** The worker's own stdout and stderr as records of this replica, so a crash stack reaches the collector as JSON. */
   #readOutput(proc: RscProcess) {
     const replicaIdx = Number(process.env.AKAN_REPLICA_IDX);
     const record = (type: "stdout" | "stderr", text: string) =>
@@ -781,10 +639,7 @@ export class RscWorker {
     }
     switch (message.type) {
       case "hello":
-        // Re-injecting `#clientManifest` / `#cssAssets` here is what makes crash
-        // recovery transparent: after a respawn the new worker's first act is
-        // to ask for config, and it receives the latest manifest the host has
-        // accumulated via `reload(...)`.
+        // A respawned worker asks for config first; this is what carries the latest reload(...) state across a crash.
         this.#proc.send({
           type: "init",
           clientManifest: this.#clientManifest,
@@ -846,10 +701,11 @@ export class RscWorker {
         return;
       case "error":
         if (message.requestId === "__init__") {
-          // Init errors are surfaced on `ready` only for the very first spawn;
-          // subsequent restarts swallow them and let exponential backoff retry.
           if (!this.#readyResolved) this.#rejectReady(new Error(String(message.message)));
-          else this.#logger.error(`[rsc] worker init error on restart: ${message.message}`);
+          else {
+            this.#logger.error(`[rsc] worker init error on restart: ${message.message}`);
+            proc.kill();
+          }
           return;
         }
         if (message.requestId === "__reload__") {
@@ -903,8 +759,7 @@ export class RscWorker {
     try {
       this.#proc.send({ type: "cancel", requestId });
     } catch {
-      // The render stream is already detached on the host side. If the worker
-      // died between cancellation and this IPC send, its exit path will clean up.
+      // A worker that died before this send is cleaned up by its exit path.
     }
   }
 
@@ -932,9 +787,7 @@ export class RscWorker {
   }
 
   #handleExit(proc: RscProcess, code: number | null): void {
-    // Stale exits from a proc we've already replaced can still fire if the
-    // old subprocess was slow to cleanup; ignore them so we don't
-    // double-schedule a restart.
+    // A replaced proc's late exit must not schedule a second restart.
     if (proc !== this.#proc) return;
 
     const err = new Error(`rsc worker exited with code ${code}`);
@@ -946,8 +799,6 @@ export class RscWorker {
       this.#pendingReload.reject(err);
       this.#pendingReload = null;
     }
-    // Drop any sends that were queued against the dead worker. Callers own
-    // their streams and will see the `onError` above.
     this.#queuedSends = [];
 
     if (this.#killed) {
@@ -964,19 +815,9 @@ export class RscWorker {
   }
 
   #scheduleRestart(): void {
-    const attempt = this.#restartAttempts;
-    if (this.#restartOpts.maxAttempts !== undefined && attempt >= this.#restartOpts.maxAttempts) {
-      this.#status = "stopped";
-      const msg = `[rsc] worker failed ${attempt} restarts; giving up. SSR will return errors until the server restarts.`;
-      this.#logger.error(msg);
-      // Surface a rejection on the initial `ready` if we never succeeded.
-      this.#rejectReady(new Error(msg));
-      return;
-    }
-
     this.#status = "restarting";
-    const delay = Math.min(this.#restartOpts.baseDelayMs * 2 ** attempt, this.#restartOpts.maxDelayMs);
-    this.#restartAttempts = attempt + 1;
+    const delay = Math.min(200 * 2 ** this.#restartAttempts, 30_000);
+    this.#restartAttempts += 1;
     this.#restartCount += 1;
     this.#logger.verbose(`[rsc] worker crashed, restarting in ${delay}ms (attempt ${this.#restartAttempts})`);
     this.#restartTimer = setTimeout(() => {
@@ -994,11 +835,10 @@ export class RscWorker {
   #shouldRecycleForReloadAccumulation(): boolean {
     const maxReloads = RscWorker.#getRscMaxReloads();
     if (!maxReloads || this.#reloadsSinceSpawn < maxReloads) return false;
-    // Save-on-keystroke produces reload bursts. Reload in place through a burst and recycle on the
-    // first reload after it settles — the counter stays over the threshold, so nothing is skipped.
-    const sinceLastRecycleMs = this.#lastRecycleAtMono === null ? null : performance.now() - this.#lastRecycleAtMono;
-    if (sinceLastRecycleMs !== null && sinceLastRecycleMs < RscWorker.#getRscMinRecycleIntervalMs()) return false;
-    return true;
+    // A save-on-keystroke burst reloads in place; the counter stays over the threshold, so the next reload recycles.
+    if (this.#lastRecycleAtMono === null) return true;
+    const minIntervalMs = MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MIN_RECYCLE_INTERVAL_MS") ?? 1_000;
+    return performance.now() - this.#lastRecycleAtMono >= minIntervalMs;
   }
 
   #maybeRecycleFromMetrics(metrics: AkanMetricsReport): void {
@@ -1013,32 +853,17 @@ export class RscWorker {
       this.restartWhenIdle(`renderCount>${maxRenderCount}`);
       return;
     }
-    const maxRouteModules = RscWorker.#getRscMaxRouteModules();
+    const maxRouteModules = MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_ROUTE_MODULES");
     if (maxRouteModules && (metrics.rscLoadedRouteModuleCount ?? 0) >= maxRouteModules) {
       this.restartWhenIdle(`routeModules>${maxRouteModules}`);
     }
   }
 
-  static #isProductionRuntime(): boolean {
-    return process.env.NODE_ENV === "production";
-  }
-
-  static #getRscRecycleGraceMs(): number {
-    return MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_RECYCLE_GRACE_MS") ?? 5_000;
-  }
-
-  /**
-   * Reloads tolerated before the worker is recycled instead of reloaded in place. Production imports
-   * the pages bundle once at boot and never reloads, so the threshold only applies to dev.
-   */
+  // Production imports the pages bundle once at boot and never reloads, so only dev gets a threshold.
   static #getRscMaxReloads(): number | null {
     if (process.env.AKAN_RSC_WORKER_MAX_RELOADS !== undefined)
       return MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_RELOADS");
-    return RscWorker.#isProductionRuntime() ? null : RscWorker.#devMaxReloads;
-  }
-
-  static #getRscMinRecycleIntervalMs(): number {
-    return MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MIN_RECYCLE_INTERVAL_MS") ?? 1_000;
+    return process.env.NODE_ENV === "production" ? null : RscWorker.#devMaxReloads;
   }
 
   static #getRscMaxRssBytes(): number | null {
@@ -1046,14 +871,8 @@ export class RscWorker {
       megabytesEnv: "AKAN_RSC_WORKER_MAX_RSS_MB",
       bytesEnv: "AKAN_RSC_WORKER_MAX_RSS",
       limitFraction: 0.55,
-      // Dev has no memory limit to derive from, but bounding the worker is the point of this ceiling: a
-      // dev sandbox should recycle rather than grow until the host starts swapping. Well above the
-      // ~142MB post-boot baseline so ordinary route warm-up never trips it.
-      fallbackBytes: RscWorker.#isProductionRuntime() ? null : RscWorker.#devMaxRssBytes,
+      // Dev has no limit to derive from, yet should recycle before swapping; well above the ~142MB post-boot baseline.
+      fallbackBytes: process.env.NODE_ENV === "production" ? null : RscWorker.#devMaxRssBytes,
     });
-  }
-
-  static #getRscMaxRouteModules(): number | null {
-    return MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_ROUTE_MODULES");
   }
 }

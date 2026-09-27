@@ -19,14 +19,10 @@ export type TransMessage<Locale extends Record<string, unknown>> = {
   [K in keyof Locale]-?: `${K & string}${Locale[K] extends Record<string, unknown> ? `.${keyof Locale[K] extends string ? keyof Locale[K] : never}` : ""}`;
 }[keyof Locale];
 
-export const makeDictionary = <Dicts extends Record<string, unknown>[]>(
-  ...dicts: Dicts
-): Prettify<ObjectAssign<Dicts>> => {
-  return Object.assign(...(dicts as unknown as [object, object])) as Prettify<ObjectAssign<Dicts>>;
-};
+export const makeDictionary = <Dicts extends Record<string, unknown>[]>(...dicts: Dicts) =>
+  Object.assign(...(dicts as unknown as [object, object])) as Prettify<ObjectAssign<Dicts>>;
 
-// Locales are per-app (`AKAN_PUBLIC_LOCALES`), so the codes the framework ships names for are a hint for
-// autocomplete, not a closed set — an app is free to configure one nothing here lists.
+// An autocomplete hint, not a closed set: locales are per-app (`AKAN_PUBLIC_LOCALES`).
 type Language = "en" | "ko" | "zhChs" | "zhCht" | "ja" | (string & {});
 export interface TransMessageOption {
   key?: string;
@@ -55,6 +51,9 @@ export type ErrInstance = Error & {
   readonly timestamp?: string;
   toJSON(): ErrPayload & { statusCode: number };
 };
+type MsgApi<Key> = {
+  [Level in "info" | "success" | "error" | "warning" | "loading"]: (key: Key, option?: TransMessageOption) => void;
+};
 
 export type ErrConstructor<ErrorKey extends string> = {
   new (key: ErrorKey, data?: TranslationData, option?: ErrRestoreOption): ErrInstance;
@@ -67,15 +66,8 @@ export type ErrConstructor<ErrorKey extends string> = {
   Conflict: new (key: ErrorKey, data?: TranslationData, option?: ErrRestoreOption) => ErrInstance;
 };
 
-/**
- * The toast API, before anything has claimed it.
- *
- * `<Messages/>` assigns the real implementations onto this object when it mounts, so a call before that — a
- * store action on the first frame — has nowhere to go. It stays a no-op rather than throwing (a dropped toast
- * must not take the render with it) and says so once, because a message that silently never appeared is
- * otherwise indistinguishable from one the user missed. Server code reaches this object too, through
- * `akanjs/dictionary`, and there nothing ever assigns over it.
- */
+// `<Messages/>` assigns the real toasts over these when it mounts (never on the server); until then a call warns once
+// instead of throwing, because a dropped toast must not take the render with it.
 const unclaimed = (level: string) => () => {
   if (unclaimed.warned) return null;
   unclaimed.warned = true;
@@ -92,13 +84,7 @@ export const msg = {
   error: unclaimed("error"),
   warning: unclaimed("warning"),
   loading: unclaimed("loading"),
-} as {
-  info: (key: TransMessage<Record<string, unknown>>, option?: TransMessageOption) => void;
-  success: (key: TransMessage<Record<string, unknown>>, option?: TransMessageOption) => void;
-  error: (key: TransMessage<Record<string, unknown>>, option?: TransMessageOption) => void;
-  warning: (key: TransMessage<Record<string, unknown>>, option?: TransMessageOption) => void;
-  loading: (key: TransMessage<Record<string, unknown>>, option?: TransMessageOption) => void;
-};
+} as MsgApi<TransMessage<Record<string, unknown>>>;
 
 export const makeTrans = <
   GlobalTransMap extends Record<string, DictModule<string, string>>,
@@ -110,24 +96,17 @@ export const makeTrans = <
 ): {
   Err: ErrConstructor<_ErrorKey>;
   translate: (lang: Language, key: _DictKey, data?: TranslationData) => string;
-  msg: {
-    info: (key: _DictKey, option?: TransMessageOption) => void;
-    success: (key: _DictKey, option?: TransMessageOption) => void;
-    error: (key: _DictKey, option?: TransMessageOption) => void;
-    warning: (key: _DictKey, option?: TransMessageOption) => void;
-    loading: (key: _DictKey, option?: TransMessageOption) => void;
-  };
+  msg: MsgApi<_DictKey>;
   getDictionary: (lang: Language) => object;
   getAllDictionary: () => RootDictionary;
   __Dict_Key__: _DictKey;
   __Error_Key__: _ErrorKey;
 } => {
   const rootDictionary = {} as RootDictionary;
-  Object.entries(transMap).forEach(([refName, trans]) => {
-    trans.dict._registerToRoot(refName, rootDictionary);
-  });
+  for (const [refName, trans] of Object.entries(transMap)) trans.dict._registerToRoot(refName, rootDictionary);
   DictionaryRegistry.register(rootDictionary, transMap);
   class Err extends Error {
+    declare static status?: number;
     readonly error: string;
     readonly statusCode: number;
     readonly details?: unknown;
@@ -139,7 +118,7 @@ export const makeTrans = <
       super(key as string);
       this.name = this.constructor.name;
       this.error = key as string;
-      this.statusCode = option.statusCode ?? 400;
+      this.statusCode = new.target.status ?? option.statusCode ?? 400;
       this.details = option.details;
       this.data = data;
       this.path = option.path;
@@ -162,33 +141,23 @@ export const makeTrans = <
     }
 
     static BadRequest = class BadRequestErr extends Err {
-      constructor(key: _ErrorKey, data?: TranslationData, option: ErrRestoreOption = {}) {
-        super(key, data, { ...option, statusCode: 400 });
-      }
+      static override status = 400;
     };
 
     static Unauthorized = class UnauthorizedErr extends Err {
-      constructor(key: _ErrorKey, data?: TranslationData, option: ErrRestoreOption = {}) {
-        super(key, data, { ...option, statusCode: 401 });
-      }
+      static override status = 401;
     };
 
     static Forbidden = class ForbiddenErr extends Err {
-      constructor(key: _ErrorKey, data?: TranslationData, option: ErrRestoreOption = {}) {
-        super(key, data, { ...option, statusCode: 403 });
-      }
+      static override status = 403;
     };
 
     static NotFound = class NotFoundErr extends Err {
-      constructor(key: _ErrorKey, data?: TranslationData, option: ErrRestoreOption = {}) {
-        super(key, data, { ...option, statusCode: 404 });
-      }
+      static override status = 404;
     };
 
     static Conflict = class ConflictErr extends Err {
-      constructor(key: _ErrorKey, data?: TranslationData, option: ErrRestoreOption = {}) {
-        super(key, data, { ...option, statusCode: 409 });
-      }
+      static override status = 409;
     };
   }
   const lookup = (lang: string, modelName: string, msgKey: string) => {
@@ -197,9 +166,7 @@ export const makeTrans = <
     const node = pathGetLoose(msgKey, model, ".") as { t?: unknown } | null;
     return typeof node?.t === "string" ? node.t : undefined;
   };
-  // A dictionary declares its own locale tuple, so an app that configures a third locale gets no node at all for
-  // the keys every lib — and the framework itself — only wrote in two. The dotted key is right only when no
-  // locale carries it.
+  // A lib's dictionary has no node for a locale only the app configures, so try the default locale before the bare key.
   const lookupDefault = (lang: string, modelName: string, msgKey: string) => {
     const { defaultLocale } = parseAkanI18nEnv();
     return defaultLocale === lang ? undefined : lookup(defaultLocale, modelName, msgKey);
@@ -210,18 +177,12 @@ export const makeTrans = <
     const message = lookup(lang, modelName, msgKey) ?? lookupDefault(lang, modelName, msgKey) ?? (key as string);
     return interpolateTranslation(message, data);
   };
-  const getDictionary = (lang: Language) => {
-    return rootDictionary[lang];
-  };
-  const getAllDictionary = () => {
-    return rootDictionary;
-  };
   return {
     Err,
     translate,
     msg,
-    getDictionary,
-    getAllDictionary,
+    getDictionary: (lang: Language) => rootDictionary[lang],
+    getAllDictionary: () => rootDictionary,
     __Dict_Key__: null as unknown as _DictKey,
     __Error_Key__: null as unknown as _ErrorKey,
   };

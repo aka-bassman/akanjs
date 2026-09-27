@@ -93,15 +93,15 @@ export default page().render(() => {
     {
       name: "push(href, { scrollToTop })",
       desc: l.trans({
-        en: "Goes to a route and adds a history entry.",
-        ko: "route로 이동하고 history 항목을 하나 추가합니다.",
+        en: "Goes to a route and adds a history entry. Browser only; on the server, use `redirect()`.",
+        ko: "route로 이동하고 history 항목을 하나 추가합니다. 브라우저에서만 되며, 서버에서는 `redirect()`를 씁니다.",
       }),
     },
     {
       name: "replace(href)",
       desc: l.trans({
-        en: "Goes to a route in place of the current history entry.",
-        ko: "현재 history 항목을 바꾸면서 이동합니다.",
+        en: "Goes to a route in place of the current history entry. Browser only; on the server, use `redirect()`.",
+        ko: "현재 history 항목을 바꾸면서 이동합니다. 브라우저에서만 되며, 서버에서는 `redirect()`를 씁니다.",
       }),
     },
     {

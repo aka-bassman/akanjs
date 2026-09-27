@@ -118,7 +118,6 @@ describe("ChatCommands", () => {
     await ChatCommands.run(commandOf("tools"), { session, l });
     const text = noteOf(session);
     expect(text).toContain("`askUser`");
-    // The first sentence only: a tool description is written for a model and runs long.
     expect(text).toContain("`submitTask` — Submit the task.");
     expect(text).not.toContain("Runs the whole flow.");
     expect(text).toContain("base.agentToolsState");

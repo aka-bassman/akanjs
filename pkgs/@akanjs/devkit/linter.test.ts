@@ -27,8 +27,7 @@ describe("parseBiomeReport", () => {
   });
 
   test("reads a report behind leading text that carries a brace", () => {
-    // The whole reason the first-brace-to-last-brace slice was wrong: Biome prints configuration and IO
-    // diagnostics onto the same stream as the report, and those messages quote source and config.
+    // Biome prints configuration and IO diagnostics onto the report's stream, and they quote source and config.
     const output = [
       "configuration/deserialize: unknown key `overrides[0].includes { }`",
       "  the file `biome.jsonc` cannot be read",

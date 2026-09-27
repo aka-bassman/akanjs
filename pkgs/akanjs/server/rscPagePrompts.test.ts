@@ -71,7 +71,6 @@ describe("RscPagePrompts", () => {
       { name: "gate", description: "Gated.", arguments: [], pattern: "/:lang/gate" },
       { name: "owned", description: "Somebody else's.", arguments: [], pattern: "/:lang/owned" },
     ]);
-    // Cached against the route array: the same routes answer the same entries without reloading a module.
     expect(await prompts.list()).toBe(await prompts.list());
   });
 
@@ -83,7 +82,6 @@ describe("RscPagePrompts", () => {
     });
     expect(run).toMatchObject({ ok: true, url: `http://127.0.0.1/en/item/${itemId}?tags=a&tags=b` });
     if (!run.ok) return;
-    // Layout first, then the page; a query that failed keeps its place with the failure instead of the value.
     expect(run.records.map((entry) => entry.key)).toEqual(["self", "item", "tagsOf"]);
     expect(run.records[1]).toEqual({
       key: "item",

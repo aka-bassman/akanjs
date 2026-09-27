@@ -7,12 +7,7 @@ import { McpServerConfig, type McpServerScope } from "./McpServerConfig";
 
 const roots: string[] = [];
 
-/**
- * The home half of the config, moved somewhere disposable.
- *
- * Without it every `add` in this file writes into whoever runs it — `~/.akan/code/mcp.json` is now a real
- * default, and a test that declares `github` would declare it for their every session.
- */
+// Without this every add() writes into the real ~/.akan/code/mcp.json of whoever runs the suite.
 beforeAll(() => {
   const home = mkdtempSync(path.join(tmpdir(), "akan-home-"));
   roots.push(home);
@@ -61,7 +56,6 @@ describe("MCP server config", () => {
     ]);
   });
 
-  /** Both are what a server that discovery cannot finish for is reached with, so the file has to carry them. */
   test("a static token and a hand-issued oauth client travel from the file", () => {
     const root = workspace(
       JSON.stringify({
@@ -104,7 +98,6 @@ describe("MCP server config", () => {
     expect(Object.keys(written(root).mcpServers ?? {})).toEqual(["linear", "github"]);
   });
 
-  /** The file is shared with whatever editor wrote it, so the key it already uses is the key a write goes into. */
   test("a VS Code file keeps its own spelling through a write", () => {
     const root = workspace(JSON.stringify({ servers: { a: { command: "a" } } }));
     McpServerConfig.add(root, "b", ["b"], "workspace");
@@ -143,12 +136,6 @@ describe("MCP server config", () => {
     expect(McpServerConfig.problem(root)).toBeUndefined();
   });
 
-  /**
-   * The whole point of the home file: one declaration, every checkout.
-   *
-   * A server is an integration with an account and its token already lives in the home directory, so making
-   * the declaration per repo means declaring and signing in again in each one.
-   */
   test("a server declared in the home file is read from a workspace that declares nothing", () => {
     globalFile(JSON.stringify({ mcpServers: { office: { url: "https://office.example/mcp" } } }));
     const root = workspace();
@@ -187,6 +174,26 @@ describe("MCP server config", () => {
     expect(McpServerConfig.remove(root, "office")).toBe("global");
     expect(McpServerConfig.remove(root, "repobot")).toBe("workspace");
     expect(McpServerConfig.read(root)).toEqual([]);
+  });
+
+  test("removing a name both files declare takes the workspace's, and the home file's then applies", () => {
+    globalFile(JSON.stringify({ mcpServers: { shared: { command: "home" } } }));
+    const root = workspace(JSON.stringify({ mcpServers: { shared: { command: "repo" } } }));
+    expect(McpServerConfig.remove(root, "shared")).toBe("workspace");
+    expect(McpServerConfig.declared(root)).toEqual([
+      { ref: { name: "shared", transport: "stdio", command: "home" }, disabled: false, scope: "global" },
+    ]);
+  });
+
+  test("a remove that names a scope touches only that file", () => {
+    globalFile(JSON.stringify({ mcpServers: { office: { command: "x" }, shared: { command: "home" } } }));
+    const root = workspace(JSON.stringify({ mcpServers: { shared: { command: "repo" } } }));
+    expect(McpServerConfig.remove(root, "office", "workspace")).toBe(false);
+    expect(McpServerConfig.remove(root, "shared", "global")).toBe("global");
+    expect(McpServerConfig.declared(root).map((entry) => [entry.ref.name, entry.scope])).toEqual([
+      ["office", "global"],
+      ["shared", "workspace"],
+    ]);
   });
 
   test("a scope is what a caller names, never guessed from the shape", () => {

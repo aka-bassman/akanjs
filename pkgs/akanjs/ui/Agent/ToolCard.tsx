@@ -8,14 +8,7 @@ export interface ToolCardProps {
   card: PendingCard;
 }
 
-/**
- * A call the user answers, parked above the composer where the approval and the question cards sit. What it draws
- * is the app's own — the declaration that published the tool also said what filling it in looks like — so this
- * frame owns only the placement and the way out of it.
- *
- * The way out is not the app's to forget: a card that renders no cancel of its own would otherwise park the turn
- * on a component the user cannot dismiss, so the frame always draws one.
- */
+/** Always draws a skip, so a card rendering no cancel of its own cannot park the turn for good. */
 export const DefaultToolCard = ({ className, card }: ToolCardProps) => {
   const { l } = usePage();
   return (

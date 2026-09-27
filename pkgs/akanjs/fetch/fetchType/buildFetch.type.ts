@@ -1,4 +1,12 @@
-import type { DatabaseSignal, EndpointCls, SerializedSignal, ServiceSignal, SliceCls } from "akanjs/signal";
+import type { ConstantModel } from "akanjs/constant";
+import type {
+  DatabaseSignal,
+  EndpointCls,
+  SerializedSignal,
+  SerializedSlice,
+  ServiceSignal,
+  SliceCls,
+} from "akanjs/signal";
 import type { FetchProxy } from "../client";
 import type { GetSliceMetaObjFromDatabaseSignals } from "../types";
 import type { SliceMeta } from "./appliedReturn.type";
@@ -68,3 +76,22 @@ export type FetchClientType<Signals extends readonly FetchSignalInput[]> = Fetch
   MergeAllFetchTypes<Signals>,
   GetSliceMetaObjFromDatabaseSignals<Signals>
 >;
+
+export type ClientSlice = {
+  refName: string;
+  sliceName: string;
+  serializedSlice: SerializedSlice;
+};
+
+export type ClientSignal<
+  RefName extends string = string,
+  SlceCls extends SliceCls = SliceCls,
+  Cnst extends ConstantModel = ConstantModel,
+> = {
+  refName: RefName;
+  _slice: SlceCls;
+  cnst: Cnst;
+  fetch: FetchProxy<any>;
+  slices: ClientSlice[];
+  serializedSignal: SerializedSignal;
+};

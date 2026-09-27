@@ -4,15 +4,8 @@ import type { LogHub, LogHubEntry } from "./logHub";
 import { LogQueryMatcher } from "./logQuery";
 import { LogStdoutWriter } from "./logStdoutWriter";
 
-/**
- * `GET /_akan/app/logs?level=warn&endpoint=mutation:*` — the hub as a `text/event-stream`, for a monitor watching
- * one process from outside the pod. Every event carries the hub `seq` as its `id:`, so a client that reconnects
- * with `Last-Event-ID` gets what it missed while the ring still holds it, and an explicit gap event when it does
- * not — never a silent skip a monitor would read as a quiet interval.
- *
- * The route exists only when `AKAN_LOG_STREAM_TOKEN` is set, and answers only a matching bearer token. It logs
- * nothing itself: a stream that logged its own subscriptions at the level it delivers would feed on itself.
- */
+// A resume past the ring gets an explicit gap event: a monitor would read a silent skip as a quiet interval.
+// Never log from here: a stream logging its own subscriptions at the level it delivers would feed on itself.
 export class LogStreamRoute {
   static readonly path = "/_akan/app/logs";
   static readonly retryMs = 2_000;
@@ -37,8 +30,7 @@ export class LogStreamRoute {
       return new Response("Unauthorized", { status: 401, headers: { "www-authenticate": "Bearer" } });
     const hub = this.#hub();
     if (!hub) return new Response("Log hub is not running", { status: 503 });
-    const url = new URL(req.url);
-    const query = LogQueryMatcher.parse(url.searchParams);
+    const query = LogQueryMatcher.parse(new URL(req.url).searchParams);
     const matcher = new LogQueryMatcher(query);
     let subscription: { unsubscribe(): void } | null = null;
     const stream = new EventStream(
@@ -49,8 +41,8 @@ export class LogStreamRoute {
       { keepAliveMs: LogStreamRoute.heartbeatMs, keepAliveChunk: ": heartbeat\n\n" },
     );
     stream.retry(LogStreamRoute.retryMs);
-    const lastEventId = LogStreamRoute.#lastEventId(req);
-    if (lastEventId !== null) LogStreamRoute.#resume(hub, stream, matcher, lastEventId);
+    const lastEventId = req.headers.get("last-event-id")?.trim();
+    if (lastEventId && /^\d+$/.test(lastEventId)) LogStreamRoute.#resume(hub, stream, matcher, Number(lastEventId));
     subscription = hub.subscribe(query, (entry) => LogStreamRoute.#send(stream, entry));
     return stream.response();
   }
@@ -63,13 +55,6 @@ export class LogStreamRoute {
     return presented.length === this.#token.length && timingSafeEqual(presented, this.#token);
   }
 
-  static #lastEventId(req: Request): number | null {
-    const value = req.headers.get("last-event-id");
-    if (value === null || !/^\d+$/.test(value.trim())) return null;
-    return Number(value.trim());
-  }
-
-  /** What arrived after `lastEventId`, preceded by a gap event when the ring no longer reaches back that far. */
   static #resume(hub: LogHub, stream: EventStream, matcher: LogQueryMatcher, lastEventId: number) {
     if (lastEventId > hub.seq) {
       // The sequence restarted — a new process is answering — so nothing after that id can exist here.

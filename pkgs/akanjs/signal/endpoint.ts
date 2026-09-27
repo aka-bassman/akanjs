@@ -1,6 +1,6 @@
 import type { Assign } from "akanjs/base";
 import { ENDPOINT_DICT_SHAPE, ENDPOINT_META } from "akanjs/base";
-import { applyMixins } from "akanjs/common";
+import { applyMixins, Logger } from "akanjs/common";
 import { type Adaptor, type AdaptorCls, dangerouslyAdapt, type ServiceModel } from "akanjs/service";
 import { buildEndpoint, type EndpInfoArgNames, type EndpointBuilder, type EndpointInfo } from "./endpointInfo";
 import type { SrvRefName } from "./types";
@@ -33,7 +33,16 @@ type MergeEndpointMetas<EndpClses extends readonly EndpointCls[], Acc = unknown>
   ? MergeEndpointMetas<Rest, Assign<Acc, EndpointMetaOf<First>>>
   : Acc;
 
-/** Builds a typed endpoint adaptor from a service module and endpoint builder. */
+const warnQueryBodyArgs = (refName: string, endpoints: { [key: string]: EndpointInfo }) => {
+  for (const [key, info] of Object.entries(endpoints))
+    if (info.type === "query")
+      for (const arg of info.args)
+        if (arg.type === "body")
+          Logger.warn(
+            `${refName}.${key}: fetch sends a query as GET, so its body argument "${arg.name}" never arrives over HTTP — declare it with .search() or make the endpoint a mutation`,
+          );
+};
+
 export function endpoint<
   SrvModule extends ServiceModel,
   Builder extends EndpointBuilder<SrvModule>,
@@ -59,6 +68,7 @@ export function endpoint<
     static srv = srv;
     static [ENDPOINT_META] = builder(buildEndpoint);
   };
+  warnQueryBodyArgs(srv.srv.refName, endpointCls[ENDPOINT_META]);
   libEndpoints.forEach((libEndpoint) => {
     Object.assign(endpointCls[ENDPOINT_META], libEndpoint[ENDPOINT_META]);
     Object.assign(endpointCls.srv.srvMap, libEndpoint.srv.srvMap);

@@ -1,38 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { EventEmitter } from "node:events";
-import { PassThrough } from "node:stream";
 import { render } from "ink";
 import type { DevLogLine } from "../application/devLogBuffer";
 import { HOST_SOURCE } from "../application/devLogBuffer";
 import { type DevTuiActions, DevTuiApp, type DevTuiRailRow, type DevTuiSnapshot } from "./DevTuiApp";
+import { esc, FakeStdout, makeStdin, nextFrame } from "./fakeTerminal.spec";
 
-/** Ink writes frames here and reads its size from `columns`/`rows`; nothing else of a tty is used. */
-class FakeStdout extends EventEmitter {
-  columns = 100;
-  rows = 14;
-  readonly frames: string[] = [];
-  write = (frame: string) => {
-    this.frames.push(frame);
-    return true;
-  };
-  get lastFrame() {
-    return (this.frames.at(-1) ?? "").replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
+class DevStdout extends FakeStdout {
+  override get lastFrame() {
+    return (this.frames.at(-1) ?? "").replace(new RegExp(`${esc}\\[[0-9;]*m`, "g"), "");
   }
 }
-
-const makeStdin = () => {
-  const stdin = new PassThrough() as PassThrough & {
-    isTTY: boolean;
-    setRawMode: (raw: boolean) => void;
-    ref: () => void;
-    unref: () => void;
-  };
-  stdin.isTTY = true;
-  stdin.setRawMode = () => undefined;
-  stdin.ref = () => undefined;
-  stdin.unref = () => undefined;
-  return stdin;
-};
 
 const lineOf = (seq: number, app: string, text: string, source = HOST_SOURCE): DevLogLine => ({
   seq,
@@ -51,20 +28,17 @@ const railOf = (): DevTuiRailRow[] => [
 ];
 
 interface Harness {
-  stdout: FakeStdout;
+  stdout: DevStdout;
   calls: string[];
   unmount: () => void;
   press: (input: string) => Promise<void>;
   setSnapshot: (patch: Partial<DevTuiSnapshot>) => void;
 }
 
-/** Ink throttles frame writes to `maxFps: 30`; anything shorter reads the previous frame. */
-const nextFrame = () => Bun.sleep(80);
-
 const harnesses: Harness[] = [];
 
 const mount = (patch: Partial<DevTuiSnapshot> = {}): Harness => {
-  const stdout = new FakeStdout();
+  const stdout = new DevStdout(100, 14);
   const stdin = makeStdin();
   const calls: string[] = [];
   let snapshot: DevTuiSnapshot = {
@@ -153,7 +127,6 @@ describe("DevTuiApp", () => {
     expect(frame).toContain("8283");
     expect(frame).toContain(HOST_SOURCE);
     expect(frame).toContain("#0 all");
-    // The digit that jumps to each app is shown next to it; replica rows carry none.
     expect(frame).toMatch(/● 1 akan 8282/);
     expect(frame).toMatch(/◐ 2 minimal 8283/);
     expect(frame).not.toMatch(/\d #0 all/);
@@ -162,7 +135,6 @@ describe("DevTuiApp", () => {
   test("a digit jumps to the nth app, not the nth rail row", async () => {
     const harness = mount();
     await nextFrame();
-    // Rail row 2 is akan's `host`, but `2` must reach the second *app*.
     await harness.press("2");
     await harness.press("1");
     expect(harness.calls).toEqual(["selectApp:1", "selectApp:0"]);
@@ -193,7 +165,6 @@ describe("DevTuiApp", () => {
   });
 
   test("the line prefix follows the scope: app when merged, source inside an app, none inside one", async () => {
-    // Merged across apps: two apps both have a `host` stream, so the app name is what separates them.
     const merged = mount({
       prefix: "app",
       lines: [lineOf(1, "akan", "one"), lineOf(2, "minimal", "two")],
@@ -286,7 +257,6 @@ describe("DevTuiApp", () => {
   test("arrows scroll by a line and shift-arrows by a page", async () => {
     const harness = mount({ logRows: 10 });
     await nextFrame();
-    const esc = String.fromCharCode(27);
     await harness.press(`${esc}[A`);
     await harness.press(`${esc}[B`);
     await harness.press(`${esc}[5~`);
@@ -299,7 +269,6 @@ describe("DevTuiApp", () => {
     const harness = mount({ editingGrep: true, grep: "pay" });
     await nextFrame();
     expect(harness.stdout.lastFrame).toContain("grep pay");
-    // `q` would quit outside the filter; here it has to be text.
     await harness.press("q");
     expect(harness.calls).toEqual(["setGrep:payq"]);
   });

@@ -83,7 +83,6 @@ describe("OAuthClientIdMetadata", () => {
     // One private address among public ones is enough: the fetch would pick whichever the stack prefers.
     const mixed = resolvingTo("93.184.216.34", "10.0.0.5");
     expect(await OAuthClientIdMetadata.fetch(clientId, { fetchImpl, resolve: mixed })).toBeNull();
-    // A name that does not resolve, or a resolver that fails, is refused rather than fetched blind.
     expect(await OAuthClientIdMetadata.fetch(clientId, { fetchImpl, resolve: resolvingTo() })).toBeNull();
     const failing = async () => {
       throw new Error("ENOTFOUND");

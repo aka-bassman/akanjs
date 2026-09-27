@@ -56,8 +56,7 @@ export class BullQueue
     this.#Worker = Worker;
   }
   override async onDestroy() {
-    // A worker closed while its connections are still opening leaves bullmq with a rejection nobody holds, so it gets
-    // a moment to finish opening — bounded, since a Redis that is down never lets it.
+    // A worker closed mid-connect leaves bullmq an unheld rejection, so it gets a bounded moment to finish opening.
     const settle = async (worker: WorkerLike) => {
       await Promise.race([worker.waitUntilReady().catch(() => undefined), Bun.sleep(2_000)]);
       await worker.close();
@@ -66,9 +65,8 @@ export class BullQueue
     await Promise.all([...this.#queues.values()].map(async (queue) => await queue.close()));
     this.#queues.clear();
   }
-  // bullmq scopes a Worker to a *queue* name, not a job name, so producer and consumer must agree on the queue.
-  // One queue per process key keeps each worker consuming only its own jobs, mirroring SolidQueue's per-name workers.
-  // The app and environment ride bullmq's `prefix`, because a queue name may not contain `:`.
+  // bullmq scopes a Worker to a queue, not a job name, so one queue per key keeps each worker on its own jobs. App and
+  // environment ride bullmq's `prefix`, as a queue name may not contain `:`.
   getQueue(key: string): QueueLike {
     const queue = this.#queues.get(key);
     if (queue) return queue;
@@ -82,9 +80,8 @@ export class BullQueue
     return newQueue;
   }
   registerProcessWorker(key: string, handler: (job: AkanJob) => Promise<unknown>): WorkerLike {
-    // Options rather than the cache's client: a worker blocks on its connections waiting for jobs, bullmq refuses one
-    // that gives up on a command after a few retries as the cache's client does, and connections bullmq opened itself
-    // are ones it closes itself — even when the worker closes before they finished opening.
+    // Options, not the cache's client: bullmq refuses a client that gives up after a few retries, and it closes the
+    // connections it opened itself even mid-open.
     const connection = { ...this.redis.options, maxRetriesPerRequest: null };
     const worker = new this.#Worker(key, handler, { connection, prefix: this.prefix });
     worker.on("error", (error) => this.logger.warn(`Worker ${key} error: ${error.message}`));

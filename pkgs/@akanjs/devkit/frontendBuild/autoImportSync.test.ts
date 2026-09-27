@@ -1,20 +1,17 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { tempDirs } from "../testHelpers";
 import { AutoImportSync, transformSource } from "./autoImportSync";
 
-const tempRoots: string[] = [];
+const makeTempRoot = tempDirs("akan-auto-import-");
 
-const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-auto-import-"));
-  tempRoots.push(root);
-  return root;
+const seed = async (root: string, rel: string, content: string) => {
+  const abs = path.join(root, rel);
+  await mkdir(path.dirname(abs), { recursive: true });
+  await writeFile(abs, content);
+  return abs;
 };
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 
 const constantCtx = { role: "constant", scope: "libs", project: "shared" } as const;
 const documentCtx = { role: "document", scope: "libs", project: "shared" } as const;
@@ -184,13 +181,6 @@ describe("transformSource — client role (package client entry)", () => {
 });
 
 describe("AutoImportSync.syncForBatch", () => {
-  const seed = async (root: string, rel: string, content: string) => {
-    const abs = path.join(root, rel);
-    await mkdir(path.dirname(abs), { recursive: true });
-    await writeFile(abs, content);
-    return abs;
-  };
-
   test("writes the fix once, then is idempotent", async () => {
     const root = await makeTempRoot();
     const abs = await seed(
@@ -309,9 +299,7 @@ describe("AutoImportSync.syncForBatch", () => {
 
   test("leaves JS globals and ambiguous domain names alone", async () => {
     const root = await makeTempRoot();
-    // `Map` is a real model here but must not shadow the JS global.
     await seed(root, "libs/x/lib/map/map.constant.ts", `export class Map extends via {}\n`);
-    // `Dup` is exported by two files → ambiguous → skipped.
     await seed(root, "libs/x/lib/a/a.constant.ts", `export class Dup {}\n`);
     await seed(root, "libs/x/lib/b/b.constant.ts", `export class Dup {}\n`);
     const consumer = await seed(
@@ -348,7 +336,7 @@ describe("AutoImportSync.syncForBatch", () => {
 
   test("srvkit: does not import a barrel whose file is absent", async () => {
     const root = await makeTempRoot();
-    await seed(root, "libs/x/lib/dict.ts", `export const x = 1;\n`); // no lib/srv.ts
+    await seed(root, "libs/x/lib/dict.ts", `export const x = 1;\n`);
     const file = await seed(root, "libs/x/srvkit/api.ts", `export const f = () => Err.of(srv.user);\n`);
     const sync = new AutoImportSync({ workspaceRoot: root });
 
@@ -370,20 +358,11 @@ describe("AutoImportSync.syncForBatch", () => {
 });
 
 describe("AutoImportSync — scope", () => {
-  const writeAt = async (root: string, rel: string, source: string) => {
-    const abs = path.join(root, rel);
-    await mkdir(path.dirname(abs), { recursive: true });
-    await writeFile(abs, source);
-    return abs;
-  };
-
-  // `lib/__lib/` is generated and gitignored: `akan sync` rewrites it, which is also what makes the
-  // watcher hand it to the syncer, so an edit there is churn that the next sync discards.
   test("leaves the generated lib/__lib stubs alone and still syncs lib/__scalar", async () => {
     const root = await makeTempRoot();
     const needsImport = "export class A {\n  count = field(Int);\n}\n";
-    const generated = await writeAt(root, "libs/shared/lib/__lib/lib.constant.ts", needsImport);
-    const scalar = await writeAt(root, "libs/shared/lib/__scalar/money/money.constant.ts", needsImport);
+    const generated = await seed(root, "libs/shared/lib/__lib/lib.constant.ts", needsImport);
+    const scalar = await seed(root, "libs/shared/lib/__scalar/money/money.constant.ts", needsImport);
 
     const result = await new AutoImportSync({ workspaceRoot: root }).syncForBatch([generated, scalar]);
 
@@ -393,11 +372,9 @@ describe("AutoImportSync — scope", () => {
     expect(await readFile(scalar, "utf8")).toContain('import { Int } from "akanjs/base";');
   });
 
-  // The transform is pure and the write is conditional on a difference, so a second pass over its own
-  // output writes nothing — without that the watcher would re-fire on the syncer's own edit.
   test("a second pass over its own output changes nothing", async () => {
     const root = await makeTempRoot();
-    const file = await writeAt(
+    const file = await seed(
       root,
       "libs/shared/lib/task/task.constant.ts",
       "export class A {\n  count = field(Int);\n}\n",
@@ -410,11 +387,10 @@ describe("AutoImportSync — scope", () => {
     expect(await readFile(file, "utf8")).toBe(afterFirst);
   });
 
-  // One try/catch per file: a file that cannot be read is reported and the rest of the batch still runs.
   test("a failing file is reported without abandoning the batch", async () => {
     const root = await makeTempRoot();
     const missing = path.join(root, "libs/shared/lib/task/gone.constant.ts");
-    const good = await writeAt(
+    const good = await seed(
       root,
       "libs/shared/lib/task/task.constant.ts",
       "export class A {\n  count = field(Int);\n}\n",

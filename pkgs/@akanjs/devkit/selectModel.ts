@@ -3,9 +3,8 @@ import { select } from "@inquirer/prompts";
 
 export const selectModel = async (modulePath: string) => {
   const modelNames = readdirSync(`${modulePath}/lib`).filter((dir) => !dir.includes(".") && !dir.startsWith("_"));
-  const modelName = await select({
+  return await select({
     message: "Select the model to create the unit for",
     choices: modelNames.map((name) => ({ name, value: name })),
   });
-  return modelName;
 };

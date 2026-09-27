@@ -126,7 +126,7 @@ export default function Item<T extends string, Full extends { id: string }, Ligh
         <div className="flex justify-center">
           <div className="relative size-full" onClick={onClick}>
             {children}
-            {/* children 클릭 방지 */}
+            {/* Covers the children so the click lands on the card, not on them. */}
             <div className="absolute inset-0" />
           </div>
         </div>
@@ -176,7 +176,6 @@ export const Action = <T extends string, M extends { id: string }, L extends { i
 }: ActionProps<T, M, L> & { outline?: boolean }) => {
   const { l } = usePage();
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
-  const storeGet = st.get as unknown as <T>() => { [key: string]: T };
   const { refName, sliceName } = slice;
   const [modelName, modelClassName] = [refName, capitalize(refName)];
   const names = {
@@ -230,7 +229,6 @@ export const Action = <T extends string, M extends { id: string }, L extends { i
   );
 };
 
-// daisyui badge-* 매핑 → 시맨틱 토큰 색 오버라이드(badgeRecipe outline 위에 얹음). "-outline"류는 색 테두리+텍스트만.
 const statusColors = {
   active: "border-info text-info",
   applied: "border-transparent bg-warning text-warning-foreground",

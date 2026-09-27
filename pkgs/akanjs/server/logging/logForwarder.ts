@@ -9,30 +9,22 @@ export interface LogForwarderOptions {
   maxMessageChars?: number;
 }
 
-/**
- * The child side of the log channel: a Logger sink that batches records over IPC to whoever owns the hub.
- * Installed only while the owner has asked for a level (`log.level`), so a process nobody is watching sends
- * nothing; `AKAN_LOG_STREAM=1` keeps it on regardless.
- */
 export class LogForwarder {
   static readonly defaultFlushMs = 20;
   static readonly defaultMaxRecords = 64;
-  /**
-   * Bun IPC loses a message outright when the sender exits soon after and the payload is large — measured from
-   * 16KB for one long string — and a small message queued behind it dies with it. Batches stay well under that.
-   */
   static readonly defaultMaxBytes = 32 * 1024;
   static readonly defaultMaxQueue = 1_000;
   static readonly defaultMaxMessageChars = 16 * 1024;
+  static readonly #closeTimeoutMs = 1_000;
 
-  readonly #send: (message: AkanIpcMessage) => void;
+  readonly #send: (message: AkanIpcMessage, onSent?: () => void) => void;
   readonly #flushMs: number;
   readonly #maxRecords: number;
   readonly #maxBytes: number;
   readonly #maxQueue: number;
   readonly #maxMessageChars: number;
   readonly #alwaysOn = process.env.AKAN_LOG_STREAM === "1";
-  /** In an ndjson deployment this process writes nothing itself, so what the stdout level admits must go up. */
+  // In an ndjson deployment this process writes nothing itself, so what the stdout level admits must go up.
   readonly #baseSev: number | null = Logger.isNdjson ? logSeverity[Logger.level] : null;
   #queue: LogRecord[] = [];
   #dropped = 0;
@@ -40,7 +32,7 @@ export class LogForwarder {
   #removeSink: (() => void) | null = null;
   #minSev: number | null = null;
 
-  constructor(send: (message: AkanIpcMessage) => void, options: LogForwarderOptions = {}) {
+  constructor(send: (message: AkanIpcMessage, onSent?: () => void) => void, options: LogForwarderOptions = {}) {
     this.#send = send;
     this.#flushMs = options.flushMs ?? LogForwarder.defaultFlushMs;
     this.#maxRecords = options.maxRecords ?? LogForwarder.defaultMaxRecords;
@@ -50,7 +42,6 @@ export class LogForwarder {
     if (this.minSev !== null) this.setMinSev(null);
   }
 
-  /** The severity floor in force, or `null` when nothing is forwarded. */
   get minSev(): number | null {
     const base = this.#alwaysOn ? 0 : this.#baseSev;
     if (base === null) return this.#minSev;
@@ -59,10 +50,6 @@ export class LogForwarder {
 
   get active() {
     return this.#removeSink !== null;
-  }
-
-  get dropped() {
-    return this.#dropped;
   }
 
   setMinSev(minSev: number | null) {
@@ -79,7 +66,6 @@ export class LogForwarder {
     });
   }
 
-  /** Enqueues a record this process produced or relays for one below it; dropped when nobody is listening. */
   push(record: LogRecord) {
     const floor = this.minSev;
     if (floor === null) return;
@@ -97,9 +83,10 @@ export class LogForwarder {
     for (const record of records) this.push(record);
   }
 
-  flush() {
+  flush(onSent?: () => void) {
     if (this.#timer) clearTimeout(this.#timer);
     this.#timer = null;
+    if (!this.#queue.length) onSent?.();
     while (this.#queue.length) {
       const batch: LogRecord[] = [];
       let bytes = 0;
@@ -113,14 +100,25 @@ export class LogForwarder {
       }
       const dropped = this.#dropped;
       this.#dropped = 0;
-      this.#send({ type: "log.records", records: batch, ...(dropped ? { dropped } : {}), pid: process.pid });
+      this.#send(
+        { type: "log.records", records: batch, ...(dropped ? { dropped } : {}), pid: process.pid },
+        this.#queue.length ? undefined : onSent,
+      );
     }
   }
 
-  close() {
+  // Bun IPC loses a large message, and every one queued behind it, when the process exits right after sending it.
+  close(): Promise<void> {
     this.#removeSink?.();
     this.#removeSink = null;
-    this.flush();
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, LogForwarder.#closeTimeoutMs);
+      timer.unref?.();
+      this.flush(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
   }
 
   #clip(record: LogRecord): LogRecord {

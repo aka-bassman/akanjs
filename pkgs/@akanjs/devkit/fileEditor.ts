@@ -17,57 +17,29 @@ export class FileEditor {
   }
 
   find(pattern: string | RegExp): number {
-    const lines = this.#content.split("\n");
     const regex = typeof pattern === "string" ? new RegExp(pattern) : pattern;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (!line) continue;
-      if (regex.test(line)) return i;
-    }
-
-    return -1;
+    return this.#content.split("\n").findIndex((line) => !!line && regex.test(line));
   }
 
   findAll(pattern: string | RegExp): number[] {
-    const lines = this.#content.split("\n");
     const regex = typeof pattern === "string" ? new RegExp(pattern) : pattern;
-    const matches: number[] = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (!line) continue;
-      if (regex.test(line)) matches.push(i);
-    }
-
-    return matches;
+    return this.#content.split("\n").flatMap((line, index) => (line && regex.test(line) ? [index] : []));
   }
 
   insertAfter(pattern: string | RegExp, data: string): this {
-    const lineIndex = this.find(pattern);
-
-    if (lineIndex === -1) {
-      throw new Error(`Pattern not found: ${pattern}`);
-    }
-
-    const lines = this.#content.split("\n");
-    lines.splice(lineIndex + 1, 0, data);
-    this.#content = lines.join("\n");
-
-    return this;
+    return this.#insertAt(pattern, data, 1);
   }
 
   insertBefore(pattern: string | RegExp, data: string): this {
+    return this.#insertAt(pattern, data, 0);
+  }
+
+  #insertAt(pattern: string | RegExp, data: string, offset: number): this {
     const lineIndex = this.find(pattern);
-
-    if (lineIndex === -1) {
-      throw new Error(`Pattern not found: ${pattern}`);
-    }
-
+    if (lineIndex === -1) throw new Error(`Pattern not found: ${pattern}`);
     const lines = this.#content.split("\n");
-    lines.splice(lineIndex, 0, data);
+    lines.splice(lineIndex + offset, 0, data);
     this.#content = lines.join("\n");
-
     return this;
   }
 

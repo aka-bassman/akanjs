@@ -210,8 +210,7 @@ describe("a reference on the provider wire", () => {
       ]),
     );
 
-  // Both dialects read the user turn out of `text`, which is the whole reason the fold happens in the service: a
-  // reference reaches every provider without either adaptor knowing the word, including the text-only default.
+  // Both dialects read the user turn from `text`, so a reference reaches every provider with no adaptor involved.
   test("rides the OpenAI dialect's user turn, text-only provider included", () => {
     const withImages = OpenaiDialect.requestBody("gpt-vision", asked(), { accepts: { image: true } });
     expect(JSON.stringify(withImages.messages[1])).toContain("a wide shot");
@@ -248,8 +247,7 @@ describe("AgentService.instructed", () => {
 });
 
 describe("AgentService tool names on the provider wire", () => {
-  // The exact shape that failed in an app: a zone's tools are scope-prefixed, DeepSeek did not reject the illegal
-  // name, and the model normalized it to the bare one — which the browser answered with `Unknown tool`.
+  // DeepSeek accepted a scope-prefixed name and the model called the bare one, which the browser did not know.
   const zoneTurn = (): LlmTurnRequest => ({
     context: [],
     messages: [{ role: "assistant", toolCalls: [{ id: "c0", name: "videoProjectDraft.readDraft", args: {} }] }],

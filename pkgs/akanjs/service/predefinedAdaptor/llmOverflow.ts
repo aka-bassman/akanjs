@@ -1,19 +1,13 @@
 import { Err } from "akanjs/dictionary";
 import { llmProviderOf } from "./llm.adaptor";
 
+/** Each field is present only when the refusal named it. */
 export interface LlmOverflowFacts {
-  /** The window, when the refusal named it. */
   limit?: number;
-  /** What the refused prompt measured, when the refusal named it. */
   requested?: number;
 }
 
-/**
- * Recognizes a provider refusing a prompt too long for its window, from the provider's own sentence — the one
- * refusal the chat can answer by itself, by summarizing and asking again. It is a list of sentences rather than a
- * rule because each provider wrote its own, and a status code does not tell a long prompt from any other bad
- * request.
- */
+/** Matches each provider's own too-long-prompt sentence; a status code cannot tell it from any other bad request. */
 export class LlmOverflow {
   static readonly patterns = [
     /prompt (?:is )?too long/i, // Anthropic: "prompt is too long: 213462 tokens > 200000 maximum"
@@ -54,11 +48,7 @@ export class LlmOverflow {
     return {};
   }
 
-  /**
-   * The `Err` for a refusal whose reason an adaptor has read: `contextOverflow` when the prompt did not fit, which
-   * the relay flags so the chat compacts and asks again, and `llmRequestFailed` for anything else. An adaptor an
-   * app writes throws through this too, and its refusals recover the same way.
-   */
+  /** `contextOverflow` when the prompt did not fit (the chat compacts and asks again), else `llmRequestFailed`. */
   static refusal(host: string, status: number, reason: string): Error {
     const provider = llmProviderOf(host);
     const overflow = LlmOverflow.match(reason);

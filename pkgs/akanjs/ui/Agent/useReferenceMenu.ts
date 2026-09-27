@@ -4,29 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import { type AgentSession, Reference } from "use-agentic";
 import type { MenuRow } from "./Menu";
 
-/** One row the `@` menu offers: a document of its source's model, named the way the screen names it. */
 export interface ReferenceCandidate {
   refId: string;
   label: string;
   description?: string;
 }
 
-/**
- * A kind of document the `@` menu can point at.
- *
- * `type` is the whole decision about what leaves the browser, in `st.expose`'s vocabulary — a model class masks by
- * that model. **Name the class that actually carries the fields somebody is pointing at**: a `Light<Model>` is
- * usually not it, and a reference masked by one arrives without the field that was the reason for pointing.
- *
- * `search` is the app's own query, because which documents a person may point at is the app's answer and not the
- * framework's; the signal is aborted when the query moves on. `resolve` is called once, when a row is picked.
- */
 export interface ReferenceSource<T extends AgentFieldType = AgentFieldType> {
   refName: string;
   /** What this group of rows is called in the menu. */
   label: string;
+  /** Masks what leaves the browser: name the class carrying the pointed-at fields, which a `Light<Model>` rarely is. */
   type: T;
+  /** The signal aborts when the query moves on. */
   search: (query: string, signal: AbortSignal) => Promise<ReferenceCandidate[]>;
+  /** Called once, when a row is picked. */
   resolve: (refId: string) => Promise<unknown>;
 }
 
@@ -38,22 +30,16 @@ interface ReferenceMenuSetup {
   onWrite: (text: string) => void;
 }
 
-/**
- * Only a word being typed at the end of the draft opens the menu. A `@` mid-sentence is left alone because the
- * draft is the only thing this can read — a textarea's caret is not in React state — and a completed token always
- * ends in a space, so the menu never reopens onto one it just wrote.
- */
+// Only a word at the draft's end opens the menu: a textarea's caret is not in React state.
 const atQuery = /(^|\s)@([^\s@[\]()]*)$/;
 
-/** Long enough that typing a name is one query rather than one per letter, short enough to feel like a menu. */
 const searchDelay = 150;
 
 export const useReferenceMenu = ({ draft, sources, session, l, onWrite }: ReferenceMenuSetup) => {
   const [rows, setRows] = useState<MenuRow[]>([]);
   const [cursor, setCursor] = useState(0);
   const [hidden, setHidden] = useState(false);
-  // Held in a ref because a host builds this array inline: depending on its identity would re-run the search on
-  // every render, and depending on nothing would search against a stale closure.
+  // A host builds `sources` inline, so its identity would re-run the search on every render.
   const held = useRef(sources);
   held.current = sources;
   const match = hidden ? null : atQuery.exec(draft);
@@ -61,8 +47,6 @@ export const useReferenceMenu = ({ draft, sources, session, l, onWrite }: Refere
   const query = match ? match[2] : null;
   const write = (candidate: ReferenceCandidate, source: ReferenceSource) => {
     const reference = { refName: source.refName, refId: candidate.refId, label: candidate.label };
-    // The token first, the value when it lands: `resolve` is the app's own fetch, and a menu that freezes until it
-    // answers is a menu. A value that never arrives leaves the pointer, which already reads as "go and read it".
     onWrite(`${draft.slice(0, match?.index ?? 0)}${match?.[1] ?? ""}${Reference.token(reference)} `);
     void source
       .resolve(candidate.refId)

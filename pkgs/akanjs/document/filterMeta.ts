@@ -18,9 +18,8 @@ import type { ConstantFilterMeta } from "./types";
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-export const isFilterModel = (filterRef: Cls<unknown, { [FILTER_META]?: ConstantFilterMeta }>): boolean => {
-  return filterRef[FILTER_META] !== undefined;
-};
+export const isFilterModel = (filterRef: Cls<unknown, { [FILTER_META]?: ConstantFilterMeta }>): boolean =>
+  filterRef[FILTER_META] !== undefined;
 export const getFilterMeta = <AllowEmpty extends boolean = false>(
   filterRef: Cls<unknown, { [FILTER_META]?: ConstantFilterMeta }> | FilterCls,
   { allowEmpty = false as AllowEmpty }: { allowEmpty?: AllowEmpty } = {},
@@ -40,7 +39,7 @@ export const setFilterMeta = (
       .flatMap((sort) => Object.keys(sort)),
   );
   const existingFilterMeta = getFilterMeta(filterRef, { allowEmpty: true });
-  if (existingFilterMeta) {
+  if (existingFilterMeta)
     Object.assign(existingFilterMeta, {
       ...filterMeta,
       query: Object.assign(
@@ -54,29 +53,20 @@ export const setFilterMeta = (
         filterMeta.sort,
       ),
     });
-    sortField.forEach((field) => {
-      filterRef.sortField.add(field);
-    });
-  } else {
+  else
     Object.assign(filterRef, {
       [FILTER_META]: {
         query: Object.assign({}, ...libFilterMetas.map((libFilterMeta) => libFilterMeta.query), filterMeta.query),
         sort: Object.assign({}, ...libFilterMetas.map((libFilterMeta) => libFilterMeta.sort), filterMeta.sort),
       },
     });
-    sortField.forEach((field) => {
-      filterRef.sortField.add(field);
-    });
-  }
+  for (const field of sortField) filterRef.sortField.add(field);
 };
 export const getFilterInfoByKey = <ArgNames extends string[] = [], Args extends any[] = any[], Model = any>(
   modelRef: FilterCls,
   key: string,
 ): FilterInfo<ArgNames, Args, Model> => {
-  const filterMeta = getFilterMeta(
-    modelRef as Cls<unknown, { [FILTER_META]?: ConstantFilterMeta; sortField: Set<string> }>,
-  );
-  const queryMeta = filterMeta.query[key];
+  const queryMeta = getFilterMeta(modelRef).query[key];
   if (!queryMeta) throw new Error(`queryMeta is not defined for key: ${key}`);
   return queryMeta;
 };
@@ -88,12 +78,7 @@ export const setFilterInfoByKey = <ArgNames extends string[] = [], Args extends 
   const filterMeta = getFilterMeta(modelRef);
   Object.assign(filterMeta.query, { [key]: filterInfo });
 };
-export const getFilterSortByKey = (modelRef: FilterCls, key: string) => {
-  const filterMeta = getFilterMeta(
-    modelRef as Cls<unknown, { [FILTER_META]?: ConstantFilterMeta; sortField: Set<string> }>,
-  );
-  return filterMeta.sort[key];
-};
+export const getFilterSortByKey = (modelRef: FilterCls, key: string) => getFilterMeta(modelRef).sort[key];
 
 export const fillMissingFilterArgs = (filterInfo: FilterInfo, args: unknown[]) => {
   if (args.length >= filterInfo.args.length) return args;
@@ -101,11 +86,8 @@ export const fillMissingFilterArgs = (filterInfo: FilterInfo, args: unknown[]) =
 };
 
 const queryOptionKeys = new Set(["select", "skip", "limit", "sort", "sample"]);
-// A generated `list<Filter>` takes the filter's own args and an optional trailing query option, and the two are
-// told apart at runtime: the args are spread into the filter function, so an option mistaken for one lands in a
-// filter slot and changes the query. A plain object every key of which names a query option is the option — a
-// filter arg is a scalar, an id, an enum, a date or an array, never that shape. `{}` counts as an option for the
-// same reason: read as a filter arg it is a truthy value nobody passed on purpose.
+// A trailing plain object whose every key names a query option is the option: a filter arg is never that shape, and
+// `{}` read as a filter arg would be a truthy value nobody passed on purpose.
 const isQueryOptionArg = (value: unknown) => {
   if (!value || typeof value !== "object") return false;
   const proto = Object.getPrototypeOf(value);
@@ -113,10 +95,7 @@ const isQueryOptionArg = (value: unknown) => {
   return Object.keys(value).every((key) => queryOptionKeys.has(key));
 };
 
-/**
- * Splits a generated filter method's arguments into the filter's own args and the trailing query option.
- * Shared by the database and service resolvers so the two cannot drift into disagreeing about what an option is.
- */
+/** Shared by the database and service resolvers, so the two cannot disagree about what a query option is. */
 export const splitFilterArgs = (filterInfo: FilterInfo, args: unknown[]) => {
   const hasQueryOption = args.length > filterInfo.args.length || isQueryOptionArg(args.at(-1));
   return {
@@ -162,10 +141,8 @@ const tryDeserializeFilterArg = (arg: FilterArgInfo, value: unknown, key: string
 };
 
 /**
- * Compiles a `(queryKey, args)` pair into the query its filter declares — the root slice's whole contract.
- * Every arg is parsed by the type the filter declared for it, so a Date arg reaches the query as a Dayjs and
- * an id that is not one is refused here rather than becoming a query that matches nothing. Args past the
- * declared ones are dropped: the caller names a filter, never a query.
+ * The root slice's contract: each arg is parsed by its declared type (an invalid id is refused rather than matching
+ * nothing), and args past the declared ones are dropped — the caller names a filter, never a query.
  */
 export const resolveFilterQuery = (
   filterRef: FilterCls,
@@ -229,8 +206,7 @@ interface BaseQuery<Model> {
 interface BaseSort {
   latest: { createdAt: -1 };
   oldest: { createdAt: 1 };
-  // Named no field on purpose: an empty sort map is how a store is told to order by search relevance instead.
-  // Without a `q.search()` in the query it falls back to the default ordering.
+  // An empty sort map orders by search relevance; without a `q.search()` it falls back to the default ordering.
   relevance: Record<string, never>;
 }
 type LibFilterQuery<LibFilters extends FilterCls[]> = MergeAllDoubleKeyOfObjects<

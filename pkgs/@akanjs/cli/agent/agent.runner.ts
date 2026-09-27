@@ -14,7 +14,7 @@ import { Prompter } from "@akanjs/devkit/prompter";
 import { collectRecipeSources, scanRecipes } from "@akanjs/devkit/recipeScanner";
 import { Logger } from "akanjs/common";
 
-type AgentTarget = "cursor" | "agents-md" | "claude";
+export type AgentTarget = "cursor" | "agents-md" | "claude";
 
 const targetPaths: Record<AgentTarget, string> = {
   cursor: ".cursor/rules/akan.mdc",
@@ -22,8 +22,7 @@ const targetPaths: Record<AgentTarget, string> = {
   claude: "CLAUDE.md",
 };
 
-// Reference samples scaffolded by `akan create-workspace`. They demonstrate the conventions but are not
-// part of the product, so agents should remove them before building real features.
+// Scaffolded by `akan create-workspace` to show the conventions; not product code, so the guide asks for removal.
 const SAMPLE_ARTIFACTS = [
   { probe: "lib/task/task.constant.ts", target: "lib/task", label: "sample database module" },
   { probe: "lib/_noti/noti.service.ts", target: "lib/_noti", label: "sample service module" },
@@ -36,7 +35,6 @@ const SAMPLE_ARTIFACTS = [
 ] as const;
 const DEFAULT_INDEX_MARKER = "Akan.js template";
 
-// Detect which scaffolded samples still exist so the guidance disappears once they are removed.
 const renderSampleCleanup = async (workspace: Workspace, appNames: string[]) => {
   const items: string[] = [];
   for (const appName of appNames) {
@@ -68,10 +66,8 @@ Keep a sample only while you are still learning its pattern; delete it once your
 `;
 };
 
-// The always-present recipe index — **framework recipes only**. App/lib recipes are indexed in each
-// app/lib's own generated `AGENTS.md` (scope-loaded, so the always-loaded context does not grow with the
-// number of apps, and an agent never sees recipes it cannot import). Compact by design — names + import +
-// variant signature + one-line doc (variants are typed, so tsc catches variant mistakes).
+// Framework recipes only: app/lib recipes live in each scope's own AGENTS.md, so this always-loaded file does not
+// grow with the app count and never lists a recipe the reader cannot import.
 const renderRecipeIndex = async (workspace: Workspace) => {
   const sources = await collectRecipeSources(`${workspace.workspaceRoot}/pkgs/akanjs/ui`, "akanjs/ui", "recipe");
   const recipes = scanRecipes(sources);
@@ -97,10 +93,8 @@ ${scopeIndexPointer}
 `;
 };
 
-// The convention set and the onboarding guide ship inside the package, so a framework release reaches an
-// existing workspace through `akan agent install` instead of leaving a copy that was written once at create
-// time. Onboarding is skipped in the framework monorepo itself: it teaches how to build *on* Akan, and pairing
-// it with the conventions would more than double an always-loaded file for readers who are changing Akan.
+// Onboarding is skipped in the framework monorepo: it teaches building *on* Akan, and would more than double an
+// always-loaded file for readers who are changing Akan.
 const renderGuides = async (context: AkanWorkspaceContext) => {
   const conventions = (await Prompter.getInstruction("conventions")).trim();
   if (context.pkgs.some((pkg) => pkg.name === "akanjs")) return conventions;
@@ -109,8 +103,6 @@ const renderGuides = async (context: AkanWorkspaceContext) => {
   return `${conventions}\n\n${onboarding.replaceAll("<%= appName %>", appName)}`;
 };
 
-// The generated, workspace-derived section. It is the only part of AGENTS.md that
-// `akan agent install` rewrites; everything outside the markers is preserved.
 const renderManagedBlock = async (workspace: Workspace) => {
   const context = await AkanContextAnalyzer.analyze(workspace);
   const frameworkGuide = await Prompter.getInstruction("framework");
@@ -122,7 +114,7 @@ const renderManagedBlock = async (workspace: Workspace) => {
   const block = `## Workspace
 
 - Repo: ${context.repoName}
-- Apps: ${context.apps.map((app) => app.name).join(", ") || "none"}
+- Apps: ${appNames.join(", ") || "none"}
 - Libraries: ${context.libs.map((lib) => lib.name).join(", ") || "none"}
 - Packages: ${context.pkgs.map((pkg) => pkg.name).join(", ") || "none"}
 
@@ -187,8 +179,7 @@ ${AGENT_BLOCK_END}
 `;
 };
 
-// Claude Code natively imports other files with \`@path\`, so CLAUDE.md stays a pointer to AGENTS.md instead of
-// duplicating its content. The comment rule is the one exception — see CLAUDE_COMMENT_RULE for why it is restated.
+// Claude Code imports files with `@path`, so CLAUDE.md stays a pointer; only the comment rule is restated.
 const renderClaudeMd = async (workspace: Workspace) => {
   const context = await AkanContextAnalyzer.analyze(workspace);
   return `# ${context.repoName} — Claude Code Guide
@@ -199,7 +190,6 @@ ${CLAUDE_COMMENT_RULE}
 `;
 };
 
-// Cursor rules reference AGENTS.md rather than carrying their own copy.
 const renderCursorRule = () => `---
 description: Akan workspace agent guide
 alwaysApply: true
@@ -223,8 +213,7 @@ export class AgentRunner extends runner("agent") {
     for (const target of targets) {
       const filePath = targetPaths[target];
       const exists = await workspace.exists(filePath);
-      // AGENTS.md updates only the managed block, so refreshing an existing file is safe without --force.
-      // CLAUDE.md and the Cursor rule are canonical pointers, so overwriting them needs --force.
+      // AGENTS.md rewrites only its managed block; the CLAUDE.md and Cursor pointers need --force to overwrite.
       if (exists && !force && target !== "agents-md") {
         throw new Error(`${filePath} already exists. Re-run with --force to overwrite it.`);
       }
@@ -237,9 +226,8 @@ export class AgentRunner extends runner("agent") {
     return written;
   }
 
-  // First-time layout of the scoped per-app/lib guides; afterwards `akan sync` (SysExecutor.scan) keeps them fresh.
-  // Best-effort per scope: one whose config/env cannot load (fresh checkout, missing .env) must not block the
-  // workspace-level install — `akan sync <name>` lays its file down once the scope is buildable.
+  // First-time layout; `akan sync` keeps them fresh. Best-effort per scope: one whose config/env cannot load yet
+  // must not block the workspace-level install.
   async #installScopeIndexes(workspace: Workspace) {
     const [appNames, libNames] = await workspace.getExecs();
     const written: string[] = [];

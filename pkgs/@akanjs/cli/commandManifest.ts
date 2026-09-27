@@ -7,14 +7,7 @@ export interface CommandManifestData {
   byCommand: Record<string, CommandModuleId>;
 }
 
-/**
- * Maps a CLI command name to the single module that implements it, so the entry can import one module
- * instead of all sixteen. Generated at build time (see `build.ts`) because a dev sandbox may only ever
- * run `akan start` once — deriving it on first run would make that one run pay the full cost.
- *
- * When the file is absent (running from source, or an older published build) the entry falls back to
- * loading every module, i.e. the pre-manifest behavior.
- */
+// Built at build time because a dev sandbox may run `akan start` only once; absent, the entry loads every module.
 export class CommandManifest {
   static readonly fileName = "commandManifest.json";
 
@@ -25,8 +18,7 @@ export class CommandManifest {
       const command = await commandModules[id]();
       for (const targetMeta of getTargetMetas(command)) {
         for (const name of getTargetCommandNames(targetMeta)) {
-          // First declaration wins, matching commander: `runCommands` registers modules in
-          // `commandModuleIds` order and a later duplicate never takes over the name.
+          // First declaration wins, matching commander's registration in `commandModuleIds` order.
           byCommand[name] ??= id;
         }
       }
@@ -42,11 +34,7 @@ export class CommandManifest {
     return data.byCommand && typeof data.byCommand === "object" ? data : null;
   }
 
-  /**
-   * Module ids needed to serve this argv. `null` means "cannot narrow" — an unknown command, a global
-   * `--help`, or no manifest — and the caller must load everything so commander can render full help
-   * and its did-you-mean suggestions.
-   */
+  /** `null` means "cannot narrow": load everything so commander can render full help and did-you-mean. */
   static resolve(manifest: CommandManifestData | null, argv: string[]): CommandModuleId[] | null {
     const requested = argv[2];
     if (!manifest || !requested || requested.startsWith("-")) return null;

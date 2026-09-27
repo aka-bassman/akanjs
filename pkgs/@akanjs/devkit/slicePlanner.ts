@@ -18,12 +18,6 @@ export interface SlicePlan {
   warnings: string[];
 }
 
-/**
- * The exact file set a single app needs to live in a workspace of its own: the app, its transitive lib
- * closure, the workspace shell around them, and a root manifest for the result.
- *
- * Consumed by `akan plan-slice`, and by anything that moves an app or a lib between workspaces.
- */
 export class SlicePlanner {
   /** Root entries owned by an app, a lib or an in-tree package rather than by the workspace shell. */
   static readonly memberDirs = ["apps", "libs", "pkgs"];
@@ -39,13 +33,8 @@ export class SlicePlanner {
   ];
   static readonly akanPackages = ["akanjs", "@akanjs/devkit", "@akanjs/cli"];
 
-  /**
-   * What the framework imports but does not install, so a workspace root has to declare it: `react`,
-   * `scheduler` and the RSC runtime, but also `ioredis`, `postgres` and `bullmq` the moment an app uses
-   * a database or a queue. No source file in the workspace names any of them, so no scan can find them
-   * — they are the akan packages' own `peerDependencies`, read wherever those are installed. Anything
-   * they declare as a plain dependency is installed with them and needs no root entry.
-   */
+  // The akan packages' peerDependencies (react, the RSC runtime, ioredis, postgres, bullmq): the framework imports
+  // them but no workspace source names them, so no scan can find them.
   static async #frameworkPeers(workspace: WorkspaceExecutor) {
     const peers = new Set<string>();
     let found = false;
@@ -67,14 +56,8 @@ export class SlicePlanner {
     return dependency.startsWith("@") ? `@types/${dependency.slice(1).replace("/", "__")}` : `@types/${dependency}`;
   }
 
-  /**
-   * The root manifest a workspace holding only these dependencies would carry, with the workspace's own
-   * version specs kept — that is what makes one branch resolve to one dependency tree everywhere.
-   *
-   * A `@types/x` package is kept alongside `x`: nothing imports it by name, so no scan can see it, and
-   * dropping it breaks the typecheck of every file that imports `x`. `workspaces` is dropped because it
-   * names in-tree packages, which a slice never carries — it consumes akanjs from the registry.
-   */
+  // `@types/x` is kept alongside `x` since nothing imports it by name; `workspaces` is dropped because a slice
+  // consumes akanjs from the registry.
   static async pruneDependencies(
     workspace: WorkspaceExecutor,
     rootPackageJson: PackageJson,
@@ -82,9 +65,8 @@ export class SlicePlanner {
   ) {
     const peers = await SlicePlanner.#frameworkPeers(workspace);
     const { workspaces: _workspaces, ...rest } = rootPackageJson;
-    //* Without akanjs's peer list every peer looks unused, and pruning it produces an install that
-    //* succeeds and a server that fails at its first redis or postgres call. Carry the dependencies
-    //* whole instead and say why.
+    //* Without the peer list every peer looks unused, and pruning it breaks the server at its first redis or
+    //* postgres call.
     if (!peers)
       return {
         packageJson: rest as PackageJson,
@@ -119,10 +101,6 @@ export class SlicePlanner {
   #app: AppExecutor;
   constructor(app: AppExecutor) {
     this.#app = app;
-  }
-
-  async #trackedFiles(paths: string[]) {
-    return await this.#app.workspace.listGitFiles(paths);
   }
 
   async #untrackedFiles(paths: string[]) {
@@ -170,14 +148,16 @@ export class SlicePlanner {
     const slicePaths = [`apps/${this.#app.name}`, ...libs.map((lib) => `libs/${lib}`)];
 
     const [appFiles, allTracked, untracked, rootPackageJson] = await Promise.all([
-      this.#trackedFiles([`apps/${this.#app.name}`]),
-      this.#trackedFiles(["."]),
+      this.#app.workspace.listGitFiles([`apps/${this.#app.name}`]),
+      this.#app.workspace.listGitFiles(["."]),
       this.#untrackedFiles(slicePaths),
       this.#app.workspace.getPackageJson(),
     ]);
 
     const libFiles = Object.fromEntries(
-      await Promise.all(libs.map(async (lib) => [lib, await this.#trackedFiles([`libs/${lib}`])] as const)),
+      await Promise.all(
+        libs.map(async (lib) => [lib, await this.#app.workspace.listGitFiles([`libs/${lib}`])] as const),
+      ),
     );
     const rootFiles = allTracked.filter((file) => !this.#isMemberFile(file));
 
@@ -211,7 +191,6 @@ export class SlicePlanner {
   }
 }
 
-/** Top-level entry each path sits under, so a long tree (`infra/**`) reads as one line. */
 const rootEntriesOf = (rootFiles: string[]) => [...new Set(rootFiles.map((file) => file.split("/")[0] ?? file))].sort();
 
 export function formatSlicePlan(plan: SlicePlan) {

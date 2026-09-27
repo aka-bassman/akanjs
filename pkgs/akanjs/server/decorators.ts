@@ -1,8 +1,4 @@
-/**
- * Method decorators for a server class: `@Transaction`, `@Try`. Kept because `libs/util`'s
- * storage adaptors use `@Try` on their remote calls; new code follows the adaptor rule instead
- * (`catch` → `logger.error` → `return null`).
- */
+// Kept for `libs/util` storage adaptors' `@Try`; new code follows the adaptor rule (catch → logger.error → null).
 
 type DecoratedInstance = {
   logger?: { warn?: (message: string) => void };
@@ -18,8 +14,7 @@ export const Try = () => {
     const originMethod = descriptor.value as (this: unknown, ...args: unknown[]) => unknown;
     descriptor.value = async function (...args: unknown[]) {
       try {
-        const result = await originMethod.apply(this, args);
-        return result;
+        return await originMethod.apply(this, args);
       } catch (e) {
         (this as DecoratedInstance).logger?.warn?.(`${key} action error return: ${e}`);
       }

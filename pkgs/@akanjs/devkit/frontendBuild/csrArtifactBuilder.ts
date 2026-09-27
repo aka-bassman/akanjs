@@ -3,6 +3,7 @@ import path from "node:path";
 import type { BaseBuildArtifact } from "akanjs/server";
 import { type PageEntry, resolveSsrPageEntriesForApp } from "../artifact/implicitRootLayout";
 import type { App } from "../commandDecorators";
+import { bundleDefine } from "./bundleDefine";
 import { getPageKeyBasePath } from "./cssCompiler";
 import { PagesBundleBuilder } from "./pagesBundleBuilder";
 import { PagesEntrySourceGenerator } from "./pagesEntrySourceGenerator";
@@ -61,10 +62,9 @@ export class CsrArtifactBuilder {
       splitting: false,
       minify: true,
       env: "AKAN_PUBLIC_*",
-      define: this.#define(),
+      define: bundleDefine(this.#app, this.#command, "csr"),
       optimizeImports: akanConfig.optimizeImports,
-      // The base artifact's compiled sheet is the only stylesheet, as it is for SSR: a raw `.css` reached through
-      // the route graph is Tailwind source, and every root layout stylesheet in the graph would land in every HTML.
+      // A raw `.css` in the route graph is Tailwind source; the base artifact's compiled sheet is the only stylesheet.
       plugins: [PagesBundleBuilder.createCssStubPlugin()],
     });
 
@@ -118,17 +118,6 @@ export class CsrArtifactBuilder {
     return path.join(this.#generatedDir, filename);
   }
 
-  #define(): Record<string, string> {
-    const nodeEnv = this.#command === "build" ? "production" : (process.env.NODE_ENV ?? "development");
-    return {
-      "process.env.NODE_ENV": JSON.stringify(nodeEnv),
-      "process.env.AKAN_PUBLIC_RENDER_ENV": JSON.stringify("csr"),
-      ...Object.fromEntries(
-        Object.entries(this.#app.getPublicEnv()).map(([key, value]) => [`process.env.${key}`, JSON.stringify(value)]),
-      ),
-    };
-  }
-
   async #createEntryFile(basePath: string, pageEntries: PageEntry[]): Promise<readonly [string, string]> {
     return [
       this.#generatedPath(CsrArtifactBuilder.entryFilename(basePath)),
@@ -168,7 +157,7 @@ void bootCsr(pages);
 
   async #inlineCsrArtifacts(cssAssets: Record<string, CssAsset>): Promise<void> {
     const jsFiles = new Set<string>();
-    for (const htmlPath of await this.#htmlOutputPaths()) {
+    for (const htmlPath of await this.#listOutputFiles((filePath) => filePath.endsWith(".html"))) {
       const htmlFile = Bun.file(htmlPath);
       if (!(await htmlFile.exists())) continue;
       const basePath = CsrArtifactBuilder.basePathOfHtml(htmlPath);
@@ -210,10 +199,6 @@ void bootCsr(pages);
     return { html: next, jsFiles };
   }
 
-  async #htmlOutputPaths(): Promise<string[]> {
-    return await this.#listOutputFiles((filePath) => filePath.endsWith(".html"));
-  }
-
   async #listOutputFiles(predicate: (filePath: string) => boolean): Promise<string[]> {
     const glob = new Bun.Glob("**/*");
     const files: string[] = [];
@@ -223,12 +208,8 @@ void bootCsr(pages);
     return files.sort();
   }
 
-  /**
-   * Bun's HTML bundler hoists the module script into `<head>`, so once that script is inline its source is part
-   * of the text being searched — and a React bundle contains `<body` and `</head>` as strings. Positions are
-   * taken on a copy with script, style and comment bodies blanked, and the snippet always lands after whatever
-   * was injected before it: prepending would reverse the cascade order the caller chose.
-   */
+  // Bun hoists the module script into <head> and a React bundle contains "</head>" as text, so positions come from a
+  // copy with script/style/comment bodies blanked. Never prepends: that would reverse the caller's cascade order.
   static injectBeforeHeadEnd(html: string, snippet: string): string {
     const scannable = CsrArtifactBuilder.blankEmbeddedContent(html);
     const headEnd = scannable.search(/<\/head\s*>/i);

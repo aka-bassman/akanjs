@@ -58,22 +58,19 @@ export interface ValidatePageSourceFileOptions {
   filePath?: string;
 }
 
+const toRouteKey = (filePath: string) =>
+  filePath.startsWith("./") ? filePath : `./${filePath.split(/[\\/]/).join("/")}`;
+
 export function isRouteSourceFile(filePath: string): boolean {
   if (!SOURCE_EXT_RE.test(filePath)) return false;
-  const key = filePath.startsWith("./") ? filePath : `./${filePath.split(/[\\/]/).join("/")}`;
-  return tryParseRouteModuleKey(key) !== null;
+  return tryParseRouteModuleKey(toRouteKey(filePath)) !== null;
 }
 
-/**
- * Why a `page/` file breaks the route convention, or null when it is fine. Null also covers a non-source
- * asset, which `page/` tolerates. `akan sync <lib>` reports these alongside its other layout violations,
- * so the rule stays in one place instead of being restated where it cannot afford to throw.
- */
+/** `null` when the file is fine, including a non-source asset, which `page/` tolerates. */
 export function getPageSourceFileViolation(filePath: string): string | null {
   if (!SOURCE_EXT_RE.test(filePath)) return null;
 
-  const key = filePath.startsWith("./") ? filePath : `./${filePath.split(/[\\/]/).join("/")}`;
-  const match = ROUTE_SOURCE_RE.exec(key);
+  const match = ROUTE_SOURCE_RE.exec(toRouteKey(filePath));
   if (!match) return "invalid page source file";
 
   const file = match[1] as string;
@@ -93,8 +90,7 @@ export function validatePageSourceFile(filePath: string, options: ValidatePageSo
 
   const violation = getPageSourceFileViolation(filePath);
   if (!violation) return true;
-  const key = filePath.startsWith("./") ? filePath : `./${filePath.split(/[\\/]/).join("/")}`;
-  throw new Error(`[route-convention] ${violation}: ${options.filePath ?? key}`);
+  throw new Error(`[route-convention] ${violation}: ${options.filePath ?? toRouteKey(filePath)}`);
 }
 
 export function validateSubRoutePageKey(
@@ -213,6 +209,20 @@ export function matchRoutePattern(pattern: string, pathname: string): Record<str
   for (let i = 0; i < patternParts.length; i++) {
     const pat = patternParts[i] ?? "";
     const val = pathParts[i] ?? "";
+    if (pat.startsWith(":")) params[pat.slice(1)] = decodeURIComponent(val);
+    else if (pat !== val) return null;
+  }
+  return params;
+}
+
+export function matchRoutePrefix(pattern: string, pathname: string): Record<string, string> | null {
+  const patternParts = pattern.split("/").filter(Boolean);
+  const pathParts = pathname.split("/").filter(Boolean);
+  if (patternParts.length > pathParts.length) return null;
+  const params: Record<string, string> = {};
+  for (let i = 0; i < patternParts.length; i++) {
+    const pat = patternParts[i];
+    const val = pathParts[i];
     if (pat.startsWith(":")) params[pat.slice(1)] = decodeURIComponent(val);
     else if (pat !== val) return null;
   }

@@ -1,6 +1,6 @@
 import type { AkanWebConfig, AkanWebOption } from "akanjs";
 import { type BackendEnv, type BaseEnv, getApiPrefix, getEnv, getWsPrefix, normalizeRoutePrefix } from "akanjs/base";
-import { Logger, logSeverity, parseBasePaths, websocketBinaryFrameContract } from "akanjs/common";
+import { Logger, parseBasePaths, websocketBinaryFrameContract } from "akanjs/common";
 import { DictionaryLookup, DictionaryRegistry } from "akanjs/dictionary";
 import type {
   Adaptor,
@@ -20,7 +20,6 @@ import { createOpenApiDocument } from "../signal/openapi";
 import { FetchSerializer } from "../signal/serializer";
 import { SignalContext } from "../signal/signalContext";
 import type { AkanLib, AkanLibProps } from "./akanLib";
-import type { BuilderRpc } from "./artifact";
 import { BinaryPubsub } from "./binaryPubsub";
 import { DevtoolsRouter } from "./devtools";
 import { DiLifecycle } from "./di/diLifecycle";
@@ -41,7 +40,7 @@ import { SqliteFiles } from "./ops/sqliteFiles";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { WebProxyRunner } from "./proxy";
 import { SignalResolver } from "./resolver";
-import { ApiRouter } from "./routing/apiRouter";
+import { type ApiRouteInputs, ApiRouter } from "./routing/apiRouter";
 import type { AppWsData } from "./routing/appWsData";
 import { createSoloAppRoutes } from "./routing/soloAppRoutes";
 import {
@@ -64,83 +63,43 @@ export interface AkanServerOptions {
   openapi?: boolean;
   /** `/mcp` is mounted by default; `false` takes it off, and the object form carries the rest of its settings. */
   mcp?: boolean | McpServerOption;
-  /**
-   * Boot only these modules and the ones they reach; every other module stays out of the container, so its
-   * services, signals, routes and schedules do not exist. Omitted or empty mounts every enabled module.
-   */
+  /** Boot only these modules and what they reach; omitted or empty mounts every enabled module. */
   modules?: string[];
-  /**
-   * The inverse of `modules`: mount everything except these and whatever reaches them. Written for a lib the
-   * app depends on but does not serve — `server.ts` is generated from the dependency graph, so a lib cannot be
-   * dropped by editing it. Applied after `modules`, so a module named by both stays out.
-   */
+  /** Mount all but these and whatever reaches them; applied after `modules`, so one named by both stays out. */
   disableModules?: string[];
-  /**
-   * The same, by owning lib: every module the named libs registered stays out, along with everything that
-   * reaches one. This is the spelling for a lib the app depends on but does not serve — it does not drift as
-   * the lib gains modules.
-   */
+  /** Like `disableModules`, by owning lib, so it does not drift as the lib gains modules. */
   disableLibs?: string[];
 }
 
 export interface McpServerOption {
   enabled?: boolean;
-  /**
-   * Drops every mutation from the catalogue whatever its guards allow — for a deployment that must not be able to
-   * write, such as a read replica or a demo. Off by default, and reported per endpoint in the boot log, because a
-   * switch that silently unlists a published endpoint cannot tell its author why it vanished.
-   */
+  /** Drops every mutation from the catalogue whatever its guards allow; off by default, reported per endpoint. */
   readOnly?: boolean;
-  /**
-   * Mount path, `/mcp` by default. The published OAuth resource identifier follows it, so changing it changes
-   * the `aud` a token has to carry.
-   */
+  /** Mount path, `/mcp` by default; the OAuth resource id (the `aud` a token must carry) follows it. */
   path?: string;
-  /** Reported as `serverInfo.version`. Defaults to `0.0.0`, the same placeholder the OpenAPI document uses. */
+  /** Reported as `serverInfo.version`; `0.0.0` by default. */
   version?: string;
-  /**
-   * Free-text usage guidance handed to the model alongside the tool list — the one place to say what this app
-   * is for and which tool to reach for first. Defaults to a bare one-liner naming the app.
-   */
+  /** Guidance handed to the model with the tool list; defaults to a one-liner naming the app. */
   instructions?: string;
-  /**
-   * Extra origins allowed past the DNS-rebinding check, beyond the server's own host. Needed only for a
-   * browser-hosted MCP client; native ones send no `Origin` at all.
-   */
+  /** Origins let past the DNS-rebinding check beyond the server's own host (only browser-hosted clients send one). */
   allowedOrigins?: string[];
-  /** Entries per catalogue page. A client that wants the whole list follows `nextCursor` until it stops. */
   pageSize?: number;
-  /**
-   * The one language the catalogue and its error text are written in, `en` by default. Server-wide on purpose:
-   * the document is built once at boot and cached by clients, and it is read by a model rather than by a person.
-   */
+  /** Language of the catalogue and its error text, `en` by default; server-wide because clients cache the document. */
   language?: string;
-  /**
-   * Whether a structured result also ships as serialized JSON in the text block, `true` by default because that
-   * is what the spec asks of a server for clients that predate `structuredContent`. It is also a flat doubling:
-   * every model-returning tool sends its whole payload twice, so a deployment whose clients read the structured
-   * half turns this off and halves what each of those calls costs the model. `AKAN_MCP_LEGACY_TEXT=false`.
-   */
+  /** Repeat structured results as JSON in the text block, per spec; `true` by default. `AKAN_MCP_LEGACY_TEXT`. */
   legacyTextBlock?: boolean;
   /**
-   * How much of a result's shape each tool advertises: `shallow` (default) names nested models instead of inlining
-   * them, `full` inlines the whole closure, `none` publishes no `outputSchema` and keeps the text block on. The
-   * listing is re-sent to every agent that connects, and the nested closures were most of it. `AKAN_MCP_OUTPUT_SCHEMA`.
+   * `shallow` (default) names nested models, `full` inlines the whole closure, `none` publishes no `outputSchema` and
+   * keeps the text block on. `AKAN_MCP_OUTPUT_SCHEMA`.
    */
   outputSchema?: "full" | "shallow" | "none";
-  /** OAuth resource-server identity: which issuers a client may authenticate with, and the scopes to demand. */
   auth?: McpAuthOption;
   /**
-   * Per-caller budget for `tools/call`, `resources/read` and `prompts/get`: 120 calls a minute and 8 in flight by
-   * default, counted per process. `false` takes it off. `AKAN_MCP_RATE_LIMIT` (`<calls>` or `<calls>/<seconds>`,
-   * `off` to disable) and `AKAN_MCP_CONCURRENT`.
+   * Per-caller budget for tools/call, resources/read and prompts/get: 120/min and 8 in flight per process by default;
+   * `false` disables. `AKAN_MCP_RATE_LIMIT` (`<calls>[/<seconds>]` or `off`), `AKAN_MCP_CONCURRENT`.
    */
   rateLimit?: McpRateLimitOption | false;
-  /**
-   * Characters of screen data one page prompt may attach before its lists are cut, 60,000 by default. A page's
-   * `{ limit: 0 }` is right for a screen and wrong for a model's window, so the cap is the server's, not the
-   * page's. `AKAN_MCP_PROMPT_BUDGET`.
-   */
+  /** Characters a page prompt may attach before its lists are cut; 60,000 by default. `AKAN_MCP_PROMPT_BUDGET`. */
   promptBudget?: number;
 }
 
@@ -151,7 +110,6 @@ interface AkanAppPrepared {
   builtinRoutes: HttpRoutes;
   renderEnvRoutes: HttpRoutes;
   hmrHub: HmrWsHub | null;
-  builderRpc: BuilderRpc | null;
   webRouter: WebRouter | null;
   webProxyRunner: WebProxyRunner | null;
 }
@@ -171,8 +129,6 @@ export interface AkanServerConsoleInfo {
 
 export class AkanServer {
   status: "stopped" | "initializing" | "initialized" | "starting" | "running" | "stopping" = "stopped";
-  // Union the app-signal data shape with the HMR channel's data shape so
-  // `server.upgrade(...)` type-checks for both.
   #server: Bun.Server<AppWsData | HmrWsData> | null = null;
   #wsServer: Bun.Server<AppWsData | HmrWsData> | null = null;
   #prepared: AkanAppPrepared | null = null;
@@ -182,8 +138,9 @@ export class AkanServer {
   readonly env: BackendEnv;
   prefix = getApiPrefix();
   websocketPrefix = getWsPrefix();
-  openapi = AkanServer.#isOpenApiEnvEnabled();
-  mcp = AkanServer.#isEnvOn("AKAN_MCP", "AKAN_PUBLIC_MCP");
+  openapi = AkanServer.#isEnvEnabled("AKAN_OPENAPI", "AKAN_PUBLIC_OPENAPI");
+  // Default-on: MCP exposure follows guards, and an opt-in switch is one most deployments would never find.
+  mcp = !AkanServer.#isEnvOff("AKAN_MCP", "AKAN_PUBLIC_MCP");
   mcpReadOnly = AkanServer.#isEnvEnabled("AKAN_MCP_READONLY", "AKAN_PUBLIC_MCP_READONLY");
   mcpAuth: McpAuthOption = AkanServer.#mcpAuthFromEnv();
   mcpOption: Omit<McpServerOption, "enabled" | "readOnly" | "auth"> = AkanServer.#mcpOptionFromEnv();
@@ -199,22 +156,17 @@ export class AkanServer {
   #localPublish: LocalPublish | null = null;
   readonly #binaryPubsub = new BinaryPubsub();
   #metricsTimer: Timer | null = null;
-  /**
-   * No gateway socket means nothing is proxying this process, so it owns the whole surface: the
-   * `/_akan/app/*` observability routes the gateway would have answered, and the rotating log file the
-   * gateway would have written. Derived rather than declared — a spawned child always carries the socket,
-   * so the two modes cannot disagree about which one this is.
-   */
+  // No gateway socket: this process owns `/_akan/app/*` and the rotating log the gateway would have handled.
   readonly #solo = !process.env.AKAN_CHILD_SOCKET;
   #logWriter: RotatingLogWriter | null = null;
-  #removeLogSink: (() => void) | null = null;
+  #detachFileLog: (() => void) | null = null;
   #logHub: LogHub | null = null;
   #logControl: LogControlSocket | null = null;
   #logForwarder: LogForwarder | null = null;
-  #hubFileSink: HubFileSink | null = null;
   #logStream: LogStreamRoute | null = null;
   #ops: OpsRoute | null | undefined;
   #lastMetrics: AkanMetricsReport = {};
+  #stopping: Promise<void> | null = null;
   constructor(
     name = "AkanServer",
     env: BackendEnv = {},
@@ -268,7 +220,7 @@ export class AkanServer {
     this.openapi = openapi;
     return this;
   }
-  /** Narrows the web surface this process serves. Never widens it past what the build produced. */
+  /** Narrows the web surface; never widens it past what the build produced. */
   setWeb(web: AkanWebOption = true) {
     if (this.status !== "stopped") throw new Error("Web config must be set before app initialization.");
     this.web = AkanServer.#narrowWeb(this.web, web);
@@ -276,8 +228,7 @@ export class AkanServer {
   }
   setMcp(mcp: boolean | McpServerOption = true) {
     if (this.status !== "stopped") throw new Error("MCP config must be set before app initialization.");
-    // An object without `enabled` only configures the surface, and the env switch only ever narrows: `libs/shared`
-    // hands over its auth settings this way, which used to turn `/mcp` back on under `AKAN_MCP=false`.
+    // An object without `enabled` only configures the surface, and the env switch can only narrow.
     const requested = typeof mcp === "boolean" ? mcp : (mcp.enabled ?? this.mcp);
     this.mcp = requested && !AkanServer.#isEnvOff("AKAN_MCP", "AKAN_PUBLIC_MCP");
     if (typeof mcp === "boolean") return this;
@@ -368,7 +319,6 @@ export class AkanServer {
         builtinRoutes: this.#createBuiltinRoutes(null),
         renderEnvRoutes: {},
         hmrHub: null,
-        builderRpc: null,
         webRouter: null,
         webProxyRunner: null,
       };
@@ -385,9 +335,7 @@ export class AkanServer {
       web: requestedWeb,
       upgradeHmrWs: (req, data) => this.#server?.upgrade(req, { data }) ?? false,
     });
-    // A build that excluded the web artifacts leaves nothing to serve. Boot the api rather than crashing on
-    // the missing artifact, and say so once — the alternative is a replica that restart-loops for a reason
-    // only the build log carries.
+    // A build without web artifacts boots the api and warns once rather than restart-looping on the missing file.
     if (!webRouter) {
       this.web = { ssr: false, csr: false };
       this.logger.warn("web off: no build artifact under .akan/artifact; serving api only");
@@ -395,7 +343,7 @@ export class AkanServer {
     }
     this.web = webRouter.web;
     this.logger.verbose(`web on: ssr=${this.web.ssr} csr=${this.web.csr}`);
-    const { renderEnvRoutes, hmrHub, builderRpc } = await webRouter.initializeRoute();
+    const { renderEnvRoutes, hmrHub } = await webRouter.initializeRoute();
     const webProxyRunner = WebProxyRunner.create(this.#di.webProxies);
     this.#prepared = {
       routes,
@@ -404,7 +352,6 @@ export class AkanServer {
       builtinRoutes: this.#createBuiltinRoutes(webRouter),
       renderEnvRoutes,
       hmrHub,
-      builderRpc,
       webRouter,
       webProxyRunner,
     };
@@ -437,23 +384,23 @@ export class AkanServer {
         logger: this.logger,
         onDrain: () => this.#binaryPubsub.flush(),
       }),
-      // `data` is typed by the upgrade call site; the runtime default is unused.
       data: {},
     } as Bun.WebSocketHandler<AppWsData | HmrWsData>;
-    // `builderRpc` lives in `#prepared` only so `stop()` can dispose it.
-    this.#server = Bun.serve({
-      idleTimeout: 0,
-      ...(unix ? { unix } : { port }),
-      routes: ApiRouter.buildRoutes({
+    const buildRoutes = (upgradeAppWs: ApiRouteInputs["upgradeAppWs"]) =>
+      ApiRouter.buildRoutes({
         prefix: this.prefix,
         websocketPrefix: this.websocketPrefix,
         routes,
         builtinRoutes,
         routeOptions,
         renderEnvRoutes,
-        upgradeAppWs: (req, data) => this.#server?.upgrade(req, { data }) ?? false,
+        upgradeAppWs,
         webProxyRunner,
-      }),
+      });
+    this.#server = Bun.serve({
+      idleTimeout: 0,
+      ...(unix ? { unix } : { port }),
+      routes: buildRoutes((req, data) => this.#server?.upgrade(req, { data }) ?? false),
       websocket: websocketHandlers,
     } as Parameters<typeof Bun.serve>[0]);
     if (unix && process.env.AKAN_CHILD_WS_PORT) {
@@ -461,24 +408,14 @@ export class AkanServer {
       const wsServeOptions = (port: number) => ({
         idleTimeout: 0,
         port,
-        routes: ApiRouter.buildRoutes({
-          prefix: this.prefix,
-          websocketPrefix: this.websocketPrefix,
-          routes,
-          builtinRoutes,
-          routeOptions,
-          renderEnvRoutes,
-          upgradeAppWs: (req: Request, data: AppWsData) => this.#wsServer?.upgrade(req, { data }) ?? false,
-          webProxyRunner,
-        }),
+        routes: buildRoutes((req, data) => this.#wsServer?.upgrade(req, { data }) ?? false),
         websocket: websocketHandlers,
       });
       try {
         this.#wsServer = Bun.serve(wsServeOptions(preferredWsPort));
       } catch (error) {
         if (!isPortInUseError(error)) throw error;
-        // A stale replica from a killed run may still hold the preferred port; an ephemeral port keeps
-        // this child bootable and the gateway routes via the actual port reported in the ready message.
+        // A stale replica may hold the preferred port; the gateway routes to the port the ready message reports.
         this.logger.warn(`ws port ${preferredWsPort} is in use; falling back to an ephemeral port`);
         this.#wsServer = Bun.serve(wsServeOptions(0));
       }
@@ -487,8 +424,7 @@ export class AkanServer {
 
     const server = this.#server;
     const wsServer = this.#wsServer;
-    // Only the listening server can answer `requestIP`, and behind the gateway `x-real-ip` beats it anyway,
-    // so this is what gives a solo process the caller instead of `null`.
+    // Only the listening server answers `requestIP`; behind the gateway `x-real-ip` wins, so this serves solo mode.
     SignalContext.setHttpPeerResolver((req) => server?.requestIP(req as Bun.BunRequest) ?? null);
     hmrHub?.setPublisher((topic, payload) => {
       server?.publish(topic, payload);
@@ -513,7 +449,7 @@ export class AkanServer {
     this.#localPublish = localPublish;
 
     this.status = "running";
-    this.#startMetricsReporting();
+    this.#metricsTimer ??= ProcessMetricsCollector.startReporting(() => this.#reportMetrics());
     this.#di.registerSchedule(this.serverMode);
     this.logger.verbose(`🚀 ${this.name} is running on ${unix ? `unix://${unix}` : `port ${port}`}`);
     const wsPort = this.#wsServer?.port;
@@ -542,7 +478,7 @@ export class AkanServer {
       this.status = "running";
       if (!isNoListenCommand) {
         Logger.role = this.serverMode;
-        this.#startMetricsReporting();
+        this.#metricsTimer ??= ProcessMetricsCollector.startReporting(() => this.#reportMetrics());
         this.#di.registerSchedule(this.serverMode);
         this.#registerParentIpc();
         await this.#startLogTransport();
@@ -560,7 +496,14 @@ export class AkanServer {
     this.#registerParentIpc();
     return this.listen();
   }
-  async stop() {
+  stop(): Promise<void> {
+    this.#stopping ??= this.#stop().finally(() => {
+      this.#stopping = null;
+    });
+    return this.#stopping;
+  }
+
+  async #stop() {
     if (this.status !== "running" && this.status !== "initialized") {
       this.logger.warn("AkanServer is not running. Cannot stop.");
       return;
@@ -570,7 +513,8 @@ export class AkanServer {
       const now = Date.now();
       this.logger.info("Shutting down gracefully...");
       this.status = "stopping";
-      this.#stopMetricsReporting();
+      if (this.#metricsTimer) clearInterval(this.#metricsTimer);
+      this.#metricsTimer = null;
       this.#di.getWebsocketAdaptor()?.clearEventHandler();
       this.#server?.stop(true);
       this.#wsServer?.stop(true);
@@ -598,10 +542,7 @@ export class AkanServer {
     process.on("disconnect", () => this.#handleParentDisconnect());
   }
 
-  /**
-   * The IPC channel closes when the parent gateway dies (including SIGKILL). Exiting here keeps a
-   * killed dev/gateway run from stranding replicas that would hold ports and break the next boot.
-   */
+  // Fires when the gateway dies, even by SIGKILL; exiting keeps orphan replicas from holding ports into the next boot.
   #handleParentDisconnect() {
     this.logger.warn("Parent IPC channel closed; shutting down to avoid an orphaned replica");
     setTimeout(() => process.exit(1), this.shutdownTimeoutMs + 1_000);
@@ -629,15 +570,6 @@ export class AkanServer {
     }
   }
 
-  #startMetricsReporting() {
-    if (this.#metricsTimer) return;
-    const report = () => {
-      void this.#reportMetrics();
-    };
-    report();
-    this.#metricsTimer = setInterval(report, ProcessMetricsCollector.parseMemoryLogIntervalMs());
-  }
-
   async #reportMetrics() {
     const metrics = await ProcessMetricsCollector.collect({
       role: this.serverMode,
@@ -651,12 +583,6 @@ export class AkanServer {
     }
   }
 
-  #stopMetricsReporting() {
-    if (!this.#metricsTimer) return;
-    clearInterval(this.#metricsTimer);
-    this.#metricsTimer = null;
-  }
-
   #assertCanGet(type = "Dependency", refName?: string) {
     if (this.status === "initialized" || this.status === "running") return;
     const target = refName ? `${type} "${refName}"` : type;
@@ -666,14 +592,7 @@ export class AkanServer {
     );
   }
 
-  /**
-   * Names, once at boot, every configured locale the dictionaries never wrote.
-   *
-   * A dictionary declares its own locale tuple and a lib ships that tuple to every app that mounts it, so an app
-   * that configures a third locale cannot widen it from the outside — the framework's own `base.*` keys included.
-   * Those keys then resolve through the default-locale fallback, which is a readable screen and therefore a
-   * silent one: the only other symptom is text that never turned into the new language.
-   */
+  // A lib's dictionaries fix their own locales, so an app's extra locale silently falls back to the default one.
   #reportLocaleCoverage() {
     for (const { locale, missing, total } of DictionaryRegistry.getLocaleGaps()) {
       const listed = missing.slice(0, 10).join(", ");
@@ -684,11 +603,7 @@ export class AkanServer {
     }
   }
 
-  /**
-   * Takes the web router as an argument rather than reading `this.#prepared`: this runs while the `#prepared`
-   * literal is still being built, so the field is `null` here on every first boot — which is how page prompts
-   * shipped unadvertised once.
-   */
+  // Takes `webRouter` as an argument: this runs while the `#prepared` literal is still being built, so it is null.
   #createBuiltinRoutes(webRouter: WebRouter | null): HttpRoutes {
     const { appName } = getEnv();
     const openapiRoutes: HttpRoutes = this.openapi
@@ -706,8 +621,7 @@ export class AkanServer {
           },
         }
       : {};
-    // Mounted at the root, not under `this.prefix`: the canonical resource URI a client authenticates against
-    // is the endpoint's own URL, and `https://<host>/mcp` is the one worth publishing.
+    // Mounted at the root, not under the prefix: its URL is the OAuth resource URI clients authenticate against.
     const mcpRouter =
       this.mcp && this.serverMode !== "batch"
         ? new McpRouter({
@@ -737,12 +651,10 @@ export class AkanServer {
           this.#opsRoute(),
         )
       : {};
-    // Builds the catalogue here rather than on the first agent request, so what MCP published — and what it
-    // refused despite an author opting in — is in the boot log of the process that decided it.
+    // Built at boot, not on the first agent request, so what MCP published or refused is in this process's boot log.
     mcpRouter?.report();
     this.#reportLocaleCoverage();
-    // Registered only when the gate passes, so outside `local` the paths do not exist at all and fall
-    // through to the SSR catch-all as a natural 404 rather than a handler that answers "forbidden".
+    // Registered only when the gate passes, so outside `local` the paths 404 via the SSR catch-all, not "forbidden".
     const devtoolsRoutes = new DevtoolsRouter({
       di: this.#di,
       env: getEnv(),
@@ -786,33 +698,17 @@ export class AkanServer {
   #startFileLogging() {
     if (!this.#solo || this.#logWriter) return;
     this.#logWriter = RotatingLogWriter.fromRuntimeDir(resolveRuntimeDir());
-    if (!this.#logWriter) return;
-    if (this.#logHub && Logger.isNdjson) {
-      this.#hubFileSink = new HubFileSink(this.#logHub, this.#logWriter, {
-        minSev: logSeverity[Logger.fileLevel],
-        json: Logger.format === "ndjson-only",
-      });
-      return;
-    }
-    this.#removeLogSink = Logger.addSink((entry) => {
-      this.#logWriter?.write(this.serverMode, entry.plainMessage);
-    });
+    if (this.#logWriter) this.#detachFileLog = HubFileSink.attach(this.#logWriter, this.#logHub, this.serverMode);
   }
 
   async #stopFileLogging() {
-    this.#removeLogSink?.();
-    this.#removeLogSink = null;
-    this.#hubFileSink?.close();
-    this.#hubFileSink = null;
+    this.#detachFileLog?.();
+    this.#detachFileLog = null;
     const writer = this.#logWriter;
     this.#logWriter = null;
     await writer?.close();
   }
 
-  /**
-   * Solo owns the hub and the control socket the gateway would have owned; a spawned child forwards its own
-   * records — and the RSC worker's, which reach it over the worker IPC — up to the gateway instead.
-   */
   async #startLogTransport() {
     if (this.#logHub || this.#logForwarder) return;
     const webRouter = this.#prepared?.webRouter ?? null;
@@ -824,21 +720,12 @@ export class AkanServer {
         hub.ingestMany(records);
         if (dropped) this.logger.warn(`RSC worker dropped ${dropped} log records (ipc backpressure)`);
       });
-      const control = new LogControlSocket(hub, resolveRuntimeDir());
-      try {
-        await control.start();
-        this.#logControl = control;
-      } catch (error) {
-        this.logger.warn(
-          `Log control socket unavailable at ${control.path}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
+      this.#logControl = await LogControlSocket.open(hub, resolveRuntimeDir(), this.logger);
       return;
     }
-    // A child of an ndjson gateway writes no text line the gateway could relay; its forwarder starts at the
-    // stdout level on its own, so nothing is lost before the gateway's `log.level` arrives.
+    // An ndjson gateway relays records, not text; the forwarder starts at the stdout level before `log.level` arrives.
     if (Logger.isNdjson) Logger.consoleOutput = false;
-    const forwarder = new LogForwarder((message) => process.send?.(message));
+    const forwarder = new LogForwarder((message, onSent) => process.send?.(message, undefined, undefined, onSent));
     this.#logForwarder = forwarder;
     webRouter?.onLogRecords((records) => forwarder.pushMany(records));
   }
@@ -848,15 +735,11 @@ export class AkanServer {
     this.#logControl = null;
     this.#logHub?.close();
     this.#logHub = null;
-    this.#logForwarder?.close();
+    await this.#logForwarder?.close();
     this.#logForwarder = null;
   }
 
-  /**
-   * Rebuilt per request rather than cached on the instance: libs register their dictionaries at module-evaluation
-   * time, and the document itself is already re-serialized per request, so a stale snapshot would be the only
-   * thing here that could disagree with the rest of the response.
-   */
+  // Rebuilt per request, not cached: libs register dictionaries at module evaluation, so a snapshot could go stale.
   static #createDescriptionResolver() {
     const lookup = new DictionaryLookup();
     return (key: string) => lookup.text(key);
@@ -875,11 +758,7 @@ export class AkanServer {
     return normalized;
   }
 
-  /**
-   * A basePath is a whole route subtree served by the SSR catch-all, so a signal prefix that shadows one — or that
-   * a basePath shadows — silently loses every route on the losing side rather than failing anywhere a reader
-   * would look.
-   */
+  // A prefix and a basePath that shadow each other silently lose every route on one side.
   #assertPrefixClearsBasePaths() {
     const basePaths = parseBasePaths(process.env.AKAN_PUBLIC_BASE_PATHS);
     const first = this.prefix.split("/")[1];
@@ -909,38 +788,20 @@ export class AkanServer {
     );
   }
 
-  static #isOpenApiEnvEnabled() {
-    return AkanServer.#isEnvEnabled("AKAN_OPENAPI", "AKAN_PUBLIC_OPENAPI");
-  }
-
   static #isEnvEnabled(...names: string[]) {
     return names.some((name) => process.env[name] === "true" || process.env[name] === "1");
   }
 
-  /**
-   * On unless the env says otherwise, which is the opposite of `#isEnvEnabled`.
-   *
-   * MCP exposure follows an endpoint's guards rather than an opt-in, so there is nothing an app has to declare for
-   * its catalogue to be right — and a switch that must be found before anything works is a switch most deployments
-   * never find. `AKAN_MCP=false` is the way off.
-   */
-  static #isEnvOn(...names: string[]) {
-    return !names.some((name) => process.env[name] === "false" || process.env[name] === "0");
-  }
-
-  /** Narrows only — a surface the build or the env left out cannot be switched back on here. */
   static #narrowWeb(current: AkanWebConfig, web: AkanWebOption | undefined): AkanWebConfig {
     if (web === undefined || web === true) return current;
     if (web === false) return { ssr: false, csr: false };
     return { ssr: current.ssr, csr: web.csr && current.csr };
   }
 
-  /** Named rather than defaulted: an absent env must leave the option unset so a value written in code still wins. */
   static #isEnvOff(...names: string[]) {
     return names.some((name) => process.env[name] === "false" || process.env[name] === "0");
   }
 
-  /** Both differ per environment, so they belong in env rather than in the app's source alongside the switch. */
   static #mcpAuthFromEnv(): McpAuthOption {
     const authorizationServers = AkanServer.#envList("AKAN_MCP_AUTH_SERVERS");
     const scopes = AkanServer.#envList("AKAN_MCP_SCOPES");
@@ -951,16 +812,7 @@ export class AkanServer {
     };
   }
 
-  /**
-   * The rest of `McpServerOption`, spelled as environment — the channel a deployment configures what the source
-   * does not through, and the only one a child of the gateway is handed. An app writes these in its `option.ts`,
-   * which merges over this: a value written in code wins over the env of the same name.
-   */
-  /**
-   * Keys whose value is `undefined` are dropped before the merge. "An option written in code wins over the env of
-   * the same name" is the contract, and a spread reads an explicitly-`undefined` property as a value — so
-   * `{ path: undefined }` from a caller assembling options conditionally erased what the environment supplied.
-   */
+  // Code wins over the env only for a value: a spread would let `{ path: undefined }` erase what the env supplied.
   static #defined<T extends object>(source: T): Partial<T> {
     return Object.fromEntries(Object.entries(source).filter(([, value]) => value !== undefined)) as Partial<T>;
   }
@@ -983,7 +835,6 @@ export class AkanServer {
     };
   }
 
-  /** `AKAN_MCP_RATE_LIMIT=off` disables; `120` is per minute, `120/30` per thirty seconds; `AKAN_MCP_CONCURRENT` caps in-flight calls. */
   static #mcpRateLimitFromEnv(): Pick<McpServerOption, "rateLimit"> {
     const raw = process.env.AKAN_MCP_RATE_LIMIT?.trim().toLowerCase();
     if (raw === "off" || raw === "false" || raw === "0") return { rateLimit: false };
@@ -1003,12 +854,7 @@ export class AkanServer {
     return value === "full" || value === "shallow" || value === "none" ? { outputSchema: value } : {};
   }
 
-  /**
-   * Both consumers build their path by concatenation — the route key, and the RFC 9728 metadata path the resource
-   * identifier is inserted into — so `AKAN_MCP_PATH=mcp` served a route named `mcp` and published its metadata at
-   * `/.well-known/oauth-protected-resourcemcp`, which no client would ever look for. Normalized rather than
-   * rejected: the intent is unambiguous, and a server that refuses to boot over a missing slash is worse.
-   */
+  // The route key and the RFC 9728 metadata path both concatenate it, so a missing leading slash is normalized.
   static #mcpPathFromEnv() {
     const path = process.env.AKAN_MCP_PATH?.trim();
     if (!path) return {};
@@ -1022,10 +868,7 @@ export class AkanServer {
       .filter(Boolean);
   }
 
-  /**
-   * Shutdown must finish inside the gateway's child-wait budget or the layer above SIGKILLs this
-   * process and strands its resources; dev (`akan start`) keeps it short so edit-restarts stay snappy.
-   */
+  // Must finish inside the gateway's child-wait budget, or the layer above SIGKILLs this process.
   static #defaultShutdownTimeoutMs() {
     const configured = Number(process.env.AKAN_SHUTDOWN_TIMEOUT_MS);
     if (Number.isFinite(configured) && configured > 0) return configured;

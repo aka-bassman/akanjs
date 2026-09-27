@@ -16,11 +16,7 @@ export class PrimitiveCommand extends command("primitive", [PrimitiveScript], ({
     })
     .option("format", String, { flag: "o", desc: "output format", default: "markdown", enum: ["markdown", "json"] })
     .exec(async function (workspace, app, module, surface, format) {
-      const report = await this.primitiveScript.createUi(workspace, {
-        app,
-        module,
-        surface: surface as UiSurface,
-      });
+      const report = await this.primitiveScript.createUi(workspace, { app, module, surface: surface as UiSurface });
       Logger.rawLog(renderPrimitiveReport(report, format as PrimitiveFormat));
     }),
   addField: target({ desc: "Add a source-limited field to a module constant and dictionary" })
@@ -50,13 +46,7 @@ export class PrimitiveCommand extends command("primitive", [PrimitiveScript], ({
     .option("default", String, { desc: "default value", nullable: true })
     .option("format", String, { flag: "o", desc: "output format", default: "markdown", enum: ["markdown", "json"] })
     .exec(async function (workspace, app, module, field, values, defaultValue, format) {
-      const report = await this.primitiveScript.addEnumField(workspace, {
-        app,
-        module,
-        field,
-        values,
-        defaultValue,
-      });
+      const report = await this.primitiveScript.addEnumField(workspace, { app, module, field, values, defaultValue });
       Logger.rawLog(renderPrimitiveReport(report, format as PrimitiveFormat));
     }),
 })) {}

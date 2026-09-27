@@ -1,16 +1,10 @@
 import { BottomInset } from "./BottomInset";
 import { BottomTab } from "./BottomTab";
 import { Header } from "./Header";
-import { LeftSider } from "./LeftSider";
 import { Navbar } from "./Navbar";
-import { RightSider } from "./RightSider";
-import { Sider } from "./Sider";
-import { Template } from "./Template";
-import { TopInset } from "./TopInset";
-import { TopLeftAction } from "./TopLeftAction";
-import { Unit } from "./Unit";
-import { View } from "./View";
-import { Zone } from "./Zone";
+import { Template, Unit, View, Zone } from "./Role";
+import { LeftSider, RightSider, Sider } from "./Sider";
+import { TopInset, TopLeftAction } from "./TopInset";
 
 export const Layout = {
   Header,

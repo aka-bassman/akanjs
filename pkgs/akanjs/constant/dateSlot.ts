@@ -1,15 +1,7 @@
 import { type Dayjs, dayjs } from "akanjs/base";
 
-/**
- * A Date field stores a native `Date` under a per-key symbol and builds the `Dayjs` its type promises on first
- * read, memoized by that `Date`. A dayjs instance is ~300 bytes and eight getter calls at construction; a `Date`
- * is 40 bytes. A listing carries every row's dates and reads a handful of them, so this is most of what a
- * hydrated list used to cost — see `crystalize`.
- *
- * The slot is a function of the key, not the class (`Symbol.for`): `applyMixins` copies a light model's accessors
- * onto the full model's prototype, so an accessor and the `set()` that fills its slot must agree on the slot
- * whichever class defined either one.
- */
+// A Date field keeps a native `Date` under a per-key symbol and builds its `Dayjs` on first read, memoized per `Date`.
+// The slot is per key, not per class: `applyMixins` copies a light model's accessors onto the full model's prototype.
 const slotByKey = new Map<string, symbol>();
 export const dateSlotOf = (key: string): symbol => {
   const cached = slotByKey.get(key);
@@ -38,11 +30,8 @@ export const toDateValue = (value: unknown): Date | null | undefined => {
 
 type DateSlotHolder = Record<symbol, Date | null | undefined>;
 
-/**
- * Enumerable so `for...in` — `plainFieldsOf`, `immerify`, `deepObjectify` — still sees the field. immer calls a
- * prototype setter with the draft as `this`, so a write through the accessor stays copy-on-write, and the getter
- * writes nothing, so a read never marks a draft modified.
- */
+// Enumerable so `for...in` (`plainFieldsOf`, `immerify`, `deepObjectify`) sees it. immer calls the setter with the
+// draft as `this`, so a write stays copy-on-write; the getter writes nothing, so a read never marks a draft modified.
 export const dateAccessorOf = (key: string): PropertyDescriptor => {
   const slot = dateSlotOf(key);
   return {

@@ -10,6 +10,12 @@ interface RefreshSessionCache {
     value: object,
     option?: { expireAt?: ReturnType<typeof dayjs> },
   ): Promise<unknown>;
+  setIfAbsent(
+    namespace: string,
+    key: string,
+    value: string,
+    option?: { expireAt?: ReturnType<typeof dayjs> },
+  ): Promise<boolean>;
   hset(
     namespace: string,
     key: string,
@@ -46,6 +52,7 @@ interface CreateRefreshSessionInput {
 }
 
 const sessionNamespace = "refreshSessionByTokenHash";
+const claimNamespace = "refreshSessionClaimByTokenHash";
 const ownerNamespace = "refreshSessionHashes";
 
 const getOwnerKey = (subject: RefreshSession["subject"], subjectId: string) => `${subject}:${subjectId}`;
@@ -148,18 +155,16 @@ export const rotateRefreshSession = async (
   if (!session) throw new Err("shared.error.invalidRefreshToken");
   if (session.revokedAt) throw new Err("shared.error.revokedRefreshToken");
   if (dayjs(session.expiresAt).isBefore(now)) throw new Err("shared.error.expiredRefreshToken");
-  if (session.rotatedAt && now.diff(dayjs(session.rotatedAt)) >= graceMs) {
+  // With no window no clock is read: a presentation whose `now` is earlier than the claim it lost is still a reuse.
+  const isPastGrace = (rotatedAt: string) => graceMs <= 0 || now.diff(dayjs(rotatedAt)) >= graceMs;
+  const reuseDetected = async () => {
     if (reuseRevokes === "lineage")
       await revokeRefreshSessionBySid(cache, session.subject, session.subjectId, session.id);
     else await revokeRefreshSessions(cache, session.subject, session.subjectId);
-    throw new Err("shared.error.refreshTokenReuseDetected");
-  }
-
-  const rotatedSession = {
-    ...session,
-    rotatedAt: session.rotatedAt ?? now.toISOString(),
-    replacedBy: nextRefreshTokenHash,
+    return new Err("shared.error.refreshTokenReuseDetected");
   };
+  if (session.rotatedAt && isPastGrace(session.rotatedAt)) throw await reuseDetected();
+
   const nextSession = {
     ...session,
     refreshTokenHash: nextRefreshTokenHash,
@@ -167,10 +172,20 @@ export const rotateRefreshSession = async (
   };
   delete nextSession.rotatedAt;
   delete nextSession.replacedBy;
-
-  await setSession(cache, rotatedSession);
+  // Listed before the claim, so the revocation a presentation that loses the claim sets off reaches this one too.
   await setSession(cache, nextSession);
   await addOwnerSessionHash(cache, nextSession);
+
+  // Two presentations can both read `rotatedAt` unset before either writes it; only one can take the claim.
+  const claimed = await cache.setIfAbsent(claimNamespace, refreshTokenHash, now.toISOString(), {
+    expireAt: dayjs(session.expiresAt),
+  });
+  const rotatedAt =
+    session.rotatedAt ??
+    (claimed ? now.toISOString() : ((await cache.get(claimNamespace, refreshTokenHash)) as string | undefined));
+  if (!rotatedAt || (!claimed && isPastGrace(rotatedAt))) throw await reuseDetected();
+
+  await setSession(cache, { ...session, rotatedAt, replacedBy: nextRefreshTokenHash });
   return nextSession;
 };
 

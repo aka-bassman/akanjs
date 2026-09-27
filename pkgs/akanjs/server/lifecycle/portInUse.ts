@@ -1,7 +1,4 @@
-/**
- * Detects "address already in use" listen failures across the shapes Bun throws them in
- * (`code: "EADDRINUSE"` on newer versions, message-only on older ones).
- */
+/** Bun reports EADDRINUSE as `code` on newer versions and only in the message on older ones; both count. */
 export const isPortInUseError = (error: unknown): boolean => {
   if (!error || typeof error !== "object") return false;
   const candidate = error as { code?: unknown; message?: unknown };

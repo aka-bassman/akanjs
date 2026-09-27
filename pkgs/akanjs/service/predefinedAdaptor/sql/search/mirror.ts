@@ -1,7 +1,7 @@
 import { FIELD_META } from "akanjs/base";
 import { type ConstantField, type ConstantModel, type FieldObject, textFieldRoles } from "akanjs/constant";
 import type { DatabaseModel } from "akanjs/document";
-import { quoteIdent } from "../../sqlDescriptor";
+import { quoteIdent } from "../values";
 import type { SearchColumns } from "./types";
 
 export interface MirrorSegment {
@@ -15,9 +15,8 @@ export class SearchMirror {
   static readonly upsertTail = `ON CONFLICT("ref", "refId") DO UPDATE SET ${textFieldRoles
     .map((role) => `${quoteIdent(role)} = excluded.${quoteIdent(role)}`)
     .join(", ")}`;
-  // unicode61 breaks a token on every non-alphanumeric character, so a `key_value` pair carrying an email, a path
-  // or a dotted id would split into fragments and stop matching as a pair. Only these are folded: the set covers
-  // what ids and enum values actually contain, and each one costs another nested `replace`.
+  // unicode61 splits on every non-alphanumeric, fragmenting a `key_value` holding an email or path; only what ids and
+  // enum values contain is folded, as each costs another nested `replace`.
   static readonly #slugSeparators = [" ", "-", ".", "/", ":", "@", ",", "+", "#", "(", ")", "'"];
 
   static sqlString(value: string) {

@@ -36,7 +36,7 @@ Reads a trusted value, such as the caller's account, and hands it to exec as an 
 
 Wraps every signal call and attaches server context before the endpoint's guards run.
 
-Runs before a page request is routed, to redirect, rewrite, or add headers.
+Runs before a page load is routed, to redirect, rewrite, or add headers.
 
 Server helper
 
@@ -46,7 +46,7 @@ A singleton adapt() class wrapping storage, queues, email, payment or a vendor A
 
 Legacy: a server-only class, such as an SDK client, injected through option.ts.
 
-Page request
+Page load
 
 Signal call
 
@@ -120,7 +120,7 @@ Kind
 
 Where the request-path four run
 
-A page request and a signal call take different paths, and each piece sits on only one of them:
+A page load and a signal call take different paths, and each piece sits on only one of them:
 
 Piece
 
@@ -130,7 +130,7 @@ Not here
 
 Server Level: WebProxy And Middleware
 
-Both are registered once in the option chain and apply to every request of their kind. A WebProxy acts on page requests before routing; a Middleware wraps every signal call.
+Both are registered once in the option chain and apply to every request of their kind. A WebProxy acts on page loads before routing; a Middleware wraps every signal call.
 
 Page render
 

@@ -1,4 +1,3 @@
-"use client";
 export * from "./AgentAbort";
 export * from "./Agentic";
 export * from "./AgenticSurface";

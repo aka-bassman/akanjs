@@ -2,30 +2,11 @@ import { mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { $ } from "bun";
 
-/**
- * Builds `@akanjs/cli` into the workspace `dist/` that `bun run akan` executes.
- *
- * Every `akan <command>` runs this first, and the output directory is shared, so two concurrent
- * commands used to destroy each other's bundle: the build opened with `rm -rf` of the whole output
- * directory, which can delete the `index.js` — or one of the lazily loaded chunks `splitting: true`
- * produces — that another invocation is about to execute. It never looked like a build problem from
- * the outside. A parallel run of the dev-stability suite failed its first test in all three shards
- * with `Timed out waiting for backend ready`, and the real cause was four levels down: `akan start`
- * exiting 1 on `cp: .../templates/appSample/lib/_noti/noti.store.ts: No such file or directory`.
- *
- * Two things make it safe, and they cover different cases:
- *
- * - **An input stamp**, so an invocation whose sources are already built does nothing at all. This is
- *   the steady state — every `akan` command after the first — and it is where the clobbering used to
- *   happen, since nothing about an up-to-date output needed rewriting in the first place.
- * - **A lock**, for the cold start where the stamp genuinely does not match and several invocations
- *   race (parallel CI shards against an empty `dist/`). Exactly one builds; the rest wait and then
- *   find the stamp matching.
- */
+// Every `akan` invocation runs this against a shared `dist/`, and a rebuild's `rm -rf` deletes chunks another one is
+// executing: an input stamp makes an up-to-date build a no-op, and a lock lets one of several cold starts build.
 export class CliDistBuilder {
   static readonly #stampFile = ".build-stamp";
-  /** Long enough to cover a cold build on a loaded machine, short enough that a lock leaked by a
-   *  `kill -9` between `mkdir` and the owner write cannot wedge the CLI for a whole session. */
+  /** Covers a cold build on a loaded machine; short enough that a lock leaked by `kill -9` cannot wedge the CLI. */
   static readonly #lockTimeoutMs = 120_000;
   static readonly #lockPollMs = 100;
 
@@ -47,8 +28,7 @@ export class CliDistBuilder {
     try {
       if (await this.#stampMatches(stamp)) return "built-by-other";
       await this.#bundle();
-      // Written last, so a build killed halfway leaves no stamp and the next invocation redoes it
-      // rather than trusting a partial bundle.
+      // Written last, so a build killed halfway leaves no stamp to trust a partial bundle by.
       await Bun.write(path.join(this.#outDir, CliDistBuilder.#stampFile), stamp);
       return "built";
     } finally {
@@ -56,16 +36,8 @@ export class CliDistBuilder {
     }
   }
 
-  /**
-   * Hash of every input the bundle depends on: each source file's path, mtime and size across the two
-   * packages that get bundled, plus the Bun version that does the bundling. Deliberately conservative
-   * — a stamp that misses an input serves a stale CLI, which is a far worse failure than an extra
-   * 0.6s build, so this walks whole package trees rather than resolving the real import graph.
-   *
-   * Test files are the one exclusion, and only because nothing can reach them: no entrypoint imports a
-   * `*.test.ts`, so including them would rebuild the bundle when a test changed — which then `rm -rf`s
-   * the `dist/` that a suite already running against it is executing from.
-   */
+  // Whole package trees, not the import graph: a missed input serves a stale CLI. Tests are excluded because no entry
+  // imports them, and a rebuild on a test edit would `rm -rf` the `dist/` a running suite executes from.
   static readonly #ignoredInputs = /\.(test|spec)\.(ts|tsx)$/;
 
   async inputStamp(): Promise<string> {
@@ -92,7 +64,6 @@ export class CliDistBuilder {
     return await Bun.file(path.join(this.#outDir, "index.js")).exists();
   }
 
-  /** Resolves once this process owns the lock; the returned callback releases it. */
   async #acquireLock(): Promise<() => Promise<void>> {
     const lockDir = `${this.#outDir}.lock`;
     await mkdir(path.dirname(lockDir), { recursive: true });
@@ -138,23 +109,17 @@ export class CliDistBuilder {
     const buildResult = await Bun.build({
       entrypoints: [
         `${this.#cliDir}/index.ts`,
-        // The code-agent SDK is a second published entry, and `naming.entry` is the bare basename — which is
-        // why this file is not called `index.ts` like every other barrel here.
+        // A second published entry; `naming.entry` is the bare basename, hence not `index.ts`.
         `${this.#cliDir}/code/akanCode.ts`,
         `${this.#devkitDir}/incrementalBuilder/incrementalBuilder.proc.ts`,
         `${this.#devkitDir}/incrementalBuilder/buildBatch.proc.ts`,
         `${this.#devkitDir}/typecheck/typecheck.proc.ts`,
       ],
-      // Required, not cosmetic: with `splitting: false` Bun inlines every dynamically imported module
-      // into the entry and hoists its external `import` statements to the top of the file, so the
-      // lazy imports that keep `typescript`, @trapezedev/project and the tailwind stack
-      // out of the dev host would all load eagerly anyway.
+      // Required: without it Bun inlines dynamic imports and hoists their externals, loading the lazy stacks eagerly.
       splitting: true,
       target: "bun",
       outdir: this.#outDir,
-      // Chunks must sit next to the entry, not in a subdirectory: code that resolves bundled assets
-      // through `import.meta.dir` (e.g. the `templates/` and `guidelines/` lookups) would otherwise
-      // look for them under `chunks/`.
+      // Chunks sit next to the entry, or `import.meta.dir` lookups of `templates/` and `guidelines/` miss.
       naming: { entry: "[name].js", chunk: "[name]-[hash].js" },
       // devkit is bundled in rather than resolved at runtime, which it already is by being absent here.
       external: Object.keys({ ...packageJson.dependencies, ...packageJson.peerDependencies }),
@@ -175,8 +140,7 @@ export class CliDistBuilder {
       },
     };
     await Bun.write(`${this.#outDir}/package.json`, JSON.stringify(distPackageJson, null, 2));
-    // Generated here rather than at first run: without it the entry has to import every command module
-    // to discover which one owns `argv[2]`, and a dev sandbox may only ever run `akan start` once.
+    // Generated here, not at first run: a dev sandbox may run `akan start` only once.
     const { CommandManifest } = await import("./commandManifest");
     await Bun.write(`${this.#outDir}/${CommandManifest.fileName}`, JSON.stringify(await CommandManifest.generate()));
   }

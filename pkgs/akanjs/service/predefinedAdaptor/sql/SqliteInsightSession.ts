@@ -3,21 +3,16 @@ import { randomBytes } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { quoteIdent } from "../sqlDescriptor";
 import type { InsightSession } from "./types";
+import { quoteIdent } from "./values";
 
 /**
- * The database attached to a fresh in-memory connection under a random schema name, with every table that holds
- * `_doc` shadowed by a TEMP view that leaves it out.
- *
- * bun:sqlite exposes no authorizer that could deny a column, so the engine is left unable to name one instead: an
- * unqualified table resolves to its view, `main` is empty, and the table itself only answers to a schema name no
- * statement may contain. A check on the statement's text could not be the boundary — SQLite reads a quoted string as a
- * name where one is expected, so `'admin'.'_doc'` is the column. `query_only` refuses every write, whatever the text.
+ * Attached to a fresh in-memory connection under a random schema, every `_doc` table shadowed by a TEMP view omitting
+ * it: bun:sqlite has no authorizer, and no text check can hold since SQLite reads `'admin'.'_doc'` as the column.
+ * `query_only` refuses every write, whatever the text.
  */
 export class SqliteInsightSession implements InsightSession {
-  // A schema passed as an argument can be computed, so these are refused by name: raw pages, and the index samples
-  // ANALYZE keeps under STAT4. Neither Bun build compiles them in today.
+  // Refused by name, as a schema argument can be computed: raw pages and ANALYZE's STAT4 index samples.
   static readonly #unnameable = ["sqlite_dbpage", "sqlite_stat3", "sqlite_stat4"];
   static readonly #documentColumn = "_doc";
 

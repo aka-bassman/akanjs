@@ -3,14 +3,14 @@ import type { App } from "@akanjs/devkit/commandDecorators";
 import { openBrowser } from "../openBrowser";
 import { DevBootConcurrency } from "./devBootConcurrency";
 import { DevSessionLog } from "./devSessionLog";
-import type { DevUiMode } from "./devUiMode";
+
+export type DevUiMode = "stream" | "tui";
 
 export interface DevAppStatus {
   app: App;
   name: string;
   port: number;
   url: string;
-  /** The public URL `--share` opened for this app, or null when the session opened none. */
   shareUrl: string | null;
   state: DevHostState;
   detail: string;
@@ -24,18 +24,15 @@ export interface DevSupervisorOptions {
   concurrency?: number | null;
   open?: boolean;
   write?: boolean;
-  /** App name to public URL, for the shares `--share` opened before the session started. */
+  /** App name to the public URL `--share` opened for it. */
   shares?: Map<string, string> | null;
 }
 
 export interface DevSupervisorView {
-  /** Called for every decoded chunk of a child's output, in arrival order. Not split into lines. */
+  /** Every decoded chunk of a child's output, in arrival order, not split into lines. */
   onOutput: (app: string, kind: "stdout" | "stderr", text: string) => void;
   onStatus: (statuses: DevAppStatus[]) => void;
-  /**
-   * The supervisor's own messages. Routed through the view rather than written straight to stdout: Ink
-   * repaints a frame it believes it owns, and a stray write into the middle of one corrupts it.
-   */
+  /** Routed through the view, not stdout: a stray write corrupts the frame Ink repaints. */
   onNote: (text: string, level: "info" | "warn") => void;
   /** Resolves when the viewer wants the session to end — a quit key, or the stream view never. */
   waitForExit: () => Promise<void>;
@@ -50,25 +47,25 @@ interface DevChild {
   opened: boolean;
 }
 
-/**
- * Runs one `akan start <app>` child per app and owns everything they must not each own: the local
- * database, the boot order, and the terminal.
- *
- * A child is the unmodified single-app dev host, re-invoked through this same CLI entry. Hosting several
- * `AkanAppHost` instances in one process would be cheaper by one process and wrong in a way that only
- * shows up later: `prepareCommand` publishes per-app values (`AKAN_PUBLIC_BASE_PATHS`,
- * `AKAN_DATABASE_MODE`) into `process.env`, and `AKAN_DATABASE_MODE` is read back as an explicit
- * override — so the second app would silently inherit the first app's database mode.
- */
+// One `akan start <app>` child process per app, not several `AkanAppHost`s in one: `prepareCommand` publishes
+// per-app values into `process.env`, and a second app would read the first's `AKAN_DATABASE_MODE` as an override.
 export class DevSupervisor {
-  /** Set in a child's env. A child that sees it reports its state over ipc instead of only printing it. */
+  // Ink needs a terminal that reports a size; a pipe, a redirect or CI downgrades (and says so) rather than failing.
+  static resolveDevUi(
+    plain: boolean,
+    {
+      isTty = !!process.stdout.isTTY,
+      columns = process.stdout.columns ?? 0,
+    }: { isTty?: boolean; columns?: number } = {},
+  ): { mode: DevUiMode; downgraded: boolean } {
+    if (plain) return { mode: "stream", downgraded: false };
+    if (!isTty || columns <= 0) return { mode: "stream", downgraded: true };
+    return { mode: "tui", downgraded: false };
+  }
+  /** A child that sees it in its env reports its state over ipc instead of only printing it. */
   static readonly supervisedEnvKey = "AKAN_DEV_SUPERVISED";
 
-  /**
-   * What a supervised child adds to its own `startOne` call. Returns nothing when this process was not
-   * spawned by a supervisor, so the single-app path stays exactly as it was — and the pipe mode is what
-   * fills `#backendStderrTail`, the tail the crash-loop diagnostic prints.
-   */
+  // Empty unless spawned by a supervisor, so the single-app path stays exactly as it was.
   static childHooks(): { stdio?: "pipe"; onDevEvent?: (event: DevHostEvent) => void } {
     if (process.env[DevSupervisor.supervisedEnvKey] !== "1" || !process.send) return {};
     const send = process.send.bind(process);
@@ -105,7 +102,7 @@ export class DevSupervisor {
     return [...this.#children.values()].map((child) => child.status);
   }
 
-  /** The session's own log files. Held here rather than by a view so `--plain` keeps them too. */
+  // Held here rather than by a view so `--plain` keeps the log files too.
   get sessionLog(): DevSessionLog {
     return this.#sessionLog;
   }
@@ -127,11 +124,7 @@ export class DevSupervisor {
     await this.#sessionLog.close();
   }
 
-  /**
-   * `getDevPort` derives a port per app, but `AKAN_DEV_PORT` overrides it — and one pin would hand every
-   * app in the session the same port. The websocket port is `port + 10_000`, so a clash there is the
-   * same clash; walking upward from each derived port is what keeps both unique.
-   */
+  // `AKAN_DEV_PORT` would hand every app the same port (and ws port, `port + 10_000`), so each walks upward.
   async #assignPorts(): Promise<Map<string, number>> {
     const taken = new Set<number>();
     const ports = new Map<string, number>();
@@ -145,10 +138,7 @@ export class DevSupervisor {
   }
 
   #makeChild(app: App, port: number): DevChild {
-    let markReady!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      markReady = resolve;
-    });
+    const { promise: ready, resolve: markReady } = Promise.withResolvers<void>();
     return {
       status: {
         app,
@@ -167,15 +157,7 @@ export class DevSupervisor {
     };
   }
 
-  /**
-   * Boots in waves rather than all at once. Two reasons, both measured: a cold boot build is the
-   * builder's RSS peak (~490MB on top of its floor), and every app's `scanSync` rewrites the generated
-   * barrels of the libs it shares with the others — serialized here as well as locked underneath.
-   *
-   * The wave size is the machine's, not a constant: `DevBootConcurrency` sizes it against memory and
-   * cores, so a laptop boots them together and a small container still staggers them. The note says
-   * which, because a session that waits on one app at a time must be able to see why.
-   */
+  // Waves: a cold boot build is the builder's RSS peak, and each `scanSync` rewrites the shared libs' barrels.
   async #bootInOrder() {
     const queue = [...this.#children.values()];
     const plan = DevBootConcurrency.resolve(queue.length, this.#options.concurrency ?? null);
@@ -192,26 +174,27 @@ export class DevSupervisor {
   }
 
   async #waitForReady(child: DevChild) {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const expired = new Promise<"expired">((resolve) => {
-      timer = setTimeout(() => resolve("expired"), DevSupervisor.readyTimeoutMs);
+    if (await DevSupervisor.timesOut(child.ready, DevSupervisor.readyTimeoutMs))
+      this.#note(
+        `${child.status.name} has not reported ready after ${Math.round(DevSupervisor.readyTimeoutMs / 1000)}s; starting the next app anyway`,
+        "warn",
+      );
+  }
+
+  // Cleared, not left to fire: the losing timer would hold the event loop open for its full budget.
+  static async timesOut(work: Promise<unknown>, ms: number): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<true>((resolve) => {
+      timer = setTimeout(() => resolve(true), ms);
     });
     try {
-      if ((await Promise.race([child.ready.then(() => "ready" as const), expired])) === "expired")
-        this.#note(
-          `${child.status.name} has not reported ready after ${Math.round(DevSupervisor.readyTimeoutMs / 1000)}s; starting the next app anyway`,
-          "warn",
-        );
+      return await Promise.race([work.then(() => false), expired]);
     } finally {
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
     }
   }
 
-  /**
-   * The child's own command line. Static and pure so a test can check every flag against what `start`
-   * actually declares — an option renamed here and not there kills every child at boot with
-   * `error: unknown option`, which looks like a dev-server failure rather than a CLI mismatch.
-   */
+  // Static so a test checks every flag against `start`: a renamed option kills each child with `unknown option`.
   static childArgs(name: string, { write = true }: { write?: boolean } = {}): string[] {
     return [
       "start",
@@ -235,8 +218,7 @@ export class DevSupervisor {
         ...process.env,
         [DevSupervisor.supervisedEnvKey]: "1",
         AKAN_PUBLIC_APP_NAME: name,
-        // Pinned, not left to be re-derived: `getDevPort` indexes the sorted app list, so a child that
-        // restarts after an app directory appears would land on a different port than the one shown here.
+        // Pinned: `getDevPort` indexes the sorted app list, so a restart after a new app dir would move it.
         AKAN_DEV_PORT: String(port),
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -303,11 +285,7 @@ export class DevSupervisor {
     this.#sessionLog.note(text);
   }
 
-  /**
-   * Ctrl+C reaches every child directly through the process group, so this is not what delivers the
-   * signal — it is what keeps this process alive long enough to wait for them and to tear the database
-   * down once. A second Ctrl+C abandons the wait.
-   */
+  // Ctrl+C reaches the children through the process group; this only keeps this process alive to wait for them.
   #installSignalHandlers(): Promise<void> {
     return new Promise<void>((resolve) => {
       let asked = false;
@@ -324,10 +302,7 @@ export class DevSupervisor {
     });
   }
 
-  /**
-   * Replaces one app's child. The dev host recovers a crashed backend or builder on its own, so this is
-   * for the case it cannot see: a change it did not classify, or a wedged process.
-   */
+  // For what the dev host cannot recover itself: a change it did not classify, or a wedged process.
   async restart(name: string) {
     const child = this.#children.get(name);
     if (!child || this.#stopping) return;
@@ -352,21 +327,11 @@ export class DevSupervisor {
     );
     for (const child of running) child.proc.kill("SIGTERM");
     const exited = Promise.all(running.map(async (child) => await child.proc.exited));
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const expired = new Promise<"expired">((resolve) => {
-      timer = setTimeout(() => resolve("expired"), DevSupervisor.shutdownGraceMs);
-    });
-    try {
-      if ((await Promise.race([exited.then(() => "exited" as const), expired])) === "expired") {
-        for (const child of running) {
-          if (!child.proc.killed) {
-            this.#note(`${child.status.name} did not exit in time; killing it`, "warn");
-            child.proc.kill("SIGKILL");
-          }
-        }
-      }
-    } finally {
-      if (timer) clearTimeout(timer);
+    if (!(await DevSupervisor.timesOut(exited, DevSupervisor.shutdownGraceMs))) return;
+    for (const child of running) {
+      if (child.proc.killed) continue;
+      this.#note(`${child.status.name} did not exit in time; killing it`, "warn");
+      child.proc.kill("SIGKILL");
     }
   }
 }

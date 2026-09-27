@@ -41,9 +41,7 @@ type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) exten
 export type MergedValues<T> = UnionToIntersection<MergeObjectValues<T>>;
 export type Assign<A, B> = Omit<A, keyof B> & B;
 
-// NOTE: All `MergeAll*` utilities below use accumulator-style tail recursion so that
-// TS does not allocate a new intersection node at every frame of the recursion. This
-// keeps type-checking roughly linear (vs. quadratic for the naive `T & Recurse<Rest>`).
+// The `MergeAll*` types recurse with an accumulator, so TS allocates no intersection per frame: linear, not quadratic.
 export type ObjectAssign<Objects extends object[], Acc = unknown> = Objects extends [
   infer First extends object,
   ...infer Rest extends object[],
@@ -119,7 +117,7 @@ export type MergeAllDoubleKeyOfObjects<
     : MergeAllDoubleKeyOfObjects<Rest, Key, SubKey, Acc>
   : Acc;
 
-export type Primitive = string | number | boolean | null | undefined; // | symbol | bigint;
+export type Primitive = string | number | boolean | null | undefined;
 
 export type NestedKeysWithAllowed<T, Allowed = Primitive> = T extends Primitive
   ? never

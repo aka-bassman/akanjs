@@ -1,15 +1,11 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { setTestEnv } from "../testHelpers.fixture";
 
 let Markdown: typeof import("./Markdown").default;
 
-/** Imported after the environment is set: `./Markdown` reaches the `akanjs/client` barrel, which calls `getEnv()`
- *  while the module is still evaluating. Same pattern as Chat.test.tsx. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "markdowntest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "markdowntest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("markdowntest");
   Markdown = (await import("./Markdown")).default;
 });
 

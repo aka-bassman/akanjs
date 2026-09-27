@@ -1,8 +1,9 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
-import type { AgentRunner, ChatMessage, MessageAttachment, ToolCallRequest } from "use-agentic";
+import type { AgentRunner, AgentSession, ChatMessage, MessageAttachment, ToolCallRequest } from "use-agentic";
+import { l, mount as mountNode, setTestEnv } from "../testHelpers.fixture";
+import type { ChatProps } from "./Chat";
 
 let lib: typeof import("use-agentic");
 let DefaultChat: typeof import("./Chat").DefaultChat;
@@ -12,21 +13,8 @@ let UiOverrideProvider: typeof import("../UiOverride").UiOverrideProvider;
 
 const runtimeFetch: Record<string, unknown> = {};
 
-const l = Object.assign((key: string) => key, {
-  _: (key: string) => key,
-  rich: (key: string) => key,
-  trans: (translation: Record<string, string>) => translation.en,
-});
-
-/**
- * Imported after the environment is set, not before: `./Chat` reaches the `akanjs/store` barrel, whose `baseSt`
- * calls `getEnv()` while the module is still evaluating. Same pattern as Dock.test.ts.
- */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "chattest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "chattest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("chattest");
   const { registerClientRuntime } = await import("akanjs/client");
   registerClientRuntime({ usePage: () => ({ path: "/", lang: "en", l }), fetch: runtimeFetch });
   const { FetchClient } = await import("akanjs/fetch");
@@ -37,20 +25,18 @@ beforeAll(async () => {
   ({ UiOverrideProvider } = await import("../UiOverride"));
 });
 
-/** The chat portals to the body, so the query scope is the body — and the host goes with the unmount. */
+// The chat portals to the body, so the query scope is the body.
 const mount = (node: ReactNode) => {
-  const host = document.createElement("div");
-  document.body.appendChild(host);
-  const root = createRoot(host);
-  act(() => root.render(node));
-  return {
-    container: document.body,
-    unmount: () => {
-      act(() => root.unmount());
-      host.remove();
-    },
-  };
+  const { container: host, unmount } = mountNode(node);
+  return { container: document.body, host, unmount };
 };
+
+const mountChat = (session: AgentSession, props: ChatProps = { defaultOpen: true }) =>
+  mount(
+    <lib.AgentProvider session={session}>
+      <DefaultChat {...props} />
+    </lib.AgentProvider>,
+  );
 
 type Turn = { text?: string; toolCall?: ToolCallRequest };
 const scripted = (...turns: Turn[]): AgentRunner => {
@@ -74,14 +60,12 @@ const untilFlushed = async (done: () => boolean) => {
   for (let i = 0; i < 100 && !done(); i += 1) await Promise.resolve();
 };
 
-/** A transcript already in storage, which is how a test opens a chat on messages nothing had to run to produce. */
 const stored = (...messages: ChatMessage[]) => ({
   load: () => messages,
   save: () => {},
   clear: () => {},
 });
 
-/** A turn slot that puts what it was handed where the DOM can be read, so a re-render cannot double-count it. */
 const stepsSkin = {
   AgentSteps: ({ messages, isRunning }: { messages: readonly ChatMessage[]; isRunning: boolean }) => (
     <div data-running={isRunning ? "yes" : "no"} data-skin="steps">
@@ -94,10 +78,7 @@ const stepsSkin = {
 
 const turns = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>('[data-skin="steps"]')];
 
-/**
- * happy-dom dispatch never reaches React's synthetic handlers, so the composer is driven through its props — and
- * they are re-read every time, because each keystroke renders a new closure over the draft.
- */
+// happy-dom dispatch never reaches React's synthetic handlers, so the composer is driven through its (re-read) props.
 const composer = (container: HTMLElement) => {
   const field = () => container.querySelector<HTMLTextAreaElement>("textarea");
   const props = () => {
@@ -108,8 +89,7 @@ const composer = (container: HTMLElement) => {
   return {
     value: () => field()?.value ?? "",
     type: (value: string) => act(() => props().onChange({ target: { value } })),
-    // The caret is stated rather than read: the handler reads it to decide whether a vertical arrow belongs to
-    // recall or to the textarea, and happy-dom does not track a selection through a props-driven keystroke.
+    // The caret is stated: happy-dom does not track a selection through a props-driven keystroke.
     press: (key: string, options: { shiftKey?: boolean; caret?: number } = {}) =>
       act(() => {
         const value = field()?.value ?? "";
@@ -126,7 +106,6 @@ const composer = (container: HTMLElement) => {
   };
 };
 
-/** A voice engine the test drives: `partial`/`say` are what a real engine's recognition callbacks do. */
 const voiceOf = () => {
   const spoken: string[] = [];
   let handlers: {
@@ -165,11 +144,7 @@ const menuRows = (container: HTMLElement) =>
 describe("Agent.Chat", () => {
   test("opens from the launcher into the composer", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, {});
     const launcher = container.querySelector<HTMLButtonElement>('button[aria-label="base.agent"]');
     expect(launcher).toBeTruthy();
     // data-agent-ui is what keeps the chat out of readScreen.
@@ -184,11 +159,7 @@ describe("Agent.Chat", () => {
 
   test("opens from the platform shortcut and shows it on the launcher", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, {});
     const apple = /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
     expect(container.querySelector("kbd")?.textContent).toBe(apple ? "⌘L" : "Ctrl+L");
     expect(container.querySelector("button")?.getAttribute("aria-keyshortcuts")).toBe(apple ? "Meta+L" : "Control+L");
@@ -213,11 +184,7 @@ describe("Agent.Chat", () => {
 
   test("renders the transcript the session accumulates", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "All done." }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     await act(async () => {
       await session.send("fill the form");
     });
@@ -240,11 +207,7 @@ describe("Agent.Chat", () => {
       surface,
       scripted({ toolCall: { id: "c1", name: "removeThing", args: {} } }, { text: "Removed." }),
     );
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     let sendDone: Promise<void> = Promise.resolve();
     await act(async () => {
       sendDone = session.send("remove it");
@@ -272,17 +235,12 @@ describe("Agent.Chat", () => {
         { text: "Applied." },
       ),
     );
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     let sendDone: Promise<void> = Promise.resolve();
     await act(async () => {
       sendDone = session.send("set the theme");
       await untilFlushed(() => !!session.pendingQuestion);
     });
-    // The card holds the question while it is pending, so the text is on screen once, not twice.
     expect(container.innerHTML.split("Which theme?").length - 1).toBe(1);
     const dark = [...container.querySelectorAll("button")].find((button) => button.textContent === "Dark");
     expect(dark).toBeTruthy();
@@ -291,7 +249,6 @@ describe("Agent.Chat", () => {
       await sendDone;
     });
     expect(session.messages.find((message) => message.role === "tool")?.toolResults?.[0].result).toBe("Dark");
-    // A settled ask reads as the exchange it was, so the tool's name never surfaces as a row.
     expect(container.innerHTML).not.toContain("askUser");
     expect(container.innerHTML).toContain("Which theme?");
     expect(container.innerHTML).toContain("Applied.");
@@ -306,17 +263,12 @@ describe("Agent.Chat", () => {
         { text: "Named." },
       ),
     );
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     let sendDone: Promise<void> = Promise.resolve();
     await act(async () => {
       sendDone = session.send("name the draft");
       await untilFlushed(() => !!session.pendingQuestion);
     });
-    // One input, not two: the card holds the picks and the composer is the free-text answer.
     expect(container.querySelectorAll("textarea")).toHaveLength(1);
     const input = container.querySelector('textarea[placeholder="base.agentAnswer"]');
     const propsKey = Object.keys(input ?? {}).find((key) => key.startsWith("__reactProps$")) ?? "";
@@ -346,11 +298,7 @@ describe("Agent.Chat", () => {
         { text: "Shown." },
       ),
     );
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     let sendDone: Promise<void> = Promise.resolve();
     await act(async () => {
       sendDone = session.send("choose columns");
@@ -379,21 +327,15 @@ describe("Agent.Chat", () => {
       surface,
       scripted({ toolCall: { id: "c1", name: "searchDocs", args: { query: "routing" } } }, { text: "Found it." }),
     );
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     await act(async () => {
       await session.send("find the routing docs");
     });
-    // The call and its result are two wire messages — the model needs both — and one row on screen.
     expect(session.messages.filter((message) => message.toolCalls?.length || message.toolResults?.length)).toHaveLength(
       2,
     );
     expect(container.innerHTML.split("searchDocs").length - 1).toBe(1);
     expect(container.innerHTML).toContain("✓");
-    // Two calls of one tool differ only by their arguments, so the row carries them.
     expect(container.innerHTML).toContain("routing");
     expect(container.innerHTML).toContain("Found it.");
     unmount();
@@ -417,11 +359,7 @@ describe("Agent.Chat", () => {
       surface,
       scripted({ toolCall: { id: "c1", name: "uploadImages", args: { count: 3 } } }, { text: "Uploaded." }),
     );
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     let sendDone: Promise<void> = Promise.resolve();
     await act(async () => {
       sendDone = session.send("upload the images");
@@ -433,7 +371,6 @@ describe("Agent.Chat", () => {
       release();
       await sendDone;
     });
-    // The report is for the wait: once the row resolves it goes back to naming the call.
     expect(container.innerHTML).not.toContain("resizing");
     expect(container.innerHTML).toContain("uploadImages");
     expect(container.innerHTML).toContain("Uploaded.");
@@ -482,14 +419,9 @@ describe("Agent.Chat", () => {
   test("takes the open state from the props when the app drives it, and asks before changing it", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
     const asked: boolean[] = [];
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat onOpenChange={(next) => asked.push(next)} open={false} />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, { onOpenChange: (next) => asked.push(next), open: false });
     const launcher = document.body.querySelector<HTMLButtonElement>('button[aria-label="base.agent"]');
     act(() => launcher?.click());
-    // The panel stays closed because the prop still says closed: the app owns the state, and only heard the ask.
     expect(asked).toEqual([true]);
     expect(document.body.querySelector("aside")).toBeNull();
     unmount();
@@ -498,11 +430,7 @@ describe("Agent.Chat", () => {
 
   test("draws no launcher when the app says it has its own", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat launcher={false} />
-      </lib.AgentProvider>,
-    );
+    const { unmount } = mountChat(session, { launcher: false });
     expect(document.body.querySelector('button[aria-label="base.agent"]')).toBeNull();
     expect(document.body.querySelector("aside")).toBeNull();
     unmount();
@@ -510,11 +438,11 @@ describe("Agent.Chat", () => {
 
   test("renders the app's own intro and header controls in place of, and beside, the built-in ones", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen header={<span>HEADER</span>} intro={<span>STARTERS</span>} />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, {
+      defaultOpen: true,
+      header: <span>HEADER</span>,
+      intro: <span>STARTERS</span>,
+    });
     expect(container.innerHTML).toContain("STARTERS");
     expect(container.innerHTML).not.toContain("base.agentIntro");
     expect(container.querySelector("header")?.textContent).toContain("HEADER");
@@ -523,11 +451,12 @@ describe("Agent.Chat", () => {
 
   test("chrome={false} drops the whole header bar, leaving the transcript and composer", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat chrome={false} defaultOpen header={<span>HEADER</span>} inline />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, {
+      chrome: false,
+      defaultOpen: true,
+      header: <span>HEADER</span>,
+      inline: true,
+    });
     expect(container.querySelector("header")).toBeNull();
     expect(container.innerHTML).not.toContain("HEADER");
     expect(container.querySelector("textarea")).not.toBeNull();
@@ -536,19 +465,11 @@ describe("Agent.Chat", () => {
 
   test("a panel the app controls without listening draws no close button instead of an inert one", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat inline open />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, { inline: true, open: true });
     expect(container.querySelector('button[aria-label="base.cancel"]')).toBeNull();
     unmount();
     const heard: boolean[] = [];
-    const listening = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat inline onOpenChange={(next) => heard.push(next)} open />
-      </lib.AgentProvider>,
-    );
+    const listening = mountChat(session, { inline: true, onOpenChange: (next) => heard.push(next), open: true });
     const close = document.body.querySelector<HTMLButtonElement>('button[aria-label="base.cancel"]');
     act(() => close?.click());
     expect(heard).toEqual([false]);
@@ -557,11 +478,7 @@ describe("Agent.Chat", () => {
 
   test("defaultDraft opens with the composer already written in, and sends nothing on its own", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultDraft="summarize this page" defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, { defaultDraft: "summarize this page", defaultOpen: true });
     expect(container.querySelector("textarea")?.value).toBe("summarize this page");
     expect(session.messages).toEqual([]);
     unmount();
@@ -569,11 +486,7 @@ describe("Agent.Chat", () => {
 
   test("Shift+Enter writes a newline instead of sending, and the arrows then belong to the textarea", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     input.type("first ask");
     await act(async () => {
@@ -581,13 +494,10 @@ describe("Agent.Chat", () => {
     });
     input.type("line one");
     input.press("Enter", { shiftKey: true });
-    // Nothing was sent, and the draft is still the user's to finish.
     expect(input.value()).toBe("line one");
     input.type("line one\nline two");
-    // A caret on the second line: the arrow moves within the text, so recall may not take it.
     input.press("ArrowUp");
     expect(input.value()).toBe("line one\nline two");
-    // On the first line it is recall's again.
     input.press("ArrowUp", { caret: 3 });
     expect(input.value()).toBe("first ask");
     unmount();
@@ -607,7 +517,6 @@ describe("Agent.Chat", () => {
     });
     expect(container.innerHTML).toContain('data-skin="bubble"');
     expect(container.innerHTML).toContain("ask");
-    // The composer, the launcher and the loop are the default's still: one slot replaced one part.
     expect(container.innerHTML).toContain("base.agentPlaceholder");
     unmount();
   });
@@ -631,14 +540,11 @@ describe("Agent.Chat", () => {
         </UiOverrideProvider>
       </lib.AgentProvider>,
     );
-    // Three turns: a transcript whose head is a compaction summary opens one without a user message to start it,
-    // and the tool message is in none of them — its result is already drawn by the call row that claims it.
     expect(turns(container).map((turn) => [...turn.children].map((step) => step.textContent))).toEqual([
       ["Earlier they asked about routing."],
       ["Looking.", "Found it."],
       ["Any time."],
     ]);
-    // The user's own messages are not in a turn, and the rest of the panel is the default's still.
     expect(container.innerHTML).toContain("find it");
     expect(container.innerHTML).toContain("thanks");
     expect(container.innerHTML).toContain("base.agentPlaceholder");
@@ -688,7 +594,6 @@ describe("Agent.Chat", () => {
       second = session.send("second");
       await untilFlushed(() => session.messages.some((message) => message.text === "turn 2"));
     });
-    // The turn that settled stays settled: only the last one is the one the session is working on.
     expect(running()).toEqual(["no", "yes"]);
     await act(async () => {
       gates[1].release();
@@ -706,20 +611,13 @@ describe("Agent.Chat", () => {
         { role: "assistant", text: "Done." },
       ),
     });
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
-    // One transcript child per message, exactly as before a turn was a group: the default is a Fragment, not a box.
+    const { container, unmount } = mountChat(session);
     const log = container.querySelector('[role="log"]');
     expect([...(log?.children ?? [])].map((child) => child.textContent)).toEqual(["ask", "Working.", "Done."]);
     unmount();
   });
 
   test("groups a restored transcript by the same boundary, with the turn folded to one assistant message", () => {
-    // What a host storing rows of its own hands back: the calls are folded into the assistant's text, so a
-    // restored turn is assistant text and nothing else. The boundary is the user message either way.
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }), {
       history: stored(
         { role: "user", text: "find it" },
@@ -763,46 +661,20 @@ describe("Agent.Chat", () => {
 
   test("leaves the page subtree for the overlay layer, and stays in flow when inline", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const render = (node: ReactNode) => {
-      const host = document.createElement("div");
-      document.body.appendChild(host);
-      const root = createRoot(host);
-      act(() => root.render(node));
-      return {
-        host,
-        drop: () => {
-          act(() => root.unmount());
-          host.remove();
-        },
-      };
-    };
-    const floating = render(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
-    // Dialog's modal portals to the body, so a z-index declared under `#pageContainers` (isolation: isolate)
-    // could never beat it — the chat has to leave the page subtree, not merely outrank the modal.
+    const floating = mountChat(session);
+    // Under `#pageContainers` (isolation: isolate) no z-index beats the body-level modal, so the chat must leave.
     expect(floating.host.querySelector("aside")).toBeNull();
     expect(document.body.querySelector("aside")?.className).toContain("z-[150]");
-    floating.drop();
+    floating.unmount();
 
-    const inline = render(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen inline />
-      </lib.AgentProvider>,
-    );
+    const inline = mountChat(session, { defaultOpen: true, inline: true });
     expect(inline.host.querySelector("aside")?.className).not.toContain("fixed");
-    inline.drop();
+    inline.unmount();
   });
 
   test("the / menu offers this chat's own commands", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     composer(container).type("/");
     const rows = menuRows(container);
     expect(rows.map((row) => row.split("base.")[0])).toEqual([
@@ -821,11 +693,7 @@ describe("Agent.Chat", () => {
       new lib.AgenticSurface(),
       scripted({ toolCall: { id: "c1", name: "unknown", args: {} } }),
     );
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     await act(async () => {
       await session.send("do a thing");
     });
@@ -843,11 +711,7 @@ describe("Agent.Chat", () => {
 
   test("the vertical arrows walk back through what was sent and forward again", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "sure" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     for (const text of ["first ask", "second ask"]) {
       input.type(text);
@@ -865,18 +729,13 @@ describe("Agent.Chat", () => {
     expect(input.value()).toBe("first ask");
     input.press("ArrowDown");
     expect(input.value()).toBe("second ask");
-    // Back at the bottom the draft that was walked away from is still there.
     input.press("ArrowDown");
     expect(input.value()).toBe("half-written");
     unmount();
   });
   test("/compact folds the transcript into one summary the transcript renders as its own block", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "notes about it all" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     input.type("summarize this");
     await act(async () => {
@@ -890,7 +749,6 @@ describe("Agent.Chat", () => {
     });
     expect(container.innerHTML).toContain("base.agentSummary");
     expect(container.innerHTML).toContain("base.agentCompacted");
-    // The summary is not a user bubble: it stands in for the exchange above it, which is gone.
     expect(container.innerHTML).not.toContain("summarize this");
     unmount();
   });
@@ -902,19 +760,13 @@ describe("Agent.Chat", () => {
       surface,
       scripted({ toolCall: { id: "c1", name: "readState", args: { key: "rowsInList" } } }, { text: "Two rows." }),
     );
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     await act(async () => {
       await session.send("read the rows");
     });
     const row = [...container.querySelectorAll("details")].find((one) => one.textContent?.includes("readState"));
-    // The value the model was handed is the one thing a transcript never showed, and it is what fills a window.
     expect(row?.querySelector("pre")?.textContent).toContain("alpha");
     expect(row?.textContent).toContain("base.agentTokens");
-    // The header measures against the point it compacts at, which the default ceiling always gives it.
     expect(container.querySelector("header")?.textContent).toContain("base.agentTokensOf");
     unmount();
   });
@@ -924,11 +776,7 @@ describe("Agent.Chat", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }), {
       compact: { summarize: () => new Promise<string>((resolve) => (release = resolve)) },
     });
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     input.type("something to summarize");
     await act(async () => {
@@ -951,11 +799,7 @@ describe("Agent.Chat", () => {
 
   test("a pasted file is staged as a chip and rides the message it is sent with", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "a chart" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     await act(async () => {
       input.paste([new File(["abc"], "q3.png", { type: "image/png" })]);
@@ -972,18 +816,13 @@ describe("Agent.Chat", () => {
       text: "what does this say?",
       attachments: [{ name: "q3.png", mimeType: "image/png", data: btoa("abc") }],
     });
-    // Staged files leave with the draft, so the next turn cannot re-send them.
     expect(container.querySelector('button[aria-label="base.agentAttachRemove"]')).toBeNull();
     unmount();
   });
 
   test("a file no built-in reader handles is named in the transcript instead of staged", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     await act(async () => {
       composer(container).paste([new File(["%PDF"], "spec.pdf", { type: "application/pdf" })]);
       await untilFlushed(() => session.messages.length > 0);
@@ -999,11 +838,7 @@ describe("Agent.Chat", () => {
 
   test("a chip for an attachment naming no type renders its name instead of taking the transcript down", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     await act(async () => {
       void session.send([
         {
@@ -1020,11 +855,7 @@ describe("Agent.Chat", () => {
 
   test("an image attached by address renders its thumbnail, the shape a reader that uploads produces", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     await act(async () => {
       void session.send([
         {
@@ -1041,14 +872,10 @@ describe("Agent.Chat", () => {
 
   test("the app's own reader is what makes a pdf attachable, and runs ahead of the built-in", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "read it" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat
-          attach={async (file) => ({ name: file.name, mimeType: "application/pdf", text: "page one" })}
-          defaultOpen
-        />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, {
+      attach: async (file) => ({ name: file.name, mimeType: "application/pdf", text: "page one" }),
+      defaultOpen: true,
+    });
     const input = composer(container);
     await act(async () => {
       input.paste([new File(["%PDF"], "spec.pdf", { type: "application/pdf" })]);
@@ -1067,24 +894,18 @@ describe("Agent.Chat", () => {
   test("a reader that takes its time says so, instead of leaving the panel blank", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "read it" }));
     let finish: (value: MessageAttachment | null) => void = () => undefined;
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat
-          attach={() =>
-            new Promise((resolve) => {
-              finish = resolve;
-            })
-          }
-          defaultOpen
-        />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, {
+      attach: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      defaultOpen: true,
+    });
     const input = composer(container);
     await act(async () => {
       input.paste([new File(["%PDF"], "spec.pdf", { type: "application/pdf" })]);
       await untilFlushed(() => container.innerHTML.includes("base.agentAttachReading"));
     });
-    // The upload an `attach` performs is seconds long, and the chip for it cannot exist until it resolves.
     expect(container.innerHTML).not.toContain("spec.pdf");
     await act(async () => {
       finish({ name: "spec.pdf", mimeType: "application/pdf", text: "page one" });
@@ -1100,11 +921,7 @@ describe("Agent.Chat", () => {
       new lib.AgenticSurface(),
       scripted({ text: "Two sentences. Here is the second." }),
     );
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen voice={voice.engine} />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, { defaultOpen: true, voice: voice.engine });
     const mic = container.querySelector<HTMLButtonElement>('button[aria-label="base.agentListen"]');
     expect(mic).toBeTruthy();
     act(() => mic?.click());
@@ -1113,13 +930,11 @@ describe("Agent.Chat", () => {
     expect(composer(container).value()).toBe("show me");
     act(() => voice.say("show me the tasks"));
     expect(composer(container).value()).toBe("show me the tasks");
-    // Recognition ended with the final result, so the button is offering to listen again.
     expect(voice.listening()).toBe(false);
     await act(async () => {
       composer(container).press("Enter");
       await untilFlushed(() => !session.isRunning && voice.spoken.length >= 2);
     });
-    // One utterance per sentence, never per delta and never the whole answer at once.
     expect(voice.spoken).toEqual(["Two sentences.", "Here is the second."]);
     unmount();
   });
@@ -1127,11 +942,7 @@ describe("Agent.Chat", () => {
   test("a typed ask is never read aloud", async () => {
     const voice = voiceOf();
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "Answered." }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen voice={voice.engine} />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, { defaultOpen: true, voice: voice.engine });
     const input = composer(container);
     input.type("show me the tasks");
     await act(async () => {
@@ -1146,11 +957,7 @@ describe("Agent.Chat", () => {
   test("a failed microphone says so in the transcript and stops listening", () => {
     const voice = voiceOf();
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen voice={voice.engine} />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, { defaultOpen: true, voice: voice.engine });
     act(() => container.querySelector<HTMLButtonElement>('button[aria-label="base.agentListen"]')?.click());
     act(() => voice.fail("not-allowed"));
     expect(session.messages[0]).toEqual({ role: "assistant", text: "base.agentVoiceFailed", local: true });
@@ -1160,19 +967,11 @@ describe("Agent.Chat", () => {
 
   test("no engine, or one that answers unavailable, renders no microphone", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const silent = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const silent = mountChat(session);
     expect(silent.container.querySelector('button[aria-label="base.agentListen"]')).toBeNull();
     silent.unmount();
     const voice = voiceOf();
-    const unavailable = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen voice={{ ...voice.engine, available: () => false }} />
-      </lib.AgentProvider>,
-    );
+    const unavailable = mountChat(session, { defaultOpen: true, voice: { ...voice.engine, available: () => false } });
     expect(unavailable.container.querySelector('button[aria-label="base.agentListen"]')).toBeNull();
     unavailable.unmount();
   });
@@ -1185,11 +984,7 @@ describe("Agent.Chat", () => {
         yield { type: "done", stop: "toolUse" };
       },
     });
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     await act(async () => {
       void session.send("pick something");
       await untilFlushed(() => !!session.pendingQuestion);
@@ -1200,7 +995,6 @@ describe("Agent.Chat", () => {
       input.press("Enter");
       await untilFlushed(() => session.messages.length === 0);
     });
-    // Answered as text, "/new" would have gone to the model as the user's decision instead of clearing the chat.
     expect(session.messages).toEqual([]);
     expect(session.pendingQuestion).toBeNull();
     unmount();
@@ -1208,11 +1002,7 @@ describe("Agent.Chat", () => {
 
   test("the / menu takes the arrows, Tab completes a name, and Enter picks what is highlighted", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     input.type("/");
     const selected = () => container.querySelector('[aria-selected="true"]')?.textContent ?? "";
@@ -1234,17 +1024,12 @@ describe("Agent.Chat", () => {
 
   test("Escape closes the menu first and the panel second", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     input.type("/");
     expect(container.querySelector('[role="option"]')).toBeTruthy();
     input.press("Escape");
     expect(container.querySelector('[role="option"]')).toBeNull();
-    // The draft is untouched: dismissing the menu is not dismissing what was being typed.
     expect(input.value()).toBe("/");
     input.press("Escape");
     expect(container.querySelector("aside")).toBeNull();
@@ -1254,11 +1039,7 @@ describe("Agent.Chat", () => {
 
   test("the same file is not staged twice, and a message holds no more than the ceiling", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     const shot = (name: string) => new File(["abc"], name, { type: "image/png" });
     const chips = () => container.querySelectorAll('button[aria-label="base.agentAttachRemove"]').length;
@@ -1276,7 +1057,6 @@ describe("Agent.Chat", () => {
       input.paste([shot("c.png"), shot("d.png"), shot("e.png"), shot("f.png")]);
       await untilFlushed(() => session.messages.length > 1);
     });
-    // The cap is the message's, so the fifth file is staged and the sixth is refused by name.
     expect(chips()).toBe(5);
     expect(session.messages[1]?.text).toBe("base.agentAttachTooMany");
     unmount();
@@ -1289,11 +1069,7 @@ describe("Agent.Chat", () => {
         yield { type: "done", stop: "toolUse" };
       },
     });
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     await act(async () => {
       input.paste([new File(["abc"], "q3.png", { type: "image/png" })]);
@@ -1317,11 +1093,7 @@ describe("Agent.Chat", () => {
 
   test("a closed panel counts what arrived while it was closed", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "answered" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, {});
     await act(async () => {
       await session.send("while I look elsewhere");
     });
@@ -1357,7 +1129,6 @@ describe("Agent.Chat", () => {
     });
     expect(turn.signal?.aborted).toBe(false);
     unmount();
-    // Aborted by the unmount rather than left running against a screen whose approvals nobody renders.
     expect(turn.signal?.aborted).toBe(true);
     await act(async () => {
       finishTurn();
@@ -1365,7 +1136,6 @@ describe("Agent.Chat", () => {
     });
   });
 
-  /** A turn that stays running until `release` — what a parked message has to wait behind. */
   const runningTurn = (...after: Turn[]) => {
     const surface = new lib.AgenticSurface();
     let release = () => {};
@@ -1390,10 +1160,7 @@ describe("Agent.Chat", () => {
     container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
   const captioned = (container: HTMLElement, text: string) =>
     [...container.querySelectorAll("button")].find((button) => button.textContent === text);
-  /**
-   * Opens the held turn and waits until its tool is the thing the loop is parked on. The turn's own promise comes
-   * back wrapped: returned bare from an async function it would be adopted, and awaited until the release it waits for.
-   */
+  // Returned wrapped: a bare promise returned from an async function is adopted, awaiting the release it waits for.
   const openHeldTurn = async (session: InstanceType<typeof lib.AgentSession>) => {
     let first: Promise<void> = Promise.resolve();
     await act(async () => {
@@ -1405,16 +1172,11 @@ describe("Agent.Chat", () => {
 
   test("Enter during a turn parks the message and sends it the moment the turn ends", async () => {
     const { session, release } = runningTurn({ text: "First done." }, { text: "Second done." });
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const { first } = await openHeldTurn(session);
     const input = composer(container);
     expect(container.innerHTML).toContain("base.agentQueuePlaceholder");
     input.type("then the second");
-    // The composer offers to park rather than to send while the turn runs, and Stop stays where it was.
     expect(captioned(container, "base.agentQueue")).toBeTruthy();
     expect(captioned(container, "base.stop")).toBeTruthy();
     input.press("Enter");
@@ -1436,11 +1198,7 @@ describe("Agent.Chat", () => {
 
   test("a second send while one is parked joins it, so the model is handed one message", async () => {
     const { session, release } = runningTurn({ text: "First done." }, { text: "Second done." });
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const { first } = await openHeldTurn(session);
     const input = composer(container);
     input.type("then the second");
@@ -1463,11 +1221,7 @@ describe("Agent.Chat", () => {
 
   test("a parked message is dropped from its card, or taken back into the composer ahead of what was typed since", async () => {
     const { session, release } = runningTurn({ text: "First done." });
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const { first } = await openHeldTurn(session);
     const input = composer(container);
     input.type("then the second");
@@ -1487,7 +1241,6 @@ describe("Agent.Chat", () => {
     await act(async () => {
       await untilFlushed(() => !session.isRunning);
     });
-    // Neither reached the transcript, and the draft taken back is still there to be sent.
     expect(session.messages.filter((message) => message.role === "user")).toEqual([
       { role: "user", text: "do the first thing" },
     ]);
@@ -1497,11 +1250,7 @@ describe("Agent.Chat", () => {
 
   test("Stop hands the parked message back to the composer instead of opening the next turn with it", async () => {
     const { session, release } = runningTurn({ text: "First done." });
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const { first } = await openHeldTurn(session);
     const input = composer(container);
     input.type("then the second");
@@ -1523,11 +1272,7 @@ describe("Agent.Chat", () => {
 
   test("/new drops the parked message along with the conversation it was written for", async () => {
     const { session, release } = runningTurn({ text: "First done." });
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     await openHeldTurn(session);
     const input = composer(container);
     input.type("then the second");
@@ -1550,11 +1295,7 @@ describe("Agent.Chat", () => {
 
   test("files staged with a parked message ride it, and come back to the composer with it", async () => {
     const { session, release } = runningTurn({ text: "First done." }, { text: "A chart." });
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const { first } = await openHeldTurn(session);
     const input = composer(container);
     await act(async () => {
@@ -1587,11 +1328,7 @@ describe("Agent.Chat", () => {
   test("a spoken ask parked behind a turn is the one answered out loud, and the earlier answer is not re-read", async () => {
     const voice = voiceOf();
     const { session, release } = runningTurn({ text: "First done." }, { text: "Second done." });
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen voice={voice.engine} />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, { defaultOpen: true, voice: voice.engine });
     const { first } = await openHeldTurn(session);
     act(() => labeled(container, "base.agentListen")?.click());
     act(() => voice.say("then the second"));
@@ -1620,11 +1357,7 @@ describe("Agent chat references", () => {
 
   test("pointing from elsewhere on the page writes the token into the draft and draws a chip", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     await act(async () => {
       input.type("make ");
@@ -1638,11 +1371,7 @@ describe("Agent chat references", () => {
 
   test("the sent message carries the reference, and the slot empties behind it", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     await act(async () => {
       session.refer(cut("a wide shot"));
@@ -1657,18 +1386,13 @@ describe("Agent chat references", () => {
     });
     expect(session.messages[0].text).toContain("make it dynamic");
     expect(session.messages[0].references).toEqual([cut("a wide shot")]);
-    // What was pointed at belongs to the message it was pointed with, so the next turn cannot re-send it.
     expect(session.staged).toEqual([]);
     unmount();
   });
 
   test("deleting the token by hand drops the reference, because the text is what carries it", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     await act(async () => {
       session.refer(cut("a wide shot"));
@@ -1689,11 +1413,7 @@ describe("Agent chat references", () => {
 
   test("removing the chip removes the token, so the two cannot disagree", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     await act(async () => {
       input.type("make ");
@@ -1714,11 +1434,7 @@ describe("Agent chat references", () => {
 
   test("a token pasted with no value behind it travels as a pointer that says to read it again", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     const input = composer(container);
     await act(async () => {
       input.type("fix @[Cut 3 body](mention:videoCut/6a1f#cutFrames.2.content) please");
@@ -1749,25 +1465,27 @@ describe("Agent chat @ menu", () => {
       [{ refId: "c1", label: "Karina" }].filter((one) => one.label.toLowerCase().startsWith(query.toLowerCase())),
     resolve,
   });
+  // Two acts: a nested sync act inside an async one does not flush until the outer act exits, so a sleep sharing
+  // the act with the keystroke would wait out the debounce against the draft as it was before it.
+  const typeAndSettle = async (input: ReturnType<typeof composer>, text: string) => {
+    await act(async () => {
+      input.type(text);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+  };
 
   test("typing @ offers the app's own rows and picking one writes the token and stages the value", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen mentions={false} reference={[source(async () => "a dancer in a red coat")]} />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, {
+      defaultOpen: true,
+      mentions: false,
+      reference: [source(async () => "a dancer in a red coat")],
+    });
     try {
       const input = composer(container);
-      // Two acts, not one: a nested sync act inside an async one does not flush until the outer act exits, so a
-      // sleep sharing the act with the keystroke waits out the debounce against the draft as it was before it.
-      await act(async () => {
-        input.type("compare @Kar");
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      });
-      // The row is drawn under its source's own heading, which is how two sources stay told apart.
+      await typeAndSettle(input, "compare @Kar");
       expect(container.innerHTML).toContain("People");
       await act(async () => {
         input.press("Enter");
@@ -1775,7 +1493,6 @@ describe("Agent chat @ menu", () => {
       });
       expect(input.value()).toBe("compare @[Karina](mention:videoCharacter/c1) ");
       expect(session.staged[0].value).toBe("a dancer in a red coat");
-      // The trailing space closes the query, so the menu cannot reopen onto the token it just wrote.
       expect(container.innerHTML).not.toContain("People");
     } finally {
       unmount();
@@ -1784,21 +1501,14 @@ describe("Agent chat @ menu", () => {
 
   test("a resolve that fails leaves the pointer and says so, rather than a chip that means nothing", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen mentions={false} reference={[source(async () => Promise.reject(new Error("gone")))]} />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, {
+      defaultOpen: true,
+      mentions: false,
+      reference: [source(async () => Promise.reject(new Error("gone")))],
+    });
     try {
       const input = composer(container);
-      // Two acts, not one: a nested sync act inside an async one does not flush until the outer act exits, so a
-      // sleep sharing the act with the keystroke waits out the debounce against the draft as it was before it.
-      await act(async () => {
-        input.type("compare @Kar");
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      });
+      await typeAndSettle(input, "compare @Kar");
       await act(async () => {
         input.press("Enter");
         await untilFlushed(() => session.messages.length > 0);
@@ -1813,19 +1523,10 @@ describe("Agent chat @ menu", () => {
 
   test("a chat given no sources keeps the @ key as an ordinary character", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     try {
       const input = composer(container);
-      await act(async () => {
-        input.type("mail me @kar");
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      });
+      await typeAndSettle(input, "mail me @kar");
       await act(async () => {
         input.press("Enter");
         await untilFlushed(() => !session.isRunning && session.messages.length >= 2);
@@ -1867,11 +1568,7 @@ describe("Agent chat tool cards", () => {
 
   test("renders the app's own card in the panel and sends what it submits back as the result", async () => {
     const session = contactSession();
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     try {
       let sendDone: Promise<void> = Promise.resolve();
       await act(async () => {
@@ -1894,7 +1591,6 @@ describe("Agent chat tool cards", () => {
     }
   });
 
-  // The frame draws it even when the card does not, so a turn can never park on something with no way out of it.
   test("the frame's own skip closes a card the app gave no way out of", async () => {
     const surface = new lib.AgenticSurface();
     surface.registerTool([], { name: "collectContact", description: "Ask for a contact.", card: () => <p>Name?</p> });
@@ -1902,11 +1598,7 @@ describe("Agent chat tool cards", () => {
       surface,
       scripted({ toolCall: { id: "c1", name: "collectContact", args: {} } }, { text: "Fine." }),
     );
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session);
     try {
       let sendDone: Promise<void> = Promise.resolve();
       await act(async () => {
@@ -1949,15 +1641,13 @@ describe("Agent chat mention pills", () => {
       });
   };
 
-  // The whole point of the editor: the draft still carries the token — it is what puts the reference on the
-  // message — and the person sees the name they picked.
   test("a picked pointer is drawn as the name it points at, never as the token that carries it", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultDraft="compare @Kar" defaultOpen reference={[source]} />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, {
+      defaultDraft: "compare @Kar",
+      defaultOpen: true,
+      reference: [source],
+    });
     try {
       await untilDrawn(() => !!editorOf(container)?.textContent && !!rowOf(container, "Karina"));
       expect(editorOf(container)?.textContent).toBe("compare @Kar");
@@ -1978,15 +1668,11 @@ describe("Agent chat mention pills", () => {
 
   test("a draft opened with a token already in it renders the pointer the same way", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat
-          defaultDraft="fix @[Cut 3 body](mention:videoCut/6a1f#cutFrames.2.content) please"
-          defaultOpen
-          reference={[source]}
-        />
-      </lib.AgentProvider>,
-    );
+    const { container, unmount } = mountChat(session, {
+      defaultDraft: "fix @[Cut 3 body](mention:videoCut/6a1f#cutFrames.2.content) please",
+      defaultOpen: true,
+      reference: [source],
+    });
     try {
       await untilDrawn(() => !!editorOf(container)?.textContent);
       expect(editorOf(container)?.textContent).toBe("fix Cut 3 body please");

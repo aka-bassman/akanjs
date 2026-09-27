@@ -1,29 +1,13 @@
 import path from "node:path";
 import { assertUniqueRoutePatterns, compareRouteSpecificity, parseRouteModuleKey } from "akanjs/common";
+import {
+  ROUTE_SEED_INDEX_JSON,
+  type RouteSeedEntry,
+  type RouteSeedIndex,
+} from "akanjs/server/artifact/routeSeedIndexStore";
 import type { PageEntry } from "./implicitRootLayout";
 
-/**
- * Build-time utilities for the route seed index. `computeRouteSeedIndex`
- * takes resolved `PageEntry` rows (`key` plus absolute module path — files
- * under `app/` or the generated implicit root layout) and produces — for every
- * route — the list of source files that seed the `"use client"` graph walk.
- *
- * The result is serialized to `route-seed-index.json` by
- * `saveRouteSeedIndex` so the runtime server can call
- * `loadRouteSeedIndex` to restore it without re-importing `pages.ts`
- * (which no longer exists) or reparsing loader sources.
- */
-
-export interface RouteSeedEntry {
-  routeId: string;
-  pattern: string;
-  seeds: string[];
-}
-
-export interface RouteSeedIndex {
-  entries: RouteSeedEntry[];
-  globalLayoutFiles: string[];
-}
+export { ROUTE_SEED_INDEX_JSON, type RouteSeedEntry, type RouteSeedIndex };
 
 export type SerializedRouteSeedEntry = Pick<RouteSeedEntry, "routeId"> &
   Partial<Pick<RouteSeedEntry, "pattern" | "seeds">>;
@@ -33,10 +17,6 @@ export interface SerializedRouteSeedIndex {
   globalLayoutFiles?: string[];
 }
 
-/**
- * Compute the route seed index from `PageEntry`s (disk paths or generated
- * implicit root layout absolute paths).
- */
 export function computeRouteSeedIndex(pageEntries: PageEntry[]): RouteSeedIndex {
   const layoutsByPrefix = new Map<string, string[]>();
   const pagesBySegments: Array<{
@@ -51,11 +31,8 @@ export function computeRouteSeedIndex(pageEntries: PageEntry[]): RouteSeedIndex 
     const parsed = parseRouteModuleKey(key);
     const files = [path.resolve(moduleAbsPath), ...(seedAbsPaths ?? []).map((seed) => path.resolve(seed))];
     if (parsed.kind === "layout" || parsed.kind === "overrides") {
-      // Overrides seed the client graph like layouts: every route under the prefix must pull the generated
-      // `"use client"` override wrapper (and its slot components) into the client bundle / RSC client manifest.
-      const prefix = parsed.routeSegments.join("/");
-      const prev = layoutsByPrefix.get(prefix) ?? [];
-      layoutsByPrefix.set(prefix, [...prev, ...files]);
+      //? Every route under an overrides prefix needs its "use client" wrapper in the client graph, as with a layout.
+      layoutsByPrefix.getOrInsert(parsed.routeSegments.join("/"), []).push(...files);
     } else if (parsed.kind === "page") {
       pagesBySegments.push({
         key,
@@ -68,9 +45,7 @@ export function computeRouteSeedIndex(pageEntries: PageEntry[]): RouteSeedIndex 
   }
   assertUniqueRoutePatterns(pagesBySegments);
 
-  const rootLayouts = layoutsByPrefix.get("") ?? [];
-  const globalLayoutFiles = rootLayouts;
-
+  const globalLayoutFiles = layoutsByPrefix.get("") ?? [];
   const seedEntries: RouteSeedEntry[] = [];
   for (const { pattern, segments, files, includeOwnLayout } of pagesBySegments) {
     const layouts: string[] = [];
@@ -84,14 +59,10 @@ export function computeRouteSeedIndex(pageEntries: PageEntry[]): RouteSeedIndex 
     const routeId = pattern || "/";
     seedEntries.push({ routeId, pattern: routeId, seeds });
   }
-  // Static segments must beat `:param` ones at match time, otherwise
-  // `/persona/new` resolves to `[personaId]=new`. Sort once at build time
-  // so the runtime matcher can stay first-match-wins.
+  // Static segments must beat `:param` ones (`/persona/new` is not `[personaId]=new`); the runtime is first-match-wins.
   seedEntries.sort((a, b) => compareRouteSpecificity(a.pattern, b.pattern));
   return { entries: seedEntries, globalLayoutFiles };
 }
-
-export const ROUTE_SEED_INDEX_JSON = "route-seed-index.json";
 
 export function serializeRouteSeedIndexForArtifact(
   index: RouteSeedIndex,
@@ -99,11 +70,7 @@ export function serializeRouteSeedIndexForArtifact(
   options: { production?: boolean } = {},
 ): SerializedRouteSeedIndex {
   const normalizedArtifactDir = path.resolve(artifactDir);
-  if (options.production) {
-    return {
-      entries: index.entries.map((entry) => ({ routeId: entry.routeId })),
-    };
-  }
+  if (options.production) return { entries: index.entries.map((entry) => ({ routeId: entry.routeId })) };
   return {
     entries: index.entries.map((entry) => ({
       ...entry,

@@ -18,8 +18,7 @@ interface ViewWrapperProps {
 }
 
 export default function ViewWrapper({ children, slice, modelId, className, modal, resets }: ViewWrapperProps) {
-  const { refName, sliceName } = slice;
-  const modelName = refName;
+  const { refName: modelName } = slice;
   const names = {
     viewModel: `view${capitalize(modelName)}`,
   };

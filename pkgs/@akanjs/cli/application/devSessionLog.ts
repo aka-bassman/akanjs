@@ -10,19 +10,8 @@ export interface DevSessionLogOptions {
   now?: () => Date;
 }
 
-/**
- * One plain-text log per app for the life of a session, with the previous one kept beside it.
- *
- * The full-screen view is also what takes a session's scrollback away: Ink repaints a single frame in
- * place, so quitting leaves one bordered screenshot behind and the 5,000-line ring goes with the
- * process. This is the copy that outlives it, and it is what lets a log be handed over as a path rather
- * than as a selection — no ANSI, nothing truncated to the pane width, every process of the app in
- * arrival order.
- *
- * `AkanApp` already writes `runtime/logs/…`, but only from the gateway process and split per replica, so
- * the dev host's own build and bundler output — the part most worth handing to someone — reaches no file
- * at all. This starts a level up, at the pipes the supervisor reads, and holds that too.
- */
+// Outlives the full-screen view's scrollback. `AkanApp`'s `runtime/logs` only holds the gateway's replicas, so
+// this is the one file that also holds the dev host's own build output.
 export class DevSessionLog {
   static readonly fileName = "dev.log";
   static readonly previousFileName = "dev.prev.log";
@@ -56,7 +45,6 @@ export class DevSessionLog {
     return path.join(this.#runtimeDirOf(app), DevSessionLog.previousFileName);
   }
 
-  /** What a reader pastes into an editor or hands to an agent, so it stays short and checkout-agnostic. */
   relativePathOf(app: string): string {
     return path.relative(this.#workspaceRoot, this.pathOf(app));
   }
@@ -66,8 +54,7 @@ export class DevSessionLog {
     for (const app of this.#appNames) {
       const file = this.pathOf(app);
       await mkdir(path.dirname(file), { recursive: true });
-      // `Bun.file().writer()` opens at offset 0 *without* truncating, so a session shorter than the last
-      // would keep its tail; moving the old file away is what leaves an empty one behind.
+      // `Bun.file().writer()` does not truncate, so moving the old file away is what leaves an empty one.
       await rename(file, this.previousPathOf(app)).catch(() => undefined);
       this.#writers.set(app, Bun.file(file).writer({ highWaterMark: DevSessionLog.bufferBytes }));
       this.#writeLine(app, `── akan start · ${app} · ${stamp} ──`);
@@ -82,7 +69,7 @@ export class DevSessionLog {
     for (const line of parts) this.#writeLine(app, stripAnsi(line));
   }
 
-  /** Session-level, so it goes to every app's file rather than being lost from all but one of them. */
+  // Session-level, so it goes to every app's file.
   note(text: string) {
     for (const app of this.#appNames) this.#writeLine(app, `[akan] ${text}`);
   }

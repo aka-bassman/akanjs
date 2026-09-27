@@ -7,20 +7,11 @@ import type { StToolMeta } from "./StToolBuilder";
 import { StToolDraft } from "./StToolDraft";
 
 export interface StAgentic {
-  /**
-   * Local state the in-page agent can read: `.desc()` then `.init()`, which is the hook and returns what
-   * `useState` returns. Writes need `set: true` and go through the generated `set<Name>` tool.
-   */
+  /** Agent-readable local state: `.desc()` then `.init()` (the hook). Agent writes need `set: true`. */
   useState: <T extends AgentFieldType>(name: string | null, type: T, meta?: StStateMeta) => StStateDraft<T>;
   /** A read-only derived value the agent can read while the component is mounted: `.desc()` then `.value()`. */
   expose: <T extends AgentFieldType>(name: string | null, type: T, meta?: StExposeMeta) => StExposeDraft<T>;
-  /**
-   * A component tool: `.desc()`, then `.arg()` / `.opt()`, chained onto one terminal hook — `.exec()` for a tool
-   * a function answers, `.card()` for one the user answers in the chat.
-   *
-   * A falsy name declares the tool without publishing it — the callable still drives the click a person makes.
-   * Every one of these ends in a hook, so a conditional surface withholds the name rather than skipping the chain.
-   */
+  /** `.desc()`, `.arg()`/`.opt()`, then the hook `.exec()` or `.card()`. A falsy name declares without publishing. */
   tool: (name: string | null, meta?: StToolMeta) => StToolDraft;
 }
 

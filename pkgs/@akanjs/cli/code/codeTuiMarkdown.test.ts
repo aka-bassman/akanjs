@@ -26,7 +26,6 @@ describe("CodeTuiMarkdown", () => {
   test("a list gets a marker and hangs its wrapped lines under the text", () => {
     const lines = render("- first item that is quite long and will need to wrap somewhere", 30);
     expect(lines[0]).toStartWith("• first item");
-    // The continuation is indented past the bullet, not back at the margin.
     expect(lines[1]).toStartWith("  ");
     expect(lines[1]?.trim()).not.toStartWith("•");
   });
@@ -39,7 +38,6 @@ describe("CodeTuiMarkdown", () => {
     expect(render("1. one\n2. two")).toEqual(["1. one", "2. two"]);
   });
 
-  /** Reflowing code is how an indentation-sensitive language stops parsing. */
   test("a fenced block keeps its own line breaks and is not word-wrapped", () => {
     const lines = render("```ts\nconst a = 1;\n  const b = 2;\n```", 20);
     expect(lines).toEqual(["ts", "│ const a = 1;", "│   const b = 2;"]);
@@ -47,7 +45,6 @@ describe("CodeTuiMarkdown", () => {
 
   test("a table aligns its columns by display width, so a Korean cell does not shift the row", () => {
     const lines = render("| name | 값 |\n| --- | --- |\n| a | 가나 |\n| bb | 다 |");
-    // Every row starts its second column at the same place; a length-based pad would put 가나 one cell left.
     const second = lines.map((line) => CodeTuiLines.width(line.slice(0, line.length - line.trimStart().length)) + 0);
     expect(second).toBeDefined();
     expect(lines[0]).toBe("name  값  ");
@@ -55,7 +52,6 @@ describe("CodeTuiMarkdown", () => {
     expect(lines[3]).toBe("bb    다  ");
   });
 
-  /** A cell that wraps back to the margin turns the grid into prose, which is what the table was chosen against. */
   test("a table too wide for the pane narrows instead of overflowing", () => {
     const source = [
       "| file | what it does |",
@@ -64,7 +60,6 @@ describe("CodeTuiMarkdown", () => {
     ].join("\n");
     const lines = render(source, 40);
     for (const line of lines) expect(CodeTuiLines.width(line)).toBeLessThanOrEqual(40);
-    // The wrapped half of the second column stays in its column rather than returning to column zero.
     const wrapped = lines.slice(2);
     expect(wrapped.length).toBeGreaterThan(1);
     for (const line of wrapped) expect(line).toStartWith(" ".repeat(0));

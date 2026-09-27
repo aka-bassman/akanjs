@@ -72,6 +72,10 @@ already signed in
 
 Prints the account's nickname and exits without opening the browser.
 
+expiring session
+
+Renewed first, near or past its expiry; only a failed renewal opens the browser.
+
 saved to
 
 `~/.akan/config.json`, one session per host, readable only by you.

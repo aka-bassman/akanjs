@@ -142,7 +142,6 @@ describe("createOpenApiDocument", () => {
         },
       },
     });
-    // The websocket types have no HTTP surface to describe, which is why they are absent.
     expect(document.paths["/openApiItem/openApiItemMessage"]).toBeUndefined();
     expect(document.paths["/ping"]).toBeUndefined();
     expect(document.paths["/localFile/getBlob/*"]).toBeUndefined();

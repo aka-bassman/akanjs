@@ -9,10 +9,7 @@ export interface OpsTokenClaims {
 
 export type OpsTokenVerdict = { ok: true; claims: OpsTokenClaims } | { ok: false; reason: string };
 
-/**
- * A compact EdDSA JWS the control plane signs and this app only verifies — the edge holds a public key, so a
- * machine someone carries off yields nothing that mints a token for any other.
- */
+// Security: verify-only EdDSA — the edge holds just a public key, so a stolen machine can mint no tokens.
 export class OpsTokenVerifier {
   static readonly maxLifetimeSec = 300;
   static readonly clockSkewSec = 30;
@@ -28,8 +25,7 @@ export class OpsTokenVerifier {
     this.audience = audience;
   }
 
-  //* With AKAN_OPS_INSTANCE set the audience carries it, so a token minted for the app as a whole — which the other
-  //* instances sharing app/env would also accept — is refused here instead of replayable across them.
+  //* An instance-bound audience refuses an app-wide token, which would replay across every instance of app/env.
   static audienceOf(appName: string, environment: string, instance = process.env.AKAN_OPS_INSTANCE?.trim()) {
     return instance ? `${appName}/${environment}/${instance}` : `${appName}/${environment}`;
   }

@@ -1,6 +1,7 @@
-import { chmod, mkdir } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import dayjs from "dayjs";
 import { FileSys } from "../fileSys";
+import { ConfigLock } from "./configLock";
 import {
   type AccessToken,
   type AccessTokenDto,
@@ -31,58 +32,90 @@ export class GlobalConfig {
       testTargets: akanConfig.testTargets ?? defaultAkanGlobalConfig.testTargets,
     };
   }
-  /**
-   * This file holds the cloud jwt and a refresh token that does not expire, so it is
-   * written owner-only — the same `0600` the runtime gives its control socket. `Bun.write` takes no mode
-   * and lands on `0666 & ~umask` (0644 on a default shell), so the mode is applied after the write; an
-   * existing world-readable file is tightened by the next write rather than left as it was found.
-   */
+  // Holds the cloud jwt and refresh token, so owner-only 0600: written to a 0600 sibling and renamed over the file,
+  // which also replaces a world-readable one and never shows another CLI process a half-written file.
   static async #setAkanGlobalConfig(akanConfig: AkanGlobalConfig) {
     await mkdir(basePath, { recursive: true, mode: 0o700 });
-    await Bun.write(configPath, JSON.stringify(akanConfig, null, 2));
-    await chmod(configPath, 0o600);
+    const temp = `${configPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    try {
+      await writeFile(temp, JSON.stringify(akanConfig, null, 2), { mode: 0o600 });
+      await rename(temp, configPath);
+    } catch (error) {
+      await rm(temp, { force: true });
+      throw error;
+    }
+  }
+  static readonly #lockPath = `${configPath}.lock`;
+  // Every write re-reads under the lock: one built on an earlier read could restore a rotated-away refresh token.
+  static async #update(mutate: (akanConfig: AkanGlobalConfig) => AkanGlobalConfig) {
+    await ConfigLock.run(GlobalConfig.#lockPath, async () => {
+      await GlobalConfig.#setAkanGlobalConfig(mutate(await GlobalConfig.#getAkanGlobalConfig()));
+    });
   }
   static async getHostConfig(host = GlobalConfig.akanCloudHost): Promise<HostConfig> {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
     return GlobalConfig.toHostConfig(akanConfig.cloudHost[host] ?? getDefaultHostConfig(host));
   }
   static async setHostConfig(config: HostConfig = getDefaultHostConfig()) {
-    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    akanConfig.cloudHost[config.host] = GlobalConfig.toHostConfigDto(config);
-    await GlobalConfig.#setAkanGlobalConfig(akanConfig);
+    await GlobalConfig.#update((akanConfig) => GlobalConfig.#withHost(akanConfig, config));
+  }
+  static #withHost(akanConfig: AkanGlobalConfig, config: HostConfig): AkanGlobalConfig {
+    return {
+      ...akanConfig,
+      cloudHost: { ...akanConfig.cloudHost, [config.host]: GlobalConfig.toHostConfigDto(config) },
+    };
+  }
+  // The cloud rotates the refresh token and revokes every session of the account when one is presented twice, so it
+  // leaves the disk before it is sent: a refresh killed in flight leaves nothing to replay, only a sign-in to redo.
+  static async refreshHostAuth(host: string, refresh: (refreshToken: string) => Promise<AccessToken>) {
+    try {
+      return await ConfigLock.run(GlobalConfig.#lockPath, async () => {
+        const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
+        const current = GlobalConfig.toHostConfig(akanConfig.cloudHost[host] ?? getDefaultHostConfig(host));
+        const accessToken = current.auth?.accessToken;
+        const refreshToken = accessToken?.refreshToken;
+        if (!accessToken || !refreshToken || !GlobalConfig.needRefreshToken(accessToken)) return current;
+        const claimed: HostConfig = {
+          ...current,
+          auth: { ...current.auth, accessToken: { ...accessToken, refreshToken: null } },
+        };
+        await GlobalConfig.#setAkanGlobalConfig(GlobalConfig.#withHost(akanConfig, claimed));
+        const next = await refresh(refreshToken).catch(() => null);
+        if (!next?.jwt) return claimed;
+        const refreshed: HostConfig = { ...current, auth: { ...current.auth, accessToken: next } };
+        await GlobalConfig.#setAkanGlobalConfig(
+          GlobalConfig.#withHost(await GlobalConfig.#getAkanGlobalConfig(), refreshed),
+        );
+        return refreshed;
+      });
+    } catch {
+      // No lock, or a write that failed: what is stored is used as it is, and nothing is refreshed outside the lock.
+      return await GlobalConfig.getHostConfig(host);
+    }
   }
   static async getRemoteEnvServers(): Promise<AkanGlobalConfig["remoteEnvServers"]> {
-    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    return akanConfig.remoteEnvServers;
+    return (await GlobalConfig.#getAkanGlobalConfig()).remoteEnvServers;
   }
   static async setRemoteEnvServer(name: string, config: RemoteEnvServerConfig) {
-    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    await GlobalConfig.#setAkanGlobalConfig({
+    await GlobalConfig.#update((akanConfig) => ({
       ...akanConfig,
-      remoteEnvServers: {
-        ...akanConfig.remoteEnvServers,
-        [name]: config,
-      },
-    });
+      remoteEnvServers: { ...akanConfig.remoteEnvServers, [name]: config },
+    }));
   }
   static async removeRemoteEnvServer(name: string) {
-    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    const { [name]: _, ...remoteEnvServers } = akanConfig.remoteEnvServers;
-    await GlobalConfig.#setAkanGlobalConfig({
-      ...akanConfig,
-      remoteEnvServers,
+    await GlobalConfig.#update((akanConfig) => {
+      const { [name]: _, ...remoteEnvServers } = akanConfig.remoteEnvServers;
+      return { ...akanConfig, remoteEnvServers };
     });
   }
   static async getTestTargets(): Promise<TestTargetsConfig> {
-    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    return akanConfig.testTargets;
+    return (await GlobalConfig.#getAkanGlobalConfig()).testTargets;
   }
   static async setTestTargets(testTargets: TestTargetsConfig) {
-    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    await GlobalConfig.#setAkanGlobalConfig({
+    await GlobalConfig.#update((akanConfig) => ({
       ...akanConfig,
       testTargets: { ...akanConfig.testTargets, ...testTargets },
-    });
+    }));
   }
   static needRefreshToken(accessToken: AccessToken): boolean {
     return !!accessToken?.expiresAt?.isBefore(dayjs().add(1, "hour"));

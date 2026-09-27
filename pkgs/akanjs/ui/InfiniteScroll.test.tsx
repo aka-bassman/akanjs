@@ -1,12 +1,11 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { fakeReact, hooks } from "../webkit/hookHarness.fixture";
 import type { InfiniteScrollProps } from "./InfiniteScroll";
 
 type Effect = () => (() => void) | undefined;
 
 const effectQueue: Effect[] = [];
 const effectCleanups: Array<() => void> = [];
-let hookIndex = 0;
-const hookStates: unknown[] = [];
 let latestObserver: FakeIntersectionObserver | undefined;
 const originalIntersectionObserver = globalThis.IntersectionObserver;
 
@@ -24,10 +23,7 @@ interface FakeScroller {
 const originalDocument = (globalThis as { document?: unknown }).document;
 const originalGetComputedStyle = (globalThis as { getComputedStyle?: unknown }).getComputedStyle;
 
-/**
- * The walk reads `parentElement`, `scrollHeight`/`clientHeight` and the computed `overflow-y`, so a chain of
- * plain objects plus a `getComputedStyle` that reads the one back off them is the whole DOM this needs.
- */
+// The walk reads only `parentElement`, the scroll/client heights and the computed `overflow-y`.
 const stubDom = (chain: FakeScroller[], scrollingElement: unknown = null) => {
   let parent: FakeScroller | null = null;
   for (const link of chain) {
@@ -56,8 +52,8 @@ const makeScroller = (over: Partial<FakeScroller> = {}): FakeScroller => ({
 });
 
 const resetHooks = () => {
-  hookIndex = 0;
-  hookStates.length = 0;
+  hooks.index = 0;
+  hooks.states.length = 0;
   effectQueue.length = 0;
 };
 
@@ -115,27 +111,14 @@ const createElement = (type: unknown, props: Record<string, unknown> = {}) => {
 };
 
 beforeAll(() => {
-  mock.module("react", () => ({
-    Fragment: ({ children }: { children: unknown }) => children,
-    useEffect: (effect: Effect) => {
-      effectQueue.push(effect);
-    },
-    useRef: <T,>(initial: T) => {
-      const index = hookIndex++;
-      if (!hookStates[index]) hookStates[index] = { current: initial };
-      return hookStates[index] as { current: T };
-    },
-    useState: <T,>(initial: T) => {
-      const index = hookIndex++;
-      if (hookStates[index] === undefined)
-        hookStates[index] = typeof initial === "function" ? (initial as () => T)() : initial;
-      const setState = (next: T | ((prev: T) => T)) => {
-        const prev = hookStates[index] as T;
-        hookStates[index] = typeof next === "function" ? (next as (value: T) => T)(prev) : next;
-      };
-      return [hookStates[index] as T, setState] as const;
-    },
-  }));
+  mock.module("react", () =>
+    fakeReact({
+      useEffect: (effect: Effect) => {
+        effectQueue.push(effect);
+      },
+      lazy: undefined,
+    }),
+  );
   mock.module("react/jsx-dev-runtime", () => ({
     Fragment: ({ children }: { children: unknown }) => children,
     jsxDEV: createElement,
@@ -169,7 +152,7 @@ const renderInfiniteScroll = async (props: InfiniteScrollProps) => {
     configurable: true,
   });
   const { InfiniteScroll } = await import("./InfiniteScroll");
-  hookIndex = 0;
+  hooks.index = 0;
   const result = InfiniteScroll(props);
   flushEffects();
   return result;

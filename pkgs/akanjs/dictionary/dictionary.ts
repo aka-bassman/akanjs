@@ -1,7 +1,6 @@
 import type { AgentEndpoint, AgentTurn, BaseEndpoint } from "akanjs/signal";
 
-import { agentDictionary } from "./agent.dictionary";
-import { agentTurnDictionary } from "./agentTurn.dictionary";
+import { agentDictionary, agentTurnDictionary } from "./agent.dictionary";
 import { baseDictionary } from "./base.dictionary";
 import { registerScalarTrans, registerServiceTrans } from "./locale";
 import { makeTrans } from "./trans";

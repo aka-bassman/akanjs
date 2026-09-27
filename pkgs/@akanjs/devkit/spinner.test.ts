@@ -6,10 +6,7 @@ interface TtyStub {
   rawModeCalls: boolean[];
 }
 
-/**
- * ora only reaches for stdin when both streams look interactive, so the stub has to fake a tty on
- * stderr (which decides `isEnabled`) as well as on stdin.
- */
+// ora only reaches for stdin when both streams look interactive, so stderr (which decides `isEnabled`) is faked too.
 const stubTty = (): TtyStub => {
   const rawModeCalls: boolean[] = [];
   const stdin = process.stdin as NodeJS.ReadStream & { setRawMode?: (mode: boolean) => unknown };
@@ -41,8 +38,7 @@ const stubTty = (): TtyStub => {
 };
 
 describe("Spinner", () => {
-  // A raw terminal at spawn time is what a Bun child snapshots and writes back when it exits, which is
-  // how `akan start` used to leave a terminal that no longer turns Ctrl+C into SIGINT.
+  // A Bun child snapshots a raw terminal at spawn and writes it back on exit, leaving Ctrl+C no longer a SIGINT.
   test("never puts the terminal into raw mode while it spins", () => {
     const tty = stubTty();
     try {
@@ -59,8 +55,7 @@ describe("Spinner", () => {
     expect(Spinner.oraOptions.discardStdin).toBe(false);
   });
 
-  // An unsized pty reports `isTTY: true` with `columns: 0`, which turns ora's clear loop into an
-  // infinite one — the process then writes cursor moves until it is SIGKILLed.
+  // An unsized pty reports `isTTY: true` with `columns: 0`, which turns ora's clear loop into an infinite one.
   test("refuses to animate against a tty that reports no width", () => {
     expect(Spinner.canAnimate({ isTTY: true, columns: 0 } as NodeJS.WriteStream)).toBe(false);
     expect(Spinner.canAnimate({ isTTY: true, columns: 120 } as NodeJS.WriteStream)).toBe(true);

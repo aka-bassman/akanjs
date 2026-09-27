@@ -8,12 +8,7 @@ export class RepairCommand extends command("repair", [RepairScript], ({ public: 
       enum: ["generated", "format", "imports", "dictionary", "module-shape"],
     })
     .with(Workspace)
-    .option("format", String, {
-      desc: "output format",
-      flag: "o",
-      default: "markdown",
-      enum: ["markdown", "json"],
-    })
+    .option("format", String, { desc: "output format", flag: "o", default: "markdown", enum: ["markdown", "json"] })
     .option("app", String, {
       desc: "target app or library for generated/dictionary/module-shape repair",
       nullable: true,
@@ -25,12 +20,6 @@ export class RepairCommand extends command("repair", [RepairScript], ({ public: 
       nullable: true,
     })
     .exec(async function (kind, workspace, format, app, module, targetName) {
-      await this.repairScript.repair(kind, {
-        workspace,
-        format: format,
-        app,
-        module,
-        target: targetName,
-      });
+      await this.repairScript.repair(kind, { workspace, format, app, module, target: targetName });
     }),
 })) {}

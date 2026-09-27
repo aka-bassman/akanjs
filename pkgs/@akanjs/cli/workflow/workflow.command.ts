@@ -9,12 +9,7 @@ export class WorkflowCommand extends command("workflow", [WorkflowScript], ({ pu
     })
     .arg("workflow", String, { desc: "workflow name, plan path, or run id", nullable: true })
     .with(Workspace)
-    .option("format", String, {
-      desc: "output format",
-      flag: "o",
-      default: "markdown",
-      enum: ["markdown", "json"],
-    })
+    .option("format", String, { desc: "output format", flag: "o", default: "markdown", enum: ["markdown", "json"] })
     .option("out", String, { flag: "w", desc: "write workflow plan JSON to this path", nullable: true })
     .option("dryRun", Boolean, { flag: "r", desc: "show predicted apply report without writing files", default: false })
     .option("app", String, { desc: "target app or library name", nullable: true })
@@ -50,7 +45,7 @@ export class WorkflowCommand extends command("workflow", [WorkflowScript], ({ pu
           action,
           workflow,
           { app, module, field, type: typeName, values, default: defaultValue, scalar, surface, mutation, slice },
-          { format: format, out, dryRun, workspace },
+          { format, out, dryRun, workspace },
         );
       },
     ),

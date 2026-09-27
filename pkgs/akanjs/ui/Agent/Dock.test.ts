@@ -1,23 +1,16 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import type { ClientSignal } from "akanjs/fetch";
 import { createElement } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
+import { setTestEnv, stubSignal } from "../../store/store.fixture";
 
 let html: string;
 let bridge: InstanceType<typeof import("akanjs/store")["AgentBridge"]>;
 let Dock: typeof import("./Dock")["Dock"];
 
-/**
- * Imported after the environment is set, not before: the `akanjs/store` barrel reaches `baseSt`, which calls
- * `getEnv()` while the module is still evaluating. Static imports all run before any test body could set it.
- */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "docktest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "docktest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("docktest");
 
-  const [{ Int, SLICE_META }, { ConstantRegistry, via }, storeFacet, dockFacet] = await Promise.all([
+  const [{ Int }, { ConstantRegistry, via }, storeFacet, dockFacet] = await Promise.all([
     import("akanjs/base"),
     import("akanjs/constant"),
     import("akanjs/store"),
@@ -48,15 +41,7 @@ beforeAll(async () => {
     endpoint: {},
     slice: { "": { args: [] } },
   };
-  const handlers: Record<string, unknown> = {};
-  const signal = {
-    refName: "dockDesk",
-    _slice: { [SLICE_META]: {} },
-    cnst,
-    fetch: new Proxy(handlers, { get: (target, key: string) => (target[key] ??= async () => null) }),
-    serializedSignal,
-    slices: [],
-  } as unknown as ClientSignal<"dockDesk">;
+  const signal = stubSignal("dockDesk", cnst, serializedSignal);
 
   class DeskStore extends store(signal, () => ({ deskDraft: "" })) {
     wipeDesk() {
@@ -78,19 +63,30 @@ describe("Agent.Dock", () => {
   });
 
   test("the withheld section is empty once the catalogue refuses nothing", () => {
-    // Base keys used to land here as a catalogue refusal; opt-out is now `{ agent: false }` at each `st.use`.
     const count = html.match(/Withheld<\/span><span[^>]*>(\d+)</)?.[1];
     expect(count).toBe("0");
   });
 
   test("offers no tool the page did not declare", () => {
-    // Tools come from the surface, so a store method and a generated setter appear nowhere in the dock.
     expect(html).not.toContain("wipeDesk");
     expect(html).not.toContain("setLabelOnDockDesk");
   });
 
   test("offers an assemble preview of the turn context", () => {
     expect(html).toContain("Assemble");
+  });
+
+  test("offers the assemble preview on every env but main, whatever NODE_ENV says", async () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "develop";
+    try {
+      const develop = await new Response(
+        await renderToReadableStream(createElement(Dock, { bridge, open: true })),
+      ).text();
+      expect(develop).toContain("Assemble");
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
   });
 
   test("renders nothing in production", async () => {

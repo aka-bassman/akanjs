@@ -3,14 +3,11 @@ import { recipe, tv } from "./factory";
 /** 버튼 look — 시맨틱 variant × size × shape, outline 플래그는 색을 유지한 외곽선 스타일. `<Button>` 이 소비하며, `_overrides.tsx` 의 recipes.button 슬롯으로 교체 가능. */
 export const buttonRecipe = recipe(
   tv({
-    // `transition` (not transition-colors) so the active-press scale animates too — without press feedback a
-    // synchronous button gives no sign at all that it was clicked. `disabled:pointer-events-none` already
-    // suppresses :active, so the press state needs no disabled counterpart.
+    // `transition`, not transition-colors, so the press scale animates; pointer-events-none already stops :active.
     base: "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-field font-medium transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
     variants: {
       variant: {
-        // Neutral filled button, paired with badgeRecipe's `default`. Distinct from `neutral`: this is
-        // the muted surface, `neutral` is the neutral color token — two different fills that coexist.
+        // The muted surface, not the `neutral` color token — two fills that coexist.
         default: "bg-muted text-foreground hover:bg-muted/80",
         primary: "bg-primary text-primary-foreground hover:bg-primary/90",
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
@@ -31,16 +28,13 @@ export const buttonRecipe = recipe(
         lg: "h-12 px-6 text-lg",
         icon: "h-10 w-10 px-0",
       },
-      // `size` already sets h-*, so squaring the aspect is enough and keeps xs/sm/lg square buttons
-      // correct without a shape×size matrix.
+      // `size` sets h-*, so squaring the aspect keeps every size square without a shape×size matrix.
       shape: {
         default: "",
         square: "aspect-square px-0",
         circle: "aspect-square rounded-full px-0",
       },
-      // An outlined *colored* button (e.g. warning + outline) cannot be a `variant` value: only one value
-      // can be chosen, so it would silently drop the color. The style modifier gets its own axis and the
-      // color pairing lives in compoundVariants below. `variant: "outline"` stays as the neutral outline.
+      // Its own axis, not a `variant` value, which would drop the color; the pairing is in compoundVariants.
       outline: { true: "border bg-transparent" },
     },
     compoundVariants: [

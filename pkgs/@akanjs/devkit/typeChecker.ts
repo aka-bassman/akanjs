@@ -38,31 +38,15 @@ export class TypeChecker {
     }
     this.config = parsedConfig;
   }
-  /**
-   * Find tsconfig.json by walking up the directory tree
-   */
   #findConfigFile(searchPath: string): string | undefined {
     return ts.findConfigFile(searchPath, (fileName) => ts.sys.fileExists(fileName), "tsconfig.json");
   }
 
-  /**
-   * Type-check a single TypeScript file
-   * @param filePath - Path to the TypeScript file to check
-   * @returns Array of diagnostic messages
-   */
-  check(filePath: string): {
-    diagnostics: ts.Diagnostic[];
-    errors: ts.Diagnostic[];
-    warnings: ts.Diagnostic[];
-    fileDiagnostics: ts.Diagnostic[];
-    fileErrors: ts.Diagnostic[];
-    fileWarnings: ts.Diagnostic[];
-  } {
+  check(filePath: string) {
     const program = ts.createProgram([filePath], this.config.options);
     const diagnostics = [
       ...program.getSemanticDiagnostics(),
       ...program.getSyntacticDiagnostics(),
-      // Only check declaration diagnostics when declaration emit is enabled
       ...(this.config.options.declaration ? program.getDeclarationDiagnostics() : []),
     ];
     const errors = diagnostics.filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
@@ -73,11 +57,6 @@ export class TypeChecker {
     return { diagnostics, errors, warnings, fileDiagnostics, fileErrors, fileWarnings };
   }
 
-  /**
-   * Format diagnostics for console output
-   * @param diagnostics - Array of TypeScript diagnostics
-   * @returns Formatted string
-   */
   formatDiagnostics(diagnostics: ts.Diagnostic[]): string {
     if (diagnostics.length === 0) return chalk.bold("✅ No type errors found");
 
@@ -86,48 +65,24 @@ export class TypeChecker {
     let warningCount = 0;
     let suggestionCount = 0;
 
-    // Group diagnostics by file
     const diagnosticsByFile = new Map<string, ts.Diagnostic[]>();
     diagnostics.forEach((diagnostic) => {
       if (diagnostic.category === ts.DiagnosticCategory.Error) errorCount++;
       else if (diagnostic.category === ts.DiagnosticCategory.Warning) warningCount++;
       else if (diagnostic.category === ts.DiagnosticCategory.Suggestion) suggestionCount++;
-
-      if (diagnostic.file) {
-        const fileName = diagnostic.file.fileName;
-        if (!diagnosticsByFile.has(fileName)) diagnosticsByFile.set(fileName, []);
-        const fileDiagnostics = diagnosticsByFile.get(fileName);
-        if (fileDiagnostics) fileDiagnostics.push(diagnostic);
-      } else {
-        if (!diagnosticsByFile.has("")) diagnosticsByFile.set("", []);
-        const fileDiagnostics = diagnosticsByFile.get("");
-        if (fileDiagnostics) fileDiagnostics.push(diagnostic);
-      }
+      diagnosticsByFile.getOrInsert(diagnostic.file?.fileName ?? "", []).push(diagnostic);
     });
 
-    // Format diagnostics by file
     diagnosticsByFile.forEach((fileDiagnostics, fileName) => {
       if (fileName) output.push(`\n${chalk.cyan(fileName)}`);
 
       fileDiagnostics.forEach((diagnostic) => {
-        const categoryText =
+        const [categoryText, categoryColor, icon] =
           diagnostic.category === ts.DiagnosticCategory.Error
-            ? "error"
+            ? (["error", chalk.red, "❌"] as const)
             : diagnostic.category === ts.DiagnosticCategory.Warning
-              ? "warning"
-              : "suggestion";
-        const categoryColor =
-          diagnostic.category === ts.DiagnosticCategory.Error
-            ? chalk.red
-            : diagnostic.category === ts.DiagnosticCategory.Warning
-              ? chalk.yellow
-              : chalk.blue;
-        const icon =
-          diagnostic.category === ts.DiagnosticCategory.Error
-            ? "❌"
-            : diagnostic.category === ts.DiagnosticCategory.Warning
-              ? "⚠️"
-              : "💡";
+              ? (["warning", chalk.yellow, "⚠️"] as const)
+              : (["suggestion", chalk.blue, "💡"] as const);
         const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
         const tsCode = chalk.dim(`(TS${diagnostic.code})`);
 
@@ -137,7 +92,6 @@ export class TypeChecker {
           output.push(`\n  ${icon} ${categoryColor(categoryText)}: ${message} ${tsCode}`);
           output.push(`     ${chalk.gray("at")} ${fileName}:${chalk.bold(`${line + 1}:${character + 1}`)}`);
 
-          // Show source line with underline
           const sourceLines = diagnostic.file.text.split("\n");
           if (line < sourceLines.length) {
             const sourceLine = sourceLines[line];
@@ -145,7 +99,6 @@ export class TypeChecker {
 
             output.push(`\n${chalk.dim(`${lineNumber} |`)} ${sourceLine}`);
 
-            // Create underline with squiggly for TypeScript
             const underlinePrefix = " ".repeat(character);
             const length = diagnostic.length ?? 1;
             const underline = "~".repeat(Math.max(1, length));
@@ -166,11 +119,6 @@ export class TypeChecker {
     return `\n${summary.join(", ")} found${output.join("\n")}`;
   }
 
-  /**
-   * Get detailed diagnostic information with code snippet
-   * @param filePath - Path to the TypeScript file to check
-   * @returns Object containing diagnostics and detailed information
-   */
   getDetailedDiagnostics(filePath: string): {
     diagnostics: ts.Diagnostic[];
     details: { line: number; column: number; message: string; code: number; codeSnippet?: string }[];
@@ -199,11 +147,7 @@ export class TypeChecker {
     return { diagnostics, details };
   }
 
-  /**
-   * Check if a file has type errors
-   * @param filePath - Path to the TypeScript file to check
-   * @returns true if there are no type errors, false otherwise
-   */
+  /** Also false when the check itself throws. */
   hasNoTypeErrors(filePath: string): boolean {
     try {
       const { diagnostics } = this.check(filePath);

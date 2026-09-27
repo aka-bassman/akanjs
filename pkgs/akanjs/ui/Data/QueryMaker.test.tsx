@@ -1,9 +1,8 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
-import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedArg } from "akanjs/signal";
-import { act, type ReactNode, Suspense } from "react";
-import { createRoot } from "react-dom/client";
+import { act } from "react";
+import { itemFixtureOf, l, mountSuspense, rootSliceArgs, setTestEnv } from "../testHelpers.fixture";
 
 let QueryMaker: typeof import("./QueryMaker").default;
 let makeStore: () => void;
@@ -15,11 +14,6 @@ const adaId = "6650000000000000000000a1";
 const linusId = "6650000000000000000000b2";
 
 const slice = { refName: "queryMakerTestItem", sliceName: "queryMakerTestItem", argLength: 2 };
-const l = Object.assign((key: string) => key, {
-  _: (key: string) => key,
-  rich: (key: string) => key,
-  trans: (translation: Record<string, string>) => translation.en,
-});
 const filterQuery = {
   any: [],
   byTitle: [{ type: "search", name: "title", refName: "String" }],
@@ -28,7 +22,6 @@ const filterQuery = {
 };
 const ownerFilterQuery = {
   any: [],
-  // The ref model's own filter points back at a model, which is what makes a picker open inside a picker.
   byManager: [{ type: "search", name: "managerId", refName: "ID", ref: "queryMakerTestOwner" }],
 };
 
@@ -60,36 +53,18 @@ const settleDebounce = async () => {
   });
 };
 
-/** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "querymakertest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "querymakertest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
-  const { Int, SLICE_META } = await import("akanjs/base");
+  setTestEnv("querymakertest");
+  const { Int } = await import("akanjs/base");
   const { ConstantRegistry, via } = await import("akanjs/constant");
+  const { Insight, storeMaker } = await itemFixtureOf("queryMakerTestItem");
   const { registerClientRuntime } = await import("akanjs/client");
-  const { store, StoreRegistry } = await import("akanjs/store");
-
-  const Input = via((f) => ({ title: f(String) }));
-  const Obj = via(Input, () => ({}));
-  const Light = via(Obj, ["title"] as const, () => ({}));
-  const Full = via(Obj, Light, () => ({}));
-  const Insight = via(Full, (f) => ({ count: f(Int, { default: 0 }) }));
-  const cnst = ConstantRegistry.buildModel("queryMakerTestItem", Input, Obj, Full, Light, Insight, {});
   calls = {
     queryMakerTestItemList: mock(async () => []),
     queryMakerTestItemInsight: mock(async () => new Insight({ count: 0 })),
   };
-  const signalFetch = new Proxy(calls, {
-    get(target, key: string) {
-      target[key] ??= mock(async () => null);
-      return target[key];
-    },
-  });
   const OwnerInput = via((f) => ({ nickname: f(String) }));
   const OwnerObj = via(OwnerInput, () => ({}));
-  // A model that writes its own one-liner, which is what a picker row should show instead of the id.
   class OwnerLight extends via(OwnerObj, ["nickname"] as const, () => ({})) {
     label() {
       return this.nickname ? `@${this.nickname}` : "";
@@ -113,56 +88,20 @@ beforeAll(async () => {
       queryMakerTestOwnerList: ownerList,
     },
   } as never);
-  const signal = {
-    refName: "queryMakerTestItem",
-    _slice: { [SLICE_META]: {} },
-    cnst,
-    fetch: signalFetch,
-    serializedSignal: {
-      prefix: "queryMakerTestItem",
-      endpoint: {},
-      slice: {
-        "": {
-          args: [
-            { type: "search", name: "queryKey", refName: "String", nullable: true },
-            { type: "search", name: "args", refName: "Any", nullable: true },
-          ],
-        },
-      },
-    },
-    slices: [],
-  } as unknown as ClientSignal<"queryMakerTestItem">;
-  makeStore = () => {
-    for (const call of Object.values(calls)) call.mockClear();
-    class ItemStore extends store(signal, () => ({})) {}
-    StoreRegistry.register(ItemStore);
-    StoreRegistry.build(StoreRegistry.merge("queryMakerRoot", ItemStore));
-  };
+  makeStore = storeMaker({ root: "queryMakerRoot", calls, sliceArgs: rootSliceArgs });
   ({ default: QueryMaker } = await import("./QueryMaker"));
 });
-
-const mount = async (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => {
-    root.render(<Suspense>{node}</Suspense>);
-  });
-  return { container, unmount: () => act(() => root.unmount()) };
-};
 
 describe("Data.QueryMaker", () => {
   test("offers the filters the client can fill, and the args the selected one takes", async () => {
     makeStore();
-    const { container, unmount } = await mount(<QueryMaker slice={slice} query={{ queryKey: "byTitle" }} />);
+    const { container, unmount } = await mountSuspense(<QueryMaker slice={slice} query={{ queryKey: "byTitle" }} />);
 
     // The options live in the select's portal, not under the maker itself.
     const options = document.querySelector("[data-akan-overlay]")?.textContent ?? "";
     expect(options).toContain("Any");
     expect(options).toContain("By Title");
-    // `byAuthor` takes a model, which no input here can type, so the filter that needs it is not offered.
     expect(options).not.toContain("By Author");
-    // The selected filter and the one arg it declares, both labelled through the dictionary.
     expect(container.textContent).toContain("By Title");
     expect(container.textContent).toContain("Title");
     unmount();
@@ -170,11 +109,9 @@ describe("Data.QueryMaker", () => {
 
   test("holds a filter whose required arg is still empty instead of sending a query the server refuses", async () => {
     makeStore();
-    const { container, unmount } = await mount(<QueryMaker slice={slice} />);
+    const { container, unmount } = await mountSuspense(<QueryMaker slice={slice} />);
 
     await pickOption("By Title");
-    // The pick lands — the maker keeps the filter the user chose — but `byTitle` has nowhere to read a title
-    // from yet, and the server refuses a filter arg it was not given. Only the request waits.
     expect(container.textContent).toContain("By Title");
     expect(calls.queryMakerTestItemList).not.toHaveBeenCalled();
 
@@ -191,13 +128,11 @@ describe("Data.QueryMaker", () => {
       { id: adaId, nickname: "ada" },
       { id: linusId, nickname: "linus" },
     ];
-    const { container, unmount } = await mount(<QueryMaker slice={slice} query={{ queryKey: "byOwner" }} />);
+    const { container, unmount } = await mountSuspense(<QueryMaker slice={slice} query={{ queryKey: "byOwner" }} />);
 
-    // An id pointing at a model is picked, not typed, so the arg gets a picker instead of a hex field.
     expect(container.querySelector("input")).toBeNull();
     await clickButton("Select");
 
-    // Rows are labelled by the method the ref model's Light class wrote, with the id kept beside it.
     const modal = document.querySelector("[role=dialog]");
     expect(modal?.textContent).toContain("@ada");
     expect(modal?.textContent).toContain("@linus");
@@ -206,7 +141,6 @@ describe("Data.QueryMaker", () => {
     await clickButton("@ada");
     await settleDebounce();
     expect(calls.queryMakerTestItemList.mock.calls[0]?.slice(0, 2)).toEqual(["byOwner", [adaId]]);
-    // The modal closes onto the row that was picked, by its label rather than its id.
     expect(document.querySelector("[role=dialog]")).toBeNull();
     expect(container.textContent).toContain("@ada");
     unmount();
@@ -215,7 +149,7 @@ describe("Data.QueryMaker", () => {
   test("says how to give the referenced model a label when none of its rows has one", async () => {
     makeStore();
     ownerRows = [{ id: adaId, nickname: "" }];
-    const { unmount } = await mount(<QueryMaker slice={slice} query={{ queryKey: "byOwner" }} />);
+    const { unmount } = await mountSuspense(<QueryMaker slice={slice} query={{ queryKey: "byOwner" }} />);
 
     await clickButton("Select");
     const modal = document.querySelector("[role=dialog]");
@@ -227,7 +161,7 @@ describe("Data.QueryMaker", () => {
   test("keeps nesting when the referenced model's own filter points at a model too", async () => {
     makeStore();
     ownerRows = [{ id: adaId, nickname: "ada" }];
-    const { unmount } = await mount(<QueryMaker slice={slice} query={{ queryKey: "byOwner" }} />);
+    const { unmount } = await mountSuspense(<QueryMaker slice={slice} query={{ queryKey: "byOwner" }} />);
 
     await clickButton("Select");
     expect(document.querySelectorAll("[role=dialog]")).toHaveLength(1);
@@ -246,7 +180,7 @@ describe("Data.QueryMaker", () => {
 
   test("renders nothing when the model declares no filter beyond the one every model has", async () => {
     makeStore();
-    const { container, unmount } = await mount(<QueryMaker slice={{ ...slice, refName: "unfiltered" }} />);
+    const { container, unmount } = await mountSuspense(<QueryMaker slice={{ ...slice, refName: "unfiltered" }} />);
 
     expect(container.textContent).toBe("");
     unmount();

@@ -8,20 +8,12 @@ export type MarkdownSpan =
   /** A link whose href was refused, or an image: rendered as its label, by every host. */
   | { kind: "plain"; text: string };
 
-// The href alternation carries one level of nested parens, so a url that ends in one — a wiki title, a
-// `javascript:alert(1)` this then refuses — is captured whole instead of cut at its first `)`.
+// One level of nested parens in the href, so a url ending in one (a wiki title) is captured whole, not cut at `)`.
 const inline =
   /(!?)\[([^\]]*)\]\(((?:[^\s()]|\([^\s()]*\))+)\)|`([^`]+)`|\*\*([\s\S]+?)\*\*|\*([^*\n]+?)\*|~~([\s\S]+?)~~/g;
 
-/**
- * The inline scanner both hosts read: a browser turns these into elements, a terminal into styled text.
- *
- * It is here rather than beside either renderer because the two decisions that matter are not rendering
- * decisions. **A link's scheme is refused for everyone** — this text comes from a model and from tool results
- * carrying stored user input, and React writes a `javascript:` href out as given. And **underscore emphasis is
- * deliberately unmatched**: snake_case is everywhere in this content, and `some_var_name` italicising mid-word
- * reads worse than a literal `_emphasis_` does.
- */
+// A link's scheme is refused here for every host: the text is model output and React writes a `javascript:` href as
+// given. Underscore emphasis is deliberately unmatched, because snake_case is everywhere in this content.
 export class MarkdownSpans {
   static of(text: string): MarkdownSpan[] {
     const spans: MarkdownSpan[] = [];
@@ -50,10 +42,9 @@ export class MarkdownSpans {
     return !/^[a-z][a-z0-9+.-]*:/i.test(href) || /^(?:https?|mailto|tel):/i.test(href);
   }
 
-  /** The text with every marker removed, for a host that has no styling to give — a width measurement, a log. */
   static plain(text: string): string {
     return MarkdownSpans.of(text)
-      .map((span) => (span.kind === "link" ? span.text : span.text))
+      .map((span) => span.text)
       .join("");
   }
 }

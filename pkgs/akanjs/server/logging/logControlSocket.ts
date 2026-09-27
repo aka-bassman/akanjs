@@ -26,13 +26,8 @@ interface ClientState {
   subscriptions: Map<string, () => void>;
 }
 
-/**
- * A unix domain socket in the runtime directory, `0600`, speaking NDJSON both ways. Filesystem permission is
- * the whole authentication: no TCP port is opened. `akan logs` and the console's `.tail` are its clients.
- *
- * Nothing in here logs per delivered record — a subscriber asking for everything would otherwise receive the
- * line about its own delivery, forever.
- */
+// Security: the socket's 0600 file mode is the whole authentication — no TCP port is ever opened.
+// Never log per delivered record here: a subscriber to everything would receive its own delivery line, forever.
 export class LogControlSocket {
   static readonly fileName = "akan-control.sock";
   static readonly maxPendingBytes = 1024 * 1024;
@@ -50,6 +45,19 @@ export class LogControlSocket {
   constructor(hub: LogHub, runtimeDir: string) {
     this.#hub = hub;
     this.path = LogControlSocket.pathIn(runtimeDir);
+  }
+
+  static async open(hub: LogHub, runtimeDir: string, logger: Logger): Promise<LogControlSocket | null> {
+    const control = new LogControlSocket(hub, runtimeDir);
+    try {
+      await control.start();
+      return control;
+    } catch (error) {
+      logger.warn(
+        `Log control socket unavailable at ${control.path}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
   }
 
   async start() {

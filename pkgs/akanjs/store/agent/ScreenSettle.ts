@@ -6,18 +6,7 @@ export interface ScreenSettleOptions {
   timeoutMs?: number;
 }
 
-/**
- * Waits until the screen stops changing.
- *
- * The surface is read synchronously and the app is not: `router.push` returns while the RSC payload for the new
- * route is still in flight, and a store action that fires `void fetch.*` commits a tick later. A tool that returns
- * at either of those moments reports the screen it replaced — and the `readScreen` the agent calls next reads the
- * page the user already left.
- *
- * Quiescence rather than a framework signal, because there is no one signal: the client router hands its promise
- * to nobody, and a change may land in the store, in a refetch, or in a streamed Suspense boundary. A
- * MutationObserver sees all three, and every wait is bounded — a screen that never holds still still answers.
- */
+/** Resolves once the DOM stops mutating, always bounded; no single router or store signal says "settled". */
 export class ScreenSettle {
   static wait({ quietMs = 120, appearMs = 0, timeoutMs = 3000 }: ScreenSettleOptions = {}): Promise<void> {
     const body = typeof document === "undefined" ? null : (document.body ?? document.documentElement);
@@ -37,8 +26,6 @@ export class ScreenSettle {
       const observer = new MutationObserver(rearm);
       const deadline = setTimeout(done, timeoutMs);
       observer.observe(body, { attributes: true, characterData: true, childList: true, subtree: true });
-      // Until the first mutation arrives there is nothing to be quiet about, so an `appearMs` wait gives the
-      // change that long to start and gives up rather than reporting a screen that never moved.
       if (appearMs) quiet = setTimeout(done, appearMs);
       else rearm();
     });

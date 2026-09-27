@@ -63,6 +63,7 @@ export class LocalRegistryRunner extends runner("localRegistry") {
     const registry = this.getRegistryUrl(registryUrl);
     const smokeRoot = path.join(workspace.workspaceRoot, ".akan/e2e");
     await rm(path.join(smokeRoot, smokeRepoName), { recursive: true, force: true });
+    const env = { ...process.env, AKAN_NPM_REGISTRY: registry, NPM_CONFIG_REGISTRY: registry };
     await workspace.spawn(
       process.execPath,
       [
@@ -77,21 +78,14 @@ export class LocalRegistryRunner extends runner("localRegistry") {
         "--registry",
         registry,
       ],
-      {
-        env: { ...process.env, AKAN_NPM_REGISTRY: registry, NPM_CONFIG_REGISTRY: registry },
-        stdio: "inherit",
-      },
+      { env, stdio: "inherit" },
     );
-    await workspace.spawn("akan", ["typecheck", smokeAppName], {
-      cwd: path.join(smokeRoot, smokeRepoName),
-      env: { ...process.env, AKAN_NPM_REGISTRY: registry, NPM_CONFIG_REGISTRY: registry },
-      stdio: "inherit",
-    });
-    await workspace.spawn("akan", ["build", smokeAppName], {
-      cwd: path.join(smokeRoot, smokeRepoName),
-      env: { ...process.env, AKAN_NPM_REGISTRY: registry, NPM_CONFIG_REGISTRY: registry },
-      stdio: "inherit",
-    });
+    for (const command of ["typecheck", "build"])
+      await workspace.spawn("akan", [command, smokeAppName], {
+        cwd: path.join(smokeRoot, smokeRepoName),
+        env,
+        stdio: "inherit",
+      });
     Logger.info(`Local registry smoke test completed for ${smokeRepoName}/${smokeAppName}`);
   }
 }

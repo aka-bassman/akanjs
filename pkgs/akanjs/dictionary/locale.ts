@@ -1,29 +1,8 @@
-import type {
-  ENDPOINT_DICT_SHAPE,
-  FILTER_DICT_SHAPE,
-  GetStateObject,
-  MergedValues,
-  SLICE_DICT_SHAPE,
-} from "akanjs/base";
+import type { GetStateObject, MergedValues } from "akanjs/base";
 import type { BaseInsight, BaseObject } from "akanjs/constant";
-import type {
-  FilterCls,
-  FilterDictShape as FilterCompactShape,
-  FilterDictArgShape,
-  FilterInfo,
-  FilterInstance,
-} from "akanjs/document";
-import type {
-  EndpointCls,
-  EndpointDictShape as EndpointCompactShape,
-  EndpointInfo,
-  SliceCls,
-  SliceDictShape as SliceCompactShape,
-  SliceInfo,
-  SliceInfoArgNames,
-  SliceInfoRefName,
-} from "akanjs/signal";
+import type { SliceInfo, SliceInfoArgNames, SliceInfoRefName } from "akanjs/signal";
 import type { ModelDictInfo, ScalarDictInfo, ServiceDictInfo } from ".";
+import type { DictArgNames, DictEndpointShape, DictFilterQuery, DictFilterSort, DictSliceShape } from "./dictShape";
 
 interface Trans {
   t: string;
@@ -37,43 +16,6 @@ interface FnTrans<ArgKey extends string> {
   desc?: string;
   arg?: { [key in ArgKey]: FieldTrans };
 }
-type DictArgShape = { [key: string]: readonly string[] };
-type AnyFilterShape = FilterCompactShape<FilterInstance<Record<string, FilterInfo>, Record<string, unknown>>>;
-type DictFilterShape<Filter> =
-  Filter extends FilterCls<infer FilterShape>
-    ? FilterCompactShape<FilterShape>
-    : Filter extends { readonly [FILTER_DICT_SHAPE]: infer CompactShape extends FilterDictArgShape }
-      ? CompactShape
-      : Filter extends FilterInstance
-        ? FilterCompactShape<Filter>
-        : Filter extends { query: Record<string, FilterInfo>; sort: Record<string, unknown> }
-          ? FilterCompactShape<Filter>
-          : Filter extends { query: DictArgShape; sort: Record<string, true> }
-            ? Filter
-            : AnyFilterShape;
-type DictFilterQuery<Filter> = DictFilterShape<Filter>["query"];
-type DictFilterSort<Filter> = DictFilterShape<Filter>["sort"];
-type DictArgNames<ArgNames> = ArgNames extends readonly string[] ? ArgNames[number] : never;
-type DictEndpointShape<Endpoint> =
-  Endpoint extends EndpointCls<infer _SrvModule, infer EndpointInfoObj>
-    ? EndpointCompactShape<EndpointInfoObj>
-    : Endpoint extends { readonly [ENDPOINT_DICT_SHAPE]: infer CompactShape extends DictArgShape }
-      ? CompactShape
-      : Endpoint extends DictArgShape
-        ? Endpoint
-        : Endpoint extends Record<string, EndpointInfo>
-          ? EndpointCompactShape<Endpoint>
-          : Record<never, never>;
-type DictSliceShape<Slice> =
-  Slice extends SliceCls<infer _SrvModule, infer SliceInfoObj>
-    ? SliceCompactShape<SliceInfoObj>
-    : Slice extends { readonly [SLICE_DICT_SHAPE]: infer CompactShape extends DictArgShape }
-      ? CompactShape
-      : Slice extends DictArgShape
-        ? Slice
-        : Slice extends Record<string, SliceInfo>
-          ? SliceCompactShape<Slice>
-          : Record<never, never>;
 type FilterTranslatorKey<Filter> = {
   [Key in keyof DictFilterQuery<Filter> & string]:
     | `${Key}`
@@ -214,35 +156,8 @@ export interface DictModule<DictKey extends string, ErrorKey extends string> {
     | ServiceDictInfo<[string, ...string[]]>;
 }
 
-export const registerModelTrans = <
-  RefName extends string,
-  Model extends BaseObject,
-  Insight extends BaseInsight,
-  Filter,
-  Slice,
-  Endpoint,
-  ModelDict,
->(
-  modelDict: ModelDict,
-): ModelDict extends ModelDictInfo<
-  infer _Languages,
-  infer _ModelKey,
-  infer _InsightKey,
-  infer _QueryKey,
-  infer _SortKey,
-  infer EnumKey,
-  infer _BaseSignalKey,
-  infer _SliceKey,
-  infer _EndpointKey,
-  infer ErrorKey,
-  infer EtcKey
->
-  ? DictModule<
-      ModelTranslatorKey<RefName, Model, Insight, Filter, Slice, Endpoint, EtcKey> | EnumTranslatorKey<EnumKey>,
-      `${RefName}.error.${ErrorKey}`
-    >
-  : never => {
-  return { dict: modelDict } as unknown as ModelDict extends ModelDictInfo<
+type ModelDictModule<RefName extends string, Model, Insight, Filter, Slice, Endpoint, ModelDict> =
+  ModelDict extends ModelDictInfo<
     infer _Languages,
     infer _ModelKey,
     infer _InsightKey,
@@ -260,35 +175,28 @@ export const registerModelTrans = <
         `${RefName}.error.${ErrorKey}`
       >
     : never;
-};
+export const registerModelTrans = <
+  RefName extends string,
+  Model extends BaseObject,
+  Insight extends BaseInsight,
+  Filter,
+  Slice,
+  Endpoint,
+  ModelDict,
+>(
+  modelDict: ModelDict,
+) => ({ dict: modelDict }) as unknown as ModelDictModule<RefName, Model, Insight, Filter, Slice, Endpoint, ModelDict>;
 
-export const registerScalarTrans = <T extends string, Model, ScalarDict>(
-  scalarDict: ScalarDict,
-): ScalarDict extends ScalarDictInfo<infer _Languages, infer _ModelKey, infer EnumKey, infer ErrorKey, infer EtcKey>
-  ? DictModule<ScalarTranslatorKey<T, Model, EtcKey> | EnumTranslatorKey<EnumKey>, `${T}.error.${ErrorKey}`>
-  : never => {
-  return { dict: scalarDict } as unknown as ScalarDict extends ScalarDictInfo<
-    infer _Languages,
-    infer _ModelKey,
-    infer EnumKey,
-    infer ErrorKey,
-    infer EtcKey
-  >
+type ScalarDictModule<T extends string, Model, ScalarDict> =
+  ScalarDict extends ScalarDictInfo<infer _Languages, infer _ModelKey, infer EnumKey, infer ErrorKey, infer EtcKey>
     ? DictModule<ScalarTranslatorKey<T, Model, EtcKey> | EnumTranslatorKey<EnumKey>, `${T}.error.${ErrorKey}`>
     : never;
-};
+export const registerScalarTrans = <T extends string, Model, ScalarDict>(scalarDict: ScalarDict) =>
+  ({ dict: scalarDict }) as unknown as ScalarDictModule<T, Model, ScalarDict>;
 
-export const registerServiceTrans = <T extends string, Endpoint, ServiceDict>(
-  serviceDict: ServiceDict,
-): ServiceDict extends ServiceDictInfo<infer _Languages, infer _EndpointKey, infer ErrorKey, infer EtcKey>
-  ? DictModule<ServiceTranslatorKey<T, Endpoint, EtcKey>, `${T}.error.${ErrorKey}`>
-  : never => {
-  return { dict: serviceDict } as unknown as ServiceDict extends ServiceDictInfo<
-    infer _Languages,
-    infer _EndpointKey,
-    infer ErrorKey,
-    infer EtcKey
-  >
+type ServiceDictModule<T extends string, Endpoint, ServiceDict> =
+  ServiceDict extends ServiceDictInfo<infer _Languages, infer _EndpointKey, infer ErrorKey, infer EtcKey>
     ? DictModule<ServiceTranslatorKey<T, Endpoint, EtcKey>, `${T}.error.${ErrorKey}`>
     : never;
-};
+export const registerServiceTrans = <T extends string, Endpoint, ServiceDict>(serviceDict: ServiceDict) =>
+  ({ dict: serviceDict }) as unknown as ServiceDictModule<T, Endpoint, ServiceDict>;

@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { ChangeKind } from "akanjs/server";
+import { SOURCE_EXTS } from "../akanApp/devHostPolicy";
 
-const SOURCE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const CSS_EXTS = new Set([".css"]);
 const CONFIG_BASENAMES = new Set(["akan.config.ts", "bunfig.toml", "tsconfig.json", "package.json"]);
 
@@ -19,7 +19,7 @@ export class HmrChangeClassifier {
   #isUninteresting(abs: string): boolean {
     const base = path.basename(abs);
     if (!base) return true;
-    if (base.startsWith(".")) return true; // .git, .DS_Store, vim swaps, etc.
+    if (base.startsWith(".")) return true;
     if (base.endsWith("~") || base.endsWith(".swp") || base.endsWith(".swx") || base.endsWith(".tmp")) return true;
     if (abs.includes(`${path.sep}node_modules${path.sep}`)) return true;
     if (abs.includes(`${path.sep}.akan${path.sep}`)) return true;

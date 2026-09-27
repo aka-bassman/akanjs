@@ -35,10 +35,8 @@ interface DragListProps<V> {
   onRemove: (value: V, idx: number) => void;
 }
 const DragList = <V,>({ className, mode = "vertical", children, onChange, onRemove }: DragListProps<V>) => {
-  // A drag-sortable list is a form control like any other: handed the generated setter by reference it publishes
-  // that field, plus `move<Field>On<Model>` for the one gesture it adds over a plain list. The extra `onChange`
-  // arguments a drag reports are ignored by a generated setter, which takes exactly one value — and a caller that
-  // reads them wrapped this in an arrow, so nothing is published for it either way.
+  // Publishes the setter like any form control, plus `move<Field>On<Model>`; a generated setter ignores the extra
+  // drag arguments.
   useFieldTool(onChange, { sortable: true });
   const refs = useRef<(HTMLDivElement | null)[]>([]);
   const order = useRef(children.map((_, index) => index));
@@ -52,7 +50,6 @@ const DragList = <V,>({ className, mode = "vertical", children, onChange, onRemo
     shadow: number;
   }>(
     children.length,
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     fn(
       order.current,
       new Array(children.length).fill(0) as number[],
@@ -119,12 +116,10 @@ const DragList = <V,>({ className, mode = "vertical", children, onChange, onRemo
           key={i}
           style={{
             zIndex,
-            // 드래그 리프트 그림자(반투명 흑색)는 테마 중립 + react-spring 동적 계산값이라 토큰화 불가.
-            // styleguard-disable-next-line inline-color
+            // A theme-neutral lift shadow computed per spring frame, so it cannot be a token.
             boxShadow: shadow.to((s) => `rgba(0, 0, 0, 0.15) 0px ${s}px ${2 * s}px 0px`),
             scale,
             ...(mode === "vertical" ? { y: movement } : { x: movement }),
-            // cursor: "grab",
           }}
         >
           <dragListContext.Provider
@@ -222,7 +217,6 @@ const fn =
           movement,
           scale: 1.01,
           zIndex: total + 1,
-          // shadow: 15,
           immediate: (key: string) => key === "zIndex",
           config: (key: string) => (key === "y" ? config.stiff : config.default),
         }

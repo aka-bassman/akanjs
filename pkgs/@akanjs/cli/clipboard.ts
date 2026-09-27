@@ -5,10 +5,7 @@ const clipboardCommands = (): string[][] => {
   return [["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]];
 };
 
-/**
- * Writes to the OS clipboard, reporting whether it landed instead of throwing: an ssh session has no
- * clipboard at all, and the caller's answer to that is to offer a path rather than fail the keystroke.
- */
+// Reports whether it landed instead of throwing: an ssh session has no clipboard, and callers offer a path instead.
 export const writeClipboard = async (text: string): Promise<boolean> => {
   for (const command of clipboardCommands()) {
     try {

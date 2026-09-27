@@ -27,10 +27,9 @@ import {
   parseRouteModuleKey,
   routeSegmentToTreePath,
 } from "akanjs/common";
-import { createElement, memo, type ReactNode, useRef } from "react"; // import React 꼭 필요함. 안그러면 csr에서 에러남
 import * as ReactDOM from "react-dom/client";
+import { RenderLayer } from "./RenderLayer";
 import { useCsrValues } from "./useCsrValues";
-import { useFetch } from "./useFetch";
 
 type RouteModuleWithConfig = RouteModule & { pageConfig?: PageConfig };
 type CsrRouteModuleLoader = () => Promise<RouteModuleSource>;
@@ -42,44 +41,6 @@ declare global {
   }
 }
 
-interface RootRenderLayerProps {
-  renders: RouteRender[];
-  index: number;
-  params: Record<string, string>;
-  searchParams: Record<string, string | string[]>;
-}
-const RootRenderLayer = memo(({ renders, index, params, searchParams }: RootRenderLayerProps) => {
-  const isLast = index >= renders.length - 1;
-  const children = isLast ? null : (
-    <RootRenderLayer renders={renders} index={index + 1} params={params} searchParams={searchParams} />
-  );
-  const routeRender = renders[index];
-  const isAsyncRender = isAsyncRouteRender(routeRender);
-  const resultRef = useRef<ReactNode | Promise<ReactNode> | null>(null);
-  if (isAsyncRender && resultRef.current === null) {
-    resultRef.current = routeRender?.render({ children, params, searchParams } as never) ?? null;
-  }
-  const { fulfilled, value: Layout } = useFetch(resultRef.current);
-  if (!routeRender) return null;
-  if (!isAsyncRender) return createElement(routeRender.render as never, { children, params, searchParams } as never);
-  if (!fulfilled || !Layout) return <>{composeLoadingFallback(renders.slice(index), params)}</>;
-  return Layout;
-});
-
-function isAsyncRouteRender(routeRender?: RouteRender): boolean {
-  return Boolean(routeRender?.isAsync || routeRender?.render.constructor.name === "AsyncFunction");
-}
-
-function composeLoadingFallback(renders: RouteRender[], params: Record<string, string>): ReactNode {
-  let element: ReactNode = null;
-  for (let i = renders.length - 1; i >= 0; i--) {
-    const Loading = renders[i]?.Loading;
-    if (!Loading) continue;
-    element = Loading({ params, children: element } as never) as ReactNode;
-  }
-  return element;
-}
-
 export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
   const i18n = parseAkanI18nEnv();
   window.document.body.style.overflow = "hidden";
@@ -88,7 +49,6 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
   const pathname = mobileBasePath && window.location.pathname === "/" ? `/${mobileBasePath}` : window.location.pathname;
   if (pathname === "/404") return;
 
-  // 1. Collect Device Information
   const [device, jwt] = await Promise.all([Device.load({ supportLanguages: i18n.locales }), getStoredAuthToken()]);
   if (!window.__AKAN_MOBILE_TARGET__ && !pathname.startsWith(`/${device.lang}`))
     window.location.replace(`/${device.lang}${pathname}${window.location.search}${window.location.hash}`);
@@ -96,7 +56,6 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
   if (jwt) initAuth({ jwt });
   Logger.verbose(`Set default language: ${device.lang}`);
 
-  // 2. Create Route Map
   const basePaths = process.env.AKAN_PUBLIC_BASE_PATHS ? parseBasePaths(process.env.AKAN_PUBLIC_BASE_PATHS) : null;
   const currentBasePath = basePaths ? pathname.split("/")[2] : undefined;
   if (currentBasePath && basePaths && !basePaths.includes(currentBasePath))
@@ -111,7 +70,7 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
       const parsed = parseRouteModuleKey(key);
       if (basePaths) {
         const pageBasePath = parsed.sourceRouteSegments.find((segment) => !/^\(.+\)$/.test(segment));
-        if (pageBasePath && otherBasePaths.includes(pageBasePath)) return; // ignore other base paths
+        if (pageBasePath && otherBasePaths.includes(pageBasePath)) return;
       }
       const entry = typeof value === "function" ? { loader: value } : value;
       const loaded = await entry.loader();
@@ -142,7 +101,6 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
       if (!children) throw new Error("No children");
       return children;
     }, routeMap);
-    if (!targetRouteMap) continue;
 
     const targetPath = pathSegments[pathSegments.length - 1];
     if (!targetPath) continue;
@@ -171,8 +129,6 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
       resolveError: layoutPage ? () => layoutPage.Error : undefined,
     };
     targetRouteMap.set(targetPath, {
-      // action: pages[path]?.action,
-      // ErrorBoundary: pages[path]?.ErrorBoundary,
       ...(targetRouteMap.get(targetPath) ?? { path: targetPath, children: new Map<string, Route>() }),
       ...(parsed.kind === "layout"
         ? { renderLayout: routeRender, layoutPageConfig: (page as RouteModuleWithConfig).pageConfig }
@@ -203,8 +159,7 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
     const currentRootLayout = isRoot && route.renderLayout ? route.renderLayout : null;
     const currentLayout = !isRoot && route.renderLayout ? route.renderLayout : null;
     const currentLayoutConfig = route.renderLayout && route.layoutPageConfig ? route.layoutPageConfig : null;
-    // See RouteTreeBuilder#getPathRoutes: overrides wrap the whole stack, root layouts included, so a layout's
-    // own JSX and the overlay host it mounts are inside the provider.
+    // Overrides wrap the whole stack, root layouts included, so a layout's JSX and its overlay host sit in the provider.
     const currentOverrideRenders = route.renderOverrides ? [route.renderOverrides] : [];
     const overrideRenders = [...parentOverrides, ...currentOverrideRenders];
     const rootLayoutStack = [...parentRootLayouts, ...(currentRootLayout ? [currentRootLayout] : [])];
@@ -280,7 +235,7 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
     return (
       <csrContext.Provider value={csrValues}>
         {location.pathRoute.renderRootLayouts.length > 0 ? (
-          <RootRenderLayer
+          <RenderLayer
             renders={location.pathRoute.renderRootLayouts}
             index={0}
             params={location.params}

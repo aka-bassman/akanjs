@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type { SsrManifest, SsrManifestEntry } from "akanjs/server";
 import type { BunPlugin } from "bun";
-import { toClientReferencePath } from "../transforms/rscUseClientTransform";
+import { scanUseClientExports, toClientReferencePath } from "../transforms/rscUseClientTransform";
+import { bundleDefine } from "./bundleDefine";
 import {
   type BundleClientEntriesInternalOptions,
   type BundleClientEntriesResult,
@@ -13,11 +14,6 @@ import {
   type OpaqueEntryAliases,
 } from "./clientBuildTypes";
 
-/**
- * Low-level primitive shared by the eager base build and the lazy per-route
- * builds. Takes a flat entrypoints list, runs `Bun.build`, and extracts a
- * `ClientManifest` / `SsrManifest` covering only those entries.
- */
 export class ClientEntriesBundler {
   #app: BundleClientEntriesInternalOptions["app"];
   #entries: string[];
@@ -29,7 +25,6 @@ export class ClientEntriesBundler {
   #target: ClientBundleTarget;
   #outputSubdir: string;
   #reactFastRefresh: boolean;
-  #artifactDir: string;
   #outdir: string;
   #servePrefix: string;
   #manifest: ClientManifest = {};
@@ -52,8 +47,8 @@ export class ClientEntriesBundler {
     this.#target = options.target ?? "browser";
     this.#outputSubdir = options.outputSubdir ?? "client";
     this.#reactFastRefresh = options.reactFastRefresh ?? false;
-    this.#artifactDir = `${this.#command === "build" ? this.#app.dist.cwdPath : this.#app.cwdPath}/.akan/artifact`;
-    this.#outdir = `${this.#artifactDir}/${this.#outputSubdir}`;
+    const artifactDir = `${this.#command === "build" ? this.#app.dist.cwdPath : this.#app.cwdPath}/.akan/artifact`;
+    this.#outdir = `${artifactDir}/${this.#outputSubdir}`;
     this.#servePrefix = `/_akan/${this.#outputSubdir}`;
   }
 
@@ -68,7 +63,7 @@ export class ClientEntriesBundler {
       format: "esm",
       naming: CLIENT_BUNDLE_NAMING,
       metafile: true,
-      define: this.#getDefine(),
+      define: bundleDefine(this.#app, this.#command, "ssr"),
       minify: this.#command === "build",
       optimizeImports: akanConfig.optimizeImports,
       reactFastRefresh: this.#command === "start" && this.#outputSubdir === "client" && this.#reactFastRefresh,
@@ -97,17 +92,6 @@ export class ClientEntriesBundler {
       entryOutputAbsByAbsPath: this.#entryOutputAbsByAbsPath,
       entryDepsByAbsPath: this.#entryDepsByAbsPath,
       clientReferenceIdByAbsPath: this.#clientReferenceIdByAbsPath,
-    };
-  }
-
-  #getDefine(): Record<string, string> {
-    const nodeEnv = this.#command === "build" ? "production" : (process.env.NODE_ENV ?? "development");
-    return {
-      "process.env.NODE_ENV": JSON.stringify(nodeEnv),
-      "process.env.AKAN_PUBLIC_RENDER_ENV": JSON.stringify("ssr"),
-      ...Object.fromEntries(
-        Object.entries(this.#app.getPublicEnv()).map(([key, value]) => [`process.env.${key}`, JSON.stringify(value)]),
-      ),
     };
   }
 
@@ -141,22 +125,10 @@ export class ClientEntriesBundler {
   }
 
   async #scanEntryExportNames(absEntry: string): Promise<string[]> {
-    const source = await Bun.file(absEntry).text();
-    const transpiler = new Bun.Transpiler({ loader: this.#loaderForEntry(absEntry) });
-    return transpiler.scan(source).exports;
+    return scanUseClientExports(await Bun.file(absEntry).text(), absEntry, this.#app.workspace.workspaceRoot);
   }
 
-  #loaderForEntry(absPath: string): "ts" | "tsx" | "js" | "jsx" {
-    if (absPath.endsWith(".tsx")) return "tsx";
-    if (absPath.endsWith(".jsx")) return "jsx";
-    if (absPath.endsWith(".ts")) return "ts";
-    return "js";
-  }
-
-  /**
-   * Build a BunPlugin that marks a fixed set of bare specifiers as external via `onResolve`,
-   * as opposed to `Bun.build({ external })`, so macro-time imports still resolve normally.
-   */
+  // `onResolve` rather than `Bun.build({ external })`, so macro-time imports still resolve normally.
   #createExternalSpecifiersPlugin(): BunPlugin {
     const set = new Set(this.#external);
     const subpathSet = new Set(this.#externalSubpaths);
@@ -182,11 +154,8 @@ export class ClientEntriesBundler {
     exactExternals: Set<string>,
     subpathExternals: Set<string>,
   ): boolean {
-    if (exactExternals.has(specifier)) return true;
-    if (subpathExternals.has(specifier)) return true;
-    for (const external of subpathExternals) {
-      if (specifier.startsWith(`${external}/`)) return true;
-    }
+    if (exactExternals.has(specifier) || subpathExternals.has(specifier)) return true;
+    for (const external of subpathExternals) if (specifier.startsWith(`${external}/`)) return true;
     return false;
   }
 

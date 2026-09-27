@@ -37,13 +37,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { getFrameCssVars } from "./frameCssVars";
+import { getFrameCssVars } from "./Common";
 import { Messages } from "./Messages";
 import { Reconnect } from "./Reconnect";
-
-declare global {
-  var __AKAN_GET_SYNC_ROUTE_HREF__: ((href: string) => string) | undefined;
-}
 
 export const Client = () => {
   return <></>;
@@ -66,16 +62,10 @@ export const ClientWrapper = ({
   signals = [],
   reconnect = true,
 }: ClientWrapperProps) => {
-  // Replace the active locale snapshot before children render.
-  // SSR provides the active-locale dictionary as a prop (serialized via the RSC Flight payload);
-  // this runs in both the SSR render process and the browser, so the first paint is translated
-  // without shipping every locale in the client JS bundle. CSR seeds via the build-time macro instead.
+  // Seeded before children render, in the SSR pass and the browser alike; CSR seeds from the build-time macro.
   if (dictionary) {
     Translator.replace(lang, dictionary);
-    // On the browser, record the server-resolved locale as the source of truth for usePage()/l().
-    // This keeps client lookups aligned with the seeded + server-rendered locale (no hydration
-    // mismatch) for base-path / cloud routing where the URL segment is not a reliable locale.
-    // Skipped on the server (typeof window === "undefined") where locale is request-scoped.
+    // The server-resolved locale is the truth for `l()`: under base-path routing the URL segment is not.
     Translator.setActiveLocale(lang);
   }
   Translator.setActivePath(path);
@@ -87,7 +77,6 @@ export const ClientWrapper = ({
   }, []);
   return (
     <>
-      {/* <ThemeProvider defaultTheme={theme}> */}
       {Children.toArray(children)}
       {reconnect ? <Reconnect key="reconnect" /> : null}
     </>
@@ -165,11 +154,6 @@ export const ClientPathWrapper = ({
     debugFrame("pathWrapper.mount", { path: pathRoute.path, pageType, href });
     return () => debugFrame("pathWrapper.unmount", { path: pathRoute.path, pageType, href });
   }, []);
-  // useEffect(() => {
-  //   void initialize();
-  //   void codepush();
-  //   void statManager();
-  // }, []);
   return (
     <pathContext.Provider
       value={{
@@ -253,17 +237,6 @@ export const ClientBridge = ({ env, lang, theme, prefix, wsConnect = true }: Cli
     window.addEventListener("pageshow", onPageShow);
     return () => window.removeEventListener("pageshow", onPageShow);
   }, [theme]);
-
-  // useEffect(() => {
-  //   if (storeTheme !== nextTheme) setTheme(storeTheme);
-  // }, [nextTheme]);
-
-  useEffect(() => {
-    //theme가 잇으면 theme부터
-    //theme가 있는데 nextTheme가 있으면
-    // if (nextTheme) setTheme(nextTheme);
-    // else if (theme) setTheme(theme);
-  }, []);
 
   useEffect(() => {
     const devMode = localStorage.getItem("devMode");
@@ -366,8 +339,7 @@ export const ClientSsrBridge = ({ lang, prefix = "", initialPageState }: ClientS
       return navigation.catch((error: unknown) => {
         // By name, not `instanceof`: the RSC client is inlined into more than one browser bundle.
         if (error instanceof Error && error.name === "RscRouteNotFound") {
-          // `syncHref` ran before the fetch, so the store is already describing the page the router refused to
-          // go to. Falling back to a document navigation is what must not happen: it would land on the 404.
+          // `syncHref` already moved the store to the refused page; a document navigation would land on the 404.
           syncHref(window.location.href);
           Logger.error(`No route at ${href}; the page was left where it was.`);
           throw error;

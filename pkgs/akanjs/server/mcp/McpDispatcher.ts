@@ -8,53 +8,31 @@ import type { Endpoint, EndpointCls } from "../../signal/endpoint";
 import type { EndpointInfo } from "../../signal/endpointInfo";
 import { Exception } from "../../signal/exception";
 import type { GuardCls } from "../../signal/guard";
-import { McpDocument, McpErrorCode, type McpExposedEndpoint, type McpToolResult } from "../../signal/mcp";
+import { McpDocument, type McpExposedEndpoint, type McpToolResult } from "../../signal/mcp";
 import type { MiddlewareCls } from "../../signal/middleware";
 import { SignalContext } from "../../signal/signalContext";
 import { McpExecutionContext } from "./McpExecutionContext";
 
-/** Raised when the caller presented no credential at all, so the client should be told to authenticate. */
+// The caller presented no credential at all, so the client must be told to authenticate.
 export class McpAuthRequiredError extends Error {}
-
-/**
- * A prompt failure whose message has already been through `#message` and is safe to put on the wire.
- *
- * It carries its JSON-RPC code because a prompt has no `isError` result to put a refusal in, so the code is the
- * only place left to say whose fault it was. Without it a mistyped argument reads as `-32603 internal error`,
- * while the *missing*-argument check `prompts/get` does itself answers `-32602` — the same mistake, two codes.
- */
 
 interface McpDispatcherProps {
   registry: InjectRegistry;
   env: BackendEnv;
   live: LiveRegistry;
   middleware: Map<string, MiddlewareCls>;
-  /** The one language error text is resolved in, matching the catalogue the client was handed. */
   language?: string;
-  /**
-   * Whether a structured result also ships as serialized JSON in the text block. `true` by default, which is what
-   * the spec asks for; `false` halves what every model-returning tool costs.
-   */
   legacyTextBlock?: boolean;
 }
 
-/** Executes one MCP tool call or resource read through the ordinary signal pipeline. */
 export class McpDispatcher {
   static readonly logger = new Logger("McpDispatcher");
 
-  /** What the text block says when the serialized duplicate is off. Read by a model, so English. */
   static readonly structuredNote = "The result is in this call's structuredContent.";
 
   readonly #props: McpDispatcherProps;
   #endpoints: Map<string, { endpointInfo: EndpointInfo; endpoint: Endpoint }> | null = null;
-  /**
-   * Built on first use and then held: the merge behind it is not free, a server whose calls all succeed never
-   * needs it, and a caller that types an argument wrong drives that path as often as it likes.
-   *
-   * Not deferred for the reason the endpoint index below is. Dictionaries register at module evaluation, before
-   * any route exists — `McpRouter` builds one at boot to resolve the catalogue's own text — so a lookup made in
-   * the constructor would be correct, just paid for by every process whether or not a call ever fails.
-   */
+  // Lazy: the dictionary merge is not free, and only a failing call needs it.
   #lookup: DictionaryLookup | null = null;
 
   constructor(props: McpDispatcherProps) {
@@ -74,29 +52,18 @@ export class McpDispatcher {
       };
     } catch (error) {
       const status = McpDispatcher.#statusOf(error);
-      // Only the client can fix a missing credential, and only if it is told to authenticate. A refusal of a
-      // credential that *was* presented goes back as a tool error instead: that is a failure the model can act
-      // on by asking the user or choosing another tool.
+      // No credential: a 401 challenge, as only the client can fix it. A refused one: a tool error the model acts on.
       if ((status === 401 || status === 403) && !req.headers.get("authorization")) throw new McpAuthRequiredError();
       return McpDispatcher.#failure(this.#message(error, status, exposed.refName));
     }
   }
 
-  /**
-   * Drops catalogue entries whose account-scoped guards refuse this caller — an anonymous agent should not be
-   * offered a shelf of admin tools it can only fail at. Entries with no such guard are kept and stopped at call
-   * time instead, so the listing is a UX filter and never the access decision.
-   *
-   * The context is deliberately not `init()`-ed: parsing arguments that a listing does not have would throw,
-   * and a resource guard reached here reads `undefined` and fails closed, which is the behaviour we want.
-   */
+  // A UX filter, never the access decision: entries without an account guard stay listed and are stopped at call time.
+  // Not `init()`-ed: a listing has no arguments, and a resource guard reached here reads undefined and fails closed.
   async filterForAccount<T extends { name: string }>(items: T[], req: Request): Promise<T[]> {
     const index = this.#index();
-    // One verdict per distinct set of account guards rather than per entry. `canListForAccount` runs the whole
-    // global middleware chain, and `AccountMiddleware` verifies the bearer token inside it — so a hundred-entry
-    // catalogue otherwise costs a hundred JWT verifications, three times over for the three listings. Sound
-    // because an account guard reads the caller and nothing about the entry; one that read `context.key` would
-    // be a resource guard mismarked, and those are not evaluated here at all.
+    // One verdict per distinct account-guard set, since each runs the middleware chain (a JWT verification). Sound
+    // because an account guard reads only the caller; one reading `context.key` is a mismarked resource guard.
     const ids = new Map<GuardCls, number>();
     const idOf = (GuardCls: GuardCls) => {
       const id = ids.get(GuardCls);
@@ -139,8 +106,7 @@ export class McpDispatcher {
     args: Record<string, unknown>,
     req: Request,
   ) {
-    // `SignalContext.run` rather than `.try`: that helper puts the stack trace into its 500 body, and a stack
-    // is the last thing to hand an agent that will quote it back into a transcript. `run` logs it, traced.
+    // `run`, not `.try`: `.try` puts the stack in its 500 body, and an agent would quote it back into a transcript.
     return await SignalContext.run(endpoint, endpointInfo, key, "mcp", async () => {
       const context = await new SignalContext(key, req as Bun.BunRequest, {
         ...this.#props,
@@ -153,13 +119,7 @@ export class McpDispatcher {
     });
   }
 
-  /**
-   * Built on first use and kept: nothing before a `tools/call` needs it, and a router constructed to answer one
-   * request — which tests and tooling do — should not walk the whole registry to do it. Not an ordering
-   * workaround; DI has finished filling the registry long before any route is created.
-   *
-   * Keyed by endpoint key, which is globally unique and is what MCP names a tool by.
-   */
+  // Lazy for cost, not ordering: DI filled the registry long before any route was created.
   #index() {
     if (this.#endpoints) return this.#endpoints;
     const endpoints = new Map<string, { endpointInfo: EndpointInfo; endpoint: Endpoint }>();
@@ -172,88 +132,46 @@ export class McpDispatcher {
   }
 
   #message(error: unknown, status: number | undefined, refName: string): string {
-    // `NoDocumentError` carries the wording internal callers match on — `No Document (user): 6712ab…`, a shape
-    // and an echoed id that say nothing an agent can act on. Restated once here rather than at the throw site,
-    // which has to keep the message it has.
+    // Restated here, not at the throw site: internal callers match on its `No Document (x): <id>` wording.
     if (error instanceof NoDocumentError) return `No ${refName} found for the arguments given.`;
     if (status && status < 500) {
-      // Every refusal reads the same, whoever wrote it. The framework's own is `Access denied by guard: Admin`
-      // and an app's is `No authentication with roles: admin, superAdmin` — both name the authorization structure
-      // to the one caller barred from it, which is what the shared "unknown tool" message exists to keep off the
-      // wire. All an agent may act on is that it may not, which is all it may know.
+      // Security: every refusal reads the same — a guard's own message names the authorization structure.
       if (status === 401 || status === 403) return "You are not permitted to perform this action.";
       const raw = error instanceof Error ? error.message : String(error);
       // A domain `Err` carries its dictionary key as the message; anything else is already prose.
       this.#lookup ??= new DictionaryLookup(this.#props.language);
       const text = this.#lookup.text(raw);
-      // Filled from the data the error carried: the bare template reads `Too many files: {maxFiles}` to a model,
-      // which is neither the sentence the author wrote nor anything it can act on.
       if (text) return interpolateTranslation(text, (error as { data?: Record<string, unknown> }).data);
       return raw;
     }
-    // An unexpected failure is logged in full and described in one flat sentence: the detail an agent would
-    // quote back into a transcript is the same detail an attacker would read.
+    // Security: logged in full, answered flat — what an agent quotes back is what an attacker would read.
     if (!SignalContext.wasReported(error))
       McpDispatcher.logger.error(`MCP call failed: ${error instanceof Error ? (error.stack ?? error.message) : error}`);
     return "The server failed to complete this request.";
   }
 
-  /**
-   * Anything without a status is treated as a crash, so the two failures an agent can trigger at will carry one:
-   * `McpArgumentError` (400) and `NoDocumentError` (404). Without them a mistyped id logged a stack and answered
-   * "the server failed", which is both a lie and a log-spam path any caller could drive.
-   */
+  // No status reads as a crash, so the agent-triggerable failures (McpArgumentError, NoDocumentError) carry one.
   static #statusOf(error: unknown): number | undefined {
     const status = (error as { statusCode?: unknown } | null)?.statusCode;
     return typeof status === "number" ? status : undefined;
   }
 
-  /**
-   * The same split `#message` makes, in the currency a prompt reports failures in. `-32602` covers a not-found
-   * as well as a bad argument: this revision retired `-32002` and points resource-does-not-exist at invalid
-   * params, so the two caller mistakes share one code by the spec's own choice rather than for want of another.
-   */
-  static #codeOf(status: number | undefined) {
-    return status && status < 500 ? McpErrorCode.invalidParams : McpErrorCode.internal;
-  }
-
-  /**
-   * A structured result rides twice by default: once as `structuredContent`, once as the same JSON here, which is
-   * what the spec asks of a server for clients that predate the structured field. Every model return therefore
-   * costs the model twice what it carries, and `legacyTextBlock: false` is the deployment that has decided its
-   * clients read the structured half — the pointer keeps `content` non-empty, since a client that renders
-   * `content[0].text` and finds nothing shows an empty answer rather than a missing one.
-   */
+  // -32602 covers not-found too: this revision retired -32002 and points resource-not-found at invalid params.
+  // The pointer keeps `content` non-empty: a client rendering an empty `content[0].text` shows an empty answer.
   #content(structuredContent: unknown, value: unknown): McpToolResult["content"] {
     if (structuredContent !== undefined && this.#props.legacyTextBlock === false)
       return [{ type: "text", text: McpDispatcher.structuredNote }];
     return [{ type: "text", text: McpDispatcher.#text(structuredContent, value) }];
   }
 
-  /**
-   * The text block every result carries, whether or not a structured one goes with it.
-   *
-   * A structured result is mirrored as its JSON, which is what the spec asks for so a client with no structured
-   * support still reads the payload. A scalar return has no structured half to mirror, and encoding one as JSON
-   * spent the block on syntax: a tool returning an id answered `"507f…"`, quotes included, which a model then has
-   * to know to strip. Numbers and booleans read the same either way; only a string differs.
-   *
-   * `JSON.stringify(undefined)` is `undefined` rather than a string, so a void return would otherwise ship a
-   * content block with no `text` at all.
-   */
+  // A string scalar goes raw, since JSON would hand a model quotes to strip. `JSON.stringify(undefined)` is
+  // undefined, so a void return would otherwise ship a block with no `text`.
   static #text(structuredContent: unknown, value: unknown) {
     if (structuredContent === undefined && typeof value === "string") return value;
     return JSON.stringify(structuredContent ?? value) ?? "null";
   }
 
-  /**
-   * Strips what the return model marks `visual` — a field the page renders and no question is answered from.
-   *
-   * Done here rather than in `resolveReturn`, which every ordinary HTTP response also passes through: the point of
-   * a `visual` field is that a browser still receives it. MCP results reach an agent and nothing else, so this is
-   * where the model's own declaration is honoured, and it is the same `mask` the in-page agent's reads use. A
-   * primitive return has no model to mask by, but one declaring an agent face is still read into it.
-   */
+  // Strips `visual` fields here, not in `resolveReturn`: a browser must still receive them.
   static #readable(exposed: McpExposedEndpoint, value: unknown): unknown {
     const { refName, modelType, arrDepth = 0 } = exposed.endpoint.returns;
     if (!modelType)
@@ -261,11 +179,7 @@ export class McpDispatcher {
     try {
       return mask(ConstantRegistry.getModelRef(refName, modelType), value);
     } catch (error) {
-      // A return naming a model this process did not mount is a catalogue that should not have listed it, and
-      // this is the one place in the file that used to answer such a thing by sending the value anyway. Every
-      // other refusal here is fail-closed; masking is what decides *what* may go out, so it fails closed too.
-      // Only `visual` was actually at stake — `resolveReturn` has already dropped `hidden` and `secret` — but
-      // an unmaskable result is a bug in the catalogue, and reporting it is how it gets fixed.
+      // Fail closed: masking decides what may go out, and an unmaskable result is a catalogue bug to report.
       McpDispatcher.logger.error(
         `MCP could not mask a "${refName}" (${modelType}) result, so it was not sent: ${
           error instanceof Error ? error.message : String(error)

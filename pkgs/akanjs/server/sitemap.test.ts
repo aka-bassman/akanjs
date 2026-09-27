@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createDefaultSitemapUrls, createSitemapXml, getSitemapBasePath } from "./sitemap";
 
+const seedEntries = (...patterns: string[]) => patterns.map((pattern) => ({ routeId: pattern, pattern, seeds: [] }));
+
 describe("sitemap fallback helpers", () => {
   const i18n = { defaultLocale: "en", locales: ["en", "ko"] };
 
@@ -15,12 +17,7 @@ describe("sitemap fallback helpers", () => {
   test("expands only static locale routes", () => {
     const urls = createDefaultSitemapUrls({
       origin: "https://example.com",
-      entries: [
-        { routeId: "/:lang", pattern: "/:lang", seeds: [] },
-        { routeId: "/:lang/about", pattern: "/:lang/about", seeds: [] },
-        { routeId: "/:lang/post/:postId", pattern: "/:lang/post/:postId", seeds: [] },
-        { routeId: "/robots.txt", pattern: "/robots.txt", seeds: [] },
-      ],
+      entries: seedEntries("/:lang", "/:lang/about", "/:lang/post/:postId", "/robots.txt"),
       i18n,
     });
 
@@ -36,12 +33,7 @@ describe("sitemap fallback helpers", () => {
     const urls = createDefaultSitemapUrls({
       origin: "https://example.com/",
       basePath: "akanjs",
-      entries: [
-        { routeId: "/:lang/akanjs", pattern: "/:lang/akanjs", seeds: [] },
-        { routeId: "/:lang/akanjs/about", pattern: "/:lang/akanjs/about", seeds: [] },
-        { routeId: "/:lang/thin/about", pattern: "/:lang/thin/about", seeds: [] },
-        { routeId: "/:lang/akanjs/post/:postId", pattern: "/:lang/akanjs/post/:postId", seeds: [] },
-      ],
+      entries: seedEntries("/:lang/akanjs", "/:lang/akanjs/about", "/:lang/thin/about", "/:lang/akanjs/post/:postId"),
       i18n,
     });
 

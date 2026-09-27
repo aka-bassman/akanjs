@@ -12,13 +12,7 @@ interface SearchProvider {
   search(key: string, query: string, count: number): Promise<string>;
 }
 
-/**
- * `web_fetch` and `web_search`, gated by the profile's network settings.
- *
- * Search needs a provider nobody ships a free key for, so the tool is registered only when one of the known
- * environment keys is present. Registering it unconditionally and failing at call time costs prompt tokens for
- * a capability that does not exist, and teaches the model to retry a tool that can never work.
- */
+// web_search only with a provider key set: a tool that can never work costs prompt tokens and invites retries.
 export class WebToolPack {
   readonly #options: WebToolPackOptions;
 

@@ -1,29 +1,14 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { ApplicationBuildReporter } from "./applicationBuildReporter";
 import { resolveSignalTestPreloadPath } from "./applicationTestPreload";
 import { TypeScriptDependencyScanner } from "./dependencyScanner";
 import { AppExecutor, WorkspaceExecutor } from "./executors";
+import { tempDirs, writeText as write } from "./testHelpers";
 import type { PackageJson, TsConfigJson } from "./types";
 
-const tempRoots: string[] = [];
-
-const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-devkit-utils-"));
-  tempRoots.push(root);
-  return root;
-};
-
-const write = async (filePath: string, content: string) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content);
-};
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
+const makeTempRoot = tempDirs("akan-devkit-utils-");
 
 describe("resolveSignalTestPreloadPath", () => {
   test("resolves the preload file from an installed akanjs package", async () => {
@@ -212,5 +197,48 @@ describe("ApplicationBuildReporter", () => {
     expect(ApplicationBuildReporter.formatError(aggregate)).toBe(
       ["failed", "  first", "  second", "  third"].join("\n"),
     );
+  });
+
+  test("says where the bundler placed each reason, relative to the workspace root", async () => {
+    const root = await makeTempRoot();
+    const refuseWith = (message: string) => ({
+      name: "refuse",
+      setup: (build: Bun.PluginBuilder) => {
+        build.onLoad({ filter: /plugged\.ts$/ }, () => {
+          throw new Error(message);
+        });
+      },
+    });
+    const failureOf = (entry: string, plugins: Bun.BunPlugin[] = []) =>
+      Bun.build({ entrypoints: [path.join(root, entry)], plugins }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+    await write(
+      path.join(root, "src/entry.ts"),
+      'export const a = 1;\nimport { gone } from "./not-there";\nexport const b = gone;\n',
+    );
+    await write(path.join(root, "src/plugged.ts"), "export const b = 1;\n");
+
+    const unresolved = await failureOf("src/entry.ts");
+    expect(ApplicationBuildReporter.formatError(unresolved, root)).toBe(
+      ["Bundle failed", '  Could not resolve: "./not-there" (src/entry.ts:2:22)'].join("\n"),
+    );
+    const outside = path.join(await realpath(root), "src/entry.ts");
+    expect(ApplicationBuildReporter.formatError(unresolved, path.join(root, "elsewhere"))).toBe(
+      ["Bundle failed", `  Could not resolve: "./not-there" (${outside}:2:22)`].join("\n"),
+    );
+    expect(
+      ApplicationBuildReporter.formatError(
+        await failureOf("src/plugged.ts", [refuseWith("refused\nsecond line")]),
+        root,
+      ),
+    ).toBe(["Bundle failed", "  refused (src/plugged.ts)", "  second line"].join("\n"));
+    expect(
+      ApplicationBuildReporter.formatError(
+        await failureOf("src/plugged.ts", [refuseWith("src/plugged.ts is refused")]),
+        root,
+      ),
+    ).toBe(["Bundle failed", "  src/plugged.ts is refused"].join("\n"));
   });
 });

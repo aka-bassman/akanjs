@@ -29,16 +29,12 @@ const getPageInfo = (): { locale: string; path: string } => {
   if (getEnv().side !== "server") {
     const [, firstSegment = "", ...rest] = window.location.pathname.split("/");
     const hasLocalePrefix = localeSet.has(firstSegment);
-    // Prefer the server-resolved active locale (seeded via ClientWrapper) so client lookups match the
-    // SSR render even when the URL's leading segment is not the locale (base-path / cloud routing).
-    // Fall back to the URL segment for CSR or any pre-seed render.
+    // The server-resolved locale first, so client lookups match SSR when the first URL segment is not the locale.
     const locale = activeLocale ?? (hasLocalePrefix ? firstSegment : defaultLocale);
     return { locale, path: activePath ?? (hasLocalePrefix ? `/${rest.join("/")}` : window.location.pathname) };
   }
   const h = untrackedHeaders();
-  // Honor explicit proxy/middleware headers when present; otherwise derive
-  // locale+path from the request URL itself so unadorned dev requests (e.g.
-  // `curl /en/hello`) still work.
+  // Proxy headers when present, else the request URL, so an unadorned dev request (`curl /en/hello`) resolves.
   const localeHeader = h.get("x-locale");
   const pathHeader = h.get("x-path");
   if (localeHeader && pathHeader) return { locale: localeHeader, path: pathHeader };
@@ -168,16 +164,12 @@ export const makePageProto = <
             dangerouslySetInnerHTML={{
               __html: translator.translate(lang, key, {
                 ...param,
-                // strong: (chunks: string) => `<b>${chunks}</b>`,
-                // "bg-primary": (chunks: string) => `<span className="bg-primary text-background">${chunks}</span>`,
-                // primary: (chunks: string) => `<span className="bg-background text-primary">${chunks}</span>`,
                 br: `<br />`,
               }),
             }}
           />
         ) as ReactNode;
-      // The record is written per call site, so a locale the app configured later is simply not in it. Walk the
-      // chain a dictionary key walks — asked-for locale, then the configured default — before giving up.
+      // Written per call site, so a later-configured locale is absent: try the asked-for locale, then the default.
       l.trans = <Returns extends ReactNode>(
         translation: Record<"en" | "ko" | (string & {}), Returns>,
       ): Returns extends string ? string : Returns => {

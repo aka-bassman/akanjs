@@ -5,7 +5,7 @@ interface ToastProps {
   root?: string;
   duration?: number;
 }
-/** Decorates async actions with loading/success/error toast messages from `msg`. */
+/** Toasts `<root>.<key>-loading` / `-success` around the method; an error is toasted and logged, not rethrown. */
 export const Toast = ({ root, duration = 3 }: ToastProps = {}) => {
   return (target: any, key: string, descriptor: PropertyDescriptor) => {
     const originMethod = descriptor.value as (...args: any[]) => Promise<void>;

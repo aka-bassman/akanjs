@@ -20,7 +20,7 @@ import type { Adaptor, AdaptorCls, DatabaseService, InjectRegistry, LiveRegistry
 import type { Internal, InternalCls, InternalInfo, MiddlewareCls } from ".";
 import { CrossSiteGuard } from "./CrossSiteGuard";
 import { EndpointCache } from "./endpointCache";
-import type { EndpointInfo, EndpointType } from "./endpointInfo";
+import type { ArgInfo, EndpointInfo, EndpointType } from "./endpointInfo";
 import { Exception, isExceptionLike } from "./exception";
 import { type GuardCls, guardOf } from "./guard";
 import { SignalFailure } from "./SignalFailure";
@@ -33,6 +33,9 @@ export type HttpPeerResolver = (req: Request) => { address: string; port: number
 
 const httpEndpointTypes = new Set<EndpointType>(["query", "mutation"]);
 
+const deserializeArg = (arg: ArgInfo, value: unknown) =>
+  deserialize(arg.argRef, arg.arrDepth, value, { key: arg.name, nullable: arg.option?.nullable, enum: arg.enum });
+
 interface WebSocketRequest {
   ws: Bun.ServerWebSocket<unknown>;
   data: unknown[];
@@ -40,10 +43,7 @@ interface WebSocketRequest {
 }
 type RuntimeRecord = Record<string, unknown>;
 type MiddlewareHandler = (context: SignalContext, next: () => Promise<unknown>) => PromiseOrObject<unknown>;
-/**
- * Every relation subtree one response has resolved, by model class and then document id. Request-scoped: the
- * outermost `resolveReturn` starts it and every recursion threads it down, so nothing survives the response.
- */
+/** Request-scoped: the outermost `resolveReturn` starts one and every recursion threads it down. */
 type ResolveCache = Map<ConstantFieldTypeInput, Map<string, Promise<unknown>>>;
 
 export class SignalContext<
@@ -55,11 +55,7 @@ export class SignalContext<
   ctx: Ctx;
   endpointInfo: EndpointInfo;
   adaptor: Adaptor;
-  /**
-   * Which surface the call came in on. The transport for a plain request, `mcp` for one an agent made through the
-   * MCP endpoint. Held on the context rather than read off the trace: `SignalTrace.create` may answer `null`, and a
-   * guard that asked the trace whether a model is driving the call would fail open exactly there.
-   */
+  /** `mcp` for a call through the MCP endpoint. Held here, not on the trace: a null trace would let a guard fail open. */
   readonly origin: TraceOrigin;
   args: unknown[] = [];
   internalArgs: unknown[] = [];
@@ -88,13 +84,9 @@ export class SignalContext<
       env: Env;
       live: LiveRegistry;
       middleware: Map<string, MiddlewareCls>;
-      /**
-       * Runs the endpoint against a caller-built context instead of one derived from the request. MCP needs it:
-       * its arguments arrive as one named object rather than in a URL, but every guard, middleware and
-       * internalArg reads the request through this context, so the transport has to stay the same one.
-       */
+      /** A caller-built context: MCP's arguments arrive as one named object, not in a URL. */
       ctx?: Ctx;
-      /** Who is calling, for the log record; defaults to the transport, and MCP names itself. */
+      /** Defaults to the transport. */
       origin?: TraceOrigin;
     },
   ) {
@@ -110,8 +102,7 @@ export class SignalContext<
     this.#env = env;
     this.#live = live;
     this.#middleware = middleware;
-    // A caller that already opened the trace (`SignalContext.run`) owns its life; only a bare construction
-    // starts one here, and `exec()` then closes it.
+    // A trace already open (`SignalContext.run`) is its opener's to close; one started here is closed by `exec()`.
     this.trace = getCurrentTrace() ?? SignalTrace.create(key, endpointInfo.type, origin ?? this.transport);
     if (this.trace && this.transport === "http")
       this.trace.applyDebugHeader((reqOrWsReq as { headers?: Headers }).headers?.get?.("x-akan-debug"));
@@ -130,38 +121,25 @@ export class SignalContext<
     return service as T;
   }
   async init() {
-    // Before the body is read, because a refused request must not have its arguments parsed or its files buffered.
-    // Only a mutation: a query is a GET whose response no cross-origin caller can read, and a websocket frame
-    // rides a socket whose handshake already carried the check the browser makes for it.
+    // Before the body is read. Only a mutation: a cross-origin caller cannot read a GET's response, and a websocket
+    // frame rides a socket whose handshake already carried the browser's check.
     if (this.endpointInfo.type === "mutation" && this.transport === "http") {
       const httpCtx = this.getHttpContext();
       CrossSiteGuard.assertOrigin(httpCtx.req, httpCtx.url, this.key);
     }
-    if (this.trace) {
-      const start = performance.now();
-      this.args = await this.ctx.getArgs(this.endpointInfo);
-      this.trace.recordSpan("argParse", performance.now() - start);
-    } else {
-      this.args = await this.ctx.getArgs(this.endpointInfo);
-    }
+    const start = this.trace ? performance.now() : 0;
+    this.args = await this.ctx.getArgs(this.endpointInfo);
+    this.trace?.recordSpan("argParse", performance.now() - start);
     return this;
   }
-  /**
-   * In declaration order, not in parallel. Every guard has to pass either way, so the only thing concurrency
-   * bought was that a call refused by two of them named whichever lost the race — a log line that changed
-   * between identical requests. Sequential also stops at the first refusal instead of running the rest.
-   */
+  // Sequential, not parallel: a call refused by two guards names the same one every time and stops at the first.
   async #checkGuards() {
     for (const GuardCls of this.endpointInfo.signalOption.guards ?? []) {
       if (!(await guardOf(GuardCls).canPass(this)))
         throw new Exception.Forbidden(`Access denied by guard: ${GuardCls.name}`);
     }
   }
-  /**
-   * Re-checks this context's guards outside of a request, for a websocket room that is already
-   * subscribed. Only global middlewares run: they carry the account resolution this depends on,
-   * while endpoint middlewares would observe a call that never executes.
-   */
+  /** Re-checks the guards of a subscribed room outside a request; only global middlewares (account resolution) run. */
   async authorize(): Promise<boolean> {
     try {
       await this.#withMiddleware(async () => await this.#checkGuards(), { endpointMiddlewares: false })();
@@ -171,19 +149,14 @@ export class SignalContext<
     }
   }
   /**
-   * Evaluates only the guards marked `static scope = "account"` — the ones that read the caller and nothing
-   * else — so a catalogue can hide entries the caller certainly cannot use.
-   *
-   * **Never an access gate.** An endpoint whose guards are all resource-scoped passes here and is stopped later
-   * by `#checkGuards` with the arguments those guards need. Erring visible is deliberate: a resource guard fails
-   * closed with no arguments, so evaluating one here would delete every legitimate entry from the listing.
+   * Evaluates only `scope = "account"` guards, to hide listing entries. Never an access gate: a resource guard fails
+   * closed without arguments, so it is left to `#checkGuards` at call time.
    */
   async canListForAccount(): Promise<boolean> {
     const guards = (this.endpointInfo.signalOption.guards ?? []).filter((GuardCls) => GuardCls.scope === "account");
     if (guards.length === 0) return true;
     try {
-      // Without the logging middleware: a refusal is the expected answer for most of a catalogue, and it would
-      // otherwise be written as an `Error …` line on every listing.
+      // Without logging: a refusal is the expected answer for most of a catalogue, not an `Error …` line per listing.
       await this.#withMiddleware(
         async () => {
           for (const GuardCls of guards) {
@@ -198,11 +171,7 @@ export class SignalContext<
       return false;
     }
   }
-  /**
-   * An account guard has no arguments here, so one that throws anything but a refusal reached for them anyway —
-   * a resource guard mismarked. The entry stays hidden (fail-closed), but the guard is named once per endpoint,
-   * because otherwise the only trace is a tool that is missing for everyone.
-   */
+  // An account guard that throws anything but a refusal reached for arguments: a mismarked resource guard.
   async #canListWith(GuardCls: GuardCls): Promise<boolean> {
     try {
       return await guardOf(GuardCls).canPass(this);
@@ -240,21 +209,12 @@ export class SignalContext<
     }
     return next;
   }
-  /**
-   * `use(env)` takes no context, so the instance and the handler it returns are a function of `(class, env)` and
-   * hold for the life of the process. Building both per request cost an instance, a handler and a closure on every
-   * call for every registered middleware — and `Logging` is registered by default.
-   */
   static #httpPeer: HttpPeerResolver | null = null;
-  /**
-   * Lets the http branch of `getClientIp` reach the socket the way the websocket branch already reaches
-   * `ws.remoteAddress`. Registered by whichever `Bun.serve` is listening, because only the server can answer
-   * `requestIP`. Behind the federation gateway this never fires — the gateway always writes `x-real-ip` —
-   * so it is the answer for a process nothing is proxying.
-   */
+  /** Registered by the listening `Bun.serve`, the only thing that can answer `requestIP`; unused behind the gateway. */
   static setHttpPeerResolver(resolve: HttpPeerResolver | null) {
     SignalContext.#httpPeer = resolve;
   }
+  // `use(env)` takes no context, so a handler is a function of (class, env) and is built once per process.
   static #middlewareHandlers = new WeakMap<MiddlewareCls, WeakMap<object, Promise<MiddlewareHandler>>>();
   static #getMiddlewareHandler(MiddlewareCls: MiddlewareCls, env: BackendEnv): Promise<MiddlewareHandler> {
     const byEnv =
@@ -262,8 +222,7 @@ export class SignalContext<
     SignalContext.#middlewareHandlers.set(MiddlewareCls, byEnv);
     const cached = byEnv.get(env);
     if (cached) return cached;
-    // A rejected setup is evicted rather than cached: a middleware that failed to initialize once should get
-    // another chance on the next request instead of poisoning the endpoint for the life of the process.
+    // A rejected setup is evicted, not cached, so the next request retries instead of the endpoint staying poisoned.
     const handler = Promise.resolve(new MiddlewareCls().use(env) as PromiseOrObject<MiddlewareHandler>).catch(
       (error: unknown) => {
         byEnv.delete(env);
@@ -301,29 +260,21 @@ export class SignalContext<
     };
     const next = this.#withMiddleware(coreExec);
     const result = this.trace ? await traceSpan("execChain", () => next()) : await next();
-    // A pubsub's return is not a response — nothing is serialized and nothing is sent. It is handed back for the
-    // one caller that needs it: a live slice's exec returns the resolved query the room is then routed by.
+    // A pubsub's return is not sent; a live slice's exec returns the resolved query its room is routed by.
     if (this.endpointInfo.type === "pubsub") return result;
     if (result instanceof Response) return result;
+    const resolveOption = {
+      signalContext: this,
+      returnRef: this.endpointInfo.returns.returnRef,
+      arrDepth: this.endpointInfo.returns.arrDepth,
+      registry: this.#registry,
+      live: this.#live,
+    };
     if (!this.trace) {
-      const resolved = await SignalContext.resolveReturn(result, {
-        signalContext: this,
-        returnRef: this.endpointInfo.returns.returnRef,
-        arrDepth: this.endpointInfo.returns.arrDepth,
-        registry: this.#registry,
-        live: this.#live,
-      });
+      const resolved = await SignalContext.resolveReturn(result, resolveOption);
       return this.ctx.makeResponse(this.#settleUndefined(resolved), this.endpointInfo);
     }
-    const resolved = await traceSpan("resolveReturn", () =>
-      SignalContext.resolveReturn(result, {
-        signalContext: this,
-        returnRef: this.endpointInfo.returns.returnRef,
-        arrDepth: this.endpointInfo.returns.arrDepth,
-        registry: this.#registry,
-        live: this.#live,
-      }),
-    );
+    const resolved = await traceSpan("resolveReturn", () => SignalContext.resolveReturn(result, resolveOption));
     return await traceSpan("serialize", async () =>
       this.ctx.makeResponse(this.#settleUndefined(resolved), this.endpointInfo),
     );
@@ -342,10 +293,7 @@ export class SignalContext<
   static wasReported(error: unknown) {
     return typeof error === "object" && error !== null && SignalContext.#reported.has(error);
   }
-  /**
-   * Runs `fn` as one traced call of `key`, so every log it writes — the 500 log included, which is why the
-   * catch is in here and not in the transport — carries the same traceId. Rethrows after logging.
-   */
+  /** The 500 log is written in here, not in the transport, so it carries the call's traceId; rethrows after. */
   static async run<T>(
     endpoint: Adaptor,
     endpointInfo: EndpointInfo,
@@ -407,7 +355,6 @@ export class SignalContext<
       arrDepth: number;
       registry: InjectRegistry;
       live: LiveRegistry;
-      /** Omitted by the outermost call, which starts an empty one; every recursion threads it down. */
       cache?: ResolveCache;
     },
   ): Promise<unknown> {
@@ -421,8 +368,7 @@ export class SignalContext<
       );
     const valueRecord = value as RuntimeRecord;
     const resolvedValue = {} as RuntimeRecord;
-    // Only a field that loads or computes gets a promise. Awaiting every field cost one promise and one
-    // microtask hop per field per document, and a model is mostly fields that are a plain copy.
+    // Only a field that loads or computes gets a promise: awaiting every field cost a microtask hop per field.
     const pending: Promise<void>[] = [];
     const assign = (key: string, resolved: Promise<unknown>) =>
       pending.push(
@@ -552,8 +498,7 @@ export class SignalContext<
     const refName = ConstantRegistry.getRefName(modelRef as ConstantCls);
     const service = live.service.get(refName) as unknown as DatabaseService;
     if (!service) throw new Error(`Service ${refName} is not registered`);
-    // The cached load is deliberately nullable, so one entry serves a nullable and a non-nullable reference to
-    // the same document alike and the refusal below stays each field's own.
+    // Cached as nullable so one entry serves every reference to the document; the refusal below is each field's own.
     const resolved =
       value === null || value === undefined
         ? null
@@ -571,13 +516,7 @@ export class SignalContext<
     if (resolved === null && !nullable) throw new Error(`Document ${value} is not found`);
     return resolved;
   }
-  /**
-   * The resolved subtree for one document, computed once per response.
-   *
-   * A listing whose rows share a relation — twenty users with the same avatar — otherwise loads, `toJSON`s and
-   * walks that document once per row, and every copy is identical by construction. The promise is what is
-   * stored, not the value, so rows that ask together coalesce onto the first load instead of racing it.
-   */
+  // Once per response per document; the promise is stored so rows asking together coalesce onto the first load.
   static #resolveOnce(
     cache: ResolveCache,
     modelRef: ConstantFieldTypeInput,
@@ -603,26 +542,21 @@ export class SignalContext<
     }
     if (arrDepth > 0 && Array.isArray(value) && value.length === 0) return [];
     if (arrDepth === 0)
-      return await service.__load(String(value)).then((doc) => {
-        if (doc === null) {
-          if (nullable) return null;
-          else throw new Error(`Document ${value} is not found`);
-        } else return doc.toJSON();
-      });
+      return await service.__load(String(value)).then((doc) => SignalContext.#loadedJson(doc, value, nullable));
     if (arrDepth === 1)
-      return await service.__loadMany(value as string[]).then((docs) =>
-        docs.map((doc) => {
-          if (doc === null) {
-            if (nullable) return null;
-            else throw new Error(`Document ${value} is not found`);
-          } else return doc.toJSON();
-        }),
-      );
+      return await service
+        .__loadMany(value as string[])
+        .then((docs) => docs.map((doc) => SignalContext.#loadedJson(doc, value, nullable)));
     return await Promise.all(
       (value as unknown[]).map(
         async (v) => await SignalContext.loadNested(v, service, { arrDepth: arrDepth - 1, nullable }),
       ),
     );
+  }
+  static #loadedJson(doc: { toJSON: () => unknown } | null, value: unknown, nullable: boolean) {
+    if (doc !== null) return doc.toJSON();
+    if (nullable) return null;
+    throw new Error(`Document ${value} is not found`);
   }
   getHttpContext<Appended = unknown>() {
     if (this.transport !== "http") throw new Error("Transport is not http");
@@ -637,19 +571,13 @@ export class SignalContext<
     return this.getWebSocketContext<{ [key: string]: T }>().ws.data[key] ?? null;
   }
   /**
-   * The caller's IP, preferring what a proxy recorded over the socket peer. Behind the federation gateway the
-   * peer is the gateway itself for every request and for the whole life of every socket, so `remoteAddress`
-   * alone names the wrong machine — which is why nothing here reads it first. IPv4 arrives unwrapped from its
-   * `::ffff:` form, so it can be used as a destination as well as an identity.
-   *
-   * `null` means no proxy recorded one and the transport has no peer to fall back on — never a placeholder,
-   * because a loopback-looking address for an unknown caller is the failure this replaced.
+   * What a proxy recorded before the socket peer (behind the gateway every peer is the gateway), IPv4 unwrapped from
+   * `::ffff:`; `null`, never a placeholder, when neither is known.
    */
   getClientIp(): string | null {
     if (this.transport === "http") {
       const { req } = this.getHttpContext();
-      // A registered resolver that answers `null` names an addressless socket — the unix socket a child is reached
-      // over — and `TrustedProxy` reads that as a local hop; an absent resolver stays `undefined`, an unknown peer.
+      // A resolver answering `null` is an addressless unix socket (a local hop); no resolver is an unknown peer.
       const peer = SignalContext.#httpPeer?.(req);
       return TrustedProxy.clientAddress(req.headers, peer === undefined ? undefined : (peer?.address ?? null));
     }
@@ -672,16 +600,8 @@ export class SignalContext<
     return `${key}${this.args.length ? "-" : ""}${this.args.join("-")}`;
   }
   /**
-   * A live room's id, which appends the caller's resolved internal arguments to the client-visible one.
-   *
-   * Without them every subscriber of an `inSelf` slice shares one room and receives each other's rows. It cannot
-   * be done for pubsub in general: an ordinary room's publisher computes the same id from the arguments it
-   * publishes with and has no access to a subscriber's `Self`, so widening the id there would put subscriber and
-   * publisher in different rooms. A live room's only publisher is the router, which holds this id already.
-   *
-   * The token is the argument's own id where it has one — that is what `Self` yields, and a room name never
-   * leaves the server — and a digest otherwise, so a credential handed in as an internal argument is not spelled
-   * out in a room name that gets logged.
+   * Appends the caller's internal arguments so subscribers of an `inSelf` slice do not share a room — only for live
+   * rooms, whose sole publisher holds this id. A non-id token is digested so no credential is spelled out in a log.
    */
   getLiveRoomId(key: string) {
     const base = this.getRoomId(key);
@@ -707,13 +627,7 @@ export class SignalContext<
     }
     return hash.toString(36);
   }
-  /**
-   * Resolves the declared internal arguments without running guards or the handler.
-   *
-   * An unsubscribe has to name the same room the subscribe joined, and that id depends on these — but there is
-   * nothing to authorize about leaving a room, and re-running the handler to compute a name would issue the
-   * slice's query again for nothing.
-   */
+  /** Without guards or the handler: an unsubscribe needs the room id, and leaving a room authorizes nothing. */
   async resolveInternalArgs() {
     if (this.internalArgs.length || !this.endpointInfo.internalArgs.length) return this.internalArgs;
     this.internalArgs = await Promise.all(
@@ -785,26 +699,14 @@ export class HttpExecutionContext<Appended = unknown> {
     const args = endpointInfo.args.map((arg) => {
       switch (arg.type) {
         case "param":
-          return deserialize(arg.argRef, arg.arrDepth, this.params[arg.name], {
-            key: arg.name,
-            nullable: arg.option?.nullable,
-            enum: arg.enum,
-          });
+          return deserializeArg(arg, this.params[arg.name]);
         case "body":
           if (arg.argRef === Upload) return this.body[arg.name];
-          return deserialize(arg.argRef, arg.arrDepth, this.body[arg.name], {
-            key: arg.name,
-            nullable: arg.option?.nullable,
-            enum: arg.enum,
-          });
+          return deserializeArg(arg, this.body[arg.name]);
         case "search": {
           const raw = arg.arrDepth ? this.url.searchParams.getAll(arg.name) : this.url.searchParams.get(arg.name);
           const value = arg.argRef === Any ? HttpExecutionContext.#parseAny(arg.name, raw) : raw;
-          const result = deserialize(arg.argRef, arg.arrDepth, value, {
-            key: arg.name,
-            nullable: arg.option?.nullable,
-            enum: arg.enum,
-          });
+          const result = deserializeArg(arg, value);
           this.searchParams[arg.name] = result;
           return result;
         }
@@ -843,17 +745,8 @@ export class WebSocketExecutionContext<Appended = unknown> {
     const args = endpointInfo.args.map((arg, idx) => {
       switch (arg.type) {
         case "msg":
-          return deserialize(arg.argRef, arg.arrDepth, this.data[idx], {
-            key: arg.name,
-            nullable: arg.option?.nullable,
-            enum: arg.enum,
-          });
         case "room":
-          return deserialize(arg.argRef, arg.arrDepth, this.data[idx], {
-            key: arg.name,
-            nullable: arg.option?.nullable,
-            enum: arg.enum,
-          });
+          return deserializeArg(arg, this.data[idx]);
         default:
           return undefined;
       }
@@ -865,8 +758,7 @@ export class WebSocketExecutionContext<Appended = unknown> {
       nullable: endpointInfo.returns.nullable,
     }) as unknown as Response;
   }
-  // Arrows, not methods: `Ws` hands these to a handler detached from the context, so a method would run with
-  // the wrapper object as `this` and register into nothing.
+  // Arrows, not methods: `Ws` hands these out detached, and a method would register into its wrapper object.
   on = (event: "disconnect" | "unsubscribe", handler: () => PromiseOrObject<void>) => {
     if (event === "disconnect") this.onDisconnect.add(handler);
     else this.onUnsubscribe.add(handler);

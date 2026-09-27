@@ -1,32 +1,29 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { AkanContextAnalyzer } from "@akanjs/devkit/akanContext";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
-import { cleanupCliTempWorkspace, createTempModule, writeText } from "@akanjs/devkit/testHelpers";
-import type { RepairReport } from "@akanjs/devkit/workflow";
+import { createTempModule, tempRoots, writeText } from "@akanjs/devkit/testHelpers";
+import type { RepairReport, WorkflowValidationCommandExecutor } from "@akanjs/devkit/workflow";
 import { RepairRunner } from "./repair.runner";
 
-const tempRoots: string[] = [];
-
-afterEach(async () => {
-  CommandContainer.clear();
-  await Promise.all(tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)));
+const passes: WorkflowValidationCommandExecutor = async (command) => ({
+  command: command.command,
+  reason: command.reason,
+  status: "passed",
+  exitCode: 0,
 });
+
+afterEach(() => CommandContainer.clear());
+const track = tempRoots();
 
 describe("RepairRunner", () => {
   test("runs generated repair as a structured command report", async () => {
-    const { root, workspace } = await createTempModule("task");
-    tempRoots.push(root);
+    const { root, workspace } = track(await createTempModule("task"));
 
     const output = await new RepairRunner().repair("generated", {
       workspace,
       app: "demo",
       format: "json",
-      execute: async (command) => ({
-        command: command.command,
-        reason: command.reason,
-        status: "passed",
-        exitCode: 0,
-      }),
+      execute: passes,
     });
     const report = JSON.parse(output) as RepairReport;
 
@@ -41,19 +38,13 @@ describe("RepairRunner", () => {
   });
 
   test("runs format repair through lint path", async () => {
-    const { root, workspace } = await createTempModule("task");
-    tempRoots.push(root);
+    const { workspace } = track(await createTempModule("task"));
 
     const output = await new RepairRunner().repair("format", {
       workspace,
       target: "demo",
       format: "json",
-      execute: async (command) => ({
-        command: command.command,
-        reason: command.reason,
-        status: "passed",
-        exitCode: 0,
-      }),
+      execute: passes,
     });
     const report = JSON.parse(output) as RepairReport;
 
@@ -62,8 +53,7 @@ describe("RepairRunner", () => {
   });
 
   test("reports dictionary repair candidates without broad rewrites", async () => {
-    const { root, workspace, app } = await createTempModule("task");
-    tempRoots.push(root);
+    const { workspace, app } = track(await createTempModule("task"));
     await writeText(
       `${app.cwdPath}/lib/task/task.constant.ts`,
       'import { field, via } from "akanjs/base";\nexport class TaskInput extends via.object({\n  title: field(String),\n})) {}\nexport class Task extends via.schema(TaskInput) {}\n',
@@ -78,12 +68,7 @@ describe("RepairRunner", () => {
       app: "demo",
       module: "task",
       format: "json",
-      execute: async (command) => ({
-        command: command.command,
-        reason: command.reason,
-        status: "passed",
-        exitCode: 0,
-      }),
+      execute: passes,
     });
     const report = JSON.parse(output) as RepairReport;
 
@@ -93,8 +78,7 @@ describe("RepairRunner", () => {
   });
 
   test("reports module shape repair next actions", async () => {
-    const { root, workspace, app } = await createTempModule("task");
-    tempRoots.push(root);
+    const { workspace, app } = track(await createTempModule("task"));
     await writeText(
       `${app.cwdPath}/lib/task/task.constant.ts`,
       'import { field, via } from "akanjs/base";\nexport class TaskInput extends via.object({\n  title: field(String),\n})) {}\nexport class Task extends via.schema(TaskInput) {}\n',
@@ -105,12 +89,7 @@ describe("RepairRunner", () => {
       app: "demo",
       module: "task",
       format: "json",
-      execute: async (command) => ({
-        command: command.command,
-        reason: command.reason,
-        status: "passed",
-        exitCode: 0,
-      }),
+      execute: passes,
     });
     const report = JSON.parse(output) as RepairReport;
 

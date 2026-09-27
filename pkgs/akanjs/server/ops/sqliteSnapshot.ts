@@ -41,10 +41,6 @@ export class SqliteSnapshot {
   static readonly manifestName = "manifest.json";
   static readonly idPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
-  static assertId(id: string) {
-    if (!SqliteSnapshot.idPattern.test(id)) throw new Error(`Invalid snapshot id "${id}"`);
-  }
-
   static async capture({
     id,
     dir,
@@ -52,7 +48,7 @@ export class SqliteSnapshot {
     includeSolid = false,
     encryptor = null,
   }: SnapshotCaptureOptions): Promise<SnapshotCapture> {
-    SqliteSnapshot.assertId(id);
+    if (!SqliteSnapshot.idPattern.test(id)) throw new Error(`Invalid snapshot id "${id}"`);
     const { appName, environment, databaseMode } = getEnv();
     if (databaseMode === "cluster" || !databaseMode)
       throw new Error(`Snapshots support SQLite database modes only, not "${databaseMode ?? "unknown"}"`);
@@ -105,9 +101,9 @@ export class SqliteSnapshot {
     const packedPath = path.join(dir, name);
     const sourceHash = createHash("sha256");
     const uploadHash = createHash("sha256");
-    const stages: NodeJS.ReadWriteStream[] = [SqliteSnapshot.#tap(sourceHash), createGzip()];
+    const stages: NodeJS.ReadWriteStream[] = [SqliteSnapshot.tap(sourceHash), createGzip()];
     if (encryptor) stages.push(encryptor.transform());
-    stages.push(SqliteSnapshot.#tap(uploadHash));
+    stages.push(SqliteSnapshot.tap(uploadHash));
     await pipeline([createReadStream(rawPath), ...stages, createWriteStream(packedPath)]);
     await rm(rawPath, { force: true });
     const file: SnapshotFile = {
@@ -122,8 +118,7 @@ export class SqliteSnapshot {
     return { file, problems, packedPath };
   }
 
-  //* A readonly second connection reads the last committed state alongside an open write transaction; a read-write
-  //* one returns SQLITE_MISUSE for VACUUM INTO against a WAL database another process holds.
+  //* Readonly on purpose: a read-write connection gets SQLITE_MISUSE for VACUUM INTO on a WAL db another process holds.
   static vacuumInto(source: string, target: string) {
     const db = new Database(source, { readonly: true });
     try {
@@ -144,7 +139,7 @@ export class SqliteSnapshot {
     }
   }
 
-  static #tap(hash: ReturnType<typeof createHash>) {
+  static tap(hash: ReturnType<typeof createHash>) {
     return new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         hash.update(chunk);

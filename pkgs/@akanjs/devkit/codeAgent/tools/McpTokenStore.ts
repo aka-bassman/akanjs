@@ -2,7 +2,6 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import path from "node:path";
 import { akanCodePaths } from "../agent/akanCodePaths";
 
-/** One server's credential, and the client registration it was issued against. */
 export interface McpStoredAuth {
   /** The authorization server that minted it, so a server that moves issuer invalidates rather than misuses it. */
   issuer: string;
@@ -21,17 +20,14 @@ export interface McpStoredAuth {
   scope?: string;
 }
 
-/**
- * The MCP bearer tokens, in the home directory and readable only by their owner.
- *
- * Never in the workspace: `.akan/code/mcp.json` is shared with the editors and routinely committed, and a
- * refresh token there is a credential in the repo. The file is written whole through a rename so a crash
- * mid-write cannot leave a truncated one, and a read that cannot parse it costs the sign-ins rather than the
- * session — a corrupt file re-authenticates, which is recoverable, where a thrown error is not.
- */
+// Home directory only, mode 0600: `.akan/code/mcp.json` is shared with the editors and routinely committed.
 export class McpTokenStore {
   static file() {
     return akanCodePaths.mcpAuthFile();
+  }
+
+  static lockFile() {
+    return `${McpTokenStore.file()}.lock`;
   }
 
   static read(name: string): McpStoredAuth | undefined {
@@ -42,13 +38,7 @@ export class McpTokenStore {
     return Object.keys(McpTokenStore.#all());
   }
 
-  /**
-   * Writes one entry, re-reading immediately before the write.
-   *
-   * Two sessions signing in to different servers at the same moment would otherwise each write the map they
-   * read at the start of their own flow — minutes earlier, across a browser round trip — and the second would
-   * drop the first's token.
-   */
+  /** Re-reads right before writing, or two concurrent sign-ins each drop the other's token. */
   static write(name: string, auth: McpStoredAuth) {
     McpTokenStore.#save({ ...McpTokenStore.#all(), [name]: auth });
   }
@@ -61,7 +51,6 @@ export class McpTokenStore {
     return true;
   }
 
-  /** Expired, or close enough that a call started now would land after it — see {@link skewMs}. */
   static isExpired(auth: McpStoredAuth) {
     return auth.expiresAt !== undefined && auth.expiresAt <= Date.now() + McpTokenStore.skewMs;
   }

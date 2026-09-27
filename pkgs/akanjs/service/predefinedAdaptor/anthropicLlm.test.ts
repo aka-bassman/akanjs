@@ -90,8 +90,7 @@ describe("AnthropicLlm.requestBody", () => {
   });
 
   test("a conversation that opens or ends on the assistant is trimmed to what the API accepts", () => {
-    // Both are reachable rather than theoretical: compaction can leave an assistant turn first, and a seeded
-    // intro is one. A trailing assistant turn is a prefill to this API, which several models refuse outright.
+    // Compaction or a seeded intro can open on the assistant; a trailing assistant turn is a prefill to this API.
     const { messages } = AnthropicLlm.requestBody("claude-opus-5", {
       ...request,
       messages: [
@@ -148,8 +147,7 @@ describe("AnthropicLlm attachments", () => {
   });
 
   test("an image type the API does not read is named, not sent — it would refuse the whole request", () => {
-    // `image/heic` is the iPhone camera default, and `accepts.image` carries it past AgentService.readable, so
-    // this adaptor is the only place left that knows the block vocabulary.
+    // `image/heic` (the iPhone default) passes `AgentService.readable`; only this adaptor knows the block vocabulary.
     const blocks = AnthropicLlm.userContent(
       asked([{ name: "IMG_0421.heic", mimeType: "image/heic", data: "QUJD" }]).messages[0],
       { image: true },

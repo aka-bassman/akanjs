@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { AgenticSurface } from "./AgenticSurface";
 import { AgentProgress } from "./AgentProgress";
-import { ToolRunner } from "./ToolRunner";
-import type { ToolActionEntry, ToolActivity, ToolCallRequest, ToolCardEntry, ToolEntry, ToolProgress } from "./types";
+import { type ToolProgress, ToolRunner } from "./ToolRunner";
+import type { ToolActionEntry, ToolActivity, ToolCallRequest, ToolCardEntry, ToolEntry } from "./types";
 
 const call = (name: string, args: Record<string, unknown> = {}, id = "c1"): ToolCallRequest => ({ id, name, args });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -194,7 +194,7 @@ describe("ToolRunner serialization", () => {
   });
 
   test("an approval parked in front of the user does not hold the queue", async () => {
-    let decide: ((verdict: true | string) => void) | null = null;
+    let decide = null as ((verdict: true | string) => void) | null;
     const gated = new ToolRunner(surfaceWith({ name: "removeTask", confirm: true }), {
       approve: () => new Promise<true | string>((resolve) => (decide = resolve)),
     });
@@ -224,14 +224,14 @@ describe("ToolRunner activity", () => {
     const events: string[] = [];
     return {
       events,
-      host: { ...host, activity: (event: ToolActivity) => events.push(`${event.phase}:${event.name}`) },
+      host: { ...host, activity: (event: ToolActivity) => void events.push(`${event.phase}:${event.name}`) },
     };
   };
 
   test("a call announces itself starting and ending, with the arguments it was made with", async () => {
     const seen: ToolActivity[] = [];
     const surface = surfaceWith({ name: "submitTask", run: () => "done" });
-    const runner = new ToolRunner(surface, { activity: (event) => seen.push(event) });
+    const runner = new ToolRunner(surface, { activity: (event) => void seen.push(event) });
     await runner.run(call("submitTask", { id: "7" }), new AbortController().signal);
     expect(seen.map((event) => event.phase)).toEqual(["start", "end"]);
     expect(seen[0]).toMatchObject({ callId: "c1", name: "submitTask", args: { id: "7" } });
@@ -246,7 +246,7 @@ describe("ToolRunner activity", () => {
       },
     });
     const seen: ToolActivity[] = [];
-    const runner = new ToolRunner(surface, { activity: (event) => seen.push(event) });
+    const runner = new ToolRunner(surface, { activity: (event) => void seen.push(event) });
     await runner.run(call("submitTask"), new AbortController().signal);
     expect(seen[1]).toMatchObject({ phase: "end", error: "the server said no" });
   });
@@ -292,7 +292,7 @@ describe("ToolRunner activity", () => {
   test("a guard's refusal is an announced call that failed", async () => {
     const seen: ToolActivity[] = [];
     const surface = surfaceWith({ name: "navigate", guard: () => "path must be internal." });
-    await new ToolRunner(surface, { activity: (event) => seen.push(event) }).run(
+    await new ToolRunner(surface, { activity: (event) => void seen.push(event) }).run(
       call("navigate"),
       new AbortController().signal,
     );

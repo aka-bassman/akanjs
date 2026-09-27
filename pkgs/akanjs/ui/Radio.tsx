@@ -15,8 +15,7 @@ export interface RadioProps {
 const DefaultRadio = ({ value, children, disabled, className, onChange }: RadioProps) => {
   const ref = useRef<HTMLDivElement>(null);
   const items = Children.toArray(children) as ReactElement<{ value: string | number | null }>[];
-  // Index matching is the documented fallback for callers that pass a position, but it only applies when no
-  // child owns the value — resolving both at once is what let two options read as checked at the same time.
+  // A numeric value falls back to a position only when no child owns it, or two options read as checked.
   const byValue = items.findIndex((child) => child.props?.value === value);
   const checkedIdx = byValue >= 0 ? byValue : typeof value === "number" ? value : -1;
 
@@ -85,10 +84,6 @@ const DefaultItem = ({ className, children }: ItemProps) => (
 
 const RadioBase = createOverridable("Radio", DefaultRadio);
 
-/**
- * Radio group. `Radio` and `Radio.Item` each resolve to a route-scoped override when a
- * `page/**\/_overrides.tsx` in the route's ancestry declares one (slots `Radio`, `RadioItem`).
- */
 export const Radio = Object.assign(RadioBase, {
   Item: createOverridable("RadioItem", DefaultItem),
 });

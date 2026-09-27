@@ -33,15 +33,12 @@ describe("CodeMailbox", () => {
     one.send("bbbb2222", "the adapter moved to srvkit");
     await Bun.sleep(CodeMailbox.pollMs + 400);
     expect(got).toEqual(["the adapter moved to srvkit"]);
-    // The poll runs again; a message already handed over must not be handed over twice.
     await Bun.sleep(CodeMailbox.pollMs + 200);
     expect(got).toEqual(["the adapter moved to srvkit"]);
   });
 
-  /** What was already in the inbox belongs to an earlier run, which read it or never will. */
   test("a session opening on a full inbox does not replay it", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "akan-mail-"));
-    // Opened once to create the directories, then closed, then seeded the way a previous run would have.
     open(dir, "cccc3333", "seeded").close();
     const inbox = path.join(dir, "inbox", "cccc3333.jsonl");
     writeFileSync(inbox, `${JSON.stringify({ from: "x", fromName: "x", text: "old" })}\n`);
@@ -67,7 +64,6 @@ describe("CodeMailbox", () => {
     open(dir, "bbbb3333", "store-other");
     expect(one.find("store-work")?.id).toBe("bbbb2222");
     expect(one.find("bbbb2")?.id).toBe("bbbb2222");
-    // Two names starting with `store` — sending to the wrong session is worse than not sending.
     expect(one.find("store")).toBeUndefined();
   });
 

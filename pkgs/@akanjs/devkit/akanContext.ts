@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
-import { capitalize } from "akanjs/common";
+import { capitalize, isRecord } from "akanjs/common";
 import { extractBlockVersion, readDevkitVersion } from "./agentsIndex";
 import { AppExecutor, LibExecutor, type SysExecutor, type WorkspaceExecutor } from "./executors";
 import { FileSys } from "./fileSys";
@@ -12,6 +12,7 @@ import {
   type WorkflowApplyReport,
   type WorkflowPlan,
   type WorkflowRunArtifact,
+  workflowPathsForPlan,
   workflowRunArtifactPath,
   workflowSyncDir,
 } from "./workflow";
@@ -122,8 +123,7 @@ export type JsonRpcRequest = {
 export type McpFraming = "content-length" | "newline";
 export type AkanMcpMode = "readonly" | "plan" | "apply";
 
-// Coding-agent tools that can host the Akan MCP server. Cursor and Claude Code both read a JSON
-// `mcpServers` map; Codex reads a TOML `[mcp_servers.<name>]` table.
+// Cursor and Claude Code read a JSON `mcpServers` map; Codex reads a TOML `[mcp_servers.<name>]` table.
 export type AkanMcpInstallTarget = "cursor" | "claude" | "codex";
 
 export type CursorMcpConfig = {
@@ -132,11 +132,6 @@ export type CursorMcpConfig = {
 
 export const guidelineResourceUri = (name: string) => `akan://guidelines/${name}`;
 
-/**
- * Resources that exist whatever the workspace holds. The guideline entries are **not** here: they are
- * one per directory under `cli/guidelines/`, and a hardcoded pair listed 2 of 31 while `readResource`
- * threw on the other 29. `buildResourceList` is the only place the two halves meet.
- */
 const staticResourceList = [
   { uri: "akan://docs/framework", name: "Akan framework guide", mimeType: "text/markdown" },
   { uri: "akan://workspace/summary", name: "Workspace summary", mimeType: "application/json" },
@@ -167,42 +162,35 @@ export const akanMcpInstallConfigPaths: Record<AkanMcpInstallTarget, string> = {
   codex: codexMcpConfigPath,
 };
 
-// `akan mcp` resolves the workspace from process.cwd(), so every launcher must run it from the
-// workspace root. Cursor expands its own ${workspaceFolder} variable. Claude Code does not guarantee
-// the server's cwd but sets CLAUDE_PROJECT_DIR in its environment, so we cd into that at runtime.
-// Codex inherits its own launch cwd (it also discovers .codex/config.toml from cwd), so it runs the
-// command directly and must be started from the workspace root.
+// `akan mcp` resolves the workspace from its cwd: Cursor expands ${workspaceFolder}, Claude Code only sets
+// CLAUDE_PROJECT_DIR (its cwd is not guaranteed), and Codex runs from its own launch cwd.
 const cursorWorkspaceFolder = "$" + "{workspaceFolder}";
 const claudeProjectDir = "$CLAUDE_PROJECT_DIR";
 
 const akanMcpCommand = (mode: AkanMcpMode, { cd }: { cd?: string } = {}) =>
   cd ? `cd "${cd}" && akan mcp --mode ${mode}` : `akan mcp --mode ${mode}`;
 
-export const createAkanCursorMcpServer = (mode: AkanMcpMode = "readonly") => ({
+const bashMcpServer = (mode: AkanMcpMode, cd: string) => ({
   type: "stdio",
   command: "bash",
-  args: ["-lc", akanMcpCommand(mode, { cd: cursorWorkspaceFolder })],
+  args: ["-lc", akanMcpCommand(mode, { cd })],
 });
 
-export const createAkanClaudeMcpServer = (mode: AkanMcpMode = "readonly") => ({
-  type: "stdio",
-  command: "bash",
-  args: ["-lc", akanMcpCommand(mode, { cd: claudeProjectDir })],
-});
+export const createAkanCursorMcpServer = (mode: AkanMcpMode = "readonly") => bashMcpServer(mode, cursorWorkspaceFolder);
 
-// JSON-config targets (Cursor, Claude Code) share the same `mcpServers` entry shape.
+export const createAkanClaudeMcpServer = (mode: AkanMcpMode = "readonly") => bashMcpServer(mode, claudeProjectDir);
+
 export const createAkanMcpServer = (target: "cursor" | "claude", mode: AkanMcpMode = "readonly") =>
   target === "cursor" ? createAkanCursorMcpServer(mode) : createAkanClaudeMcpServer(mode);
 
 export const akanCursorMcpServer = createAkanCursorMcpServer();
 
-// Codex config is TOML and we have no TOML serializer, so we build the `[mcp_servers.akan]` table as text.
+// No TOML serializer is bundled, so the `[mcp_servers.akan]` table is written as text.
 export const codexMcpServerTableHeader = "[mcp_servers.akan]";
 export const createAkanCodexMcpServerBlock = (mode: AkanMcpMode = "readonly") =>
   `${codexMcpServerTableHeader}\ncommand = "bash"\nargs = ["-lc", "${akanMcpCommand(mode)}"]\n`;
 
-// A TOML table runs from its header until the next top-level `[header]` or EOF. We upsert only the
-// akan table and preserve everything else in the file, mirroring the JSON merge behavior.
+// A TOML table runs from its header until the next top-level `[header]` or EOF.
 const codexAkanTablePattern = /^\[mcp_servers\.akan\][^\n]*\n(?:(?!\[)[^\n]*(?:\n|$))*/m;
 
 export const upsertCodexMcpServerBlock = (
@@ -331,29 +319,12 @@ const moduleShapeFiles = (module: AkanModuleContext) => {
 const constantFieldNames = (content: string) =>
   [...content.matchAll(/\b([A-Za-z_$][\w$]*)\s*:\s*field\(/g)].map((match) => match[1]).filter(Boolean);
 
-const safeReadDir = async (dirPath: string) => {
-  try {
-    return (await readdir(dirPath, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
-  } catch {
-    return [];
-  }
-};
+const safeReadDir = async (dirPath: string) =>
+  (await readdir(dirPath, { withFileTypes: true }).catch(() => [])).sort((a, b) => a.name.localeCompare(b.name));
 
-const safeReadText = async (filePath: string) => {
-  try {
-    return await FileSys.readText(filePath);
-  } catch {
-    return null;
-  }
-};
+const safeReadText = (filePath: string) => FileSys.readText(filePath).catch(() => null);
 
-const safeReadJson = async <T>(filePath: string) => {
-  try {
-    return await FileSys.readJson<T>(filePath);
-  } catch {
-    return null;
-  }
-};
+const safeReadJson = <T>(filePath: string) => FileSys.readJson<T>(filePath).catch(() => null);
 
 const isWorkflowPlan = (value: unknown): value is WorkflowPlan =>
   typeof value === "object" &&
@@ -361,7 +332,15 @@ const isWorkflowPlan = (value: unknown): value is WorkflowPlan =>
   "schemaVersion" in value &&
   value.schemaVersion === 1 &&
   "mode" in value &&
-  value.mode === "plan";
+  value.mode === "plan" &&
+  "inputs" in value &&
+  isRecord(value.inputs) &&
+  "predictedChanges" in value &&
+  Array.isArray(value.predictedChanges) &&
+  value.predictedChanges.every((change) => isRecord(change) && typeof change.target === "string");
+
+const isPathList = (value: unknown) =>
+  Array.isArray(value) && value.every((file) => isRecord(file) && typeof file.path === "string");
 
 const isWorkflowApplyReport = (value: unknown): value is WorkflowApplyReport =>
   typeof value === "object" &&
@@ -369,28 +348,16 @@ const isWorkflowApplyReport = (value: unknown): value is WorkflowApplyReport =>
   "schemaVersion" in value &&
   value.schemaVersion === 1 &&
   "mode" in value &&
-  (value.mode === "apply" || value.mode === "dry-run");
+  (value.mode === "apply" || value.mode === "dry-run") &&
+  "changedFiles" in value &&
+  isPathList(value.changedFiles) &&
+  "generatedFiles" in value &&
+  isPathList(value.generatedFiles) &&
+  "plan" in value &&
+  isWorkflowPlan(value.plan);
 
 const isWorkflowRunArtifact = (value: unknown): value is WorkflowRunArtifact =>
   typeof value === "object" && value !== null && "schemaVersion" in value && value.schemaVersion === 1;
-
-const planInputString = (plan: WorkflowPlan, key: string) => {
-  const value = plan.inputs[key];
-  return typeof value === "string" ? value : "";
-};
-
-const expandWorkflowTarget = (target: string, plan: WorkflowPlan) => {
-  const app = planInputString(plan, "app");
-  const module = planInputString(plan, "module");
-  const moduleClass = module ? capitalize(module) : "<Module>";
-  return target
-    .replace(/^\*\//, app ? `apps/${app}/` : "")
-    .replaceAll("<module>", module || "<module>")
-    .replaceAll("<Module>", moduleClass);
-};
-
-const workflowPathsForPlan = (plan: WorkflowPlan) =>
-  plan.predictedChanges.map((change) => expandWorkflowTarget(change.target, plan));
 
 const workflowPathsForArtifact = (artifact: WorkflowRunArtifact) => {
   if (isWorkflowPlan(artifact)) return workflowPathsForPlan(artifact);
@@ -401,7 +368,8 @@ const workflowPathsForArtifact = (artifact: WorkflowRunArtifact) => {
       ...workflowPathsForPlan(artifact.plan),
     ];
   }
-  if ("mode" in artifact && artifact.mode === "validate" && artifact.plan) return workflowPathsForPlan(artifact.plan);
+  if ("mode" in artifact && artifact.mode === "validate" && isWorkflowPlan(artifact.plan))
+    return workflowPathsForPlan(artifact.plan);
   return [];
 };
 
@@ -635,9 +603,7 @@ export class AkanContextAnalyzer {
     };
   }
 
-  // The conventions in AGENTS.md ship with the package, but nothing re-renders them on `bun update` — a workspace
-  // keeps whichever release wrote its block until someone re-runs the install. Comparing the stamp against the
-  // running devkit is the only signal that the guide an agent is reading is older than the framework it describes.
+  // Nothing re-renders the AGENTS.md block on `bun update`, so the version stamp is the only staleness signal.
   static async #agentGuideDrift(workspace: WorkspaceExecutor) {
     const installed = await readDevkitVersion();
     if (!installed) return null;
@@ -679,6 +645,10 @@ export class AkanContextAnalyzer {
         true,
       ),
     ];
+    const report = (diagnostic: AkanDiagnostic, action: RepairAction) => {
+      diagnostics.push({ ...diagnostic, repairActions: [action] });
+      repairActions.push(action);
+    };
 
     for (const sys of [...context.apps, ...context.libs]) {
       const sysPath = path.join(workspace.workspaceRoot, sys.path);
@@ -687,73 +657,60 @@ export class AkanContextAnalyzer {
         const allowed = entry.isDirectory()
           ? rootAllowedDirs[sys.type].has(entry.name)
           : rootAllowedFiles[sys.type].has(entry.name);
-        if (!allowed) {
-          const action = repairAction(
-            "module-shape",
-            `akan repair module-shape --app ${sys.name}`,
-            `Review ${sys.type} root shape and remove or move the unknown entry.`,
-            false,
+        if (!allowed)
+          report(
+            {
+              severity: "error",
+              code: `${sys.type}-root-unknown-entry`,
+              path: `${sys.path}/${entry.name}`,
+              message: `Unexpected ${entry.isDirectory() ? "folder" : "file"} in ${sys.type} root: ${sys.path}/${entry.name}`,
+            },
+            repairAction(
+              "module-shape",
+              `akan repair module-shape --app ${sys.name}`,
+              `Review ${sys.type} root shape and remove or move the unknown entry.`,
+              false,
+            ),
           );
-          diagnostics.push({
-            severity: "error",
-            code: `${sys.type}-root-unknown-entry`,
-            path: `${sys.path}/${entry.name}`,
-            message: `Unexpected ${entry.isDirectory() ? "folder" : "file"} in ${sys.type} root: ${sys.path}/${entry.name}`,
-            repairActions: [action],
-          });
-          repairActions.push(action);
-        }
       }
     }
 
     const agentDrift = await AkanContextAnalyzer.#agentGuideDrift(workspace);
-    if (agentDrift) {
-      const action = repairAction("generated", "akan agent install agents-md", agentDrift.hint, true);
-      diagnostics.push({
-        severity: "warning",
-        code: agentDrift.code,
-        path: "AGENTS.md",
-        message: agentDrift.message,
-        repairActions: [action],
-      });
-      repairActions.push(action);
-    }
+    if (agentDrift)
+      report(
+        { severity: "warning", code: agentDrift.code, path: "AGENTS.md", message: agentDrift.message },
+        repairAction("generated", "akan agent install agents-md", agentDrift.hint, true),
+      );
 
     for (const sys of [...context.apps, ...context.libs]) {
       for (const module of sys.modules) {
-        if (!module.abstract.exists) {
-          const action = repairAction(
-            "module-shape",
-            `akan repair module-shape --app ${sys.name} --module ${module.name}`,
-            "Create the missing module abstract or inspect required source files.",
-            false,
+        const moduleShapeCommand = `akan repair module-shape --app ${sys.name} --module ${module.name}`;
+        if (!module.abstract.exists)
+          report(
+            {
+              severity: strict ? "error" : "warning",
+              code: "module-abstract-missing",
+              path: module.abstract.path,
+              message: `${capitalize(module.kind)} module ${sys.name}:${module.name} should include ${module.abstract.path}`,
+            },
+            repairAction(
+              "module-shape",
+              moduleShapeCommand,
+              "Create the missing module abstract or inspect required source files.",
+              false,
+            ),
           );
-          diagnostics.push({
-            severity: strict ? "error" : "warning",
-            code: "module-abstract-missing",
-            path: module.abstract.path,
-            message: `${capitalize(module.kind)} module ${sys.name}:${module.name} should include ${module.abstract.path}`,
-            repairActions: [action],
-          });
-          repairActions.push(action);
-        }
         const missingFiles = moduleShapeFiles(module).filter((filename) => !module.files.includes(filename));
-        if (missingFiles.length) {
-          const action = repairAction(
-            "module-shape",
-            `akan repair module-shape --app ${sys.name} --module ${module.name}`,
-            "Review missing required module source files.",
-            false,
+        if (missingFiles.length)
+          report(
+            {
+              severity: "error",
+              code: "module-shape-invalid",
+              path: module.path,
+              message: `${capitalize(module.kind)} module ${sys.name}:${module.name} is missing required files: ${missingFiles.join(", ")}`,
+            },
+            repairAction("module-shape", moduleShapeCommand, "Review missing required module source files.", false),
           );
-          diagnostics.push({
-            severity: "error",
-            code: "module-shape-invalid",
-            path: module.path,
-            message: `${capitalize(module.kind)} module ${sys.name}:${module.name} is missing required files: ${missingFiles.join(", ")}`,
-            repairActions: [action],
-          });
-          repairActions.push(action);
-        }
         if (module.kind !== "service" && module.files.includes(`${module.name}.dictionary.ts`)) {
           const constantPath = path.join(workspace.workspaceRoot, module.path, `${module.name}.constant.ts`);
           const dictionaryPath = path.join(workspace.workspaceRoot, module.path, `${module.name}.dictionary.ts`);
@@ -764,28 +721,27 @@ export class AkanContextAnalyzer {
           if (constantContent && dictionaryContent) {
             for (const fieldName of constantFieldNames(constantContent)) {
               if (new RegExp(`\\b${fieldName}\\s*:`).test(dictionaryContent)) continue;
-              const action = repairAction(
-                "dictionary",
-                `akan repair dictionary --app ${sys.name} --module ${module.name}`,
-                "Add missing dictionary labels for source constant fields.",
-                false,
+              report(
+                {
+                  severity: "warning",
+                  code: "dictionary-label-missing",
+                  path: `${module.path}/${module.name}.dictionary.ts`,
+                  message: `Dictionary labels for ${sys.name}:${module.name}.${fieldName} were not found.`,
+                },
+                repairAction(
+                  "dictionary",
+                  `akan repair dictionary --app ${sys.name} --module ${module.name}`,
+                  "Add missing dictionary labels for source constant fields.",
+                  false,
+                ),
               );
-              diagnostics.push({
-                severity: "warning",
-                code: "dictionary-label-missing",
-                path: `${module.path}/${module.name}.dictionary.ts`,
-                message: `Dictionary labels for ${sys.name}:${module.name}.${fieldName} were not found.`,
-                repairActions: [action],
-              });
-              repairActions.push(action);
             }
           }
         }
       }
     }
 
-    // Recipe SSOT advisory (항상 warning — 차단하지 않음): recipe 지문이 인라인 className 으로 재작성된
-    // 곳의 추이를 보이게 한다. 유입이 실제로 재발하면 그때 lint 승격을 검토한다 — 증거 기반 에스컬레이션.
+    //* Advisory only (warning): promoted to lint only if inline re-authoring actually recurs.
     for (const sys of [...context.apps, ...context.libs]) {
       const sources = await collectRecipeSources(path.join(workspace.workspaceRoot, sys.path, "ui"), "ui");
       if (sources.length === 0) continue;
@@ -815,11 +771,7 @@ export class AkanContextAnalyzer {
       });
     }
 
-    // Recipe index freshness. The recipe indexes are generated and read as authoritative — a recipe missing
-    // from its index gets re-invented inline, and a name lingering in it gets imported and fails. The index is
-    // split by ownership: the root AGENTS.md `## Recipes` lists framework recipes only, and every app/lib lists
-    // what it may additionally import in its own AGENTS.md `## Recipes In Scope`. Doctor never writes, so this
-    // is the check that catches a *committed* stale index (lint/sync self-heal the working tree instead).
+    // Doctor never writes, so this is what catches a committed stale recipe index (lint and sync self-heal the tree).
     const scanNames = async (uiDirPath: string, basename?: string) =>
       new Set(scanRecipes(await collectRecipeSources(uiDirPath, "ui", basename)).map((info) => info.name));
     const declaredByImport = new Map<string, Set<string>>();
@@ -853,24 +805,19 @@ export class AkanContextAnalyzer {
     };
     const pushIndexDiagnostic = (indexPath: string, missing: string[], stale: string[], repairCommand: string) => {
       if (missing.length === 0 && stale.length === 0) return;
-      const action = repairAction(
-        "generated",
-        repairCommand,
-        "Regenerate the recipe index from the scanned recipes.",
-        true,
-      );
       const parts = [
         missing.length > 0 ? `${missing.length} declared but unlisted (${missing.slice(0, 5).join(", ")})` : "",
         stale.length > 0 ? `${stale.length} listed but gone (${stale.slice(0, 5).join(", ")})` : "",
       ].filter(Boolean);
-      diagnostics.push({
-        severity: "error",
-        code: "recipe-index-stale",
-        path: indexPath,
-        message: `${indexPath} recipe index is out of date — ${parts.join("; ")}. Agents read this list as authoritative.`,
-        repairActions: [action],
-      });
-      repairActions.push(action);
+      report(
+        {
+          severity: "error",
+          code: "recipe-index-stale",
+          path: indexPath,
+          message: `${indexPath} recipe index is out of date — ${parts.join("; ")}. Agents read this list as authoritative.`,
+        },
+        repairAction("generated", repairCommand, "Regenerate the recipe index from the scanned recipes.", true),
+      );
     };
     const frameworkDeclared = declaredByImport.get("akanjs/ui") ?? new Set<string>();
     if (frameworkDeclared.size > 0) {

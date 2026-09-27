@@ -8,7 +8,7 @@ export interface SignalTestPreloadTarget {
 
 export async function resolveSignalTestPreloadPath(target: SignalTestPreloadTarget) {
   const candidates: string[] = [];
-  const addResolvedPackageCandidate = (basePath: string) => {
+  for (const basePath of [target.cwdPath, process.cwd(), path.dirname(Bun.main), import.meta.dir]) {
     try {
       candidates.push(
         path.join(path.dirname(Bun.resolveSync("akanjs/package.json", basePath)), SIGNAL_TEST_PRELOAD_PATH),
@@ -16,13 +16,7 @@ export async function resolveSignalTestPreloadPath(target: SignalTestPreloadTarg
     } catch {
       // Source workspaces and published installs can resolve Akan packages from different roots.
     }
-  };
-
-  addResolvedPackageCandidate(target.cwdPath);
-  addResolvedPackageCandidate(process.cwd());
-  addResolvedPackageCandidate(path.dirname(Bun.main));
-  addResolvedPackageCandidate(import.meta.dir);
-
+  }
   candidates.push(
     path.join(target.cwdPath, "../../node_modules/akanjs", SIGNAL_TEST_PRELOAD_PATH),
     path.join(target.cwdPath, "../../pkgs/akanjs", SIGNAL_TEST_PRELOAD_PATH),
@@ -33,10 +27,7 @@ export async function resolveSignalTestPreloadPath(target: SignalTestPreloadTarg
   );
 
   const uniqueCandidates = [...new Set(candidates)];
-  for (const candidate of uniqueCandidates) {
-    if (await Bun.file(candidate).exists()) return candidate;
-  }
-
+  for (const candidate of uniqueCandidates) if (await Bun.file(candidate).exists()) return candidate;
   throw new Error(
     `Failed to locate ${SIGNAL_TEST_PRELOAD_PATH} from ${target.cwdPath}.\nProbed paths:\n${uniqueCandidates
       .map((candidate) => `  - ${candidate}`)

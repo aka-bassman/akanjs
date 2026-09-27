@@ -31,10 +31,7 @@ export interface OpenApiDocument {
   };
 }
 
-/**
- * Every endpoint type this app answers over HTTP, which is what an API contract has to list. The websocket types
- * (`pubsub`, `message`) have no HTTP surface to describe and are absent for that reason rather than by omission.
- */
+// `pubsub` and `message` have no HTTP surface to describe.
 const httpMethods = {
   query: "get",
   mutation: "post",

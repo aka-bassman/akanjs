@@ -8,7 +8,6 @@ import { ConformanceEnv } from "./conformance";
 
 const MAX_RETRY = 5;
 const TEST_LISTEN_PORT_BASE = 38080;
-const MIN_ACTIVATION_TIME = 0;
 const MAX_ACTIVATION_TIME = 30000;
 
 type TestStorage = "memory" | "tempFile";
@@ -128,26 +127,20 @@ export class TestServer {
     for (const key of ConformanceEnv.deploymentEnvKeys) delete process.env[key];
     TestServer.applyProcessEnv(this.#env, { workerId: this.workerId, port: this.#port, serverMode: this.#serverMode });
     const { databaseFilePath, solidFilePath } = await this.#makeDatabaseFiles();
+    const pragmas =
+      this.#storage === "memory"
+        ? { journalMode: "MEMORY", synchronous: "OFF" }
+        : { journalMode: "WAL", synchronous: "NORMAL" };
     this.#env.port = this.#port;
-    this.#env.database = {
-      sqlite: {
-        filePath: databaseFilePath,
-        journalMode: this.#storage === "memory" ? "MEMORY" : "WAL",
-        synchronous: this.#storage === "memory" ? "OFF" : "NORMAL",
-        foreignKeys: true,
-      },
-    };
+    this.#env.database = { sqlite: { filePath: databaseFilePath, ...pragmas, foreignKeys: true } };
     this.#env.solid = {
       filePath: solidFilePath,
-      journalMode: this.#storage === "memory" ? "MEMORY" : "WAL",
-      synchronous: this.#storage === "memory" ? "OFF" : "NORMAL",
+      ...pragmas,
       cleanupIntervalMs: 60_000,
       queuePollIntervalMs: 60_000,
       queueLeaseMs: 30_000,
     };
-    this.#env.onCleanup = async () => {
-      await this.cleanup();
-    };
+    this.#env.onCleanup = () => this.cleanup();
     await this.#applyDatabaseMode();
     this.#server = new AkanServer(this.#env.appName, this.#env, this.#serverMode, ...this.#libs);
     await this.#server.start({ listen: this.#listen, web: this.#web });
@@ -162,8 +155,7 @@ export class TestServer {
   }
   async terminate() {
     const now = Date.now();
-    const elapsed = now - this.#startAt;
-    await sleep(50); // cooldown
+    await sleep(50);
     await this.#server?.stop();
     this.#server = undefined;
     await this.#dropSchema?.();
@@ -173,16 +165,9 @@ export class TestServer {
       this.#tempDir = undefined;
     }
     this.#restoreProcessEnv();
-    if (elapsed < MIN_ACTIVATION_TIME) {
-      this.#logger.info(`waiting for ${MIN_ACTIVATION_TIME - elapsed}`);
-      await sleep(MIN_ACTIVATION_TIME - elapsed);
-    }
     this.#logger.info(`System Terminated in ${Date.now() - now}ms`);
   }
-  /**
-   * Which database mode's adaptors the server runs: `single` unless `AKAN_TEST_DATABASE_MODE` names another, and never
-   * whatever `AKAN_DATABASE_MODE` a developer's shell happens to hold — the suite pins it, so it cannot drift silently.
-   */
+  // `single` unless `AKAN_TEST_DATABASE_MODE` names another; never the `AKAN_DATABASE_MODE` of a developer's shell.
   static #modeFromEnv(): DatabaseMode {
     return DatabaseModes.parse(process.env.AKAN_TEST_DATABASE_MODE?.trim() || "single", "AKAN_TEST_DATABASE_MODE");
   }
@@ -220,9 +205,7 @@ export class TestServer {
   }
   #rememberProcessEnv() {
     this.#previousEnv.clear();
-    TEST_ENV_KEYS.forEach((key) => {
-      this.#previousEnv.set(key, process.env[key]);
-    });
+    for (const key of TEST_ENV_KEYS) this.#previousEnv.set(key, process.env[key]);
   }
   #restoreProcessEnv() {
     this.#previousEnv.forEach((value, key) => {

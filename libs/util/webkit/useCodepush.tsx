@@ -8,7 +8,7 @@ import { useState } from "react";
 // export const useCodepush = ({ serverUrl, branch }: { serverUrl: string; branch: "debug" | "develop" | "main" }) => {
 export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
   const [update, setUpdate] = useState(false);
-  const [version] = useState("");
+  const [version, setVersion] = useState("");
 
   const initialize = async () => {
     const { CapacitorUpdater } = await loadCapacitorUpdater();
@@ -24,14 +24,10 @@ export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
     const info = await Device.getInfo();
     const app = await App.getInfo();
     const { deviceId } = await CapacitorUpdater.getDeviceId();
-    const { bundle: version, native } = await CapacitorUpdater.current();
-    const builtInversion = await CapacitorUpdater.getBuiltinVersion();
+    const { bundle } = await CapacitorUpdater.current();
     const appId = app.id;
     const platform = info.platform;
 
-    window.alert(
-      `getBuildinVersion:${builtInversion.version}\ncurrent.bundle:${version.version}\ncurrennt.native:${native}`,
-    );
     /**
      *  "version_name": "builtin",
      *   "version_code": "1",
@@ -46,7 +42,9 @@ export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
      *   "platform": "ios",
      *   "defaultChannel": ""
      */
-    const { major, minor, patch } = splitVersion(version.version === "builtin" ? app.version : version.version);
+    const runningVersion = bundle.version === "builtin" ? app.version : bundle.version;
+    setVersion(runningVersion);
+    const { major, minor, patch } = splitVersion(runningVersion);
     const appName = process.env.AKAN_PUBLIC_APP_NAME ?? "";
 
     const appInfo: ProtoAppInfo = {
@@ -62,9 +60,8 @@ export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
       buildNum: app.build, //앱내 빌드시 버전 횟수 모르면 고한테 물어보기
       versionOs: info.osVersion,
     };
-    //fix lu to akasys
-    // ! NEED TO FIX
-    const url = serverUrl.replace("lu", "akasys");
+    // TODO: take the release URL as an option and drop this lu → akasys host rewrite (codepush in development).
+    const url = serverUrl.replace(/^((?:[a-z][a-z\d+.-]*:)?\/\/)?lu(?=[-.:/]|$)/i, "$1akasys");
     const httpClient = new HttpClient(url);
     const release = await httpClient.post<(ProtoAppInfo & { appBuild: string }) | null>("/release/codepush", {
       data: { ...appInfo },

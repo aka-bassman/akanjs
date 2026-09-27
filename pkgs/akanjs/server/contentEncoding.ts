@@ -7,12 +7,7 @@ const COMPRESSIBLE_TYPES = new Set([
   "image/svg+xml",
 ]);
 
-/**
- * br is tried first: it is ~15% smaller than gzip across the artifact and ~22% on the CSS bundle, and on a
- * model listing it is half of gzip's size at the same cost. The gzip entry stays the fallback because browsers
- * only advertise `br` on secure origins, so a plain-http dev server or an intermediary that rewrites
- * Accept-Encoding still gets a compressed body.
- */
+// gzip stays as the fallback: browsers only advertise `br` on secure origins.
 export const CONTENT_ENCODINGS = [
   { encoding: "br", ext: ".br", accept: /(?:^|,)\s*(?:br|\*)(?![\w-])\s*(?:;\s*q=([\d.]+))?/i },
   { encoding: "gzip", ext: ".gz", accept: /(?:^|,)\s*(?:gzip|\*)(?![\w-])\s*(?:;\s*q=([\d.]+))?/i },
@@ -28,16 +23,12 @@ export const acceptsEncoding = (acceptEncoding: string, accept: RegExp): boolean
 
 export const isCompressibleContentType = (contentType: string): boolean => {
   const type = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
-  // An event stream has no end, so both readers here — a `.br` sidecar lookup and a buffering
-  // compressor — would wait on a body that never completes.
+  // An event stream never ends, so a sidecar lookup or a buffering compressor would wait forever.
   if (type === "text/event-stream") return false;
   return type.startsWith("text/") || COMPRESSIBLE_TYPES.has(type);
 };
 
-/**
- * Quality 4, not brotli's default 11: on a 132KB model listing q4 lands at 1.4KB in 0.10ms, where q11 spends
- * tens of milliseconds to save a few hundred more bytes. gzip level 6 costs the same 0.10ms and lands at 2.7KB.
- */
+// Not brotli's default 11: q11 spends tens of ms per response to save a few hundred bytes over q4.
 const BROTLI_QUALITY = 4;
 const GZIP_LEVEL = 6;
 /** Under a KB the framing bytes and the call cost more than the repetition they remove. */
@@ -53,24 +44,13 @@ const compressBody = (bytes: Uint8Array, encoding: ContentEncoding) =>
       })
     : gzipSync(bytes, { level: GZIP_LEVEL });
 
-export const negotiateContentEncoding = (req: Request): ContentEncoding | null => {
-  if (process.env.AKAN_HTTP_COMPRESS === "false" || process.env.AKAN_HTTP_COMPRESS === "0") return null;
-  const acceptEncoding = req.headers.get("accept-encoding") ?? "";
-  return CONTENT_ENCODINGS.find(({ accept }) => acceptsEncoding(acceptEncoding, accept))?.encoding ?? null;
-};
-
-/**
- * Compresses a fully-materialized response the caller accepts an encoding for, or hands back the original.
- *
- * Buffers the body, so it is only ever applied where the body is already in memory — a signal endpoint's JSON.
- * A streamed response (SSR HTML, an RSC flight payload, an event stream) must not reach this: buffering one
- * would hold the whole render before the first byte, which is the opposite of what streaming it was for.
- */
+// Buffers the body: never pass a streamed response (SSR HTML, RSC flight, SSE) — it would hold the whole render.
 export const compressResponse = async (req: Request, response: Response): Promise<Response> => {
   if (response.headers.has("content-encoding") || !response.body) return response;
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!isCompressibleContentType(contentType)) return response;
-  const encoding = negotiateContentEncoding(req);
+  if (!isCompressibleContentType(response.headers.get("content-type") ?? "")) return response;
+  if (process.env.AKAN_HTTP_COMPRESS === "false" || process.env.AKAN_HTTP_COMPRESS === "0") return response;
+  const acceptEncoding = req.headers.get("accept-encoding") ?? "";
+  const encoding = CONTENT_ENCODINGS.find(({ accept }) => acceptsEncoding(acceptEncoding, accept))?.encoding;
   if (!encoding) return response;
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.byteLength < MIN_COMPRESS_BYTES) return new Response(bytes, response);
@@ -81,4 +61,42 @@ export const compressResponse = async (req: Request, response: Response): Promis
   // Without it a shared cache can hand a br body to a client that never asked for one.
   headers.append("Vary", "Accept-Encoding");
   return new Response(compressed, { status: response.status, statusText: response.statusText, headers });
+};
+
+export interface EncodedSidecar {
+  bytes: ArrayBuffer;
+  encoding: string;
+}
+
+export const resolveEncodedSidecar = async (
+  req: Request,
+  filePath: string,
+  contentType: string,
+): Promise<EncodedSidecar | null> => {
+  if (!isCompressibleContentType(contentType)) return null;
+  const acceptEncoding = req.headers.get("accept-encoding") ?? "";
+  for (const { encoding, ext, accept } of CONTENT_ENCODINGS) {
+    if (!acceptsEncoding(acceptEncoding, accept)) continue;
+    const file = Bun.file(`${filePath}${ext}`);
+    if (!(await file.exists())) continue;
+    const bytes = await file.bytes();
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    return { bytes: buffer, encoding };
+  }
+  return null;
+};
+
+// A precompressed `.br`/`.gz` sibling when the client takes one, else the file itself.
+export const encodedFileResponse = async (
+  req: Request,
+  filePath: string,
+  contentType: string,
+  headers: Headers,
+): Promise<Response> => {
+  const sidecar = await resolveEncodedSidecar(req, filePath, contentType);
+  if (!sidecar) return new Response(Bun.file(filePath).stream(), { headers });
+  headers.set("Content-Encoding", sidecar.encoding);
+  headers.set("Content-Length", String(sidecar.bytes.byteLength));
+  headers.set("Vary", "Accept-Encoding");
+  return new Response(sidecar.bytes, { headers });
 };

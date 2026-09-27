@@ -16,13 +16,7 @@ export interface DepsSerializerContext {
 
 type InjectableCls = { [INJECT_META]?: Record<string, InjectInfo>; refName: string };
 
-/**
- * Turns the DI container into a plain node/edge graph for the `/_akan/deps` visualiser.
- *
- * Edge derivation mirrors `InjectInfo.resolveInjection` field-for-field, so the drawn graph is the one that
- * actually resolves at boot rather than a plausible reconstruction of it. Only classes and refNames are
- * emitted — never a live instance, which for `uses` routinely closes over credentials.
- */
+/** Edges mirror `InjectInfo.resolveInjection` field-for-field, so the graph is the one that resolves at boot. */
 export class DepsSerializer {
   readonly #context: DepsSerializerContext;
   readonly #nodes = new Map<string, DepNode>();
@@ -52,16 +46,11 @@ export class DepsSerializer {
     };
   }
 
-  // * ==================== Nodes ==================== * //
-
   #collectNodes() {
     const { di } = this.#context;
     const serviceStageOf = DepsSerializer.#stageIndex(di.hierarchy.serviceStages);
     const adaptorStageOf = DepsSerializer.#stageIndex(di.hierarchy.adaptorStages);
-    const roleOf = new Map<string, string>();
-    di.registry.adaptorRole.forEach((impl, role) => {
-      roleOf.set(impl.refName, role.refName);
-    });
+    const roleOf = new Map([...di.registry.adaptorRole].map(([role, impl]) => [impl.refName, role.refName] as const));
 
     di.registry.serviceCls.forEach((cls, refName) => {
       this.#node("service", refName, {
@@ -111,28 +100,18 @@ export class DepsSerializer {
     return id;
   }
 
-  // * ==================== Edges ==================== * //
-
   #collectEdges() {
     const { di } = this.#context;
-    di.registry.serviceCls.forEach((cls, refName) => {
-      this.#edgesFrom(this.#node("service", refName), cls as InjectableCls);
-    });
-    di.registry.adaptorCls.forEach((cls, refName) => {
-      this.#edgesFrom(this.#node("adaptor", refName), cls as InjectableCls);
-    });
-    di.registry.serverSignalCls.forEach((cls, refName) => {
-      this.#edgesFrom(this.#node("serverSignal", refName), cls as unknown as InjectableCls);
-    });
-    di.registry.internalCls.forEach((cls, refName) => {
-      this.#edgesFrom(this.#node("internal", refName), cls as unknown as InjectableCls);
-    });
-    di.registry.endpointCls.forEach((cls, refName) => {
-      this.#edgesFrom(this.#node("endpoint", refName), cls as unknown as InjectableCls);
-    });
-    di.live.sliceCls.forEach((cls, refName) => {
-      this.#edgesFrom(this.#node("slice", refName), cls as unknown as InjectableCls);
-    });
+    const sources: [DepNodeKind, Map<string, unknown>][] = [
+      ["service", di.registry.serviceCls],
+      ["adaptor", di.registry.adaptorCls],
+      ["serverSignal", di.registry.serverSignalCls],
+      ["internal", di.registry.internalCls],
+      ["endpoint", di.registry.endpointCls],
+      ["slice", di.live.sliceCls],
+    ];
+    for (const [kind, classes] of sources)
+      for (const [refName, cls] of classes) this.#edgesFrom(this.#node(kind, refName), cls as InjectableCls);
   }
 
   #edgesFrom(from: string, cls: InjectableCls) {
@@ -211,20 +190,13 @@ export class DepsSerializer {
     );
   }
 
-  // * ==================== Env ==================== * //
-
-  /**
-   * An `env` inject only knows its keys by running its factory, and factories construct SDK clients and open
-   * sockets — so scan the source for `env.KEY` / `env["KEY"]` instead of invoking it. Slightly over-inclusive,
-   * which is fine: this is a local-dev endpoint reading unminified source, and it exposes names, never values.
-   */
+  // Scans the factory source instead of invoking it (factories open sockets); over-inclusive, but names only.
   static #extractEnvKeys(fn: (options: never) => unknown): string[] {
     const source = Function.prototype.toString.call(fn);
     const matches = [...source.matchAll(/\.\s*([A-Za-z_$][\w$]*)|\[\s*["'`]([^"'`]+)["'`]\s*\]/g)];
     return [...new Set(matches.map((match) => match[1] ?? match[2]).filter((key): key is string => Boolean(key)))];
   }
 
-  /** Values only for `AKAN_PUBLIC_*`; every other key contributes its name and nothing else. */
   static #serializeEnv(env: BaseEnv): DepsData["env"] {
     const publicEnv: Record<string, string> = {};
     Object.entries(process.env).forEach(([key, value]) => {
@@ -234,16 +206,8 @@ export class DepsSerializer {
     return { public: publicEnv, keys: [...keys].sort() };
   }
 
-  // * ==================== Helpers ==================== * //
-
   static #stageIndex(stages: string[][]): Map<string, number> {
-    const index = new Map<string, number>();
-    stages.forEach((stage, stageIdx) => {
-      stage.forEach((refName) => {
-        index.set(refName, stageIdx);
-      });
-    });
-    return index;
+    return new Map(stages.flatMap((stage, stageIdx) => stage.map((refName) => [refName, stageIdx] as const)));
   }
 
   static #classNameOf(value: unknown): string {

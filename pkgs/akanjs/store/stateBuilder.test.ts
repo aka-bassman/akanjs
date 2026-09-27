@@ -8,6 +8,7 @@ import {
   resolveDerivedState,
   resolveWritableState,
 } from "./stateBuilder";
+import { setTestEnv } from "./store.fixture";
 
 class StateBuilderTestMode extends enumOf("StateBuilderTestMode", ["list", "grid"] as const) {}
 const StateBuilderTestAddress = via((f) => ({
@@ -16,12 +17,7 @@ const StateBuilderTestAddress = via((f) => ({
 }));
 ConstantRegistry.buildScalar("stateBuilderTestAddress", StateBuilderTestAddress, { StateBuilderTestAddress });
 
-const setupEnv = () => {
-  process.env.AKAN_PUBLIC_APP_NAME = "storetest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "storetest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
-};
+const setupEnv = () => setTestEnv("storetest");
 
 describe("makeDefaultFactory", () => {
   test("preserves DataList instances when cloning default state", async () => {
@@ -151,8 +147,6 @@ describe("state builder declarations", () => {
     expect(() =>
       resolveDerivedState({ broken: builder.computed(["missing" as never], () => "bad") }, new Set(["count"])),
     ).toThrow("Computed broken has invalid deps: missing");
-    // One declaration reaching the merge twice is the extension chain, not a mistake: a store that lists another
-    // as a lib store carries its entries, and both are registered.
     expect(mergeDerivedMeta(resolved.meta, resolved.meta).computed.summary).toBe(resolved.meta.computed.summary);
     const rival = resolveDerivedState(
       { summary: builder.computed(["count"], (count) => `${count}`) },

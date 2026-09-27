@@ -39,8 +39,7 @@ export const Date = <Nullable extends boolean>({
       <input
         type={showTime ? "datetime-local" : "date"}
         className={inputRecipe({}, [
-          // `user-invalid` replaces daisyUI's `.validator`, which coloured the border off the same
-          // pseudo-class. The native date input reports its own min/max violations through it.
+          // The native date input reports its own min/max violations through `user-invalid`.
           "user-invalid:border-destructive text-xs outline-none duration-200 focus-within:outline-none focus:outline-none",
           dateClassName,
         ])}
@@ -86,12 +85,7 @@ export const DateRange = <Nullable extends boolean>({
   onChange,
   showTime,
 }: DateRangeProps<Nullable>) => {
-  /**
-   * Adds the pair callback to one endpoint setter, carrying that setter's own tag onto the wrapper.
-   *
-   * The wrapper really does run the setter, so the tag stays a true statement — and wiring `onChange` then costs
-   * the endpoint neither its agent tool nor its `data-akan-action`, which a plain closure would both drop.
-   */
+  // The wrapper really runs the setter, so carrying its tag keeps the endpoint's agent tool and `data-akan-action`.
   const withPair = (setter: (value: Dayjs) => void, pair: (value: Dayjs) => [Dayjs | null, Dayjs | null]) => {
     if (!onChange) return setter;
     const wrapped = (value: Dayjs) => {

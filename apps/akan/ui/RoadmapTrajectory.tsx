@@ -7,8 +7,8 @@ interface Point {
 
 interface RoadmapWaypoint {
   key: string;
-  label: string;
-  caption: string;
+  label?: string;
+  caption?: string;
   state: "flown" | "current" | "committed" | "proposed";
 }
 
@@ -104,7 +104,10 @@ export const RoadmapTrajectory = ({ className, waypoints }: RoadmapTrajectoryPro
       viewBox="0 0 1200 520"
       className={cn("h-auto w-full overflow-visible", className)}
       role="img"
-      aria-label={waypoints.map((waypoint) => waypoint.label).join(" → ")}
+      aria-label={waypoints
+        .map((waypoint) => waypoint.label)
+        .filter((label): label is string => !!label)
+        .join(" → ")}
     >
       <defs>
         <filter id="akan-roadmap-glow" x="-20%" y="-20%" width="140%" height="140%">
@@ -139,24 +142,26 @@ export const RoadmapTrajectory = ({ className, waypoints }: RoadmapTrajectoryPro
           ) : (
             <circle cx={point.x} cy={point.y} r="6" className={dotClassName[waypoint.state]} />
           )}
-          <g className={cn("max-md:hidden", labelClassName[waypoint.state])}>
-            <text
-              x={isVertical ? point.x + 22 : point.x}
-              y={isVertical ? point.y - 2 : isAbove ? point.y - 32 : point.y + 30}
-              textAnchor={isVertical ? "start" : "middle"}
-              className={cn("font-bold font-mono", waypoint.state === "current" ? "text-[17px]" : "text-[13px]")}
-            >
-              {waypoint.label}
-            </text>
-            <text
-              x={isVertical ? point.x + 22 : point.x}
-              y={isVertical ? point.y + 15 : isAbove ? point.y - 16 : point.y + 46}
-              textAnchor={isVertical ? "start" : "middle"}
-              className="text-[11px] opacity-70"
-            >
-              {waypoint.caption}
-            </text>
-          </g>
+          {waypoint.label ? (
+            <g className={cn("max-md:hidden", labelClassName[waypoint.state])}>
+              <text
+                x={isVertical ? point.x + 22 : point.x}
+                y={isVertical ? point.y - 2 : isAbove ? point.y - 32 : point.y + 30}
+                textAnchor={isVertical ? "start" : "middle"}
+                className={cn("font-bold font-mono", waypoint.state === "current" ? "text-[17px]" : "text-[13px]")}
+              >
+                {waypoint.label}
+              </text>
+              <text
+                x={isVertical ? point.x + 22 : point.x}
+                y={isVertical ? point.y + 15 : isAbove ? point.y - 16 : point.y + 46}
+                textAnchor={isVertical ? "start" : "middle"}
+                className="text-[11px] opacity-70"
+              >
+                {waypoint.caption}
+              </text>
+            </g>
+          ) : null}
         </g>
       ))}
       <g transform={`translate(${current.point.x} ${current.point.y}) rotate(${current.angle + 90})`}>

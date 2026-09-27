@@ -1,7 +1,6 @@
 import type { DatabaseMode } from "@akanjs/devkit/akanConfig";
 import { App, Apps, command, Exec, Sys, Workspace } from "@akanjs/devkit/commandDecorators";
 import { getMobileTargetChoices } from "@akanjs/devkit/mobile";
-import { select } from "@inquirer/prompts";
 
 import { ApplicationScript } from "./application.script";
 
@@ -10,6 +9,14 @@ const mobileTargetOption = {
   ask: "Select mobile target",
   enum: async ({ app }: { app: App }) => await getMobileTargetChoices(app),
 };
+const devEnvs = ["local", "debug", "develop", "main"] as const;
+const buildEnvOption = { enum: devEnvs, desc: "backend environment", default: "debug" } as const;
+const startEnvOption = { enum: devEnvs, desc: "backend environment", default: "local" } as const;
+const releaseEnvOption = {
+  enum: ["debug", "develop", "main", "local"],
+  desc: "backend environment",
+  default: "main",
+} as const;
 
 export class ApplicationCommand extends command("application", [ApplicationScript], ({ public: target }) => ({
   createApplication: target({ desc: "Create a new application in the workspace" })
@@ -117,28 +124,20 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
   buildIos: target({ short: true, desc: "Build iOS app with Capacitor" })
     .with(App)
     .option("target", String, mobileTargetOption)
-    .option("env", String, {
-      enum: ["local", "debug", "develop", "main"],
-      desc: "backend environment",
-      default: "debug",
-    })
+    .option("env", String, buildEnvOption)
     .option("write", Boolean, { desc: "write code generation", default: true })
     .option("regenerate", Boolean, { flag: "g", desc: "delete and regenerate native project", default: false })
     .exec(async function (app, target, env, write, regenerate) {
-      await this.applicationScript.buildIos(app, { target, env: env, write, regenerate });
+      await this.applicationScript.buildIos(app, { target, env, write, regenerate });
     }),
   buildAndroid: target({ short: true, desc: "Build Android app with Capacitor" })
     .with(App)
     .option("target", String, mobileTargetOption)
-    .option("env", String, {
-      enum: ["local", "debug", "develop", "main"],
-      desc: "backend environment",
-      default: "debug",
-    })
+    .option("env", String, buildEnvOption)
     .option("write", Boolean, { desc: "write code generation", default: true })
     .option("regenerate", Boolean, { flag: "g", desc: "delete and regenerate native project", default: false })
     .exec(async function (app, target, env, write, regenerate) {
-      await this.applicationScript.buildAndroid(app, { target, env: env, write, regenerate });
+      await this.applicationScript.buildAndroid(app, { target, env, write, regenerate });
     }),
   start: target({ short: true, desc: "Start development server(s) (frontend SSR + backend)" })
     .with(Apps)
@@ -158,11 +157,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
   startIos: target({ short: true, desc: "Start iOS app in simulator or device" })
     .with(App)
     .option("target", String, mobileTargetOption)
-    .option("env", String, {
-      enum: ["local", "debug", "develop", "main"],
-      desc: "backend environment",
-      default: "local",
-    })
+    .option("env", String, startEnvOption)
     .option("open", Boolean, { desc: "open ios simulator", default: false })
     .option("release", Boolean, { desc: "release mode", default: false })
     .option("write", Boolean, { desc: "write code generation", default: true })
@@ -178,7 +173,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app, target, env, open, release, write, regenerate, allowProvisioningUpdates, device) {
       await this.applicationScript.startIos(app, {
         target,
-        env: env,
+        env,
         open,
         operation: release ? "release" : "local",
         write,
@@ -190,11 +185,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
   startAndroid: target({ short: true, desc: "Start Android app in emulator or device" })
     .with(App)
     .option("target", String, mobileTargetOption)
-    .option("env", String, {
-      enum: ["local", "debug", "develop", "main"],
-      desc: "backend environment",
-      default: "local",
-    })
+    .option("env", String, startEnvOption)
     .option("release", Boolean, { desc: "release mode", default: false })
     .option("open", Boolean, { desc: "open android simulator", default: false })
     .option("write", Boolean, { desc: "write code generation", default: true })
@@ -202,7 +193,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app, target, env, release, open, write, regenerate) {
       await this.applicationScript.startAndroid(app, {
         target,
-        env: env,
+        env,
         open,
         operation: release ? "release" : "local",
         write,
@@ -212,39 +203,25 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
   releaseIos: target({ desc: "Build and package iOS app for release (App Store)" })
     .with(App)
     .option("target", String, mobileTargetOption)
-    .option("env", String, {
-      enum: ["debug", "develop", "main", "local"],
-      desc: "backend environment",
-      default: "main",
-    })
+    .option("env", String, releaseEnvOption)
     .option("write", Boolean, { desc: "write code generation", default: true })
     .option("regenerate", Boolean, { flag: "g", desc: "delete and regenerate native project", default: false })
     .option("allowLocalRelease", Boolean, { flag: "l", desc: "allow release with --env local", default: false })
     .exec(async function (app, target, env, write, regenerate, allowLocalRelease) {
-      await this.applicationScript.releaseIos(app, {
-        target,
-        env: env,
-        write,
-        regenerate,
-        allowLocalRelease,
-      });
+      await this.applicationScript.releaseIos(app, { target, env, write, regenerate, allowLocalRelease });
     }),
   releaseAndroid: target({ desc: "Build and package Android app for release (Play Store)" })
     .with(App)
     .option("assembleType", String, { enum: ["apk", "aab"], default: "apk" })
     .option("target", String, mobileTargetOption)
-    .option("env", String, {
-      enum: ["debug", "develop", "main", "local"],
-      desc: "backend environment",
-      default: "main",
-    })
+    .option("env", String, releaseEnvOption)
     .option("write", Boolean, { desc: "write code generation", default: true })
     .option("regenerate", Boolean, { flag: "g", desc: "delete and regenerate native project", default: false })
     .option("allowLocalRelease", Boolean, { flag: "l", desc: "allow release with --env local", default: false })
     .exec(async function (app, assembleType, target, env, write, regenerate, allowLocalRelease) {
       await this.applicationScript.releaseAndroid(app, assembleType, {
         target,
-        env: env,
+        env,
         write,
         regenerate,
         allowLocalRelease,
@@ -259,17 +236,10 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app, rebuild, buildNum, environment, local) {
       await this.applicationScript.releaseSource(app, { rebuild, buildNum, environment, local });
     }),
-  codepush: target({ desc: "Deploy over-the-air (OTA) update for mobile app" })
+  codepush: target({ desc: "Over-the-air (OTA) update for a mobile app — in development, deploys nothing yet" })
     .with(App)
     .exec(async function (app) {
-      const os: "ios" | "android" = await select({
-        message: "Select os",
-        choices: [
-          { value: "ios", name: "ios", description: "ios" },
-          { value: "android", name: "android", description: "android" },
-        ],
-      });
-      await this.applicationScript.codepush(app, os);
+      await this.applicationScript.codepush(app);
     }),
   dbup: target({ desc: "Start local database services for a database mode" })
     .with(Workspace)

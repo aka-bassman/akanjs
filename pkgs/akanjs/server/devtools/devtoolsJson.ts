@@ -1,17 +1,9 @@
 import { dayjs } from "akanjs/base";
 import type { Unserializable } from "./types";
 
-/**
- * Coerces arbitrary registry values into something `JSON.stringify` can round-trip.
- *
- * Registries hold whatever a `.constant.ts` happened to export — Dayjs defaults, Maps, Sets, classes,
- * closures, even cyclic graphs. The devtools payloads must never throw on one of those, so anything
- * unrepresentable degrades to an `Unserializable` marker the visualiser can render as-is.
- */
+/** Never throws: what JSON cannot represent (functions, classes, cycles, …) becomes an `Unserializable` marker. */
 export class DevtoolsJson {
-  static readonly #defaultMaxDepth = 6;
-
-  static toSafe(value: unknown, { maxDepth = DevtoolsJson.#defaultMaxDepth }: { maxDepth?: number } = {}): unknown {
+  static toSafe(value: unknown, { maxDepth = 6 }: { maxDepth?: number } = {}): unknown {
     return DevtoolsJson.#coerce(value, maxDepth, new WeakSet<object>());
   }
 
@@ -33,7 +25,6 @@ export class DevtoolsJson {
     }
   }
 
-  /** Returns `undefined` when `value` is not a leaf this method owns, so the caller keeps walking. */
   static #coercePrimitive(value: unknown): unknown {
     switch (typeof value) {
       case "string":
@@ -46,16 +37,13 @@ export class DevtoolsJson {
         return DevtoolsJson.#mark("bigint", String(value));
       case "symbol":
         return DevtoolsJson.#mark("symbol", (value as symbol).description);
-      case "function":
-        return DevtoolsJson.#coerceFunction(value as (...args: never[]) => unknown);
+      case "function": {
+        const isClass = /^\s*class\s/.test(Function.prototype.toString.call(value));
+        return DevtoolsJson.#mark(isClass ? "class" : "function", (value as () => unknown).name || undefined);
+      }
       default:
         return undefined;
     }
-  }
-
-  static #coerceFunction(value: (...args: never[]) => unknown): Unserializable {
-    const isClass = /^\s*class\s/.test(Function.prototype.toString.call(value));
-    return DevtoolsJson.#mark(isClass ? "class" : "function", value.name || undefined);
   }
 
   static #coerceObject(value: object, depthLeft: number, seen: WeakSet<object>): unknown {

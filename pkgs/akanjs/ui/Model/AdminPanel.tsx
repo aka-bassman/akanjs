@@ -17,10 +17,7 @@ interface AdminPanelProps<T extends string, State, Input, Full extends { id: str
   template?: any;
   unit?: any;
   view?: any;
-  /**
-   * Overrides the filter a summary column applies. A column left out still narrows the listing when its own
-   * field declares one with `.meta(...)`.
-   */
+  /** Overrides a summary column's filter; a column left out still filters through its field's `.meta(...)`. */
   queryMap?: { [column: string]: QuerySetting };
   /** Model whose fields `summaryColumns` name. Defaults to the `summary` model the state key already implies. */
   summaryRefName?: string;
@@ -49,8 +46,7 @@ export default function AdminPanel<
   renderInsight = ({ insight }) => (
     <Data.Insight insight={insight} slice={slice} columns={insightColumns as (keyof BaseInsight)[]} />
   ),
-  // Only default a dashboard when there is something to put in it: the summary it reads is an app-level store
-  // key, so a panel that asks for no column would render an empty frame on every app that has one.
+  // Defaulted only when columns are asked for, or every app with a `summary` key would get an empty frame.
   renderDashboard = summaryColumns?.length
     ? ({ summary, hidePresents, onSelect, queryKey }) => (
         <Data.Dashboard

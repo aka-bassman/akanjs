@@ -20,11 +20,7 @@ export interface ResolvedRouteModule {
 export const isRouteDefinition = (value: unknown): value is RouteDefinition =>
   typeof value === "object" && value !== null && (value as Record<symbol, unknown>)[routeDefinitionMarker] === true;
 
-/**
- * Every loader — the RSC worker, the CSR boot, the generated root layout — reads route modules by their named
- * exports. A chain module has one export, so it is unfolded into that shape here and nothing downstream learns
- * which of the two it was reading; a legacy module passes through untouched.
- */
+/** Unfolds a chain module into the named-export shape every loader reads; a legacy module passes through untouched. */
 export const resolveRouteModule = (
   mod: RouteModuleSource,
   key: string,

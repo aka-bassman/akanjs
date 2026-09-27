@@ -30,11 +30,7 @@ export class LocalRegistryScript extends script("localRegistry", [
     const registry = await this.localRegistryRunner.start(workspace, { registryUrl });
     const akanPkgs = await this.cloudRunner.getAkanPkgs(workspace);
     await this.#preparePackages(workspace, akanPkgs, { test });
-    await this.cloudRunner.deployAkan(workspace, akanPkgs, {
-      registryUrl: registry,
-      confirmPublish: false,
-      tag,
-    });
+    await this.cloudRunner.deployAkan(workspace, akanPkgs, { registryUrl: registry, confirmPublish: false, tag });
     await this.localRegistryRunner.smoke(workspace, { registryUrl: registry });
   }
 

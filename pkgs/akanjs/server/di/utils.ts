@@ -1,5 +1,5 @@
 import { INJECT_META } from "akanjs/base";
-import { lowerlize } from "akanjs/common";
+import { lowerlize, toError } from "akanjs/common";
 import { ConstantRegistry } from "akanjs/constant";
 import type { InjectInfo } from "akanjs/service";
 import type { DatabaseModule, ServiceModule } from "../akanLib";
@@ -68,12 +68,7 @@ export const getModuleDependencyRefNames = (mod: DatabaseModule | ServiceModule)
   return dependencies;
 };
 
-/**
- * The modules a cascade edge forces this one to be mounted with: a `removeRef` target and a monomorphic
- * `removeWith` owner both fail `CascadeRunner.seal` when they are absent, so they are boot dependencies the
- * inject graph cannot see. A polymorphic owner is exempt — an enum list spans optional modules by design, and
- * `cascade: "removeWithAny"` names no module at all.
- */
+// Cascade targets are boot deps the inject graph misses (seal fails without them); polymorphic owners are exempt.
 export const getModuleCascadeRefNames = (mod: DatabaseModule | ServiceModule) => {
   const dependencies = new Set<string>();
   if (!("constant" in mod)) return dependencies;
@@ -92,10 +87,7 @@ export interface Registration {
   owner: string;
 }
 
-/**
- * A key registered twice is silently last-write-wins everywhere downstream — an app that meant to add a second
- * adaptor gets one, and the other's `onInit` never runs. Refuse the boot instead, naming both claimants.
- */
+// Downstream maps are last-write-wins, so a duplicate would silently skip the other's `onInit`.
 export const assertUniqueRegistrations = (kind: string, registrations: Registration[]) => {
   const claimed = new Map<string, string>();
   const clashes: string[] = [];
@@ -108,30 +100,25 @@ export const assertUniqueRegistrations = (kind: string, registrations: Registrat
   throw new Error(`[DI:${kind}] ${clashes.length} duplicate registration(s):\n${clashes.join("\n")}`);
 };
 
-/**
- * Run every task in parallel and, if any rejects, throw a single
- * `AggregateError` that enumerates every failing label + cause. This replaces
- * the previous `Promise.all` flow where a second concurrent failure in the
- * same stage would hide the first, making boot errors hard to localize.
- */
+// allSettled, not Promise.all: every failing task of a stage is reported, not just the first.
 export const runStage = async (stageLabel: string, tasks: StageTask[]): Promise<void> => {
   if (tasks.length === 0) return;
   const settled = await Promise.allSettled(tasks.map((t) => t.run()));
-  const failures: { label: string; reason: unknown }[] = [];
-  settled.forEach((res, i) => {
-    if (res.status === "rejected") {
-      const task = tasks[i];
-      failures.push({ label: task ? task.label : `#${i}`, reason: res.reason });
-    }
-  });
+  const failures = settled.flatMap((res, i) =>
+    res.status === "rejected" ? [{ label: tasks[i]?.label ?? `#${i}`, reason: res.reason }] : [],
+  );
+  throwStageFailures(stageLabel, failures, tasks.length);
+};
+
+export const throwStageFailures = (
+  stageLabel: string,
+  failures: { label: string; reason: unknown }[],
+  total: number,
+) => {
   if (failures.length === 0) return;
   const summary = failures.map((f) => `  • ${f.label}: ${reasonMessage(f.reason)}`).join("\n");
   const errors = failures.map((f) => toError(f.reason));
-  throw new AggregateError(errors, `[DI:${stageLabel}] ${failures.length}/${tasks.length} task(s) failed:\n${summary}`);
-};
-
-export const toError = (reason: unknown): Error => {
-  return reason instanceof Error ? reason : new Error(String(reason));
+  throw new AggregateError(errors, `[DI:${stageLabel}] ${failures.length}/${total} task(s) failed:\n${summary}`);
 };
 
 export const reasonMessage = (reason: unknown): string => {

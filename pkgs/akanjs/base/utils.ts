@@ -21,10 +21,7 @@ export const applyFnToArrayObjects = <Input, Fn extends (arg: never) => unknown>
   arraiedData: Input,
   fn: Fn,
 ): ApplyFnToArrayObjectsResult<Input, ReturnType<Fn>> => {
-  if (Array.isArray(arraiedData))
-    return arraiedData.map((data) => applyFnToArrayObjects(data, fn)) as ApplyFnToArrayObjectsResult<
-      Input,
-      ReturnType<Fn>
-    >;
-  return fn(arraiedData as never) as ApplyFnToArrayObjectsResult<Input, ReturnType<Fn>>;
+  type Result = ApplyFnToArrayObjectsResult<Input, ReturnType<Fn>>;
+  if (Array.isArray(arraiedData)) return arraiedData.map((data) => applyFnToArrayObjects(data, fn)) as Result;
+  return fn(arraiedData as never) as Result;
 };

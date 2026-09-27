@@ -20,12 +20,6 @@ export interface RouterInstance {
   back: (routeOptions?: RouteOptions) => void;
   refresh: () => void;
 }
-interface InternalRouterInstance {
-  push: (href: string, routeOptions?: RouteOptions) => void | Promise<void>;
-  replace: (href: string, routeOptions?: RouteOptions) => void | Promise<void>;
-  back: (routeOptions?: RouteOptions) => void;
-  refresh: () => void;
-}
 interface RouterOptions {
   prefix?: string;
   lang?: string;
@@ -136,8 +130,6 @@ const getServerBasePath = (reqPathname: string, lang: string, headerBasePath: st
 
 declare global {
   var __AKAN_ROUTER__: Router | undefined;
-  var __AKAN_DEV_SYNC_NAVIGATION__: ((href: string, kind: "push" | "replace" | "back" | "pop") => void) | undefined;
-  var __AKAN_DEV_SYNC_NAVIGATION_APPLYING__: boolean | undefined;
 }
 
 export const getPathInfo = (requestUrl: string, lang: string, prefix: string) => {
@@ -166,18 +158,14 @@ class Router {
   #indexPath = "/";
   #navigation: Promise<void> = Promise.resolve();
   #historyIdx = 0;
-  #instance: InternalRouterInstance = {
+  #instance: RouterInstance = {
     push: (href: string) => {
       const { href: fullHref } = this.#getPathInfo(href);
-      Logger.info(`push to:${fullHref}`);
-      // ! need to revive
-      // if (getEnv().side === "server") void redirect(fullHref);
+      Logger.warn(`router.push(${fullHref}) does not navigate on the server; use router.redirect() there`);
     },
     replace: (href: string) => {
-      const { pathname } = this.#getPathInfo(href);
-      Logger.info(`replace to:${pathname}`);
-      // ! need to revive
-      // if (getEnv().side === "server") void redirect(fullHref);
+      const { href: fullHref } = this.#getPathInfo(href);
+      Logger.warn(`router.replace(${fullHref}) does not navigate on the server; use router.redirect() there`);
     },
     back: () => {
       throw new Error("back is only available in client");
@@ -187,7 +175,6 @@ class Router {
     },
   };
   init(options: SsrClientRouterOption | SsrServerRouterOption | CSRClientRouterOption) {
-    // if (this.isInitialized) throw new Error("Router is already initialized");
     this.#prefix = options.prefix ?? "";
     this.#lang = options.lang ?? parseAkanI18nEnv().defaultLocale;
     this.#routePaths = new Set(
@@ -202,30 +189,20 @@ class Router {
     }
     this.#ensureHistoryState();
     if (options.type === "csr") this.#initCsrClientRouter(options);
-    else if (options.side === "server") this.#initSsrServerRouter(options);
-    else this.#initSsrClientRouter(options);
+    else if (options.side === "client") this.#initSsrClientRouter(options);
     this.isInitialized = true;
     Logger.verbose("Router initialized");
   }
-  #initSsrServerRouter(options: SsrServerRouterOption) {
-    // already initialized in next server
-  }
   #initSsrClientRouter(options: SsrClientRouterOption) {
+    const navigate = (method: "push" | "replace") => (href: string, routeOptions?: RouteOptions) => {
+      const pathInfo = this.#getPathInfo(href);
+      const navigationPathInfo = this.#getNavigationPathInfo(href);
+      this.#postPathChange(pathInfo);
+      return options.router[method](navigationPathInfo.href, routeOptions);
+    };
     this.#instance = {
-      push: (href: string, routeOptions) => {
-        const router = options.router;
-        const pathInfo = this.#getPathInfo(href);
-        const navigationPathInfo = this.#getNavigationPathInfo(href);
-        this.#postPathChange(pathInfo);
-        return router.push(navigationPathInfo.href, routeOptions);
-      },
-      replace: (href: string, routeOptions) => {
-        const router = options.router;
-        const pathInfo = this.#getPathInfo(href);
-        const navigationPathInfo = this.#getNavigationPathInfo(href);
-        this.#postPathChange(pathInfo);
-        return router.replace(navigationPathInfo.href, routeOptions);
-      },
+      push: navigate("push"),
+      replace: navigate("replace"),
       back: () => {
         const router = options.router;
         const pathInfo = this.#getPathInfo(document.referrer);
@@ -386,14 +363,8 @@ class Router {
     this.#postDevSyncNavigation("replace", href);
     return undefined as never;
   }
-  /**
-   * The navigation `push` / `replace` last started, for a caller that has to know whether it landed. **Rejects
-   * when the route refused to move** — a target that resolves to nothing leaves the page where it was instead of
-   * replacing it, and `push` returns long before that is known, so this is the only place it can be reported.
-   *
-   * A method rather than a getter: `router` is a Proxy that binds functions to the real instance, and a getter
-   * reached through it would run with the Proxy as `this` and fail on the private field.
-   */
+  /** The last `push`/`replace`; rejects when the route refused to move. A method, not a getter: through the `router`
+   * Proxy a getter would run with the Proxy as `this` and fail on the private field. */
   navigation(): Promise<void> {
     return this.#navigation;
   }
@@ -416,7 +387,6 @@ class Router {
   }
   back(routeOptions?: RouteOptions) {
     if (getEnv().side === "server") throw new Error("back is only available in client side");
-    // history보고 뒤로갈지 끌지 정하던가 먹통하던가
     this.#checkInitialized();
     this.#instance.back(routeOptions);
     return undefined as never;
@@ -467,11 +437,7 @@ class Router {
     this.#instance.replace(`${path}${search ? `?${search}` : ""}${hash ? `#${hash}` : ""}`);
     return undefined as never;
   }
-  /**
-   * A pathname with the locale and base-path segments taken off — the app-internal route it names, which is what
-   * a tool argument and a `<a href>` have in common. Unguarded, unlike `getPath`, whose default argument is the
-   * one thing in it that needs a browser.
-   */
+  /** A pathname without its locale and base-path segments; unlike `getPath`, it needs no browser. */
   routeOf(pathname: string) {
     return getPathInfo(pathname, this.#lang, this.#prefix).path;
   }

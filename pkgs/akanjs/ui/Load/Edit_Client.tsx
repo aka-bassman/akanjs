@@ -91,44 +91,9 @@ function Render<T extends string, Full extends { id: string }>({
   );
 }
 
-export default function Edit_Client<T extends string, Full extends { id: string }>({
-  className,
-  checkSubmit,
-  modalClassName,
-  type,
-  edit,
-  modal,
-  slice,
-  loading,
-  children,
-  onSubmit,
-  onCancel,
-  submitText,
-  submitClassName,
-  submitOption,
-  renderSubmit,
-  draft,
-}: EditProps<T, Full>) {
-  const props: EditProps<T, Full> = {
-    className,
-    checkSubmit,
-    modalClassName,
-    type,
-    edit,
-    modal,
-    slice,
-    loading,
-    children,
-    onSubmit,
-    onCancel,
-    submitText,
-    submitClassName,
-    submitOption,
-    renderSubmit,
-    draft,
-  };
+export default function Edit_Client<T extends string, Full extends { id: string }>(props: EditProps<T, Full>) {
   return (
-    <Stream of={edit} fallback={loading === undefined ? <Loading.Skeleton active /> : loading}>
+    <Stream of={props.edit} fallback={props.loading === undefined ? <Loading.Skeleton active /> : props.loading}>
       {(serverEdit) => (serverEdit ? <Render {...props} edit={serverEdit} /> : <Empty />)}
     </Stream>
   );

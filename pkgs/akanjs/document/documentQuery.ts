@@ -1,4 +1,5 @@
 import { type Dayjs, dayjs } from "akanjs/base";
+import { isValidDate } from "akanjs/common";
 
 export type DocumentId = string & { readonly __brand: "DocumentId" };
 
@@ -45,24 +46,7 @@ export type DocumentQueryNode =
 /** The four real SQL columns. Everything else lives inside `_doc`, which is what makes the two compile differently. */
 export const baseDocumentColumns = new Set(["id", "createdAt", "updatedAt", "removedAt"]);
 
-export type DocumentQueryOperator =
-  | "eq"
-  | "ne"
-  | "oneOf"
-  | "notOneOf"
-  | "gt"
-  | "gte"
-  | "lt"
-  | "lte"
-  | "between"
-  | "exists"
-  | "missing"
-  | "empty"
-  | "has"
-  | "contains";
-
-/** The operator-object shorthand's keys: `{ status: { oneOf: [...] } }` reaches the same operators as `q.oneOf`. */
-export const queryOperatorKeys = new Set<string>([
+const documentQueryOperators = [
   "eq",
   "ne",
   "oneOf",
@@ -77,7 +61,11 @@ export const queryOperatorKeys = new Set<string>([
   "empty",
   "has",
   "contains",
-]);
+] as const;
+export type DocumentQueryOperator = (typeof documentQueryOperators)[number];
+
+/** The operator-object shorthand's keys: `{ status: { oneOf: [...] } }` reaches the same operators as `q.oneOf`. */
+export const queryOperatorKeys = new Set<string>(documentQueryOperators);
 
 export type DocumentQueryValue =
   | DocumentPrimitive
@@ -86,9 +74,8 @@ export type DocumentQueryValue =
   | undefined
   | Record<string, unknown>;
 
-// Update operators mirror the query DSL: an update is `{ path: updateNode }`, symmetric with the `{ path: queryNode }`
-// query shape. A bare value at a path is shorthand for `set(value)`. Compilers translate these nodes into a single
-// atomic JSON expression pushed to the database (no read-modify-write).
+// A bare value at a path is shorthand for `set(value)`; the nodes compile to one atomic JSON expression, never a
+// read-modify-write.
 export type DocumentUpdateOperator =
   | "set"
   | "unset"
@@ -162,16 +149,16 @@ export interface SqlFragment {
 }
 
 const op = (op: DocumentQueryOperator, value?: unknown): DocumentQueryNode => ({ kind: "op", op, value });
+const group =
+  (kind: "all" | "any") =>
+  (...queries: (DocumentQuery | null | undefined | false)[]): DocumentQueryNode => ({
+    kind,
+    queries: queries.filter(Boolean) as DocumentQuery[],
+  });
 
 export const createDocumentQueryHelper = () => ({
-  all: (...queries: (DocumentQuery | null | undefined | false)[]): DocumentQueryNode => ({
-    kind: "all",
-    queries: queries.filter(Boolean) as DocumentQuery[],
-  }),
-  any: (...queries: (DocumentQuery | null | undefined | false)[]): DocumentQueryNode => ({
-    kind: "any",
-    queries: queries.filter(Boolean) as DocumentQuery[],
-  }),
+  all: group("all"),
+  any: group("any"),
   not: (query: DocumentQuery): DocumentQueryNode => ({ kind: "not", query }),
   eq: (value: unknown) => op("eq", value),
   ne: (value: unknown) => op("ne", value),
@@ -183,16 +170,14 @@ export const createDocumentQueryHelper = () => ({
   lte: (value: unknown) => op("lte", value),
   between: (from: unknown, to: unknown) => op("between", [from, to]),
   exists: (path: string) => ({ [path]: op("exists") }),
-  // `missing` is key absence, not "no value": an optional field left out of an insert has no key, but the same
-  // field on a document read back and saved carries an explicit null the read materialized. `empty` covers both
-  // and is what a caller asking "has no value" wants.
+  // `missing` is key absence, not "no value": a document read back and saved carries an explicit null the read
+  // materialized. `empty` covers both.
   missing: (path: string) => ({ [path]: op("missing") }),
   empty: (path: string) => ({ [path]: op("empty") }),
   has: (value: unknown) => op("has", value),
   contains: (value: unknown) => op("contains", value),
   raw: (sql: string, params: unknown[] = []): DocumentQueryNode => ({ kind: "raw", sql, params }),
-  // A pure descriptor: whether search is available at all is decided by the compiler, so a filter declaring
-  // `q.search(...)` still typechecks and still builds on a process that has the index switched off.
+  // A pure descriptor: the compiler decides whether search is available, so a filter still builds with it off.
   search: (text: string, options: DocumentSearchOptions = {}): DocumentQueryNode => ({
     kind: "search",
     text,
@@ -206,8 +191,7 @@ export type DocumentQueryHelper = ReturnType<typeof createDocumentQueryHelper>;
 export const documentQueryHelper = createDocumentQueryHelper();
 
 export const encodeDocumentValue = (value: unknown): unknown => {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
+  if (value === undefined || value === null) return value;
   if (dayjs.isDayjs(value)) return value.valueOf();
   if (value instanceof Date) return value.getTime();
   if (Array.isArray(value)) return value.map(encodeDocumentValue);
@@ -216,8 +200,7 @@ export const encodeDocumentValue = (value: unknown): unknown => {
 };
 
 export const sanitizeJson = (value: unknown): unknown => {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
+  if (value === undefined || value === null) return value;
   if (dayjs.isDayjs(value)) return value.valueOf();
   if (value instanceof Date) return value.getTime();
   if (value instanceof Map)
@@ -233,3 +216,17 @@ export const sanitizeJson = (value: unknown): unknown => {
   });
   return Object.fromEntries(entries);
 };
+
+const convertOperatorValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map((v) => convertOperatorValue(v));
+  if (!value) return value;
+  if (isValidDate(value as Date)) return dayjs(value as Date).valueOf();
+  if (typeof value !== "object" || value.constructor !== Object) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, value]) => [key, convertOperatorValue(value)]),
+  );
+};
+export const convertAggregateMatch = (query: unknown) =>
+  Object.fromEntries(
+    Object.entries(query as Record<string, unknown>).map(([key, value]) => [key, convertOperatorValue(value)]),
+  );

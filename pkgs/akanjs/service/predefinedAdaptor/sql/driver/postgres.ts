@@ -9,9 +9,7 @@ const bindings = (params: unknown[] | Record<string, unknown>) => {
 import type { AkanSqlClient, AkanSqlStatement } from "../types";
 import { toPostgresSql } from "../values";
 
-// `unsafe` skips statement preparation unless asked, and an unprepared query with parameters costs two round trips:
-// postgres.js describes it first to learn the parameter types. Asking here still yields to the connection's own
-// `prepare` (`?prepare=false` in the URL), which a PgBouncer in transaction mode needs.
+// Unprepared, a parameterized `unsafe` costs two round trips; the URL's `?prepare=false` (PgBouncer) still wins.
 const prepared = { prepare: true } as const;
 
 export class PostgresStatement implements AkanSqlStatement {

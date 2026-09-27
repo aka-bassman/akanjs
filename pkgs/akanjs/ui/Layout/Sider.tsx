@@ -3,7 +3,7 @@ import { cn } from "akanjs/client";
 import { st } from "akanjs/store";
 import { animated } from "akanjs/ui";
 import { type ReactNode, useEffect, useState } from "react";
-import { AiOutlineMenu } from "react-icons/ai";
+import { AiOutlineClose, AiOutlineMenu } from "react-icons/ai";
 import { BiX } from "react-icons/bi";
 import { useSpring } from "react-spring";
 import { agentAttrs } from "../agentAttrs";
@@ -96,5 +96,86 @@ export const Sider = ({ className, bgClassName, trigger, header, close, children
         <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
       </animated.div>
     </>
+  );
+};
+
+export interface LeftSiderProps {
+  className?: string;
+  children: ReactNode;
+  open: boolean;
+  width?: number | string;
+  /** Element that closes the drawer. `false` draws none. */
+  close?: ReactNode | false;
+  onCancel: () => void;
+}
+export const LeftSider = ({ className, children, open, width, close, onCancel }: LeftSiderProps) => {
+  return (
+    <div
+      className={cn(
+        "absolute top-0 border-muted border-r bg-background transition-all duration-150",
+        open ? "translate-x-0" : "translate-x-[-100%]",
+        className,
+      )}
+      style={{ width }}
+    >
+      {children}
+      {close === false ? null : (
+        <div
+          className="absolute top-0 right-0"
+          onClick={() => {
+            onCancel();
+          }}
+        >
+          {close ?? (
+            <button className={buttonRecipe({ variant: "ghost", size: "icon" })}>
+              <BiX />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export interface RightSiderProps {
+  className?: string;
+  children: ReactNode;
+  open: boolean;
+  title?: ReactNode;
+  width?: number | string;
+  /** The mark inside the drawer's close control. `false` draws no control. */
+  close?: ReactNode | false;
+  onCancel: () => void;
+}
+export const RightSider = ({ className, children, open, title, width, close, onCancel }: RightSiderProps) => {
+  return (
+    <div
+      className={cn(
+        "group absolute top-0 right-0 overflow-y-auto border-muted border-l bg-background pt-14 transition-all duration-150",
+        open && "translate-x-0",
+        !open && "translate-x-[100%]",
+        className,
+      )}
+      style={{ width }}
+    >
+      {children}
+      <div className="absolute top-2 left-4 flex items-center gap-4 pt-2 text-xl">
+        {close === false ? null : (
+          <div
+            className={cn(
+              "cursor-pointer border-muted bg-background transition-all duration-150",
+              open && "opacity-100",
+              !open && "opacity-0",
+            )}
+            onClick={() => {
+              onCancel();
+            }}
+          >
+            {close ?? <AiOutlineClose />}
+          </div>
+        )}
+        {title ? <div className="whitespace-nowrap">{title}</div> : null}
+      </div>
+    </div>
   );
 };

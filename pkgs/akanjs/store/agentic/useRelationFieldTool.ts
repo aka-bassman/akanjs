@@ -10,25 +10,12 @@ import { FormFields } from "./formFields";
 export interface RelationFieldSource<T extends { id: string }> {
   /** Read live from the store rather than closed over: `load` below changes the list mid-call. */
   read: () => DataList<T>;
-  /** Loads the options an agent never opened the dropdown to fetch. */
   load: () => Promise<unknown> | unknown;
-  /** How one option reads to a person, so the agent can match what it sees on screen. */
   label: (model: T) => string;
   disabled?: boolean;
 }
 
-/**
- * The two tools a relation picker owes an agent: list the documents it can pick, then pick by id.
- *
- * `FormFields` publishes no schema for a relation, and it is right not to — the form holds the whole related
- * document, so an id would need a lookup the store does not do. The picker is where that lookup lives: it holds
- * the slice list, the loader, and the label each option renders with. So the field reaches an agent from the one
- * component that can resolve it, which is the rule every other control follows — the control is the declaration.
- *
- * Listing is its own tool because loading is its own step for a person too: the options arrive when the dropdown
- * opens, and an agent never opens it. Folding the load into the setter would leave an agent guessing ids in order
- * to learn them from the refusal.
- */
+/** A relation picker's two tools: list the pickable documents (loading them first), then set by id. */
 export const useRelationFieldTool = <T extends { id: string }>(
   onChange: unknown,
   { read, load, label, disabled }: RelationFieldSource<T>,
@@ -43,8 +30,7 @@ export const useRelationFieldTool = <T extends { id: string }>(
     if (!action || disabled) return;
     const ref = FormFields.ref(action);
     const target = ref && FormFields.relationOf(ref.field);
-    // A field the form can describe on its own is `useFieldTool`'s: this hook exists for the one it cannot, and
-    // publishing both would register one name twice with two different argument shapes.
+    // A describable field is `useFieldTool`'s: two setters under one name would give one action two shapes.
     if (!ref || !target || FormFields.schema(ref.field)) return;
     const many = ref.field.arrDepth > 0;
     const nullable = !!ref.field.nullable && !many;

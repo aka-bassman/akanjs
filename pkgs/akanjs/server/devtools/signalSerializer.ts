@@ -24,6 +24,7 @@ import { FetchSerializer } from "../../signal/serializer";
 import type { DatabaseModule, ServiceModule } from "../akanLib";
 import type { DiLifecycle } from "../di/diLifecycle";
 import { SignalResolver } from "../resolver";
+import { ApiRouter } from "../routing/apiRouter";
 import type { EndpointNode, InternalNode, RouteRow, SignalData, SignalNode, SliceNode } from "./types";
 
 export interface SignalSerializerContext {
@@ -33,15 +34,7 @@ export interface SignalSerializerContext {
   websocketPrefix: string;
 }
 
-/**
- * Builds the `/_akan/signal` payload from the live DI container.
- *
- * The client-side `getSerializedSignal()` is deliberately *not* used here: its map is seeded with the `base`
- * signal and only completed at build time via `applySignal`, so on a server process it under-reports the API.
- * Declared endpoints come from `FetchSerializer.serializeRegistry(di.live)` (what `/openapi.json` uses), the
- * framework-generated CRUD/slice endpoints come from the slice endpoint class the resolver synthesized, and
- * internals — absent from `SerializedSignal` entirely — are read straight off `INTERNAL_META`.
- */
+/** Built from the live DI container: on a server, `getSerializedSignal()` holds only the `base` signal. */
 export class SignalSerializer {
   static serialize({ di, serverMode, prefix, websocketPrefix }: SignalSerializerContext): SignalData {
     const serializedSignals = FetchSerializer.serializeRegistry(di.live).signal;
@@ -124,13 +117,7 @@ export class SignalSerializer {
     };
   }
 
-  // * ==================== Endpoints ==================== * //
-
-  /**
-   * `FetchSerializer` never populates `prefix`/`globalPrefix` (they are server-routing concerns), so a
-   * `{ globalPrefix: false }` endpoint is unreconstructable from the client payload alone. Read them off
-   * `ENDPOINT_META` instead of widening what ships to every client bundle.
-   */
+  // FetchSerializer omits prefix/globalPrefix (server routing); read ENDPOINT_META rather than widen client bundles.
   static #augmentAll(
     endpoints: Record<string, SerializedEndpoint>,
     endpointCls: EndpointCls,
@@ -159,7 +146,6 @@ export class SignalSerializer {
     return Object.fromEntries(Object.entries(endpoints).filter(([key]) => predicate(key)));
   }
 
-  /** The list/insight pair the resolver synthesizes per slice key — everything else on that class is CRUD. */
   static #sliceDerivedKeys(refName: string, sliceCls: SliceCls | undefined): Set<string> {
     const sliceMeta = (sliceCls?.[SLICE_META] ?? {}) as Record<string, SliceInfo>;
     return new Set(
@@ -193,8 +179,6 @@ export class SignalSerializer {
     };
   }
 
-  // * ==================== Routes ==================== * //
-
   static #routeRows(
     signal: string,
     endpointCls: EndpointCls,
@@ -219,7 +203,7 @@ export class SignalSerializer {
           method: node.type === "mutation" ? (info.signalOption.method ?? "POST") : transport === "http" ? "GET" : null,
           path:
             transport === "ws"
-              ? SignalSerializer.#joinPath(prefix, websocketPrefix)
+              ? ApiRouter.joinRoutePath(prefix, websocketPrefix)
               : SignalSerializer.#httpPath(key, info, defaultPrefix, prefix),
           guards: node.guards ?? [],
           ...(node.cache !== undefined ? { cache: node.cache } : {}),
@@ -230,37 +214,10 @@ export class SignalSerializer {
     });
   }
 
-  /** Mirrors `SignalResolver.resolveEndpoint` + `ApiRouter.applyGlobalPrefix` so paths match the real route table. */
   static #httpPath(key: string, info: EndpointInfo, defaultPrefix: string | undefined, apiPrefix: string): string {
-    const servicePrefix = SignalSerializer.#resolveServicePrefix(info.signalOption.prefix, defaultPrefix);
-    const localPath = `${servicePrefix}${info.getPath(key)}`;
-    if (info.signalOption.globalPrefix === false) return SignalSerializer.#normalizePath(localPath);
-    return SignalSerializer.#joinPath(apiPrefix, localPath);
+    const servicePrefix = SignalResolver.resolveServicePrefix(info.signalOption.prefix, defaultPrefix);
+    return ApiRouter.applyGlobalPrefix(apiPrefix, `${servicePrefix}${info.getPath(key)}`, info.signalOption);
   }
-
-  static #resolveServicePrefix(prefix: false | string | undefined, defaultPrefix?: string): string {
-    if (prefix === false || prefix === "") return "";
-    const resolved = prefix ?? defaultPrefix;
-    if (!resolved) return "";
-    const trimmed = resolved.trim().replace(/^\/+|\/+$/g, "");
-    return trimmed ? `/${trimmed}` : "";
-  }
-
-  static #joinPath(prefix: string, path: string): string {
-    const normalizedPrefix = SignalSerializer.#normalizePath(prefix).replace(/\/$/, "");
-    const normalizedPath = SignalSerializer.#normalizePath(path);
-    if (normalizedPrefix === "/") return normalizedPath;
-    if (normalizedPath === "/") return normalizedPrefix;
-    return `${normalizedPrefix}${normalizedPath}`;
-  }
-
-  static #normalizePath(path: string): string {
-    const trimmed = path.trim();
-    if (!trimmed || trimmed === "/") return "/";
-    return `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
-  }
-
-  // * ==================== Internals ==================== * //
 
   static #serializeInternals(
     internalMeta: Record<string, InternalInfo>,
@@ -276,8 +233,6 @@ export class SignalSerializer {
 
   static #serializeInternal(key: string, info: InternalInfo, serverMode: "federation" | "batch" | "all"): InternalNode {
     const option = info.signalOption;
-    // `resolveField` internals are field resolvers, never scheduled — reporting them as "disabled" would read
-    // as a misconfiguration rather than the design.
     const schedulable = info.type !== "resolveField";
     const skip = schedulable ? SignalResolver.getScheduleSkipReason(info, serverMode) : null;
     return {
@@ -307,8 +262,6 @@ export class SignalSerializer {
       return scheduleTime !== undefined ? { schedule: { everyMs: scheduleTime } } : {};
     return {};
   }
-
-  // * ==================== Args ==================== * //
 
   static #serializeArg(argInfo: ArgInfo<{ nullable?: boolean }>): SerializedArg {
     const { refName, modelType } = SignalSerializer.#resolveRefInfo(argInfo.argRef as Cls);

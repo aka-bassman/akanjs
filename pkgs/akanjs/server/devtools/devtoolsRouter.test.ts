@@ -13,7 +13,6 @@ const makeEnv = (environment: string): BaseEnv =>
     operationMode: "local",
   }) as BaseEnv;
 
-/** An empty container: every registry present, nothing registered in it. */
 const emptyDi = () =>
   ({
     live: getDefaultLiveRegistry(),
@@ -86,8 +85,6 @@ describe("DevtoolsRouter gating", () => {
   });
 
   test("a serializer failure answers 500 instead of crashing the dev server", async () => {
-    // A bare object, not the empty container: the serializer throws on its first registry access, which is the
-    // failure this asserts is answered rather than propagated.
     const brokenDi = {} as DiLifecycle;
     const routes = (new DevtoolsRouter(makeContext("local", brokenDi)).createRoutes() ?? {}) as Record<
       string,

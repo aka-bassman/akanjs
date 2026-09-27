@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
 import { interpolateTranslation } from "../common/interpolateTranslation";
-import { pathGetLoose } from "../common/pathGetLoose";
+import { pathGetLoose } from "../common/objectPath";
 import { cn } from "./cn";
 import { createFont, Inter, Nanum_Gothic_Coding, Noto_Sans_KR, Roboto } from "./createFont";
 import { clearRscNavigationCache, isRscNavigationFromCache, navigateRsc } from "./rscNavigation";

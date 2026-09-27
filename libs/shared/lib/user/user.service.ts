@@ -1,6 +1,11 @@
 import type { Self } from "@libs/shared/common";
 import { withRedirectQuery } from "@libs/shared/common";
-import { type AuthTokenMeta, type SsoCookie, ssoSessionCookies } from "@libs/shared/srvkit";
+import {
+  type AuthTokenMeta,
+  type RotateRefreshSessionOptions,
+  type SsoCookie,
+  ssoSessionCookies,
+} from "@libs/shared/srvkit";
 import { randomCode, randomString } from "@libs/util/common";
 import type { EmailApi, PurpleApi } from "@libs/util/srvkit";
 import type { Dayjs } from "akanjs/base";
@@ -63,12 +68,17 @@ export class UserService extends serve(db.user, ({ use, service, env }) => ({
     );
     return { ...accessToken, refreshToken };
   }
-  async refreshUserToken(refreshToken: string, account?: Account): Promise<db.util.AccessToken> {
+  async refreshUserToken(
+    refreshToken: string,
+    account?: Account,
+    options: Pick<RotateRefreshSessionOptions, "graceMs" | "reuseRevokes"> = {},
+  ): Promise<db.util.AccessToken> {
     const nextRefreshToken = this.securityService.createRefreshToken();
     const session = await this.userModel.rotateRefreshSession(
       this.securityService.hashRefreshToken(refreshToken),
       nextRefreshToken.refreshTokenHash,
       nextRefreshToken.refreshTokenExpiresAt,
+      options,
     );
     const user = await this.getActiveUser(session.subjectId);
     const self = await this.makeSelf(user);

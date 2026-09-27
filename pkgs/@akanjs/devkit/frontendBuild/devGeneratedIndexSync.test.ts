@@ -1,16 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { tempDirs } from "../testHelpers";
 import { DevGeneratedIndexSync } from "./devGeneratedIndexSync";
 
-const tempRoots: string[] = [];
-
-const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-generated-index-"));
-  tempRoots.push(root);
-  return root;
-};
+const makeTempRoot = tempDirs("akan-generated-index-");
 
 const seedFacet = async (root: string, facet: string, { files, dirs }: { files: string[]; dirs: string[] }) => {
   const dir = path.join(root, "libs", "util", facet);
@@ -28,23 +22,19 @@ const barrelFor = async (root: string, facet: string, seed: { files: string[]; d
   return readFile(path.join(dir, "index.ts"), "utf8");
 };
 
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
-
 describe("DevGeneratedIndexSync facet barrels", () => {
   test("camelCase facets export only clean camelCase names", async () => {
     const content = await barrelFor(await makeTempRoot(), "srvkit", {
       files: [
         "aes.ts",
         "cloudflareApi.ts",
-        "cloudflareApi.helper.ts", // dotted → skipped
-        "pushNotificationServer.type.ts", // dotted → skipped
-        "PushNotificationServer.ts", // PascalCase in camel facet → skipped
-        "my_snake.ts", // snake_case → skipped
-        "kebab-case.ts", // kebab-case → skipped
+        "cloudflareApi.helper.ts",
+        "pushNotificationServer.type.ts",
+        "PushNotificationServer.ts",
+        "my_snake.ts",
+        "kebab-case.ts",
       ],
-      dirs: ["storageApi", "BadDir"], // PascalCase dir → skipped
+      dirs: ["storageApi", "BadDir"],
       trigger: "aes.ts",
     });
     expect(content).toBe(`export * from "./aes";\nexport * from "./cloudflareApi";\nexport * from "./storageApi";\n`);
@@ -52,13 +42,8 @@ describe("DevGeneratedIndexSync facet barrels", () => {
 
   test("ui facet exports only clean PascalCase names", async () => {
     const content = await barrelFor(await makeTempRoot(), "ui", {
-      files: [
-        "Globe.tsx",
-        "AkanLogo.tsx",
-        "Globe_Dynamic.tsx", // underscore → skipped
-        "lowerStart.tsx", // camelCase in ui facet → skipped
-      ],
-      dirs: ["Code", "badDir"], // camelCase dir → skipped
+      files: ["Globe.tsx", "AkanLogo.tsx", "Globe_Dynamic.tsx", "lowerStart.tsx"],
+      dirs: ["Code", "badDir"],
       trigger: "Globe.tsx",
     });
     expect(content).toBe(`export * from "./AkanLogo";\nexport * from "./Code";\nexport * from "./Globe";\n`);

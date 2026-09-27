@@ -15,13 +15,11 @@ const languageNames = {
   ja: "日本語",
 } as const;
 
-// A configured locale the framework ships no display name for still routes and still translates, so it belongs
-// in the list under its own code rather than vanishing from a menu that offers no other way to reach it.
+// A configured locale with no shipped display name still routes, so it is listed under its own code.
 const nameOf = (locale: string) => languageNames[locale as keyof typeof languageNames] ?? locale;
 
 const warned = new Set<string>();
-// A locale outside `AKAN_PUBLIC_LOCALES` has no route prefix, so choosing it navigates straight to a 404.
-// Dropping it is the only safe render; saying so once is what keeps the drop from reading as a typo.
+// A locale outside `AKAN_PUBLIC_LOCALES` has no route prefix and would navigate to a 404, so it is dropped.
 const warnDropped = (dropped: string[], locales: string[]) => {
   if (process.env.AKAN_PUBLIC_ENV !== "local") return;
   const unseen = dropped.filter((locale) => !warned.has(locale));

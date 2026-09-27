@@ -1,18 +1,7 @@
-import { normalizeIpAddress } from "./clientAddress";
+import { clientAddressFromHeaders, normalizeIpAddress } from "./clientAddress";
 
-/**
- * Whether the hop that connected is allowed to name the caller.
- *
- * `x-real-ip` and `x-forwarded-for` are just request headers: anyone can send them. They are the truth only when
- * the peer that sent them is a proxy we put there — otherwise a client forges its own address and walks past
- * every `.with(Ip)` guard, rate limit and audit line at once.
- *
- * The default trusts a private, loopback or link-local peer and nothing else, because that is exactly the shape
- * of a proxy on the same network: an ingress, a service mesh, the dev machine. A gateway reachable from the
- * internet sees a public peer, so a header from there is dropped rather than believed. `AKAN_TRUSTED_PROXIES`
- * takes a comma-separated CIDR list for the case the proxy is not private — and `*` for "the deployment
- * guarantees nothing untrusted can reach this port", which is the old behaviour, written down.
- */
+// Forwarded headers are forgeable, so they are believed only from a private, loopback or link-local peer;
+// `AKAN_TRUSTED_PROXIES` adds a comma-separated CIDR list, and `*` trusts every peer.
 export class TrustedProxy {
   static #cidrs: { bytes: Uint8Array; bits: number }[] | null = null;
   static #trustAll: boolean | null = null;
@@ -48,31 +37,16 @@ export class TrustedProxy {
     return (TrustedProxy.#cidrs ?? []).some((cidr) => TrustedProxy.#inRange(bytes, cidr));
   }
 
-  /**
-   * The caller's address as recorded by a proxy, but only when the peer is one. Falls back to the peer itself,
-   * which is the right answer for a process nothing is proxying, and `null` when there is no peer either.
-   *
-   * `null` and `undefined` mean different things here. `null` is what `Server.requestIP` answers for a socket
-   * that has no address — a unix socket, which is how a gateway reaches its children — and only a process on
-   * this machine can open one, so the headers it wrote are a local proxy's and are believed. `undefined` is
-   * "nobody asked": no resolver was registered, and a header from an unknown peer is a header the client wrote.
-   */
+  /** A `null` peer is a unix socket, which only a local proxy opens, so its headers count; `undefined` is not. */
   static clientAddress(headers: Headers, peerAddress: string | null | undefined): string | null {
     if (peerAddress === null || TrustedProxy.isTrusted(peerAddress)) {
-      const realIp = headers.get("x-real-ip")?.trim();
-      if (realIp) return normalizeIpAddress(realIp);
-      const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-      if (forwarded) return normalizeIpAddress(forwarded);
+      const recorded = clientAddressFromHeaders(headers);
+      if (recorded) return recorded;
     }
     return peerAddress ? normalizeIpAddress(peerAddress) : null;
   }
 
-  /**
-   * Whether an address is one no public name should resolve to: the local ranges `isTrusted` reads, plus the
-   * unspecified address, the carrier-grade NAT block `100.64/10`, multicast and the reserved top of IPv4. Used
-   * to refuse a fetch whose destination a caller chose by name, so it judges the address alone and never the
-   * configured proxy list — a trusted proxy is still not somewhere to send an outbound request.
-   */
+  /** For refusing an outbound fetch to a caller-chosen name: judges the address alone, never the proxy list. */
   static isPrivateAddress(address: string): boolean {
     const bytes = TrustedProxy.#toBytes(normalizeIpAddress(address));
     if (!bytes) return true;
@@ -134,8 +108,7 @@ export class TrustedProxy {
   }
 
   static #ipv6ToBytes(address: string): Uint8Array | null {
-    // A zone index (`fe80::1%eth0`) is not part of the address, and an IPv4-mapped tail is already unwrapped
-    // by `normalizeIpAddress` for the forms that matter here.
+    // A zone index (`fe80::1%eth0`) is not part of the address; `normalizeIpAddress` already unwrapped IPv4-mapped.
     const bare = address.split("%")[0] ?? "";
     const halves = bare.split("::");
     if (halves.length > 2) return null;

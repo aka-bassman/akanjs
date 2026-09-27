@@ -1,19 +1,11 @@
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import os from "node:os";
+import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { tempDirs } from "../testHelpers";
 import { IdleWatchedProcess } from "./IdleWatchedProcess";
 
-const roots: string[] = [];
-const makeLogPath = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-idle-watch-"));
-  roots.push(root);
-  return path.join(root, "nested", "run.log");
-};
-
-afterAll(async () => {
-  await Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
-});
+const makeRoot = tempDirs("akan-idle-watch-");
+const makeLogPath = async () => path.join(await makeRoot(), "nested", "run.log");
 
 describe("IdleWatchedProcess", () => {
   test("tees the output of a command that finishes into the log and reports its exit code", async () => {

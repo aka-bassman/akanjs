@@ -1,13 +1,9 @@
 import { Logger } from "akanjs/common";
 import type { SsrManifest } from "../ssrTypes";
-import type { BuildRouteClientResult, ClientManifest } from "./manifestTypes";
+import type { BuildRouteClientResult, ClientManifest } from "./ipcTypes";
 import type { RoutesManifest } from "./routesManifestStore";
 
-/**
- * Snapshot of every per-route build's accumulated output for one HMR
- * generation. Callers should take a `snapshot()` before rendering so an
- * invalidate cannot mutate the manifest while a request is consuming it.
- */
+/** One HMR generation's merged route builds; render from a `snapshot()`, which an invalidate cannot mutate. */
 export interface MergedManifest {
   generation: number;
   clientManifest: ClientManifest;
@@ -40,12 +36,7 @@ export class RouteClientCache {
   readonly #logger = new Logger("RouteClientCache");
   readonly #built = new Map<string, BuildRouteClientResult>();
   readonly #building = new Map<string, PendingBuild>();
-  merged: MergedManifest = {
-    generation: 0,
-    clientManifest: {},
-    ssrManifest: { moduleLoading: null, moduleMap: {} },
-    knownEntries: new Set<string>(),
-  };
+  merged: MergedManifest = this.#getEmptyMerged(0);
   readonly #buildRoute: RouteBuildFn;
   readonly #onMerge?: OnMergeFn;
   #revision = 0;
@@ -55,11 +46,7 @@ export class RouteClientCache {
     this.#onMerge = onMerge;
   }
 
-  /**
-   * Bumped on every mutation of `merged`, including a delta merge that leaves `generation` where it was. It lets a
-   * consumer memoize work derived from the manifest — merging the runtime manifest over it, say — without having to
-   * copy the manifest to find out whether anything changed. In production nothing after `seed` moves it at all.
-   */
+  /** Bumped on every change to `merged`, even a delta merge that keeps `generation`: a memo key for derived work. */
   get revision(): number {
     return this.#revision;
   }
@@ -149,14 +136,14 @@ export class RouteClientCache {
     return delta;
   }
 
+  #dropBuilt(predicate: (routeId: string) => boolean): string[] {
+    const dropped = [...this.#built.keys()].filter((routeId) => predicate(routeId));
+    for (const id of dropped) this.#built.delete(id);
+    return dropped;
+  }
+
   invalidate(predicate: (routeId: string) => boolean): string[] {
-    const dropped: string[] = [];
-    for (const id of [...this.#built.keys()]) {
-      if (predicate(id)) {
-        this.#built.delete(id);
-        dropped.push(id);
-      }
-    }
+    const dropped = this.#dropBuilt(predicate);
     if (dropped.length > 0) {
       this.#rebuildKnownEntriesPreservingManifest(this.merged.generation + 1);
       this.#building.clear();
@@ -167,13 +154,7 @@ export class RouteClientCache {
 
   invalidateClientEntries({ routePredicate, staleEntries }: InvalidateClientEntriesOptions): string[] {
     const normalizedStaleEntries = new Set([...staleEntries].map((entry) => RouteClientCache.#normalizePath(entry)));
-    const dropped: string[] = [];
-    for (const id of [...this.#built.keys()]) {
-      if (routePredicate(id)) {
-        this.#built.delete(id);
-        dropped.push(id);
-      }
-    }
+    const dropped = this.#dropBuilt(routePredicate);
     if (dropped.length === 0 && normalizedStaleEntries.size === 0) return dropped;
 
     this.#rebuildKnownEntriesPreservingManifest(this.merged.generation + 1, normalizedStaleEntries);
@@ -185,11 +166,7 @@ export class RouteClientCache {
   }
 
   clear(): string[] {
-    const dropped: string[] = [];
-    for (const id of [...this.#built.keys()]) {
-      this.#built.delete(id);
-      dropped.push(id);
-    }
+    const dropped = this.#dropBuilt(() => true);
     const nextGeneration = this.merged.generation + 1;
     this.merged = this.#getEmptyMerged(nextGeneration);
     this.#revision += 1;

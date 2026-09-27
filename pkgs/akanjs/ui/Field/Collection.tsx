@@ -12,6 +12,7 @@ import { DraggableList } from "../DraggableList";
 import { Input } from "../Input";
 import { useUiRecipe } from "../UiOverride";
 import { Label } from "./Label";
+import { lengthValidator } from "./Text";
 
 export interface ListProps<Item> {
   className?: string;
@@ -43,8 +44,7 @@ export const List = <Item,>({
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <div className="mb-2 flex w-full flex-col gap-2 rounded-box border border-border p-2">
         {items.map((item, idx) => (
-          // `Fragment` rather than `<>`: the mapped element is the list child, so a key on its first child is a
-          // key on nothing. Index-keyed on purpose — these rows are embedded scalars with no id of their own.
+          // `Fragment` so the key sits on the list child; index-keyed since embedded scalars have no id.
           <Fragment key={idx}>
             <div className="flex h-full w-full items-center justify-between gap-2">
               {renderItem(item, idx)}
@@ -122,8 +122,7 @@ export const TextList = ({
       <div className="mb-5 h-full gap-2 rounded-box border border-border p-2">
         <DraggableList
           className="h-full gap-2"
-          // Wrapped on purpose: this component already published the field with its own `transform`, and handing
-          // the reference down would register the same names a second time from the list inside it.
+          // Wrapped on purpose: passing the setter down would publish the field again from the inner list.
           onChange={(sorted: string[]) => {
             onChange(sorted);
           }}
@@ -145,12 +144,7 @@ export const TextList = ({
                       newValue[idx] = transform(text);
                       onChange(newValue);
                     }}
-                    validate={(text: string) => {
-                      if (text.length < minTextlength) return l("base.textTooShortError", { minlength: minTextlength });
-                      else if (text.length > maxTextlength)
-                        return l("base.textTooLongError", { maxlength: maxTextlength });
-                      else return validate?.(text) ?? true;
-                    }}
+                    validate={lengthValidator(l, minTextlength, maxTextlength, validate)}
                     className={cn("w-full", inputClassName)}
                     inputClassName="h-8 w-full"
                     placeholder={placeholder}
@@ -188,22 +182,7 @@ export const TextList = ({
   );
 };
 
-export interface TagsProps {
-  label?: string;
-  desc?: string;
-  labelClassName?: string;
-  className?: string;
-  value: string[] | null;
-  onChange: (value: string[]) => void;
-  inputClassName?: string;
-  placeholder?: string;
-  disabled?: boolean;
-  transform?: (value: string) => string;
-  validate?: (text: string) => boolean | string;
-  minlength?: number;
-  maxlength?: number;
-  minTextlength?: number;
-  maxTextlength?: number;
+export interface TagsProps extends TextListProps {
   secret?: boolean;
 }
 export const Tags = ({
@@ -270,11 +249,7 @@ export const Tags = ({
               setInputVisible(false);
               setTag("");
             }}
-            validate={(text: string) => {
-              if (text.length < minTextlength) return l("base.textTooShortError", { minlength: minTextlength });
-              else if (text.length > maxTextlength) return l("base.textTooLongError", { maxlength: maxTextlength });
-              else return validate?.(text) ?? true;
-            }}
+            validate={lengthValidator(l, minTextlength, maxTextlength, validate)}
           />
         ) : !disabled ? (
           <div

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
-import { Transform } from "node:stream";
+import type { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
 import type { SnapshotFile, SnapshotManifest, SnapshotSources } from "./snapshotTypes";
@@ -86,7 +86,7 @@ export class SnapshotRestore {
     const hash = createHash("sha256");
     const stages: NodeJS.ReadWriteStream[] = [];
     if (manifest.encryption && decryptor && !predecrypted) stages.push(decryptor.transform());
-    stages.push(createGunzip(), SnapshotRestore.#tap(hash));
+    stages.push(createGunzip(), SqliteSnapshot.tap(hash));
     await pipeline([createReadStream(input), ...stages, createWriteStream(stagedPath)]);
     if (hash.digest("hex") !== file.sha256) {
       await rm(stagedPath, { force: true });
@@ -100,8 +100,7 @@ export class SnapshotRestore {
     return stagedPath;
   }
 
-  //* The old -wal/-shm travel with the old file under the same prefix: left in place they would be replayed into the
-  //* restored database, and moved together they still open as the consistent pre-restore state.
+  //* The old -wal/-shm move with the old file: left in place they would be replayed into the restored database.
   static async #preserve(target: string, stamp: string) {
     if (!existsSync(target)) return null;
     const preserved = `${target}.pre-restore-${stamp}`;
@@ -116,14 +115,5 @@ export class SnapshotRestore {
     const hash = createHash("sha256");
     for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
     return hash.digest("hex");
-  }
-
-  static #tap(hash: ReturnType<typeof createHash>) {
-    return new Transform({
-      transform(chunk: Buffer, _encoding, callback) {
-        hash.update(chunk);
-        callback(null, chunk);
-      },
-    });
   }
 }

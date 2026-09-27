@@ -596,8 +596,8 @@ export default page().render(() => {
     {
       name: "CurrentUserId",
       desc: l.trans({
-        en: "The workspace scaffold writes it to `srvkit/SessionInternalArg.ts`, for handlers needing only an id.",
-        ko: "워크스페이스 스캐폴드가 `srvkit/SessionInternalArg.ts`에 넣어 주는 인자로, id만 필요한 핸들러용입니다.",
+        en: "The workspace scaffold writes it to `srvkit/internalArgs.ts`, for handlers needing only an id.",
+        ko: "워크스페이스 스캐폴드가 `srvkit/internalArgs.ts`에 넣어 주는 인자로, id만 필요한 핸들러용입니다.",
       }),
     },
     {

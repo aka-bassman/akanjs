@@ -1,12 +1,4 @@
-/**
- * The embeddable code agent: the engine and everything around it, plus the terminal host's own pieces.
- *
- * The engine itself lives in `@akanjs/devkit/codeAgent` — the CLI is the executable, devkit is the library —
- * and is re-exported here so an embedder has one entry to import rather than two packages to know about.
- *
- * `CodeTui` is deliberately absent: it imports Ink and React, and an SDK consumer embedding the core in a
- * server or a browser bundle should not pay for a terminal renderer. Import it from `./CodeTui`.
- */
+// `CodeTui` is left out on purpose: it pulls in Ink and React, which an embedder of the core should not pay for.
 export * from "@akanjs/devkit/codeAgent";
 export { CodeTuiAgents } from "./CodeTuiAgents";
 export { CodeTuiClipboard } from "./CodeTuiClipboard";

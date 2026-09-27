@@ -1,9 +1,9 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { enumOf, Int, SLICE_META } from "akanjs/base";
+import { enumOf, Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
-import type { ClientSignal } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
 import { store } from "../store";
+import { setTestEnv, stubSignal } from "../store.fixture";
 import { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
 import { StoreCatalogue } from "./StoreCatalogue";
@@ -41,32 +41,14 @@ const serializedSignal: SerializedSignal = {
   },
 };
 
-const makeSignal = () => {
-  const handlers: Record<string, unknown> = {};
-  const fetch = new Proxy(handlers, {
-    get: (target, key: string) => (target[key] ??= async () => null),
-  });
-  return {
-    refName: "catalogueTask",
-    _slice: { [SLICE_META]: {} },
-    cnst: taskConstant,
-    fetch,
-    serializedSignal,
-    slices: [],
-  } as unknown as ClientSignal<"catalogueTask">;
-};
-
 let catalogue: StoreCatalogue;
 let instance: StoreInstance;
 
 beforeAll(() => {
-  process.env.AKAN_PUBLIC_APP_NAME = "cataloguetest";
-  process.env.AKAN_PUBLIC_REPO_NAME = "cataloguetest";
-  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
-  process.env.AKAN_PUBLIC_ENV = "testing";
+  setTestEnv("cataloguetest");
 
   class TaskStore extends store(
-    makeSignal(),
+    stubSignal("catalogueTask", taskConstant, serializedSignal),
     () => ({ draft: "", openTaskIds: [] as string[] }),
     ({ computed }) => ({ draftLabel: computed(["draft"], (draft: string) => `draft:${draft}`) }),
   ) {
@@ -97,15 +79,12 @@ describe("StoreCatalogue state", () => {
   });
 
   test("names the model from the declaration even when the value cannot", () => {
-    // `STATE_META` holds initial values, not types, so a key that starts null says nothing about its shape — but
-    // which model it belongs to is declared, and that is what a read of it has to be masked by.
     expect(catalogue.state.catalogueTask).toEqual({
       type: "unknown",
       refName: "catalogueTask",
       modelType: "full",
       derived: false,
     });
-    // The form is the case that matters: `immerify` copies it into a plain object, so the value has no class left.
     expect(catalogue.state.catalogueTaskForm).toEqual({
       type: "object",
       refName: "catalogueTask",

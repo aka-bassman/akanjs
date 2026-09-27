@@ -1,11 +1,7 @@
 import { readdir } from "node:fs/promises";
 import ts from "typescript";
 
-/**
- * A single Akan UI recipe discovered by scanning source. `variants` maps each variant key to its allowed option
- * names (e.g. `{ variant: ["primary", "ghost"], size: ["sm", "md"] }`); a base-only recipe has `variants: {}`.
- * `importFrom` is the module a consumer imports the recipe from (e.g. `@apps/minimal/ui`).
- */
+/** `variants` maps each key to its option names (`{}` for a base-only recipe); `importFrom` is the consumer's module. */
 export interface RecipeInfo {
   name: string;
   importFrom: string;
@@ -22,13 +18,8 @@ export interface RecipeSource {
   importFrom: string;
 }
 
-/**
- * Collects every recipe source under a `ui` folder. Recipes live one-per-file in a `Recipe/` folder
- * (`recipe/` for the framework), so this reads the whole folder; the flat `Recipe.ts` is still read for
- * apps that have not moved yet. Every consumer of `scanRecipes` must go through here — three call sites
- * (AGENTS.md recipe index, `recipeGate` lint, MCP module context) hardcoded the flat path before, and each
- * one fails silently (empty list, no error) when the file is absent.
- */
+// One recipe per file under `Recipe/` (`recipe/` for the framework), plus the legacy flat `Recipe.ts`. Every
+// `scanRecipes` consumer goes through here: a hardcoded path fails silently (an empty list) when the file is absent.
 export const collectRecipeSources = async (
   uiDirPath: string,
   importFrom: string,
@@ -51,12 +42,8 @@ export const collectRecipeSources = async (
   return [flat, ...fromDir].filter((source): source is RecipeSource => !!source);
 };
 
-/**
- * Statically finds every `export const <name> = recipe(tv({ ... }))` across the given sources and extracts its
- * variant surface + leading JSDoc one-liner. Detection is by the `recipe(tv(...))` call shape (not by name suffix,
- * since base-only recipes like `appScreen` omit the `Recipe` suffix). Being AST-based, it never matches recipe
- * definitions that appear only inside string/template literals (e.g. code examples in docs pages).
- */
+// Detected by the `recipe(tv(...))` call shape, not the name suffix (base-only recipes like `appScreen` omit it);
+// AST-based, so code examples inside string literals never match.
 export const scanRecipes = (sources: RecipeSource[]): RecipeInfo[] => {
   const recipes: RecipeInfo[] = [];
   for (const source of sources) {
@@ -73,12 +60,13 @@ export const scanRecipes = (sources: RecipeSource[]): RecipeInfo[] => {
         if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue;
         const parsed = parseRecipeCall(declaration.initializer);
         if (!parsed) continue;
+        const doc = getLeadingDoc(source.content, statement);
         recipes.push({
           name: declaration.name.text,
           importFrom: source.importFrom,
           variants: parsed.variants,
           ...(parsed.defaultVariants ? { defaultVariants: parsed.defaultVariants } : {}),
-          ...(getLeadingDoc(source.content, statement) ? { doc: getLeadingDoc(source.content, statement) } : {}),
+          ...(doc ? { doc } : {}),
           ...(parsed.base ? { base: parsed.base } : {}),
         });
       }
@@ -90,7 +78,6 @@ export const scanRecipes = (sources: RecipeSource[]): RecipeInfo[] => {
 const isExported = (statement: ts.VariableStatement): boolean =>
   statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false;
 
-/** Matches `recipe( tv( <ObjectLiteral> ) )` and returns the variant surface, or null for anything else. */
 const parseRecipeCall = (
   initializer: ts.Expression,
 ): { variants: Record<string, string[]>; defaultVariants?: Record<string, string>; base?: string } | null => {
@@ -148,27 +135,12 @@ export interface RecipeDuplicate {
   className: string;
 }
 
-/**
- * Fraction of a recipe's base tokens an inline className must reproduce to count as a duplicate.
- *
- * Requiring *every* token (the original rule) only caught a verbatim copy of the whole base, which is the one
- * form of duplication that essentially never happens: someone re-authoring a look reproduces the gist, not all
- * eight tokens. So the check passed on exactly the near-duplicates it existed to find, and silently — it is an
- * advisory, so nothing went red. A ratio catches those; false positives are cheap here for the same reason.
- */
+// A re-authored look reproduces the gist, not every token, so a ratio (not all tokens) catches near-duplicates.
 const DUPLICATE_TOKEN_RATIO = 0.7;
 
-/** Minimum base tokens for a recipe to be worth fingerprinting at all. */
 const MIN_FINGERPRINT_TOKENS = 3;
 
-/**
- * SSOT advisory: finds JSX `className` string values that hand-rewrite a recipe's base fingerprint instead of
- * consuming the recipe. Only recipes whose base has 3+ distinctive tokens are checked — shorter fingerprints
- * (`grid gap-3` …) are generic utilities and would flood the report with false positives. A className counts as
- * a duplicate once it reproduces {@link DUPLICATE_TOKEN_RATIO} of those tokens, so a near-copy that drops or
- * swaps one still reports. AST-scoped to real `className` attributes, so class strings inside doc-example
- * template literals never match.
- */
+// Shorter fingerprints (`grid gap-3`) are generic utilities that would flood the report with false positives.
 export const findInlineRecipeDuplicates = (
   recipes: RecipeInfo[],
   files: { path: string; content: string }[],
@@ -219,7 +191,6 @@ const stringValuesIn = (node: ts.Node): string[] => {
   return values;
 };
 
-/** The first non-empty line of the JSDoc/line comment immediately preceding the statement, markers stripped. */
 const getLeadingDoc = (fullText: string, node: ts.Node): string | undefined => {
   const ranges = ts.getLeadingCommentRanges(fullText, node.getFullStart());
   if (!ranges?.length) return undefined;

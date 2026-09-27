@@ -5,23 +5,14 @@ import type { DefaultOf } from "./types";
 export interface DefaultPlan {
   /** Fields whose default is a value that can be shared: a primitive, `null`, or the field's own literal. */
   shared: Record<string, unknown>;
-  /**
-   * Fields that have to be produced per call — a thunk, a fresh array, a nested scalar record, or a primitive's
-   * structured default.
-   */
+  /** Fields produced per call: a thunk, a fresh array, a nested scalar record, or a primitive's structured default. */
   perCall: Map<string, () => unknown>;
 }
 
-// Keyed on the FIELD_META object a model owns, so one entry per model rather than per call. `via()` memoizes the
-// finished record per class already; the database adaptor does not, and reached this per nested scalar value per
-// row (`decodeNestedValue`, `fillScalarDefaults`).
+// One entry per model's FIELD_META: the database adaptor reaches this per nested scalar value per row.
 const planCache = new WeakMap<FieldObject, DefaultPlan>();
 
-/**
- * The split is what keeps this faithful: `default: () => dayjs()` still means "now" on every call, and an array
- * or nested-scalar default is still a fresh object, so two documents filled from the same model never end up
- * sharing one. Only values that were already shared before this cache existed live in `shared`.
- */
+/** A thunk default runs per call and an array or nested-scalar default is fresh, so no two results share one. */
 export const getDefault = <T>(fieldObj: FieldObject): DefaultOf<T> => {
   const plan = defaultPlanOf(fieldObj);
   const result: Record<string, unknown> = { ...plan.shared };
@@ -29,7 +20,7 @@ export const getDefault = <T>(fieldObj: FieldObject): DefaultOf<T> => {
   return result as DefaultOf<T>;
 };
 
-/** The per-field default rules, split as above; `HydrationPlan` reads them per field so a present value skips its thunk. */
+/** Read per field by `HydrationPlan`, so a present value skips its default thunk. */
 export const defaultPlanOf = (fieldObj: FieldObject): DefaultPlan => {
   const cached = planCache.get(fieldObj);
   if (cached) return cached;
@@ -45,14 +36,12 @@ const buildPlan = (fieldObj: FieldObject): DefaultPlan => {
     if (field.fieldType === "hidden" || field.fieldType === "secret") shared[key] = null;
     else if (field.default !== undefined && field.default !== null) {
       if (typeof field.default === "function") perCall.set(key, field.default as () => unknown);
-      // An array default is the field's own array — the `[]` an array field is given when it declares none
-      // included — so handing it out by reference would let one filled object's `push` land in the field default
-      // and in every object filled from it afterwards.
+      // An array default is the field's own array, so a shared reference would let one object's `push` reach the rest.
       else if (Array.isArray(field.default)) {
         const items = field.default as unknown[];
         perCall.set(key, () => [...items]);
       }
-      // Any other literal default is the field's own object, handed out by reference before this cache existed too.
+      // Any other literal default is the field's own object, shared by reference as it always was.
       else shared[key] = field.default as object;
     } else if (field.isArray) perCall.set(key, () => []);
     else if (field.nullable) shared[key] = null;
@@ -73,9 +62,5 @@ const isStructured = (value: unknown): value is object =>
   value !== null &&
   (Array.isArray(value) || Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 
-/**
- * A primitive's value is never an identity, so a plain object or array — an empty editor document as a primitive's
- * `DEFAULT_VALUE` — is copied for each use, for the reason an array field default is. An instance (a `Dayjs`, a
- * `Uint8Array`) is handed back as is: its own API is how it changes, and a structured copy would drop its prototype.
- */
+/** Copies a plain object or array; an instance (`Dayjs`, `Uint8Array`) is returned as is, keeping its prototype. */
 export const freshPrimitiveValue = <T>(value: T): T => (isStructured(value) ? structuredClone(value) : value);

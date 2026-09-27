@@ -106,10 +106,7 @@ export type BaseBuildArtifact = {
   i18n: AkanI18nConfig;
   imageConfig: AkanImageConfig;
   deepLinkAssociations?: MobileDeepLinkAssociation[];
-  /**
-   * Which surfaces this artifact was built for. Absent on an artifact written before the option existed,
-   * which is read as both on — the shape every such build actually has.
-   */
+  /** Surfaces this artifact was built for; absent (an artifact older than the option) reads as both on. */
   web?: AkanWebConfig;
 };
 
@@ -118,11 +115,7 @@ export const resolveWebConfig = (web: Partial<AkanWebConfig> | undefined): AkanW
   csr: web?.csr ?? true,
 });
 
-/**
- * `AKAN_SSR` / `AKAN_CSR`, both on unless the env says otherwise — the same shape `AKAN_MCP` uses, because a
- * switch a deployment has to find before anything works is a switch most deployments never find. Read by the
- * gateway and by every replica, so both agree on what the pod serves.
- */
+/** Reads `AKAN_SSR` / `AKAN_CSR`: each is on unless set to `"false"` or `"0"`. */
 export const getWebConfigFromEnv = (): AkanWebConfig => {
   const off = (name: string) => process.env[name] === "false" || process.env[name] === "0";
   const ssr = !off("AKAN_SSR");

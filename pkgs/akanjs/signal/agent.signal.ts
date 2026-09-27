@@ -14,16 +14,13 @@ import { SignalRegistry } from "./signalRegistry";
 export class AgentInternal extends internal(srv.agent, () => ({})) {}
 
 export class AgentEndpoint extends endpoint(srv.agent, ({ mutation }) => ({
-  // No policy registered ⇒ `canPass` is false, the same answer `None` gives. `AgentRelayAccess.use(policy)` at
-  // boot is what opens it; tools still execute only in the caller's own browser session. The `Any` bodies keep
-  // the endpoint off MCP whatever the guard answers.
+  // The `Any` bodies keep the endpoint off MCP whatever the guard answers.
   runAgentTurn: mutation(AgentTurn, { guards: [AgentRelayAccess] })
     .body("messages", [Any])
     .body("tools", [Any])
     .body("context", [Any])
     .body("instructions", String, { nullable: true })
-    // `Req` binds the endpoint to the HTTP transport (a ws call has no request to inject) — which is what the
-    // chat's runner speaks, and what SSE negotiation needs the Accept header for.
+    // `Req` binds the endpoint to HTTP, where SSE negotiation reads the Accept header.
     .with(Req)
     .with(CallerAccount, { nullable: true })
     .exec(async function (messages, tools, context, instructions, request, account) {
@@ -34,7 +31,6 @@ export class AgentEndpoint extends endpoint(srv.agent, ({ mutation }) => ({
         ...(instructions ? { instructions } : {}),
       };
       if (AgentTurnStream.wants(request as Bun.BunRequest))
-        // The signal layer sends a raw Response as-is, so the declared return stays the JSON path's contract.
         return AgentTurnStream.response((onDelta) =>
           AgentMeter.run(account, () => this.agentService.runTurn(turn, onDelta)),
         ) as unknown as AgentTurn;

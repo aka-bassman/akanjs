@@ -22,8 +22,7 @@ describe("OAuthPkce", () => {
 
   test("recognises only the shape an S256 challenge can have", () => {
     expect(OAuthPkce.isChallenge(challenge)).toBe(true);
-    // A `plain` challenge is the verifier itself — 43 characters that happen to fit — so the method is what refuses
-    // it, in `OAuthAuthorize`; the shape check only rules out what cannot be a digest at all.
+    // A 43-character `plain` challenge fits this shape; `OAuthAuthorize` refuses it by its method instead.
     expect(OAuthPkce.isChallenge(`${challenge}=`)).toBe(false);
     expect(OAuthPkce.isChallenge("")).toBe(false);
   });

@@ -114,22 +114,15 @@ export function createAkanSegmentCacheTree<T>(node: RscNavigationCacheNode<T>): 
   const routerState = node.routerState;
   if (!routerState || routerState.segments.length === 0) return null;
 
-  const root = createAkanSegmentCacheNode<T>({
-    segment: routerState.segments[0],
-    href: node.href,
-    routerState,
-  });
-  let current = root;
-  for (let index = 1; index < routerState.segments.length; index++) {
-    const child = createAkanSegmentCacheNode<T>({
-      segment: routerState.segments[index],
-      href: node.href,
-      routerState,
-    });
-    current.children.push(child);
+  let root: AkanSegmentCacheNode<T> | null = null;
+  let current: AkanSegmentCacheNode<T> | null = null;
+  for (const segment of routerState.segments) {
+    const child = createAkanSegmentCacheNode<T>({ segment, href: node.href, routerState });
+    if (current) current.children.push(child);
+    else root = child;
     current = child;
   }
-  current.thenable = node.thenable;
+  if (current) current.thenable = node.thenable;
   return root;
 }
 
@@ -218,17 +211,9 @@ export function deleteRscCacheEntryIfCurrent<T>(cache: RscNavigationCache<T>, hr
   return cache.delete(href);
 }
 
-export function rememberRscCacheNode<T>(
-  cache: RscNavigationCache<RscNavigationCacheNode<T>>,
-  node: RscNavigationCacheNode<T>,
-  maxEntries: number,
-): void {
-  rememberRscCacheEntry(cache, node.href, node, maxEntries);
-}
-
-export function rememberRscPatchCacheNode<T>(
-  cache: RscNavigationCache<RscPatchNavigationCacheNode<T>>,
-  node: RscPatchNavigationCacheNode<T>,
+export function rememberRscCacheNode<N extends { href: string }>(
+  cache: RscNavigationCache<N>,
+  node: N,
   maxEntries: number,
 ): void {
   rememberRscCacheEntry(cache, node.href, node, maxEntries);

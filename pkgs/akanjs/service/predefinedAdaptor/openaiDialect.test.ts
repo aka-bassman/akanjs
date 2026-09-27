@@ -111,8 +111,7 @@ describe("OpenaiDialect", () => {
   });
 
   test("a length finish is its own stop, and wins over the calls that did arrive", () => {
-    // A truncated turn is otherwise indistinguishable from a complete one, and running the batch it did finish
-    // is acting on half an intention — the call it was cut off inside never reached the wire.
+    // A truncated turn would read as complete, and its last call was cut off before reaching the wire.
     expect(
       OpenaiDialect.turnAnswer({ choices: [{ message: { content: "Half a sen" }, finish_reason: "length" }] }),
     ).toEqual({ text: "Half a sen", stop: "length" });

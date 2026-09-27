@@ -1,9 +1,10 @@
 import { cn } from "akanjs/client";
 import type { ReactNode, RefObject } from "react";
 import { AiOutlineCopy } from "react-icons/ai";
+import { BiChevronDown } from "react-icons/bi";
 import { buttonRecipe } from "../Button";
 import { Copy } from "../Copy";
-import { docBorder, docDash, docUi } from "./style";
+import { docBorder, docDash, docUi } from "./docUi";
 
 interface PanelProps {
   className?: string;
@@ -11,7 +12,6 @@ interface PanelProps {
   label?: string;
   meta?: ReactNode;
   tone?: Parameters<typeof docBorder>[0];
-  /** Rendered outside the scrolling body so it can cover the whole panel. */
   overlay?: ReactNode;
   children: ReactNode;
 }
@@ -36,6 +36,23 @@ export const Panel = ({ className, bodyClassName, label, meta, tone = "muted", o
   </div>
 );
 
+interface DocTableProps {
+  className?: string;
+  head: ReactNode;
+  children: ReactNode;
+}
+
+export const DocTable = ({ className, head, children }: DocTableProps) => (
+  <div className={cn(docUi.tablePanel, className)}>
+    <table className={docUi.tableClass}>
+      <thead>
+        <tr>{head}</tr>
+      </thead>
+      <tbody>{children}</tbody>
+    </table>
+  </div>
+);
+
 interface CodeProps {
   className?: string;
   label?: string;
@@ -47,10 +64,7 @@ interface CodeProps {
   overlay?: ReactNode;
 }
 
-/**
- * Read-only code surface. A `<pre>` rather than a `<textarea>`: every one of these panels ignored what was typed
- * into it, so the caret and the resize grip were promising an edit that never landed anywhere.
- */
+// A `<pre>`, not a `<textarea>`: nothing reads what is typed, so a caret would promise an edit that never lands.
 export const Code = ({ className, label, code, tone, meta, placeholder = "—", bodyRef, overlay }: CodeProps) => (
   <Panel
     bodyClassName="max-h-none overflow-visible p-0"
@@ -76,4 +90,88 @@ export const Code = ({ className, label, code, tone, meta, placeholder = "—", 
       {code || <span className={docDash}>{placeholder}</span>}
     </pre>
   </Panel>
+);
+
+interface CollapseProps {
+  className?: string;
+  contentClassName?: string;
+  summary: ReactNode;
+  children: ReactNode;
+  open?: boolean;
+}
+
+// Native `<details>`, not a stateful collapse: opening and closing ships no client JS.
+export const Collapse = ({ summary, children, open, className, contentClassName }: CollapseProps) => (
+  <details
+    className={cn(docUi.card, "group overflow-hidden transition-colors hover:border-foreground/20", className)}
+    open={open}
+  >
+    <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/40 [&::-webkit-details-marker]:hidden">
+      <div className="min-w-0 flex-1">{summary}</div>
+      <BiChevronDown className="mt-1 shrink-0 text-foreground/30 transition-transform group-open:rotate-180" />
+    </summary>
+    <div className={cn("flex w-full flex-col gap-4 border-border/70 border-t p-4", contentClassName)}>{children}</div>
+  </details>
+);
+
+interface SummaryCardProps {
+  className?: string;
+  label: string;
+  value: number | string;
+}
+
+export const SummaryCard = ({ className, label, value }: SummaryCardProps) => (
+  <div className={cn(docUi.card, "px-4 py-3", className)}>
+    <div className={docUi.sectionLabel}>{label}</div>
+    <div className="font-bold text-2xl">{value}</div>
+  </div>
+);
+
+interface SummaryGridProps {
+  className?: string;
+  children: ReactNode;
+}
+
+export const SummaryGrid = ({ className, children }: SummaryGridProps) => (
+  <div className={cn("grid grid-cols-2 gap-2 md:grid-cols-4", className)}>{children}</div>
+);
+
+interface ToolbarProps {
+  className?: string;
+  children: ReactNode;
+}
+
+export const Toolbar = ({ className, children }: ToolbarProps) => (
+  <div className={cn(docUi.card, "flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3", className)}>{children}</div>
+);
+
+interface ToolbarFieldProps {
+  className?: string;
+  label: string;
+  children: ReactNode;
+}
+
+export const ToolbarField = ({ className, label, children }: ToolbarFieldProps) => (
+  <div className={cn("flex min-w-0 items-center gap-2", className)}>
+    <span className={docUi.sectionLabel}>{label}</span>
+    {children}
+  </div>
+);
+
+interface SectionProps {
+  className?: string;
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}
+
+export const Section = ({ className, title, action, children }: SectionProps) => (
+  <section className={cn("flex flex-col gap-3", className)}>
+    <div className="flex items-center gap-3">
+      <h2 className={docUi.sectionTitle}>{title}</h2>
+      <div className="h-px flex-1 bg-border" />
+      {action}
+    </div>
+    {children}
+  </section>
 );

@@ -56,7 +56,6 @@ describe("mouse wheel", () => {
     const mouse = new CodeTuiMouse();
     mouse.read("[M");
     expect(mouse.read(`${String.fromCharCode(96)}!"hi`)).toEqual({ rows: -CodeTuiMouse.step, rest: "hi" });
-    // The report is over: the next chunk is read as input again.
     expect(mouse.read("hi")).toBeUndefined();
   });
 });

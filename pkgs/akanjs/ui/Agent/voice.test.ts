@@ -16,7 +16,6 @@ const engineOf = () => {
       return { cancel: done, done: promise };
     },
   };
-  /** Ends the utterance being spoken, the way a real engine's `done` resolves. */
   const finish = async () => {
     settle?.();
     settle = null;
@@ -49,7 +48,6 @@ describe("speechText", () => {
     let previous = "";
     for (let at = 1; at <= whole.length; at += 1) {
       const now = speechText(whole.slice(0, at));
-      // A fence marker always arrives before the lines it swallows, so earlier output never changes.
       if (!now.startsWith(previous.slice(0, Math.min(previous.length, now.length)))) throw new Error(now);
       previous = now;
     }
@@ -62,12 +60,10 @@ describe("VoiceReader", () => {
     const { engine, spoken, finish } = engineOf();
     const reader = new VoiceReader(() => engine);
     reader.feed("First one.");
-    // No whitespace behind the terminator yet, so it may still be `First one.5` — nothing is spoken.
     expect(spoken).toEqual([]);
     reader.feed("First one. Second");
     expect(spoken).toEqual(["First one."]);
     reader.feed("First one. Second one. Third");
-    // Still one: the queue waits for the utterance in flight.
     expect(spoken).toEqual(["First one."]);
     await finish();
     expect(spoken).toEqual(["First one.", "Second one."]);

@@ -9,11 +9,6 @@ import type {
   WorkflowStepResult,
 } from "./types";
 
-/**
- * `WorkflowExecutor` takes its registry by constructor injection and its plan as data, so `apply` runs with
- * no filesystem and no workspace — the `workspace` argument is what gates every post-apply check. These
- * cover the ordering rules that `cli/workflow/workflow.test.ts` can only reach through a real scaffold.
- */
 const step = (id: string, tool = `tool:${id}`): WorkflowStep => ({
   id,
   tool,
@@ -21,8 +16,7 @@ const step = (id: string, tool = `tool:${id}`): WorkflowStep => ({
   description: id,
 });
 
-// Every field spelled out rather than cast through `unknown`: `apply` reads `validation` before the first
-// step runs, so a partial literal fails at runtime instead of at the type level.
+// Not a cast partial: `apply` reads `validation` before the first step, so a missing field fails only at runtime.
 const planOf = (steps: WorkflowStep[], diagnostics: WorkflowDiagnostic[] = []): WorkflowPlan => ({
   schemaVersion: 1,
   workflow: "add-field",
@@ -37,10 +31,6 @@ const planOf = (steps: WorkflowStep[], diagnostics: WorkflowDiagnostic[] = []): 
   requiresApproval: true,
 });
 
-/**
- * A registry that records **which key** each call resolved through, not just that a step ran — the
- * resolution order is the thing under test, and every candidate key would otherwise record the same step id.
- */
 const changed = (path: string): PrimitiveChangedFile => ({ path, action: "modify", reason: "test" });
 
 const recordingRegistry = (results: Record<string, WorkflowStepResult | undefined> = {}) => {
@@ -79,7 +69,6 @@ describe("WorkflowExecutor.apply", () => {
 
   test("resolves a runner by workflow-scoped key first, then tool, then bare step id", async () => {
     const { calls, registry, on } = recordingRegistry();
-    // All three keys are registered for the same step, so only the winner records a call.
     on(workflowStepKey("add-field", "scoped"));
     on("tool:scoped");
     on("scoped");

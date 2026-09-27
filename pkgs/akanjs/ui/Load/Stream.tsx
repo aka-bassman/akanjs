@@ -9,18 +9,8 @@ interface StreamProps<Value> {
   children: (value: Value) => ReactNode;
 }
 
-/**
- * Renders whatever a route hands over, awaited or not.
- *
- * A resolved value renders with no boundary, keeping its markup in the SSR shell that prerendering, SEO
- * snapshots and pre-hydration E2E read. A thenable gets a boundary of its own and is read with `use()`, so the
- * server streams the real markup once the data lands and the rest of the page never waits for it; resolving it
- * in an effect instead commits a skeleton the browser then has to re-render.
- *
- * The file carries no `"use client"`, which is what lets one implementation serve both sides: a route keeps its
- * `children` on the server, and `Load.Units` and friends compile it into their own client chunk. `use()` is
- * exported by the `react-server` build too, so the same read works in either graph.
- */
+// A resolved value renders in the SSR shell with no boundary; a thenable gets its own boundary and `use()`, so the
+// server streams it (an effect would commit a skeleton). No `"use client"`: `use()` works in both graphs.
 export default function Stream<Value>({ of, fallback = null, children }: StreamProps<Value>) {
   return isThenable(of) ? (
     <Suspense fallback={fallback}>

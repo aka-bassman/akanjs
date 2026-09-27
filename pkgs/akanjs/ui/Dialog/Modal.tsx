@@ -7,7 +7,7 @@ import { BiX } from "react-icons/bi";
 import { buttonRecipe } from "../Button";
 import { useOverlayLayerProps } from "../overlayLayer";
 
-import { DialogContext } from "./context";
+import { DialogContext } from "./Provider";
 
 export interface ModalProps {
   className?: string;
@@ -25,10 +25,8 @@ export const Modal = ({ className, bodyClassName, confirmClose, closeButton, chi
   const focusedElementRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const contentId = useId();
-  // Read through the portal-to-be: whichever dismissable scope rendered this modal owns it.
   const overlayLayerProps = useOverlayLayerProps();
-  // Resolved in an effect rather than at render: the first client pass has to match the server's, which
-  // portalled nothing, or a dialog opened by `defaultOpen` hydrates as a mismatch.
+  // Set in an effect: the first client pass has to match the server's, which portalled nothing.
   const [portalElement, setPortalElement] = useState<HTMLElement | null>(null);
 
   const requestClose = useCallback(() => {
@@ -79,9 +77,7 @@ export const Modal = ({ className, bodyClassName, confirmClose, closeButton, chi
     >
       <div
         ref={ref}
-        // Focus moves here on open so the tab order starts inside the dialog, but this container is not a
-        // control — drawing a keyboard ring around the whole surface only reads as a glitch. Controls
-        // inside keep their own rings, which is where the focus indicator belongs.
+        // Focused on open so tabbing starts inside, but it is no control, so it draws no focus ring.
         className={cn(
           "relative flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-box border border-border bg-card text-card-foreground shadow-lg outline-none",
           className,

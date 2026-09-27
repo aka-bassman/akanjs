@@ -77,7 +77,6 @@ export interface LiveRegistry {
   internal: Map<string, Internal>;
   sliceCls: Map<string, SliceCls>;
   endpointCls: Map<string, EndpointCls>;
-  /** The process's one live-sync router. Rooms are registered on it at subscribe and read from it on every write. */
   syncHub: LiveSyncHub;
 }
 export const getDefaultLiveRegistry = (): LiveRegistry => ({
@@ -404,8 +403,7 @@ export const injectionBuilder = (parentRefName: string) => ({
     const isMap = modelRef === Map;
     if (isMap && !opts.of) throw new Error("of should be provided when modelRef is Map");
     const valueRef = (isMap ? opts.of : modelRef) as Cls;
-    // A model or scalar class serializes to an object and is stored as JSON text — the shape every entry written
-    // before the cache adaptors kept value types already has, so old and new entries read back the same way.
+    // A model or scalar class is stored as JSON text, the shape entries from before typed cache values already have.
     const isStructured = Array.isArray(valueRef) || !PrimitiveRegistry.has(valueRef);
     const read = opts.get as ((value: unknown) => unknown) | undefined;
     const write = opts.set as ((value: unknown) => unknown) | undefined;

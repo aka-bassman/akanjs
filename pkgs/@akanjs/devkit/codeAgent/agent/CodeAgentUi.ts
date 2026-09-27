@@ -5,13 +5,8 @@ export interface CodeAgentUiHandlers {
   notify(level: "info" | "warning" | "error", message: string): void;
 }
 
-/**
- * The engine's UI port, answered by the akan wire instead of by a terminal.
- *
- * Only the four dialog calls and `notify` mean anything off a TUI; the rest of the port paints widgets, footers
- * and editors that exist solely inside the engine's own interactive shell. They are no-ops here rather than
- * throws — an extension that sets a status line should not take the turn down with it.
- */
+// Only the dialogs and `notify` mean anything off the engine's TUI; the rest are no-ops, not throws, so an
+// extension that sets a status line does not take the turn down with it.
 export class CodeAgentUi {
   readonly #handlers: CodeAgentUiHandlers;
 

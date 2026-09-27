@@ -17,7 +17,6 @@ const workspace = (files: Record<string, string>) => {
   return root;
 };
 
-/** What the engine hands over: the one context file it took for that directory. */
 const loaded = (root: string, name = "AGENTS.md"): AkanContextFile[] => [
   { path: path.join(root, name), content: "the workspace guide" },
 ];
@@ -60,7 +59,6 @@ describe("workspace context files", () => {
     expect(files[1]?.content).toBe("never use any\n");
   });
 
-  /** Cursor's other three kinds are conditional; applying one always is applying a rule its author scoped. */
   test("a scoped cursor rule is left to cursor", () => {
     const root = workspace({
       ".cursor/rules/ui.mdc": "---\nglobs: ui/**/*.tsx\n---\nno inline colours\n",

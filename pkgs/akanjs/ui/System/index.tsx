@@ -1,11 +1,10 @@
 import { getEnv } from "akanjs/base";
 import { default as CSR, type CSRProviderProps } from "./CSR";
-import { DevModeToggle } from "./DevModeToggle";
 import { Reconnect } from "./Reconnect";
 import { Root } from "./Root";
 import { SelectLanguage } from "./SelectLanguage";
 import { default as SSR, type SSRProviderProps } from "./SSR";
-import { ThemeToggle } from "./ThemeToggle";
+import { DevModeToggle, ThemeToggle } from "./ThemeToggle";
 
 export type { WebAppManifest } from "akanjs/client";
 
@@ -16,6 +15,7 @@ export const Provider = (props: CSRProviderProps | SSRProviderProps) => {
 export const System = {
   Provider,
   ThemeToggle,
+  /** @deprecated Renders `children` and ignores `st`; render the children directly. */
   Root,
   SelectLanguage,
   Reconnect,

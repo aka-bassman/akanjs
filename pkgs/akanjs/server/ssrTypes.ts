@@ -42,12 +42,7 @@ export interface RscTraceMetadata {
   patchHeadSafe?: boolean;
   patchHeadSnapshot?: string;
   routeState?: string;
-  /**
-   * Resolved from the matched route's `pageConfig.ssr === "block"`. Rides the
-   * trace so the host (which never resolves pageConfig itself) can decide
-   * whether the full-document SSR pass buffers until every Suspense boundary
-   * resolves. Absent/`false` means stream the shell first.
-   */
+  /** The route's `pageConfig.ssr === "block"`, carried here because the host never resolves pageConfig itself. */
   ssrBlocking?: boolean;
 }
 
@@ -57,34 +52,14 @@ export interface SsrFromRscInput {
   rscStream: ReadableStream<Uint8Array>;
   ssrManifest: SsrManifest;
   bootstrapModules?: string[];
-  /** Extra inline JS appended to the framework's bootstrap script. The HMR
-   * dev client lives here so the browser wires up its reload channel before
-   * any application module evaluates. */
   extraBootstrapInline?: string;
-  /**
-   * Bare specifier -> served URL mapping for the `<script type="importmap">`
-   * the HTML stream should prepend to `<head>`. Used so per-route client
-   * chunks (which externalize `react`, `react-dom/client`, ...) resolve
-   * those specifiers to the base build's vendor entries at load time,
-   * guaranteeing one React instance across rscClient and every route
-   * chunk.
-   *
-   * Injection happens via a stream transform, not React children, because the
-   * spec is strict: import maps must be acquired before any module script fetch
-   * starts, including modulepreload. Akan writes bootstrap module preloads
-   * directly after this importmap and delays the executable module script until
-   * the Fizz HTML stream has completed.
-   */
+  // One React across route chunks: their externalized specifiers resolve to the base build's vendor entries.
+  // Injected by a stream transform, not React children: the spec needs the import map before any module fetch.
   importmap?: Record<string, string>;
   theme?: AkanTheme;
   injectThemeInitScript?: boolean;
   lateControl?: Promise<SsrLateRedirect | null>;
   onCancel?: (reason?: unknown) => void;
-  /**
-   * When true, buffer the whole document until every Suspense boundary resolves
-   * (`stream.allReady`) before emitting a byte, matching `pageConfig.ssr:
-   * "block"`. Defaults to shell-first streaming so `Loading` fallbacks surface.
-   * The `AKAN_SSR_WAIT_FOR_ALL_READY=1` env var forces blocking globally.
-   */
+  /** Buffers until `stream.allReady` (`pageConfig.ssr: "block"`); `AKAN_SSR_WAIT_FOR_ALL_READY=1` forces it globally. */
   waitForAllReady?: boolean;
 }

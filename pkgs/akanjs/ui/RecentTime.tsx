@@ -21,19 +21,15 @@ export interface RecentTimeRelative {
 export type RecentTimeRelativeFormat = RecentTimeRelativeStyle | ((relative: RecentTimeRelative) => string);
 
 export interface RecentTimeProps {
-  /** Date value to render. Null renders nothing, and epoch placeholder values render --:--. */
+  /** Null renders nothing; an epoch placeholder renders --:--. */
   date: Date | Dayjs | null;
-  /** Unit at which relative labels stop and formatted dates are shown instead. */
+  /** The unit past which a formatted date replaces the relative label. */
   breakUnit?: Intl.RelativeTimeFormatUnit;
-  /** Use compact automatic formatting or always include date and time. */
+  /** `"full"` always includes date and time. */
   format?: "full" | "auto";
-  /**
-   * Relative phrasing. `"fromNow"` (default) keeps dayjs locale strings (`하루 전`).
-   * `"always"` / `"auto"` use `Intl.RelativeTimeFormat` — `1일 전` vs `어제`.
-   * A function replaces the relative label; return `defaultLabel` to keep the default.
-   */
+  /** `"fromNow"` (default) keeps dayjs locale strings (`하루 전`); `"always"` / `"auto"` use `Intl.RelativeTimeFormat`
+   *  (`1일 전` vs `어제`); a function replaces the label, returning `defaultLabel` to keep it. */
   relative?: RecentTimeRelativeFormat;
-  /** Additional classes for the trigger span. */
   className?: string;
 }
 
@@ -65,29 +61,21 @@ const formatRelativeLabel = (date: Dayjs, now: Dayjs, lang: string, relative: Re
   return new Intl.RelativeTimeFormat(lang, { numeric: relative }).format(count, unit);
 };
 
+const relativeLimits = [
+  ["second", 1000, 60],
+  ["minute", 1000 * 60, 60],
+  ["hour", 1000 * 3600, 24],
+  ["day", 1000 * 3600 * 24, 7],
+  ["week", 1000 * 3600 * 24 * 7, 4],
+  ["month", 1000 * 3600 * 24 * 30, 12],
+] as const;
+
 const isRelativeDisplay = (diffMs: number, breakUnit?: Intl.RelativeTimeFormatUnit) => {
-  const elapsed = {
-    second: Math.abs(Math.floor(diffMs / 1000)),
-    minute: Math.abs(Math.floor(diffMs / (1000 * 60))),
-    hour: Math.abs(Math.floor(diffMs / (1000 * 3600))),
-    day: Math.abs(Math.floor(diffMs / (1000 * 3600 * 24))),
-    week: Math.abs(Math.floor(diffMs / (1000 * 3600 * 24 * 7))),
-    month: Math.abs(Math.floor(diffMs / (1000 * 3600 * 24 * 30))),
-  };
-  if (breakUnit === "second") return false;
-  if (elapsed.second < 60) return true;
-  if (breakUnit === "minute") return false;
-  if (elapsed.minute < 60) return true;
-  if (breakUnit === "hour") return false;
-  if (elapsed.hour < 24) return true;
-  if (breakUnit === "day") return false;
-  if (elapsed.day < 7) return true;
-  if (breakUnit === "week") return false;
-  if (elapsed.week < 4) return true;
-  if (breakUnit === "month") return false;
-  if (elapsed.month < 12) return true;
-  if (breakUnit === "year") return false;
-  return true;
+  for (const [unit, unitMs, limit] of relativeLimits) {
+    if (breakUnit === unit) return false;
+    if (Math.abs(Math.floor(diffMs / unitMs)) < limit) return true;
+  }
+  return breakUnit !== "year";
 };
 
 export const RecentTime = ({ date, breakUnit, format = "auto", relative = "fromNow", className }: RecentTimeProps) => {

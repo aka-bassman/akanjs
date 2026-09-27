@@ -1,25 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { type EnumInstance, enumOf, FIELD_META, Int } from "akanjs/base";
-import { type ConstantCls, type ConstantField, ConstantRegistry, type FieldInfoObject, field } from "akanjs/constant";
-
+import { ConstantRegistry, field } from "akanjs/constant";
+import { makeRef } from "../testHelpers.fixture";
 import { databaseModelVariants, getConstantSchemaDoc } from "./schemaDoc";
 
 class ConstantDocRole extends enumOf("constantDocRole", ["admin", "user"] as const) {}
 ConstantRegistry.enum.set("constantDocRole", ConstantDocRole as unknown as EnumInstance);
-
-const makeRef = (fields: FieldInfoObject | Record<string, ConstantField>): ConstantCls => {
-  class TestConstant {}
-  Object.assign(TestConstant, {
-    [FIELD_META]: Object.fromEntries(
-      Object.entries(fields).map(([key, fieldInfo]) => [key, "toField" in fieldInfo ? fieldInfo.toField() : fieldInfo]),
-    ),
-    children: new Set(),
-    relations: new Set(),
-    enums: new Set(),
-    text: { search: new Set(), filter: new Set(), children: { search: new Set(), filter: new Set() } },
-  });
-  return TestConstant as ConstantCls;
-};
 
 const ConstantDocAddress = makeRef({
   city: field(String),

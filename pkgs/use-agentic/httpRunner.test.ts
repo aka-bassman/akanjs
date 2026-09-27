@@ -68,19 +68,20 @@ const sse = (frames: string[], contentType = "text/event-stream") => {
       controller.close();
     },
   });
-  return (async () => new Response(stream, { status: 200, headers: { "content-type": contentType } })) as typeof fetch;
+  return (async () =>
+    new Response(stream, { status: 200, headers: { "content-type": contentType } })) as unknown as typeof fetch;
 };
 
 describe("httpRunner streaming", () => {
   test("negotiates via accept and consumes one RunnerEvent per data line", async () => {
     let accept = "";
-    const fetcher = (async (url: unknown, init?: RequestInit) => {
+    const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
       accept = (init?.headers as Record<string, string> | undefined)?.accept ?? "";
       return sse([
         'data: {"type":"text","delta":"Hel"}\n\n',
         'data: {"type":"text","delta":"lo"}\n\ndata: {"type":"toolCall","id":"c1","name":"bump","args":{}}\n\n',
         'data: {"type":"done","stop":"toolUse"}\n\n',
-      ])();
+      ])(url, init);
     }) as typeof fetch;
     const events = await collect(httpRunner({ url: "/x", fetcher }).run(request()));
     expect(accept).toContain("text/event-stream");

@@ -18,29 +18,20 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 export interface PopconfirmProps {
-  /** Confirmation title. */
   title: ReactNode;
-  /** Optional detailed confirmation message. */
   description?: ReactNode;
-  /** The mark beside the message. `false` draws none. */
+  /** `false` draws none. */
   icon?: ReactNode | false;
-  /** The whole footer, replacing both buttons. A replacement owns the confirm and the dismiss. */
+  /** Replaces both buttons; a replacement owns the confirm and the dismiss. */
   actions?: ReactNode;
-  /** Called when the user confirms. */
   onConfirm?: () => void;
-  /** Props forwarded to the OK button. */
   okButtonProps?: ButtonProps;
-  /** Props forwarded to the cancel button. */
   cancelButtonProps?: ButtonProps;
-  /** Custom OK button text. */
   okText?: ReactNode;
-  /** Custom cancel button text. */
   cancelText?: ReactNode;
-  /** Trigger content. */
   children?: ReactNode;
-  /** Additional classes for the trigger wrapper. */
   triggerClassName?: string;
-  /** Additional classes for the popover arrow/decorator. */
+  /** Classes for the pointer; setting it drops the pointer's computed offset. */
   decoClassName?: string;
 }
 
@@ -61,11 +52,10 @@ export const DefaultPopconfirm = ({
   const { l } = usePage();
   const recipe = useUiRecipe("button") ?? buttonRecipe;
   const [isConfirming, setIsConfirming] = useState(false);
-  // Resolved in an effect rather than at render, so the first client pass portals exactly what the server did.
+  // Set in an effect: the first client pass has to match the server's, which portalled nothing.
   const [portal, setPortal] = useState<HTMLElement | null>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  // Read through the portal-to-be: whichever dismissable scope rendered this popover owns it.
   const overlayLayerProps = useOverlayLayerProps();
   const position = useOverlayPosition({
     opened: isConfirming,
@@ -166,9 +156,4 @@ export const DefaultPopconfirm = ({
   );
 };
 
-/**
- * Confirmation popover. Resolves to a route-scoped override when a
- * `page/**\/_overrides.tsx` in the route's ancestry declares one, otherwise
- * renders {@link DefaultPopconfirm}.
- */
 export const Popconfirm = createOverridable("Popconfirm", DefaultPopconfirm);

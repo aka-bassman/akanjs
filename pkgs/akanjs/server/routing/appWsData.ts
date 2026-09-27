@@ -8,18 +8,11 @@ import {
 
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "user-agent"] as const;
 
-/**
- * Credential snapshot taken at the websocket handshake and carried on `ws.data` for the life of the
- * socket, so auth middleware and guards can read the caller the same way they read an HTTP request.
- * Only the credential headers are copied — retaining the whole `Request` would pin it for as long
- * as the socket stays open.
- */
+// Copies only the needed headers: retaining the whole Request would pin it for the socket's life.
 export class AppWsData {
   static fromRequest(req: Request): AppWsData {
     const headers = new Headers();
-    // The forwarded set travels with the credentials because the handshake is the only moment the socket
-    // ever sees them: behind the federation gateway `ws.remoteAddress` is the gateway, for the whole life
-    // of the connection, so an endpoint that reads the peer instead names the wrong machine every time.
+    // Forwarded headers exist only at the handshake; behind the gateway `ws.remoteAddress` is the gateway.
     for (const key of [...CREDENTIAL_HEADERS, ...forwardedHeaders]) {
       const value = req.headers.get(key);
       if (value) headers.set(key, value);
@@ -29,17 +22,11 @@ export class AppWsData {
   static of(ws: Bun.ServerWebSocket<unknown>): AppWsData {
     return ws.data as AppWsData;
   }
-  /**
-   * Swaps the credential the socket authenticates with. Callers must run this synchronously on the
-   * auth frame: frames arrive in order, so a subscribe sent right after the credential must not be
-   * able to observe the previous one.
-   */
   static applyCredential(data: AppWsData, jwt: string | null) {
     if (jwt) data.headers.set("authorization", `Bearer ${jwt}`);
     else {
       data.headers.delete("authorization");
-      // Swept by key shape rather than by this app's own key: the jar the handshake copied is the whole
-      // host's, so it can hold the pre-scoping global key alongside the scoped ones.
+      // Swept by key shape, not this app's key: the copied jar is the host's and may hold the legacy global key.
       for (const name of [...data.cookies].map(([name]) => name)) {
         if (isAuthTokenKey(name)) data.cookies.delete(name);
       }
@@ -53,28 +40,16 @@ export class AppWsData {
   headers: Headers;
   cookies: Bun.CookieMap;
   account?: unknown;
-  /**
-   * Identity of this connection, minted here so every app socket carries one from its first frame and
-   * adaptors and endpoints only ever read it. Per-connection and process-local — a reconnect gets a new
-   * one, and the federation gateway's own socket is a different one — so it is never a caller identity.
-   * It outlives a credential swap on purpose: the socket is still the same socket.
-   */
+  // Per-connection, process-local (a reconnect gets a new one): never a caller identity; survives credential swaps.
   socketId: string;
-  /**
-   * The caller's address as the nearest proxy recorded it, or null when nothing did.
-   *
-   * The handshake headers alone cannot say whether a proxy wrote them or the client did, so this trusts them —
-   * a socket that reached a child came through the gateway, which already resolved the question. `ipOf` is what
-   * an endpoint should read: it has the peer, so it can decide.
-   */
+  // Trusts the handshake headers blindly (a child's socket came through the gateway, which settled trust);
+  // endpoints read `ipOf`, which has the peer and can decide.
   get ip(): string | null {
     return clientAddressFromHeaders(this.headers);
   }
-  /** The caller's source port as the nearest proxy recorded it, or null when nothing did. */
   get port(): number | null {
     return clientPortFromHeaders(this.headers);
   }
-  /** The address to answer on: what a proxy recorded, else this socket's own peer. */
   ipOf(ws: Bun.ServerWebSocket<unknown>): string | null {
     return TrustedProxy.clientAddress(this.headers, ws.remoteAddress);
   }

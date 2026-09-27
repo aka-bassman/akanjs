@@ -1,6 +1,6 @@
 import { parseAkanI18nEnv } from "akanjs/common";
 
-import { ModelDictInfo, ScalarDictInfo, ServiceDictInfo } from "./dictInfo";
+import { ModelDictInfo, ScalarDictInfo } from "./dictInfo";
 import type { DictModule } from "./locale";
 import type { DictionaryNode, RootDictionary } from "./trans";
 
@@ -17,13 +17,8 @@ export interface LocaleGap {
   missing: string[];
 }
 
-/**
- * Collects every dictionary tree built by `makeTrans` so a server process can read the merged result.
- *
- * `makeTrans` keeps its `rootDictionary` in a closure and `AkanLib` carries no dictionary, so without this
- * the i18n tree is unreachable from `AkanServer`. Registration happens at module-evaluation time, which the
- * API process reaches because it imports the generated `server.ts` (which re-exports `lib/dict.ts`) whole.
- */
+// The only path from `AkanServer` to the i18n tree: `makeTrans` keeps its root in a closure and `AkanLib` carries no
+// dictionary. Registration runs when the server imports the generated `server.ts`, which re-exports `lib/dict.ts`.
 export class DictionaryRegistry {
   static readonly #roots: RootDictionary[] = [];
   static readonly #modules = new Map<string, DictionaryModuleInfo>();
@@ -31,21 +26,18 @@ export class DictionaryRegistry {
   /** Registration order is base → libs → app, matching `makeDictionary`, so a later root wins on conflict. */
   static register(root: RootDictionary, transMap: Record<string, DictModule<string, string>>) {
     DictionaryRegistry.#roots.push(root);
-    Object.entries(transMap).forEach(([refName, trans]) => {
+    for (const [refName, trans] of Object.entries(transMap))
       DictionaryRegistry.#modules.set(refName, {
         kind: DictionaryRegistry.#resolveKind(trans),
         languages: [...((trans.dict as { languages?: string[] }).languages ?? [])],
       });
-    });
   }
 
   static getRoot(): RootDictionary {
     const merged = {} as RootDictionary;
-    DictionaryRegistry.#roots.forEach((root) => {
-      Object.entries(root).forEach(([language, models]) => {
+    for (const root of DictionaryRegistry.#roots)
+      for (const [language, models] of Object.entries(root))
         merged[language] = { ...(merged[language] ?? {}), ...models };
-      });
-    });
     return merged;
   }
 
@@ -57,14 +49,7 @@ export class DictionaryRegistry {
     return Object.fromEntries([...DictionaryRegistry.#modules.entries()].map(([key, info]) => [key, { ...info }]));
   }
 
-  /**
-   * Which configured locales the registered dictionaries never wrote, per locale.
-   *
-   * A dictionary declares its own locale tuple — `serviceDictionary(["en", "ko"])` — and a lib ships that tuple to
-   * every app that mounts it, so an app that adds a third locale cannot widen it from the outside. Every key those
-   * modules own then resolves through the default-locale fallback: the screen stays readable and nothing throws,
-   * which is exactly why the gap is invisible without asking.
-   */
+  /** Modules whose own locale tuple lacks a configured locale; their keys silently fall back to the default locale. */
   static getLocaleGaps(locales: string[] = parseAkanI18nEnv().locales): LocaleGap[] {
     const modules = [...DictionaryRegistry.#modules.entries()];
     return locales
@@ -79,11 +64,8 @@ export class DictionaryRegistry {
   /** Flattened dotted paths of every leaf translation, e.g. `"user.signal.createUser.arg.data"`. */
   static getKeys(root: RootDictionary = DictionaryRegistry.getRoot()): string[] {
     const keys = new Set<string>();
-    Object.values(root).forEach((models) => {
-      Object.entries(models).forEach(([refName, node]) => {
-        DictionaryRegistry.#collectKeys(refName, node, keys);
-      });
-    });
+    for (const models of Object.values(root))
+      for (const [refName, node] of Object.entries(models)) DictionaryRegistry.#collectKeys(refName, node, keys);
     return [...keys].sort();
   }
 
@@ -108,7 +90,6 @@ export class DictionaryRegistry {
   static #resolveKind(trans: DictModule<string, string>): DictionaryModuleKind {
     if (trans.dict instanceof ModelDictInfo) return "model";
     if (trans.dict instanceof ScalarDictInfo) return "scalar";
-    if (trans.dict instanceof ServiceDictInfo) return "service";
     return "service";
   }
 }

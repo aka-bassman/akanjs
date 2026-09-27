@@ -1,5 +1,6 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { parseJsonLine, readJsonLines } from "./jsonLines";
 
 export interface CodeSessionEntry {
   id: string;
@@ -12,15 +13,8 @@ export interface CodeSessionEntry {
   turns: number;
 }
 
-/**
- * The sessions on disk, read as files rather than through the engine.
- *
- * The engine's session manager addresses one session at a time — it can open a file and append to it, and has
- * nothing that enumerates the directory. The format is self-describing JSONL, so the listing is a read of
- * lines we already own the shape of, and it costs no engine instance to produce.
- */
+// Read as files: the engine's session manager has nothing that enumerates the directory.
 export class CodeSessionIndex {
-  /** Past this, a file is a session long enough that its opening lines are far from the interesting part. */
   static readonly readLimit = 512 * 1024;
 
   static list(dir: string, limit = 30): CodeSessionEntry[] {
@@ -52,11 +46,11 @@ export class CodeSessionIndex {
   }
 
   static #read(file: string, updatedAt: number): CodeSessionEntry | undefined {
-    const lines = CodeSessionIndex.#lines(file);
+    const lines = readJsonLines(file, CodeSessionIndex.readLimit);
     if (!lines.length) return undefined;
     const entry: CodeSessionEntry = { id: "", file, name: undefined, opening: "", updatedAt, turns: 0 };
     for (const line of lines) {
-      const record = CodeSessionIndex.#parse(line);
+      const record = parseJsonLine<{ [key: string]: unknown; type?: string }>(line);
       if (!record) continue;
       if (record.type === "session" && typeof record.id === "string") entry.id = record.id;
       // A rename appends a second entry rather than editing the first, so the last one on the file wins.
@@ -70,26 +64,6 @@ export class CodeSessionIndex {
     return entry.id ? entry : undefined;
   }
 
-  static #lines(file: string) {
-    try {
-      if (statSync(file).size > CodeSessionIndex.readLimit) return [];
-      return readFileSync(file, "utf8")
-        .split("\n")
-        .filter((line) => !!line.trim());
-    } catch {
-      return [];
-    }
-  }
-
-  static #parse(line: string): { [key: string]: unknown; type?: string } | undefined {
-    try {
-      return JSON.parse(line) as { type?: string };
-    } catch {
-      return undefined;
-    }
-  }
-
-  /** One line, always: the opening ask is a label in a list, and a pasted stack trace is not a label. */
   static #text(content: unknown) {
     const text =
       typeof content === "string"

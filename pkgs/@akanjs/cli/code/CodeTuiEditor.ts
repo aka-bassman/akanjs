@@ -13,14 +13,7 @@ export interface CodeTuiEditorLayout {
   col: number;
 }
 
-/**
- * The prompt buffer: text plus a caret, edited the way a textarea is.
- *
- * Movement is **visual**, not by stored line — `up` from a wrapped paragraph's third screen row lands on its
- * second screen row, because that is where the character above the caret is drawn. Columns are display cells,
- * so moving up through Korean text does not drift: a Hangul syllable is one index and two columns, and a caret
- * tracked by index would land half a character off on every row it crosses.
- */
+/** Moves by drawn row, and columns are display cells, so a caret crossing Hangul rows does not drift. */
 export class CodeTuiEditor {
   #text = "";
   #caret = 0;
@@ -46,7 +39,7 @@ export class CodeTuiEditor {
     this.set("");
   }
 
-  /** Swaps a range for something else, leaving the caret after it — how a completion lands. */
+  /** Leaves the caret after the inserted text. */
   replace(from: number, to: number, text: string) {
     this.set(this.#text.slice(0, from) + text + this.#text.slice(to), from + text.length);
   }
@@ -60,25 +53,13 @@ export class CodeTuiEditor {
     return { from, to, text: this.#text.slice(from, to) };
   }
 
-  /**
-   * A keystroke, or a whole paste — the terminal hands both to the same handler as one chunk.
-   *
-   * Newlines are kept: a pasted stack trace or snippet is the common reason to paste at all, and treating the
-   * first line break as an enter nobody pressed would send a fragment and type the rest into the next turn.
-   */
+  /** A keystroke or a whole paste; newlines are kept, CR and CRLF normalized to LF. */
   insert(text: string) {
     const clean = text.replace(/\r\n?/g, "\n");
     this.set(this.#text.slice(0, this.#caret) + clean + this.#text.slice(this.#caret), this.#caret + clean.length);
   }
 
-  /**
-   * A line break, without the backslash that arrives ahead of it.
-   *
-   * Shift+enter is not a key a plain terminal can report, so the usual way to bind it is to send the two
-   * characters a shell reads as a line continuation — `\` then the return. The continuation is meant for the
-   * shell; what the person meant here was one prompt written on two lines, and the backslash is an artifact of
-   * how the key had to be delivered rather than anything they typed.
-   */
+  /** Drops a backslash before the caret: terminals bind shift+enter as the shell continuation `\` + return. */
   newline() {
     if (this.#text.slice(0, this.#caret).endsWith("\\"))
       this.set(this.#text.slice(0, this.#caret - 1) + this.#text.slice(this.#caret), this.#caret - 1);
@@ -126,7 +107,7 @@ export class CodeTuiEditor {
     this.#caret = Math.min(this.#text.length, this.#caret + rest.length);
   }
 
-  /** Moves one **visual** row, keeping the column. False when there is no row that way — the caller's cue. */
+  /** Moves one visual row, keeping the column; false when there is no row that way. */
   move(direction: -1 | 1, width: number) {
     const { rows, row, col } = this.layout(width);
     const target = rows[row + direction];
@@ -146,27 +127,20 @@ export class CodeTuiEditor {
     this.#caret = current ? current.at + current.text.length : this.#text.length;
   }
 
-  /**
-   * The buffer as the rows it draws on, plus where the caret sits among them.
-   *
-   * Each row carries its own offset rather than the caller re-deriving one, because a hard break consumes a
-   * character and a soft wrap consumes none — a reconstruction has to know which happened at every boundary,
-   * and gets it wrong the first time a line wraps exactly at a newline.
-   */
   layout(width: number): CodeTuiEditorLayout {
     const room = Math.max(4, width);
     const rows: CodeTuiEditorRow[] = [];
     let at = 0;
     for (const line of this.#text.split("\n")) {
-      for (const text of CodeTuiEditor.#wrap(line, room)) {
+      // Character wrap, not word wrap: an editor must never move text the writer placed.
+      for (const text of line ? CodeTuiLines.chunks(line, room) : [""]) {
         rows.push({ text, at });
         at += text.length;
       }
       at += 1;
     }
     if (!rows.length) rows.push({ text: "", at: 0 });
-    // The last row whose start is at or before the caret: at a soft wrap that puts the caret on the new row,
-    // which is where the next character will be drawn, and at a hard break the newline keeps them apart.
+    // At a soft wrap the caret belongs to the new row, which is where the next character will be drawn.
     let row = 0;
     for (let index = 0; index < rows.length; index += 1) if ((rows[index]?.at ?? 0) <= this.#caret) row = index;
     const current = rows[row] ?? { text: "", at: 0 };
@@ -180,22 +154,6 @@ export class CodeTuiEditor {
       at += char.length;
     }
     return at;
-  }
-
-  /** Character wrap, not word wrap: an editor must never move text the writer placed. */
-  static #wrap(line: string, width: number) {
-    if (!line.length) return [""];
-    const rows: string[] = [];
-    let row = "";
-    for (const char of line) {
-      if (row && CodeTuiLines.width(row + char) > width) {
-        rows.push(row);
-        row = "";
-      }
-      row += char;
-    }
-    if (row) rows.push(row);
-    return rows;
   }
 
   static #prev(text: string, at: number) {

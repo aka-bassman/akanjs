@@ -34,6 +34,8 @@ class FakeTransport implements CodeAgentTransport {
 }
 
 const event = (seq: number, body: Partial<CodeAgentEvent> = {}) => ({ type: "idle", seq, ...body }) as CodeAgentEvent;
+const start = { type: "agent_start" } as never;
+const finished = (stopReason: string) => ({ type: "agent_end", messages: [{ stopReason }], willRetry: false }) as never;
 
 describe("CodeAgentClient", () => {
   test("correlates a reply with the command that asked for it", async () => {
@@ -207,8 +209,6 @@ describe("CodeAgentAsks", () => {
 });
 
 describe("CodeAgentEventMapper", () => {
-  const start = { type: "agent_start" } as never;
-
   test("a run becomes one turn, not one turn per round trip", () => {
     const mapper = new CodeAgentEventMapper();
     expect(mapper.map(start)).toEqual([{ type: "turn_start", turnId: "t1" }]);
@@ -231,10 +231,6 @@ describe("CodeAgentEventMapper", () => {
     expect(think).toEqual([{ type: "thinking_delta", turnId: "t1", text: "hmm" }]);
   });
 
-  /**
-   * `String({})` is `"[object Object]"`, and an `edit` call's argument is an array of them — so a row that
-   * should read "three replacements" read as two identical placeholders instead.
-   */
   test("a structured argument is described by its shape, not stringified", () => {
     const mapper = new CodeAgentEventMapper();
     mapper.map(start);
@@ -248,7 +244,6 @@ describe("CodeAgentEventMapper", () => {
     expect(title).not.toContain("[object Object]");
     expect(title).toContain("edits=2 items");
     expect(title).toContain("options={1 key}");
-    // A path still reads as itself: it is the one argument worth showing verbatim.
     expect(title).toContain("path=/repo/a.ts");
   });
 
@@ -289,8 +284,7 @@ describe("CodeAgentEventMapper", () => {
   test("reports an aborted run as aborted rather than done", () => {
     const mapper = new CodeAgentEventMapper();
     mapper.map(start);
-    const frames = mapper.map({ type: "agent_end", messages: [{ stopReason: "aborted" }], willRetry: false } as never);
-    expect(frames).toEqual([{ type: "turn_end", turnId: "t1", stopReason: "aborted" }]);
+    expect(mapper.map(finished("aborted"))).toEqual([{ type: "turn_end", turnId: "t1", stopReason: "aborted" }]);
   });
 
   test("a compaction that failed or was cancelled carries that, not just its reason", () => {
@@ -435,10 +429,6 @@ describe("codeAgentShouldPersist", () => {
 });
 
 describe("turn outcome", () => {
-  const start = { type: "agent_start" } as never;
-  const finished = (stopReason: string) =>
-    ({ type: "agent_end", messages: [{ stopReason }], willRetry: false }) as never;
-
   test("an abort is reported even though the engine calls it a normal stop", () => {
     const mapper = new CodeAgentEventMapper();
     mapper.map(start);
@@ -477,25 +467,17 @@ describe("turn outcome", () => {
 });
 
 describe("truncation", () => {
-  const start = { type: "agent_start" } as never;
-
   test("the engine's `length` is a partial success, not a completed turn", () => {
     const mapper = new CodeAgentEventMapper();
     mapper.map(start);
-    const frames = mapper.map({
-      type: "agent_end",
-      messages: [{ stopReason: "length" }],
-      willRetry: false,
-    } as never);
-    expect(frames).toEqual([{ type: "turn_end", turnId: "t1", stopReason: "truncated" }]);
+    expect(mapper.map(finished("length"))).toEqual([{ type: "turn_end", turnId: "t1", stopReason: "truncated" }]);
   });
 
   test("an abort still wins over the engine's report", () => {
     const mapper = new CodeAgentEventMapper();
     mapper.map(start);
     mapper.noteOutcome("aborted");
-    const frames = mapper.map({ type: "agent_end", messages: [{ stopReason: "length" }], willRetry: false } as never);
-    expect(frames).toEqual([{ type: "turn_end", turnId: "t1", stopReason: "aborted" }]);
+    expect(mapper.map(finished("length"))).toEqual([{ type: "turn_end", turnId: "t1", stopReason: "aborted" }]);
   });
 
   test("the terminal says so, because a cut answer looks like a finished one", () => {
@@ -526,17 +508,12 @@ describe("akanCodeModelWarnings", () => {
 });
 
 describe("wire coverage", () => {
-  /**
-   * The audit that found `context` declared, rendered, and never emitted. A contract entry with no producer
-   * costs every host a branch for a frame that cannot arrive.
-   */
   test("every event type either has a producer in the core or is documented as host-supplied", async () => {
     const dir = import.meta.dir;
     const sources = await Promise.all(
       ["CodeAgent.ts", "CodeAgentEventMapper.ts"].map(async (file) => await Bun.file(`${dir}/${file}`).text()),
     );
     const core = sources.join("\n");
-    // `host` is the one frame the core never makes: it is the slot a host fills with its own vocabulary.
     const hostSupplied = new Set(["host"]);
     const missing = Object.keys(codeAgentEventPersistence).filter(
       (type) => !hostSupplied.has(type) && !core.includes(`type: "${type}"`),

@@ -35,10 +35,7 @@ export interface SqlDriver {
   dialect: SqlDialect;
   /** A new adaptor on the same storage — what a process restart sees, so only what was committed. */
   restart: () => Promise<SqlDriver>;
-  /**
-   * A second adaptor on the same storage while this one stays open — another process of the same app, booted with
-   * these text search settings over the first one's.
-   */
+  /** A second adaptor on the same storage while this one stays open: another process, with these search settings. */
   sibling: (search?: SearchConfig) => Promise<SqlDriver>;
   /** A restart with other text search settings — a redeploy that changed `AKAN_SEARCH_*`. */
   reconfigure: (search: SearchConfig) => Promise<SqlDriver>;
@@ -51,11 +48,7 @@ const backendEnvNames = {
   libsql: "AKAN_TEST_LIBSQL_URL",
 } as const;
 
-/**
- * Where the database-mode conformance suites find their backends. Every suite reads the same three variables, so one
- * `bun run testConformance` (which starts `infra/test/compose.yaml`) lights up all of them, and a plain `bun test`
- * runs only the SQLite side.
- */
+/** `bun run testConformance` (`infra/test/compose.yaml`) sets all three backends; plain `bun test` runs SQLite. */
 export class ConformanceEnv {
   static readonly #announced = new Set<string>();
   /** Where a deployment points an app at its data. A test that hands its storage in has these cleared first. */
@@ -111,10 +104,8 @@ export class ConformanceEnv {
   }
 
   /**
-   * A throwaway schema on the conformance Postgres and a URL that pins every pooled connection to it.
-   * `search_path` rides the URL because postgres.js forwards unknown query parameters as startup parameters, which is
-   * what makes it hold on connections the pool opens later. `insight` adds a login role of the schema's own for
-   * `InsightQuery` to read as; roles belong to the whole server, so it is dropped with the schema.
+   * A throwaway schema and a URL pinning every pooled connection to it: postgres.js forwards unknown query parameters
+   * as startup parameters, so `search_path` holds on later connections too. `insight` adds a login role, dropped too.
    */
   static async postgresSchema(prefix: string, { insight = false }: { insight?: boolean } = {}) {
     const base = ConformanceEnv.url("postgres");
@@ -173,11 +164,7 @@ export class ConformanceEnv {
     return ConformanceEnv.has(suite, "redis") ? ["solid", "redis"] : ["solid"];
   }
 
-  /**
-   * A cache adaptor of `kind` on storage of its own. `app` stands for the app that built it: two apps sharing one
-   * Redis each build their own instance, which is what an isolation case compares. On Redis the app is the key
-   * prefix, and closing deletes everything under it.
-   */
+  /** `app` stands for the app that built the cache: on Redis it is the key prefix, and closing deletes under it. */
   static async openCache(
     kind: ConformanceCacheKind,
     { app = ConformanceEnv.uniqueName("app") }: { app?: string } = {},
@@ -231,9 +218,8 @@ export class ConformanceEnv {
   }
 
   /**
-   * The real adaptor class for `kind`, initialised the way the DI container would, on storage nothing else sees.
-   * `insight` gives Postgres a login role for `InsightQuery`; `memory` puts SQLite in memory, as `TestServer` does;
-   * `search` replaces the text search settings.
+   * The real adaptor, initialised as the DI container would, on storage nothing else sees. `insight` gives Postgres a
+   * login role for `InsightQuery`; `memory` puts SQLite in memory, as `TestServer` does.
    */
   static async openSqlDriver(kind: SqlDriverKind, options: SqlDriverOptions = {}): Promise<SqlDriver> {
     return await ConformanceEnv.#openSqlAdaptor(kind, await ConformanceEnv.#sqlStorage(kind, options));

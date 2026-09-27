@@ -20,14 +20,12 @@ interface RemoveWrapperProps {
 
 export default function RemoveWrapper({ children, slice, name, modelId, className, modal }: RemoveWrapperProps) {
   const { l } = usePage();
-  const { refName, sliceName } = slice;
-  const modelName = refName;
+  const { refName: modelName } = slice;
   const names = {
     removeModel: `remove${capitalize(modelName)}`,
   };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
-  // The `remove` prefix turns on the approval card by default, which is the agent's half of the Popconfirm
-  // this draws for a person.
+  // The `remove` prefix turns on the approval card, the agent's half of the Popconfirm drawn for a person.
   const removeModel = st
     .tool(names.removeModel)
     .desc(`Remove one ${modelName}.`)

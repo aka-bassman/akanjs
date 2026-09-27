@@ -1,17 +1,16 @@
+import net from "node:net";
 import { type TunnelOpenFrame, tunnelWireContract } from "akanjs/common";
 import { type TunnelStream, type TunnelStreamLink, tunnelResetCodeOf } from "./tunnelStream";
 
-/**
- * A raw TCP stream to a local port — what SSH through the tunnel rides. The provider side only: what opens one
- * is undefined in wire version 1, so nothing in the framework calls this yet.
- */
+/** A raw TCP stream to a local port (SSH); provider side only — nothing opens one in wire version 1 yet. */
 export class TunnelTcpStream implements TunnelStream {
   readonly #open: TunnelOpenFrame;
   readonly #link: TunnelStreamLink;
   readonly #hostname: string;
-  #socket: Bun.Socket | null = null;
-  #pending: Uint8Array[] = [];
-  #closed = false;
+  #socket: net.Socket | null = null;
+  #forwarding: Promise<void> = Promise.resolve();
+  #closed: boolean = false;
+  #gatewayEnded: boolean = false;
 
   constructor(open: TunnelOpenFrame, link: TunnelStreamLink, hostname: string) {
     this.#open = open;
@@ -28,29 +27,29 @@ export class TunnelTcpStream implements TunnelStream {
     }
     try {
       await new Promise<void>((resolve, reject) => {
-        void Bun.connect({
-          hostname: this.#hostname,
-          port,
-          socket: {
-            open: () => {
-              this.#link.sendFrame({ type: "head", streamId, status: 200, headers: [], body: true });
-            },
-            data: (_socket, data) => {
-              for (let at = 0; at < data.byteLength; at += tunnelWireContract.chunkBytes)
-                void this.#link.sendPayload(data.subarray(at, at + tunnelWireContract.chunkBytes));
-            },
-            // Everything `write` could not take is held here and retried, in order, when the kernel buffer frees.
-            drain: (socket) => this.#flush(socket),
-            close: () => {
-              if (!this.#closed) this.#link.sendFrame({ type: "end", streamId });
-              this.#finish();
-              resolve();
-            },
-            error: (_socket, error) => reject(error),
-          },
-        }).then((socket) => {
-          this.#socket = socket;
-        }, reject);
+        // Not `Bun.connect`: after `shutdown(true)` it fires its own `end` and drops the origin's reply (Bun 1.4).
+        const socket = net.connect({ host: this.#hostname, port, allowHalfOpen: true });
+        this.#socket = socket;
+        socket.on("connect", () =>
+          this.#link.sendFrame({ type: "head", streamId, status: 200, headers: [], body: true }),
+        );
+        socket.on("data", (data: Buffer) => {
+          socket.pause();
+          this.#forwarding = this.#forward(socket, data);
+        });
+        // Bun emits `end` and `close` on a paused socket as soon as the last chunk is handed out.
+        socket.on("end", () =>
+          this.#afterForward(() => {
+            if (!this.#closed) this.#link.sendFrame({ type: "end", streamId });
+          }),
+        );
+        socket.on("error", reject);
+        socket.on("close", () =>
+          this.#afterForward(() => {
+            this.#finish();
+            resolve();
+          }),
+        );
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -60,39 +59,36 @@ export class TunnelTcpStream implements TunnelStream {
   }
 
   push(data: Uint8Array) {
-    const socket = this.#socket;
-    if (!socket || this.#closed) return;
-    this.#pending.push(data);
-    this.#flush(socket);
+    if (this.#closed || this.#gatewayEnded) return;
+    this.#socket?.write(data);
   }
 
   end() {
+    this.#gatewayEnded = true;
     this.#socket?.end();
   }
 
   reset() {
-    this.#closed = true;
-    this.#socket?.end();
     this.#finish();
   }
 
-  #flush(socket: Bun.Socket) {
-    while (this.#pending.length) {
-      const chunk = this.#pending[0];
-      if (!chunk) break;
-      const written = socket.write(chunk);
-      if (written < chunk.byteLength) {
-        // Partial writes are normal once the kernel buffer fills; the remainder waits for `drain`.
-        this.#pending[0] = chunk.subarray(Math.max(written, 0));
-        return;
-      }
-      this.#pending.shift();
+  async #forward(socket: net.Socket, data: Uint8Array) {
+    try {
+      for (let at = 0; at < data.byteLength; at += tunnelWireContract.chunkBytes)
+        await this.#link.sendPayload(data.subarray(at, at + tunnelWireContract.chunkBytes));
+    } finally {
+      if (!this.#closed) socket.resume();
     }
   }
 
+  #afterForward(fn: () => void) {
+    void this.#forwarding.then(fn, fn);
+  }
+
   #finish() {
+    if (this.#closed) return;
     this.#closed = true;
-    this.#pending = [];
+    this.#socket?.destroy();
     this.#socket = null;
     // A raw stream owns its data socket for its whole life, so the socket goes with it rather than being pooled.
     this.#link.closeSocket();

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import type { Device } from "./device";
 
 const deviceState = {
   platform: "web",
@@ -65,6 +66,16 @@ const installWindow = (pathname = "/ko/home", options: { nativeTarget?: boolean 
   return { scrollCalls };
 };
 
+const expectWebDevice = (device: Device) => {
+  expect(device.lang).toBe("ko");
+  expect(device.info.platform).toBe("web");
+  expect(device.topSafeArea).toBe(0);
+  expect(device.bottomSafeArea).toBe(0);
+  expect(deviceState.infoCalls).toBe(0);
+  expect(deviceState.languageCalls).toBe(0);
+  expect(deviceState.safeAreaCalls).toBe(0);
+};
+
 afterEach(async () => {
   const { Device } = await import("./device");
   Device.instance = null;
@@ -91,13 +102,7 @@ describe("Device", () => {
     const second = await Device.load({ lang: "en", supportLanguages: ["en"] });
 
     expect(device).toBe(second);
-    expect(device.lang).toBe("ko");
-    expect(device.info.platform).toBe("web");
-    expect(device.topSafeArea).toBe(0);
-    expect(device.bottomSafeArea).toBe(0);
-    expect(deviceState.infoCalls).toBe(0);
-    expect(deviceState.languageCalls).toBe(0);
-    expect(deviceState.safeAreaCalls).toBe(0);
+    expectWebDevice(device);
     expect(Device.getDevice()).toBe(device);
   });
 
@@ -123,13 +128,7 @@ describe("Device", () => {
 
     const device = await Device.load({ supportLanguages: ["en", "ko"] });
 
-    expect(device.lang).toBe("ko");
-    expect(device.info.platform).toBe("web");
-    expect(device.topSafeArea).toBe(0);
-    expect(device.bottomSafeArea).toBe(0);
-    expect(deviceState.infoCalls).toBe(0);
-    expect(deviceState.languageCalls).toBe(0);
-    expect(deviceState.safeAreaCalls).toBe(0);
+    expectWebDevice(device);
   });
 
   test("web platform skips native keyboard and haptics but uses window scroll", async () => {

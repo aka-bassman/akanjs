@@ -27,22 +27,14 @@ const ScreenNavigatorContext = sharedContext<ScreenNavigatorContextType>("screen
 });
 
 interface ScreenNavigatorProps {
-  // currentMenu: string;
   children: React.ReactNode;
   setMenu?: (menu: string) => void;
   menus: string[];
-  /** Names this navigator for the in-page agent. Without it it publishes nothing — two on one screen would share a name. */
+  /** Names this navigator for the in-page agent; without it it publishes nothing. */
   namespace?: string;
 }
 
-export const ScreenNavigator = ({
-  children,
-  setMenu = () => {
-    //
-  },
-  menus,
-  namespace,
-}: ScreenNavigatorProps) => {
+export const ScreenNavigator = ({ children, setMenu = () => {}, menus, namespace }: ScreenNavigatorProps) => {
   const [currentMenu, setCurrentMenu] = useState(menus[0]);
   const xValue = useSpringValue(0, { config: { clamp: true } });
   const ref = useRef<HTMLDivElement>(null);

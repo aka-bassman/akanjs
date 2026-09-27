@@ -17,7 +17,7 @@ export interface TunnelAgentOptions {
   /** Where a `tcp` stream dials. Local by construction: an agent is a door into one machine, not a router. */
   tcpHost?: string;
   name?: string;
-  /** Attempts on a link that has never gone ready before the agent gives up. Defaults to `coldAttemptLimit`. */
+  /** Attempts on a link that has never gone ready before the agent gives up (default 10). */
   retryLimit?: number;
   onReady?: (ready: TunnelReadyFrame) => void;
   /** The control socket dropped and a reconnect is scheduled; the share is down until `onReady` comes again. */
@@ -36,21 +36,11 @@ const fatalCloseCodes = new Set<number>([
 
 const backoffMs = [1_000, 2_000, 4_000, 8_000, 15_000];
 
-/**
- * How many times a link that has *never* carried a session may be retried before the agent gives up.
- *
- * A refusal is supposed to arrive as a 4000-range close code, but a gateway that answers the upgrade with an
- * HTTP status, or a proxy in front of one, reaches the client as a bare `1006` — indistinguishable from a
- * dropped link, and so retried forever with a credential that will never be accepted. A session that once went
- * ready is exempt: that link demonstrably works, and a reconnect is what it is for.
- */
+// An HTTP-status refusal at the upgrade (or a proxy's) arrives as a bare 1006, indistinguishable from a dropped
+// link — so a link that never went ready is retried only this many times; one that did is exempt.
 const coldAttemptLimit = 10;
 
-/**
- * The private half of a tunnel: it dials out to the gateway, so the machine it runs on needs no public address,
- * no inbound port and no NAT traversal. One control socket carries the handshake and the heartbeat; every
- * request rides a data socket from the pool.
- */
+/** Dials out to the gateway, so its machine needs no public address, no inbound port and no NAT traversal. */
 export class TunnelAgent {
   readonly #options: TunnelAgentOptions;
   readonly logger = new Logger("TunnelAgent");
@@ -219,7 +209,6 @@ export class TunnelAgent {
     this.#ws.send(JSON.stringify(frame));
   }
 
-  /** Opens data sockets until the gateway's idle target is met, without passing its ceiling. */
   #grow() {
     const ready = this.#ready;
     if (!ready || this.#stopped) return;

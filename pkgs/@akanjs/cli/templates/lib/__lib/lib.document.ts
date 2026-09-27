@@ -1,7 +1,5 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
-const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
-
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { [key: string]: string } = {}) {
   if (!scanInfo) return null;
   const libs = scanInfo.getLibs();

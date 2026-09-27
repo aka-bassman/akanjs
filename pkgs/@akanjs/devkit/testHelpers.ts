@@ -1,7 +1,11 @@
+import { afterEach, beforeEach } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { AppExecutor, LibExecutor, ModuleExecutor, PkgExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
+
+// Executors are imported on first use: they load akanjs/base, which patches the String/Boolean/Date globals.
+const executors = () => import("@akanjs/devkit/executors");
+
 export interface CallRecord {
   name: string;
   args: unknown[];
@@ -11,11 +15,7 @@ export const createCallRecorder = () => {
   const calls: CallRecord[] = [];
   return {
     calls,
-    /**
-     * `Returns` lets one recorder stand in for methods that return a value. Nothing is produced — the
-     * stub resolves to `undefined`, so use it only where the code under test does not read the result;
-     * a test that needs the value should return it from its own closure instead.
-     */
+    /** `Returns` only types the stub: it always returns `undefined`, so use it where the result is not read. */
     record<Returns = void>(name: string, ...args: unknown[]): Returns {
       calls.push({ name, args });
       return undefined as unknown as Returns;
@@ -72,20 +72,45 @@ export const createFakeExecutor = <Extra extends object = object>(
     scanSync: (...args: unknown[]) => Promise<{ name: string }>;
   };
 
-export const makeCliTempWorkspace = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-cli-"));
-  await mkdir(root, { recursive: true });
+export const makeCliTempWorkspace = async (parentDir = os.tmpdir()) => {
+  await mkdir(parentDir, { recursive: true });
+  const root = await mkdtemp(path.join(parentDir, "akan-cli-"));
   await writeText(path.join(root, ".gitignore"), "");
   await writeText(
     path.join(root, ".env"),
     ["AKAN_PUBLIC_REPO_NAME=repo", "AKAN_PUBLIC_SERVE_DOMAIN=localhost", "AKAN_PUBLIC_ENV=local", ""].join("\n"),
   );
+  const { WorkspaceExecutor } = await executors();
   const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
   return { root, workspace };
 };
 
-export const cleanupCliTempWorkspace = async (root: string) => {
-  await rm(root, { recursive: true, force: true });
+// Registers the afterEach that removes the root of every value the returned tracker was handed.
+export const tempRoots = (remove = (root: string) => rm(root, { recursive: true, force: true })) => {
+  const roots: string[] = [];
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((root) => remove(root)));
+  });
+  return <Temp extends { root: string }>(temp: Temp) => {
+    roots.push(temp.root);
+    return temp;
+  };
+};
+
+// Registers the afterEach that removes every directory the returned factory created.
+export const tempDirs = (prefix: string, remove?: (root: string) => Promise<void>) => {
+  const track = tempRoots(remove);
+  return async () => track({ root: await mkdtemp(path.join(os.tmpdir(), prefix)) }).root;
+};
+
+export const isolateEnv = (env: Record<string, string> = {}) => {
+  const originalEnv = { ...process.env };
+  beforeEach(() => {
+    process.env = { ...originalEnv, ...env };
+  });
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 };
 
 export const writeText = async (filePath: string, content: string) => {
@@ -97,8 +122,10 @@ export const writeJson = async (filePath: string, value: object) => {
   await writeText(filePath, `${JSON.stringify(value, null, 2)}\n`);
 };
 
-export const createTempApp = async (appName = "demo") => {
-  const { root, workspace } = await makeCliTempWorkspace();
+const tsconfigJson = { compilerOptions: { target: "ESNext", paths: {} } };
+
+export const createTempApp = async (appName = "demo", parentDir?: string) => {
+  const { root, workspace } = await makeCliTempWorkspace(parentDir);
   await writeJson(path.join(root, "package.json"), {
     name: "repo",
     version: "1.0.0",
@@ -109,13 +136,8 @@ export const createTempApp = async (appName = "demo") => {
       "react-server-dom-webpack": "19.0.0",
     },
   });
-  await writeJson(path.join(root, "tsconfig.json"), {
-    compilerOptions: { target: "ESNext", paths: {} },
-    references: [],
-  });
-  await writeJson(path.join(root, "apps", appName, "tsconfig.json"), {
-    compilerOptions: { target: "ESNext", paths: {} },
-  });
+  await writeJson(path.join(root, "tsconfig.json"), { ...tsconfigJson, references: [] });
+  await writeJson(path.join(root, "apps", appName, "tsconfig.json"), tsconfigJson);
   await writeJson(path.join(root, "apps", appName, "package.json"), {
     name: appName,
     version: "1.0.0",
@@ -125,7 +147,7 @@ export const createTempApp = async (appName = "demo") => {
   });
   await writeText(path.join(root, "apps", appName, "akan.config.ts"), "export default {};\n");
   await mkdir(path.join(root, "apps", appName, "lib", "__scalar"), { recursive: true });
-  const app = AppExecutor.from(workspace, appName);
+  const app = (await executors()).AppExecutor.from(workspace, appName);
   return { root, workspace, app };
 };
 
@@ -138,11 +160,8 @@ export const createTempLib = async (libName = "shared") => {
     dependencies: {},
     devDependencies: {},
   });
-  await writeJson(path.join(root, "tsconfig.json"), {
-    compilerOptions: { target: "ESNext", paths: {} },
-    references: [],
-  });
-  const lib = LibExecutor.from(workspace, libName);
+  await writeJson(path.join(root, "tsconfig.json"), { ...tsconfigJson, references: [] });
+  const lib = (await executors()).LibExecutor.from(workspace, libName);
   return { root, workspace, lib };
 };
 
@@ -155,25 +174,21 @@ export const createTempPackage = async (pkgName = "@sample/tool") => {
     dependencies: { lodash: "4.0.0" },
     devDependencies: { typescript: "6.0.0" },
   });
-  await writeJson(path.join(root, "tsconfig.json"), {
-    compilerOptions: { target: "ESNext", paths: {} },
-  });
+  await writeJson(path.join(root, "tsconfig.json"), tsconfigJson);
   await writeJson(path.join(root, "pkgs", pkgName, "package.json"), {
     name: pkgName,
     version: "0.1.0",
     description: "tool",
     exports: {},
   });
-  await writeJson(path.join(root, "pkgs", pkgName, "tsconfig.json"), {
-    compilerOptions: { target: "ESNext", paths: {} },
-  });
+  await writeJson(path.join(root, "pkgs", pkgName, "tsconfig.json"), tsconfigJson);
   await writeText(path.join(root, "pkgs", pkgName, "index.ts"), 'import "lodash";\nexport const value = 1;\n');
-  const pkg = PkgExecutor.from(workspace, pkgName);
+  const pkg = (await executors()).PkgExecutor.from(workspace, pkgName);
   return { root, workspace, pkg };
 };
 
 export const createTempModule = async (moduleName = "post") => {
   const { root, workspace, app } = await createTempApp("demo");
-  const module = ModuleExecutor.from(app, moduleName);
+  const module = (await executors()).ModuleExecutor.from(app, moduleName);
   return { root, workspace, app, module };
 };

@@ -17,14 +17,8 @@ interface PlanOwner {
   [FIELD_META]: FieldObject;
 }
 
-/**
- * One hydration plan per model class, compiled from `FIELD_META` on the first instance. Reading the field map,
- * resolving `getProps()` and dispatching on the field kind used to happen per field per instance, and was most of
- * what a listing paid after the dayjs objects — a plan turns a row into a plain loop over precomputed converters.
- *
- * Cached per class rather than per field map because `fullModelOf` extends a lib model's `FIELD_META` in place;
- * `applyConstantStatics` resets the entry whenever it finishes wiring a class.
- */
+// One plan per model class, compiled from `FIELD_META` on the first instance. Per class, not per field map, because
+// `fullModelOf` extends a lib model's `FIELD_META` in place; `applyConstantStatics` resets it after wiring a class.
 export class HydrationPlan {
   static #byClass = new WeakMap<object, HydrationPlan>();
   static of(cls: PlanOwner): HydrationPlan {
@@ -47,8 +41,7 @@ export class HydrationPlan {
       const convert: Converter = isDateSlot ? toDateValue : converterOf(props);
       const perCall = defaults.perCall.get(key);
       const rawDefault = perCall ?? (() => defaults.shared[key]);
-      // A default goes through the same converter as a value, so an array literal is copied and a scalar record
-      // becomes an instance exactly as it did when defaults were spread into `set()`.
+      // A default goes through the converter too: an array literal is copied, a scalar record becomes an instance.
       return { key, target: isDateSlot ? dateSlotOf(key) : key, convert, makeDefault: () => convert(rawDefault()) };
     });
   }

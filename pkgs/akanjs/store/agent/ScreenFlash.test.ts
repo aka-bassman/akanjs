@@ -23,7 +23,6 @@ describe("ScreenFlash", () => {
 
   test("the ring waits for the element to hold still", async () => {
     let top = 0;
-    // Moving for three frames, then parked — a smooth scroll landing.
     target.getBoundingClientRect = () => {
       if (top < 300) top += 100;
       return { top } as DOMRect;

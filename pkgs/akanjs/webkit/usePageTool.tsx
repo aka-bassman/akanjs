@@ -3,9 +3,8 @@ import { Any, Int } from "akanjs/base";
 import { st } from "akanjs/store";
 
 interface PageToolOptions {
-  /** The slice's own `setPageOf<Model>`, or null while the screen draws no pager — one page needs no control. */
+  /** Null publishes nothing: a single page draws no pager. */
   name: string | null;
-  /** The model's refName, for the description an agent picks the tool by. */
   model: string;
   page: number;
   lastPage: number;
@@ -13,13 +12,7 @@ interface PageToolOptions {
   onSelect: (page: number) => void;
 }
 
-/**
- * Publishes one pager: the `setPageOf<Model>` its control already dispatches, plus the counts an agent needs to
- * aim it. Shared by the three components that draw a pager so all three speak the slice's one name.
- *
- * The page count rides the guard and the resource rather than the description, which is mount-static and would
- * keep quoting whatever the list held on its first render.
- */
+/** The page count rides the guard and the resource: the description is read once, at mount. */
 export const usePageTool = ({ name, model, page, lastPage, total, onSelect }: PageToolOptions) => {
   st.expose(name ? `pagesOf${model.charAt(0).toUpperCase()}${model.slice(1)}` : null, Any)
     .desc(`Where the ${model} list is paged to.`)

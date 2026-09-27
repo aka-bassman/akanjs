@@ -1,21 +1,9 @@
 import { type MarkdownBlock, MarkdownBlocks, type MarkdownSpan, MarkdownSpans, type TableBlock } from "akanjs/common";
 import { CodeTuiLines, type CodeTuiRow, type CodeTuiSpan, type CodeTuiStyle } from "./CodeTuiLines";
 
-/**
- * Renders a model's markdown for a terminal, from the same scanner `Agent.Chat` renders for a browser.
- *
- * The scanner lives in `akanjs/common` precisely so there is one of it: which links are refused, and the
- * decision not to treat `_` as emphasis because snake_case is everywhere in this content, are not rendering
- * decisions and must not be made twice.
- *
- * What differs is only the ink. A terminal has no `<h1>`, so a heading is bold and a rule is a line of dashes;
- * a fenced block gets a left bar instead of a background, because a background colour across a wrapped block
- * fights whatever theme the terminal already has.
- */
+/** Terminal ink for the shared `akanjs/common` markdown scanner; parsing decisions belong there, not here. */
 export class CodeTuiMarkdown {
   static readonly bullet = "•";
-
-  /** Columns a table needs between itself and the pane edge before it is worth drawing as a grid. */
   static readonly minColumn = 6;
 
   static rows(source: string, width = 80): CodeTuiRow[] {
@@ -61,7 +49,6 @@ export class CodeTuiMarkdown {
     }
   }
 
-  /** A fence keeps its own line breaks — reflowing code is how an indentation-sensitive language stops parsing. */
   static #code(lang: string | undefined, text: string): CodeTuiRow[] {
     const label = lang?.trim();
     const bar: CodeTuiSpan = { text: "│ ", dim: true };
@@ -71,17 +58,7 @@ export class CodeTuiMarkdown {
     ];
   }
 
-  /**
-   * A table as a grid that holds its columns.
-   *
-   * Every column is measured and wrapped in display cells, so a Korean cell claims the two columns it draws in
-   * — padding by `String.length` puts every later column of that row one place left of its header. A table
-   * wider than the pane is **narrowed**, not left to overflow: a cell that wraps back to the margin turns the
-   * grid into prose, which is the one thing a table was chosen to avoid.
-   *
-   * Inline markers inside a cell are stripped rather than styled. Wrapping styled runs per column would mean
-   * re-splitting spans at every column edge, and a grid that lines up is worth more in a table than a bold word.
-   */
+  // Cell markers are stripped, not styled: styled runs would need re-splitting at every column edge.
   static #table(block: TableBlock, width: number): CodeTuiRow[] {
     const columns = block.head.length;
     const grid = [block.head, ...block.rows].map((row) =>
@@ -97,13 +74,7 @@ export class CodeTuiMarkdown {
     ];
   }
 
-  /**
-   * Natural widths, narrowed to fit.
-   *
-   * A column's floor is its longest **unbreakable** token, not a share of the pane: shrinking a column of file
-   * paths proportionally splits `minimal.service.ts` across two lines, and a path broken mid-name is no longer
-   * searchable or copyable. Prose columns give up the room instead, which is what they can afford.
-   */
+  // A column's floor is its longest word, not a proportional share: a path split mid-name cannot be searched.
   static #columns(grid: string[][], columns: number, width: number) {
     const natural = Array.from({ length: columns }, (_, col) =>
       Math.max(1, ...grid.map((row) => CodeTuiLines.width(row[col] ?? ""))),
@@ -127,7 +98,6 @@ export class CodeTuiMarkdown {
     return Math.max(1, ...grid.flatMap((row) => (row[col] ?? "").split(/\s+/).map((word) => CodeTuiLines.width(word))));
   }
 
-  /** One logical row as the physical rows its tallest cell needs; shorter cells pad out to keep the grid. */
   static #gridRow(cells: string[], widths: number[], aligns: TableBlock["aligns"], style: CodeTuiStyle) {
     const wrapped = widths.map((size, col) => CodeTuiMarkdown.#cell(cells[col] ?? "", size));
     const height = Math.max(1, ...wrapped.map((lines) => lines.length));
@@ -156,30 +126,13 @@ export class CodeTuiMarkdown {
       line += word;
     }
     if (line.trim() || !lines.length) lines.push(line.trimEnd());
-    return lines.flatMap((entry) =>
-      CodeTuiLines.width(entry) <= width ? [entry] : CodeTuiMarkdown.#hardSplit(entry, width),
-    );
-  }
-
-  static #hardSplit(text: string, width: number) {
-    const chunks: string[] = [];
-    let chunk = "";
-    for (const char of text) {
-      if (CodeTuiLines.width(chunk + char) > width) {
-        chunks.push(chunk);
-        chunk = "";
-      }
-      chunk += char;
-    }
-    if (chunk) chunks.push(chunk);
-    return chunks;
+    return lines.flatMap((entry) => (CodeTuiLines.width(entry) <= width ? [entry] : CodeTuiLines.chunks(entry, width)));
   }
 
   /** Inline markers as terminal styling, with `base` applied under whatever the markers add. */
   static spans(text: string, base: CodeTuiStyle = {}): CodeTuiSpan[] {
     return MarkdownSpans.of(text).flatMap((span): CodeTuiSpan[] => {
-      // A terminal cannot hide a url behind its label, and a label alone is unfollowable — there is nothing to
-      // click. Both are shown, which is also what a person copying the link out of the scrollback needs.
+      // A terminal cannot hide a url behind a clickable label, so both are shown.
       if (span.kind === "link")
         return [
           { ...base, underline: true, text: span.text },
