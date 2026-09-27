@@ -689,7 +689,7 @@ describe("AkanApp", () => {
   }, 15_000);
 
   test("honors an explicitly configured runtimeDir for child sockets", async () => {
-    const { serverPath, runtimeDir, port } = await makeRoot("akan-app-runtime-dir-", "custom-runtime");
+    const { serverPath, runtimeDir, port } = await makeRoot("akan-rtdir-", "custom-runtime");
     await writeOkChild(serverPath, "ok");
 
     await withApp(serverPath, { replica: 1, runtimeDir, port }, async () => {
@@ -906,7 +906,7 @@ describe("AkanApp", () => {
   }, 20_000);
 
   test("stops counting the sockets of a room a snapshot no longer confirms, whose unsubscribes were lost", async () => {
-    const { serverPath, runtimeDir, port } = await makeRoot("akan-app-pubsub-snapshot-sockets-");
+    const { serverPath, runtimeDir, port } = await makeRoot("akan-snapsock-");
     await writePubsubChild(serverPath);
 
     await withApp(serverPath, { replica: 2, runtimeDir, port }, async () => {

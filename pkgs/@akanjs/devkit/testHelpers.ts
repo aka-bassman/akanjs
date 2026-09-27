@@ -72,9 +72,9 @@ export const createFakeExecutor = <Extra extends object = object>(
     scanSync: (...args: unknown[]) => Promise<{ name: string }>;
   };
 
-export const makeCliTempWorkspace = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "akan-cli-"));
-  await mkdir(root, { recursive: true });
+export const makeCliTempWorkspace = async (parentDir = os.tmpdir()) => {
+  await mkdir(parentDir, { recursive: true });
+  const root = await mkdtemp(path.join(parentDir, "akan-cli-"));
   await writeText(path.join(root, ".gitignore"), "");
   await writeText(
     path.join(root, ".env"),
@@ -124,8 +124,8 @@ export const writeJson = async (filePath: string, value: object) => {
 
 const tsconfigJson = { compilerOptions: { target: "ESNext", paths: {} } };
 
-export const createTempApp = async (appName = "demo") => {
-  const { root, workspace } = await makeCliTempWorkspace();
+export const createTempApp = async (appName = "demo", parentDir?: string) => {
+  const { root, workspace } = await makeCliTempWorkspace(parentDir);
   await writeJson(path.join(root, "package.json"), {
     name: "repo",
     version: "1.0.0",

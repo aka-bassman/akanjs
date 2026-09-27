@@ -7,7 +7,8 @@ const track = tempRoots();
 
 describe("BuildBatchRunner", () => {
   test("reports a boot build the bundler refuses with where each reason sits in the workspace", async () => {
-    const { root } = track(await createTempApp("demo"));
+    // Inside the checkout so `akanjs/server` resolves to its source: from the OS temp dir Bun auto-installs npm's 2.x.
+    const { root } = track(await createTempApp("demo", path.join(import.meta.dir, "..", "local")));
     const appDir = path.join(root, "apps/demo");
     await writeText(path.join(appDir, "env/env.client.ts"), "export const env = {} as const;\n");
     await writeText(
