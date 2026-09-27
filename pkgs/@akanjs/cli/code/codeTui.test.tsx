@@ -838,12 +838,20 @@ describe("CodeTui", () => {
     await harness.press("\r");
     await harness.press("two");
     await harness.press("\r");
+    // The transcript echoes each entry as ` › …`, so only the rows from the prompt's `› ` down to the caret are read.
+    const prompt = () => {
+      const caret = caretOf(harness.stdout);
+      let top = caret?.row ?? 0;
+      while (top > 0 && !caret?.lines[top]?.startsWith("› ")) top -= 1;
+      return caret ? caret.lines.slice(top, caret.row + 1) : [];
+    };
     await harness.press(`${esc}[A`);
     await harness.press(`${esc}[A`);
-    expect(harness.stdout.lastFrame).toContain("one long");
+    expect(prompt()[0]).toStartWith("› one long");
+    expect(prompt().length).toBeGreaterThan(1);
     await harness.press(`${esc}[B`);
-    expect(harness.stdout.lastFrame).toContain("› two");
+    expect(prompt()).toEqual(["› two"]);
     await harness.press(`${esc}[B`);
-    expect(harness.stdout.lastFrame).toContain("ask for something");
+    expect(prompt().join("\n")).toContain("ask for something");
   });
 });
