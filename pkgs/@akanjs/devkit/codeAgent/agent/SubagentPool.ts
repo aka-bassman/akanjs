@@ -180,14 +180,20 @@ export class SubagentPool {
       void agent.abort();
     };
     signal?.addEventListener("abort", abort, { once: true });
+    // A listener added to an already-aborted signal never fires: this child was stopped while it was being created.
+    if (signal?.aborted) stopped = true;
     let finished = false;
     try {
       let answer = "";
       agent.on((event) => {
         if (event.type === "message" && event.role === "assistant") answer = event.text;
+        // The engine drops an abort that lands before its run is live, so a stopped child is stopped again there.
+        if (event.type === "turn_start" && stopped) void agent.abort();
       });
-      await agent.prompt(prompt);
-      await agent.waitForIdle();
+      if (!stopped) {
+        await agent.prompt(prompt);
+        await agent.waitForIdle();
+      }
       finished = true;
       return answer.length > maxResultChars
         ? `${answer.slice(0, maxResultChars)}\n…(truncated)`
