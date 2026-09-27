@@ -55,7 +55,7 @@ Scrolls to the top after client-side navigation.
 
 Replaces the current history entry instead of adding one.
 
-Meant to bypass the route cache, but neither renderer reads it yet.
+Deprecated: it has no effect, so leave it out.
 
 Pass through to `<a>` on server-rendered pages. The CSR bundle drops them.
 
