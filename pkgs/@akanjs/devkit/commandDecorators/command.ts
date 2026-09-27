@@ -409,5 +409,9 @@ It may cause unexpected behavior. Run \`akan update\` to update latest akanjs.`,
       }
     }
   }
-  await program.parseAsync(process.argv);
+  // Handled here, not by the handler above: a rejection reaching the entry's top-level await prints Bun's own trace.
+  await program.parseAsync(process.argv).catch((error: unknown) => {
+    printCliError(error);
+    process.exit(1);
+  });
 };

@@ -593,7 +593,8 @@ class IncrementalBuilder {
   }
 }
 
-void IncrementalBuilder.main().catch((err) => {
+// Awaited, not voided: on Windows Bun exits during a missing file's `Bun.file` read unless an entry await is pending.
+await IncrementalBuilder.main().catch((err) => {
   console.error(err);
   process.exit(1);
 });

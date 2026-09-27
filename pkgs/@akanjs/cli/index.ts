@@ -8,4 +8,5 @@ import { type CommandModuleId, commandModuleIds, commandModules } from "./comman
 const ids: CommandModuleId[] = CommandManifest.resolve(await CommandManifest.read(), process.argv) ?? commandModuleIds;
 const commands = await Promise.all(ids.map(async (id) => await commandModules[id]()));
 
-void runCommands(...commands);
+// Awaited, not voided: on Windows Bun exits during a missing file's `Bun.file` read unless an entry await is pending.
+await runCommands(...commands);
