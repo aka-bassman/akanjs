@@ -14,6 +14,8 @@ class FakeProvider {
   readonly server: ReturnType<typeof Bun.serve>;
   readonly issued: string[] = [];
   readonly registrations: { redirect_uris?: string[] }[] = [];
+  readonly sessions: string[] = [];
+  readonly calls: { token: string; session: string | null }[] = [];
   readonly #codes = new Map<string, { challenge: string; resource: string | null }>();
   #next = 0;
   methods: string[] = ["S256"];
@@ -21,6 +23,8 @@ class FakeProvider {
   refreshable = true;
   refreshExpiresIn: number | undefined = 3600;
   refusing = false;
+  refreshes = 0;
+  refreshDelayMs = 0;
 
   constructor() {
     this.server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (request) => this.#route(request) });
@@ -70,8 +74,14 @@ class FakeProvider {
         },
       );
     const body = (await request.json()) as { id?: number; method?: string };
-    if (body.method === "initialize")
-      return Response.json({ jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-06-18" } });
+    if (body.method === "initialize") {
+      const session = `session-${this.sessions.length + 1}`;
+      this.sessions.push(session);
+      return Response.json(
+        { jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-06-18" } },
+        { headers: { "mcp-session-id": session } },
+      );
+    }
     if (body.method === "tools/list")
       return Response.json({
         jsonrpc: "2.0",
@@ -80,6 +90,10 @@ class FakeProvider {
           tools: [{ name: "search", description: "search it", inputSchema: { type: "object", properties: {} } }],
         },
       });
+    if (body.method === "tools/call") {
+      this.calls.push({ token, session: request.headers.get("mcp-session-id") });
+      return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: "found" }] } });
+    }
     return Response.json({ jsonrpc: "2.0", id: body.id, result: {} });
   }
 
@@ -105,6 +119,8 @@ class FakeProvider {
   async #token(request: Request) {
     const form = new URLSearchParams(await request.text());
     if (form.get("grant_type") === "refresh_token") {
+      this.refreshes += 1;
+      await Bun.sleep(this.refreshDelayMs);
       if (!this.refreshable) return Response.json({ error: "invalid_grant" }, { status: 400 });
       const access = `access-refreshed-${this.issued.length + 1}`;
       this.issued.push(access);
@@ -313,6 +329,103 @@ describe("MCP sign-in", () => {
     const pack = await connect();
     try {
       expect(pack?.status[0]).toMatchObject({ auth: "required", tools: [] });
+      expect(provider.issued).toEqual(["access-1", "access-refreshed-2"]);
+    } finally {
+      pack?.close();
+    }
+  });
+
+  type McpExecute = (id: string, params: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
+  const search = async (pack: McpToolPack | undefined) => {
+    const tools = new Map<string, McpExecute>();
+    const extension = pack?.extension();
+    if (extension && "factory" in extension)
+      extension.factory({
+        registerTool: (tool: { name: string; execute: McpExecute }) => tools.set(tool.name, tool.execute),
+      } as never);
+    const execute = tools.get("mcp__fake__search");
+    if (!execute) throw new Error("the pack published no search tool");
+    return await execute("call", {});
+  };
+
+  test("a token refused mid-session is refreshed once, and the call is retried on a new session with the new token", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    const pack = await connect();
+    try {
+      provider.issued.splice(provider.issued.indexOf(auth.accessToken), 1);
+      expect((await search(pack)).content[0]?.text).toBe("found");
+      expect(provider.refreshes).toBe(1);
+      expect(provider.calls).toEqual([{ token: "access-refreshed-1", session: "session-2" }]);
+      expect(McpTokenStore.read("fake")).toMatchObject({
+        accessToken: "access-refreshed-1",
+        refreshToken: "refresh-2",
+      });
+    } finally {
+      pack?.close();
+    }
+  });
+
+  test("calls refused together share one refresh and one new session", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    const pack = await connect();
+    try {
+      provider.issued.splice(provider.issued.indexOf(auth.accessToken), 1);
+      const answers = await Promise.all([search(pack), search(pack), search(pack)]);
+      expect(answers.map((answer) => answer.content[0]?.text)).toEqual(["found", "found", "found"]);
+      expect(provider.refreshes).toBe(1);
+      expect(provider.sessions).toEqual(["session-1", "session-2"]);
+    } finally {
+      pack?.close();
+    }
+  });
+
+  test("a sub-agent's pack refused at the same moment waits on the same refresh", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    const [parent, child] = [await connect(), await connect()];
+    try {
+      provider.issued.splice(provider.issued.indexOf(auth.accessToken), 1);
+      provider.refreshDelayMs = 100;
+      const answers = await Promise.all([search(parent), search(child)]);
+      expect(answers.map((answer) => answer.content[0]?.text)).toEqual(["found", "found"]);
+      expect(provider.refreshes).toBe(1);
+    } finally {
+      parent?.close();
+      child?.close();
+    }
+  });
+
+  test("a session connecting with an expired token while a call is refused shares one refresh with it", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    McpTokenStore.write("fake", { ...auth, expiresAt: Date.now() - 1 });
+    provider.refreshDelayMs = 50;
+    const tokens = await Promise.all([McpSignIn.token(refOf()), McpSignIn.retryToken(refOf(), auth.accessToken)]);
+    expect(tokens).toEqual(["access-refreshed-2", "access-refreshed-2"]);
+    expect(provider.refreshes).toBe(1);
+  });
+
+  test("a mid-session refusal whose refresh fails names /mcp login, and the next call does not refresh again", async () => {
+    await McpSignIn.run(refOf(), { open: browser });
+    const notices: string[] = [];
+    const pack = await connect(notices);
+    try {
+      provider.issued.splice(0);
+      provider.refreshable = false;
+      await expect(search(pack)).rejects.toThrow("/mcp login fake");
+      await expect(search(pack)).rejects.toThrow("/mcp login fake");
+      expect(provider.refreshes).toBe(1);
+      expect(notices.join(" ")).toContain("needs signing in again");
+    } finally {
+      pack?.close();
+    }
+  });
+
+  test("a refreshed token the server refuses too ends the call in /mcp login after one refresh", async () => {
+    await McpSignIn.run(refOf(), { open: browser });
+    const pack = await connect();
+    try {
+      provider.refusing = true;
+      await expect(search(pack)).rejects.toThrow("/mcp login fake");
+      expect(provider.refreshes).toBe(1);
       expect(provider.issued).toEqual(["access-1", "access-refreshed-2"]);
     } finally {
       pack?.close();

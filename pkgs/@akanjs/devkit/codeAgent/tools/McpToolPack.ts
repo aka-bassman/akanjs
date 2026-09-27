@@ -17,25 +17,36 @@ export interface McpToolPackOptions {
   onNotice?: (message: string) => void;
 }
 
+interface McpToolPackServer {
+  client: McpClient;
+  tools: McpToolInfo[];
+  token: string | undefined;
+  renewing: Promise<McpClient | undefined> | undefined;
+  refused: McpClient | undefined;
+}
+
 // Tool names carry the server prefix: two servers offering `search` is the normal case, and a shadow is invisible.
 export class McpToolPack {
-  readonly #clients: { client: McpClient; tools: McpToolInfo[] }[] = [];
+  readonly #clients: McpToolPackServer[] = [];
   readonly #status: CodeAgentMcpStatus[] = [];
+  readonly #onNotice: ((message: string) => void) | undefined;
 
-  private constructor() {}
+  private constructor(onNotice: ((message: string) => void) | undefined) {
+    this.#onNotice = onNotice;
+  }
 
   /** Undefined only when nothing is declared; a pack whose every server failed still comes back to say why. */
   static async connect(options: McpToolPackOptions) {
     const refs = McpToolPack.#refs(options);
     if (!refs.length) return undefined;
-    const pack = new McpToolPack();
+    const pack = new McpToolPack(options.onNotice);
     for (const ref of refs) {
       const base = { name: ref.name, transport: ref.transport, target: McpServerConfig.targetOf(ref) };
       // Never an interactive sign-in: connect runs inside `CodeAgent.create`, before any screen is drawn.
       const token = ref.transport === "http" ? await McpSignIn.token(ref, options.onNotice) : undefined;
       try {
         const opened = await McpToolPack.#openRefreshing(ref, token, options.onNotice);
-        pack.#clients.push({ client: opened.client, tools: opened.tools });
+        pack.#clients.push({ ...opened, renewing: undefined, refused: undefined });
         pack.#status.push({
           ...base,
           tools: opened.tools.map((tool) => McpToolPack.#nameOf(ref.name, tool.name)),
@@ -95,19 +106,19 @@ export class McpToolPack {
   }
 
   #register(pi: ExtensionAPI) {
-    for (const { client, tools } of this.#clients)
-      for (const tool of tools) {
-        const name = McpToolPack.#nameOf(client.ref.name, tool.name);
+    for (const server of this.#clients)
+      for (const tool of server.tools) {
+        const name = McpToolPack.#nameOf(server.client.ref.name, tool.name);
         const description = tool.description ?? tool.name;
         pi.registerTool({
           name,
-          label: `${client.ref.name}: ${tool.name}`,
+          label: `${server.client.ref.name}: ${tool.name}`,
           description,
           promptSnippet: `${name}: ${description.split(".")[0] ?? description}`,
           // The server's own schema goes through untouched; it is the party that validates the call.
           parameters: Type.Unsafe<Record<string, unknown>>(tool.inputSchema),
           execute: async (_id, params) => {
-            const result = await client.callTool(tool.name, params ?? {});
+            const result = await this.#call(server, tool.name, params ?? {});
             return {
               content: [{ type: "text", text: codeAgentClip(result.text, codeAgentOutputChars) }],
               details: undefined,
@@ -116,6 +127,56 @@ export class McpToolPack {
           },
         });
       }
+  }
+
+  async #call(server: McpToolPackServer, tool: string, args: Record<string, unknown>) {
+    const client = server.client;
+    try {
+      return await client.callTool(tool, args);
+    } catch (error) {
+      if (!(error instanceof McpUnauthorized)) throw error;
+    }
+    const renewed = await this.#renewed(server, client);
+    try {
+      if (renewed) return await renewed.callTool(tool, args);
+    } catch (error) {
+      if (!(error instanceof McpUnauthorized)) throw error;
+      server.refused = renewed;
+    }
+    throw new Error(`MCP server "${client.ref.name}" needs signing in — /mcp login ${client.ref.name}`);
+  }
+
+  // One refresh per refused token, shared by every call it refused; a server that refuses every token costs one.
+  async #renewed(server: McpToolPackServer, refused: McpClient) {
+    if (server.client === refused && server.refused !== refused)
+      server.renewing ??= this.#renew(server, refused).finally(() => {
+        server.renewing = undefined;
+      });
+    if (server.renewing) return await server.renewing;
+    return server.client === server.refused ? undefined : server.client;
+  }
+
+  async #renew(server: McpToolPackServer, refused: McpClient) {
+    const token = server.token ? await McpSignIn.retryToken(refused.ref, server.token, this.#onNotice) : undefined;
+    const client = token ? await McpToolPack.#reopen(refused.ref, token) : undefined;
+    if (!client) {
+      server.refused = refused;
+      return undefined;
+    }
+    refused.close();
+    server.client = client;
+    server.token = token;
+    return client;
+  }
+
+  // A new client, so a new streamable HTTP session: a server may bind its session to the token that opened it.
+  static async #reopen(ref: CodeAgentMcpServerRef, token: string) {
+    try {
+      return await new McpClient(ref, token).connect();
+    } catch (error) {
+      if (error instanceof McpUnauthorized) return undefined;
+      throw error;
+    }
   }
 
   static #nameOf(server: string, tool: string) {
