@@ -44,8 +44,8 @@ export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
       buildNum: app.build,
       versionOs: info.osVersion,
     };
-    // FIXME: the release server is reached by rewriting "lu" to "akasys" in serverUrl.
-    const url = serverUrl.replace("lu", "akasys");
+    // TODO: take the release URL as an option and drop this lu → akasys host rewrite (codepush in development).
+    const url = serverUrl.replace(/^((?:[a-z][a-z\d+.-]*:)?\/\/)?lu(?=[-.:/]|$)/i, "$1akasys");
     const httpClient = new RestClient(url);
     const release = await httpClient.post<(ProtoAppInfo & { appBuild: string }) | null>("/release/codepush", {
       data: { ...appInfo },

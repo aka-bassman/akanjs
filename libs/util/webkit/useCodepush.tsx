@@ -60,9 +60,8 @@ export const useCodepush = ({ serverUrl }: { serverUrl: string }) => {
       buildNum: app.build, //앱내 빌드시 버전 횟수 모르면 고한테 물어보기
       versionOs: info.osVersion,
     };
-    //fix lu to akasys
-    // ! NEED TO FIX
-    const url = serverUrl.replace("lu", "akasys");
+    // TODO: take the release URL as an option and drop this lu → akasys host rewrite (codepush in development).
+    const url = serverUrl.replace(/^((?:[a-z][a-z\d+.-]*:)?\/\/)?lu(?=[-.:/]|$)/i, "$1akasys");
     const httpClient = new HttpClient(url);
     const release = await httpClient.post<(ProtoAppInfo & { appBuild: string }) | null>("/release/codepush", {
       data: { ...appInfo },

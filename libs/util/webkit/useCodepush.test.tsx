@@ -36,12 +36,12 @@ const installCapacitor = (bundleVersion = "builtin") => {
   });
 };
 
-const renderCodepush = async () => {
+const renderCodepush = async (serverUrl = "https://api.example.com") => {
   const { useCodepush } = await import("./useCodepush");
   return {
     get current() {
       hookIndex = 0;
-      return useCodepush({ serverUrl: "https://api.example.com" });
+      return useCodepush({ serverUrl });
     },
   };
 };
@@ -55,6 +55,26 @@ afterEach(() => {
 });
 
 describe("useCodepush", () => {
+  test("reaches the release server by rewriting only an lu host, never another URL's text", async () => {
+    installCapacitor();
+    const cases = {
+      "https://lu-main.akamir.com": "https://akasys-main.akamir.com/release/codepush",
+      "https://lu.akamir.com": "https://akasys.akamir.com/release/codepush",
+      "https://value.example.com": "https://value.example.com/release/codepush",
+      "https://lucky.example.com": "https://lucky.example.com/release/codepush",
+    };
+    for (const [serverUrl, releaseUrl] of Object.entries(cases)) {
+      const requested: string[] = [];
+      globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+        requested.push(input instanceof Request ? input.url : String(input));
+        return Response.json(null);
+      }) as unknown as typeof fetch;
+      const hook = await renderCodepush(serverUrl);
+      await hook.current.checkNewRelease();
+      expect(requested[0]).toBe(releaseUrl);
+    }
+  });
+
   test("checks for a release without interrupting the user", async () => {
     installCapacitor();
     const alert = mock(() => undefined);
