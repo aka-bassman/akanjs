@@ -54,6 +54,7 @@ export interface CodeAgentMcpStatus {
 
 export interface CodeAgentSubagentBudget {
   maxDepth: number;
+  /** Subagents a whole tree may run at once; past it the `task` tool refuses instead of queueing. */
   maxConcurrent: number;
   /** Tokens a whole subagent tree may spend before the `task` tool refuses to open another. */
   budget: number;
