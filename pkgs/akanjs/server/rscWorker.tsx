@@ -477,10 +477,8 @@ export class RscRenderer {
               })
             : { status: "full" as const, reason: partialDecision.reason, commonPrefixLength: 0 };
         const safePatchDecision = match
-          ? await this.#resolveHeadSafePatchDecision(
-              match.pathRoute,
-              patchDecision,
-              await this.#resolveRouteHeadSnapshot(urlObj, match, searchParams),
+          ? await this.#resolveHeadSafePatchDecision(match.pathRoute, patchDecision, () =>
+              this.#resolveRouteHeadSnapshot(urlObj, match, searchParams),
             )
           : patchDecision;
         const patchCacheEntry = resolveRscWorkerPatchCacheEntry({
@@ -1074,10 +1072,11 @@ export class RscRenderer {
     this.#send({ type: "not-found", requestId });
   }
 
+  // Runs the head only when a patch hinges on it, so a cached replay skips it along with its notFound()/redirect().
   async #resolveHeadSafePatchDecision(
     pathRoute: PathRoute,
     patchDecision: AkanRscPatchDecision,
-    headSnapshot: ResolvedHead["headSnapshot"],
+    resolveHeadSnapshot: () => Promise<ResolvedHead["headSnapshot"]>,
   ): Promise<AkanRscPatchDecision> {
     if (patchDecision.status !== "patch" || !patchDecision.patch) {
       return patchDecision;
@@ -1085,11 +1084,12 @@ export class RscRenderer {
     if (!isAkanRscPartialCommitEnabled()) {
       return { status: "full", reason: "guard-disabled", commonPrefixLength: patchDecision.commonPrefixLength };
     }
+    const pageConfig = await pathRoute.renderPage.getPageConfig?.();
     return resolveAkanRscHeadSafePatchDecision({
       partialCommitEnabled: true,
       patchDecision,
-      pageConfig: await pathRoute.renderPage.getPageConfig?.(),
-      headSnapshot,
+      pageConfig,
+      headSnapshot: pageConfig?.rscPatchHeadSafe === true ? await resolveHeadSnapshot() : undefined,
     });
   }
 
