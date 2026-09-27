@@ -229,6 +229,13 @@ export default page().render(() => {
           }),
         },
         {
+          name: l.trans({ en: "expiring session", ko: "만료 임박 세션" }),
+          desc: l.trans({
+            en: "Renewed first, near or past its expiry; only a failed renewal opens the browser.",
+            ko: "만료가 가깝거나 지났으면 먼저 갱신하고, 갱신에 실패할 때만 브라우저를 엽니다.",
+          }),
+        },
+        {
           name: l.trans({ en: "saved to", ko: "저장 위치" }),
           desc: l.trans({
             en: "`~/.akan/config.json`, one session per host, readable only by you.",
