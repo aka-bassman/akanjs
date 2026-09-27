@@ -231,6 +231,8 @@ class GatewayStub {
         const payload = new TextEncoder().encode(JSON.stringify({ code: 1000, reason: "done" }));
         socket.send(tunnelWireContract.encodeWsPayload(tunnelWsPayload.close, payload));
       },
+      reset: () => socket.send(JSON.stringify({ type: "reset", streamId, code: "canceled" })),
+      socketClosed: () => !this.busy.has(socket),
       finished,
     };
   }
@@ -434,6 +436,14 @@ describe("tunnel agent against a gateway", () => {
       socket.close();
       expect(await socket.finished).toBeUndefined();
     }
+    expect(await until(() => gateway.idle.length >= gateway.idleTarget)).toBe(true);
+  });
+
+  test("closes the data socket of a websocket the gateway resets, and replaces it", async () => {
+    const socket = await gateway.websocket("/ws");
+    expect(await until(() => socket.head()?.status === 101)).toBe(true);
+    socket.reset();
+    expect(await until(socket.socketClosed)).toBe(true);
     expect(await until(() => gateway.idle.length >= gateway.idleTarget)).toBe(true);
   });
 
