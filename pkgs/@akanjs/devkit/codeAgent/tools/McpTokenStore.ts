@@ -26,6 +26,10 @@ export class McpTokenStore {
     return akanCodePaths.mcpAuthFile();
   }
 
+  static lockFile() {
+    return `${McpTokenStore.file()}.lock`;
+  }
+
   static read(name: string): McpStoredAuth | undefined {
     return McpTokenStore.#all()[name];
   }

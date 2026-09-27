@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CodeAgentMcpServerRef } from "akanjs/common";
+import { ConfigLock } from "../../cloud/configLock";
 import { McpOAuth } from "./McpOAuth";
 import { McpSignIn } from "./McpSignIn";
 import { McpTokenStore } from "./McpTokenStore";
@@ -25,6 +26,9 @@ class FakeProvider {
   refusing = false;
   refreshes = 0;
   refreshDelayMs = 0;
+  rotating: boolean = false;
+  reused = false;
+  readonly #spent = new Set<string>();
 
   constructor() {
     this.server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (request) => this.#route(request) });
@@ -120,11 +124,16 @@ class FakeProvider {
     const form = new URLSearchParams(await request.text());
     if (form.get("grant_type") === "refresh_token") {
       this.refreshes += 1;
+      const presented = form.get("refresh_token") ?? "";
+      const reuse = this.rotating && this.#spent.has(presented);
+      if (this.rotating) this.#spent.add(presented);
       await Bun.sleep(this.refreshDelayMs);
-      if (!this.refreshable) return Response.json({ error: "invalid_grant" }, { status: 400 });
+      if (reuse) this.reused = true;
+      if (!this.refreshable || reuse) return Response.json({ error: "invalid_grant" }, { status: 400 });
       const access = `access-refreshed-${this.issued.length + 1}`;
       this.issued.push(access);
-      return Response.json({ access_token: access, refresh_token: "refresh-2", expires_in: this.refreshExpiresIn });
+      const refresh = this.rotating ? `refresh-for-${access}` : "refresh-2";
+      return Response.json({ access_token: access, refresh_token: refresh, expires_in: this.refreshExpiresIn });
     }
     const issued = this.#codes.get(form.get("code") ?? "");
     if (!issued) return Response.json({ error: "invalid_grant" }, { status: 400 });
@@ -511,4 +520,93 @@ describe("the token file", () => {
     expect(McpTokenStore.read("fake")).toBeUndefined();
     expect(McpTokenStore.names()).toEqual([]);
   });
+});
+
+describe("two akan code processes", () => {
+  const lines = (stream: ReadableStream<Uint8Array>) => {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    return async () => {
+      while (!buffer.includes("\n")) {
+        const chunk = await reader.read();
+        if (chunk.done) return buffer;
+        buffer += decoder.decode(chunk.value, { stream: true });
+      }
+      const [line = "", ...rest] = buffer.split("\n");
+      buffer = rest.join("\n");
+      return line;
+    };
+  };
+
+  // A separate `bun` per session, pointed at this file's AKAN_CODE_HOME so both read and write the one token file.
+  const session = async () => {
+    const script = path.join(home, `session-${crypto.randomUUID()}.ts`);
+    await Bun.write(
+      script,
+      `import { McpToolPack } from ${JSON.stringify(path.resolve(import.meta.dir, "McpToolPack.ts"))};
+import { McpTokenStore } from ${JSON.stringify(path.resolve(import.meta.dir, "McpTokenStore.ts"))};
+if (!McpTokenStore.file().startsWith(${JSON.stringify(home)})) throw new Error("refusing to touch " + McpTokenStore.file());
+const pack = await McpToolPack.connect({
+  workspaceRoot: ${JSON.stringify(home)},
+  profile: { name: "t", tools: { mcp: [${JSON.stringify(refOf())}] } },
+});
+let execute;
+const extension = pack?.extension();
+if (extension && "factory" in extension)
+  extension.factory({ registerTool: (tool) => { if (tool.name === "mcp__fake__search") execute = tool.execute; } });
+process.stdout.write("ready\\n");
+for await (const line of console) if (line.trim() === "go") break;
+const answer = await execute("call", {}).then((result) => result.content[0].text, (error) => "error: " + String(error));
+process.stdout.write(JSON.stringify(answer) + "\\n");
+pack?.close();
+process.exit(0);
+`,
+    );
+    const proc = Bun.spawn(["bun", script], {
+      env: { ...process.env, AKAN_CODE_HOME: home },
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return { proc, line: lines(proc.stdout) };
+  };
+
+  test("a refresh waits for the lock another session holds, then takes the token that session stored", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    const taken = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    const elsewhere = ConfigLock.run(McpTokenStore.lockFile(), async () => {
+      taken.resolve();
+      await released.promise;
+    });
+    await taken.promise;
+    const retried = McpSignIn.retryToken(refOf(), auth.accessToken);
+    McpTokenStore.write("fake", { ...auth, accessToken: "access-elsewhere", refreshToken: "refresh-elsewhere" });
+    released.resolve();
+    await elsewhere;
+    expect(await retried).toBe("access-elsewhere");
+    expect(provider.refreshes).toBe(0);
+  });
+
+  test("refused at the same moment, they make one refresh between them, and both calls go through", async () => {
+    const auth = await McpSignIn.run(refOf(), { open: browser });
+    provider.rotating = true;
+    provider.refreshDelayMs = 300;
+    const sessions = [await session(), await session()];
+    try {
+      expect(await Promise.all(sessions.map(({ line }) => line()))).toEqual(["ready", "ready"]);
+      provider.issued.splice(provider.issued.indexOf(auth.accessToken), 1);
+      for (const { proc } of sessions) {
+        proc.stdin.write("go\n");
+        await proc.stdin.flush();
+      }
+      const answers = await Promise.all(sessions.map(({ line }) => line()));
+      expect(answers).toEqual(['"found"', '"found"']);
+      expect(provider.refreshes).toBe(1);
+      expect(provider.reused).toBe(false);
+    } finally {
+      for (const { proc } of sessions) proc.kill();
+    }
+  }, 30_000);
 });
