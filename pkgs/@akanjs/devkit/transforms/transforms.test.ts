@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
+import { ApplicationBuildReporter } from "../applicationBuildReporter";
 import { tempDirs, writeText as write } from "../testHelpers";
 import { BarrelAnalyzer, type BarrelExportTarget } from "./barrelAnalyzer";
 import { rewriteBarrelImports } from "./barrelImportsPlugin";
-import { toClientReferencePath, transformUseClient } from "./rscUseClientTransform";
+import { scanUseClientExports, toClientReferencePath, transformUseClient } from "./rscUseClientTransform";
+import { createUseClientBundlePlugin } from "./useClientBundlePlugin";
 
 const makeTempRoot = tempDirs("akan-devkit-transform-");
 
@@ -46,6 +48,65 @@ describe("transformUseClient", () => {
     expect(transformed).toContain("export const useThing = registerClientReference");
     expect(transformed).toContain("export default registerClientReference");
     expect(toClientReferencePath("/repo/apps/demo/Button.tsx", "/repo")).toBe("apps/demo/Button.tsx");
+  });
+});
+
+describe('export * in a "use client" module', () => {
+  test("is refused with the file, the specifier and the fix, since the server would see none of its names", () => {
+    const source = [
+      '"use client";',
+      'export * from "../../ui/UserLeave";',
+      "export const General = () => null;",
+      "",
+    ].join("\n");
+    expect(() =>
+      transformUseClient(source, { path: "/repo/libs/shared/lib/user/User.Template.tsx", workspaceRoot: "/repo" }),
+    ).toThrow(
+      'libs/shared/lib/user/User.Template.tsx is a "use client" module, so it cannot `export * from "../../ui/UserLeave"`',
+    );
+    expect(() => scanUseClientExports('"use client";\nexport * from "./a";\n', "/repo/ui/Barrel.ts")).toThrow(
+      "Re-export them by name",
+    );
+  });
+
+  test("leaves every other export shape alone, and a module that is not a client boundary", () => {
+    const file = "/repo/ui/Barrel.tsx";
+    const shapes = [
+      '"use client";',
+      'export type * from "./types";',
+      'export * as ns from "./namespace";',
+      'export { LeaveInfo, Voc } from "./leave";',
+      "// export * from './commented';",
+      "export const text = \"export * from './a string'\";",
+      "",
+    ].join("\n");
+    expect(scanUseClientExports(shapes, file).sort()).toEqual(["LeaveInfo", "Voc", "ns", "text"]);
+    expect(scanUseClientExports('export * from "./a";\nexport const X = 1;\n', file)).toEqual(["X"]);
+    const stub = transformUseClient(shapes, { path: file, workspaceRoot: "/repo" });
+    expect(stub).toContain("export const LeaveInfo = registerClientReference");
+    expect(stub).toContain("export const Voc = registerClientReference");
+  });
+
+  test("fails the server bundle, and the build report carries the reason out of the bundler's error", async () => {
+    const root = await makeTempRoot();
+    await write(path.join(root, "Leave.tsx"), '"use client";\nexport const LeaveInfo = () => null;\n');
+    await write(
+      path.join(root, "Template.tsx"),
+      '"use client";\nexport * from "./Leave";\nexport const General = () => null;\n',
+    );
+    await write(path.join(root, "page.tsx"), 'import * as Template from "./Template";\nexport const T = Template;\n');
+    const failure = await Bun.build({
+      entrypoints: [path.join(root, "page.tsx")],
+      target: "bun",
+      external: ["react-server-dom-webpack/server.node"],
+      plugins: [createUseClientBundlePlugin({ workspaceRoot: root })],
+    }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(ApplicationBuildReporter.formatError(failure)).toContain(
+      'Template.tsx is a "use client" module, so it cannot `export * from "./Leave"`',
+    );
   });
 });
 
