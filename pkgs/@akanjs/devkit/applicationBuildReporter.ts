@@ -73,7 +73,8 @@ export class ApplicationBuildReporter {
     if (!path.isAbsolute(file)) return file;
     for (const root of [workspaceRoot, ApplicationBuildReporter.#realpathOf(workspaceRoot)]) {
       const relative = path.relative(root, file);
-      if (!relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) return relative;
+      if (!relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+        return relative.replaceAll(path.sep, "/");
     }
     return file;
   }

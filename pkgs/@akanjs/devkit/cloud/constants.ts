@@ -1,8 +1,9 @@
+import path from "node:path";
 import type { Dayjs } from "dayjs";
 import { GlobalConfig } from "./globalConfig";
 
-export const basePath = `${Bun.env.HOME ?? Bun.env.USERPROFILE}/.akan`;
-export const configPath = `${basePath}/config.json`;
+export const basePath = path.join(Bun.env.HOME ?? Bun.env.USERPROFILE ?? "", ".akan");
+export const configPath = path.join(basePath, "config.json");
 
 export interface HostConfig {
   host: string;
