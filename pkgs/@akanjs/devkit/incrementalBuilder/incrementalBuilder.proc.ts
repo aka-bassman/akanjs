@@ -119,7 +119,7 @@ class IncrementalBuilder {
         } as BuildRouteResultPayload,
       };
     } catch (err) {
-      const errMsg = ApplicationBuildReporter.formatError(err);
+      const errMsg = ApplicationBuildReporter.formatError(err, this.#app.workspace.workspaceRoot);
       this.#logger.error(`build-route failed routeId=${msg.routeId}: ${errMsg}`);
       this.#sendBuildStatus("route", { generation: msg.generation, ok: false, files: msg.seeds, message: errMsg });
       return { type: "build-route-res", id: msg.id, ok: false, error: errMsg };

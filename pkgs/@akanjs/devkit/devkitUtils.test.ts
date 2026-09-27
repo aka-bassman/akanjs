@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { ApplicationBuildReporter } from "./applicationBuildReporter";
 import { resolveSignalTestPreloadPath } from "./applicationTestPreload";
@@ -196,5 +197,48 @@ describe("ApplicationBuildReporter", () => {
     expect(ApplicationBuildReporter.formatError(aggregate)).toBe(
       ["failed", "  first", "  second", "  third"].join("\n"),
     );
+  });
+
+  test("says where the bundler placed each reason, relative to the workspace root", async () => {
+    const root = await makeTempRoot();
+    const refuseWith = (message: string) => ({
+      name: "refuse",
+      setup: (build: Bun.PluginBuilder) => {
+        build.onLoad({ filter: /plugged\.ts$/ }, () => {
+          throw new Error(message);
+        });
+      },
+    });
+    const failureOf = (entry: string, plugins: Bun.BunPlugin[] = []) =>
+      Bun.build({ entrypoints: [path.join(root, entry)], plugins }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+    await write(
+      path.join(root, "src/entry.ts"),
+      'export const a = 1;\nimport { gone } from "./not-there";\nexport const b = gone;\n',
+    );
+    await write(path.join(root, "src/plugged.ts"), "export const b = 1;\n");
+
+    const unresolved = await failureOf("src/entry.ts");
+    expect(ApplicationBuildReporter.formatError(unresolved, root)).toBe(
+      ["Bundle failed", '  Could not resolve: "./not-there" (src/entry.ts:2:22)'].join("\n"),
+    );
+    const outside = path.join(await realpath(root), "src/entry.ts");
+    expect(ApplicationBuildReporter.formatError(unresolved, path.join(root, "elsewhere"))).toBe(
+      ["Bundle failed", `  Could not resolve: "./not-there" (${outside}:2:22)`].join("\n"),
+    );
+    expect(
+      ApplicationBuildReporter.formatError(
+        await failureOf("src/plugged.ts", [refuseWith("refused\nsecond line")]),
+        root,
+      ),
+    ).toBe(["Bundle failed", "  refused (src/plugged.ts)", "  second line"].join("\n"));
+    expect(
+      ApplicationBuildReporter.formatError(
+        await failureOf("src/plugged.ts", [refuseWith("src/plugged.ts is refused")]),
+        root,
+      ),
+    ).toBe(["Bundle failed", "  src/plugged.ts is refused"].join("\n"));
   });
 });

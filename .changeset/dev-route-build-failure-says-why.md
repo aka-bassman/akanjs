@@ -11,5 +11,5 @@ under it, the way `akan build` and the rest of the dev build already did:
 
 ```
 Bundle failed
-  Could not resolve: "./not-there"
+  Could not resolve: "./not-there" (apps/demo/ui/Broken.tsx:2:22)
 ```

@@ -16,7 +16,7 @@ const until = async (proc: Bun.Subprocess, what: string, condition: () => boolea
 };
 
 describe("incremental builder process", () => {
-  test("says why a route's client bundle failed, in its answer, its build status and its log", async () => {
+  test("says why and where a route's client bundle failed, in its answer, its build status and its log", async () => {
     const { root } = track(await createTempApp("demo"));
     const appDir = path.join(root, "apps/demo");
     // The batch runner looks under the workspace root first: a stand-in for the boot build, which needs a whole app.
@@ -67,7 +67,7 @@ process.send({ type: "build-batch-result", data: { generation, errors: {}, artif
     }
     const log = await new Response(proc.stderr).text();
 
-    const reason = '"./not-there"';
+    const reason = '"./not-there" (apps/demo/ui/Broken.tsx:2:22)';
     expect(messages.find((message) => message.type === "build-route-res")).toMatchObject({
       id: 1,
       ok: false,
