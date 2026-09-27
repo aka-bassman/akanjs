@@ -84,6 +84,37 @@ describe("BarrelAnalyzer and rewriteBarrelImports", () => {
     expect(map?.has("ns")).toBe(false);
   });
 
+  test("a name a module exports itself wins over the same name its star re-exports bring, as ES decides", async () => {
+    const root = await makeTempRoot();
+    const pkgDir = path.join(root, "pkg");
+    await write(
+      path.join(pkgDir, "index.ts"),
+      [
+        'export * from "./a";',
+        'export { X } from "./c";',
+        'export * from "./nested";',
+        "export const Local = 1;",
+        "",
+      ].join("\n"),
+    );
+    await write(path.join(pkgDir, "a.ts"), "export const X = 2;\nexport const Local = 2;\nexport const OnlyA = 2;\n");
+    await write(path.join(pkgDir, "c.ts"), "export const X = 1;\n");
+    await write(path.join(pkgDir, "nested", "index.ts"), 'export * from "./deep";\nexport { Y } from "./y";\n');
+    await write(path.join(pkgDir, "nested", "deep.ts"), "export const Y = 2;\n");
+    await write(path.join(pkgDir, "nested", "y.ts"), "export const Y = 1;\n");
+    const analyzer = new BarrelAnalyzer({
+      resolvePackage: async () => ({ pkgName: "@scope/pkg", entryFile: path.join(pkgDir, "index.ts"), pkgDir }),
+    });
+
+    const runtime = (await import(path.join(pkgDir, "index.ts"))) as Record<string, number>;
+    expect([runtime.X, runtime.Local, runtime.Y, runtime.OnlyA]).toEqual([1, 1, 1, 2]);
+    const map = await analyzer.analyze("@scope/pkg");
+    expect(map?.get("X")).toEqual({ subpath: "@scope/pkg/c", originalName: "X" });
+    expect(map?.get("Local")).toEqual({ subpath: "@scope/pkg", originalName: "Local" });
+    expect(map?.get("Y")).toEqual({ subpath: "@scope/pkg/nested/y", originalName: "Y" });
+    expect(map?.get("OnlyA")).toEqual({ subpath: "@scope/pkg/a", originalName: "OnlyA" });
+  });
+
   test("two analyses that interleave each keep their own place in their barrel", async () => {
     const root = await makeTempRoot();
     const barrels = { first: ["a1", "a2", "a3"], second: ["b1", "b2"] } as const;
