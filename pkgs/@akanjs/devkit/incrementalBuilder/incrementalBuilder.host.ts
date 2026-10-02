@@ -1,6 +1,8 @@
+import fs from "node:fs";
 import path from "node:path";
 import { Logger } from "akanjs/common";
 import type { BuilderMessage } from "akanjs/server";
+import { CSR_DEV_DIRNAME, CSR_DEV_PATCHING_MARKER, SSR_DEV_DIRNAME } from "akanjs/server/hmr/csrDevManifest";
 import { MemoryLimit } from "akanjs/server/memoryLimit";
 import type { App } from "../commandDecorators";
 
@@ -11,8 +13,11 @@ const builderMsgTypeSet = new Set<BuilderMessage["type"]>([
   "invalidate",
   "css-updated",
   "pages-updated",
+  "csr-updated",
+  "ssr-updated",
   "build-status",
   "builder-metrics",
+  "boot-armed",
 ]);
 /** Prefer `"pipe"` under a TUI: a Bun child that inherits the terminal restores its spawn-time termios on exit. */
 export type DevStdioMode = "inherit" | "pipe";
@@ -25,6 +30,8 @@ interface IncrementalBuilderHostOptions {
   onMessage: (message: BuilderMessage) => void;
   /** Required with `stdio: "pipe"` (an undrained pipe blocks the builder); receives decoded chunks, not lines. */
   onOutput?: (kind: "stdout" | "stderr", text: string) => void;
+  /** Carried over from the host this one replaces: a patcher a crash turned off stays off. */
+  patcherOff?: boolean;
 }
 
 /** `recycling`: the builder finishes accepted work but refuses new requests; hold them for the replacement. */
@@ -44,8 +51,9 @@ export class IncrementalBuilderHost {
   static readonly #restartBaseDelayMs = 1_000;
   static readonly #restartMaxDelayMs = 30_000;
   static readonly #recycleDrainTimeoutMs = 30_000;
-  // A fresh boot is ~300-600MB; this leaves room for one full rebuild on top.
-  static readonly #devMaxRssBytes = 1_200 * 1024 * 1024;
+  // apps/akan's builder peaks near 950MB holding the SSR registry's patcher through a route build, and arming CSR adds
+  // a second patcher: this recycles only a builder grown well past both.
+  static readonly #devMaxRssBytes = 2_048 * 1024 * 1024;
   logger = new Logger("IncrementalBuilderHost");
   entry: string;
   env: Record<string, string>;
@@ -61,21 +69,34 @@ export class IncrementalBuilderHost {
   #recycleTimer: ReturnType<typeof setTimeout> | null = null;
   #recycleRequested: boolean = false;
   #spawnAfterRecycle: boolean = false;
+  #patcherOff: boolean = false;
   #manualStop = false;
   // Nothing else answers a request whose builder exits holding it: a crash or kill sends nothing, and a drain races
   // its own exit, so an unanswered page request would spin forever.
   readonly #inFlight = new Map<number, "build-route" | "build-csr">();
   #startOptions: IncrementalBuilderStartOptions = {};
-  constructor({ app, entry, env, stdio = "inherit", onMessage, onOutput }: IncrementalBuilderHostOptions) {
+  constructor({
+    app,
+    entry,
+    env,
+    stdio = "inherit",
+    onMessage,
+    onOutput,
+    patcherOff = false,
+  }: IncrementalBuilderHostOptions) {
     this.app = app;
     this.entry = entry;
     this.env = env;
     this.#stdio = stdio;
     this.#onMessage = onMessage;
     this.#onOutput = onOutput ?? null;
+    this.#patcherOff = patcherOff;
   }
   get status() {
     return this.#status;
+  }
+  get patcherOff(): boolean {
+    return this.#patcherOff;
   }
   /** For reading RSS between builds: the builder's own metrics sample the post-work peak, stale once arenas return. */
   get pid(): number | null {
@@ -94,10 +115,16 @@ export class IncrementalBuilderHost {
     this.ready = false;
     const afterRecycle = this.#spawnAfterRecycle;
     this.#spawnAfterRecycle = false;
+    this.#checkPatchingMarker(isRestart && !afterRecycle);
     let proc!: Bun.Subprocess<"ignore", "inherit" | "pipe", "inherit" | "pipe">;
     proc = Bun.spawn(["bun", this.entry], {
       cwd: this.app.cwdPath,
-      env: { ...this.env, AKAN_WATCH: "1", ...(afterRecycle ? { AKAN_BUILDER_ANNOUNCE_BOOT: "1" } : {}) },
+      env: {
+        ...this.env,
+        AKAN_WATCH: "1",
+        ...(afterRecycle ? { AKAN_BUILDER_ANNOUNCE_BOOT: "1" } : {}),
+        ...(this.#patcherOff ? { AKAN_DEV_CSR_PATCHER: "off" } : {}),
+      },
       stdio: ["ignore", this.#stdio, this.#stdio],
       ipc: (msg: BuilderMessage) => {
         if (this.#proc !== proc) return;
@@ -151,6 +178,23 @@ export class IncrementalBuilderHost {
     }
     this.logger.verbose(`builder spawned pid=${proc.pid} entry=${this.entry}${isRestart ? " restart=1" : ""}`);
   }
+  //? The resident builder patches the dev CSR bundle in its own process, so a bundler crash there takes the file watcher
+  //? with it. A builder that died holding the marker hands every later CSR save to build workers for this session;
+  //? a marker any other exit left behind (Ctrl-C mid-patch) is cleared so it cannot turn the patcher off next session.
+  #checkPatchingMarker(afterCrash: boolean): void {
+    const markers = [CSR_DEV_DIRNAME, SSR_DEV_DIRNAME]
+      .map((dirName) => path.join(this.app.cwdPath, ".akan/artifact", dirName, CSR_DEV_PATCHING_MARKER))
+      .filter((marker) => fs.existsSync(marker));
+    if (markers.length === 0) return;
+    if (afterCrash && !this.#patcherOff) {
+      this.#patcherOff = true;
+      this.logger.warn(
+        "the builder died while patching a dev module registry; registry saves go to a build worker until the next config or metadata restart (AKAN_DEV_CSR_PATCHER=off)",
+      );
+    }
+    for (const marker of markers) fs.rmSync(marker, { force: true });
+  }
+
   async #drain(stream: ReadableStream<Uint8Array> | undefined | null, kind: "stdout" | "stderr") {
     if (!stream) return;
     const decoder = new TextDecoder();
@@ -262,7 +306,8 @@ export class IncrementalBuilderHost {
     {
       stdio = "inherit",
       onOutput,
-    }: { stdio?: DevStdioMode; onOutput?: (kind: "stdout" | "stderr", text: string) => void } = {},
+      patcherOff = false,
+    }: Pick<IncrementalBuilderHostOptions, "stdio" | "onOutput" | "patcherOff"> = {},
   ) {
     const candidates = [
       path.join(app.workspace.workspaceRoot, "pkgs/@akanjs/devkit/incrementalBuilder/incrementalBuilder.proc.ts"),
@@ -275,7 +320,7 @@ export class IncrementalBuilderHost {
     ];
     for (const c of candidates)
       if (await Bun.file(c).exists())
-        return new IncrementalBuilderHost({ app, entry: c, env, stdio, onMessage, onOutput });
+        return new IncrementalBuilderHost({ app, entry: c, env, stdio, onMessage, onOutput, patcherOff });
     throw new Error(`[cli] frontend builder entry not found; looked in: ${candidates.join(", ")}`);
   }
 }

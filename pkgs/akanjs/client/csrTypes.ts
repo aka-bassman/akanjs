@@ -103,6 +103,9 @@ export type LayoutErrorRender = (props: LayoutErrorProps) => PromiseOrObject<Rea
 export interface RouteRender {
   render: LayoutRender | PageRender;
   isAsync?: boolean;
+  /** CSR: a page's render reads the query; a layout's reads only the params of its own path (`paramNames`). */
+  kind?: "page" | "layout";
+  paramNames?: string[];
   Loading?: LayoutLoadingRender | PageLoadingRender;
   /** Loads the module and fills `Loading` without running `render`/`resolveHead` (the suffix compose path). */
   resolveLoading?: () => void | Promise<void>;
@@ -171,6 +174,8 @@ export interface Route {
   path: string;
   renderPage?: RouteRender;
   renderLayout?: RouteRender;
+  /** `renderLayout` is a generated `__root_layout`: a root boundary the page generator found. */
+  isRootLayout?: boolean;
   /** Synthetic layout render from a `_overrides.tsx` at this node; wraps the subtree in a UI-override provider. */
   renderOverrides?: RouteRender;
   pageIncludesOwnLayout?: boolean;
@@ -221,6 +226,7 @@ export interface Location {
   searchParams: { [key: string]: string | string[] };
   pathRoute: PathRoute;
   hash: string;
+  entryId?: string; // the history entry this location is; a replace within one route keeps it
 }
 export type CsrNavigationPhase = "idle" | "preparing" | "transitioning";
 export type CsrNavigationKind = "push" | "replace" | "back" | "popForward" | "popBack";
@@ -247,6 +253,7 @@ export interface History {
   idxMap: Map<string, number>;
   cachedLocationMap: Map<string, Location>;
   idx: number;
+  dormant?: Set<string>; // entry ids a restored stack holds without a page until one is visited
 }
 
 export interface RouterProps {
@@ -256,14 +263,24 @@ export interface RouterProps {
   back: () => void | Promise<void>;
 }
 
+export type CsrPageType = "current" | "prev" | "pending" | "cached";
+export interface CsrStackEntry {
+  key: string; // the page container's identity: the entry, or the route itself for a `cache` page
+  location: Location;
+  pageType: CsrPageType;
+  zIndex: number;
+}
+
 export interface RouteState {
   clientWidth: number;
   clientHeight: number;
   location: Location;
   prevLocation: Location | null;
   pendingLocation: Location | null;
+  stackEntries: CsrStackEntry[];
   navigationIntent: NavigationIntent | null;
   phase: CsrNavigationPhase;
+  isBackgrounded: boolean;
   history: RefObject<History>;
   topSafeAreaRef: RefObject<HTMLDivElement | null>;
   bottomSafeAreaRef: RefObject<HTMLDivElement | null>;
@@ -288,14 +305,24 @@ export type UseCsrTransition = CsrTransitionStyles & {
 };
 
 export type CsrContextType = RouteState & UseCsrTransition;
-export const csrContext = sharedContext<CsrContextType>("csr", {} as unknown as CsrContextType);
+// The web's SSR tree has no CSR shell, so no provider: its refs still exist, empty, as a mounted page's are before commit.
+export const csrContext = sharedContext<CsrContextType>("csr", {
+  history: { current: null },
+  topSafeAreaRef: { current: null },
+  bottomSafeAreaRef: { current: null },
+  prevPageContentRef: { current: null },
+  pageContentRef: { current: null },
+  frameRootRef: { current: null },
+  onBack: { current: {} },
+} as unknown as CsrContextType);
 export const useCsr = () => {
   const contextValues = useContext(csrContext);
   return contextValues;
 };
 
 export interface PathContextType {
-  pageType: "current" | "prev" | "cached" | "pending";
+  pageType: CsrPageType;
+  pageKey?: string;
   location: Location;
   prefix?: string;
   gestureEnabled: boolean;
@@ -307,6 +334,17 @@ export const usePathCtx = () => {
   const contextValues = useContext(pathContext);
   return contextValues;
 };
+
+//? `prev` is shown under the current page for a swipe back; `hidden` is parked, its effects stopped.
+export type PageActivity = "current" | "prev" | "pending" | "hidden";
+export interface PageActivityState {
+  activity: PageActivity;
+  focused: boolean;
+}
+export const pageActivityContext = sharedContext<PageActivityState>("pageActivity", {
+  activity: "current",
+  focused: true,
+});
 
 export interface PathRoute {
   path: string;

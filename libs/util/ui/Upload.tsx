@@ -1,9 +1,9 @@
 "use client";
 import { usePage } from "@libs/util/client";
-import { useCamera } from "@libs/util/webkit";
 import { cn, Device } from "akanjs/client";
 import type { ProtoLightFile } from "akanjs/constant";
 import { BottomSheet, type BottomSheetRef, Image } from "akanjs/ui";
+import { useCamera } from "akanjs/webkit";
 import { type ChangeEvent, useRef, useState } from "react";
 import { AiFillFileImage, AiFillFileText, AiOutlineDelete, AiOutlineLoading } from "react-icons/ai";
 import { GiFiles } from "react-icons/gi";
@@ -54,7 +54,7 @@ interface FileProps {
   file: ProtoLightFile | null;
   render?: (file: ProtoLightFile) => React.ReactNode;
   onChange?: (e: File | FileList) => void | Promise<void>;
-  onRemove?: (e: any) => void;
+  onRemove?: (file: ProtoLightFile) => void;
   children?: React.ReactNode;
   disabled?: boolean;
   maxCount?: number;
@@ -178,7 +178,7 @@ interface FileListProps {
   fileList?: ProtoLightFile[];
   render?: (file: ProtoLightFile) => React.ReactNode;
   onChange?: (e: File | File[]) => void | Promise<void>;
-  onRemove?: (e: any) => void;
+  onRemove?: (file: ProtoLightFile) => void;
   children?: React.ReactNode;
   disabled?: boolean;
   maxCount?: number;
@@ -434,7 +434,7 @@ const UploadImage = ({
 
   return (
     <>
-      <div>
+      <div className={wrapperClassName}>
         <input
           ref={inputRef}
           multiple={false}
@@ -462,7 +462,7 @@ const UploadImage = ({
               onClick={() => {
                 onRemove(protoFile as unknown as File);
               }}
-              className="group relative flex size-56"
+              className={cn("group relative flex size-56", className)}
             >
               <Image
                 className={cn(
@@ -492,6 +492,7 @@ const UploadImage = ({
                 styleType === "circle" && "rounded-full",
                 styleType === "square" && "rounded-md",
                 !isAccepted && "cursor-not-allowed",
+                className,
               )}
             >
               <div

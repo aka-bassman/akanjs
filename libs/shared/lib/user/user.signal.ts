@@ -72,9 +72,10 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
       return makeAccessTokenResponse(await this.userService.signinWithSignToken(userId, signToken)) as never;
     }),
   signoutUser: mutation(cnst.util.AccessToken)
+    .body("pushDeviceId", String, { nullable: true })
     .with(Account)
-    .exec(async function (account) {
-      return makeSignoutResponse(await this.userService.signoutUser(account)) as never;
+    .exec(async function (pushDeviceId, account) {
+      return makeSignoutResponse(await this.userService.signoutUser(account, pushDeviceId)) as never;
     }),
   activateUser: mutation(cnst.util.AccessToken)
     .param("userId", ID)
@@ -194,6 +195,19 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .body("accountId", String)
     .exec(async function (accountId) {
       return await this.userService.resetPassword(accountId);
+    }),
+  requestEmailCodeInPrepareUser: mutation(Boolean)
+    .body("userId", ID)
+    .exec(async function (userId) {
+      await this.userService.requestEmailCodeInPrepareUser(userId);
+      return true;
+    }),
+  verifyEmailInPrepareUser: mutation(Boolean)
+    .body("userId", ID)
+    .body("emailCode", String)
+    .exec(async function (userId, emailCode) {
+      await this.userService.verifyEmailInPrepareUser(userId, emailCode);
+      return true;
     }),
   //*====================== Password Signing Area ======================*//
   //*===================================================================*//
@@ -376,23 +390,34 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .body("userId", ID)
     .body("notiSetting", cnst.NotiSetting)
     .exec(async function (userId, notiSetting) {
-      await this.userService.setNotiSettingOfUser(userId, notiSetting);
-      return true;
+      return await this.userService.setNotiSettingOfUser(userId, notiSetting);
     }),
   // A device's push token, registered by the running client. There is no device on the other end of an MCP call.
   addNotiDeviceTokenOfSelf: mutation(Boolean, { guards: [User], mcp: false })
-    .body("notiDeviceToken", String)
+    .body("deviceToken", cnst.DeviceToken)
     .with(Self)
-    .exec(async function (notiDeviceToken, self) {
-      await this.userService.addNotiDeviceTokenOfUser(self.id, notiDeviceToken);
-      return true;
+    .exec(async function (deviceToken, self) {
+      return await this.userService.addNotiDeviceTokenOfUser(self.id, deviceToken);
     }),
   subNotiDeviceTokenOfSelf: mutation(Boolean, { guards: [User], mcp: false })
     .body("notiDeviceToken", String)
     .with(Self)
     .exec(async function (notiDeviceToken, self) {
-      await this.userService.subNotiDeviceTokenOfUser(self.id, notiDeviceToken);
-      return true;
+      return await this.userService.subNotiDeviceTokenOfUser(self.id, notiDeviceToken);
+    }),
+  // `notiInfo` is a secret field, so the settings screen cannot read its own state off `self`. These two answer
+  // the single question it has instead of handing back every device the account has ever registered.
+  hasNotiDeviceTokenOfSelf: query(Boolean, { guards: [User], mcp: false })
+    .search("notiDeviceToken", String)
+    .with(Self)
+    .exec(async function (notiDeviceToken, self) {
+      if (!notiDeviceToken) return false;
+      return await this.userService.hasNotiDeviceTokenOfUser(self.id, notiDeviceToken);
+    }),
+  notiSettingOfSelf: query(String, { guards: [User], mcp: false })
+    .with(Self)
+    .exec(async function (self) {
+      return await this.userService.getNotiSettingOfUser(self.id);
     }),
   //*====================== Secret Setup Area =======================*//
   //*================================================================*//

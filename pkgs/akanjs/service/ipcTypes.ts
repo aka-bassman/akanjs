@@ -143,6 +143,7 @@ export type AkanIpcMessage =
       /** Actual websocket upstream the child bound; may differ from the preferred port when it was in use. */
       wsUpstream?: Extract<AkanUpstream, { type: "tcp" }>;
       healthPath?: string;
+      crossSite?: { allowedOrigins: string[]; enabled: boolean };
     }
   | { type: "backend-ready"; pid: number }
   | { type: "pubsub.publish"; roomId: string; data: object | object[]; origin?: string }
@@ -163,6 +164,9 @@ export type AkanIpcMessage =
   /** Hub → child: the lowest severity any subscriber wants; `null` tells the child to stop forwarding. */
   | { type: "log.level"; minSev: number | null }
   | { type: "shutdown"; signal?: string }
+  /** Desktop server → the shell that started it: the path behind a file picker grant (forServer). */
+  | { type: "file.resolve"; id: string; grant: string }
+  | { type: "file.resolved"; id: string; path?: string; mode?: "read" | "write" | "folder"; error?: string }
   | { type: "error"; message: string; stack?: string; pid?: number };
 
 export const sendAkanIpc = (message: AkanIpcMessage) => {

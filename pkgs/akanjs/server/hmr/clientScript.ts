@@ -1,3 +1,4 @@
+import { SSR_DEV_ROUTE_PREFIX } from "./csrDevManifest";
 import { isSyncNavigationEnabled } from "./wsHub";
 
 // A classic inline script that runs before any module script, so it stays dependency-free. swapCss must drop both the
@@ -7,15 +8,17 @@ export const HMR_CLIENT_SCRIPT = `(function(){
   self.__AKAN_HMR_INSTALLED__ = true;
   var syncNavigationEnabled = ${JSON.stringify(isSyncNavigationEnabled())};
   var syncNavigationClientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  var clientKind = self.__AKAN_HMR_CLIENT__ === "csr" ? "csr" : "ssr";
+  // The dev error page a failed render served: it runs no app, so any sign of a fixed build reloads it.
+  var systemPage = !!self.__AKAN_HMR_SYSTEM_PAGE__;
   var proto = location.protocol === "https:" ? "wss:" : "ws:";
-  var url = proto + "//" + location.host + "/_akan/hmr";
+  var url = proto + "//" + location.host + "/_akan/hmr" + (clientKind === "csr" ? "?client=csr" : "");
   var attempts = 0;
   var socket = null;
   var lastBuildId = null;
   var refreshRuntimePromise = null;
   var refreshRuntime = null;
   var pendingRefreshRegistrations = [];
-  var refreshQueue = Promise.resolve();
   var overlayEl = null;
   var overlayLabelEl = null;
   var overlayDetailEl = null;
@@ -25,7 +28,7 @@ export const HMR_CLIENT_SCRIPT = `(function(){
   var overlayNextToken = 1;
   var overlayJobs = {};
   var buildErrorStates = {};
-  self.__AKAN_HMR_PHASE__ = null;
+  var traces = self.__AKAN_HMR_TRACES__ = self.__AKAN_HMR_TRACES__ || [];
   self.__AKAN_DEV_SYNC_NAVIGATION__ = function(href, kind){
     if (self.__AKAN_DEV_SYNC_NAVIGATION_APPLYING__ || !syncNavigationEnabled || !socket || socket.readyState !== WebSocket.OPEN) return;
     try {
@@ -49,24 +52,58 @@ export const HMR_CLIENT_SCRIPT = `(function(){
   self.$RefreshSig$ = self.$RefreshSig$ || function(){ return function(type){ return type; }; };
   // Start installing React Refresh before the application module graph loads.
   // Injecting the runtime only on the first update is too late for React's renderer hook.
-  ensureRefreshRuntime().catch(function(err){
+  // A CSR page has no import map to load it from; the registry dev bundle installs its own.
+  if (clientKind === "ssr" && !systemPage) ensureRefreshRuntime().catch(function(err){
     console.warn("[akan-hmr] React Refresh runtime preload failed", err);
   });
 
   function connect(){
     try { socket = new WebSocket(url); }
     catch(e){ console.error("[akan-hmr] ws init failed", e); schedule(); return; }
-    socket.addEventListener("open", function(){ attempts = 0; });
     socket.addEventListener("message", function(ev){
       var msg;
       try { msg = JSON.parse(ev.data); } catch (e){ return; }
       if (!msg || typeof msg.type !== "string") return;
       if (msg.type === "hello") {
-        if (lastBuildId !== null && msg.buildId !== lastBuildId) {
-          location.reload();
+        // Not on open: the gateway takes the socket before its upstream answers, and closes it when that fails.
+        attempts = 0;
+        var dropped = Array.isArray(msg.failingPhases) && dropBuildErrorsExcept(msg.failingPhases);
+        if (dropped && systemPage) {
+          reloadForUpdate("the build that failed to render this page recovered");
           return;
         }
-        lastBuildId = msg.buildId;
+        if (clientKind === "csr") {
+          if (csrGenerationMoved(msg.csrGeneration)) reloadForUpdate("missed a CSR update while disconnected");
+          return;
+        }
+        if (systemPage) {
+          if (lastBuildId !== null && msg.buildId !== lastBuildId) location.reload();
+          lastBuildId = msg.buildId;
+          return;
+        }
+        if (ssrRegistryReplaced(msg.ssrEpoch)) {
+          reloadForUpdate("the dev server rebuilt the SSR registry while this tab held the previous one");
+          return;
+        }
+        if (ssrRegistryGone(msg.ssrEpoch)) {
+          reloadForUpdate("the dev server has no SSR registry yet: a new session or a config restart is building one");
+          return;
+        }
+        if (ssrBootFailedBefore(msg.ssrGeneration, msg.ssrEpoch)) {
+          reloadForUpdate("the SSR registry this tab failed to load was rebuilt");
+          return;
+        }
+        if (typeof msg.ssrGeneration === "number") self.__AKAN_SSR_HELLO_GENERATION__ = msg.ssrGeneration;
+        var sameRegistry = holdsSsrRegistry(msg.ssrEpoch);
+        if (sameRegistry) catchUpSsrRegistry(msg.ssrGeneration);
+        if (lastBuildId === null || msg.buildId === lastBuildId) {
+          lastBuildId = msg.buildId;
+          return;
+        }
+        // A restarted backend dropped whatever was sent meanwhile: the patches just caught up, then the refresh. Only
+        // onto the registry this tab holds: a new dev session or a config restart builds another from generation 1.
+        if (sameRegistry) refreshRsc({ buildId: msg.buildId });
+        else location.reload();
         return;
       }
       if (msg.type === "reload") {
@@ -79,8 +116,12 @@ export const HMR_CLIENT_SCRIPT = `(function(){
         refreshRsc(msg);
         return;
       }
-      if (msg.type === "client-refresh") {
-        refreshClient(msg);
+      if (msg.type === "csr-update") {
+        applyCsrUpdate(msg);
+        return;
+      }
+      if (msg.type === "ssr-update") {
+        applySsrUpdate(msg);
         return;
       }
       if (msg.type === "css-update") {
@@ -116,6 +157,92 @@ export const HMR_CLIENT_SCRIPT = `(function(){
     });
     socket.addEventListener("close", function(){ socket = null; schedule(); });
     socket.addEventListener("error", function(){ try { socket && socket.close(); } catch(e){} });
+  }
+
+  function csrGenerationMoved(generation){
+    if (typeof generation !== "number") return false;
+    var current = self.__akan ? self.__akan.generation : self.__AKAN_CSR_GENERATION__;
+    return typeof current === "number" && current !== generation;
+  }
+
+  function reloadForUpdate(reason){
+    console.warn("[akan-hmr] reloading the page: " + reason);
+    beginHmrOverlay("Reloading...", true);
+    setTimeout(function(){ location.reload(); }, 30);
+  }
+
+  // Kept in the page so a latency probe can line up the build side's marks with when the page took the update.
+  function recordTrace(kind, msg, receivedAt, appliedAt){
+    traces.push({ kind: kind, generation: msg.generation, trace: msg.trace || null, receivedAt: receivedAt, appliedAt: appliedAt });
+    if (traces.length > 64) traces.shift();
+  }
+
+  // A registry page (self.__akan) patches itself; a single-file CSR artifact can only reload.
+  function applyCsrUpdate(msg){
+    recordTrace("csr", msg, Date.now(), null);
+    if (msg.reload || !self.__akan || typeof self.__akan.hot !== "function") {
+      reloadForUpdate(msg.reason || "the CSR bundle was rebuilt");
+      return;
+    }
+    self.__akan.hot(msg);
+  }
+
+  // A new dev server builds its registry from scratch, restarting the generations a tab would compare.
+  function ssrRegistryReplaced(epoch){
+    var own = self.__AKAN_SSR_EPOCH__;
+    return typeof epoch === "number" && typeof own === "number" && own !== epoch;
+  }
+
+  // Certain, not assumed: a hello from a backend whose registry is not built yet names no epoch at all.
+  function holdsSsrRegistry(epoch){
+    return typeof epoch === "number" && self.__AKAN_SSR_EPOCH__ === epoch;
+  }
+
+  // No manifest on disk means .akan was cleared (a new akan start, a config restart): the registry this tab holds is
+  // gone, the next starts over from generation 1, and its first build is announced to no tab. A new document waits for it.
+  function ssrRegistryGone(epoch){
+    return typeof self.__AKAN_SSR_EPOCH__ === "number" && typeof epoch !== "number";
+  }
+
+  // Behind only, counting patches still loading: a tab that booted from an app.js newer than the last update sent is
+  // ahead, not stale. A registry that has not started catches up in the shim, once it has.
+  function catchUpSsrRegistry(generation){
+    var registry = self.__akan;
+    if (typeof generation !== "number" || !registry || typeof registry.catchUp !== "function") return;
+    if (registry.inspect().target < generation) registry.catchUp(generation, ${JSON.stringify(SSR_DEV_ROUTE_PREFIX)});
+  }
+
+  function ssrBootFailedBefore(generation, epoch){
+    var failed = self.__AKAN_SSR_BOOT_FAILED__;
+    if (!failed || typeof generation !== "number") return false;
+    return generation > failed.generation || (typeof epoch === "number" && typeof failed.epoch === "number" && epoch !== failed.epoch);
+  }
+
+  // An SSR page in registry mode. One that has not loaded its registry yet keeps the update for the registry's start.
+  function applySsrUpdate(msg){
+    recordTrace("ssr", msg, Date.now(), null);
+    if (systemPage) {
+      reloadForUpdate("a save changed the client code of the page that failed to render");
+      return;
+    }
+    if (ssrBootFailedBefore(msg.generation)) {
+      reloadForUpdate("the SSR registry this tab failed to load was updated");
+      return;
+    }
+    // Directly: a registry whose app.js never started would only queue it, and one that failed to start takes a reload
+    // of its own generation too (its app.js may have booted beside the vendor file of the build before).
+    var startFailed = !!(self.__akan && typeof self.__akan.inspect === "function" && self.__akan.inspect().failed);
+    if (msg.reload && self.__akan && (!(msg.generation <= self.__akan.generation) || (startFailed && msg.generation >= self.__akan.generation))) {
+      reloadForUpdate(msg.reason || "the SSR registry was rebuilt");
+      return;
+    }
+    if (self.__akan && typeof self.__akan.hot === "function") {
+      self.__akan.hot(msg);
+      return;
+    }
+    var early = self.__AKAN_SSR_EARLY_UPDATES__ = self.__AKAN_SSR_EARLY_UPDATES__ || [];
+    early.push(msg);
+    if (early.length > 64) early.shift();
   }
 
   function schedule(){
@@ -236,6 +363,10 @@ export const HMR_CLIENT_SCRIPT = `(function(){
       showBuildErrorOverlay(msg);
       return;
     }
+    if (msg.status === "ok" && systemPage) {
+      reloadForUpdate("the build that failed to render this page recovered");
+      return;
+    }
     if (msg.status === "ok") clearBuildErrorOverlay(msg);
   }
 
@@ -278,9 +409,34 @@ export const HMR_CLIENT_SCRIPT = `(function(){
     var current = buildErrorStates[phase];
     if (!current) return;
     var generation = typeof msg.generation === "number" ? msg.generation : 0;
-    var recovered = phase === "backend" ? generation >= current.generation : generation > current.generation;
+    var sameGeneration = phase === "backend" || phase === "route";
+    var recovered = sameGeneration ? generation >= current.generation : generation > current.generation;
     if (!recovered) return;
     delete buildErrorStates[phase];
+    showBuildRecovered(msg);
+  }
+
+  //? A backend that restarted since these went out, and sends each phase failing now right after its hello, never
+  //? recovers the others: its route builds and statuses start over, so the fix of one is nothing it would report.
+  function dropBuildErrorsExcept(failing){
+    var dropped = false;
+    for (var phase in buildErrorStates) {
+      if (failing.indexOf(phase) >= 0) continue;
+      delete buildErrorStates[phase];
+      dropped = true;
+    }
+    if (dropped && !systemPage) showBuildRecovered({});
+    return dropped;
+  }
+
+  // A render error belongs to no build phase and no status reports its fix; this page rendering again is the only sign.
+  function clearRenderError(){
+    if (!buildErrorStates.build) return;
+    delete buildErrorStates.build;
+    showBuildRecovered({});
+  }
+
+  function showBuildRecovered(msg){
     if (hasBuildErrors()) {
       renderBuildErrorOverlay();
       return;
@@ -337,7 +493,29 @@ export const HMR_CLIENT_SCRIPT = `(function(){
     return prefix ? prefix + "\\n" + msg.message : msg.message;
   }
 
+  // After the registry applied every patch it was handed: the payload names the client modules those patches brought.
+  var rscRefreshSeq = 0;
+  var rscRefreshedSeq = 0;
   function refreshRsc(msg){
+    var receivedAt = Date.now();
+    // A newer refresh supersedes this one: it waits for the patches that came with it, which this wait did not.
+    var seq = ++rscRefreshSeq;
+    var refresh = function(){ if (seq === rscRefreshSeq) doRefreshRsc(msg, receivedAt, seq); };
+    var settle = function(){
+      return self.__akan && typeof self.__akan.whenSettled === "function" ? self.__akan.whenSettled() : null;
+    };
+    // A registry still booting holds the updates that came first; the payload may name what they bring. One whose boot
+    // failed never starts, so it has nothing to wait for.
+    var booting = self.__AKAN_SSR_BOOT__;
+    var settled = booting ? Promise.resolve(booting).then(settle, function(){ return null; }) : settle();
+    if (!settled) {
+      refresh();
+      return;
+    }
+    settled.then(refresh, refresh);
+  }
+
+  function doRefreshRsc(msg, receivedAt, seq){
     var started = performance.now();
     var overlayToken = beginHmrOverlay("Refreshing page...");
     try { self.__AKAN_RSC_CLEAR_CACHE__ && self.__AKAN_RSC_CLEAR_CACHE__(); } catch(e){}
@@ -348,8 +526,14 @@ export const HMR_CLIENT_SCRIPT = `(function(){
       return;
     }
     Promise.resolve(self.__AKAN_RSC_REFRESH__({ buildId: msg.buildId })).then(function(){
-      lastBuildId = msg.buildId;
+      // One started before a newer refresh can finish after it; the newer one's build is what the page shows.
+      if (!(seq < rscRefreshedSeq)) {
+        rscRefreshedSeq = seq;
+        lastBuildId = msg.buildId;
+      }
+      recordTrace("rsc-refresh", msg, receivedAt, Date.now());
       endHmrOverlay(overlayToken);
+      clearRenderError();
       console.debug && console.debug("[akan-hmr] RSC refreshed", {
         buildId: msg.buildId,
         generation: msg.generation,
@@ -383,75 +567,6 @@ export const HMR_CLIENT_SCRIPT = `(function(){
       return runtime;
     });
     return refreshRuntimePromise;
-  }
-
-  function refreshClient(msg){
-    refreshQueue = refreshQueue.then(function(){ return doRefreshClient(msg); }, function(){ return doRefreshClient(msg); });
-  }
-
-  function setHmrPhase(phase){
-    self.__AKAN_HMR_PHASE__ = phase;
-  }
-
-  function doRefreshClient(msg){
-    var started = performance.now();
-    var metadataAt = started;
-    var importAt = started;
-    var refreshAt = started;
-    var overlayToken = beginHmrOverlay("Updating...");
-    var fallbackToRsc = false;
-    return ensureRefreshRuntime().then(function(runtime){
-      setHmrOverlayLabel(overlayToken, "Fetching update...");
-      var endpoint = new URL("/_akan/hmr/client-refresh", location.origin);
-      endpoint.searchParams.set("url", location.href);
-      if (msg.buildId != null) endpoint.searchParams.set("buildId", String(msg.buildId));
-      return fetch(endpoint, { credentials: "same-origin", cache: "no-store" })
-        .then(function(res){
-          if (!res.ok) throw new Error("client-refresh metadata failed " + res.status + " " + res.statusText);
-          return res.json();
-        })
-        .then(function(info){
-          metadataAt = performance.now();
-          var chunks = Array.isArray(info.chunks) ? info.chunks : [];
-          if (chunks.length === 0) throw new Error("no client chunks returned");
-          setHmrPhase("refresh-import");
-          setHmrOverlayLabel(overlayToken, "Importing update...");
-          return Promise.all(chunks.map(function(chunk){ return import(chunk); })).then(function(){
-            importAt = performance.now();
-            setHmrPhase("react-refresh");
-            setHmrOverlayLabel(overlayToken, "Applying update...");
-            try {
-              runtime.performReactRefresh();
-            } finally {
-              setHmrPhase(null);
-            }
-            refreshAt = performance.now();
-            lastBuildId = msg.buildId;
-            console.debug && console.debug("[akan-hmr] React Fast Refresh applied", {
-              buildId: msg.buildId,
-              generation: msg.generation,
-              chunks: chunks.length,
-              routeIds: info.routeIds || msg.routeIds,
-              changedFiles: msg.changedFiles && msg.changedFiles.length,
-              metadataMs: Math.round(metadataAt - started),
-              importMs: Math.round(importAt - metadataAt),
-              refreshMs: Math.round(refreshAt - importAt),
-              durationMs: Math.round(refreshAt - started)
-            });
-            endHmrOverlay(overlayToken);
-          }, function(err){
-            setHmrPhase(null);
-            throw err;
-          });
-        });
-    }).catch(function(err){
-      console.warn("[akan-hmr] React Fast Refresh failed, falling back to RSC refresh", err);
-      fallbackToRsc = true;
-      endHmrOverlay(overlayToken);
-      refreshRsc(msg);
-    }).finally(function(){
-      if (!fallbackToRsc) endHmrOverlay(overlayToken);
-    });
   }
 
   function swapCss(href){

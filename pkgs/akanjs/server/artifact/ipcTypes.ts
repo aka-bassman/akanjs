@@ -9,6 +9,8 @@ export interface BuildRouteResultPayload {
   clientDepsByEntry?: Record<string, string[]>;
   routeId?: string;
   generation?: number;
+  /** The newest save batch whose files its client-entry discovery had taken in when it started. */
+  seenGeneration?: number;
 }
 
 /** Re-announces a recycled builder's artifact (not an edit); the host drops it when the hashed output did not move. */
@@ -42,7 +44,7 @@ export interface DevChangePlan {
   reasonByFile: Record<string, string[]>;
 }
 
-export type BuildPhase = "scan" | "barrel" | "csr" | "pages" | "css" | "route" | "backend";
+export type BuildPhase = "scan" | "barrel" | "csr" | "ssr" | "pages" | "css" | "route" | "backend";
 
 export interface DevBuildStatus {
   generation: number;
@@ -50,6 +52,8 @@ export interface DevBuildStatus {
   ok: boolean;
   files: string[];
   message?: string;
+  /** The route a route build's status speaks for. */
+  scope?: string;
 }
 
 export type BuilderReq = {
@@ -76,22 +80,65 @@ export type BuilderCsrRes =
 /** Drain and exit (the only way bundler memory returns to the OS); draining, not killing, keeps a rebuild whole. */
 export type BuilderControl = { type: "builder-shutdown"; reason: string };
 
+/** Epoch-ms marks a save picks up on its way to the page, so a slow update says which hop it waited in. */
+export interface HmrTrace {
+  eventAt?: number; // first fs event of the watcher window
+  flushAt?: number; // the watcher handed the batch over
+  batchAt?: number; // the builder started on it (after its queue)
+  spawnAt?: number; // the build worker was spawned
+  workerStartAt?: number; // the worker process started
+  workerAt?: number; // the worker finished its imports
+  patchAt?: number; // the update (CSR patch or pages bundle) was on disk
+  sentAt?: number; // the build side sent the update
+  broadcastAt?: number; // the backend sent it to the tabs
+}
+
 export interface PagesBundlePayload {
   bundlePath: string;
   buildId: number;
   generation?: number;
   changedFiles?: string[];
   reason?: BuilderStateReason;
+  trace?: HmrTrace;
+  /** False when no changed file is one the server renders (a `"use client"` edit that kept its export names). */
+  serverTouched?: boolean;
 }
 
 /** `Bun.build` keeps native arenas `Bun.gc(true)` never frees (macOS returns none when idle): hence recycling. */
 export interface BuilderMetrics {
   /** A peak sampled when the queues drain; stale within seconds on Linux, so the host re-reads RSS from the OS. */
   rssBytes: number;
-  /** The builder's newest generation; 0 until it has processed a watch batch since spawning. */
+  /** The builder's newest generation; a replacement builder continues from the last one its host saw. */
   generation: number;
   /** Work items completed since this builder spawned, so a host can require real work before recycling. */
   workCount: number;
+}
+
+export interface CsrUpdatedPayload {
+  generation: number;
+  mode: "registry" | "artifact";
+  reload: boolean;
+  reason?: string;
+  patchUrl?: string;
+  changedIds?: string[];
+  trace?: HmrTrace;
+}
+
+/** A new generation of the SSR dev registry, where SSR pages load their client code from: a patch, or a reload. */
+export interface SsrUpdatedPayload {
+  generation: number;
+  reload: boolean;
+  reason?: string;
+  patchUrl?: string;
+  changedIds?: string[];
+  trace?: HmrTrace;
+  /** The save also changed what the server renders: the tabs get this patch with that batch's RSC refresh. */
+  hold?: boolean;
+  /** The watch batch this patch came from, which the `pages-updated` releasing it names as its generation. */
+  batchGeneration?: number;
+  epoch?: number;
+  /** The registry's first build: no tab holds a module of it, so there is nothing to send them. */
+  first?: boolean;
 }
 
 export type BuilderEvent =
@@ -107,8 +154,12 @@ export type BuilderEvent =
     }
   | { type: "css-updated"; data: CssPayload }
   | { type: "pages-updated"; data: PagesBundlePayload }
+  | { type: "csr-updated"; data: CsrUpdatedPayload }
+  | { type: "ssr-updated"; data: SsrUpdatedPayload }
   | { type: "build-status"; data: DevBuildStatus }
-  | { type: "builder-metrics"; data: BuilderMetrics };
+  | { type: "builder-metrics"; data: BuilderMetrics }
+  /** The boot builds settled (the SSR registry's, and CSR's when the env arms it): their workers are a boot's peak. */
+  | { type: "boot-armed" };
 
 export type BuilderMessage = BuilderReq | BuilderRes | BuilderCsrReq | BuilderCsrRes | BuilderControl | BuilderEvent;
 
@@ -128,4 +179,6 @@ export interface BuildRouteClientResult {
   discoveredEntries?: string[];
   clientDeps: string[];
   clientDepsByEntry?: Record<string, string[]>;
+  /** The newest save batch whose files its client-entry discovery had taken in when it started. */
+  seenGeneration?: number;
 }

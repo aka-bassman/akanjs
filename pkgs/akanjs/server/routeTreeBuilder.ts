@@ -15,8 +15,9 @@ import {
   getRouteExports,
   Logger,
   matchRoutePattern,
-  parseBasePaths,
   parseRouteModuleKey,
+  type RouteLayer,
+  RouteLayering,
   routeSegmentToTreePath,
 } from "akanjs/common";
 import { createElement } from "react";
@@ -54,15 +55,12 @@ export class RouteTreeBuilder {
   };
 
   readonly #context: PagesContext;
-  readonly #baseLayoutPaths: string[];
   readonly #routeMap = new Map<string, Route>();
   readonly #pagePatterns: { key: string; pattern: string }[] = [];
   readonly #fallbackRoutes: LayoutFallbackRoute[] = [];
 
   constructor(context: PagesContext) {
     this.#context = context;
-    const basePaths = process.env.AKAN_PUBLIC_BASE_PATHS ? parseBasePaths(process.env.AKAN_PUBLIC_BASE_PATHS) : null;
-    this.#baseLayoutPaths = ["/", "/:lang", ...(basePaths?.map((bp) => `/:lang/${bp}`) ?? [])];
     this.#routeMap.set("/", { path: "/", children: new Map() });
   }
 
@@ -169,7 +167,7 @@ export class RouteTreeBuilder {
     targetRouteMap.set(targetPath, {
       ...(targetRouteMap.get(targetPath) ?? { path: targetPath, children: new Map<string, Route>() }),
       ...(parsed.kind === "layout"
-        ? { renderLayout: routeRender }
+        ? { renderLayout: routeRender, isRootLayout: parsed.isInternalRootLayout }
         : {
             renderPage: routeRender,
             pageIncludesOwnLayout: parsed.leaf === "_index",
@@ -178,52 +176,27 @@ export class RouteTreeBuilder {
     } as Route);
   }
 
-  #getPathRoutes(
-    route: Route,
-    parentRootLayouts: RouteRender[] = [],
-    parentLayouts: RouteRender[] = [],
-    parentPaths: string[] = [],
-    parentHead?: ResolveHead,
-    parentOverrides: RouteRender[] = [],
-  ): PathRoute[] {
-    const parentPath = parentPaths.filter((p) => p !== "/").join("");
-    const currentPathSegment = /^\/\(.*\)$/.test(route.path) ? "" : route.path;
-    const isRoot = this.#baseLayoutPaths.includes(parentPath + currentPathSegment) && parentRootLayouts.length < 2;
-    const routePath = parentPath + currentPathSegment;
-    const pathSegments = [...parentPaths, ...(currentPathSegment ? [currentPathSegment] : [])];
-    const currentRootLayout = isRoot && route.renderLayout ? route.renderLayout : null;
-    const currentLayout = !isRoot && route.renderLayout ? route.renderLayout : null;
-    // Overrides wrap root layouts too, or a root layout's own UI (the overlay host portalled Modals use) misses them.
-    // `parentRootLayouts` stays override-free: the isRoot test counts its length.
-    const currentOverrideRenders = route.renderOverrides ? [route.renderOverrides] : [];
-    const overrideRenders = [...parentOverrides, ...currentOverrideRenders];
-    const rootLayoutStack = [...parentRootLayouts, ...(currentRootLayout ? [currentRootLayout] : [])];
-    const renderRootLayouts = [...overrideRenders, ...rootLayoutStack];
-    const renderLayouts = [...parentLayouts, ...(currentLayout ? [currentLayout] : [])];
+  #getPathRoutes(route: Route, parent: RouteLayer<RouteRender> | null = null, parentHead?: ResolveHead): PathRoute[] {
+    const layer = RouteLayering.of(route, parent);
     if (route.renderLayout) {
       this.#fallbackRoutes.push({
-        path: routePath,
-        pathSegments,
-        renderRootLayouts,
-        renderLayouts,
+        path: layer.path,
+        pathSegments: layer.pathSegments,
+        renderRootLayouts: layer.renderRootLayouts,
+        renderLayouts: layer.renderLayouts,
       });
     }
     const routeHead = RouteTreeBuilder.#composeHeadResolvers(route.renderLayout?.resolveHead, parentHead);
-    const pageRenderRootLayouts =
-      route.pageIncludesOwnLayout === false && currentRootLayout
-        ? [...overrideRenders, ...parentRootLayouts]
-        : renderRootLayouts;
-    const pageRenderLayouts = route.pageIncludesOwnLayout === false && currentLayout ? parentLayouts : renderLayouts;
     const pageHead = route.pageIncludesOwnLayout === false ? parentHead : routeHead;
     return [
       ...(route.renderPage
         ? [
             {
-              path: routePath,
-              pathSegments,
+              path: layer.path,
+              pathSegments: layer.pathSegments,
               renderPage: route.renderPage,
-              renderRootLayouts: pageRenderRootLayouts,
-              renderLayouts: pageRenderLayouts,
+              renderRootLayouts: layer.pageRenderRootLayouts,
+              renderLayouts: layer.pageRenderLayouts,
               resolveHead: RouteTreeBuilder.#composeHeadResolvers(route.renderPage.resolveHead, pageHead),
               isSpecialRoute: route.isSpecialRoute,
               pageState: route.pageState ?? defaultPageState,
@@ -231,9 +204,7 @@ export class RouteTreeBuilder {
           ]
         : []),
       ...(route.children.size
-        ? [...route.children.values()].flatMap((child) =>
-            this.#getPathRoutes(child, rootLayoutStack, renderLayouts, pathSegments, routeHead, overrideRenders),
-          )
+        ? [...route.children.values()].flatMap((child) => this.#getPathRoutes(child, layer, routeHead))
         : []),
     ];
   }

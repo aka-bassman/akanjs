@@ -15,24 +15,24 @@ export default page().render(() => {
       }),
     },
     {
-      name: "Capacitor",
+      name: "native runtime",
       desc: l.trans({
-        en: "An open-source runtime that wraps a web app in a real Android and iOS project.",
-        ko: "웹 앱을 실제 Android, iOS 프로젝트로 감싸 주는 오픈소스 런타임입니다.",
+        en: "@akanjs/native, shipped inside akanjs. It builds your CSR client into iOS, Android, macOS, Windows and Linux apps, with no Xcode project, Gradle files or CocoaPods to keep.",
+        ko: "akanjs 안에 들어 있는 @akanjs/native입니다. CSR 클라이언트를 iOS, Android, macOS, Windows, Linux 앱으로 빌드하며, 따로 관리할 Xcode 프로젝트, Gradle 파일, CocoaPods가 없습니다.",
       }),
     },
     {
       name: "native shell",
       desc: l.trans({
-        en: "The Android and iOS project around your web client. It holds the app icon, ID and signing.",
-        ko: "웹 클라이언트를 감싸는 Android, iOS 프로젝트입니다. 앱 아이콘, ID, 서명을 가집니다.",
+        en: "The small native app around your web client, built under .akan/native/<target>/build: icon, ID, signing.",
+        ko: "웹 클라이언트를 감싸는 작은 네이티브 앱이며, .akan/native/<target>/build 아래에 생성되어 앱 아이콘, ID, 서명을 가집니다.",
       }),
     },
     {
       name: "plugin",
       desc: l.trans({
-        en: "A Capacitor package that exposes one device feature to JavaScript. This is the native bridge.",
-        ko: "기기 기능 하나를 JavaScript에 열어 주는 Capacitor 패키지입니다. 이것이 네이티브 브리지입니다.",
+        en: "A native runtime plugin that exposes one device feature to JavaScript, such as camera, push or iap. This is the native bridge.",
+        ko: "camera, push, iap처럼 기기 기능 하나를 JavaScript에 열어 주는 네이티브 런타임 plugin입니다. 이것이 네이티브 브리지입니다.",
       }),
     },
     {
@@ -55,7 +55,7 @@ export default page().render(() => {
     },
     {
       title: l.trans({ en: "Native shell boundary", ko: "네이티브 shell 경계" }),
-      caption: l.trans({ en: "The Capacitor project", ko: "Capacitor 프로젝트의 몫" }),
+      caption: l.trans({ en: "What the native runtime generates", ko: "네이티브 런타임이 만드는 몫" }),
       desc: l.trans({
         en: "Native code owns packaging, signing, app capabilities, plugin linking, and store distribution.",
         ko: "네이티브 코드는 패키징, signing, app capability, plugin linking, store 배포를 담당합니다.",
@@ -65,8 +65,8 @@ export default page().render(() => {
       title: l.trans({ en: "Shared backend", ko: "공유 백엔드" }),
       caption: l.trans({ en: "The server you already run", ko: "이미 돌리고 있는 그 서버" }),
       desc: l.trans({
-        en: "Android, iOS, and web clients call the same Akan services and can share auth, permission, database rules, and app-level domains.",
-        ko: "Android, iOS, 웹 client는 같은 Akan service를 호출하고 auth, permission, database rule, app-level domain을 공유할 수 있습니다.",
+        en: "Android, iOS, and web clients call the same Akan services and can share auth, permission, database rules, and app-level domains. A desktop app whose target carries the server calls the copy of that server it carries instead.",
+        ko: "Android, iOS, 웹 client는 같은 Akan service를 호출하고 auth, permission, database rule, app-level domain을 공유할 수 있습니다. 서버를 싣는 target의 데스크톱 앱은 대신 자기가 싣고 있는 서버를 호출합니다.",
       }),
     },
   ];
@@ -102,15 +102,15 @@ export default page().render(() => {
     {
       title: "Permissions",
       desc: l.trans({
-        en: "Permissions describe which native capabilities a mobile target intends to use.",
-        ko: "Permissions는 모바일 target이 사용하려는 네이티브 기능을 설명합니다.",
+        en: "Permissions describe which native capabilities a native target intends to use.",
+        ko: "Permissions는 네이티브 target이 사용하려는 네이티브 기능을 설명합니다.",
       }),
     },
     {
       title: "Files",
       desc: l.trans({
-        en: "Native config files such as Firebase config live in the app folder.",
-        ko: "Firebase 설정 같은 네이티브 config 파일은 app 폴더에 둡니다.",
+        en: "Native files such as google-services.json or a notification sound live in the app folder; the config names where each one lands.",
+        ko: "google-services.json이나 알림음 같은 네이티브 파일은 app 폴더에 두고, config에 각 파일이 들어갈 자리를 적습니다.",
       }),
     },
     {
@@ -123,8 +123,8 @@ export default page().render(() => {
     {
       title: "Push notifications",
       desc: l.trans({
-        en: "Push delivery uses Firebase/FCM setup, while click routing uses a standard data.url field.",
-        ko: "Push 수신은 Firebase/FCM 설정을 사용하고, 클릭 라우팅은 표준 data.url 필드를 사용합니다.",
+        en: "Push goes out through APNs on iOS and FCM on Android and the web, while click routing uses a standard data.url field.",
+        ko: "Push는 iOS에서는 APNs, Android와 웹에서는 FCM으로 나가고, 클릭 라우팅은 표준 data.url 필드를 사용합니다.",
       }),
     },
   ];
@@ -142,8 +142,14 @@ export default page().render(() => {
           </div>
           <div>
             {l.trans({
-              en: "Concretely, Akan mobile apps are CSR web clients running inside a Capacitor native shell. The product screen is still built with Akan page, UI, state, and service patterns; Capacitor supplies the native project, app identity, store package, and device bridge.",
-              ko: "정확히 말하면 Akan 모바일 앱은 Capacitor 네이티브 shell 안에서 실행되는 CSR 웹 클라이언트입니다. 제품 화면은 여전히 Akan page, UI, state, service 패턴으로 만들고, Capacitor가 네이티브 프로젝트, 앱 식별 정보, 스토어 패키지, 디바이스 브리지를 제공합니다.",
+              en: "Concretely, Akan mobile apps are CSR web clients running inside a native shell that akanjs's own runtime, @akanjs/native, generates. The product screen is still built with Akan page, UI, state, and service patterns; the runtime supplies the shell, app identity, store package, and device bridge from what akan.config.ts declares.",
+              ko: "정확히 말하면 Akan 모바일 앱은 akanjs의 자체 런타임인 @akanjs/native가 만들어 내는 네이티브 shell 안에서 실행되는 CSR 웹 클라이언트입니다. 제품 화면은 여전히 Akan page, UI, state, service 패턴으로 만들고, 런타임이 akan.config.ts의 선언을 바탕으로 shell, 앱 식별 정보, 스토어 패키지, 디바이스 브리지를 제공합니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "The same target also builds a macOS, Windows or Linux app. A desktop app calls the shared backend like a phone does, or, with native.desktop.server on, carries the app's own server: it starts beside the window on a loopback port, keeps its data on that computer, and is the only backend the pages call, so the app works with no server elsewhere.",
+              ko: "같은 target으로 macOS, Windows, Linux 앱도 빌드합니다. 데스크톱 앱은 폰처럼 공유 백엔드를 부르거나, native.desktop.server를 켜면 앱의 서버를 함께 싣습니다. 이 서버는 창과 함께 loopback 포트로 떠서 데이터를 그 컴퓨터에 두고, 페이지가 부르는 유일한 백엔드가 되므로 다른 곳에 서버 없이 앱이 동작합니다.",
             })}
           </div>
           <Docs.Figure
@@ -153,13 +159,13 @@ export default page().render(() => {
               Application source at the far left labelled "Akan App", with a long arrow to the centre. In the centre one
               phone drawn large, about half the frame tall. Its screen holds a simple web page sketch — a top bar, one
               big block and three short rows — labelled "CSR Client" beside the screen. The phone's outer body is traced
-              as the red accent and labelled "Capacitor Native Shell". Below the phone, a dashed arrow down to two small
+              as the red accent and labelled "Akan Native Shell". Below the phone, a dashed arrow down to two small
               closed parcel boxes side by side, labelled "Android" and "iOS". To the right, a two-headed arrow from the
               phone to a server with a database cylinder beside it, labelled once "Shared Akan Backend".
             `}
             alt={l.trans({
-              en: "The Akan app builds a CSR client that runs inside the Capacitor native shell, which is packaged for Android and iOS and talks to the shared Akan backend.",
-              ko: "Akan 앱은 CSR 클라이언트를 빌드하고, 그 클라이언트는 Capacitor 네이티브 shell 안에서 실행됩니다. shell은 Android와 iOS 패키지로 나가며 공유 Akan 백엔드와 통신합니다.",
+              en: "The Akan app builds a CSR client that runs inside the Akan native shell, which is packaged for Android and iOS and talks to the shared Akan backend.",
+              ko: "Akan 앱은 CSR 클라이언트를 빌드하고, 그 클라이언트는 Akan 네이티브 shell 안에서 실행됩니다. shell은 Android와 iOS 패키지로 나가며 공유 Akan 백엔드와 통신합니다.",
             })}
           />
           <Docs.SubSubTitle>{l.trans({ en: "Words used on this page", ko: "이 페이지에서 쓰는 말" })}</Docs.SubSubTitle>
@@ -184,19 +190,19 @@ export default page().render(() => {
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="mobile-targets" title={l.trans({ en: "Mobile Targets", ko: "모바일 Target" })}>
-        <Docs.Title>{l.trans({ en: "Mobile Targets", ko: "모바일 Target" })}</Docs.Title>
+      <Scroll.Slide id="native-targets" title={l.trans({ en: "Native Targets", ko: "네이티브 Target" })}>
+        <Docs.Title>{l.trans({ en: "Native Targets", ko: "네이티브 Target" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Sometimes one product is really two apps in the store, such as a customer app and a staff app. Each needs its own name and app ID, yet both should run on the same backend. Mobile targets are for exactly that.",
-              ko: "하나의 제품이 스토어에서는 두 개의 앱일 때가 있습니다. 예를 들어 고객용 앱과 직원용 앱이죠. 각자 이름과 app ID는 달라야 하지만 백엔드는 같이 써야 합니다. 모바일 target은 바로 이럴 때 씁니다.",
+              en: "Sometimes one product is really two apps in the store, such as a customer app and a staff app. Each needs its own name and app ID, yet both should run on the same backend. Native targets are for exactly that.",
+              ko: "하나의 제품이 스토어에서는 두 개의 앱일 때가 있습니다. 예를 들어 고객용 앱과 직원용 앱이죠. 각자 이름과 app ID는 달라야 하지만 백엔드는 같이 써야 합니다. 네이티브 target은 바로 이럴 때 씁니다.",
             })}
           </div>
           <div>
             {l.trans({
-              en: "A mobile target is one native package built from an Akan app. A single Akan app can publish multiple mobile packages by pointing each target at a different basePath while reusing the same backend modules.",
-              ko: "모바일 target은 Akan 앱에서 만들어지는 하나의 네이티브 패키지입니다. 하나의 Akan 앱은 각 target이 서로 다른 basePath를 열도록 설정해 여러 모바일 패키지를 배포할 수 있고, 백엔드 모듈은 그대로 공유할 수 있습니다.",
+              en: "A native target is one native package built from an Akan app. A single Akan app can publish several packages by pointing each target at a different basePath while reusing the same backend modules. A target takes from native every value it does not set itself.",
+              ko: "네이티브 target은 Akan 앱에서 만들어지는 하나의 네이티브 패키지입니다. 하나의 Akan 앱은 각 target이 서로 다른 basePath를 열도록 설정해 여러 패키지를 배포할 수 있고, 백엔드 모듈은 그대로 공유할 수 있습니다. target은 자기가 적지 않은 값을 native에서 받습니다.",
             })}
           </div>
           <Docs.Figure
@@ -224,9 +230,7 @@ const config: AppConfig = {
     { domains: { main: ["store.example.com"] }, basePath: "store" },
     { domains: { main: ["admin.example.com"] }, basePath: "admin" },
   ],
-  mobile: {
-    appName: "Example App",
-    appId: "com.example.app",
+  native: {
     version: "1.0.0",
     buildNum: 1,
     targets: {
@@ -247,14 +251,14 @@ export default config;`}
               })}
             </li>
             <li>
-              <code>mobile</code>{" "}
+              <code>native</code>{" "}
               {l.trans({
-                en: "— the app's name, app ID, version and build number.",
-                ko: "— 앱의 이름, app ID, 버전, 빌드 번호입니다.",
+                en: "— what every target shares, here the version and build number.",
+                ko: "— 모든 target이 함께 쓰는 값이며, 여기서는 버전과 빌드 번호입니다.",
               })}
             </li>
             <li>
-              <code>mobile.targets</code>{" "}
+              <code>native.targets</code>{" "}
               {l.trans({
                 en: "— one entry per package, each with its own basePath, display name and app ID.",
                 ko: "— 패키지마다 항목 하나이며, 각자 basePath, 표시 이름, app ID를 가집니다.",
@@ -361,27 +365,27 @@ export default page()
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Web code alone cannot reach the camera, push notifications or the file system. Device capabilities are accessed through Capacitor plugins, and Akan keeps the app-level API small. Using one takes three steps:",
-              ko: "카메라, 푸시 알림, 파일 시스템은 웹 코드만으로는 닿지 않습니다. 디바이스 기능은 Capacitor plugin을 통해 접근하고, Akan은 앱 레벨 API를 작게 유지합니다. 기능 하나를 쓰는 데는 세 단계면 됩니다:",
+              en: "Web code alone cannot reach the camera, push notifications or the file system. Device capabilities are accessed through the native runtime's plugins, and Akan keeps the app-level API small. Using one takes three steps:",
+              ko: "카메라, 푸시 알림, 파일 시스템은 웹 코드만으로는 닿지 않습니다. 디바이스 기능은 네이티브 런타임의 plugin을 통해 접근하고, Akan은 앱 레벨 API를 작게 유지합니다. 기능 하나를 쓰는 데는 세 단계면 됩니다:",
             })}
           </div>
           <ol className="my-4 list-decimal space-y-2 pl-5">
             <li>
               {l.trans({
-                en: "Declare the native capability the app needs.",
-                ko: "필요한 네이티브 기능을 선언합니다.",
+                en: "Declare the native capability the app needs: a permission in native.permissions, or a plugin in native.plugins.",
+                ko: "필요한 네이티브 기능을 선언합니다. native.permissions의 permission이나 native.plugins의 plugin입니다.",
               })}
             </li>
             <li>
               {l.trans({
-                en: "Sync and build the native project.",
-                ko: "네이티브 프로젝트를 sync하고 build합니다.",
+                en: "Build or run the app (akan build-ios, akan start-android, …); the shell is generated with those plugins in it.",
+                ko: "앱을 빌드하거나 실행합니다(akan build-ios, akan start-android, …). shell은 그 plugin을 넣은 채로 만들어집니다.",
               })}
             </li>
             <li>
               {l.trans({
-                en: "Call the matching client hook or plugin wrapper from the CSR app.",
-                ko: "CSR 앱에서 해당 client hook 또는 plugin wrapper를 호출합니다.",
+                en: "Call the matching client hook or plugin wrapper (akanjs/client/native) from the CSR app.",
+                ko: "CSR 앱에서 해당 client hook 또는 plugin wrapper(akanjs/client/native)를 호출합니다.",
               })}
             </li>
           </ol>
@@ -407,8 +411,8 @@ export default page()
                 href: "/cheatsheet/mobile/setup",
                 title: l.trans({ en: "Setup", ko: "설정" }),
                 desc: l.trans({
-                  en: "Mobile config, Capacitor plugins, and the Android and iOS projects.",
-                  ko: "Mobile config, Capacitor plugin, Android와 iOS 프로젝트를 설정합니다.",
+                  en: "Native config, native plugins, and building and running the iOS, Android and desktop apps.",
+                  ko: "native 설정, 네이티브 plugin, iOS·Android·데스크톱 앱의 빌드와 실행을 다룹니다.",
                 }),
               },
               {
@@ -431,8 +435,8 @@ export default page()
                 href: "/cheatsheet/mobile/push",
                 title: "Push Notifications",
                 desc: l.trans({
-                  en: "Firebase/FCM setup, registering the device and storing its token.",
-                  ko: "Firebase/FCM 설정, 기기 등록, token 저장을 다룹니다.",
+                  en: "APNs and FCM setup, registering the device and storing its token.",
+                  ko: "APNs와 FCM 설정, 기기 등록, token 저장을 다룹니다.",
                 }),
               },
             ]}

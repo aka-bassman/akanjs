@@ -25,10 +25,9 @@ import {
   workflowInputsArg,
   workspacePath,
 } from "@akanjs/devkit/akanMcpContract";
-import { isPlaceholderAppId } from "@akanjs/devkit/capacitorApp";
 import { runner, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor } from "@akanjs/devkit/executors";
-import { getMobileTargets } from "@akanjs/devkit/mobile";
+import { appIdsOf, getMobileTargets, isPlaceholderAppId, NativeApp } from "@akanjs/devkit/mobile";
 import { Prompter } from "@akanjs/devkit/prompter";
 import { createWorkflowBaselineSummary, jsonText } from "@akanjs/devkit/workflow";
 import { RepairRunner } from "../repair/repair.runner";
@@ -96,24 +95,37 @@ export class ContextRunner extends runner("context") {
   async #doctorIos(workspace: Workspace, format: "text" | "json") {
     const appNames = await workspace.getApps();
     const diagnostics: { severity: "warning" | "error"; code: string; path: string; message: string }[] = [];
+    let toolchainChecked = false;
     for (const appName of appNames) {
       const app = AppExecutor.from(workspace, appName);
       const config = await app.getConfig();
-      if (!config.hasMobileConfig) continue;
+      if (!config.hasNativeConfig) continue;
+      if (!toolchainChecked) {
+        toolchainChecked = true;
+        const report = await NativeApp.doctor(app.cwdPath, ["ios"]);
+        for (const check of report.checks.filter((check) => !check.ok || check.warn))
+          diagnostics.push({
+            severity: check.ok ? "warning" : "error",
+            code: "native-toolchain",
+            path: `${check.group} › ${check.name}`,
+            message: [check.detail, check.hint].filter(Boolean).join(" "),
+          });
+      }
       for (const { name, config: target } of await getMobileTargets(app)) {
-        if (!isPlaceholderAppId(target.appId)) continue;
+        const placeholder = appIdsOf(target.appId).find(isPlaceholderAppId);
+        if (!placeholder) continue;
         diagnostics.push({
           severity: "warning",
           code: "mobile-appid-placeholder",
           path: `apps/${appName}/akan.config.ts`,
-          message: `Mobile target '${name}' uses placeholder bundle id '${target.appId}'. Apple's developer portal almost always already claims it, so signing to a physical device fails with "cannot be registered to your development team". Set a unique mobile.appId (reverse-DNS of your org).`,
+          message: `Native target '${name}' uses placeholder bundle id '${placeholder}'. Apple's developer portal almost always already claims it, so signing to a physical device fails with "cannot be registered to your development team". Set a unique native.appId (reverse-DNS of your org).`,
         });
       }
     }
     const status = diagnostics.some((diagnostic) => diagnostic.severity === "error") ? "failed" : "passed";
     if (format === "json") return jsonText({ schemaVersion: 1, kind: "ios", status, diagnostics });
     const lines = [`Akan iOS diagnostics for ${workspace.repoName}`];
-    if (diagnostics.length === 0) lines.push("  No mobile configuration issues found.");
+    if (diagnostics.length === 0) lines.push("  No native configuration issues found.");
     else
       for (const diagnostic of diagnostics) {
         lines.push(`  [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`);

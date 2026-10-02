@@ -8,12 +8,19 @@ import type { AkanImageConfig } from "akanjs/server";
 import type { App, Lib } from "../commandDecorators";
 import { LibExecutor, WorkspaceExecutor } from "../executors";
 import type { BaseDevEnv, PackageJson } from "../types";
+import { AkanBin } from "./akanBin";
 import {
   type AkanApiConfig,
   type AkanAssetsConfig,
+  type AkanBinConfig,
   type AkanDatabaseConfig,
-  type AkanMobileConfig,
-  type AkanMobileTargetConfig,
+  type AkanNativeAppConfig,
+  type AkanNativeAppResult,
+  type AkanNativeDeepLinks,
+  type AkanNativeDesktopConfig,
+  type AkanNativeSettings,
+  type AkanNativeTarget,
+  type AkanNativeUpdatesConfig,
   type AkanRouteConfig,
   type AkanWebConfig,
   type AkanWebOption,
@@ -40,22 +47,6 @@ const DEFAULT_OPTIMIZE_IMPORTS = [
 const WORKSPACE_BARREL_FACETS = ["ui", "webkit", "common", "client", "server"] as const;
 const DEFAULT_DOCKER_IMAGE = "oven/bun:1-slim";
 const SSR_RUNTIME_PACKAGES = ["react", "react-dom", "react-server-dom-webpack"] as const;
-// Optional peers only, so a fresh workspace never installs them; the mobile preflight adds them at the root.
-const MOBILE_RUNTIME_PACKAGES = [
-  "@capacitor/cli",
-  "@capacitor/core",
-  "@capacitor/ios",
-  "@capacitor/android",
-  "@capacitor/assets",
-] as const;
-// `npx cap sync` registers only plugins the app's own package.json declares (else the bridge throws `Capacitor plugin
-// "Device" is not available.`), so they are declared there with "*" and deduped to the root-installed version.
-const MOBILE_APP_CAPACITOR_PLUGINS = [
-  ..."app browser camera core device geolocation haptics inappbrowser keyboard preferences push-notifications"
-    .split(" ")
-    .map((name) => `@capacitor/${name}`),
-  "capacitor-plugin-safe-area",
-];
 const DEFAULT_AKAN_IMAGE_CONFIG: AkanImageConfig = {
   deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
   imageSizes: [32, 48, 64, 96, 128, 256, 384],
@@ -108,28 +99,27 @@ const normalizeDeepLinkDomain = (domain: string) => {
   }
 };
 
-const normalizeDeepLinks = (deepLinks: DeepPartial<AkanMobileTargetConfig["deepLinks"]> | undefined) => {
-  if (!deepLinks) return undefined;
-  const schemes = normalizeStringList(deepLinks.schemes as string[] | undefined);
-  const domains = normalizeStringList((deepLinks.domains as string[] | undefined)?.map(normalizeDeepLinkDomain));
-  const teamId = (deepLinks.ios?.teamId as string | undefined)?.trim();
-  const sha256CertFingerprints = normalizeStringList(deepLinks.android?.sha256CertFingerprints as string[] | undefined);
-  if (!schemes && !domains && !teamId && !sha256CertFingerprints) return undefined;
-  return {
-    ...(schemes ? { schemes } : {}),
-    ...(domains ? { domains } : {}),
-    ...(teamId ? { ios: { teamId } } : {}),
-    ...(sha256CertFingerprints ? { android: { sha256CertFingerprints } } : {}),
-  } satisfies AkanMobileTargetConfig["deepLinks"];
+const normalizeDeepLinks = (deepLinks: AkanNativeDeepLinks | undefined): AkanNativeDeepLinks | undefined => {
+  const schemes = normalizeStringList(deepLinks?.schemes);
+  const domains = normalizeStringList(deepLinks?.domains?.map(normalizeDeepLinkDomain));
+  if (!schemes && !domains) return undefined;
+  return { ...(schemes ? { schemes } : {}), ...(domains ? { domains } : {}) };
 };
 
-type AppConfigDeclaration = Omit<DeepPartial<AppConfigResult>, "docker" | "web"> & {
+type AppConfigDeclaration = Omit<DeepPartial<AppConfigResult>, "docker" | "web" | "bin" | "native"> & {
   docker?: DockerOption;
   web?: AkanWebOption;
+  bin?: AkanBinConfig;
+  native?: AkanNativeAppConfig;
 };
+
+type LibConfigDeclaration = Omit<DeepPartial<LibConfigResult>, "bin"> & { bin?: AkanBinConfig };
 
 export interface LibContributions {
   externalLibs: string[];
+  trustedDependencies?: string[];
+  /** Per lib, since an app carries only the entries of the libs it depends on. */
+  bin?: { lib: string; bin: AkanBinConfig }[];
   docker: LibDockerConfig;
   /** Keep globs rewritten to the app's own `public/`, where `akan sync` mounts each lib's assets. */
   keepFonts?: string[];
@@ -137,9 +127,18 @@ export interface LibContributions {
 
 const emptyLibContributions = (): LibContributions => ({
   externalLibs: [],
+  trustedDependencies: [],
+  bin: [],
   docker: { preRuns: [], postRuns: [] },
   keepFonts: [],
 });
+
+const normalizePackageNames = (names: unknown, owner: string): string[] => {
+  if (names === undefined) return [];
+  if (!Array.isArray(names) || names.some((name) => typeof name !== "string" || !name.trim()))
+    throw new Error(`${owner}: trustedDependencies lists package names`);
+  return [...new Set(names.map((name: string) => name.trim()))];
+};
 
 const normalizeKeepFonts = (keepFonts: string[] | undefined) => [
   ...new Set((keepFonts ?? []).map((glob) => glob.trim().replace(/^\/+/, "")).filter(Boolean)),
@@ -161,15 +160,19 @@ export class AkanAppConfig implements AppConfigResult {
   database: AkanDatabaseConfig;
   web: AkanWebConfig;
   externalLibs: string[];
+  trustedDependencies: string[];
+  /** The app's own entries; the libs' are in `libBins`. */
+  bin: AkanBinConfig;
+  libBins: { lib: string; bin: AkanBinConfig }[];
   barrelImports: string[];
   optimizeImports: string[];
   images: AkanImageConfig;
   i18n: AkanI18nConfig;
   api: AkanApiConfig;
   publicEnv: string[];
-  mobile: AkanMobileConfig;
-  /** True only when the app's akan.config.ts explicitly declares a `mobile` section (vs. the synthesized default). */
-  hasMobileConfig: boolean;
+  native: AkanNativeAppResult;
+  /** True only when the app's akan.config.ts declares a `native` section (vs. the synthesized default target). */
+  hasNativeConfig: boolean;
   secrets: string[];
   assets: AkanAssetsConfig;
   /** Raw setting, resolved against the app's lib deps at sync time. */
@@ -199,6 +202,15 @@ export class AkanAppConfig implements AppConfigResult {
     this.#applyRoutes(config?.routes);
     this.database = AkanAppConfig.#database(app, config);
     this.externalLibs = [...new Set([...(config?.externalLibs ?? []), ...libContributions.externalLibs])];
+    const owner = `apps/${app.name}/akan.config.ts`;
+    this.trustedDependencies = [
+      ...new Set([
+        ...normalizePackageNames(config?.trustedDependencies, owner),
+        ...(libContributions.trustedDependencies ?? []),
+      ]),
+    ];
+    this.bin = AkanBin.parse(config?.bin, owner, app.cwdPath);
+    this.libBins = libContributions.bin ?? [];
     this.barrelImports = [
       ...DEFAULT_BARREL_IMPORTS,
       ...WORKSPACE_BARREL_FACETS.map((facet) => `@apps/${app.name}/${facet}`),
@@ -226,8 +238,12 @@ export class AkanAppConfig implements AppConfigResult {
       ],
     };
     this.syncPageLibs = (config?.syncPageLibs as string[] | boolean | undefined) ?? false;
-    this.hasMobileConfig = Boolean(config.mobile);
-    this.mobile = this.#resolveMobileConfig(config.mobile);
+    if ((config as { mobile?: unknown }).mobile !== undefined)
+      throw new Error(
+        `apps/${this.app.name}/akan.config.ts declares \`mobile\`, which is now \`native\`: the platform settings sit in native.ios, native.android and native.desktop, and a target overrides them under native.targets.<name>.`,
+      );
+    this.hasNativeConfig = Boolean(config.native);
+    this.native = this.#resolveNativeConfig(config.native);
     this.web = this.#resolveWebConfig(config.web);
     this.docker = AkanAppConfig.#resolveDocker(config.docker, libContributions.docker);
     this.dockerfile = this.#makeDockerfile();
@@ -235,80 +251,225 @@ export class AkanAppConfig implements AppConfigResult {
   #resolveWebConfig(web: AkanWebOption | undefined): AkanWebConfig {
     const resolved = typeof web === "object" ? { ssr: true, csr: web.csr } : { ssr: web ?? true, csr: web ?? true };
     // `akan build-ios` / `build-android` copy `dist/apps/<app>/csr/<target>.html` into the native project.
-    if (!resolved.csr && this.hasMobileConfig)
+    if (!resolved.csr && this.hasNativeConfig)
       throw new Error(
-        `apps/${this.app.name}/akan.config.ts turns the CSR bundle off but declares mobile targets; the Capacitor build ships that bundle. Drop the mobile section or leave CSR on.`,
+        `apps/${this.app.name}/akan.config.ts turns the CSR bundle off but declares a native section; the native apps ship that bundle. Drop the native section or leave CSR on.`,
       );
     return resolved;
   }
-  #resolveMobileConfig(mobile: DeepPartial<AkanMobileConfig> | undefined): AkanMobileConfig {
-    const {
-      targets: rawTargets,
-      indexPath: _indexPath,
-      ...rawMobile
-    } = (mobile ?? {}) as DeepPartial<AkanMobileConfig> & { indexPath?: unknown };
-    const appName = rawMobile.appName ?? this.app.name;
-    const appId = rawMobile.appId ?? deriveDefaultAppId(this.baseDevEnv.repoName, this.app.name);
-    const version = rawMobile.version ?? "0.0.1";
-    const buildNum = rawMobile.buildNum ?? 1;
-    const defaultTargetName = this.#defaultMobileTargetName(rawTargets);
-    const targetEntries = Object.entries(
-      rawTargets ?? {
-        [defaultTargetName]: {},
-      },
-    );
+  #resolveNativeConfig(native: AkanNativeAppConfig | undefined): AkanNativeAppResult {
+    const configPath = `apps/${this.app.name}/akan.config.ts`;
+    const { targets: rawTargets, ...root } = native ?? {};
+    AkanAppConfig.#assertNativeKeys(root, "native", configPath);
+    AkanAppConfig.#assertFiles(root, "native", configPath);
+    const appName = root.appName ?? this.app.name;
+    const appId = root.appId ?? deriveDefaultAppId(this.baseDevEnv.repoName, this.app.name);
+    const version = root.version ?? "0.0.1";
+    const buildNum = root.buildNum ?? 1;
+    const named = rawTargets !== undefined && Object.keys(rawTargets).length > 0;
+    const entries: [string, AkanNativeSettings][] = named
+      ? Object.entries(rawTargets)
+      : [[this.basePaths.has(this.app.name) ? this.app.name : "default", {}]];
     const targets = Object.fromEntries(
-      targetEntries.map(([name, rawTarget]) => {
-        const target = rawTarget as DeepPartial<AkanMobileTargetConfig>;
-        const fallbackBasePath = !rawTargets && this.basePaths.has(name) ? name : undefined;
-        const basePath = (target.basePath ?? fallbackBasePath)?.replace(/^\/+|\/+$/g, "") || undefined;
-        const indexPath = normalizeIndexPath(target.indexPath as string | undefined);
-        const deepLinks = normalizeDeepLinks(target.deepLinks);
-        if (basePath && !this.basePaths.has(basePath)) {
+      entries.map(([name, own]) => {
+        const where = named ? `native.targets.${name}` : "native";
+        AkanAppConfig.#assertNativeKeys(own ?? {}, where, configPath);
+        const merged = AkanAppConfig.#overlay(root, own ?? {});
+        const fallbackBasePath = !named && this.basePaths.has(name) ? name : undefined;
+        const basePath = (merged.basePath ?? fallbackBasePath)?.replace(/^\/+|\/+$/g, "") || undefined;
+        if (basePath && !this.basePaths.has(basePath))
+          throw new Error(`Native target '${name}' uses unknown basePath '${basePath}' in ${configPath}`);
+        const { updates } = merged;
+        if (updates && (!updates.url || !updates.publicKey))
           throw new Error(
-            `Mobile target '${name}' uses unknown basePath '${basePath}' in apps/${this.app.name}/akan.config.ts`,
+            `${where}.updates in ${configPath} has no url or publicKey${named ? "; give them in native.updates or the target's own" : ""}.`,
           );
-        }
-        const resolved = {
-          ...rawMobile,
-          ...target,
+        AkanAppConfig.#assertFiles(own ?? {}, where, configPath);
+        const {
+          basePath: _basePath,
+          indexPath: rawIndexPath,
+          deepLinks: rawDeepLinks,
+          updates: _updates,
+          ...rest
+        } = merged;
+        const indexPath = normalizeIndexPath(rawIndexPath);
+        const deepLinks = normalizeDeepLinks(rawDeepLinks);
+        const { teamId: rawTeamId, ...iosRest } = AkanAppConfig.#platformIndexPath(merged.ios ?? {});
+        const teamId = rawTeamId?.trim();
+        const { sha256CertFingerprints: rawFingerprints, ...androidRest } = AkanAppConfig.#platformIndexPath(
+          merged.android ?? {},
+        );
+        const fingerprints = normalizeStringList(rawFingerprints);
+        const target: AkanNativeTarget = {
+          ...rest,
           name,
-          basePath,
-          indexPath,
-          deepLinks,
-          appName: target.appName ?? appName,
-          appId: target.appId ?? appId,
-          version: target.version ?? version,
-          buildNum: target.buildNum ?? buildNum,
-          plugins: {
-            ...rawMobile.plugins,
-            ...target.plugins,
-          },
-          android: {
-            ...rawMobile.android,
-            ...target.android,
-          },
-          ios: {
-            ...rawMobile.ios,
-            ...target.ios,
-          },
-        } satisfies AkanMobileTargetConfig;
-        return [name, resolved];
+          ...(basePath ? { basePath } : {}),
+          ...(indexPath ? { indexPath } : {}),
+          ...(deepLinks ? { deepLinks } : {}),
+          ...(merged.ios ? { ios: { ...iosRest, ...(teamId ? { teamId } : {}) } } : {}),
+          ...(merged.android
+            ? { android: { ...androidRest, ...(fingerprints ? { sha256CertFingerprints: fingerprints } : {}) } }
+            : {}),
+          ...(merged.desktop
+            ? {
+                desktop: AkanAppConfig.#desktopServer(
+                  AkanAppConfig.#platformIndexPath(merged.desktop),
+                  `${where}.desktop.server`,
+                  configPath,
+                ),
+              }
+            : {}),
+          appName: merged.appName ?? this.app.name,
+          appId: merged.appId ?? appId,
+          version: merged.version ?? version,
+          buildNum: merged.buildNum ?? buildNum,
+          ...(updates ? { updates: updates as AkanNativeUpdatesConfig } : {}),
+        };
+        return [name, target];
       }),
     );
-    return {
-      ...rawMobile,
-      appName,
-      appId,
-      version,
-      buildNum,
-      targets,
-      plugins: rawMobile.plugins,
-    } as AkanMobileConfig;
+    return { appName, appId, ...(root.fileName ? { fileName: root.fileName } : {}), version, buildNum, targets };
   }
-  #defaultMobileTargetName(rawTargets: DeepPartial<AkanMobileConfig>["targets"] | undefined) {
-    if (rawTargets && Object.keys(rawTargets).length > 0) return Object.keys(rawTargets)[0] as string;
-    return this.basePaths.has(this.app.name) ? this.app.name : "default";
+  //? `true` or `{ omit }`: each omitted name trimmed once, so two targets that omit the same packages stage one server.
+  static #desktopServer<T extends { server?: AkanNativeDesktopConfig["server"] }>(
+    desktop: T,
+    where: string,
+    configPath: string,
+  ): T {
+    const { server } = desktop;
+    if (server === undefined || typeof server === "boolean") return desktop;
+    if (!AkanAppConfig.#isPlainObject(server))
+      throw new Error(`${where} in ${configPath} must be true or { omit: string[] }.`);
+    const omit = server.omit;
+    if (omit !== undefined && (!Array.isArray(omit) || omit.some((name) => typeof name !== "string" || !name.trim())))
+      throw new Error(`${where}.omit in ${configPath} must be a list of package names.`);
+    const names = [...new Set((omit ?? []).map((name) => name.trim()))].sort();
+    return { ...desktop, server: { omit: names } };
+  }
+  static #platformIndexPath<T extends { indexPath?: string }>(section: T): T {
+    const { indexPath: rawIndexPath, ...rest } = section;
+    const indexPath = normalizeIndexPath(rawIndexPath);
+    return { ...rest, ...(indexPath ? { indexPath } : {}) } as T;
+  }
+  /** `own` over `base`: plain objects merge key by key, and any other value, a list included, replaces. */
+  static #overlay(base: AkanNativeSettings, own: AkanNativeSettings): AkanNativeSettings {
+    const merge = (kept: unknown, value: unknown, top: boolean, key: string): unknown => {
+      if (!AkanAppConfig.#isPlainObject(kept) || !AkanAppConfig.#isPlainObject(value)) return value;
+      //? An icon or splash given as an object is one value: its image and color go together.
+      if (top && (key === "icon" || key === "splash")) return value;
+      const out: Record<string, unknown> = { ...kept };
+      for (const [inner, next] of Object.entries(value))
+        if (next !== undefined) out[inner] = merge(out[inner], next, false, inner);
+      return out;
+    };
+    const out: Record<string, unknown> = { ...base };
+    for (const [key, value] of Object.entries(own))
+      if (value !== undefined) out[key] = merge(out[key], value, true, key);
+    return out as AkanNativeSettings;
+  }
+  static #isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+  static readonly #nativeKeys = {
+    native: [
+      "basePath",
+      "indexPath",
+      "appName",
+      "appId",
+      "fileName",
+      "version",
+      "buildNum",
+      "icon",
+      "splash",
+      "permissions",
+      "plugins",
+      "deepLinks",
+      "updates",
+      "ios",
+      "android",
+      "desktop",
+    ],
+    ios: ["indexPath", "teamId", "infoPlist", "entitlements", "privacy", "files"],
+    android: [
+      "indexPath",
+      "sha256CertFingerprints",
+      "googleServices",
+      "push",
+      "autoplay",
+      "manifest",
+      "application",
+      "activity",
+      "files",
+    ],
+    desktop: ["indexPath", "server", "recovery", "window", "screenCapture", "entitlements"],
+    desktopServer: ["omit"],
+    deepLinks: ["schemes", "domains"],
+  } as const;
+  //* Settings that moved when `mobile` became `native` are named with where they went, instead of "unknown".
+  static readonly #movedKeys: Readonly<Record<string, string>> = {
+    native: "the platform sections and plugins sit directly in the native section: ios, android, desktop, plugins",
+    assets: "icon and splash sit directly in the native section",
+    files:
+      "ios.files (keyed by the path in the app bundle) or android.files (keyed res/<type>/<file> or assets/<path>)",
+    push: "android.push",
+    privacy: "ios.privacy",
+    "deepLinks.ios": "ios.teamId",
+    "deepLinks.android": "android.sha256CertFingerprints",
+  };
+  static #assertNativeKeys(section: object, where: string, configPath: string) {
+    const check = (value: unknown, known: readonly string[], at: string, kind: string) => {
+      if (!AkanAppConfig.#isPlainObject(value)) return;
+      for (const key of Object.keys(value)) {
+        if (known.includes(key)) continue;
+        const moved = AkanAppConfig.#movedKeys[kind === "native" ? key : `${kind}.${key}`];
+        throw new Error(
+          moved
+            ? `${at}.${key} in ${configPath} has moved: ${moved}.`
+            : `${at}.${key} in ${configPath} is not a native setting. Known: ${known.join(", ")}.`,
+        );
+      }
+    };
+    check(section, AkanAppConfig.#nativeKeys.native, where, "native");
+    const settings = section as AkanNativeSettings;
+    check(settings.ios, AkanAppConfig.#nativeKeys.ios, `${where}.ios`, "ios");
+    check(settings.android, AkanAppConfig.#nativeKeys.android, `${where}.android`, "android");
+    check(settings.desktop, AkanAppConfig.#nativeKeys.desktop, `${where}.desktop`, "desktop");
+    check(
+      settings.desktop?.server,
+      AkanAppConfig.#nativeKeys.desktopServer,
+      `${where}.desktop.server`,
+      "desktopServer",
+    );
+    check(settings.deepLinks, AkanAppConfig.#nativeKeys.deepLinks, `${where}.deepLinks`, "deepLinks");
+  }
+  static readonly #androidFilePattern = /^(?:res\/[^/]+\/[^/]+|assets\/.+)$/;
+  static #assertFiles(settings: AkanNativeSettings, where: string, configPath: string) {
+    const check = (
+      files: Record<string, string> | undefined,
+      at: string,
+      valid: (to: string) => boolean,
+      shape: string,
+    ) => {
+      for (const [to, from] of Object.entries(files ?? {})) {
+        if (typeof from !== "string")
+          throw new Error(
+            `${at}["${to}"] in ${configPath} must name its source file, relative to the app folder, e.g. { "${shape}": "assets/chime.mp3" }.`,
+          );
+        if (!valid(to)) throw new Error(`${at}["${to}"] in ${configPath} must land at ${shape}.`);
+      }
+    };
+    check(
+      settings.ios?.files,
+      `${where}.ios.files`,
+      (to) => to.length > 0 && !to.startsWith("/") && !to.split("/").includes(".."),
+      "<path in the app bundle>",
+    );
+    check(
+      settings.android?.files,
+      `${where}.android.files`,
+      (to) => AkanAppConfig.#androidFilePattern.test(to),
+      "res/<type>/<file> or assets/<path>",
+    );
   }
   #applyRoutes(routes: AkanRouteConfig[] = []) {
     for (const route of routes) {
@@ -355,18 +516,39 @@ export class AkanAppConfig implements AppConfigResult {
       command: docker?.command ?? ["bun", "main.js"],
     };
   }
-  #makeDockerfile(): string {
+  /** What the built server runs with in its image; a desktop app's carried server starts from the same values. */
+  getProductionEnv(environment: string = this.baseDevEnv.env): Record<string, string> {
+    return {
+      PORT: "8282",
+      NODE_ENV: "production",
+      AKAN_PUBLIC_REPO_NAME: this.baseDevEnv.repoName,
+      AKAN_PUBLIC_SERVE_DOMAIN: this.baseDevEnv.serveDomain,
+      AKAN_PUBLIC_APP_NAME: this.app.name,
+      AKAN_PUBLIC_ENV: environment,
+      ...(this.basePaths.size ? { AKAN_PUBLIC_BASE_PATHS: [...this.basePaths].join(",") } : {}),
+      AKAN_PUBLIC_DEFAULT_LOCALE: this.i18n.defaultLocale,
+      AKAN_PUBLIC_LOCALES: this.i18n.locales.join(","),
+      AKAN_PUBLIC_API_PREFIX: this.api.prefix,
+      AKAN_PUBLIC_WS_PREFIX: this.api.websocketPrefix,
+      AKAN_PUBLIC_OPERATION_MODE: "cloud",
+      AKAN_DATABASE_MODES: this.database.modes.join(","),
+      // File logging is off: a container's writable layer is ephemeral and stdout is the collection path.
+      AKAN_LOG_TO_FILE: "0",
+      // The web env matches what was built (a deployment can only narrow it).
+      ...(this.web.ssr ? {} : { AKAN_SSR: "false" }),
+      ...(this.web.csr ? {} : { AKAN_CSR: "false" }),
+    };
+  }
+  dockerfileFor(environment: string): string {
+    return this.#makeDockerfile(environment);
+  }
+  #makeDockerfile(environment?: string): string {
     if (typeof this.docker === "string") return this.docker;
     const { image, preRuns, postRuns, command } = this.docker;
     const preRunScripts = this.#getDockerRunScripts(preRuns);
     const postRunScripts = this.#getDockerRunScripts(postRuns);
     const imageScript = this.#getDockerImageScript(image, DEFAULT_DOCKER_IMAGE);
-    // The web env matches what was built (a deployment can only narrow it). File logging is off: a container's
-    // writable layer is ephemeral and stdout is the collection path.
-    const webEnvLines = [
-      ...(this.web.ssr ? [] : ["ENV AKAN_SSR=false"]),
-      ...(this.web.csr ? [] : ["ENV AKAN_CSR=false"]),
-    ].join("\n");
+    const envLines = Object.entries(this.getProductionEnv(environment)).map(([key, value]) => `ENV ${key}=${value}`);
     return `${imageScript}
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
 RUN ln -sf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
@@ -378,21 +560,7 @@ COPY ./package.json ./package.json
 RUN bun install --production
 ${postRunScripts.join("\n")}
 COPY . .
-ENV PORT=8282
-ENV NODE_ENV=production
-ENV AKAN_PUBLIC_REPO_NAME=${this.baseDevEnv.repoName}
-ENV AKAN_PUBLIC_SERVE_DOMAIN=${this.baseDevEnv.serveDomain}
-ENV AKAN_PUBLIC_APP_NAME=${this.app.name}
-ENV AKAN_PUBLIC_ENV=${this.baseDevEnv.env}
-${this.basePaths.size ? `ENV AKAN_PUBLIC_BASE_PATHS=${[...this.basePaths].join(",")}` : ""}
-ENV AKAN_PUBLIC_DEFAULT_LOCALE=${this.i18n.defaultLocale}
-ENV AKAN_PUBLIC_LOCALES=${this.i18n.locales.join(",")}
-ENV AKAN_PUBLIC_API_PREFIX=${this.api.prefix}
-ENV AKAN_PUBLIC_WS_PREFIX=${this.api.websocketPrefix}
-ENV AKAN_PUBLIC_OPERATION_MODE=cloud
-ENV AKAN_DATABASE_MODES=${this.database.modes.join(",")}
-ENV AKAN_LOG_TO_FILE=0
-${webEnvLines}
+${envLines.join("\n")}
 CMD [${command.map((c) => `"${c}"`).join(",")}]`;
   }
   static #importGeneration = 0;
@@ -435,6 +603,10 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
     );
     return {
       externalLibs: libConfigs.flatMap((libConfig) => libConfig?.externalLibs ?? []),
+      trustedDependencies: libConfigs.flatMap((libConfig) => libConfig?.trustedDependencies ?? []),
+      bin: libConfigs.flatMap((libConfig) =>
+        libConfig && Object.keys(libConfig.bin).length ? [{ lib: libConfig.lib.name, bin: libConfig.bin }] : [],
+      ),
       docker: {
         preRuns: libConfigs.flatMap((libConfig) => libConfig?.docker.preRuns ?? []),
         postRuns: libConfigs.flatMap((libConfig) => libConfig?.docker.postRuns ?? []),
@@ -480,16 +652,6 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
     const modes = declared?.length ? declared : ["single"];
     return { modes: DatabaseModes.parseList(modes.join(","), `database.modes in apps/${app.name}/akan.config.ts`) };
   }
-  getMobileRuntimePackages() {
-    // Installed at the root too, so the app's "*" declarations resolve to the hoisted, peer-pinned version.
-    return [...new Set([...MOBILE_RUNTIME_PACKAGES, ...MOBILE_APP_CAPACITOR_PLUGINS])];
-  }
-  getMissingMobileDependencySpecs() {
-    return this.#getMissingDependencySpecs(this.getMobileRuntimePackages());
-  }
-  getMobileAppCapacitorPlugins() {
-    return [...MOBILE_APP_CAPACITOR_PLUGINS];
-  }
   #getMissingDependencySpecs(libs: readonly string[]) {
     const rootDependencies = {
       ...this.rootPackageJson.dependencies,
@@ -514,6 +676,7 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
           this.#resolveProductionDependencyVersion(lib),
         ]),
       ),
+      ...(this.trustedDependencies.length ? { trustedDependencies: this.trustedDependencies } : {}),
       ...data,
     };
   }
@@ -567,13 +730,18 @@ function mergeImageConfig(config: Partial<AkanImageConfig> = {}): AkanImageConfi
 export class AkanLibConfig implements LibConfigResult {
   lib: Lib;
   externalLibs: string[];
+  trustedDependencies: string[];
+  bin: AkanBinConfig;
   docker: LibDockerConfig;
   assets: LibAssetsConfig;
   /** Live-only: plugins declared in this lib's `akan.config.ts` (never serialized). */
   plugins: AkanPlugin[];
-  constructor(lib: Lib, config: DeepPartial<LibConfigResult>, plugins: AkanPlugin[] = []) {
+  constructor(lib: Lib, config: LibConfigDeclaration, plugins: AkanPlugin[] = []) {
     this.lib = lib;
     this.externalLibs = config?.externalLibs ?? [];
+    const owner = `libs/${lib.name}/akan.config.ts`;
+    this.trustedDependencies = normalizePackageNames(config?.trustedDependencies, owner);
+    this.bin = AkanBin.parse(config?.bin, owner, lib.cwdPath);
     this.docker = { preRuns: config?.docker?.preRuns ?? [], postRuns: config?.docker?.postRuns ?? [] };
     this.assets = { keepFonts: normalizeKeepFonts(config?.assets?.keepFonts as string[] | undefined) };
     this.plugins = plugins;
@@ -581,14 +749,14 @@ export class AkanLibConfig implements LibConfigResult {
   static async from(lib: Lib, { bustImportCache = false }: { bustImportCache?: boolean } = {}) {
     const configImp = await AkanAppConfig.importConfigModule(lib.cwdPath, { bustImportCache });
     const resolved = typeof configImp === "function" ? configImp(lib) : configImp;
-    const { plugins, ...config } = (resolved ?? {}) as DeepPartial<LibConfigResult> & { plugins?: AkanPlugin[] };
+    const { plugins, ...config } = (resolved ?? {}) as LibConfigDeclaration & { plugins?: AkanPlugin[] };
     return new AkanLibConfig(lib, config, plugins ?? []);
   }
 }
 
 //! need to refactor
 const shiftBuildNum = async (app: App, delta: number) => {
-  const { buildNum } = (await AkanAppConfig.from(app)).mobile;
+  const { buildNum } = (await AkanAppConfig.from(app)).native;
   const akanConfigPath = path.join(app.cwdPath, "akan.config.ts");
   const akanConfig = fs.readFileSync(akanConfigPath, "utf8");
   fs.writeFileSync(akanConfigPath, akanConfig.replace(`buildNum: ${buildNum}`, `buildNum: ${buildNum + delta}`));

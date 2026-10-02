@@ -1,4 +1,4 @@
-# Runtime Rule — Serving, Processes, Logging, Image, Assets
+# Runtime Rule — Serving, Processes, Logging, Image, Native Apps, Desktop Server, Assets
 
 How an Akan app is built, what it serves, how many processes it runs, where its logs go, and what ends up in
 its image. Everything here is declared in `akan.config.ts` or narrowed by an env at boot; none of it is reached
@@ -11,14 +11,14 @@ on; the other two are declared in `akan.config.ts` as **`web: true | false | { c
 narrowed again per deployment.
 
 ```ts
-const config: AppConfig = { web: { csr: false } }; // web without the mobile bundle
+const config: AppConfig = { web: { csr: false } }; // web without the CSR bundle the native apps ship
 const config: AppConfig = { web: false }; // api only
 ```
 
 - **`web: { csr: false }`** drops the CSR build phase and the `/__csr` + `?csr=true` routes. The CSR bundle is
-  what the Capacitor mobile build ships, so a web-only deployment never needs it — and an app that declares a
-  `mobile` section is refused, because `akan build-ios` copies `dist/apps/<app>/csr/<target>.html` into the
-  native project.
+  what the native apps ship, so a web-only deployment never needs it — and an app that declares a `native` section
+  is refused, because every native build copies `dist/apps/<app>/csr/<target>.html` into the target's web root,
+  `.akan/native/<target>/web`.
 - **`web: false`** is an API-only build: no base artifact, no pages or client bundles, no RSC worker
   entrypoint, and no `public/` in the image (the web router's catch-all is its only reader). Nothing under
   `page/` is served, including routes a lib contributed through `syncPageLibs`.
@@ -68,7 +68,7 @@ const config: AppConfig = { api: { prefix: "/backend", websocketPrefix: "/socket
   origin when the module graph initializes, before any component renders, so a React prop — a `System.Provider`
   value, anything out of `implicitRootLayout` — is always too late. The value rides the SSR classic bootstrap
   script instead, the one thing guaranteed to run ahead of every module script, and is omitted when it matches
-  what the bundle already assumes. `akan.config.ts` is what a Capacitor bundle or a statically served CSR shell
+  what the bundle already assumes. `akan.config.ts` is what a native app bundle or a statically served CSR shell
   follows, because neither is rendered by a server that could tell it otherwise.
 - **A prefix is a path segment.** A blank value or a bare `/` is refused: `/` would be mounted ahead of the SSR
   catch-all and swallow every page route. A prefix whose first segment is a declared basePath is refused at
@@ -183,6 +183,217 @@ const config: AppConfig = { docker: "FROM oven/bun:1-slim\n…" }; // verbatim, 
   change in dev. Keep a lib's steps to what its runtime genuinely requires.
 - `AkanAppConfig.docker` is the resolved declaration; `AkanAppConfig.dockerfile` is the text `akan build` writes
   to `dist/apps/<app>/Dockerfile`.
+
+## Native Apps — The `native` Section
+
+An app's iOS, Android and desktop (macOS, Windows, Linux) apps are the `native` section of its `akan.config.ts`.
+Each ships the CSR bundle on the native runtime, so one set of pages serves the web and every app.
+
+```ts
+const config: AppConfig = {
+  native: {
+    appName: "Board",
+    appId: "com.example.board", // or one per platform: { default, ios, android, macos, windows, linux }
+    version: "1.2.0",
+    buildNum: 12,
+    indexPath: "/explore", // the first page, and where a deep link's stack and a back with no history land
+    permissions: ["camera", "push"],
+    plugins: ["file-picker", "keep-awake"],
+    deepLinks: { schemes: ["board"], domains: ["board.example.com"] },
+    ios: { teamId: "ABCDE12345" }, // universal links for deepLinks.domains
+    android: { googleServices: "secrets/google-services.json", sha256CertFingerprints: ["…"] }, // FCM, app links
+    desktop: { server: true },
+  },
+};
+```
+
+- **Without `targets` the app has one target, `default`** — the usual case, with every setting in the section
+  itself; `native: { desktop: { server: true } }` alone is a whole desktop app that carries its server. Defaults:
+  the app's folder name for `appName` and `fileName`, an id made from the repository's and the app's names for
+  `appId`, `0.0.1` and `1`.
+- **A target is another app made from the section.** It has the section's shape minus `targets` and overrides it
+  field by field: plain objects merge key by key — `ios`, `android`, `desktop`, `deepLinks`, `updates` and the
+  objects inside them — and every other value replaces the section's, a list included, so a target's `plugins` or
+  `permissions` is its whole list. An `icon` or `splash` object is one value. Once `targets` is declared, only the
+  targets it names are built:
+
+  ```ts
+  native: {
+    appId: "com.example.board",
+    plugins: ["file-picker"],
+    targets: {
+      board: {},
+      lobby: { appId: "com.example.lobby", plugins: ["file-picker", "keep-awake"], desktop: { recovery: "reload" } },
+    },
+  },
+  ```
+
+- **A platform section may name its own `indexPath`**, which wins on that platform: `indexPath: "/mobile"` with
+  `desktop: { indexPath: "/" }` opens the phones on `/mobile` and the desktop app on `/`, from one target, so no
+  command needs `--target`. It moves the dev build's first page and the `indexPath` its bundle carries alike.
+- **`basePath` is the client a target opens.** An app with no basePaths leaves it out. Without `targets`, the one
+  target opens the basePath named like the app when there is one; in an app with basePaths, a target that names
+  none is a template, and `--target <basePath>` builds that client from it.
+- Every native command takes `--target <name>`. `build-*`, `release-*`, `update-keygen` and `publish-update` also
+  take `all`; `start-*` and `pack-update` handle one target at a time.
+- **Everything a build makes is under `apps/<app>/.akan/native/<target>/`**: `build/<platform>` (`build-ios`,
+  `build-android`, `build-desktop`), `dev/<platform>` (the dev builds `start-*` run), `updates` (what
+  `publish-update` signs and `pack-update` packs), `web` (the bundle the app loads) and `bin`. `akan start` leaves
+  the folder alone.
+- **`start-ios` / `start-android` / `start-desktop` run a dev build that loads its pages from `akan start`.** It has
+  to be running — except for a desktop app that carries its server, which starts it when none of this checkout
+  answers. `--release true` runs a release build of the app's own bundle instead.
+- **A desktop app builds only for the computer that builds it** — a `.app` on macOS, and an unsigned folder on
+  Windows and Linux. `build-desktop --installer true` adds what a person downloads: a per-user NSIS setup on Windows
+  (`/S` installs silently), a dmg on macOS, an AppImage on Linux (it needs `mksquashfs`; an AppImage cannot update
+  itself, so a release with `updates` ships a new one). `--arch arm64|x64` builds a Windows or Linux app for the
+  other CPU of that OS: the Rust library, Bun's executable, the server's `bun install --cpu` and each `bin` file
+  follow it, and a server addon with no binary for that CPU stops the build. A macOS app is Apple silicon only —
+  Intel Macs are not a target, so `--arch x64` on macOS is refused.
+- **A macOS release for download is signed with a Developer ID and notarized, from the environment.**
+  `AKAN_NATIVE_MACOS_IDENTITY` names a keychain identity, or `AKAN_NATIVE_MACOS_CERTIFICATE` +
+  `_CERTIFICATE_PASSWORD` a `.p12` the build imports into a keychain of its own (a CI runner);
+  `AKAN_NATIVE_MACOS_NOTARY_KEY` + `_KEY_ID` + `_ISSUER` (an App Store Connect API key) or `_NOTARY_PROFILE` turn on
+  notarization and stapling of the app and the dmg. Every Mach-O file — the server's addons and `bin` included — is
+  signed inside out with the hardened runtime and a timestamp; the executable gets Bun's JIT entitlements and the
+  camera's or microphone's when a usage text asks for them, and `desktop.entitlements` adds the app's own.
+  `publish-update` signs with the same identity, since the updater checks the installed app's signature. Without a
+  Developer ID the build warns, because Gatekeeper blocks a downloaded copy.
+- **A Windows release is signed with Authenticode, from the environment.** `AKAN_NATIVE_WINDOWS_CERTIFICATE` +
+  `_CERTIFICATE_PASSWORD` (a `.pfx`), `AKAN_NATIVE_WINDOWS_THUMBPRINT` (a certificate in the store, a token's or an
+  HSM's), or `AKAN_NATIVE_WINDOWS_SIGN_COMMAND` (a JSON array run per file with `{file}`, e.g. signtool with Azure
+  Trusted Signing's dlib) signs every PE file of the app — the server's `.node` and `bin` included — the setup program
+  and the uninstaller it writes, SHA-256 with a timestamp (`AKAN_NATIVE_WINDOWS_TIMESTAMP_URL`).
+- **`updates: { url, publicKey }` lets an installed app update itself** — the whole app on a desktop, the web
+  bundle on a phone. `akan update-keygen <app>` makes the signing key once
+  (`~/.akan/native/keys/<app id>.update.key`, or the path `AKAN_NATIVE_UPDATE_KEY` names) and prints the
+  `publicKey`. `akan publish-update <app>` builds and signs a release into `updates/`: upload that folder to `url`,
+  the manifests last. `akan pack-update` writes an unsigned phone bundle for whoever holds the key to sign. The
+  channel is the backend env the binary was built for unless `channel` names one, and a release that does not
+  come up is rolled back to the one before.
+- **An unattended screen** — signage, a kiosk — takes `desktop.recovery: "reload"` (a crashed page loads again,
+  and the app relaunches when the webview ends), `desktop.window: { fullscreen, skipTaskbar }`,
+  `desktop.screenCapture: "auto"` (Windows answers `getDisplayMedia()` with the first screen, no picker) and
+  `android.autoplay` (media plays with sound without a tap).
+
+## A Desktop App's Server — `bin` And `trustedDependencies`
+
+A desktop app whose `native` section, or target, declares `desktop: { server: true }` carries the app's server:
+`akan build-desktop`, `start-desktop --release` and `publish-update` put the backend `akan build` made into the
+app — everything the backend build wrote (the `.js`, `akan.build.json`, `private/`, a bundled package's `.node`,
+`.wasm` or file asset) but the Dockerfile, the RSC worker, the console, `csr/` and `public/` — and install its
+packages first with `bun install --production --prefer-offline`, before `akan build` runs. `start-desktop` without
+`--release` starts `akan start` beside the app when no dev server of this checkout answers. The setting is the
+app's backend, so it does not change under an installed app: an update whose release carries a server when the app
+has none, or none when it has one, is refused, and switching means a reinstall.
+`desktop: { server: { omit: ["rclnodejs"] } }` carries the server without packages only the image needs — an addon
+tied to the image's system, code only a process the app never starts loads — and whatever only they pull in; the
+image keeps them, and the server's own bundle must not import them. A package another dependency still installs
+stops the build, naming who needs it. So does a native addon that would not load on a user's computer: no binary
+for the app's OS and CPU, a link outside the system, or a `binding.gyp` its install never compiled. It runs as an API-only edge server on SQLite, on a loopback port the launcher picks — the last session's when
+it is free, which is not a guarantee, so a provider that needs an exact redirect URI signs in through a cloud
+server's adapter. It refuses a `Host` other than its own, but any program on the computer can still call that port:
+guard its endpoints as a network server's. It runs in one process, so a `main.ts` or an env asking for replicas (`replica`,
+`solo: false`, `AKAN_SOLO=false`, `AKAN_REPLICA`, `AKAN_COMMAND_TYPE=start`) does not boot in the app. Its data lives in the app's local data folder (`%LOCALAPPDATA%\<id>\server`
+on Windows, never Roaming; `server-debug` for a `--debug` build). It trusts the OS certificate store, and of the
+user's environment it takes a fixed set and nothing else: the system's own (`PATH`, `HOME`, the temp folder, `LANG`,
+`TZ`, Windows' folders and `ComSpec`), the desktop session a `bin` tool needs for the screen or the audio server
+(`DISPLAY`, `XAUTHORITY`, `WAYLAND_DISPLAY`, the session bus, `PULSE_*`, `XDG_*`), and the proxy and CA variables
+(`HTTP(S)_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`).
+
+**Everything it carries is on the user's computer, readable.** That is `private/` as it is — each lib's too, under
+`private/libs/<lib>` — and the server env of the one environment the build is for (`--env`: `debug` for
+`build-desktop`, `local` for `start-desktop --release`, `main` for `publish-update`, unless named): the build keeps
+`env/env.server.<env>.ts` and swaps every other environment's file for exports that refuse to be read. The server env
+each lib exports as its defaults (the lib's `env.server.testing.ts`, spread into every environment by
+`env.server.type.ts`) ships as well. Keep a key in those files only if every user of the app may hold it; a secret the
+server needs belongs to a cloud server its adapter calls. There is no `public/`: a file the server reads at runtime
+goes in `private/` and is read from `AKAN_APP_DIR` (the folder `server.js` sits in), never from `process.cwd()`, which
+is the app's data folder.
+
+**Nothing from `docker` reaches it.** `preRuns`, `postRuns` and a whole Dockerfile install into a Linux image the
+desktop app never runs in, and the build warns when an app has them and carries no `bin`. What the server needs
+from them comes one of two ways:
+
+```ts
+const config: AppConfig = {
+  trustedDependencies: ["rclnodejs"],
+  bin: {
+    ffmpeg: {
+      "darwin-arm64": {
+        url: "https://files.example.com/ffmpeg-7.1-lgpl-darwin-arm64.zip",
+        sha256: "…",
+        file: "ffmpeg-7.1/bin/ffmpeg",
+      },
+      "win32-x64": { url: "https://files.example.com/ffmpeg-7.1-lgpl-win64.zip", sha256: "…", file: "bin/ffmpeg.exe" },
+      "linux-x64": { path: "tools/linux-x64/ffmpeg" },
+    },
+  },
+};
+```
+
+- **An executable the desktop app spawns goes in `bin`** — its server's code or its native plugins, whether or not
+  it carries a server — keyed by the name the code spawns and then by
+  `${process.platform}-${process.arch}` (`darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`,
+  `win32-x64`). A source is `{ url, sha256, file? }` — downloaded when the app is built, refused unless it hashes
+  to `sha256` (so plain http is as safe as https), kept in `apps/<app>/.akan/cache/bin/<sha256>` — or
+  `{ path, file? }`, relative to the `akan.config.ts` that declares it. `file` is the executable inside an archive
+  (`.zip`, `.tar.gz`, `.tgz`, `.tar.xz`, `.tar.bz2`, `.tar`), unpacked with the OS's own `tar` (`unzip` for a zip
+  on Linux).
+- Only the building computer's platform is fetched, and an entry without it fails the build instead of the user's
+  call. `build-desktop` and `start-desktop` copy the file into the app's `bin/` (keeping `.exe` on Windows), sign it
+  with the app on macOS, and put that folder first on the app's PATH. The server's `spawn("ffmpeg")` needs no change
+  and finds the carried file even in an app launched from the Finder, whose PATH is only
+  `/usr/bin:/bin:/usr/sbin:/sbin`. A native plugin finds the folder in `ctx.binDir`: Bun's own `spawn` and `which`
+  without `env` read the environment the app started with, so a plugin passes `env: process.env` to run one by name.
+  The server passes it too when it spawns a carried `bun build --compile` executable: the shell starts the server as
+  Bun with `BUN_BE_BUN=1`, which akanjs takes out of `process.env` at boot, and a child spawned without `env` still
+  inherits it and runs as Bun's own CLI instead of the tool.
+- **One file per entry, so carry a static build.** A build that loads its own shared libraries — a `-shared`
+  archive, or Homebrew's ffmpeg with its 55 dylibs — runs on the computer that built it and nowhere else.
+- **A lib's `bin` reaches only the apps that depend on it**, unlike its `docker` steps; the app's own entry of the
+  same name wins, and two libs that declare one name differently fail the build.
+- **The image does not read `bin`.** Keep installing through `docker.preRuns` there.
+- **A package that builds itself at install goes in `trustedDependencies`.** `bun install --production` runs no
+  dependency's install or postinstall script unless the package is trusted, so an addon with no prebuild arrives
+  unbuilt and fails at its first call. The list lands in the built `package.json`, so it applies to the image and to
+  the desktop server alike, and a lib's list reaches every app, like its `externalLibs`.
+
+**Carry an LGPL ffmpeg.** A build configured with `--enable-nonfree` may not be redistributed at all — the macOS
+binary npm's `ffmpeg-static` downloads is one — and a `--enable-gpl` build obliges you to offer its source. An LGPL
+build has no `libx264`, so encode H.264 through the OS's encoder: `h264_videotoolbox` on macOS, `h264_mf` on
+Windows, VAAPI or NVENC on Linux. Codec patents are a separate question to settle before shipping.
+
+**A server bound to its machine stays a service.** A server that needs a whole environment — ROS, system services,
+root to change the network or the clock — runs as a service on that machine (the image), and the desktop app's
+target leaves `desktop.server` off, pinned to it with `AKAN_PUBLIC_SERVER_URL` at build time. A carried server runs
+as the signed-in user and stops with the app, and so does what it started. On macOS and Linux the server leads its
+own process group: quitting the app ends the group, and when the app was killed or crashed — even while the server
+was still starting — the server sees its parent gone and ends the group itself, SIGTERM first and SIGKILL a second
+later for whatever ignored it. On Windows the job object ends them all with the app. A process started `detached`
+leaves the group, or the job, and keeps running.
+
+**A file the user picks reaches the server as a grant, never as a copy or a path.** With `"file-picker"` in
+`native.plugins`, `filePicker.pickFiles({ forServer: true })` (also `pickDirectory` and `saveFile`,
+from `akanjs/client/native`) copies nothing, whatever the size: its FileRefs serve the originals for a preview, and
+each result carries a `grant`. The page hands the grant to an endpoint, and the server exchanges it:
+
+```ts
+const input = await NativeFile.resolve(grant, "read"); // "write" for a saveFile grant, "folder" for pickDirectory
+const clip = await NativeFile.resolveIn(folderGrant, "day1/a.mp4"); // refused if it climbs out of the folder
+```
+
+The carried server asks the shell that showed the dialog over its IPC channel, so it reaches what the user picked
+and nothing else, and no page ever holds a path. Behind a dev build `akan start` checks the grant's signature
+against a key in `~/.akan/native` instead, in `operationMode` local only; every other server refuses a grant.
+
+**Devices belong to the shell, not the server.** Displays and their changes (`screen`), windows placed on them
+(`window`), the system volume and mute (`volume`), global shortcuts (`global-shortcut`), keep-awake (`keep-awake`)
+and launch at login (`autostart`) are native runtime plugins, each added to `native.plugins`. Every builtin plugin's
+page API is
+`akanjs/client/native/<id>` (`akanjs/client/native/window`, `…/screen`, `…/global-shortcut`), imported in a `webkit/`
+hook; `volume` and `filePicker` also come from `akanjs/client/native` itself. A capability the shell
+lacks is added there: an app's own plugin runs as Bun code in the plugin host and cannot add a native shell op.
 
 ## Database Modes — `database` In `akan.config.ts`
 

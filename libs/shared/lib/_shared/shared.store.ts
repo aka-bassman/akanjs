@@ -1,3 +1,5 @@
+import { saveRefreshToken } from "@libs/shared/webkit";
+import { loadPushDeviceId } from "@libs/util/webkit";
 import { router, setAuth } from "akanjs/client";
 import { Logger } from "akanjs/common";
 import { store } from "akanjs/store";
@@ -25,8 +27,9 @@ export class SharedStore extends store("shared" as const, () => ({
     }
   }
   async logout() {
-    const { jwt } = await fetch.signoutUser();
+    const { jwt } = await fetch.signoutUser(await loadPushDeviceId());
     setAuth({ jwt });
+    await saveRefreshToken("user", null);
     (this as unknown as RootStore).set({ me: new cnst.Admin(), self: new cnst.User() });
     void (this as unknown as RootStore).getSelf({ jwt });
     router.refresh();

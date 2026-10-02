@@ -2,7 +2,6 @@ import type { DevHostEvent } from "@akanjs/devkit/akanApp";
 import type { AkanAppConfig, DatabaseMode } from "@akanjs/devkit/akanConfig";
 import { ApplicationBuildReporter } from "@akanjs/devkit/applicationBuildReporter";
 import type { TypecheckOptions } from "@akanjs/devkit/applicationBuildRunner";
-import type { ReleaseSourceOptions } from "@akanjs/devkit/applicationReleasePackager";
 import {
   type App,
   type Apps,
@@ -14,16 +13,20 @@ import {
 } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, LibExecutor, PkgExecutor } from "@akanjs/devkit/executors";
 import type { DevStdioMode } from "@akanjs/devkit/incrementalBuilder";
+import { DesktopServerStage } from "@akanjs/devkit/mobile";
 import { formatSlicePlan } from "@akanjs/devkit/slicePlanner";
 import { confirm } from "@inquirer/prompts";
 import { Logger } from "akanjs/common";
 import { LibraryScript } from "../library/library.script";
 import {
   ApplicationRunner,
-  type IosStartOptions,
+  type IosReleaseOptions,
   type LogsOptions,
+  type MobileBuildOptions,
+  type MobilePublishOptions,
   type MobileStartOptions,
   type MobileTargetOptions,
+  type MobileUpdatePackOptions,
 } from "./application.runner";
 import { DevPortReclaimer } from "./devPortReclaimer";
 import { DevStreamView } from "./devStreamView";
@@ -48,16 +51,18 @@ interface StartOneOptions {
   onDevEvent?: (event: DevHostEvent) => void;
 }
 
-interface MobileCommandOptions extends MobileTargetOptions {
+interface MobileWriteOptions {
   write?: boolean;
 }
-interface MobileReleaseOptions extends MobileCommandOptions {
+interface MobileReleaseGate {
   allowLocalRelease?: boolean;
 }
 
 export class ApplicationScript extends script("application", [ApplicationRunner, LibraryScript]) {
   /** Long enough for `docker compose down` on a healthy daemon, short enough that a wedged one still exits. */
   static dbShutdownTimeoutMs = 20_000;
+  /** A cold `akan start`: the base build, then the SSR registry's, before the first request is answered. */
+  static devServerReadyTimeoutMs = DevSupervisor.bootTimeoutMs;
   readonly #interrupt = new InterruptTeardown();
   async confirmDatabaseModeDependencyInstall(databaseMode: DatabaseMode, installSpecs: string[]) {
     return await confirm({
@@ -74,20 +79,6 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       throw new Error(`Database mode '${databaseMode}' requires missing dependencies: ${installSpecs.join(", ")}.`);
     await this.#addDependencies(app, installSpecs, `database dependencies for ${databaseMode} mode`);
   }
-  async confirmMobileDependencyInstall(installSpecs: string[]) {
-    return await confirm({
-      message: `Mobile builds require missing dependencies: ${installSpecs.join(", ")}. Install them now?`,
-      default: true,
-    });
-  }
-  async syncMobileDependencies(app: App, akanConfig: AkanAppConfig) {
-    const installSpecs = akanConfig.getMissingMobileDependencySpecs();
-    if (installSpecs.length === 0) return;
-
-    const shouldInstall = await this.confirmMobileDependencyInstall(installSpecs);
-    if (!shouldInstall) throw new Error(`Mobile builds require missing dependencies: ${installSpecs.join(", ")}.`);
-    await this.#addDependencies(app, installSpecs, "mobile dependencies");
-  }
   async #addDependencies(app: App, installSpecs: string[], what: string) {
     const spinner = app.workspace.spinning(`Installing ${what}...`);
     try {
@@ -96,27 +87,6 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       spinner.succeed(`Installed ${what}`);
     } catch (error) {
       spinner.fail(`Failed to install ${what}`);
-      throw error;
-    }
-  }
-  // `npx cap sync` reads plugins from the app's own package.json; a "*" range resolves to the root-hoisted version.
-  async syncMobileAppCapacitorPlugins(app: App, akanConfig: AkanAppConfig) {
-    const plugins = akanConfig.getMobileAppCapacitorPlugins();
-    if (plugins.length === 0) return;
-    const packageJson = await app.getPackageJson({ refresh: true });
-    const dependencies = packageJson.dependencies ?? {};
-    const missing = plugins.filter((plugin) => !dependencies[plugin]);
-    if (missing.length === 0) return;
-
-    const spinner = app.workspace.spinning(`Adding default Capacitor plugins to ${app.name}...`);
-    try {
-      packageJson.dependencies = { ...dependencies, ...Object.fromEntries(missing.map((plugin) => [plugin, "*"])) };
-      await app.setPackageJson(packageJson);
-      await app.workspace.spawn("bun", ["install"], { stdio: "inherit" });
-      await app.getPackageJson({ refresh: true });
-      spinner.succeed(`Added default Capacitor plugins to ${app.name}: ${missing.join(", ")}`);
-    } catch (error) {
-      spinner.fail(`Failed to add default Capacitor plugins to ${app.name}`);
       throw error;
     }
   }
@@ -324,90 +294,137 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     return started;
   }
 
-  async buildIos(app: App, { write = true, target, env = "debug", regenerate = false }: MobileCommandOptions = {}) {
+  async buildIos(app: App, { write = true, ...options }: MobileBuildOptions & MobileWriteOptions = {}) {
     await app.scanSync({ write });
-    await this.applicationRunner.buildIos(app, { target, env, regenerate });
+    await this.applicationRunner.buildMobile(app, "ios", options);
   }
-  async startIos(
+  async buildAndroid(app: App, { write = true, ...options }: MobileBuildOptions & MobileWriteOptions = {}) {
+    await app.scanSync({ write });
+    await this.applicationRunner.buildMobile(app, "android", options);
+  }
+  async buildDesktop(app: App, { write = true, ...options }: MobileBuildOptions & MobileWriteOptions = {}) {
+    await app.scanSync({ write });
+    await this.applicationRunner.buildDesktop(app, options);
+  }
+  async startIos(app: App, { write = true, ...options }: MobileStartOptions & MobileWriteOptions = {}) {
+    await app.scanSync({ write });
+    await this.applicationRunner.startMobile(app, "ios", options);
+  }
+  async startAndroid(app: App, { write = true, ...options }: MobileStartOptions & MobileWriteOptions = {}) {
+    await app.scanSync({ write });
+    await this.applicationRunner.startMobile(app, "android", options);
+  }
+  async startDesktop(
     app: App,
-    {
-      open = false,
-      operation = "local",
-      env = "local",
-      write = true,
-      target,
-      device,
-      regenerate = false,
-      noAllowProvisioningUpdates = false,
-    }: IosStartOptions & { write?: boolean } = {},
+    { write = true, ...options }: Omit<MobileStartOptions, "device" | "teamId" | "interrupt"> & MobileWriteOptions = {},
   ) {
     await app.scanSync({ write });
-    const akanConfig = await app.getConfig();
-    await this.syncMobileDependencies(app, akanConfig);
-    await this.syncMobileAppCapacitorPlugins(app, akanConfig);
-    await this.applicationRunner.startIos(app, {
-      open,
-      operation,
-      env,
-      target,
-      device,
-      regenerate,
-      noAllowProvisioningUpdates,
+    if (options.operation === "release") return await this.applicationRunner.startDesktop(app, options);
+    //? Before a dev server boots for nothing: an app with several targets names one.
+    const mobileTarget = await ApplicationRunner.startTarget(app, undefined, options.target);
+    //? A desktop app that carries its server calls no other backend, so its dev build needs this app's dev server.
+    if (!ApplicationRunner.carriesServer(mobileTarget)) return await this.applicationRunner.startDesktop(app, options);
+    DesktopServerStage.assertCarriable(await app.getConfig());
+    const upstream = `http://localhost:${await app.getDevPort()}`;
+    try {
+      if (await ApplicationRunner.answers(upstream, app.name, app.workspace.workspaceRoot))
+        app.log(`The desktop app follows the dev server on ${upstream}.`);
+      else await this.#startDevServerFor(app, upstream);
+      await this.applicationRunner.startDesktop(app, { ...options, interrupt: this.#interrupt });
+    } finally {
+      await this.#interrupt.runAll();
+    }
+  }
+  //* `akan start` in this process, as `--plain` runs it: the full-screen view would take the terminal from the app's logs.
+  async #startDevServerFor(app: App, upstream: string) {
+    app.log(`No dev server answers on ${upstream}; starting \`akan start ${app.name}\` for the desktop app.`);
+    let settle: (state: "ready" | "failed") => void = () => {};
+    const settled = new Promise<"ready" | "failed">((resolve) => (settle = resolve));
+    const appHost = await this.startOne(app, {
+      write: false,
+      onDevEvent: (event) => {
+        if ("state" in event && (event.state === "ready" || event.state === "failed")) settle(event.state);
+      },
     });
+    this.#interrupt.add(
+      async () => {
+        await appHost.stop();
+      },
+      "Abandoning the dev server shutdown; its processes may still be running.",
+      130,
+    );
+    let state: "ready" | "failed" | undefined;
+    const timedOut = await DevSupervisor.timesOut(
+      settled.then((settledState) => (state = settledState)),
+      ApplicationScript.devServerReadyTimeoutMs,
+    );
+    if (state === "ready") return;
+    await this.#interrupt.runAll();
+    throw new Error(
+      timedOut
+        ? `akan start ${app.name} did not answer within ${ApplicationScript.devServerReadyTimeoutMs / 1000}s; see its log above.`
+        : `akan start ${app.name} gave up restarting its server; see its log above.`,
+    );
   }
   async releaseIos(
     app: App,
-    { write = true, target, env = "main", regenerate = false, allowLocalRelease = false }: MobileReleaseOptions = {},
-  ) {
-    await app.scanSync({ write });
-    if (env === "local" && !allowLocalRelease)
-      throw new Error(
-        "releaseIos --env local is blocked. Pass allowLocalRelease only for explicit local release testing.",
-      );
-    await this.applicationRunner.releaseIos(app, { target, env, regenerate });
-  }
-  async buildAndroid(app: App, { write = true, target, env = "debug", regenerate = false }: MobileCommandOptions = {}) {
-    await app.scanSync({ write });
-    await this.applicationRunner.buildAndroid(app, { target, env, regenerate });
-  }
-  async startAndroid(
-    app: App,
     {
-      open = false,
-      operation = "local",
-      env = "local",
       write = true,
-      target,
-      regenerate = false,
-    }: MobileStartOptions & { write?: boolean } = {},
+      allowLocalRelease = false,
+      ...options
+    }: IosReleaseOptions & MobileWriteOptions & MobileReleaseGate = {},
   ) {
     await app.scanSync({ write });
-    const akanConfig = await app.getConfig();
-    await this.syncMobileDependencies(app, akanConfig);
-    await this.syncMobileAppCapacitorPlugins(app, akanConfig);
-    await this.applicationRunner.startAndroid(app, { open, operation, env, target, regenerate });
+    ApplicationScript.#assertReleaseEnv("releaseIos", options.env ?? "main", allowLocalRelease);
+    await this.applicationRunner.releaseIos(app, options);
   }
   async releaseAndroid(
     app: App,
-    assembleType: "apk" | "aab",
-    { write = true, target, env = "main", regenerate = false, allowLocalRelease = false }: MobileReleaseOptions = {},
+    format: "apk" | "aab",
+    {
+      write = true,
+      allowLocalRelease = false,
+      ...options
+    }: MobileTargetOptions & MobileWriteOptions & MobileReleaseGate = {},
   ) {
     await app.scanSync({ write });
+    ApplicationScript.#assertReleaseEnv("releaseAndroid", options.env ?? "main", allowLocalRelease);
+    await this.applicationRunner.releaseAndroid(app, format, options);
+  }
+  async packUpdate(
+    app: App,
+    platform: "ios" | "android",
+    {
+      write = true,
+      allowLocalRelease = false,
+      ...options
+    }: MobileUpdatePackOptions & MobileWriteOptions & MobileReleaseGate = {},
+  ) {
+    await app.scanSync({ write });
+    ApplicationScript.#assertReleaseEnv("packUpdate", options.env ?? "main", allowLocalRelease);
+    await this.applicationRunner.packUpdate(app, platform, options);
+  }
+  async updateKeygen(app: App, platform: "desktop" | "android" | "ios", { target }: { target?: string } = {}) {
+    await this.applicationRunner.updateKeygen(app, platform, target);
+  }
+  async publishUpdate(
+    app: App,
+    platform: "desktop" | "android" | "ios",
+    {
+      write = true,
+      allowLocalRelease = false,
+      ...options
+    }: MobilePublishOptions & MobileWriteOptions & MobileReleaseGate = {},
+  ) {
+    await app.scanSync({ write });
+    ApplicationScript.#assertReleaseEnv("publishUpdate", options.env ?? "main", allowLocalRelease);
+    await this.applicationRunner.publishUpdate(app, platform, options);
+  }
+  static #assertReleaseEnv(command: string, env: string, allowLocalRelease: boolean) {
     if (env === "local" && !allowLocalRelease)
       throw new Error(
-        "releaseAndroid --env local is blocked. Pass allowLocalRelease only for explicit local release testing.",
+        `${command} --env local is blocked. Pass allowLocalRelease only for explicit local release testing.`,
       );
-    await this.applicationRunner.releaseAndroid(app, assembleType, { target, env, regenerate });
-  }
-
-  async configureApp(app: App) {
-    await this.applicationRunner.configureApp(app);
-  }
-  async releaseSource(app: App, options: ReleaseSourceOptions) {
-    await this.applicationRunner.releaseSource(app, options);
-  }
-  async codepush(app: App) {
-    await this.applicationRunner.codepush(app);
   }
   async transferDatabase(app: App, direction: "export" | "import", dir: string) {
     await this.applicationRunner.transferDatabase(app, direction, dir);

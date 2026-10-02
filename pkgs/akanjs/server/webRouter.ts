@@ -19,6 +19,7 @@ import {
   RouteClientCache,
   type RouteSeedIndex,
   RouteSeedIndexStore,
+  type RoutesManifest,
   RoutesManifestStore,
 } from "./artifact";
 import {
@@ -36,7 +37,10 @@ import {
 } from "./cachePolicy";
 import { encodedFileResponse } from "./contentEncoding";
 import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
+import { CSR_DEV_ROUTE_PREFIX, resolveDevCsrMode, SSR_DEV_DIRNAME, SSR_DEV_ROUTE_PREFIX } from "./hmr/csrDevManifest";
+import { CsrDevShell } from "./hmr/csrDevShell";
 import { DevHmrController } from "./hmr/devHmrController";
+import { SsrDevShim } from "./hmr/ssrDevShim";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { ImageOptimizer } from "./imageOptimizer";
 import { normalizeHost, resolveArtifactDir, warnIgnoredSubRouteBasePaths } from "./proxy/hostBasePathWebProxy";
@@ -250,6 +254,8 @@ interface WebRouterOptions {
   rsc: RscWorker;
   seedIndex: RouteSeedIndex;
   upgradeHmrWs: (req: Request, data: HmrWsData) => boolean;
+  /** The production build's route manifest, which the worker was already handed at boot. */
+  prebuilt?: RoutesManifest | null;
 }
 
 interface CachedHtmlResult {
@@ -272,6 +278,9 @@ export class WebRouter {
   #builderRpc: BuilderRpc | null;
   #routeCache: RouteClientCache;
   #devHmr: DevHmrController | null = null;
+  #csrDevShell: CsrDevShell | null = null;
+  /** Dev only: SSR pages load their client code from the dev module registry it serves. */
+  #ssrDevShell: CsrDevShell | null = null;
   #csrArmed = false;
   #csrOnDemandBuild: Promise<unknown> | null = null;
   readonly #requestStats = {
@@ -297,7 +306,8 @@ export class WebRouter {
   /** What this router actually mounts, already intersected with what the artifact carries. */
   readonly web: AkanWebConfig;
   #seedIndex: RouteSeedIndex;
-  constructor({ artifact, web, cssBytesByUrl, rsc, seedIndex, upgradeHmrWs }: WebRouterOptions) {
+  readonly #prebuilt: RoutesManifest | null;
+  constructor({ artifact, web, cssBytesByUrl, rsc, seedIndex, upgradeHmrWs, prebuilt = null }: WebRouterOptions) {
     this.#logger.verbose(`[SSR] loaded ${Object.keys(cssBytesByUrl).length} CSS assets`);
     this.web = web;
     if (process.env.NODE_ENV === "production" && !this.#prodMode)
@@ -317,6 +327,7 @@ export class WebRouter {
       cssBytesByUrl,
     };
     this.#seedIndex = seedIndex;
+    this.#prebuilt = prebuilt;
     if (this.#prodMode) {
       this.#builderRpc = null;
       this.#routeCache = new RouteClientCache({
@@ -328,28 +339,26 @@ export class WebRouter {
       });
     } else {
       this.#devHmr = new DevHmrController({
+        artifactDir: this.#artifactDir,
         renderState: this.renderState,
         rsc: this.#rsc,
         seedIndex: this.#seedIndex,
         upgradeHmrWs,
+        pagesBundlePath: this.#artifact.pagesBundlePath,
       });
       this.#builderRpc = this.#devHmr.builderRpc;
       this.#routeCache = this.#devHmr.routeCache;
       this.#hub = this.#devHmr.hub;
+      if (resolveDevCsrMode() === "registry") this.#csrDevShell = new CsrDevShell(this.#artifactDir);
+      this.#ssrDevShell = new CsrDevShell(this.#artifactDir, {
+        dirName: SSR_DEV_DIRNAME,
+        routePrefix: SSR_DEV_ROUTE_PREFIX,
+      });
     }
   }
 
   async initializeRoute() {
-    const prebuilt = this.#prodMode ? await RoutesManifestStore.read(this.#artifactDir) : null;
-    if (prebuilt) {
-      this.#routeCache.seed(prebuilt);
-      await this.#rsc.reload({
-        clientManifest: this.#mergeRuntimeManifest().clientManifest,
-        cssAssets: this.renderState.cssAssets,
-        // The worker's boot id: any other is a fresh `?v=` URL, and Bun keeps both bundle copies in its ESM registry.
-        buildId: this.#artifact.pagesBundleBuildId,
-      });
-    }
+    if (this.#prebuilt) this.#routeCache.seed(this.#prebuilt);
 
     const clientServePrefix = `/_akan/client`;
     const clientOutputDir = `${this.#artifactDir}/client`;
@@ -367,8 +376,9 @@ export class WebRouter {
     const renderEnvRoutes: HttpRoutes = {
       ...(this.web.csr
         ? {
-            "/__csr": async () => {
+            "/__csr": async (req) => {
               this.#requestStats.csr += 1;
+              if (this.#csrDevShell) return await this.#serveCsrDevShell(req, "/", this.#csrDevShell);
               const csrHtml = await this.#resolveCsrHtml(csrOutputDir, "/");
               const csrFile = csrHtml ? Bun.file(csrHtml) : null;
               const htmlText =
@@ -387,7 +397,23 @@ export class WebRouter {
     <script type="module" src="/csr.js"></script>
   </body>
 </html>`;
-              return new Response(this.#withCsrHmr(htmlText), { headers: WebRouter.#htmlResponseHeaders(200) });
+              return new Response(this.#withCsrHmr(htmlText), { headers: this.#htmlResponseHeaders(200) });
+            },
+            ...(this.#csrDevShell
+              ? {
+                  [`${CSR_DEV_ROUTE_PREFIX}*`]: async (req: Request) => {
+                    this.#requestStats.staticAsset += 1;
+                    return (await this.#csrDevShell?.serve(req)) ?? new Response("Not Found", { status: 404 });
+                  },
+                }
+              : {}),
+          }
+        : {}),
+      ...(this.#ssrDevShell
+        ? {
+            [`${SSR_DEV_ROUTE_PREFIX}*`]: async (req: Request) => {
+              this.#requestStats.staticAsset += 1;
+              return (await this.#ssrDevShell?.serve(req)) ?? new Response("Not Found", { status: 404 });
             },
           }
         : {}),
@@ -442,8 +468,6 @@ export class WebRouter {
         ? {
             "/_akan/hmr": (req: Request) =>
               this.#devHmr?.handleWs(req) ?? new Response("HMR unavailable", { status: 404 }),
-            "/_akan/hmr/client-refresh": (req: Request) =>
-              this.#devHmr?.handleClientRefresh(req) ?? new Response("HMR unavailable", { status: 404 }),
           }
         : {}),
       "/__rsc": async (req) => {
@@ -521,10 +545,11 @@ export class WebRouter {
           const isCsr = url.searchParams.get("csr") === "true";
           if (isCsr) {
             this.#requestStats.csr += 1;
+            if (this.#csrDevShell) return await this.#serveCsrDevShell(req, url.pathname, this.#csrDevShell);
             const csrHtml = await this.#resolveCsrHtml(csrOutputDir, url.pathname);
             if (!csrHtml) return this.#csrUnavailableResponse(url.pathname);
             const html = await Bun.file(csrHtml).text();
-            return new Response(this.#withCsrHmr(html), { headers: WebRouter.#htmlResponseHeaders(200) });
+            return new Response(this.#withCsrHmr(html), { headers: this.#htmlResponseHeaders(200) });
           }
 
           const csrAssetPath = path.extname(url.pathname) ? resolveStaticPath(csrOutputDir, url.pathname) : null;
@@ -583,7 +608,7 @@ export class WebRouter {
           const htmlCacheEntry = htmlCacheDecision.entry;
           const cachedHtml = htmlCacheEntry ? this.#getCachedHtml(htmlCacheEntry.key) : null;
           if (cachedHtml) {
-            const cachedHeaders = WebRouter.#htmlResponseHeaders(200);
+            const cachedHeaders = this.#htmlResponseHeaders(200);
             cachedHeaders.set("X-Akan-Cache", "HIT");
             return new Response(cachedHtml, { headers: cachedHeaders });
           }
@@ -601,6 +626,9 @@ export class WebRouter {
             rscResult.trace?.routeState
               ? `self.__AKAN_RSC_INITIAL_STATE__=${JSON.stringify(rscResult.trace.routeState)};`
               : "",
+            this.#ssrDevShell
+              ? SsrDevShim.script(await this.#ssrDevShell.readManifest(), Object.keys(this.#artifact.vendorMap))
+              : "",
             !this.#prodMode ? HMR_CLIENT_SCRIPT : "",
           ]
             .filter(Boolean)
@@ -613,7 +641,10 @@ export class WebRouter {
             bootstrapModules: [this.#artifact.rscClientUrl],
             extraBootstrapInline: extraBootstrapInline || undefined,
             importmap: this.#artifact.vendorMap,
-            theme: cookieTheme ?? rscResult.theme ?? "system",
+            //? Read once the shell has rendered: the root layout's theme arrives after the stream starts.
+            get theme() {
+              return cookieTheme ?? rscResult.theme ?? "system";
+            },
             lateControl: rscResult.lateControl,
             waitForAllReady: rscResult.trace?.ssrBlocking ?? false,
             onCancel: (reason: unknown) => {
@@ -621,7 +652,7 @@ export class WebRouter {
             },
           });
           const responseStatus = rscResult.status ?? 200;
-          const responseHeaders = WebRouter.#htmlResponseHeaders(responseStatus);
+          const responseHeaders = this.#htmlResponseHeaders(responseStatus);
           if (req.method === "HEAD") {
             const headers = new Headers(responseHeaders);
             if (htmlCacheEntry && responseStatus === 200) headers.set("X-Akan-Cache", "MISS");
@@ -692,6 +723,12 @@ export class WebRouter {
       },
     };
     return { renderEnvRoutes, hmrHub: this.#hub, builderRpc: this.#builderRpc };
+  }
+  refreshHmrState(): void {
+    this.#devHmr?.refreshRegistryState();
+  }
+  hmrBuildErrors(): { phase: string }[] {
+    return this.#devHmr?.buildErrorMessages() ?? [];
   }
   dispose() {
     this.#devHmr?.dispose();
@@ -783,6 +820,12 @@ export class WebRouter {
   }
 
   #getHtmlCacheEntry(req: Request, url: URL): { entry: RouteCacheEntry | null; reason?: string } {
+    //? The dev registry's shim config is part of the HTML: a cached page would boot every reload beside the vendor file
+    //? it was rendered with, and a tab that reloads onto the current pair would reload again until the entry expired.
+    if (this.#ssrDevShell) {
+      this.#htmlCacheBypass += 1;
+      return { entry: null, reason: "dev-registry" };
+    }
     const decision = resolvePublicRouteCacheEntryDecision({
       request: req,
       url,
@@ -886,6 +929,7 @@ export class WebRouter {
       stylesheetHref: this.#getStylesheetHref(req, new URL(req.url).pathname),
       showDetails: !this.#prodMode,
       error: err,
+      ...(this.#prodMode ? {} : { script: `self.__AKAN_HMR_SYSTEM_PAGE__=true;${HMR_CLIENT_SCRIPT}` }),
     });
   }
 
@@ -935,14 +979,32 @@ export class WebRouter {
     return this.renderState.cssAssets[basePath ?? ""]?.cssUrl ?? null;
   }
 
-  static #htmlResponseHeaders(status: number): Headers {
+  //? Dev: a back/forward navigation replays a document from the HTTP cache without asking, which would boot a tab onto
+  //? the RSC payload and registry config of a build the server no longer runs.
+  #htmlResponseHeaders(status: number): Headers {
     const headers = new Headers({ "Content-Type": "text/html; charset=utf-8" });
-    if (status >= 400) headers.set("Cache-Control", "no-store");
+    if (status >= 400 || !this.#prodMode) headers.set("Cache-Control", "no-store");
     return WebRouter.#applySecurityHeaders(headers, { html: true });
   }
   #withCsrHmr(html: string): string {
     if (this.#prodMode) return html;
-    return WebRouter.#injectBeforeBodyEnd(html, `<script>${HMR_CLIENT_SCRIPT}</script>`);
+    const csrGeneration = this.renderState.csrGeneration ?? null;
+    const flags = `self.__AKAN_HMR_CLIENT__="csr";self.__AKAN_CSR_GENERATION__=${csrGeneration};`;
+    return WebRouter.#injectBeforeBodyEnd(html, `<script>${flags}${HMR_CLIENT_SCRIPT}</script>`);
+  }
+  // Armed before the first render: the builder keeps the registry bundle current only after something asked for it.
+  async #serveCsrDevShell(req: Request, pathname: string, shell: CsrDevShell): Promise<Response> {
+    await this.#armCsrArtifact(pathname);
+    const basePath =
+      getBasePathFromPathname(pathname, { basePaths: this.#artifact.basePaths, i18n: this.#artifact.i18n }) ?? "";
+    const html = await shell.render({
+      basePath,
+      lang: "en",
+      title: process.env.AKAN_PUBLIC_APP_NAME ?? "akan",
+      cssHref: this.#getStylesheetHref(req, pathname),
+    });
+    if (!html) return this.#csrUnavailableResponse(pathname);
+    return new Response(this.#withCsrHmr(html), { headers: this.#htmlResponseHeaders(200) });
   }
   async #resolveCsrHtml(csrOutputDir: string, pathname: string): Promise<string | null> {
     const resolved = WebRouter.#resolveCsrHtmlPath(csrOutputDir, pathname, this.#artifact);
@@ -993,7 +1055,18 @@ export class WebRouter {
     const prodMode = process.env.NODE_ENV === "production" && process.env.AKAN_COMMAND_TYPE !== "start";
     //* Production listens before the bundle loads (renders queue until `ready`) and exits if it cannot load rather
     //* than restart-loop behind a healthy API; dev awaits, as the next rebuild hands the worker a fixed bundle.
-    const rsc = new RscWorker(artifact, { failBeforeReady: prodMode });
+    //? The prebuilt route manifest rides the worker's first init: a reload onto it would wait for `ready`, and so would
+    //? `listen`.
+    const prebuilt = prodMode ? await RoutesManifestStore.read(artifactDir) : null;
+    const rsc = new RscWorker(
+      prebuilt
+        ? {
+            ...artifact,
+            rscRuntimeClientManifest: { ...artifact.rscRuntimeClientManifest, ...prebuilt.clientManifest },
+          }
+        : artifact,
+      { failBeforeReady: prodMode },
+    );
     if (prodMode)
       void rsc.ready.catch((error: unknown) => {
         new Logger("WebRouter").error(`RSC worker failed to load the pages bundle: ${String(error)}`);
@@ -1008,6 +1081,7 @@ export class WebRouter {
       rsc,
       seedIndex,
       upgradeHmrWs,
+      prebuilt,
     });
   }
 
@@ -1111,9 +1185,9 @@ export class WebRouter {
     const associations = artifact.deepLinkAssociations ?? [];
     if (pathname === APPLE_APP_SITE_ASSOCIATION_PATH) {
       const details = associations
-        .filter((association) => association.domains.length > 0 && association.iosTeamId)
+        .filter((association) => association.domains.length > 0 && association.iosTeamId && association.iosAppId)
         .map((association) => ({
-          appIDs: [`${association.iosTeamId}.${association.appId}`],
+          appIDs: [`${association.iosTeamId}.${association.iosAppId}`],
           components: [{ "/": "/*" }],
         }));
       if (details.length === 0) return null;
@@ -1123,14 +1197,17 @@ export class WebRouter {
     const packageSuffixes = process.env.AKAN_PUBLIC_ENV === "main" ? [""] : ["", ".debug"];
     const assetLinks = associations
       .filter(
-        (association) => association.domains.length > 0 && (association.androidSha256CertFingerprints?.length ?? 0) > 0,
+        (association) =>
+          association.domains.length > 0 &&
+          !!association.androidAppId &&
+          (association.androidSha256CertFingerprints?.length ?? 0) > 0,
       )
       .flatMap((association) =>
         packageSuffixes.map((suffix) => ({
           relation: ["delegate_permission/common.handle_all_urls"],
           target: {
             namespace: "android_app",
-            package_name: `${association.appId}${suffix}`,
+            package_name: `${association.androidAppId}${suffix}`,
             sha256_cert_fingerprints: association.androidSha256CertFingerprints,
           },
         })),

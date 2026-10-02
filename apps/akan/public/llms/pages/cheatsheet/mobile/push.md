@@ -9,118 +9,94 @@
 ## Headings
 
 - Push Setup (#push-setup)
-- Why Two Plugins (#push-plugins)
+- One Native Plugin (#push-plugins)
 - Web Push (#web-push)
 - Android Push (#android-push)
 - iOS Push (#ios-push)
 - Which APNs Environment You Built (#apns-environment)
 - Client Registration (#client-registration)
-- Store The Token (#token-store)
+- Where Tokens Live (#token-store)
 - Send And Retire Dead Tokens (#token-lifecycle)
 
 ## Content
 
 Push Notifications
 
-Firebase Cloud Messaging. Akan sends to web, Android and iOS through it.
-
-Apple's push service. FCM hands iOS messages to it, so Firebase needs an Apple key.
-
-push token
-
-The address of one app install. `register()` returns it, and the server sends to it.
-
-VAPID key
-
-The web push key pair. Its public half goes in the client env as `vapidKey`.
-
-service account
-
-The Firebase Admin credential the server sends with. It never reaches the client.
-
-The iOS entitlement that picks the APNs development or production path.
-
-Web
-
-In the consoles
-
-Firebase app
-
-One Firebase project, with a web, Android or iOS app registered in it.
-
-A Web Push certificate key pair, generated in Firebase's Cloud Messaging settings.
-
-APNs auth key (.p8)
-
-Created in Apple Developer, then uploaded to Firebase for development and production.
-
-In the app folder
-
-The public Firebase web config and `vapidKey`, under `firebase`.
-
-The Android Firebase config, copied into the native project by `mobile.files`.
-
-The iOS Firebase config, copied the same way.
-
-`@capacitor/push-notifications` and `@capacitor-community/fcm` as app dependencies.
-
-Turns on native push for the mobile target in `akan.config.ts`.
-
-On the server
-
-`pushNoti.firebase`: the service account the server sends with, for every platform.
-
-The OS push bridge: permission, native registration, click and action listeners, delivered notifications and Android channels.
-
-Firebase token access. It keeps Android and iOS on the same Firebase Admin send({ token }) contract.
-
-Asks for permission when needed and returns a `PushToken`, or `undefined`.
-
-Returns the current token without asking for permission.
-
-Reads the current permission state.
-
-Shows the permission prompt and returns the answer.
-
-Tells whether push can work in this runtime.
-
-Routes notification clicks. The hook already runs it on mount.
-
-required
-
-The notification title.
-
-The notification body.
-
-One device's push token. Send either `token` or `topic`.
-
-An FCM topic. Every device subscribed to it receives the message.
-
-Where a click lands. It arrives in the message as `data.url`.
-
-An image shown in the notification.
-
-Extra key-value pairs delivered with the message.
-
 Push Setup
 
-The browser prompt appears, a token comes back, and the server logs a successful send. Nothing arrives on the phone.
+The prompt appears, a token comes back, and the server logs a send. Nothing arrives on the phone.
+
+Push is one client API, `usePushNotification()`, and two senders on the server: APNs for iOS, FCM for Android and the web. A token sent without its sender's credential is skipped with one log line, so prepare every row that applies to you.
 
 Words used on this page
 
 Term
 
+- FCM: Firebase Cloud Messaging. Akan sends to Android apps and browsers through it.
+
+- APNs: Apple's push service. The server sends to iOS apps through it directly; Firebase is not involved.
+
+- push token: The address of one app install. `register()` returns it with the `provider` that delivers to it.
+
+- provider: `apns` on iOS, `fcm` on Android and the web. The server picks the sender by it.
+
+- deviceId: A random id the app keeps in its own storage, so a rotated token replaces the old one.
+
+- VAPID key: The web push key pair. Its public half goes in the client env as `vapidKey`.
+
+- service account: The Firebase Admin credential the server sends to FCM with. It never reaches the client.
+
+- APNs auth key: The `.p8` key the server signs its APNs requests with. One key serves both APNs environments.
+
+- aps-environment: The iOS entitlement that says whether the app's tokens belong to APNs development or production.
+
 What you prepare
 
 Item
+
+Web
+
+Android
+
+iOS
+
+- In the consoles
+
+  - Firebase app: One Firebase project, with the web app and the Android app registered in it.
+
+  - VAPID key: A Web Push certificate key pair, generated in Firebase's Cloud Messaging settings.
+
+  - Push capability: Push Notifications turned on for the App ID in Apple Developer, so its profiles carry the entitlement.
+
+  - APNs auth key (.p8): Created under Keys in Apple Developer, with its Key ID and your Team ID. It goes to your server.
+
+- In the app folder
+
+  - env.client.*: The public Firebase web config and `vapidKey`, under `firebase`.
+
+  - google-services.json: The Android Firebase config, named by `native.android.googleServices` in `akan.config.ts`.
+
+  - permissions: ["push"]: Adds the native push plugin; it goes in `native` in `akan.config.ts`.
+
+- On the server
+
+  - pushNoti.firebase: In `env.server.*`: the service account the server sends to FCM with.
+
+  - pushNoti.apns: In `env.server.*`: the APNs key, its Key ID, your Team ID and the app's bundle id.
 
 Needed
 
 Not needed
 
-Why Two Plugins
+One Native Plugin
 
-Akan uses FCM as its push provider, so a native app needs two Capacitor plugins: one for the OS push bridge and one for the FCM token.
+A native app gets push from the runtime's `push` plugin, and `permissions: ["push"]` in `native` is all that adds it. There is no package to install. The plugin speaks each platform's own service:
+
+- iOS · APNs — push.register() → { provider: "apns" } — Registers with APNs directly, with no Firebase SDK. A tap, and a message that arrives in front, come through the shell's notification router.
+
+- Android · FCM — push.register() → { provider: "fcm" } — An FCM module pinned with the runtime. The build reads `google-services.json` itself, so no Gradle plugin is involved.
+
+`usePushNotification()` hides which is which: it calls the plugin in a native shell and Firebase in a browser, and hands back one `PushToken` shape either way. Which permission adds which plugin is on Setup.
 
 Web Push
 
@@ -130,13 +106,27 @@ Create or open a web app in Firebase Console.
 
 Open Firebase Console
 
+Copy its public config into `env.client.*`, under `firebase`.
+
 Open Firebase web config docs
+
+Generate a Web Push certificate key pair and put its public key in `vapidKey`.
 
 Open Firebase web push credentials docs
 
 The client env file then looks like this:
 
+**Only public values go here.** `env.client.*` ships to the browser; the server's service account belongs in `env.server.*`.
+
+**Four fields are required.** Without `apiKey`, `projectId`, `messagingSenderId` or `appId`, `register()` returns `undefined` on the web.
+
+**One file per environment.** `env.client.ts` picks `env.client.<env>.ts` by `AKAN_PUBLIC_ENV`, so fill in every environment you deploy.
+
+**The service worker is generated.** With `firebase` in the client env, `akan sync` writes `public/firebase-messaging-sw.js` for each environment.
+
 Android Push
+
+Android push is a Firebase Android app whose package name matches `native.appId` exactly, plus one config file `native.android.googleServices` names.
 
 Open Firebase Console and select the project.
 
@@ -144,87 +134,219 @@ Add an Android app.
 
 Open Firebase Android setup docs
 
+Enter the same package name as `native.appId`.
+
+Download `google-services.json`.
+
 Open google-services.json docs
+
+Place it at `apps/myapp/secrets/google-services.json`.
+
+Then name it in `native.android` in `akan.config.ts`:
+
+**The build converts the file itself.** It picks the client whose package name is the target's `appId` (a debug build falls back to it too), and a file without that app fails the build with the names it has.
+
+**`secrets/`, not `public/`.** Everything in `public/` is served to every visitor. `secrets` keeps the file out of git and carries it with `akan upload-env` and `akan download-env`.
+
+**`permissions: ["push"]`** adds the push plugin and `POST_NOTIFICATIONS` to the app.
+
+**`google-services.json` is not the server credential.** It is the Android app's Firebase config, not the Firebase Admin service account JSON. The server credential goes in `env.server.*`, as the last section shows.
 
 Android Notification Details
 
-Android can need display settings beyond token registration. Three of them are yours to decide:
+How a notification shows depends on whether the app is in front:
 
-Open Capacitor push notification channel docs
+Open Android notification channel docs
+
+**Foreground.** The framework asks the plugin to show a push that arrives while the app is open (banner, list, sound, badge), so it can be tapped like any other.
+
+**Background.** FCM draws the notification itself while the app is not in front. A tap opens the app and routes the push's `url`.
+
+**Channel, icon and color.** Firebase posts into its default channel with the launcher icon, which the status bar draws as a gray square. `native.android.push` names a `channel` (`{ id, name, importance? }`), a `smallIcon` (a white-on-transparent PNG in the app folder) and an accent `color` instead.
 
 iOS Push
 
-iOS push is the same Firebase registration plus an Apple credential, and it is where most silent failures live. What you own is which APNs credential Firebase holds.
+iOS push needs no Firebase at all: the app registers with APNs, and the server sends to APNs itself. What you own is the capability on the App ID and the key the server signs with.
 
-Open Firebase iOS setup docs
-
-Open GoogleService-Info.plist docs
-
-Copy it into the generated App target and confirm its target membership in Xcode.
+In Apple Developer, open Identifiers, pick the App ID that matches `native.appId`, and turn on Push Notifications.
 
 Open Apple push notification registration docs
 
-Open Firebase APNs certificate docs
+Under Keys, create a key with Apple Push Notifications service enabled and download its `.p8`. Apple lets you download it once; note its Key ID and your Team ID.
 
-Upload APNs credentials for both development and production. Development serves simulator and debug builds; production serves TestFlight and the App Store.
+Open APNs token-based connection docs
 
-Copy the plist the same way Android copies its file:
+Put the three into `pushNoti.apns` on the server, as the last section shows.
+
+Add `permissions: ["push"]` to `native`.
+
+Nothing else goes in the config:
+
+**No `GoogleService-Info.plist`, no firebase-ios-sdk.** The push plugin adds `UIBackgroundModes` and `aps-environment` to the app itself.
+
+**An iOS token is an APNs device token**, with `provider: "apns"`. FCM does not accept it, so the server sends it to APNs itself.
+
+**`xcrun simctl push` needs no server.** It hands a payload to a simulator, which tests the tap and the routing. Put `url` at the top level, beside `aps`, as the server does.
+
+**Keep the `.p8` on the server.** It signs pushes to every app of your team. It belongs in `env.server.*`, never in `env.client.*` or `public/`.
 
 Which APNs Environment You Built
+
+You never write `aps-environment`: the push plugin declares `development`, and a build signed with a provisioning profile takes the profile's value. It decides which APNs environment the device's token belongs to.
 
 Command
 
 Used for
 
-Local simulator and device runs, through the APNs sandbox.
+Simulator and development-signed iPhone runs, through the APNs sandbox.
 
-A local run in release mode.
+A simulator build.
 
-Release build generation.
+The App Store profile: TestFlight and the App Store.
 
-Store and TestFlight releases.
+An ad hoc profile.
+
+**The server tries both.** With `environment` unset, a send goes to production first and, when APNs answers `BadDeviceToken` (a development build's token), to the sandbox. Set `environment` to pin one.
+
+**One key serves both.** An APNs auth key is not tied to an environment, so a development run and a TestFlight build need nothing different on the server.
+
+**A token no environment knows is dropped.** A `410`, or `BadDeviceToken` from the last environment tried, removes the token from its owner.
 
 Client Registration
 
+An app that mounts `libs/shared` needs no code of its own. Mount `Notification.Zone.Initialize` once in a signed-in layout: it registers the device again on every visit and on every token a native shell rotates, and never asks for permission.
+
+The permission prompt belongs to a user action, because Chrome ignores a request with no gesture behind it and iOS refuses one. `Notification.Util.PushSetting` is that switch. A button of your own calls `register()` and hands the `PushToken` to the store:
+
+**`registerPushToken` comes with `libs/shared`.** Without it, hand the `PushToken` to an endpoint of your own; its fields map one to one onto the `DeviceToken` shown next.
+
 What usePushNotification() returns
+
+Import it from `@libs/util/webkit`. Most screens need only `register()`.
 
 Method
 
-Store The Token
+- register(): Asks for permission, then returns a `PushToken`, or `undefined` when refused or unsupported.
 
-Each device's token is yours to keep, not Akan's. This section shows one way to store tokens in the database and send only to active ones; shape yours to fit your app.
+- getToken(): Returns the token without asking. Registering shows no prompt, so check `getPermission()` first.
+
+- getPermission(): Reads the current permission state.
+
+- requestPermission(): Shows the permission prompt and returns the answer.
+
+- isSupported(): Whether push can work here: the native plugin in a shell, the Firebase web config in a browser.
+
+- onTokenChange(listener): A native token rotates on its own; the listener gets each new `PushToken`. Returns the unsubscribe.
+
+- initClickBridge(): Routes the browser's notification clicks. The hook runs it on mount; a native shell needs nothing.
+
+**PushToken** holds `token`, `platform` (`web` | `android` | `ios`), `provider` (`apns` | `fcm`) and `deviceId`, the installation id `getPushDeviceId()` keeps in the app's storage.
+
+**Built-in storage.** With `libs/shared`, `st.do.registerPushToken(pushToken)` stores it on the signed-in user. The next section shows where.
+
+**Click routing.** Send a `url` and a tap opens it through the CSR router. In a native shell the framework routes it from boot, the tap that launched the app included; in a browser the service worker hands it to the open tab. Only a path inside the app is followed.
+
+Where Tokens Live
+
+`libs/shared` keeps every device's token on its owner: `user.notiInfo.deviceTokens`, one `DeviceToken` per installation. The field is secret, so it never leaves the server.
 
 Push token lifecycle
 
 Client: register()
 
-Server: registerPushToken
+Server: addNotiDeviceTokenOfSelf
 
-Server: load active tokens
+Server: push(userIds)
 
-Server: send(token)
+Settings accept it?
+
+sendEach by provider
 
 User device
 
-Invalid?
+Gone?
 
-Server: retire the token
+Server: drop the token
 
 yes
 
-Two filters find one token and a user's live devices:
+The scalar holds what `register()` returned, plus when the server stored it:
 
-The store action is the ordinary one: call the endpoint, then toast. Nothing here is push-specific; the token is just an argument.
+**One entry per installation.** Registering again with the same `token` or the same `deviceId` replaces that entry, so a rotated token does not pile up.
+
+**`updatedAt` is the server's.** It is written when the token is registered; the value a client sends is not used.
+
+**Signing out drops this device.** `signoutUser` sends the installation's `deviceId`, so a handed-down phone does not get the previous person's notifications.
+
+**Older tokens are skipped.** A token stored as a plain string before this shape is not read; `Notification.Zone.Initialize` registers the device again on its next visit.
+
+The endpoints
+
+All three are `User`-guarded mutations and queries on the `user` signal, called through the notification store's `registerPushToken`, `unregisterPushToken` and `loadPushState`:
+
+Endpoint
+
+- addNotiDeviceTokenOfSelf(deviceToken): Stores this device's `DeviceToken` on the caller, replacing its earlier entry.
+
+- subNotiDeviceTokenOfSelf(token): Removes one token from the caller: the push switch turned off.
+
+- hasNotiDeviceTokenOfSelf(token): Whether this device is registered, which is what the switch shows.
+
+**`Self` supplies the owner,** so a client cannot register a token under someone else's account.
+
+**Kept off MCP.** An agent has no device, so the token endpoints are `mcp: false`.
 
 Send And Retire Dead Tokens
 
-Server credential
+`notificationService.push(userIds, payload)` is the one call a domain service makes. It reads each recipient's settings, sends every accepted device through its own provider, and drops the tokens APNs or FCM call gone.
+
+Server credentials
+
+Put both senders' credentials under `pushNoti` in each server env file:
 
 Open Firebase Admin setup docs
 
-The service registers, retires and sends, and turns FCM's dead-token answer into a retirement:
+**`firebase` is the service account** from Firebase Console, under Project settings, then Service accounts. Copy the five fields above from the downloaded JSON. Android and the web need it.
 
-What send() takes
+**`apns` is the `.p8` key.** `privateKey` is the file's text (`\n` escapes are fine), `keyId` and `teamId` come from Apple Developer, and `bundleId` is the app's `native.appId`. iOS needs it.
+
+**Neither is `google-services.json`.** That file is the Android app's config; these sign every send.
+
+**A sender without credentials sends nothing and throws nothing.** Its tokens are skipped with one `warn` line, such as `pushNoti.apns is not configured`, and counted as failures.
+
+Sending from a service
+
+Load, save, then notify, with the push fire-and-forget:
+
+**The settings gate is one function.** `NotificationService.accepts`: `block` and `disagree` stop everything, `fewer` lets only `actionRequired` and `essential` through, a future `pauseUntil` stops everything, and a user without tokens is skipped.
+
+**Dead tokens go at once.** APNs `410` or `BadDeviceToken`, and FCM `messaging/registration-token-not-registered`, remove the token from its owner in the same call.
+
+**It never throws.** A push is best effort: `push()` answers what it reached (`targetUserIds`, `tokenNum`, `successCount`, `prunedTokens`), and a failed send never fails the caller's own work.
+
+**A megaphone takes the same gate.** An admin notification of `type: "all"` goes to every active user, 500 at a time, through `accepts` like any other push.
+
+What push() takes
+
+- title (string): The notification title.
+
+  - required
+
+- level (cnst.NotiLevel): `actionRequired`, `notice`, `essential`, `suggestion` or `advertise`. The settings gate reads it.
+
+- content (string): The notification body.
+
+- contentKey (string): A dictionary key for the body instead, resolved in the app's default locale.
+
+- url (string): Where a tap lands: a path inside the app.
+
+- tag (string): A collapse key: a second push with the same tag replaces the first.
+
+- imageUrl (string): An image shown in the notification.
+
+- badge (number): The app icon's badge count.
+
+**No topics.** A topic cannot hold an APNs token, cannot ask a person's settings and never reports a dead token, so every send goes to stored tokens. Without `libs/shared`, call `PushNotificationServer.sendEach(targets, message)` from `@libs/util/srvkit` with `{ token, provider }` targets, and stop storing the `invalidTokens` it returns.
 
 ## Code Examples
 
@@ -251,18 +373,10 @@ import type { AppConfig } from "akanjs";
 
 const config: AppConfig = {
   secrets: ["secrets/**"],
-  mobile: {
+  native: {
     appId: "com.myapp.app",
-    targets: {
-      default: {
-        permissions: ["push"],
-        files: {
-          android: {
-            "app/google-services.json": "secrets/google-services.json",
-          },
-        },
-      },
-    },
+    permissions: ["push"],
+    android: { googleServices: "secrets/google-services.json" },
   },
 };
 
@@ -275,37 +389,43 @@ export default config;
 import type { AppConfig } from "akanjs";
 
 const config: AppConfig = {
-  secrets: ["secrets/**"],
-  mobile: {
-    targets: {
-      default: {
-        permissions: ["push"],
-        files: {
-          ios: {
-            "App/App/GoogleService-Info.plist": "secrets/GoogleService-Info.plist",
-          },
-        },
-      },
-    },
+  native: {
+    appId: "com.myapp.app",
+    permissions: ["push"],
   },
 };
 
 export default config;
 ```
 
-### apps/myapp/lib/userDevice/UserDevice.Util.tsx
+### apps/myapp/page/(user)/_layout.tsx
+
+```ts
+import { Notification } from "@libs/shared/client";
+import { layout } from "akanjs/client";
+
+export default layout().render(({ children }) => (
+  <>
+    <Notification.Zone.Initialize />
+    {children}
+  </>
+));
+```
+
+### apps/myapp/ui/EnablePush.tsx
 
 ```ts
 "use client";
-import { st, usePage } from "@apps/myapp/client";
+import { st } from "@apps/myapp/client";
 import { usePushNotification } from "@libs/util/webkit";
 import { buttonRecipe } from "akanjs/ui";
+import type { ReactNode } from "react";
 
-interface RegisterPushTokenProps {
+interface EnablePushProps {
   className?: string;
+  children: ReactNode;
 }
-export const RegisterPushToken = ({ className }: RegisterPushTokenProps) => {
-  const { l } = usePage();
+export const EnablePush = ({ className, children }: EnablePushProps) => {
   const push = usePushNotification();
   return (
     <button
@@ -316,133 +436,29 @@ export const RegisterPushToken = ({ className }: RegisterPushTokenProps) => {
       }}
       type="button"
     >
-      {l("userDevice.signal.registerPushToken")}
+      {children}
     </button>
   );
 };
 ```
 
-### apps/myapp/lib/userDevice/userDevice.constant.ts
+### libs/shared/lib/__scalar/deviceToken/deviceToken.constant.ts
 
 ```ts
-import { enumOf, ID } from "akanjs/base";
+import { dayjs, enumOf } from "akanjs/base";
 import { via } from "akanjs/constant";
 
-export class PushProvider extends enumOf("pushProvider", ["fcm"] as const) {}
-export class PushPlatform extends enumOf(
-  "pushPlatform",
-  ["web", "android", "ios"] as const,
-) {}
+export class PushProvider extends enumOf("pushProvider", ["apns", "fcm"] as const) {}
 
-export class UserDeviceInput extends via((field) => ({
+export class DevicePlatform extends enumOf("devicePlatform", ["ios", "android", "web"] as const) {}
+
+export class DeviceToken extends via((field) => ({
   token: field(String),
-  platform: field(PushPlatform),
-  provider: field(PushProvider),
+  provider: field(PushProvider, { default: "fcm" }),
+  platform: field(DevicePlatform, { default: "web" }),
   deviceId: field(String).optional(),
+  updatedAt: field(Date, { default: () => dayjs() }),
 })) {}
-
-export class UserDeviceObject extends via(UserDeviceInput, (field) => ({
-  userId: field(ID, { ref: "user" }),
-  disabledAt: field(Date).optional(), // set when FCM rejects the token
-})) {}
-
-export class LightUserDevice extends via(
-  UserDeviceObject,
-  ["platform", "disabledAt"] as const,
-  (resolve) => ({}),
-) {}
-
-export class UserDevice extends via(
-  UserDeviceObject,
-  LightUserDevice,
-  (resolve) => ({}),
-) {}
-
-export class UserDeviceInsight extends via(UserDevice, (field) => ({})) {}
-```
-
-### apps/myapp/lib/userDevice/userDevice.document.ts
-
-```ts
-import { ID } from "akanjs/base";
-import { by, from, into } from "akanjs/document";
-import * as cnst from "../cnst";
-
-export class UserDeviceFilter extends from(cnst.UserDevice, (filter) => ({
-  query: {
-    byToken: filter()
-      .arg("token", String)
-      .query((token) => ({ token })),
-    ofUser: filter()
-      .arg("userId", ID)
-      .query((userId, q) => q.all({ userId }, q.empty("disabledAt"))),
-  },
-  sort: {},
-})) {}
-
-export class UserDevice extends by(cnst.UserDevice) {}
-
-export class UserDeviceModel extends into(
-  UserDevice,
-  UserDeviceFilter,
-  cnst.userDevice,
-  () => ({}),
-) {}
-```
-
-### apps/myapp/lib/userDevice/userDevice.signal.ts
-
-```ts
-import { Admin, Self, User } from "@libs/shared/srvkit";
-import { endpoint, internal, slice } from "akanjs/signal";
-import * as cnst from "../cnst";
-import * as srv from "../srv";
-
-export class UserDeviceInternal extends internal(srv.userDevice, () => ({})) {}
-
-export class UserDeviceSlice extends slice(
-  srv.userDevice,
-  { guards: { root: Admin, get: Admin, cru: Admin } },
-  () => ({}),
-) {}
-
-export class UserDeviceEndpoint extends endpoint(
-  srv.userDevice,
-  ({ mutation }) => ({
-    registerPushToken: mutation(Boolean, { guards: [User] })
-      .body("pushToken", cnst.UserDeviceInput)
-      .with(Self)
-      .exec(async function (pushToken, self) {
-        await this.userDeviceService.registerPushToken(self.id, pushToken);
-        return true;
-      }),
-    invalidatePushToken: mutation(Boolean, { guards: [Admin] })
-      .body("token", String)
-      .exec(async function (token) {
-        await this.userDeviceService.invalidatePushToken(token);
-        return true;
-      }),
-  }),
-) {}
-```
-
-### apps/myapp/lib/userDevice/userDevice.store.ts
-
-```ts
-import { msg } from "@apps/myapp/client";
-import type { PushToken } from "@libs/util/webkit";
-import { store } from "akanjs/store";
-import { fetch, sig } from "../useClient";
-
-export class UserDeviceStore extends store(sig.userDevice, () => ({
-  // state
-})) {
-  // action
-  async registerPushToken(pushToken: PushToken) {
-    await fetch.registerPushToken(pushToken);
-    msg.success("userDevice.pushTokenRegistered");
-  }
-}
 ```
 
 ### apps/myapp/env/env.server.local.ts
@@ -461,57 +477,37 @@ export const env: ModulesOptions = {
       private_key: "...",
       client_email: "...",
     },
+    apns: {
+      teamId: "...",
+      keyId: "...",
+      privateKey: "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
+      bundleId: "com.myapp.app",
+    },
   },
 };
 ```
 
-### apps/myapp/lib/userDevice/userDevice.service.ts
+### apps/myapp/lib/order/order.service.ts
 
 ```ts
-import { PushNotificationServer } from "@libs/util/srvkit";
-import { dayjs } from "akanjs/base";
 import { serve } from "akanjs/service";
 import * as db from "../db";
+import type * as srv from "../srv";
 
-interface PushMessage {
-  title: string;
-  body: string;
-  url?: string;
-}
-
-export class UserDeviceService extends serve(db.userDevice, ({ plug }) => ({
-  pushNotificationServer: plug(PushNotificationServer),
+export class OrderService extends serve(db.order, ({ service }) => ({
+  notificationService: service<srv.NotificationService>(),
 })) {
-  async registerPushToken(userId: string, pushToken: db.UserDeviceInput) {
-    const { token } = pushToken;
-    const userDevice = await this.userDeviceModel.findByToken(token);
-    if (userDevice) return await userDevice.set({ userId }).save();
-    return await this.userDeviceModel.createUserDevice({
-      ...pushToken,
-      userId,
+  async shipOrder(orderId: string) {
+    const order = await this.orderModel.pickById(orderId);
+    await order.ship().save();
+    void this.notificationService.push([order.buyerId], {
+      title: order.title,
+      contentKey: "order.pushShipped",
+      level: "notice",
+      url: `/order/${order.id}`,
+      tag: `order-${order.id}`,
     });
-  }
-  async invalidatePushToken(token: string) {
-    await this.userDeviceModel
-      .updateByToken(token)
-      .set({ disabledAt: dayjs() });
-  }
-  async notifyUser(userId: string, message: PushMessage) {
-    const userDevices = await this.userDeviceModel.listOfUser(userId);
-    return await Promise.all(
-      userDevices.map((userDevice) => this.notify(userDevice.token, message)),
-    );
-  }
-  async notify(token: string, message: PushMessage) {
-    try {
-      return await this.pushNotificationServer.send({ token, ...message });
-    } catch (error) {
-      // FCM answers a token the device dropped with this code, forever.
-      const { code } = error as { code?: string };
-      if (code !== "messaging/registration-token-not-registered") throw error;
-      await this.invalidatePushToken(token);
-      return null;
-    }
+    return order;
   }
 }
 ```

@@ -112,11 +112,6 @@ beforeAll(() => {
   mock.module("react-dom/client", () => ({
     createRoot: () => ({ render: () => undefined }),
   }));
-  mock.module("@capacitor/app", () => ({
-    App: {
-      addListener: () => ({ remove: () => undefined }),
-    },
-  }));
   mock.module("@react-spring/web", () => ({
     useSpringValue: () => ({ to: () => 0, start: async () => undefined }),
   }));
@@ -150,6 +145,18 @@ const installWindow = ({
       search: url.search,
       hash: url.hash,
       replace: replace ?? (() => undefined),
+    },
+    history: {
+      state: null,
+      replaceState: (_state: unknown, _unused: string, next: string) => {
+        const nextUrl = new URL(next, url);
+        Object.assign(window.location, {
+          href: nextUrl.href,
+          pathname: nextUrl.pathname,
+          search: nextUrl.search,
+          hash: nextUrl.hash,
+        });
+      },
     },
   } as unknown as Window & typeof globalThis;
   Object.defineProperty(globalThis, "window", { value: window, configurable: true });
@@ -197,7 +204,7 @@ describe("bootCsr", () => {
     expect(replacements).toEqual(["/en/home?a=1#top"]);
   });
 
-  test("initializes mobile target from local Capacitor CSR URL", async () => {
+  test("initializes mobile target from the dev start URL", async () => {
     const replacements: string[] = [];
     installWindow({
       href: "https://example.test/en/?csr=true&akanMobileTarget=default&akanMobileBasePath=minimal&akanMobileIndexPath=/explore",
@@ -211,5 +218,65 @@ describe("bootCsr", () => {
 
     expect(window.__AKAN_MOBILE_TARGET__).toEqual({ name: "default", basePath: "minimal", indexPath: "/explore" });
     expect(replacements).toEqual([]);
+  });
+
+  test("starts a release bundle opened at / on the target's home, without a reload", async () => {
+    const cases = [
+      { target: { name: "default", indexPath: "/explore" }, home: "/en/explore" },
+      { target: { name: "default", basePath: "minimal" }, home: "/en/minimal" },
+      { target: { name: "default", basePath: "/minimal/", indexPath: "explore" }, home: "/en/minimal/explore" },
+      { target: { name: "default" }, home: "/en" },
+    ];
+    for (const { target, home } of cases) {
+      const replacements: string[] = [];
+      installWindow({ href: "app://localhost/", replace: (href) => replacements.push(href) });
+      window.__AKAN_MOBILE_TARGET__ = target;
+      const { bootCsr } = await import("./bootCsr");
+
+      await bootCsr({ "./_index.tsx": async () => ({ default: () => null }) });
+
+      expect(window.location.pathname).toBe(home);
+      expect(replacements).toEqual([]);
+    }
+  });
+
+  test("leaves a path the shell opened below / to the router", async () => {
+    installWindow({ href: "app://localhost/en/inbox?tab=1" });
+    window.__AKAN_MOBILE_TARGET__ = { name: "default", indexPath: "/explore" };
+    const { bootCsr } = await import("./bootCsr");
+
+    await bootCsr({ "./_index.tsx": async () => ({ default: () => null }) });
+
+    expect(window.location.pathname).toBe("/en/inbox");
+    expect(window.location.search).toBe("?tab=1");
+  });
+
+  test("replacePages rebuilds the route table in place, and refuses another set of routes", async () => {
+    installWindow({ href: "https://example.test/en/home" });
+    const { bootCsr, replacePages } = await import("./bootCsr");
+    const { CsrRouteTable } = await import("./CsrRouteTable");
+    const [index, first, second] = [() => null, () => null, () => null];
+    await bootCsr({ "./_index.tsx": async () => ({ default: index }), "./home.tsx": async () => ({ default: first }) });
+    const table = CsrRouteTable.active;
+    let published = 0;
+    table?.subscribe(() => {
+      published += 1;
+    });
+    const renders = () => table?.snapshot().pathRoutes.map((pathRoute) => pathRoute.renderPage.render) ?? [];
+    expect(renders()).toContain(first);
+
+    expect(
+      await replacePages({
+        "./home.tsx": async () => ({ default: second }),
+        "./_index.tsx": async () => ({ default: index }),
+      }),
+    ).toBe(true);
+    expect(renders()).toContain(second);
+    expect(renders()).not.toContain(first);
+    expect(published).toBe(1);
+
+    expect(await replacePages({ "./_index.tsx": async () => ({ default: index }) })).toBe(false);
+    expect(renders()).toContain(second);
+    expect(published).toBe(1);
   });
 });

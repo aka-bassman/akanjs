@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-beta.19 -->
+<!-- akan:agent:version 3.0.0-beta.28 -->
 
 ## Workspace
 
 - Repo: akanjs
-- Apps: akan, minimal
+- Apps: akan, groupedroot, minimal
 - Libraries: shared, util
-- Packages: @akanjs/cli, @akanjs/devkit, akanjs, create-akan-workspace, use-agentic
+- Packages: @akanjs/cli, @akanjs/devkit, @akanjs/native, akanjs, create-akan-workspace, use-agentic
 
 ## Repo Overview
 
@@ -46,7 +46,7 @@ you fetch on demand — `get_guideline` with the name, or `akan guideline show <
 | name | covers |
 |---|---|
 | `ssrRule` | server-share targets, the `akan.ssr.*` warnings, the client-boundary playbook |
-| `runtimeRule` | `web` / `csr` surfaces, gateway vs solo processes, logging, the generated image, shipped assets, database modes |
+| `runtimeRule` | `web` / `csr` surfaces, gateway vs solo processes, logging, the generated image, native apps and a desktop app's server, shipped assets, database modes |
 | `queryRule` | slices and hydration, the generated filter methods, full-text search, cascade removal |
 | `transportRule` | guards across HTTP and websocket, socket identity and cleanup, binary pubsub, mutation verbs |
 | `mcpRule` | MCP configuration, wire behaviour, resource URIs, OAuth metadata, protocol revisions |
@@ -75,8 +75,9 @@ back.
   `no-inline-color`, `no-interpolated-arbitrary-class`)
 - **Never `throw new Error`.** Throw `new Err("<module>.error.<key>")` and register the key as `[en, ko]` in that
   module's dictionary `.error({})`. Import `Err` from `"../dict"` on the server and from `"@libs/<lib>/client"` or
-  `"@apps/<app>/client"` in UI. `no-throw-raw-error.grit` exempts tests, `*.constant.ts`, `common/**`, and `env/**`
-  — the last two have no legal `Err` import path, so keep throwing code out of them.
+  `"@apps/<app>/client"` in UI. `no-throw-raw-error.grit` exempts tests, `*.constant.ts`, `common/**`, `env/**`, and
+  a root `native/` folder — `common/` and `env/` have no legal `Err` import path, so keep throwing code out of them,
+  and a native plugin throws `AkanNativeError`, the error its bridge carries back to the page.
 - **Never import a third-party package** from `page/**`, from any barrel, or from any
   `*.{constant,dictionary,document,service,signal,store}.ts` / `*.{Template,Unit,Util,View,Zone}.tsx`
   (`no-import-external-library.grit`). Re-export the symbol through a lib first. One-line re-export shims in a lib's
@@ -94,6 +95,19 @@ back.
   `*.constant.ts`, `*.store.ts`, and the five module component suffixes (`no-bang-comment-in-client.grit`). Bun
   classifies `//!` and `/*!` as legal comments and keeps them through minification, so the note ships to every
   visitor. Use `// FIXME:` there; `//!` stays legal in server, `srvkit/`, and CLI files.
+- **Never touch `document.cookie`, `localStorage` or `sessionStorage` in app or lib code** (`no-document-cookie.grit`,
+  `no-web-storage.grit`). A native shell serves the page from `app://localhost` on iOS, macOS and Linux, which keeps
+  no cookies: `document.cookie` reads `""` and a write is dropped, so the value exists in the browser and vanishes in
+  the app. Web Storage does work in the shells, but it bypasses the store akanjs picks per platform (the shell's
+  Preferences in an app) and throws during SSR. Use `getCookie` / `setCookie` / `removeCookie`, `storage`, and
+  `secretStorage` for tokens and credentials, all from `akanjs/client`.
+- **Browser APIs an app WebView lacks live in `webkit/`** (`no-web-only-api-outside-webkit.grit`, a warning):
+  `navigator.share` / `canShare` (Android's WebView has none), `navigator.serviceWorker` and
+  `Notification.requestPermission` / `.permission` (no app page has them), `navigator.geolocation` (use
+  `useGeoLocation` from `akanjs/webkit`) and `navigator.vibrate` (iOS has none; use `haptics`). They are legal on the
+  web, so the rule does not ban them: it keeps them in a `webkit/` hook that branches on `isNativeApp()` from
+  `akanjs/client/native`, which is where the app side goes too. A root `native/` folder is out of its scope: a
+  plugin's web part is where those APIs belong.
 - **Never return a value from a store action** (`no-return-in-store-action.grit`). Every method of a `store(...)`
   class dispatches through `st.do.<action>()`, typed `void` / `Promise<void>`, so the value is unreachable — write
   it into state with `this.set({ ... })`. A bare `return;` guard, a `return` inside a nested callback, a getter,
@@ -313,11 +327,11 @@ What an app serves, how many processes it runs, where its logs go, and what ship
 declared in `akan.config.ts` and narrowed — never widened — by an env at boot. Domain code reaches none of it.
 Full contract: `get_guideline` with `runtimeRule`, or `akan guideline show runtimeRule`.
 
-- **Web surfaces are `web: true | false | { csr: boolean }`.** `{ csr: false }` drops the mobile/CSR bundle,
-  `false` is an API-only build that serves nothing under `page/`. There is no CSR-without-SSR option, by type —
-  the CSR bundle inlines the stylesheet the SSR base artifact compiles. `AKAN_SSR` / `AKAN_CSR` narrow further at
-  runtime and can never switch a surface the build left out back on. `akan start` ignores `web` and keeps the
-  whole dev surface.
+- **Web surfaces are `web: true | false | { csr: boolean }`.** `{ csr: false }` drops the CSR bundle the native
+  apps ship, `false` is an API-only build that serves nothing under `page/`. There is no CSR-without-SSR option, by
+  type — the CSR bundle inlines the stylesheet the SSR base artifact compiles. `AKAN_SSR` / `AKAN_CSR` narrow
+  further at runtime and can never switch a surface the build left out back on. `akan start` ignores `web` and
+  keeps the whole dev surface.
 - **One traffic replica runs in the container's only process.** `AKAN_REPLICA=0,0,1` — the default everywhere —
   has nothing to balance, so there is no gateway and no unix-socket proxy hop. Two or more replicas, a batch-only
   replica, `AKAN_SOLO=false`, passing `replica` to `new AkanApp(...)`, or `akan start` all bring the gateway back.
@@ -326,7 +340,7 @@ Full contract: `get_guideline` with `runtimeRule`, or `akan guideline show runti
   rotating log file; nothing supervises it but the orchestrator's probes.
 - **Route prefixes move together or not at all.** `new AkanApp({ prefix, websocketPrefix })` in `main.ts` moves
   the server's routes, the gateway's websocket upgrade and — through the SSR bootstrap script — the
-  `fetchClient` in every tab the server renders. A prebuilt CSR shell or a Capacitor bundle is never rendered by
+  `fetchClient` in every tab the server renders. A prebuilt CSR shell or a native app bundle is never rendered by
   a server, so `api: { prefix, websocketPrefix }` in `akan.config.ts` is what those follow; declare it there too
   when the app ships either. Read the value with `getApiPrefix()` / `getWsPrefix()` from `akanjs/base` — never
   write `/api` or `/ws` as a literal, and never try to hand it down as a React prop: `FetchClient` fixes its
@@ -354,6 +368,31 @@ Full contract: `get_guideline` with `runtimeRule`, or `akan guideline show runti
   assembles one from; the string form takes no contributions. The generated image installs `ca-certificates` and
   `tzdata` and nothing else, so an app needing `ffmpeg` or Chromium declares it in `preRuns` / `postRuns`. A lib
   declares the steps its own runtime needs and every mounting app inherits them.
+- **Native apps are the `native` section** — iOS, Android and a desktop app (macOS, Windows, Linux), each shipping
+  the CSR bundle on the native runtime. Shared fields (`appName`, `appId`, `version`, `indexPath`, `permissions`,
+  `plugins`, `deepLinks`, `updates`, …) sit beside one section per platform: `ios`, `android`, `desktop`, and a
+  platform section's own `indexPath` wins on that platform (`desktop: { indexPath: "/" }`). Without
+  `targets` the app has one target, `default`, and an app with no basePaths leaves `basePath` out; a target takes
+  the same shape and overrides the section field by field — objects merge key by key, a list or any other value
+  replaces the section's. `akan start-ios` / `start-android` / `start-desktop` run a dev build that loads its pages
+  from `akan start`; `build-ios` / `build-android` / `build-desktop` write
+  `apps/<app>/.akan/native/<target>/build/<platform>`, a desktop app only for the OS that builds it — `--arch` picks
+  a Windows or Linux app's CPU, and a macOS app is Apple silicon only. `--installer true` adds a Windows setup, a
+  macOS dmg or a Linux AppImage; `AKAN_NATIVE_MACOS_*` signs with a Developer ID and notarizes,
+  `AKAN_NATIVE_WINDOWS_*` signs with Authenticode. With `updates: { url, publicKey }` an installed app takes the signed
+  releases `akan publish-update` makes; `akan update-keygen` makes the key and prints its `publicKey`.
+- **A desktop app that carries its server (`desktop: { server: true }` in `native`, or in one target) gets nothing
+  from `docker`** — and `server: { omit: [...] }` leaves out packages only the image needs. That server is API-only, runs in database mode `single`, and listens on a loopback port any
+  program on the computer can call, so guard its endpoints as a network server's. An executable the app spawns
+  goes in `bin` — per platform, a download checked against its `sha256` or a file beside the config, put first on
+  the app's PATH so the server's `spawn("ffmpeg")` finds it, and in `ctx.binDir` for a native plugin — and a package
+  that builds itself at install goes in `trustedDependencies`, which the image honours too. Carry a static LGPL
+  ffmpeg: a `--enable-nonfree` build may not be redistributed. A file the user picks with
+  `filePicker.pickFiles({ forServer: true })` reaches it as a grant, never a copy or a path:
+  `NativeFile.resolve(grant, "read")` in `akanjs/server` asks the shell for it. What it carries is readable on the
+  user's computer — `private/` (each lib's too, under `private/libs/<lib>`), the one `env.server.<env>.ts` of its
+  `--env` and its libs' server env defaults (`env.server.testing.ts`) — and it has no `public/`: read runtime files
+  from `AKAN_APP_DIR`, never `process.cwd()`.
 - **`assets: { pruneFonts, keepFonts }`** trims from the `dist` copy of `public/` the fonts nothing reads; source
   trees are never touched. A font with `optimize` on is a build input, not a runtime asset. `keepFonts` belongs to
   the `akan.config.ts` that owns the font, written against that scope's own `public/`.
@@ -878,6 +917,12 @@ shape, so `cascade` never means "related" — it means one of exactly these:
   `.layoutStyle()` on the root layout; `.prompt()` on a page. A named export beside the chain, or `page()` in a
   `_layout.tsx`, fails the build. `.head()` takes JSX — `<title>`, `<meta>`, `<link>` — or a function of the
   route's args returning it; there is no metadata object, and analytics is the app's own script, not a stage.
+- **A CSR bundle (a native app, `?csr=true`) never shows a root layout's own markup.** Pages render into the
+  frame, and what the root layout draws around `{children}` stays in a hidden container, so its wrappers cannot
+  stack a second screen beside the frame. Its components still mount and their effects run (`<Auth.User />` works).
+  Anything a person must see from a root layout — an overlay, a gate, a banner — renders through
+  `createPortal(…, document.body)`, as `<Agent.Chat />` and the dialogs already do. A non-root `_layout.tsx` has no
+  such limit.
 - **A page names every `[x]` segment of its path with `.param("x", Type)`** and reads a query key only through
   `.search("k", Type)`. Values arrive typed — `ID`/`String` → string, `Int`/`Float` → number, `Boolean`, `Date` →
   Dayjs, an `enumOf` class → its union, `[T]` → array — a path value the type refuses answers not-found, and a
@@ -920,10 +965,10 @@ export default page()
 
 ## Akan Sync Conventions (`apps/**`, `libs/**`)
 
-- `apps/<appName>` root may only contain these files: `AGENTS.md`, `CLAUDE.md`, `akan.app.json`, `akan.config.ts`, `capacitor.config.ts`, `client.ts`, `main.ts`, `package.json`, `server.ts`, `tsconfig.json`, `tsconfig.tsbuildinfo`.
-- `apps/<appName>` root may only contain these folders: `.akan`, `android`, `common`, `env`, `ios`, `lib`, `mobile`, `page`, `plugin`, `private`, `public`, `script`, `secrets`, `srvkit`, `ui`, `webkit`.
+- `apps/<appName>` root may only contain these files: `AGENTS.md`, `CLAUDE.md`, `akan.app.json`, `akan.config.ts`, `client.ts`, `main.ts`, `package.json`, `server.ts`, `tsconfig.json`, `tsconfig.tsbuildinfo`.
+- `apps/<appName>` root may only contain these folders: `.akan`, `common`, `env`, `lib`, `native`, `page`, `plugin`, `private`, `public`, `script`, `secrets`, `srvkit`, `ui`, `webkit`.
 - `libs/<libName>` root may only contain these files: `AGENTS.md`, `CLAUDE.md`, `README.md`, `akan.config.ts`, `akan.lib.json`, `client.ts`, `index.ts`, `package.json`, `server.ts`, `tsconfig.json`, `tsconfig.spec.json`, `tsconfig.tsbuildinfo`.
-- `libs/<libName>` root may only contain these folders: `common`, `env`, `lib`, `page`, `plugin`, `private`, `public`, `srvkit`, `ui`, `webkit`. A library is never booted or packaged as an app, so the run and mobile entries an app carries (`main.ts`, `capacitor.config.ts`, `.akan`, `android`, `ios`, `mobile`, `script`, `secrets`) are rejected there.
+- `libs/<libName>` root may only contain these folders: `common`, `env`, `lib`, `native`, `page`, `plugin`, `private`, `public`, `srvkit`, `ui`, `webkit`. A library is never booted or packaged as an app, so the run and mobile entries an app carries (`main.ts`, `.akan`, `script`, `secrets`) are rejected there. A Capacitor-era `ios` / `android` / `mobile` folder or `capacitor.config.*` is refused in an app root too, named as a leftover: the native runtime generates its projects under `.akan/native/<target>`.
 - Both allowlists have one source — `pkgs/@akanjs/devkit/workspaceLayout.ts`. `akan sync` (error), `akan doctor`
   (diagnostic), and `akan quality scan` (warning) all read it, so add a new root entry there and mirror it into this
   list, never into one of the three call sites.
@@ -947,12 +992,15 @@ export default page()
 | Folder | Admission test | Naming |
 |---|---|---|
 | `common/` | pure, isomorphic, zero-dependency; may import only sibling `common/*` and `akanjs/base`. Cannot import `Err`, so keep throwing code out of it. | camelCase file, filename equals the single export |
-| `webkit/` | touches `window` / `navigator` / Capacitor, or is a React hook | `use<Thing>.tsx` — `.tsx` even with no JSX |
+| `webkit/` | touches `window` / `navigator` / the native bridge (`akanjs/client/native`, or `akanjs/client/native/<plugin id>` for any builtin plugin), or is a React hook | `use<Thing>.tsx` — `.tsx` even with no JSX |
 | `srvkit/` | touches `node:*`, `Bun`, `process.env`, a secret, or a server SDK | camelCase file, PascalCase class |
 | `ui/` | renders JSX, or defines a look (a recipe in `Recipe/`, a lib's `tokens.css`), and is not bound to one model | PascalCase component, camelCase sidecar (`swipeCard.util.ts`), `Recipe/<name>.ts` |
 | `plugin/` | build- or CLI-time `AkanPlugin` | `<name>.plugin.ts`, registered in `akan.config.ts` |
+| `native/` | a native plugin the app or lib owns: `native-plugin.json` beside its page API (`src/index.ts`, `definePlugin` from `akanjs/client/native`), its desktop part (`src/desktop.ts`, `defineDesktopPlugin` from `akanjs/native/desktop`), Kotlin and Swift. Every mobile and desktop target ships it; a lib's reach only the apps that depend on it, and the app's own wins an id | `native/<id>/`, the folder named after the plugin id |
 
 - Hooks return a named object of async closures, never a tuple.
+- A `native/` plugin's page API is imported by a `webkit/` hook (`../native/<id>/src`) and nothing else; pages and
+  components call the hook, the same way they reach `akanjs/client/native`.
 - `ui/` is the presentation layer — markup and the looks it is built from — so a recipe lives there although it is
   neither a component nor a hook. Not `webkit/`: its hooks are `"use client"`, the opposite signal for a function
   server components call. Not `common/`: it cannot import `akanjs/ui`, where `recipe` / `tv` come from.
@@ -1008,11 +1056,13 @@ actions and state (see `<model>.store.ts` above).
   other file. The previous session is kept beside it as `dev.prev.log`. Hand somebody — or an agent — the
   path rather than a paste: it costs one line instead of a transcript, and it can be re-read after a fix.
   In the view, `y` copies the lines the filters have already narrowed and `Y` copies the path.
-- **How many apps boot at once is the machine's answer, not a constant.** A cold boot build is the builder's
-  RSS peak (~900MB per app), so the default wave is what memory and cores allow — half the memory budget
-  divided by that peak, and one app per four cores — which boots a laptop's apps together and still staggers
-  them inside a small container. The session says which in one line. `--concurrency <n>` overrides it, and
-  `AKAN_MEMORY_LIMIT` lowers the budget it derives from.
+- **How many apps boot at once is the machine's answer, not a constant.** A cold boot is an app's RSS peak
+  (~1.8GB per app, most of it the build worker — the base build, then the SSR registry's), so the default wave
+  is what memory and cores allow — half the memory budget divided by that peak, and one app per four cores —
+  which boots a laptop's apps together and still staggers them inside a small container. The session says
+  which in one line. The next wave starts once an app serves and its boot builds have settled, or 30 seconds
+  after it serves, while the app shows as ready — and `--open` opens it — as soon as it serves.
+  `--concurrency <n>` overrides the wave size, and `AKAN_MEMORY_LIMIT` lowers the budget it derives from.
 - `--kill` frees the dev ports first — it resolves each port's listener, walks up to the top of that akan dev
   tree and signals it, so another checkout's server or a stale orphan on the same port is reclaimed. A holder
   that is not recognisably an akan process is reported and left alone.

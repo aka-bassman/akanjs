@@ -4,8 +4,9 @@ import path from "node:path";
 import { Logger } from "akanjs/common";
 import type { AkanChildRole, AkanChildStatus, AkanIpcMessage, AkanMetricsReport, AkanUpstream } from "akanjs/service";
 import { getApiPrefix, getWsPrefix, normalizeRoutePrefix, resetEnvCache } from "../base/baseEnv";
+import { CrossSiteGuard } from "../signal/CrossSiteGuard";
 import { isTraceEnabled } from "../signal/trace";
-import { makeAkanChildProxyHeaders } from "./akanAppHeaders";
+import { AKAN_CHILD_HOST, makeAkanChildProxyHeaders } from "./akanAppHeaders";
 import type { BuilderCsrReq, BuilderCsrRes, BuilderMessage, BuilderReq, BuilderRes } from "./artifact";
 import { compressResponse, encodedFileResponse } from "./contentEncoding";
 import { isPortInUseError } from "./lifecycle/portInUse";
@@ -19,6 +20,8 @@ import { RotatingLogWriter } from "./logging/rotatingLogWriter";
 import { AppInfo } from "./ops/appInfo";
 import type { OpsRoute } from "./ops/opsRoute";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
+import { HostAllowlist } from "./routing/hostAllowlist";
+import { SelfExec } from "./selfExec";
 import { resolveStaticPath } from "./staticPath";
 import { getWebConfigFromEnv } from "./types";
 
@@ -140,6 +143,7 @@ export class AkanApp {
   #logControl: LogControlSocket | null = null;
   #logStream: LogStreamRoute | null = null;
   #ops: OpsRoute | null = null;
+  #hostAllowlist = HostAllowlist.fromEnv();
   static readonly #ansiPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
   #gatewayMetrics: AkanMetricsReport = {};
   #proxyHopCount = 0;
@@ -150,6 +154,7 @@ export class AkanApp {
   #stopping = false;
 
   constructor(serverPathOrOptions: string | AkanAppOptions = "./server", options: AkanAppOptions = {}) {
+    SelfExec.adopt();
     const resolvedOptions = typeof serverPathOrOptions === "string" ? options : serverPathOrOptions;
     const serverPath = typeof serverPathOrOptions === "string" ? serverPathOrOptions : "./server";
     this.#serverPath = AkanApp.#resolveServerPath(resolvedOptions.serverPath ?? serverPath);
@@ -240,6 +245,10 @@ export class AkanApp {
       process.exit(await OpsCommand.run(process.argv.slice(3)));
     }
     if (this.#solo) return await this.#startSolo();
+    if (SelfExec.carried)
+      throw new Error(
+        "A desktop app's server runs in one process, and this one was asked for a gateway and replicas, which would start with the `bun` on the user's PATH: by `replica` or `solo: false` in main.ts, or by AKAN_SOLO=false, an AKAN_REPLICA other than one traffic replica, or AKAN_COMMAND_TYPE=start in its env. Leave them out of the app the desktop build carries.",
+      );
     Logger.role = "gateway";
     await this.#prepareRuntimeDir();
     await this.#startLogHub();
@@ -588,6 +597,7 @@ export class AkanApp {
     this.#server = Bun.serve({
       idleTimeout: 0,
       port: this.#port,
+      hostname: process.env.AKAN_LISTEN_HOST || undefined,
       fetch: (req, server) => this.#handleFetch(req, server),
       websocket: {
         idleTimeout: 0,
@@ -604,6 +614,7 @@ export class AkanApp {
   }
 
   async #handleFetch(req: Request, server: Bun.Server<GatewayWsData>): Promise<Response | undefined> {
+    if (this.#hostAllowlist && !this.#hostAllowlist.allows(req)) return this.#hostAllowlist.refuse();
     const url = new URL(req.url);
     if (url.pathname === "/_akan/app/health") return Response.json(this.#getHealthStatus());
     if (url.pathname === "/_akan/app/metrics") return Response.json(this.#getMetricsStatus());
@@ -647,6 +658,12 @@ export class AkanApp {
     const upstream = child?.upstream ? (child.wsUpstream ?? this.#getChildUpstream(child.idx, child.role).ws) : null;
     if (!child || !upstream) return new Response("No websocket upstream is ready", { status: 503 });
     const url = new URL(req.url);
+    //? Once upgraded here, a replica's refusal can only close the socket: the browser has to see the 403 from this hop.
+    try {
+      CrossSiteGuard.assertOrigin(req, url, url.pathname === "/_akan/hmr" ? "hmr" : "websocket");
+    } catch {
+      return new Response("Forbidden", { status: 403 });
+    }
     const upstreamWs = new WebSocket(`ws://${upstream.host}:${upstream.port}${url.pathname}${url.search}`, {
       headers: makeAkanChildProxyHeaders(req, child.idx, server.requestIP(req)),
     } as unknown as string[]);
@@ -750,6 +767,8 @@ export class AkanApp {
   async #proxyHttp(req: Request, server: Bun.Server<GatewayWsData>): Promise<Response> {
     const child = await this.#pickReadyFederationChild(req);
     if (!child?.upstream || child.upstream.type !== "unix") return this.#respondWithUnavailable(req);
+    // Read once: a concurrent request's failure can clear `child.upstream` while this one awaits the child.
+    const { socketPath } = child.upstream;
     const url = new URL(req.url);
     const upstreamUrl = `http://akan-child${url.pathname}${url.search}`;
     const headers = makeAkanChildProxyHeaders(req, child.idx, server.requestIP(req));
@@ -759,7 +778,7 @@ export class AkanApp {
     const hopStart = traced ? performance.now() : 0;
     try {
       const upstreamRes = await fetch(upstreamUrl, {
-        unix: child.upstream.socketPath,
+        unix: socketPath,
         method: req.method,
         headers,
         body: req.method === "GET" || req.method === "HEAD" ? undefined : req.body,
@@ -769,9 +788,7 @@ export class AkanApp {
       return await this.#proxyResponse(req, upstreamRes);
     } catch (error) {
       if (AkanApp.#isUpstreamOpenFailure(error)) {
-        this.logger.error(
-          `Child ${child.idx}/${child.role} upstream is unreachable (${child.upstream.socketPath}); restarting`,
-        );
+        this.logger.error(`Child ${child.idx}/${child.role} upstream is unreachable (${socketPath}); restarting`);
         this.#scheduleChildRestart(child, child.proc, "upstream-open-failed");
         return AkanApp.#unavailableResponse(req, "Federation child upstream is unreachable; restarting");
       }
@@ -940,8 +957,10 @@ export class AkanApp {
   async #proxyResponse(req: Request, upstreamRes: Response): Promise<Response> {
     const headers = new Headers(upstreamRes.headers);
     // Bun fetch decompresses upstream bodies but keeps these headers, so browsers would decode twice.
-    headers.delete("content-encoding");
-    headers.delete("content-length");
+    if (headers.has("content-encoding")) {
+      headers.delete("content-encoding");
+      headers.delete("content-length");
+    }
     this.#rewriteInternalLocation(headers);
     const proxied = new Response(upstreamRes.body, {
       status: upstreamRes.status,
@@ -961,7 +980,8 @@ export class AkanApp {
     if (!location) return;
     try {
       const parsed = new URL(location);
-      if (parsed.hostname === "akan-child") headers.set("location", `${parsed.pathname}${parsed.search}${parsed.hash}`);
+      if (parsed.hostname === AKAN_CHILD_HOST)
+        headers.set("location", `${parsed.pathname}${parsed.search}${parsed.hash}`);
     } catch {
       // Relative redirects are already safe to pass through.
     }
@@ -1068,6 +1088,8 @@ export class AkanApp {
       case "invalidate":
       case "css-updated":
       case "pages-updated":
+      case "csr-updated":
+      case "ssr-updated":
       case "build-status":
         this.#fanoutToFederation(message);
         return;
@@ -1087,6 +1109,7 @@ export class AkanApp {
     child.upstream = message.upstream;
     child.wsUpstream = message.wsUpstream;
     child.healthPath = message.healthPath;
+    if (message.crossSite) CrossSiteGuard.configure(message.crossSite);
     child.lastPongAtMono = performance.now();
     child.restartAttempts = 0;
     // A child that (re)spawned after subscribers arrived has never heard the floor.
@@ -1097,7 +1120,8 @@ export class AkanApp {
     this.#federationChildCache = null;
     // Batch children serve no HTTP/HMR traffic, so they must not gate frontend readiness.
     const trafficChildren = [...this.#children.values()].filter((item) => item.role !== "batch");
-    if (child.role !== "batch" && trafficChildren.every((item) => item.ready)) {
+    //? A gateway that lost its port stops only after its replicas exit, and one may boot in that wait.
+    if (!this.#stopping && child.role !== "batch" && trafficChildren.every((item) => item.ready)) {
       process.send?.({ type: "backend-ready", pid: process.pid } satisfies AkanIpcMessage);
     }
     if ([...this.#children.values()].every((item) => item.ready)) {

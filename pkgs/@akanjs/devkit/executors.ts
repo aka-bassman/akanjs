@@ -21,7 +21,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AkanPlugin, AkanSyncContext, PluginRuntimeContext } from "akanjs";
+import type { AkanPlugin, AkanSyncContext } from "akanjs";
 import {
   capitalize,
   getPageSourceFileViolation,
@@ -790,7 +790,8 @@ export class WorkspaceExecutor extends Executor {
   }
   async #getDirHasFile(basePath: string, targetFilename: string) {
     if (!(await FileSys.dirExists(basePath))) return [];
-    const AVOID_DIRS = ["node_modules", "dist", "public", "webkit"];
+    //? `local/` is gitignored scratch: a test's temporary workspace there has a package.json of its own.
+    const AVOID_DIRS = ["node_modules", "dist", "public", "webkit", "local"];
     const getDirs = async (dirname: string, maxDepth = 3, results: string[] = [], prefix = "") => {
       const dirs = await this.readdir(dirname);
       await Promise.all(
@@ -1118,6 +1119,20 @@ export class AppExecutor extends SysExecutor {
   static from(executor: SysExecutor | WorkspaceExecutor, name: string) {
     return new AppExecutor({ workspace: executor instanceof WorkspaceExecutor ? executor : executor.workspace, name });
   }
+  //* Not dev output: native builds and the update releases waiting to be uploaded, and the downloaded `bin` sources.
+  static readonly #keptOnStart = [path.join(".akan", "native"), path.join(".akan", "cache", "bin")];
+  async #removeDevOutput(dir = ".akan") {
+    const entries = await readDirEntries(this.getPath(dir)).catch(() => [] as string[]);
+    await Promise.all(
+      entries.map(async (name) => {
+        const entry = path.join(dir, name);
+        if (AppExecutor.#keptOnStart.includes(entry)) return;
+        if (AppExecutor.#keptOnStart.some((kept) => kept.startsWith(`${entry}${path.sep}`)))
+          return await this.#removeDevOutput(entry);
+        await this.removeDir(entry);
+      }),
+    );
+  }
   getEnv() {
     return WorkspaceExecutor.getBaseDevEnv().env;
   }
@@ -1174,7 +1189,7 @@ export class AppExecutor extends SysExecutor {
         ...(akanConfig.web.ssr ? [this.cp("public", `${this.dist.cwdPath}/public`, { dereference: true })] : []),
       ]);
     } else {
-      await this.removeDir(".akan");
+      await this.#removeDevOutput();
       //? `akan start` keeps the full dev surface: the incremental builder is also the file watcher.
       if (!akanConfig.web.ssr || !akanConfig.web.csr)
         this.logger.verbose(
@@ -1479,17 +1494,6 @@ export class AppExecutor extends SysExecutor {
       seen.add(plugin.name);
       return true;
     });
-  }
-  async getPluginRuntimePackages(): Promise<string[]> {
-    const plugins = await this.collectPlugins();
-    const appConfig = await this.getConfig();
-    const ctx: PluginRuntimeContext = {
-      appName: this.name,
-      mobile: appConfig.mobile,
-      hasMobilePermission: (permission) =>
-        Object.values(appConfig.mobile.targets).some((target) => target.permissions?.includes(permission) ?? false),
-    };
-    return [...new Set(plugins.flatMap((plugin) => plugin.runtimePackages?.(ctx) ?? []))];
   }
   async increaseBuildNum() {
     await increaseBuildNum(this);

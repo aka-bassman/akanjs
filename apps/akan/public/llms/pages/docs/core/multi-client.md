@@ -27,6 +27,18 @@ The test is whether the surfaces are sold, deployed, or reached as separate prod
 
 Situation
 
+- A customer storefront and an admin console — They share products, orders, users, and permissions, but need different domains, layouts, and release targets.
+
+- A consumer client, a partner portal, and an internal tool — One backend, three audiences. Each gets its own home screen and navigation without a second app.
+
+- Android and iOS packages released per brand, region, or user type — A native target points at a basePath, so each package opens its own client from the same backend.
+
+- White-label or regional sites on shared business rules — Different domains, names, and first screens over the same domain models — the case basePath exists for.
+
+- Account settings, dashboards, tabs, grouped screens — These are sections inside one client. A route group such as (user) organizes them without adding a URL segment.
+
+- A section that only some signed-in users may open — Authorization is a guard and a layout gate, not a deployment boundary. Splitting on it buys nothing and costs a domain.
+
 normal routing
 
 Akan can serve multiple web clients from one app by splitting pages with basePath. Every route sits under the locale, so locally a client is the segment right after it — /en/store — but in production the matching domain hides that segment and serves the client as a separate site.
@@ -61,9 +73,9 @@ Route Config
 
 Define clients in akan.config.ts with routes. The basePath names the client, and domains decide which production host should open that client.
 
-The client this route opens and its first page folder: basePath store lives in page/store.
+- basePath (string): The client this route opens and its first page folder: basePath store lives in page/store.
 
-Hosts per branch that open this basePath; a matching host hides the basePath segment.
+- domains (Record<branch, string[]>, default {}): Hosts per branch that open this basePath; a matching host hides the basePath segment.
 
 Page Structure
 
@@ -89,7 +101,7 @@ Locally the site root has no page of its own, so Akan answers it with a list of 
 
 CSR And Mobile Builds
 
-When the app is built, Akan can prepare CSR web output per basePath. Mobile targets can also point to a basePath, so Android and iOS apps can open the right client from the same backend.
+When the app is built, Akan can prepare CSR web output per basePath. Native targets can also point to a basePath, so Android and iOS apps can open the right client from the same backend.
 
 Build outputs
 
@@ -148,7 +160,7 @@ https://admin.example.com  -> admin
 https://partner-main.example.com -> partner
 ```
 
-### Mobile targets
+### Native targets
 
 ```ts
 const config = {
@@ -156,9 +168,7 @@ const config = {
     { domains: { main: ["store.example.com"] }, basePath: "store" },
     { domains: { main: ["admin.example.com"] }, basePath: "admin" },
   ],
-  mobile: {
-    appName: "Example App",
-    appId: "com.example.app",
+  native: {
     version: "1.0.0",
     buildNum: 1,
     targets: {

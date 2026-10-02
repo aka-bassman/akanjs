@@ -41,6 +41,30 @@ The five UI suffixes are not five sizes of component either. Each one answers a 
 
 File
 
+- model.abstract.md: Business intent, domain rules, workflows and agent notes beside the module code. — shared
+
+- model.constant.ts: Constants, status values, default options, and shared model types. — shared
+
+- model.dictionary.ts: Labels, field names, and text keys the model uses, such as the price label. — shared
+
+- model.document.ts: Stored data shape, filters, and document model definition. — server
+
+- model.service.ts: Server-side business logic, such as creating an order or applying a coupon. — server
+
+- model.signal.ts: Public actions, slices, endpoints, and internal jobs that pages can call. — shared
+
+- model.store.ts: Client or model state used across screens, such as selected filters or a cart. — client
+
+- Model.Template.tsx: The create and edit form: reads st.use.productForm(), writes through generated setters. — client
+
+- Model.Unit.tsx: One item in a list or grid, such as a row or card; takes the trimmed LightProduct. — server
+
+- Model.Util.tsx: A domain UI helper named for the endpoint verb minus the model noun, like Refund. — client
+
+- Model.View.tsx: One record in full detail: the full model, with fields a list never loads. — server
+
+- Model.Zone.tsx: A composed page section: feeds the store to Load.Units or Load.View; Unit and View draw it. — client
+
 The client boundary follows the suffix, not your judgment. Template, Zone, and Util always carry "use client" on line 1; Unit and View never do, so they render on the server and ship no JavaScript.
 
 Naming Rule
@@ -77,6 +101,40 @@ Not every folder type uses every file type. Database modules can have the full s
 
 Choose the file set by the business role of the folder. product is a thing you store, so it can have document and store files. _payment is something you do, so it usually focuses on service and signal files. money is a reusable value shape, so it stays small and definition-oriented.
 
+- database: Database — lib/product/
+
+- service: Service — lib/_payment/
+
+- scalar: Scalar — lib/__scalar/money/
+
+- Business files — model
+
+  - .abstract.md
+
+  - .constant.ts
+
+  - .dictionary.ts
+
+  - .document.ts
+
+  - .service.ts
+
+  - .signal.ts
+
+  - .store.ts
+
+- UI files — Model
+
+  - .Template.tsx
+
+  - .Unit.tsx
+
+  - .Util.tsx
+
+  - .View.tsx
+
+  - .Zone.tsx
+
 {num} files
 
 Allowed in this module kind
@@ -92,6 +150,22 @@ When you are not sure which file to create, start from the business question you
 For example, 'Can the customer see the order?' points to View. 'Can the customer cancel the order?' points to signal and service. 'What fields does an order save?' points to document.
 
 Question
+
+- Do we store this data? — model.document.ts
+
+- Does the server process it? — model.service.ts
+
+- Should a page call it? — model.signal.ts
+
+- Does one record get its own page? — Model.View.tsx
+
+- Is it one item in a list? — Model.Unit.tsx
+
+- Does the user fill it in? — Model.Template.tsx
+
+- Is it a domain UI action? — Model.Util.tsx
+
+- Is it a large screen area? — Model.Zone.tsx
 
 ## Code Examples
 

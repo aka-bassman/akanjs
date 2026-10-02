@@ -1,12 +1,12 @@
-import { ACTION_META, ACTION_OWNER_META, getEnv, STATE_DERIVED_META, STATE_INIT_META } from "akanjs/base";
+import { ACTION_META, ACTION_OWNER_META, STATE_DERIVED_META, STATE_INIT_META } from "akanjs/base";
 import { Translator } from "akanjs/client";
-import { loadCapacitorApp } from "akanjs/client/capacitor";
+import { appState, isNativeApp } from "akanjs/client/native";
 import { capitalize, type DynamicRecord, isRecord, Logger, parseAkanI18nEnv } from "akanjs/common";
 import { ConstantRegistry } from "akanjs/constant";
 import type { SerializedArg } from "akanjs/signal";
 import { enableMapSet, produce } from "immer";
 import type { RefObject } from "react";
-import { useScopePath } from "use-agentic";
+import { type AgentGate, useAgentGate, useScopePath } from "use-agentic";
 import { type ActionOwner, actionTagOf, tagAction } from "./actionTag";
 import { useFormTools } from "./agentic/useFormTools";
 import { DraftStore } from "./draftStore";
@@ -56,6 +56,8 @@ export type ReactAPI = {
 
 export class StoreInstance {
   #state: StoreStateRecord = {};
+  // What the server rendered: initializers only, since nothing on the server ever calls `set`.
+  #serverState: StoreStateRecord = {};
   #listeners = new Set<() => void>();
   #derivedMeta: StateDerivedMeta = { drafts: {}, persistSession: {}, search: {}, computed: {}, derivedKeys: new Set() };
   #draftTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -146,6 +148,7 @@ export class StoreInstance {
 
   #sel = <U>(selector: (state: StoreStateRecord) => U, equals?: (a: U, b: U) => boolean) => {
     const eq = equals ?? Object.is;
+    let serverSnapshot: { value: U } | null = null;
     return useSyncExternalStore(
       (onStoreChange: () => void) => {
         let prev = selector(this.#state);
@@ -159,47 +162,59 @@ export class StoreInstance {
         return this.subscribe(listener);
       },
       () => selector(this.#state),
-      () => selector(this.#state),
+      // React hydrates each Suspense boundary in its own pass, after earlier boundaries' effects already wrote the store.
+      () => {
+        serverSnapshot ??= { value: selector(this.#serverState) };
+        return serverSnapshot.value;
+      },
     );
   };
 
-  retainLive = (key: string, scopeKey = "") => {
-    const scopes = this.#liveKeys.get(key) ?? new Map<string, number>();
-    scopes.set(scopeKey, (scopes.get(scopeKey) ?? 0) + 1);
+  retainLive = (key: string, scopeKey = "", gate: AgentGate | null = null) => {
+    const scopes = this.#liveKeys.get(key) ?? new Map<string, Map<AgentGate | null, number>>();
+    const gates = scopes.get(scopeKey) ?? new Map<AgentGate | null, number>();
+    gates.set(gate, (gates.get(gate) ?? 0) + 1);
+    scopes.set(scopeKey, gates);
     this.#liveKeys.set(key, scopes);
   };
 
-  releaseLive = (key: string, scopeKey = "") => {
+  releaseLive = (key: string, scopeKey = "", gate: AgentGate | null = null) => {
+    const gates = this.#liveKeys.get(key)?.get(scopeKey);
+    if (!gates) return;
+    const count = gates.get(gate) ?? 0;
+    if (count <= 1) gates.delete(gate);
+    else gates.set(gate, count - 1);
+    if (gates.size) return;
     const scopes = this.#liveKeys.get(key);
-    if (!scopes) return;
-    const count = scopes.get(scopeKey) ?? 0;
-    if (count <= 1) scopes.delete(scopeKey);
-    else scopes.set(scopeKey, count - 1);
-    if (!scopes.size) this.#liveKeys.delete(key);
+    scopes?.delete(scopeKey);
+    if (!scopes?.size) this.#liveKeys.delete(key);
   };
 
   #useLive(key: string, count = true) {
-    // Retention is tagged with the ambient agent scope, so a zone session sees only the keys its own subtree reads.
+    // Retention is tagged with the ambient agent scope, so a zone session sees only the keys its own subtree reads,
+    // and with its gate, so a page kept mounted under the current one stops lending the screen its keys.
     const scopeKey = useScopePath().join(".");
+    const gate = useAgentGate();
     useEffect(() => {
       if (!count) return;
-      this.retainLive(key, scopeKey);
+      this.retainLive(key, scopeKey, gate);
       return () => {
-        this.releaseLive(key, scopeKey);
+        this.releaseLive(key, scopeKey, gate);
       };
-    }, [key, count, scopeKey]);
+    }, [key, count, scopeKey, gate]);
   }
 
   // Keys are learned by running the selector over a recording proxy, once at mount: retained must equal released.
   #useLiveSelector(selector: (state: StoreStateRecord) => unknown) {
     const scopeKey = useScopePath().join(".");
+    const gate = useAgentGate();
     useEffect(() => {
       const keys = [...this.#touched(selector)];
-      for (const key of keys) this.retainLive(key, scopeKey);
+      for (const key of keys) this.retainLive(key, scopeKey, gate);
       return () => {
-        for (const key of keys) this.releaseLive(key, scopeKey);
+        for (const key of keys) this.releaseLive(key, scopeKey, gate);
       };
-    }, [scopeKey]);
+    }, [scopeKey, gate]);
   }
 
   #touched(selector: (state: StoreStateRecord) => unknown) {
@@ -239,7 +254,7 @@ export class StoreInstance {
   readonly #sliceStateRoles = new Map<string, SliceStateRole>();
   readonly #actionArity = new Map<string, number>();
   readonly #actionOwners = new Map<string, ActionOwner>();
-  readonly #liveKeys = new Map<string, Map<string, number>>();
+  readonly #liveKeys = new Map<string, Map<string, Map<AgentGate | null, number>>>();
   readonly #generatedSetters = new Set<string>();
 
   /** How many mounted components read each state key right now. */
@@ -247,14 +262,14 @@ export class StoreInstance {
     return this.liveKeysIn("");
   }
 
-  /** Live keys retained at `viewKey`'s scope or below; `""` is the whole screen. */
+  /** Live keys retained at `viewKey`'s scope or below, behind no gate or an active one; `""` is the whole screen. */
   liveKeysIn(viewKey: string): ReadonlyMap<string, number> {
     const keys = new Map<string, number>();
     for (const [key, scopes] of this.#liveKeys) {
       let total = 0;
-      for (const [scopeKey, count] of scopes) {
+      for (const [scopeKey, gates] of scopes) {
         if (viewKey && scopeKey !== viewKey && !scopeKey.startsWith(`${viewKey}.`)) continue;
-        total += count;
+        for (const [gate, count] of gates) if (gate?.active ?? true) total += count;
       }
       if (total > 0) keys.set(key, total);
     }
@@ -295,22 +310,27 @@ export class StoreInstance {
   addStore(store: RootStoreCls) {
     this.#mergeDerivedMeta(store[STATE_DERIVED_META]);
     const newState = evaluateInitializers(store[STATE_INIT_META] ?? {});
+    this.#serverState = this.#withNewKeys(
+      this.#serverState,
+      this.#materializeDerived({ ...this.#serverState, ...newState }, this.#serverState, true),
+    );
     const hydratedState = this.#hydratePersistSession(newState);
     const derivedState = this.#materializeDerived({ ...this.#state, ...hydratedState }, this.#state);
-    let hasNewStateKey = false;
-    const nextState = { ...this.#state };
-    for (const [key, value] of Object.entries(derivedState)) {
-      if (key in nextState) continue;
-      nextState[key] = value;
-      hasNewStateKey = true;
-    }
-    if (hasNewStateKey) this.#state = nextState;
+    const nextState = this.#withNewKeys(this.#state, derivedState);
+    const hasNewStateKey = nextState !== this.#state;
+    this.#state = nextState;
     for (const [key, owner] of Object.entries(store[ACTION_OWNER_META] ?? {})) this.#actionOwners.set(key, owner);
     this.#mergeActions(store[ACTION_META]);
     this.#extendAccessors(derivedState, store[ACTION_META]);
     this.#buildSlices(store);
     if (hasNewStateKey) this.#notify();
     return this;
+  }
+
+  #withNewKeys(state: StoreStateRecord, additions: StoreStateRecord) {
+    const newKeys = Object.keys(additions).filter((key) => !(key in state));
+    if (!newKeys.length) return state;
+    return { ...state, ...Object.fromEntries(newKeys.map((key) => [key, additions[key]])) };
   }
 
   static #formRefNameOf(key: string) {
@@ -565,18 +585,18 @@ export class StoreInstance {
     window.addEventListener("pagehide", this.flushDrafts);
     document.addEventListener("visibilitychange", onHide);
     // iOS can suspend a webview without ever firing a page event, so the native lifecycle is the only warning.
-    if (getEnv().renderMode === "csr")
-      void loadCapacitorApp()
-        .then(({ App }) => App.addListener("pause", this.flushDrafts))
-        .catch(() => undefined);
+    if (isNativeApp())
+      appState.listen("change", ({ state }) => {
+        if (state === "background") this.flushDrafts();
+      });
   }
 
-  #materializeDerived(next: StoreStateRecord, prev: StoreStateRecord) {
+  #materializeDerived(next: StoreStateRecord, prev: StoreStateRecord, server = typeof window === "undefined") {
     const materialized = { ...next };
     const changedKeys = new Set(Object.keys(materialized).filter((key) => !Object.is(materialized[key], prev[key])));
     const searchParams = (materialized.searchParams ?? {}) as SearchParamsState;
     for (const [key, meta] of Object.entries(this.#derivedMeta.search)) {
-      const value = typeof window === "undefined" ? meta.getDefault() : meta.parseSearch(searchParams);
+      const value = server ? meta.getDefault() : meta.parseSearch(searchParams);
       if (!Object.is(materialized[key], value)) {
         materialized[key] = value;
         changedKeys.add(key);

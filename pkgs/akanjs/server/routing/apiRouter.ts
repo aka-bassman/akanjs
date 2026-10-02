@@ -1,19 +1,27 @@
 import { dayjs } from "akanjs/base";
 import { type Logger, websocketAuthContract, websocketHeartbeatContract } from "akanjs/common";
 import type { InjectRegistry, LiveRegistry } from "akanjs/service";
-import { isExceptionLike, SignalContext, SignalFailure, type WebsocketReqData } from "akanjs/signal";
+import { CrossSiteGuard, isExceptionLike, SignalContext, SignalFailure, type WebsocketReqData } from "akanjs/signal";
 import { compressResponse } from "../contentEncoding";
 import type { HmrWsData, HmrWsHub } from "../hmr/wsHub";
 import { copyBunRequestFields, type WebProxyRunner } from "../proxy";
 import { SignalResolver } from "../resolver";
 import type { HttpRoutes, SignalRouteOptions, WebsocketRoutes } from "../types";
 import { AppWsData } from "./appWsData";
+import type { HostAllowlist } from "./hostAllowlist";
 
 export interface HmrStateSource {
   readonly state: {
     buildId: number;
     cssAssets?: Record<string, { cssUrl: string; cssRelPath: string }>;
+    csrGeneration?: number;
+    ssrGeneration?: number;
+    ssrEpoch?: number;
   };
+  /** Called before each hello: brings what the state says about the dev registries up to what is on disk. */
+  refresh?: () => void;
+  /** Sent right after hello: the build statuses failing now, which the socket connected too late to hear. */
+  errors?: () => { phase: string }[];
 }
 
 export type NonNullHttpRoutes = NonNullable<HttpRoutes>;
@@ -27,6 +35,7 @@ export interface ApiRouteInputs {
   renderEnvRoutes: HttpRoutes;
   upgradeAppWs: (req: Request, data: AppWsData) => boolean;
   webProxyRunner?: WebProxyRunner | null;
+  hostAllowlist?: HostAllowlist | null;
 }
 
 type RouteValue = NonNullHttpRoutes[keyof NonNullHttpRoutes];
@@ -55,10 +64,14 @@ export class ApiRouter {
     renderEnvRoutes,
     upgradeAppWs,
     webProxyRunner,
+    hostAllowlist,
   }: ApiRouteInputs): NonNullHttpRoutes {
     const endpointEntries = Object.entries(routes ?? {}).map(
       ([p, handler]) =>
-        [ApiRouter.applyGlobalPrefix(prefix, p, routeOptions?.[p]), ApiRouter.#compressRoute(handler)] as const,
+        [
+          ApiRouter.applyGlobalPrefix(prefix, p, routeOptions?.[p]),
+          ApiRouter.#corsRoute(ApiRouter.#compressRoute(handler)),
+        ] as const,
     );
     const builtinEntries = Object.entries(builtinRoutes ?? {}).map(
       ([path, handler]) => [path, ApiRouter.#compressRoute(handler)] as const,
@@ -66,6 +79,13 @@ export class ApiRouter {
     const endpointPaths = new Set([...endpointEntries.map(([path]) => path), ...builtinEntries.map(([path]) => path)]);
     const routeTable = {
       [`${prefix}${websocketPrefix}` as "/api/ws"]: (req) => {
+        //? A socket has no CORS: a page on another site that opens one reads every room it may subscribe to, and it
+        //? carries the SameSite=None auth cookie. The browser only sends Origin; the server is the one to refuse it.
+        try {
+          CrossSiteGuard.assertOrigin(req, new URL(req.url), "websocket");
+        } catch {
+          return new Response("Forbidden", { status: 403 });
+        }
         const upgraded = upgradeAppWs(req, AppWsData.fromRequest(req));
         if (upgraded) return;
         return new Response("Failed to upgrade to WebSocket", { status: 500 });
@@ -74,9 +94,10 @@ export class ApiRouter {
       ...Object.fromEntries(builtinEntries),
       ...(renderEnvRoutes ?? {}),
     } as NonNullHttpRoutes;
-    return webProxyRunner
+    const served = webProxyRunner
       ? ApiRouter.#wrapRoutesWithWebProxy(routeTable, webProxyRunner, prefix, endpointPaths)
       : routeTable;
+    return hostAllowlist ? ApiRouter.#guardHosts(served, hostAllowlist) : served;
   }
 
   static buildWebsocketHandlers({
@@ -96,13 +117,20 @@ export class ApiRouter {
         const data = ws.data as WsTaggedData | undefined;
         if (data?.kind === "akan-hmr" && hmrHub && hmrState) {
           hmrHub.attach(ws as unknown as Bun.ServerWebSocket<HmrWsData>);
+          hmrState.refresh?.();
+          const errors = hmrState.errors?.() ?? [];
           ws.send(
             JSON.stringify({
               type: "hello",
               buildId: hmrState.state.buildId,
               cssAssets: hmrState.state.cssAssets,
+              csrGeneration: hmrState.state.csrGeneration,
+              ssrGeneration: hmrState.state.ssrGeneration,
+              ssrEpoch: hmrState.state.ssrEpoch,
+              ...(hmrState.errors ? { failingPhases: errors.map((status) => status.phase) } : {}),
             }),
           );
+          for (const status of errors) ws.send(JSON.stringify(status));
           return;
         }
         SignalResolver.handleWsOpen(ws, registry);
@@ -197,6 +225,15 @@ export class ApiRouter {
     ) as NonNullHttpRoutes;
   }
 
+  static #guardHosts(routes: NonNullHttpRoutes, allowlist: HostAllowlist): NonNullHttpRoutes {
+    return Object.fromEntries(
+      Object.entries(routes).map(([path, route]) => [
+        path,
+        ApiRouter.#mapRoute(route, (handler) => (req) => (allowlist.allows(req) ? handler(req) : allowlist.refuse())),
+      ]),
+    ) as NonNullHttpRoutes;
+  }
+
   static #isApiRoute(path: string, apiPrefix: string): boolean {
     const normalized = apiPrefix.replace(/\/$/, "");
     return path === normalized || path.startsWith(`${normalized}/`);
@@ -215,14 +252,30 @@ export class ApiRouter {
     });
   }
 
+  // Signal routes are method maps, so the preflight answers with exactly the verbs the path serves.
+  static #corsRoute(route: RouteValue): RouteValue {
+    if (!route || typeof route !== "object" || route instanceof Response || "OPTIONS" in route) return route;
+    const methods = Object.keys(route);
+    const answered = ApiRouter.#mapRoute(route, (handler) => async (req) => {
+      const response = await handler(req);
+      return response ? CrossSiteGuard.withCors(req, response) : response;
+    });
+    return { ...(answered as object), OPTIONS: (req: Request) => CrossSiteGuard.preflight(req, methods) } as RouteValue;
+  }
+
+  //? A static Response is cloned per request once wrapped: a handler hands the same body out only once.
   static #mapRoute(route: RouteValue, wrap: (handler: RouteHandler) => RouteHandler): RouteValue {
     if (typeof route === "function") return wrap(route as RouteHandler) as RouteValue;
-    if (route instanceof Response) return wrap(() => route) as RouteValue;
+    if (route instanceof Response) return wrap(() => route.clone()) as RouteValue;
     if (!route || typeof route !== "object") return route;
     return Object.fromEntries(
       Object.entries(route).map(([method, handler]) => [
         method,
-        typeof handler === "function" ? wrap(handler as RouteHandler) : handler,
+        typeof handler === "function"
+          ? wrap(handler as RouteHandler)
+          : handler instanceof Response
+            ? wrap(() => handler.clone())
+            : handler,
       ]),
     ) as RouteValue;
   }

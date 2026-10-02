@@ -1,6 +1,6 @@
 {
   "name": "@akanjs/devkit",
-  "version": "3.0.0-beta.20",
+  "version": "3.0.0-beta.31",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -47,8 +47,7 @@
     "@earendil-works/pi-tui": "0.86.1",
     "@inquirer/prompts": "^8.4.3",
     "@tailwindcss/node": "^4.3.0",
-    "@trapezedev/project": "^7.1.4",
-    "akanjs": "3.0.0-beta.20",
+    "akanjs": "3.0.0-beta.31",
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
     "dayjs": "^1.11.20",
@@ -64,13 +63,9 @@
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
-    "@capacitor/cli": "^8.3.4",
-    "react": "19.2.7"
+    "react": "19.3.0"
   },
   "peerDependenciesMeta": {
-    "@capacitor/cli": {
-      "optional": true
-    },
     "react": {
       "optional": true
     }

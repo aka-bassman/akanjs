@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { installMockHost, type MockHost } from "@akanjs/native/core/testing";
 import { interpolateTranslation } from "../common/interpolateTranslation";
 import { pathGetLoose } from "../common/objectPath";
 import { parseCookieHeader } from "../fetch/requestStorage";
@@ -14,9 +15,9 @@ const envState = {
 };
 const preferenceStore = new Map<string, string>();
 const localStore = new Map<string, string>();
-const cookieStore: Record<string, string> = {};
 const documentCookies = new Map<string, string>();
 const fetchJwtCalls: Array<string | null> = [];
+const fetchState = { jwt: null as string | null };
 const requestState = {
   request: undefined as Request | undefined,
 };
@@ -100,32 +101,48 @@ beforeAll(() => {
       error: () => undefined,
     },
     fetch: {
-      setJwt: (jwt: string | null) => fetchJwtCalls.push(jwt),
+      setJwt: (jwt: string | null) => {
+        fetchJwtCalls.push(jwt);
+        fetchState.jwt = jwt;
+      },
+      instance: {
+        get jwt() {
+          return fetchState.jwt;
+        },
+      },
     },
   }));
 });
 
-const installCapacitorBridge = () => {
-  Object.defineProperty(globalThis, "Capacitor", {
-    value: {
-      Plugins: {
-        Preferences: {
-          get: async ({ key }: { key: string }) => ({ value: preferenceStore.get(key) ?? null }),
-          set: async ({ key, value }: { key: string; value: string }) => {
-            preferenceStore.set(key, value);
-          },
-          remove: async ({ key }: { key: string }) => {
-            preferenceStore.delete(key);
-          },
+// A module of its own per test: the reinstall check runs once per module, as it does once per launch.
+const freshStorage = (tag: string) => import(`./storage.ts?${tag}`) as Promise<typeof import("./storage")>;
+let host: MockHost | null = null;
+const secureStore = new Map<string, string>();
+const secureClears: number[] = [];
+
+const installNativeHost = () => {
+  host = installMockHost({
+    platform: "ios",
+    plugins: {
+      preferences: {
+        methods: {
+          get: ({ key }: { key: string }) => ({ value: preferenceStore.get(key) ?? null }),
+          set: ({ key, value }: { key: string; value: string }) => void preferenceStore.set(key, value),
+          remove: ({ key }: { key: string }) => void preferenceStore.delete(key),
         },
-        CapacitorCookies: {
-          setCookie: async ({ key, value }: { key: string; value: string }) => {
-            cookieStore[key] = value;
+      },
+      "secure-storage": {
+        methods: {
+          get: ({ key }: { key: string }) => ({ value: secureStore.get(key) ?? null }),
+          set: ({ key, value }: { key: string; value: string }) => void secureStore.set(key, value),
+          remove: ({ key }: { key: string }) => void secureStore.delete(key),
+          clear: () => {
+            secureClears.push(secureStore.size);
+            secureStore.clear();
           },
         },
       },
     },
-    configurable: true,
   });
 };
 
@@ -179,15 +196,16 @@ afterEach(() => {
   preferenceStore.clear();
   localStore.clear();
   documentCookies.clear();
-  Object.keys(cookieStore).forEach((key) => {
-    delete cookieStore[key];
-  });
   fetchJwtCalls.length = 0;
+  fetchState.jwt = null;
   requestState.request = undefined;
-  globalThis.__AKAN_CAPACITOR_IMPORTS__ = undefined;
+  host?.uninstall();
+  host = null;
+  secureStore.clear();
+  secureClears.length = 0;
   Object.defineProperty(globalThis, "localStorage", { value: undefined, configurable: true });
   Object.defineProperty(globalThis, "document", { value: undefined, configurable: true });
-  Object.defineProperty(globalThis, "Capacitor", { value: undefined, configurable: true });
+  Object.defineProperty(globalThis, "location", { value: undefined, configurable: true });
 });
 
 describe("storage", () => {
@@ -212,36 +230,56 @@ describe("storage", () => {
     expect(await storage.getItem("jwt")).toBeNull();
   });
 
-  test("client csr mode uses Capacitor Preferences", async () => {
-    envState.side = "client";
-    envState.renderMode = "csr";
-    installCapacitorBridge();
-    const { storage } = await import("./storage");
-
-    await storage.setItem("jwt", "token-2");
-    expect(await storage.getItem("jwt")).toBe("token-2");
-    await storage.removeItem("jwt");
-    expect(await storage.getItem("jwt")).toBeNull();
-  });
-
-  test("client csr mode falls back to localStorage when a Preferences call rejects", async () => {
+  test("client csr mode outside a native app uses localStorage", async () => {
     envState.side = "client";
     envState.renderMode = "csr";
     installBrowserGlobals();
-    const refuse = async () => {
-      throw new Error("Preferences unavailable");
-    };
-    Object.defineProperty(globalThis, "Capacitor", {
-      value: { Plugins: { Preferences: { get: refuse, set: refuse, remove: refuse } } },
-      configurable: true,
-    });
-    const { storage } = await import("./storage");
+    const { secretStorage, storage } = await import("./storage");
 
-    await storage.setItem("jwt", "token-3");
-    expect(localStore.get("jwt")).toBe("token-3");
-    expect(await storage.getItem("jwt")).toBe("token-3");
-    await storage.removeItem("jwt");
-    expect(localStore.has("jwt")).toBe(false);
+    await storage.setItem("theme", "dark");
+    await secretStorage.setItem("jwt", "token-2");
+    expect(localStore.get("theme")).toBe("dark");
+    expect(localStore.get("jwt")).toBe("token-2");
+    await secretStorage.removeItem("jwt");
+    expect(await secretStorage.getItem("jwt")).toBeNull();
+  });
+
+  test("a native app keeps values in preferences and secrets in the credential store", async () => {
+    envState.side = "client";
+    envState.renderMode = "csr";
+    installBrowserGlobals();
+    installNativeHost();
+    const { secretStorage, storage } = await freshStorage("native");
+
+    await storage.setItem("theme", "dark");
+    await secretStorage.setItem("jwt", "token-3");
+    expect(preferenceStore.get("theme")).toBe("dark");
+    expect(secureStore.get("jwt")).toBe("token-3");
+    expect(localStore.size).toBe(0);
+    expect(await secretStorage.getItem("jwt")).toBe("token-3");
+    await secretStorage.removeItem("jwt");
+    expect(await secretStorage.getItem("jwt")).toBeNull();
+    await storage.removeItem("theme");
+    expect(await storage.getItem("theme")).toBeNull();
+  });
+
+  test("a reinstall finds the credential store cleared once, before its first read", async () => {
+    envState.side = "client";
+    envState.renderMode = "csr";
+    installBrowserGlobals();
+    installNativeHost();
+    secureStore.set("jwt:test-app", "left-by-the-last-install");
+    const { secretStorage } = await freshStorage("reinstall");
+
+    expect(await secretStorage.getItem("jwt:test-app")).toBeNull();
+    await secretStorage.setItem("jwt:test-app", "token-4");
+    expect(await secretStorage.getItem("jwt:test-app")).toBe("token-4");
+    expect(secureClears).toEqual([1]);
+    expect(preferenceStore.get("akan:installed")).toBe("1");
+
+    const relaunched = await freshStorage("relaunch");
+    expect(await relaunched.secretStorage.getItem("jwt:test-app")).toBe("token-4");
+    expect(secureClears).toEqual([1]);
   });
 });
 
@@ -361,5 +399,57 @@ describe("cookies, headers, and auth", () => {
 
     installBrowserGlobals(`jwt=${makeJwt({ appName: "other", environment: "debug" })}`);
     expect(getAccount<Record<string, unknown>>()).toEqual({ appName: "test-app", environment: "debug" });
+  });
+
+  test("a CSR client is signed in by the token fetch sends, with no cookie anywhere", async () => {
+    envState.side = "client";
+    envState.renderMode = "csr";
+    installBrowserGlobals();
+    const { getAccount, getAuthToken, initAuth, resetAuth, setAuth } = await import("./cookie");
+    const jwt = makeJwt({ appName: "test-app", environment: "debug", userId: "u1" });
+
+    expect(getAuthToken()).toBeUndefined();
+    setAuth({ jwt });
+    expect(getAuthToken()).toBe(jwt);
+    expect(getAccount<{ userId?: string }>().userId).toBe("u1");
+    expect(document.cookie).toBe("");
+
+    initAuth();
+    expect(fetchJwtCalls.at(-1)).toBe(jwt);
+
+    resetAuth();
+    expect(getAuthToken()).toBeUndefined();
+    expect(getAccount<Record<string, unknown>>()).toEqual({ appName: "test-app", environment: "debug" });
+  });
+
+  test("a custom-scheme page keeps its cookies in localStorage", async () => {
+    envState.side = "client";
+    envState.renderMode = "csr";
+    installBrowserGlobals();
+    Object.defineProperty(globalThis, "location", { value: { protocol: "app:" }, configurable: true });
+    const { getCookie, removeCookie, setCookie } = await import("./cookie");
+
+    setCookie("theme", "dark");
+    setCookie("prepareUserId", "p1");
+    expect(getCookie("theme")).toBe("dark");
+    expect(JSON.parse(localStore.get("akan:cookies") ?? "{}")).toEqual({ theme: "dark", prepareUserId: "p1" });
+    expect(document.cookie).toBe("");
+
+    removeCookie("theme");
+    expect(getCookie("theme")).toBeUndefined();
+    expect(getCookie("prepareUserId")).toBe("p1");
+  });
+
+  test("any other page keeps using the browser's cookie jar", async () => {
+    envState.side = "client";
+    envState.renderMode = "csr";
+    installBrowserGlobals();
+    Object.defineProperty(globalThis, "location", { value: { protocol: "https:" }, configurable: true });
+    const { getCookie, setCookie } = await import("./cookie");
+
+    setCookie("theme", "dark");
+    expect(document.cookie).toBe("theme=dark");
+    expect(getCookie("theme")).toBe("dark");
+    expect(localStore.has("akan:cookies")).toBe(false);
   });
 });

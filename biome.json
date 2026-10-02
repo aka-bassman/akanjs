@@ -9,12 +9,17 @@
       "**/*.jsonc",
       "!infra/master/createRecords.ts",
       "!pkgs/@akanjs/devkit/lint/__fixtures__",
+      "!!.claude",
       "!!**/node_modules",
       "!!**/dist",
       "!!**/.akan",
       "!!**/dump",
       "!!**/local",
       "!!**/ios/DerivedData",
+      "!!pkgs/@akanjs/native/native/android/maven.lock.json",
+      "!!pkgs/@akanjs/native/packages/core/contract.json",
+      "!!pkgs/@akanjs/native/packages/core/src/contract.ts",
+      "!!pkgs/@akanjs/native/packages/core/vectors",
       "!benchmarks/sample-app-productivity/tmp",
       "!benchmarks/sample-app-productivity/workspaces"
     ]

@@ -1,9 +1,11 @@
+import { resolveServerUrl } from "akanjs/client";
 import { type EditorConfig, type LexicalEditor, TextNode } from "lexical";
 
-import { MENTION_CHIP, MENTION_CHIP_AVATAR } from "../theme";
+import { MENTION_CHIP, MENTION_CHIP_AVATAR, MENTION_CHIP_LINK } from "../theme";
 import { $createMentionNode, type MentionPayload, type SerializedMentionNode } from "./mentionNode.util";
 
 const MENTION_CHIP_CLASSES = MENTION_CHIP.split(" ");
+const MENTION_CHIP_LINK_CLASSES = MENTION_CHIP_LINK.split(" ");
 const MENTION_CHIP_AVATAR_CLASSES = MENTION_CHIP_AVATAR.split(" ");
 
 // XXX: the url() below is interpolated into a style property — anything that could
@@ -14,9 +16,14 @@ const applyChip = (dom: HTMLElement, node: MentionNode) => {
   dom.classList.add(...MENTION_CHIP_CLASSES);
   dom.dataset.mentionRef = node.__refName;
   dom.dataset.mentionId = node.__refId;
-  if (node.__href) dom.dataset.mentionHref = node.__href;
-  else delete dom.dataset.mentionHref;
-  const avatarUrl = cssSafeUrl(node.__imageUrl);
+  if (node.__href) {
+    dom.dataset.mentionHref = node.__href;
+    dom.classList.add(...MENTION_CHIP_LINK_CLASSES);
+  } else {
+    delete dom.dataset.mentionHref;
+    dom.classList.remove(...MENTION_CHIP_LINK_CLASSES);
+  }
+  const avatarUrl = cssSafeUrl(node.__imageUrl ? resolveServerUrl(node.__imageUrl) : null);
   if (avatarUrl) {
     dom.style.setProperty("--mention-avatar", `url("${avatarUrl}")`);
     dom.classList.add(...MENTION_CHIP_AVATAR_CLASSES);

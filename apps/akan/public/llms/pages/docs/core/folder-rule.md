@@ -78,6 +78,30 @@ Each folder has an admission test rather than a theme, and the first column says
 
 Folder
 
+- page/: A screen the user visits. When a feature has its own URL, put the page here. Example: page/orders.tsx serves /orders. — client
+
+- lib/: Business data and the rules that go with it. When a feature owns something you save, make it a module folder. Example: lib/order/ holds the order data and its behavior. — shared
+
+- ui/: Pieces of screen you reuse across pages and that are not tied to one model. Example: a card or a chart used in several places. — client
+
+- webkit/: Code that needs the browser or a device feature, or a React hook. Example: a clipboard helper, a camera hook. — client
+
+- common/: Small pure helpers both sides use. Example: date formatting, string utilities. — shared
+
+- srvkit/: Connections to outside services. Example: a payment API client, a mail sender. — server
+
+- env/: Settings that differ per environment. Example: local and production API hosts. — shared
+
+- plugin/: Code that changes how the app builds or runs. Example: a plugin that generates image sizes at build time. — shared
+
+- native/: Its own native plugins, one folder per plugin id. Example: native/label-printer/ with its page API, Kotlin and Swift. — client
+
+- public/: Files served as they are, with no processing. Example: images, fonts, robots.txt. — client
+
+- private/: An asset folder the server reads at runtime and never serves to the browser. Example: an ONNX model file, a fixed JSON dataset. — server
+
+- script/: Developer scripts you run by hand against a running app. Example: filling the database with test data. — server
+
 When you are unsure, ask what the file does: screen goes to page/, reusable visual piece goes to ui/, saved business data goes to lib/<model>/, and private server integration goes to srvkit/ or lib/_<service>/.
 
 Module Folder Rule
@@ -147,6 +171,7 @@ apps/myapp/
 ├── webkit/
 ├── env/
 ├── plugin/
+├── native/
 ├── public/
 ├── srvkit/
 ├── private/
@@ -170,6 +195,7 @@ libs/shared/
 ├── common/
 ├── webkit/
 ├── plugin/
+├── native/
 ├── client.ts
 ├── server.ts
 └── index.ts

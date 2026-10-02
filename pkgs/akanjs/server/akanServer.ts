@@ -19,11 +19,13 @@ import { AgentRelayAccess } from "../signal/guards";
 import { createOpenApiDocument } from "../signal/openapi";
 import { FetchSerializer } from "../signal/serializer";
 import { SignalContext } from "../signal/signalContext";
+import { AKAN_CHILD_HOST } from "./akanAppHeaders";
 import type { AkanLib, AkanLibProps } from "./akanLib";
 import { BinaryPubsub } from "./binaryPubsub";
 import { DevtoolsRouter } from "./devtools";
 import { DiLifecycle } from "./di/diLifecycle";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
+import { OrphanGroup } from "./lifecycle/orphanGroup";
 import { isPortInUseError } from "./lifecycle/portInUse";
 import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { ShutdownManager } from "./lifecycle/shutdownManager";
@@ -42,6 +44,7 @@ import { WebProxyRunner } from "./proxy";
 import { SignalResolver } from "./resolver";
 import { type ApiRouteInputs, ApiRouter } from "./routing/apiRouter";
 import type { AppWsData } from "./routing/appWsData";
+import { HostAllowlist } from "./routing/hostAllowlist";
 import { createSoloAppRoutes } from "./routing/soloAppRoutes";
 import {
   getWebConfigFromEnv,
@@ -167,6 +170,8 @@ export class AkanServer {
   #ops: OpsRoute | null | undefined;
   #lastMetrics: AkanMetricsReport = {};
   #stopping: Promise<void> | null = null;
+  #parentGone: boolean = false;
+  #orphanExiting = false;
   constructor(
     name = "AkanServer",
     env: BackendEnv = {},
@@ -380,13 +385,22 @@ export class AkanServer {
         registry: this.#di.registry,
         live: this.#di.live,
         hmrHub,
-        hmrState: webRouter ? { state: webRouter.renderState } : null,
+        hmrState: webRouter
+          ? {
+              state: webRouter.renderState,
+              refresh: () => webRouter.refreshHmrState(),
+              errors: () => webRouter.hmrBuildErrors(),
+            }
+          : null,
         logger: this.logger,
         onDrain: () => this.#binaryPubsub.flush(),
       }),
       data: {},
     } as Bun.WebSocketHandler<AppWsData | HmrWsData>;
-    const buildRoutes = (upgradeAppWs: ApiRouteInputs["upgradeAppWs"]) =>
+    //? Behind the gateway the Host a child sees is the gateway's hop, so only a server bound to TCP checks it.
+    const hostAllowlist = unix ? null : HostAllowlist.fromEnv();
+    const hostname = process.env.AKAN_LISTEN_HOST || undefined;
+    const buildRoutes = (upgradeAppWs: ApiRouteInputs["upgradeAppWs"], allowlist: HostAllowlist | null) =>
       ApiRouter.buildRoutes({
         prefix: this.prefix,
         websocketPrefix: this.websocketPrefix,
@@ -396,19 +410,26 @@ export class AkanServer {
         renderEnvRoutes,
         upgradeAppWs,
         webProxyRunner,
+        hostAllowlist: allowlist,
       });
     this.#server = Bun.serve({
       idleTimeout: 0,
-      ...(unix ? { unix } : { port }),
-      routes: buildRoutes((req, data) => this.#server?.upgrade(req, { data }) ?? false),
+      ...(unix ? { unix } : { port, hostname }),
+      routes: buildRoutes((req, data) => this.#server?.upgrade(req, { data }) ?? false, hostAllowlist),
       websocket: websocketHandlers,
     } as Parameters<typeof Bun.serve>[0]);
     if (unix && process.env.AKAN_CHILD_WS_PORT) {
       const preferredWsPort = Number(process.env.AKAN_CHILD_WS_PORT);
+      //? Only the gateway dials this port, at the loopback address the ready message names below. A page on a name
+      //? rebound to 127.0.0.1 reaches it too, with its own name as Host, which the gateway's hop never carries.
       const wsServeOptions = (port: number) => ({
         idleTimeout: 0,
         port,
-        routes: buildRoutes((req, data) => this.#wsServer?.upgrade(req, { data }) ?? false),
+        hostname: "127.0.0.1",
+        routes: buildRoutes(
+          (req, data) => this.#wsServer?.upgrade(req, { data }) ?? false,
+          new HostAllowlist([AKAN_CHILD_HOST]),
+        ),
         websocket: websocketHandlers,
       });
       try {
@@ -453,7 +474,7 @@ export class AkanServer {
     this.#di.registerSchedule(this.serverMode);
     this.logger.verbose(`🚀 ${this.name} is running on ${unix ? `unix://${unix}` : `port ${port}`}`);
     const wsPort = this.#wsServer?.port;
-    process.send?.({
+    this.#sendReady({
       type: "ready",
       pid: process.pid,
       replicaIdx: Number(process.env.AKAN_REPLICA_IDX ?? 0),
@@ -461,7 +482,8 @@ export class AkanServer {
       upstream: unix ? { type: "unix", socketPath: unix } : { type: "tcp", host: "127.0.0.1", port: Number(port) },
       wsUpstream: typeof wsPort === "number" ? { type: "tcp", host: "127.0.0.1", port: wsPort } : undefined,
       healthPath: "/_akan/app/child-health",
-    } satisfies AkanIpcMessage);
+      crossSite: CrossSiteGuard.option(),
+    });
     await this.#di.runSchedulerInit();
     ShutdownManager.register(this.logger, () => this.stop());
     return this;
@@ -470,7 +492,10 @@ export class AkanServer {
   async start({ listen, web }: { listen?: boolean; web?: AkanWebOption } = {}) {
     const isNoListenCommand = process.env.AKAN_COMMAND_TYPE === "script" || process.env.AKAN_COMMAND_TYPE === "console";
     const shouldListen = (listen ?? !isNoListenCommand) && this.serverMode !== "batch";
+    //? Before init: once an adaptor listens for `message`, Bun emits `disconnect` at the close only to listeners there.
+    if (shouldListen || !isNoListenCommand) this.#registerParentIpc();
     await this.init({ routes: shouldListen, web });
+    if (this.#parentGone) return this;
     if (!shouldListen) {
       const websocket = this.#di.getWebsocketAdaptor();
       if (websocket)
@@ -480,20 +505,18 @@ export class AkanServer {
         Logger.role = this.serverMode;
         this.#metricsTimer ??= ProcessMetricsCollector.startReporting(() => this.#reportMetrics());
         this.#di.registerSchedule(this.serverMode);
-        this.#registerParentIpc();
         await this.#startLogTransport();
-        process.send?.({
+        this.#sendReady({
           type: "ready",
           pid: process.pid,
           replicaIdx: Number(process.env.AKAN_REPLICA_IDX ?? 0),
           role: this.serverMode,
-        } satisfies AkanIpcMessage);
+        });
         await this.#di.runSchedulerInit();
         ShutdownManager.register(this.logger, () => this.stop());
       }
       return this;
     }
-    this.#registerParentIpc();
     return this.listen();
   }
   stop(): Promise<void> {
@@ -540,15 +563,30 @@ export class AkanServer {
   #registerParentIpc() {
     process.on("message", (message) => this.#handleIpcMessage(message as AkanIpcMessage));
     process.on("disconnect", () => this.#handleParentDisconnect());
+    //? A channel that closed before these listeners existed never calls them; `connected` is what is left of it.
+    if (process.send && !process.connected) this.#handleParentDisconnect();
+  }
+
+  //? Bun answers a send on a closed channel with false and throws nothing.
+  #sendReady(message: AkanIpcMessage) {
+    if (process.send?.(message) === false) this.#handleParentDisconnect();
   }
 
   // Fires when the gateway dies, even by SIGKILL; exiting keeps orphan replicas from holding ports into the next boot.
   #handleParentDisconnect() {
+    if (this.#parentGone) return;
+    this.#parentGone = true;
     this.logger.warn("Parent IPC channel closed; shutting down to avoid an orphaned replica");
-    setTimeout(() => process.exit(1), this.shutdownTimeoutMs + 1_000);
+    setTimeout(() => this.#exitOrphaned(1), this.shutdownTimeoutMs + 1_000);
     void this.stop()
-      .then(() => process.exit(0))
-      .catch(() => process.exit(1));
+      .then(() => this.#exitOrphaned(0))
+      .catch(() => this.#exitOrphaned(1));
+  }
+
+  #exitOrphaned(code: number) {
+    if (this.#orphanExiting) return;
+    this.#orphanExiting = true;
+    OrphanGroup.exit(code);
   }
 
   #handleIpcMessage(message: AkanIpcMessage) {

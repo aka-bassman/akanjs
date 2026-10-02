@@ -75,6 +75,34 @@ Nine of the fourteen read, one only builds a query descriptor, and the remaining
 
 Method
 
+- list<Filter>: Read, no hooks. Hydrated documents, newest first; takes skip, limit, sort and select. — Example: `await listByOwner(ownerId, { limit: 20 })`
+
+- listIds<Filter>: Read, no hooks. Just the ids; the same option, minus select. — Example: `await listIdsByOwner(ownerId)`
+
+- find<Filter>: Read, no hooks. The newest match or null. — Example: `await findByOwner(ownerId)`
+
+- findId<Filter>: Read, no hooks. That match's id, or null. — Example: `await findIdByOwner(ownerId)`
+
+- pick<Filter>: Read, no hooks. Like find, but no match throws — for rows the caller knows exist. — Example: `await pickByOwner(ownerId)`
+
+- pickId<Filter>: Read, no hooks. That id, or a throw. — Example: `await pickIdByOwner(ownerId)`
+
+- exists<Filter>: Read, no hooks. The matching id or null — not a boolean, though it works in a condition. — Example: `if (await existsByOwner(ownerId)) …`
+
+- count<Filter>: Read, no hooks. How many rows match. — Example: `await countByOwner(ownerId)`
+
+- insight<Filter>: Read, no hooks. The model's Insight aggregate as a plain record, not a hydrated document. — Example: `await insightByOwner(ownerId)`
+
+- query<Filter>: Neither. The descriptor a slice's exec returns; synchronous, never touches the database. — Example: `this.productService.queryByOwner(ownerId)`
+
+- remove<Filter>: Write, NO hooks. One atomic soft delete over every match, reporting counts. — Example: `await removeByOwner(ownerId)`
+
+- removeOne<Filter>: Write, NO hooks. The same on the newest match; for at-most-one rows, not queue claims. — Example: `await removeOneByOwner(ownerId)`
+
+- update<Filter>: Write, NO hooks. A chain: the patch goes on a terminal .set(); building it does nothing. — Example: `await updateByOwner(ownerId).set({ status: "archived" })`
+
+- updateOne<Filter>: Write, NO hooks. The same chain, narrowed to the newest match. — Example: `await updateOneByOwner(ownerId).set({ status: "archived" })`
+
 Reach for the four writes only on a model whose removal carries no side effect. A model with a cascade, a _postRemove that deletes a stored file, or a live list watching it must be removed one document at a time through remove<Model>(id) — one atomic UPDATE cannot run any of that.
 
 Every model already carries an any filter, so listAny and countAny exist before you declare anything.
@@ -154,6 +182,20 @@ Common Decisions
 When you are not sure where to put code, start with the business question. The data layer is easier to design when each file answers one kind of question.
 
 Question
+
+- What fields does it have? — model.constant.ts
+
+- Which fields are text searchable? — model.constant.ts
+
+- How is it stored, filtered, or searched? — model.document.ts
+
+- What business rule should run? — model.service.ts
+
+- What should a page call, and who may call it? — model.signal.ts
+
+- What state is shared on the client? — model.store.ts
+
+- What should users see? — Model.View.tsx · Model.Zone.tsx
 
 Keep page files focused on user experience. If the rule would still matter when another page, mobile app, or admin screen uses the same feature, it usually belongs in the data layer.
 

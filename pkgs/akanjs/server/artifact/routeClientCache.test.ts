@@ -67,7 +67,7 @@ describe("RouteClientCache", () => {
     expect(cache.snapshot().knownEntries.has("/repo/retry.tsx")).toBe(true);
   });
 
-  test("invalidates built routes, ignores stale builds, and clears generations", async () => {
+  test("invalidates built routes, rebuilds a route whose build an invalidation overtook, and clears generations", async () => {
     // An array, not `let x = null`: TS ignores the executor's assignment and narrows the call below to `null`.
     const resolveBuild: (() => void)[] = [];
     const cache = new RouteClientCache({
@@ -87,10 +87,12 @@ describe("RouteClientCache", () => {
     const pending = cache.ensure("/slow", []);
     expect(cache.clear()).toEqual([]);
     resolveBuild[0]?.();
+    for (let tick = 0; tick < 100 && resolveBuild.length < 2; tick++) await Bun.sleep(1);
+    resolveBuild[1]?.();
     await pending;
 
-    expect(cache.snapshot().clientManifest).toEqual({});
-    expect(cache.snapshot().knownEntries.size).toBe(0);
+    expect(Object.keys(cache.snapshot().clientManifest)).toEqual(["/slow#1"]);
+    expect(cache.snapshot().knownEntries).toEqual(new Set(["/repo//slow-1.tsx"]));
 
     const immediate = new RouteClientCache({
       buildRoute: async (routeId) => ({
@@ -262,5 +264,136 @@ describe("RouteClientCache", () => {
       { routeId: "/b", knownEntries: ["/repo/Shared.tsx"] },
     ]);
     expect(cache.snapshot().knownEntries).toEqual(new Set(["/repo/Shared.tsx"]));
+  });
+
+  const heldBuilds = () => {
+    const held: { routeId: string; generation: number; finish: () => void }[] = [];
+    const cache = new RouteClientCache({
+      buildRoute: async (routeId, { generation }) =>
+        await new Promise<BuildRouteClientResult>((resolve) => {
+          held.push({
+            routeId,
+            generation,
+            finish: () =>
+              resolve({
+                manifestDelta: {
+                  [`/repo${routeId}.tsx#default`]: {
+                    id: `ssr-dev:${routeId}#${generation}`,
+                    chunks: [],
+                    name: "default",
+                  },
+                },
+                ssrManifestDelta: emptySsrManifest,
+                newEntries: [`/repo${routeId}.tsx`],
+                discoveredEntries: [`/repo${routeId}.tsx`],
+                clientDeps: [`/repo${routeId}.tsx`, "/repo/ui/Button.tsx"],
+                clientDepsByEntry: { [`/repo${routeId}.tsx`]: [`/repo${routeId}.tsx`, "/repo/ui/Button.tsx"] },
+              }),
+          });
+        }),
+    });
+    const settle = async (count: number) => {
+      for (let tick = 0; tick < 200 && held.length < count; tick++) await Bun.sleep(1);
+    };
+    return { cache, held, settle };
+  };
+
+  test("a save that concerns neither the route nor what its build reached leaves that build merged", async () => {
+    const { cache, held, settle } = heldBuilds();
+    const pending = cache.ensure("/b", []);
+    await settle(1);
+    cache.invalidateClientEntries({
+      routePredicate: (routeId) => routeId === "/a",
+      staleEntries: ["/repo/a.tsx"],
+      files: ["/repo/a.tsx"],
+    });
+    held[0]?.finish();
+    const merged = await pending;
+
+    expect(held.map(({ routeId }) => routeId)).toEqual(["/b"]);
+    expect(merged.generation).toBe(1);
+    expect(merged.clientManifest["/repo/b.tsx#default"]?.id).toBe("ssr-dev:/b#0");
+  });
+
+  test("a save no entry is known to read is kept for a running build to check, and costs nothing with none running", async () => {
+    const { cache, held, settle } = heldBuilds();
+    const pending = cache.ensure("/b", []);
+    await settle(1);
+    cache.invalidateClientEntries({ routePredicate: () => false, staleEntries: [], files: ["/repo/ui/Other.tsx"] });
+    held[0]?.finish();
+    const merged = await pending;
+    expect(held).toHaveLength(1);
+    expect(merged.generation).toBe(1);
+
+    const revision = cache.revision;
+    cache.invalidateClientEntries({ routePredicate: () => false, staleEntries: [], files: ["/repo/ui/Button.tsx"] });
+    expect(cache.snapshot().generation).toBe(1);
+    expect(cache.revision).toBe(revision);
+  });
+
+  test("a running build is built again when a save drops its route, stales an entry it reached, or edits a dep", async () => {
+    const invalidations: [string, (cache: RouteClientCache) => void][] = [
+      ["its route", (cache) => cache.invalidate((routeId) => routeId === "/b")],
+      [
+        "an entry it reached",
+        (cache) => cache.invalidateClientEntries({ routePredicate: () => false, staleEntries: ["/repo/b.tsx"] }),
+      ],
+      [
+        "a file it bundled that no entry is known to read",
+        (cache) =>
+          cache.invalidateClientEntries({
+            routePredicate: () => false,
+            staleEntries: [],
+            files: ["/repo/ui/Button.tsx"],
+          }),
+      ],
+      [
+        "a file it bundled, for a server-only route",
+        (cache) => cache.invalidate(() => false, { files: ["/repo/ui/Button.tsx"] }),
+      ],
+      ["everything", (cache) => cache.clear()],
+    ];
+    for (const [label, invalidate] of invalidations) {
+      const { cache, held, settle } = heldBuilds();
+      const pending = cache.ensure("/b", []);
+      await settle(1);
+      invalidate(cache);
+      held[0]?.finish();
+      await settle(2);
+      held[1]?.finish();
+      const merged = await pending;
+      expect({ label, builds: held.map(({ generation }) => generation) }).toEqual({ label, builds: [0, 1] });
+      expect(merged.clientManifest["/repo/b.tsx#default"]?.id).toBe("ssr-dev:/b#1");
+    }
+  });
+
+  test("a caller that came after a save retries a build from before it that failed, rather than failing", async () => {
+    let attempts = 0;
+    let failFirst: (error: Error) => void = () => undefined;
+    const cache = new RouteClientCache({
+      buildRoute: async (routeId) => {
+        attempts += 1;
+        if (attempts === 1)
+          return await new Promise<BuildRouteClientResult>((_, reject) => {
+            failFirst = reject;
+          });
+        return {
+          manifestDelta: { [`/repo${routeId}.tsx#default`]: { id: "fixed.js", chunks: [], name: "default" } },
+          ssrManifestDelta: emptySsrManifest,
+          newEntries: [`/repo${routeId}.tsx`],
+          discoveredEntries: [`/repo${routeId}.tsx`],
+          clientDeps: [],
+        };
+      },
+    });
+    const first = cache.ensure("/b", []);
+    for (let tick = 0; tick < 200 && attempts < 1; tick++) await Bun.sleep(1);
+    cache.invalidate((routeId) => routeId === "/b", { files: ["/repo/b.tsx"] });
+    const second = cache.ensure("/b", []);
+    failFirst(new Error("broken before the save"));
+
+    await expect(first).rejects.toThrow("broken before the save");
+    expect((await second).clientManifest["/repo/b.tsx#default"]?.id).toBe("fixed.js");
+    expect(attempts).toBe(2);
   });
 });

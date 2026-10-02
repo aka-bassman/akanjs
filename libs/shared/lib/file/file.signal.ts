@@ -13,7 +13,7 @@ export class FileInternal extends internal(srv.file, ({ interval }) => ({
 })) {}
 
 export class FileSlice extends slice(srv.file, { guards: { root: None, get: Public, cru: None } }, (init) => ({
-  inIds: init({ guards: [Public] })
+  inIds: init({ guards: [Public], mcp: false })
     .search("ids", [ID])
     .exec(async function (ids) {
       return await this.fileService.queryByIds(ids ?? []);
@@ -27,9 +27,10 @@ export class FileEndpoint extends endpoint(srv.file, ({ mutation }) => ({
     .body("type", String, { example: "user" })
     .body("parentId", ID, { nullable: true })
     .exec(async function (files, metas, type, parentId) {
-      const parsedMetas = (global.JSON.parse(metas) as db.FileMeta[]).map((meta) => ({
-        ...meta,
+      // Only the two fields the upload client sends are read: `generateFile` overwrites any File whose id is passed.
+      const parsedMetas = (global.JSON.parse(metas) as Partial<db.FileMeta>[]).map((meta) => ({
         lastModifiedAt: dayjs(meta.lastModifiedAt),
+        size: Number.isFinite(Number(meta.size)) ? Math.max(0, Math.floor(Number(meta.size))) : 0,
       }));
       return await this.fileService.addFiles(files, parsedMetas, type, parentId);
     }),

@@ -1,6 +1,6 @@
 {
   "name": "akanjs",
-  "version": "3.0.0-beta.20",
+  "version": "3.0.0-beta.31",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -62,15 +62,20 @@
       "types": "./client/index.ts",
       "default": "./client/index.ts"
     },
-    "./client/capacitor": {
-      "import": "./client/capacitor.ts",
-      "types": "./client/capacitor.ts",
-      "default": "./client/capacitor.ts"
+    "./client/native": {
+      "import": "./client/native.ts",
+      "types": "./client/native.ts",
+      "default": "./client/native.ts"
     },
-    "./capacitor.base.config": {
-      "import": "./capacitor.base.config.ts",
-      "types": "./capacitor.base.config.ts",
-      "default": "./capacitor.base.config.ts"
+    "./client/native/*": {
+      "import": "./client/native/*.ts",
+      "types": "./client/native/*.ts",
+      "default": "./client/native/*.ts"
+    },
+    "./native/desktop": {
+      "import": "./native/desktop.ts",
+      "types": "./native/desktop.ts",
+      "default": "./native/desktop.ts"
     },
     "./webkit": {
       "import": "./webkit/index.ts",
@@ -149,6 +154,16 @@
       "import": "./server/logging/logTailClient.ts",
       "types": "./server/logging/logTailClient.ts",
       "default": "./server/logging/logTailClient.ts"
+    },
+    "./server/hmr/csrDevManifest": {
+      "import": "./server/hmr/csrDevManifest.ts",
+      "types": "./server/hmr/csrDevManifest.ts",
+      "default": "./server/hmr/csrDevManifest.ts"
+    },
+    "./server/hmr/runtimeMetadataFile": {
+      "import": "./server/hmr/runtimeMetadataFile.ts",
+      "types": "./server/hmr/runtimeMetadataFile.ts",
+      "default": "./server/hmr/runtimeMetadataFile.ts"
     }
   },
   "dependencies": {
@@ -161,99 +176,29 @@
     "tailwind-variants": "^3.3.0"
   },
   "peerDependencies": {
-    "@capacitor-community/contacts": "^7.2.0",
-    "@capacitor/android": "^8.3.4",
-    "@capacitor/app": "^8.1.0",
-    "@capacitor/assets": "^3.0.5",
-    "@capacitor/browser": "^8.0.3",
-    "@capacitor/camera": "^8.2.0",
-    "@capacitor/cli": "^8.3.4",
-    "@capacitor/core": "^8.3.4",
-    "@capacitor/device": "^8.0.2",
-    "@capacitor/geolocation": "^8.2.0",
-    "@capacitor/haptics": "^8.0.2",
-    "@capacitor/inappbrowser": "^4.0.1",
-    "@capacitor/ios": "^8.3.4",
-    "@capacitor/keyboard": "^8.0.3",
-    "@capacitor/preferences": "^8.0.1",
-    "@capacitor/push-notifications": "^8.1.1",
-    "@capgo/capacitor-updater": "^8.46.1",
     "@happy-dom/global-registrator": "^20.11.2",
     "@libsql/client": "^0.17.3",
     "@playwright/test": "^1.60.0",
     "@react-spring/web": "^10.1.0",
     "@use-gesture/react": "^10.3.1",
     "bullmq": "^5.76.10",
-    "capacitor-plugin-safe-area": "^5.0.0",
     "chance": "^1.1.13",
-    "cordova-plugin-purchase": "^13.16.0",
     "firebase": "^12.13.0",
     "happy-dom": "^20.11.2",
     "ioredis": "^5.10.1",
     "postgres": "^3.4.9",
     "protobufjs": "^8.4.0",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "react-icons": "^5.6.0",
-    "react-refresh": "^0.18.0",
-    "react-server-dom-webpack": "^19.2.7",
+    "react-refresh": "^0.19.0",
+    "react-server-dom-webpack": "^19.3.0",
     "react-spring": "^10.0.4",
-    "scheduler": "^0.27.0",
+    "scheduler": "^0.28.0",
     "tailwind-scrollbar": "^4.0.2",
     "typescript": "^6.0.3"
   },
   "peerDependenciesMeta": {
-    "@capacitor-community/contacts": {
-      "optional": true
-    },
-    "@capacitor/android": {
-      "optional": true
-    },
-    "@capacitor/app": {
-      "optional": true
-    },
-    "@capacitor/assets": {
-      "optional": true
-    },
-    "@capacitor/browser": {
-      "optional": true
-    },
-    "@capacitor/camera": {
-      "optional": true
-    },
-    "@capacitor/cli": {
-      "optional": true
-    },
-    "@capacitor/core": {
-      "optional": true
-    },
-    "@capacitor/device": {
-      "optional": true
-    },
-    "@capacitor/geolocation": {
-      "optional": true
-    },
-    "@capacitor/haptics": {
-      "optional": true
-    },
-    "@capacitor/inappbrowser": {
-      "optional": true
-    },
-    "@capacitor/ios": {
-      "optional": true
-    },
-    "@capacitor/keyboard": {
-      "optional": true
-    },
-    "@capacitor/preferences": {
-      "optional": true
-    },
-    "@capacitor/push-notifications": {
-      "optional": true
-    },
-    "@capgo/capacitor-updater": {
-      "optional": true
-    },
     "@happy-dom/global-registrator": {
       "optional": true
     },
@@ -272,13 +217,7 @@
     "bullmq": {
       "optional": true
     },
-    "capacitor-plugin-safe-area": {
-      "optional": true
-    },
     "chance": {
-      "optional": true
-    },
-    "cordova-plugin-purchase": {
       "optional": true
     },
     "firebase": {
@@ -326,7 +265,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",
-    "@types/bun": "^1.4.0"
+    "@types/bun": "^1.4.2"
   },
   "bun": {
     "platform": "bun"

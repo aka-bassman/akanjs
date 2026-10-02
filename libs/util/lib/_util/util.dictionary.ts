@@ -43,6 +43,11 @@ export const dictionary = serviceDictionary(["en", "ko"])
     discordBotNotFound: ["No bot found for botId: {botId}", "botId {botId}에 해당하는 봇을 찾을 수 없습니다"],
     discordRoleOrUserNotFound: ["No role or user", "역할 또는 사용자를 찾을 수 없습니다"],
     noResponseBody: ["No response body", "응답 본문이 없습니다"],
+    streamAborted: ["Stream aborted: {localPath}", "전송이 취소되었습니다: {localPath}"],
+    streamStalled: [
+      "Stream stalled for {seconds}s: {localPath}",
+      "{seconds}초 동안 응답이 없어 전송을 중단했습니다: {localPath}",
+    ],
     filenameRequired: [
       "Filename is required for local path: {localPath}",
       "로컬 경로 {localPath}에 파일 이름이 필요합니다",
@@ -76,13 +81,13 @@ export const dictionary = serviceDictionary(["en", "ko"])
       "Failed to register the repository webhook: {reason}",
       "저장소 웹훅을 등록하지 못했습니다: {reason}",
     ],
+    githubWebhookUpdateFailed: [
+      "Failed to update the repository webhook: {reason}",
+      "저장소 웹훅을 갱신하지 못했습니다: {reason}",
+    ],
     githubPrivateKeyNotConfigured: [
       "GitHub App private key is not configured",
       "GitHub 앱 개인 키가 설정되지 않았습니다",
-    ],
-    pushNotificationTargetRequired: [
-      "Push notification target token or topic is required.",
-      "푸시 알림 대상 토큰 또는 토픽이 필요합니다.",
     ],
     invalidBaseUrlForDelete: [
       "Invalid base URL, unable to delete data",

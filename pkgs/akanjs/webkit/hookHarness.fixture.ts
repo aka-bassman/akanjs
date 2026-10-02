@@ -1,3 +1,5 @@
+import { createContext } from "react";
+
 export const hooks = {
   index: 0,
   states: [] as unknown[],
@@ -72,7 +74,12 @@ export const fakeElement = (tagName = "div") =>
 export const csrClientBase = () => ({
   DEFAULT_BOTTOM_INSET: 34,
   DEFAULT_TOP_INSET: 44,
+  RouteDefinition: { renderArgsKey: () => "" },
   csrContext: { Provider: ({ children }: { children: unknown }) => children },
+  debugFrame: () => undefined,
+  pageActivityContext: createContext({ activity: "current", focused: true }),
+  router: { redirectCount: () => 0 },
+  usePathCtx: () => ({}),
   defaultPageState: {
     transition: "none",
     topSafeArea: 0,

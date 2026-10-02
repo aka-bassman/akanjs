@@ -15,6 +15,7 @@ import {
   SsrBaseArtifactBuilder,
 } from "./frontendBuild";
 import { Spinner } from "./spinner";
+import { createServerEnvPlugin } from "./transforms/serverEnvPlugin";
 
 export interface TypecheckOptions {
   clean?: boolean;
@@ -29,6 +30,8 @@ export type BuildProgressReporter = ApplicationBuildProgressReporter;
 export interface ApplicationBuildRunnerOptions {
   fast?: boolean;
   reporter?: BuildProgressReporter;
+  /** The backend env the build is for, when it is not the workspace's own (a mobile or desktop build's `--env`). */
+  environment?: string;
 }
 export interface BuildOptions {
   spinner?: boolean;
@@ -76,14 +79,16 @@ export class ApplicationBuildRunner {
   #app: App;
   #fast: boolean;
   #reporter?: BuildProgressReporter;
+  #environment?: string;
   #spinner?: boolean;
   #startedAt = Date.now();
   #phases: BuildPhaseResult[] = [];
 
-  constructor(app: App, { fast = false, reporter }: ApplicationBuildRunnerOptions = {}) {
+  constructor(app: App, { fast = false, reporter, environment }: ApplicationBuildRunnerOptions = {}) {
     this.#app = app;
     this.#fast = fast;
     this.#reporter = reporter;
+    this.#environment = environment;
   }
 
   async build({ spinner = false }: BuildOptions = {}): Promise<BuildResult> {
@@ -133,7 +138,7 @@ export class ApplicationBuildRunner {
           ? `${result.files} files, ${ApplicationBuildRunner.formatBytes(result.inputBytes)} -> gzip ${ApplicationBuildRunner.formatBytes(result.outputBytes)} / br ${ApplicationBuildRunner.formatBytes(result.brotliBytes)}`
           : "no files",
     );
-    await this.#runPhase("metadata", "Writing production metadata", () => this.#buildAppMeta());
+    await this.#runPhase("metadata", "Writing production metadata", () => this.buildAppMeta());
     return {
       phases: this.#phases,
       durationMs: Date.now() - this.#startedAt,
@@ -175,11 +180,12 @@ export class ApplicationBuildRunner {
     }
   }
 
-  async #buildAppMeta() {
+  async buildAppMeta() {
     const akanConfig = await this.#app.getConfig();
+    const dockerfile = akanConfig.dockerfileFor(this.#environment ?? akanConfig.baseDevEnv.env);
     await Promise.all([
       this.#app.dist.writeJson("package.json", akanConfig.getProductionPackageJson()),
-      this.#app.dist.writeFile(`${this.#app.dist.cwdPath}/Dockerfile`, akanConfig.dockerfile),
+      this.#app.dist.writeFile(`${this.#app.dist.cwdPath}/Dockerfile`, dockerfile),
       this.#app.dist.writeJson("akan.build.json", {
         buildId: await this.#resolveBuildId(),
         akanVersion: akanConfig.akanVersion,
@@ -204,7 +210,7 @@ export class ApplicationBuildRunner {
   }
 
   async #buildBackend() {
-    const { externalLibs, web } = await this.#app.getConfig();
+    const { externalLibs, web, baseDevEnv, branches } = await this.#app.getConfig();
     const backendEntryPoints = [`${this.#app.cwdPath}/main.ts`, `${this.#app.cwdPath}/server.ts`];
     for (const entrypoint of backendEntryPoints) {
       if (!(await Bun.file(entrypoint).exists())) throw new Error(`Backend entrypoint not found: ${entrypoint}`);
@@ -217,7 +223,16 @@ export class ApplicationBuildRunner {
       // `akan build` must embed production react-server-dom regardless of the shell's NODE_ENV.
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
     } satisfies Omit<Bun.BuildConfig, "entrypoints">;
-    const backendConfig = { ...sharedConfig, plugins: [this.#createExternalSpecifiersPlugin(externalLibs)] };
+    const serverEnvPlugin = createServerEnvPlugin({
+      envDir: path.join(this.#app.cwdPath, "env"),
+      //? The root .env wins over the shell in baseDevEnv, so a `--env` build names its own; a desktop app runs it.
+      environment: this.#environment ?? baseDevEnv.env,
+      environments: ["local", "testing", ...branches],
+    });
+    const backendConfig = {
+      ...sharedConfig,
+      plugins: [this.#createExternalSpecifiersPlugin(externalLibs), serverEnvPlugin],
+    };
     //* Built apart so main.js keeps its own module copies; splitting moves lazy vendor `import()`s out of the boot parse.
     const [mainResult, serverResult] = [
       await this.#buildOrThrow("backend", { ...backendConfig, entrypoints: [backendEntryPoints[0]] }),

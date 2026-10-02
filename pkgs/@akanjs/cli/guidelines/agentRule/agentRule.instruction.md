@@ -15,6 +15,13 @@ for. `Load` scopes, the route, and the live keys complete the context. The React
 apps and libs never import it directly (`no-import-external-library`) — everything reaches them through `st.*` and
 `akanjs/ui`.
 
+**Mounted is not published: on a CSR stack only the current page is.** The page kept under the current one for a
+swipe back stays mounted and live, and its declarations stay registered, but its tools, resources, guides and
+`st.use` keys are parked until it is current again — the agent sees the screen the user sees, never two. Each page
+container renders `use-agentic`'s `<AgentActivity active>` for this; a parked registration shadows nothing, two
+pages declaring one name never clash, and a registry kept outside the surface reads the same gate through
+`useAgentGate()`, as the store's live keys do.
+
 ## Mounting The Chat
 - **Mount `<Agent.Chat />` once in a layout.** That is the floating chat, the approval card, and the client-side
   loop. The default runner drives `runAgentTurn`, which the **framework serves on every app** — no lib to mount,
@@ -181,9 +188,9 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   there: a voice user who is never told about the card is a conversation that simply ends.
   The contract is a subscription rather than `listen(): Promise<string>` on purpose: a promise fits push-to-talk
   and nothing else, so hands-free could then only arrive as a breaking change. `useSpeech` in a util lib's
-  `webkit/` is the engine — the browser's own recognition and synthesis on the web, the Capacitor plugins in a
-  WebView, **which has neither on Android or iOS**, so a `speech.plugin.ts` declares the permission and
-  the packages the native build needs. An engine answering `available()` false renders no microphone at all,
+  `webkit/` is the engine — the browser's own recognition and synthesis. An app's WebView **has neither on
+  Android or iOS** and `@akanjs/native` ships no speech plugin yet, so a `speech.plugin.ts` declares only the
+  permission and its usage texts. An engine answering `available()` false renders no microphone at all,
   the same rule as publishing no tool for a control the screen does not draw.
 - **Data the user points at rides the message too, as `references` — and its value is a snapshot.** A file is
   something they handed over; a reference is something they pointed at while asking, so it belongs in the same

@@ -4,6 +4,7 @@ import { GeoJson, type PigeonProps } from "pigeon-maps";
 import { type CSSProperties, useContext } from "react";
 
 import { PigeonMapPropsContext } from "./context";
+import { pigeonSvgAttributes } from "./pigeonSvg.util";
 
 interface PigeonArcProps extends PigeonProps {
   className?: string;
@@ -12,9 +13,6 @@ interface PigeonArcProps extends PigeonProps {
   maxRadius: number;
   direction: number;
   angle: number;
-  styleCallback?: any;
-  hover?: any;
-  feature?: any;
   style?: CSSProperties;
   onClick?: () => void;
 }
@@ -30,7 +28,6 @@ function createArcGeometry(
   const centerLon = center.coordinates[0];
 
   const startAngle = direction - angle / 2;
-  const endAngle = direction + angle / 2;
 
   const earthRadius = 6371000;
   const points: number[][] = [];
@@ -94,7 +91,7 @@ export default function PigeonArc({
         ],
       }}
       styleCallback={() => {
-        return props.style;
+        return pigeonSvgAttributes(props.style);
       }}
     />
   );

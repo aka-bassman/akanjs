@@ -24,7 +24,7 @@ const isRefreshMessage = (msg: unknown): boolean =>
   typeof msg === "object" &&
   msg !== null &&
   "type" in msg &&
-  (msg.type === "client-refresh" || msg.type === "rsc-refresh" || msg.type === "reload");
+  (msg.type === "ssr-update" || msg.type === "rsc-refresh" || msg.type === "reload");
 
 const isBuildStatus =
   (status: "error" | "ok") =>
@@ -148,10 +148,45 @@ describe("dev stability integration harness", () => {
     await host.waitForLogSince(mark, /\[backend-reload\]|Shutting down gracefully|stopping backend/);
     await host.waitForLogSince(mark, /backend ready pid=(\d+)|AkanApp gateway is running on port/);
     expect(host.proc.killed).toBe(false);
-    expect(host.logs.join("").slice(mark)).not.toMatch(/\[hmr\].*(client-refresh|rsc-refresh)/);
+    expect(host.logs.join("").slice(mark)).not.toMatch(/\[hmr\].*rsc-refresh|\[ssr\] registry generation/);
     await hmr?.waitForNoMessageSince(hmrMark, isRefreshMessage);
     hmr?.close();
   });
+
+  integrationTest(
+    "server edits landing while a restart stops the backend leave the port to the backend it tracks",
+    async () => {
+      const harness = await createHarness();
+      const host = await harness.startHost();
+      const port = await harness.resolvePort();
+      const writeMarker = (label: string) =>
+        harness.writeFile("srvkit/backendMarker.ts", `export const backendMarker = "${label}";\n`);
+
+      const { mark } = await harness.editUntilSeen(host, (attempt) => writeMarker(`burst-first-${attempt}`), {
+        evidence: /stopping backend pid=\d+/,
+      });
+      // Each lands past the 120ms debounce, so a restart timer fires while the one before still waits for its exit.
+      for (let idx = 0; idx < 8; idx++) {
+        await writeMarker(`burst-${idx}`);
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+
+      const trackedPid = () =>
+        [
+          ...host.logs
+            .join("")
+            .slice(mark)
+            .matchAll(/backend spawned pid=(\d+)/g),
+        ].at(-1)?.[1];
+      const settled = await waitForGatewayHealth(
+        port,
+        (health) => String(health.pid) === trackedPid() && health.children.some((child) => child.ready),
+      );
+      expect(String(settled.pid)).toBe(trackedPid() ?? "");
+      const since = host.logs.join("").slice(mark);
+      expect(since).not.toMatch(/already in use|not starting a second one/);
+    },
+  );
 
   integrationTest("client-only valid edits refresh browser state without backend restart", async () => {
     const harness = await createHarness();
@@ -179,7 +214,10 @@ describe("dev stability integration harness", () => {
     if (hmr) {
       await expectHmrMessage(hmr, hmrMark, isRefreshMessage, "a client refresh");
     } else {
-      await host.waitForLogSince(mark, /\[hmr\].*(client-refresh|rsc-refresh|reload)|\[SSR\] pages-updated/);
+      await host.waitForLogSince(
+        mark,
+        /\[hmr\].*(rsc-refresh|reload)|\[ssr\] registry generation|\[SSR\] pages-updated/,
+      );
     }
     expect(host.logs.join("").slice(mark)).not.toMatch(/\[backend-reload\]/);
     hmr?.close();
@@ -487,7 +525,8 @@ describe("dev resource budgets", () => {
         `csr-armed-marker-${attempt}`,
       ),
     );
-    await host.waitForLogSince(resyncMark, /csr-rebundle ok/, WAIT_MS);
+    // A worker logs `csr-dev generation=N patch`; the resident builder's patcher logs `csr-patch generation=N patch`.
+    await host.waitForLogSince(resyncMark, /csr-rebundle ok|csr-(?:dev|patch) generation=\d+ patch/, WAIT_MS);
   });
 
   budgetTest("bounds the rsc worker and the tree across repeated saves", async () => {
@@ -498,6 +537,9 @@ describe("dev resource budgets", () => {
       env: { AKAN_RSC_WORKER_MAX_RELOADS: "1", AKAN_RSC_WORKER_MIN_RECYCLE_INTERVAL_MS: "1" },
     });
     await harness.waitForHttpText("initial-client-marker", WAIT_MS);
+    // The first page no longer waits for the SSR registry's boot build; the host logs when its worker is done, whether or
+    // not a backend was up to take the build's announcement.
+    await host.waitForLogSince(0, /\[builder\] boot builds settled/, WAIT_MS);
 
     const idleTotal = await DevStabilityHarness.processTreeRssBytes(host.proc.pid);
     const idleWithoutBuilder = await DevStabilityHarness.processTreeRssBytes(host.proc.pid, { excludeBuilder: true });
@@ -543,7 +585,7 @@ describe("dev resource budgets", () => {
 
   budgetTest("recycles the builder at an unmeetable ceiling and keeps developing through it", async () => {
     const harness = await createHarness();
-    // Deliberately below the post-boot builder: it no longer grows into a ceiling, so it must start over one.
+    // Below the builder once it has served the first route build (about 380MiB), which arms the recycle.
     const host = await harness.startHost({ timeoutMs: BOOT_MS, env: { AKAN_BUILDER_MAX_RSS_MB: "200" } });
     const start = host.markLog();
     await harness.waitForHttpText("initial-client-marker", WAIT_MS);
@@ -579,14 +621,25 @@ describe("dev resource budgets", () => {
     );
     await harness.waitForHttpText("marker-after-recycle", WAIT_MS);
 
-    // A tight ceiling is reported, and still enforced (recycles are throttled), never disabled for the session.
+    // A ceiling the replacement is back over within the interval is reported, and still enforced (recycles are
+    // throttled), never disabled for the session. Whether it is back over depends on the machine's allocator, so the
+    // warning is asserted only when it is; the decision itself is unit-tested (devHostPolicy).
+    const settledFrom = host.markLog();
     for (let i = 1; i <= 3; i++) {
       const { mark } = await harness.editUntilSeen(host, (attempt) =>
         harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-settled-${i}-${attempt}`),
       );
       await host.waitForLogSince(mark, /pages-rebundle ok/, WAIT_MS).catch(() => undefined);
     }
-    await host.waitForLogSince(start, /ceiling costs about one boot build per interval/, WAIT_MS);
+    const settled = await DevStabilityHarness.builderProcess(host.proc.pid);
+    const warned = /ceiling costs about one boot build per interval/.test(host.logs.join("").slice(start));
+    //? Past the interval (a slow machine) the next report recycles instead of warning: either answer settles it.
+    if ((settled?.rssBytes ?? 0) >= 200 * MB && !warned)
+      await host.waitForLogSince(
+        settledFrom,
+        /ceiling costs about one boot build per interval|recycling builder pid=\d+|skipped: the builder fell to/,
+        WAIT_MS,
+      );
     expect(host.logs.join("").slice(start)).not.toMatch(/no longer enforcing it this session/);
   });
 

@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { createPrivateKey, createPublicKey, generateKeyPairSync } from "node:crypto";
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { AkanAppConfig, DatabaseMode } from "@akanjs/devkit/akanConfig";
 import { CommandContainer, getArgMetas, getTargetMetas } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, LibExecutor, PkgExecutor } from "@akanjs/devkit/executors";
+import { NativeApp } from "@akanjs/devkit/mobile";
 import {
   createCallRecorder,
   createFakeExecutor,
@@ -18,6 +22,8 @@ import { ApplicationRunner } from "./application.runner";
 import { ApplicationScript } from "./application.script";
 
 type CallRecorder = ReturnType<typeof createCallRecorder>;
+
+const repoRoot = path.resolve(import.meta.dir, "../../../..");
 
 const createRecordedWorkspace = (recorder: CallRecorder) =>
   createFakeExecutor(
@@ -46,19 +52,6 @@ const stubStart = (script: ApplicationScript, recorder: CallRecorder, { confirme
       return {};
     },
   });
-};
-
-const stubMobileStart = (script: ApplicationScript, recorder: CallRecorder, { confirmed = true } = {}) => {
-  script.confirmMobileDependencyInstall = async (...args: unknown[]) => {
-    recorder.record("confirmMobileInstall", ...args);
-    return confirmed;
-  };
-  script.applicationRunner.startIos = async (...args: unknown[]) => {
-    recorder.record("runner.startIos", ...args);
-  };
-  script.applicationRunner.startAndroid = async (...args: unknown[]) => {
-    recorder.record("runner.startAndroid", ...args);
-  };
 };
 
 const createStartApp = ({
@@ -97,52 +90,6 @@ const createStartApp = ({
   };
 };
 
-const createMobileApp = ({
-  missingMobileSpecs = [],
-  appPlugins = [],
-  appDependencies = {},
-}: {
-  missingMobileSpecs?: string[];
-  appPlugins?: string[];
-  appDependencies?: Record<string, string>;
-} = {}) => {
-  const recorder = createCallRecorder();
-  const workspace = createRecordedWorkspace(recorder);
-  const getMissingMobileDependencySpecs = mock(() => missingMobileSpecs);
-  const getMobileAppCapacitorPlugins = mock(() => appPlugins);
-  const akanConfig = {
-    getMissingMobileDependencySpecs,
-    getMobileAppCapacitorPlugins,
-  } as unknown as AkanAppConfig;
-  let appPackageJson: Record<string, unknown> = { name: "app", version: "1.0.0", dependencies: { ...appDependencies } };
-  const app = createFakeExecutor(
-    "app",
-    {
-      scanSync: async (...args: unknown[]) => recorder.record("scanSync", ...args),
-      getConfig: async () => akanConfig,
-      getPackageJson: async (...args: unknown[]) => {
-        recorder.record("app.getPackageJson", ...args);
-        return appPackageJson;
-      },
-      setPackageJson: async (packageJson: Record<string, unknown>) => {
-        recorder.record("app.setPackageJson", packageJson);
-        appPackageJson = packageJson;
-      },
-      workspace,
-    },
-    recorder,
-  );
-  return {
-    app,
-    akanConfig,
-    getMissingMobileDependencySpecs,
-    getMobileAppCapacitorPlugins,
-    recorder,
-    workspace,
-    getAppPackageJson: () => appPackageJson,
-  };
-};
-
 afterEach(() => {
   CommandContainer.clear();
   mock.restore();
@@ -166,25 +113,42 @@ describe("ApplicationCommand", () => {
     expect(calls).toEqual([["my-app", { name: "workspace" }, { start: true }]]);
   });
 
-  test("codepush says it deploys nothing yet and fails, without asking for an os", async () => {
-    const prompts = await import("@inquirer/prompts");
-    const select = mock(async () => "ios");
-    mock.module("@inquirer/prompts", () => ({ ...prompts, select }));
-    const { app } = track(await createTempApp("demo"));
-    const command = CommandContainer.get(ApplicationCommand);
-    const handler = getTargetMetas(ApplicationCommand).find((meta) => meta.key === "codepush")?.handler;
-
-    await expect(handler?.call(command, app)).rejects.toThrow("akan codepush is still in development");
-    expect(select).not.toHaveBeenCalled();
-    expect(await Bun.file(path.join(app.cwdPath, "capacitor.config.ts")).exists()).toBe(false);
+  test("the Capacitor-era commands and flags are gone", () => {
+    const keys = getTargetMetas(ApplicationCommand).map((meta) => meta.key);
+    for (const removed of ["codepush", "configureApp", "releaseSource"]) expect(keys).not.toContain(removed);
+    const optionNames = (key: string) => getArgMetas(ApplicationCommand, key)[1].map((meta) => meta.name);
+    for (const key of ["buildIos", "buildAndroid", "startIos", "startAndroid", "releaseIos", "releaseAndroid"])
+      for (const removed of ["regenerate", "open", "allowProvisioningUpdates"])
+        expect(optionNames(key)).not.toContain(removed);
+    expect(optionNames("startIos")).toEqual(expect.arrayContaining(["device", "team"]));
+    expect(optionNames("startAndroid")).toContain("device");
+    expect(optionNames("releaseIos")).toEqual(expect.arrayContaining(["team", "adHoc"]));
   });
 
-  test("uses the same mobile target selector metadata across mobile commands", async () => {
-    const mobileCommandKeys = ["buildIos", "buildAndroid", "startIos", "startAndroid", "releaseIos", "releaseAndroid"];
+  test("no command gives two options the same short flag", () => {
+    for (const { key } of getTargetMetas(ApplicationCommand)) {
+      const flags = getArgMetas(ApplicationCommand, key)[1].map(
+        (meta) => (meta.argsOption as { flag?: string } | undefined)?.flag ?? meta.name.slice(0, 1).toLowerCase(),
+      );
+      expect({ key, flags: [...new Set(flags)] }).toEqual({ key, flags });
+    }
+  });
+
+  test("uses the same native target selector metadata across native commands", async () => {
+    const mobileCommandKeys = [
+      "buildIos",
+      "buildAndroid",
+      "buildDesktop",
+      "startIos",
+      "startAndroid",
+      "startDesktop",
+      "releaseIos",
+      "releaseAndroid",
+    ];
     const app = {
       getConfig: async () => ({
         basePaths: new Set(["store", "admin"]),
-        mobile: {
+        native: {
           targets: {
             store: { name: "store", basePath: "store" },
           },
@@ -196,7 +160,7 @@ describe("ApplicationCommand", () => {
       const [, optionMetas] = getArgMetas(ApplicationCommand, key);
       const targetOption = optionMetas.find((meta) => meta.name === "target")?.argsOption;
 
-      expect(targetOption?.ask).toBe("Select mobile target");
+      expect(targetOption?.ask).toBe("Select native target");
       expect(typeof targetOption?.enum).toBe("function");
       if (typeof targetOption?.enum === "function") {
         await expect(targetOption.enum({ values: {}, app: app as never })).resolves.toEqual(["store"]);
@@ -390,133 +354,532 @@ describe("ApplicationScript", () => {
     expect(recorder.names()).toEqual(["scanSync"]);
   });
 
-  test("passes iOS provisioning opt-out from script to runner", async () => {
+  test("startIos hands the device and team to the runner for iOS", async () => {
+    const script = CommandContainer.get(ApplicationScript);
+    const recorder = createCallRecorder();
+    const app = createFakeExecutor(
+      "demo",
+      { scanSync: async (...args: unknown[]) => recorder.record("scanSync", ...args) },
+      recorder,
+    );
+    script.applicationRunner.startMobile = async (...args: unknown[]) => {
+      recorder.record("runner.startMobile", ...args);
+    };
+
+    await script.startIos(app as never, { target: "default", device: "iPhone 17", teamId: "TEAM1", write: false });
+
+    expect(recorder.calls).toContainEqual({ name: "scanSync", args: [{ write: false }] });
+    expect(recorder.calls).toContainEqual({
+      name: "runner.startMobile",
+      args: [app, "ios", { target: "default", device: "iPhone 17", teamId: "TEAM1" }],
+    });
+  });
+});
+
+describe("ApplicationScript desktop", () => {
+  test("startDesktop runs the target on this computer's desktop platform, with no device or team to pick", async () => {
+    const script = CommandContainer.get(ApplicationScript);
+    const recorder = createCallRecorder();
+    const app = createFakeExecutor(
+      "demo",
+      { scanSync: async (...args: unknown[]) => recorder.record("scanSync", ...args) },
+      recorder,
+    );
+    const startMobile = script.applicationRunner.startMobile;
+    script.applicationRunner.startMobile = async (...args: unknown[]) => {
+      recorder.record("runner.startMobile", ...args);
+    };
+    try {
+      await script.startDesktop(app as never, { target: "default", operation: "release", write: false });
+    } finally {
+      script.applicationRunner.startMobile = startMobile;
+    }
+
+    expect(recorder.calls).toContainEqual({ name: "scanSync", args: [{ write: false }] });
+    expect(recorder.calls).toContainEqual({
+      name: "runner.startMobile",
+      args: [app, NativeApp.desktopPlatform(), { target: "default", operation: "release" }],
+    });
+    const optionNames = getArgMetas(ApplicationCommand, "startDesktop")[1].map((meta) => meta.name);
+    expect(optionNames).toEqual(["target", "env", "release", "write"]);
+  });
+
+  const desktopDevHarness = ({
+    answers,
+    carries = true,
+    modes = ["single"],
+  }: {
+    answers: boolean;
+    carries?: boolean;
+    modes?: DatabaseMode[];
+  }) => {
     const script = CommandContainer.get(ApplicationScript);
     const recorder = createCallRecorder();
     const app = createFakeExecutor(
       "demo",
       {
-        scanSync: async (...args: unknown[]) => recorder.record("scanSync", ...args),
-        getConfig: async () =>
-          ({
-            getMissingMobileDependencySpecs: () => [],
-            getMobileAppCapacitorPlugins: () => [],
-          }) as unknown as AkanAppConfig,
+        scanSync: async () => undefined,
+        getDevPort: async () => 8482,
+        getConfig: async () => ({ app: { name: "demo" }, database: { modes } }),
+        log: () => undefined,
+        workspace: { workspaceRoot: "/workspace" },
       },
       recorder,
     );
-    script.applicationRunner.startIos = async (...args: unknown[]) => {
-      recorder.record("runner.startIos", ...args);
+    const saved = {
+      answers: ApplicationRunner.answers,
+      startTarget: ApplicationRunner.startTarget,
+      startOne: script.startOne,
+      startDesktop: script.applicationRunner.startDesktop,
+      timeout: ApplicationScript.devServerReadyTimeoutMs,
     };
-
-    await script.startIos(app as never, {
-      target: "default",
-      env: "local",
-      write: false,
-      noAllowProvisioningUpdates: true,
+    ApplicationRunner.startTarget = async () => ({
+      name: "default",
+      config: { desktop: { server: carries } } as never,
     });
+    ApplicationRunner.answers = async (url: string, _appName: string, workspaceRoot: string) => {
+      recorder.record("answers", url, workspaceRoot);
+      return answers;
+    };
+    script.applicationRunner.startDesktop = async (...args: unknown[]) => {
+      recorder.record("runner.startDesktop", ...args);
+    };
+    const restore = () => {
+      ApplicationRunner.answers = saved.answers;
+      ApplicationRunner.startTarget = saved.startTarget;
+      script.startOne = saved.startOne;
+      script.applicationRunner.startDesktop = saved.startDesktop;
+      ApplicationScript.devServerReadyTimeoutMs = saved.timeout;
+    };
+    return { script, recorder, app, restore };
+  };
+
+  test("a desktop app carrying its server follows a dev server that already answers, and starts none", async () => {
+    const { script, recorder, app, restore } = desktopDevHarness({ answers: true });
+    script.startOne = async () => {
+      recorder.record("startOne");
+      return undefined as never;
+    };
+    try {
+      await script.startDesktop(app as never, { target: "default", write: false });
+    } finally {
+      restore();
+    }
+
+    expect(recorder.names()).toEqual(["answers", "runner.startDesktop"]);
+    expect(recorder.calls[0]?.args).toEqual(["http://localhost:8482", "/workspace"]);
+    expect(recorder.calls[1]?.args[1]).toMatchObject({ target: "default", interrupt: expect.any(Object) });
+  });
+
+  test("a desktop app carrying its server needs database mode single in dev too, and says so before a dev server boots", async () => {
+    const { script, recorder, app, restore } = desktopDevHarness({ answers: false, modes: ["cluster"] });
+    script.startOne = async () => {
+      recorder.record("startOne");
+      return undefined as never;
+    };
+    try {
+      await expect(script.startDesktop(app as never, { write: false })).rejects.toThrow(
+        "only database mode single runs (no Redis or Postgres); apps/demo/akan.config.ts declares cluster",
+      );
+    } finally {
+      restore();
+    }
+
+    expect(recorder.names()).toEqual([]);
+  });
+
+  test("a desktop app carrying its server stops the local database the dev server brought up when that fails to start", async () => {
+    const { script, recorder, app, restore } = desktopDevHarness({ answers: false });
+    Object.assign(app, {
+      getConfig: async () =>
+        ({
+          app: { name: "demo" },
+          database: { modes: ["multiple", "single"] },
+          resolveDatabaseMode: () => "multiple",
+          getMissingDatabaseModeDependencySpecs: () => [],
+        }) as unknown as AkanAppConfig,
+      getEnv: () => "local",
+      spinning: () => ({ succeed: () => undefined, fail: () => undefined }),
+    });
+    const dbup = script.dbup;
+    const dbdown = script.dbdown;
+    script.dbup = async (...args: unknown[]) => {
+      recorder.record("dbup", ...args);
+      return false;
+    };
+    script.dbdown = async () => {
+      recorder.record("dbdown");
+    };
+    const start = script.applicationRunner.start;
+    script.applicationRunner.start = async () => {
+      throw new Error("the dev host did not start");
+    };
+    try {
+      await expect(script.startDesktop(app as never, { write: false })).rejects.toThrow("the dev host did not start");
+    } finally {
+      restore();
+      Object.assign(script, { dbup, dbdown });
+      script.applicationRunner.start = start;
+    }
+
+    expect(recorder.names()).toEqual(["answers", "dbup", "dbdown"]);
+  });
+
+  test("a desktop app carrying its server starts akan start, opens the app once it serves, and stops it when the app ends", async () => {
+    const { script, recorder, app, restore } = desktopDevHarness({ answers: false });
+    script.startOne = async (_app, options) => {
+      recorder.record("startOne", options?.write);
+      setTimeout(() => options?.onDevEvent?.({ app: "demo", state: "ready" }), 5);
+      return {
+        stop: async () => {
+          recorder.record("devServer.stop");
+        },
+      } as never;
+    };
+    try {
+      await script.startDesktop(app as never, { target: "default", write: false });
+    } finally {
+      restore();
+    }
+
+    expect(recorder.names()).toEqual(["answers", "startOne", "runner.startDesktop", "devServer.stop"]);
+    expect(recorder.calls[1]?.args).toEqual([false]);
+  });
+
+  test("a desktop app carrying its server stops the dev server it started when that never serves", async () => {
+    const { script, recorder, app, restore } = desktopDevHarness({ answers: false });
+    ApplicationScript.devServerReadyTimeoutMs = 20;
+    script.startOne = async () =>
+      ({
+        stop: async () => {
+          recorder.record("devServer.stop");
+        },
+      }) as never;
+    try {
+      await expect(script.startDesktop(app as never, { write: false })).rejects.toThrow(
+        "akan start demo did not answer within",
+      );
+    } finally {
+      restore();
+    }
+
+    expect(recorder.names()).toEqual(["answers", "devServer.stop"]);
+  });
+
+  test("a desktop app carrying its server stops at once when the dev server it started gives up", async () => {
+    const { script, recorder, app, restore } = desktopDevHarness({ answers: false });
+    script.startOne = async (_app, options) => {
+      setTimeout(() => options?.onDevEvent?.({ app: "demo", state: "failed" }), 5);
+      return {
+        stop: async () => {
+          recorder.record("devServer.stop");
+        },
+      } as never;
+    };
+    const startedAt = Date.now();
+    try {
+      await expect(script.startDesktop(app as never, { write: false })).rejects.toThrow(
+        "akan start demo gave up restarting its server",
+      );
+    } finally {
+      restore();
+    }
+
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+    expect(recorder.names()).toEqual(["answers", "devServer.stop"]);
+  });
+
+  test("a desktop app carrying its server asks for one target before it starts a dev server", async () => {
+    const { script, recorder, app, restore } = desktopDevHarness({ answers: false });
+    ApplicationRunner.startTarget = async () => {
+      throw new Error("start-desktop runs one native target at a time; pass --target <name>.");
+    };
+    script.startOne = async () => {
+      recorder.record("startOne");
+      return undefined as never;
+    };
+    try {
+      await expect(script.startDesktop(app as never, { write: false })).rejects.toThrow(
+        "start-desktop runs one native target at a time",
+      );
+    } finally {
+      restore();
+    }
+
+    expect(recorder.names()).toEqual([]);
+  });
+
+  test("a release build starts no dev server: the runner builds the server into the app", async () => {
+    const { script, recorder, app, restore } = desktopDevHarness({ answers: false });
+    try {
+      await script.startDesktop(app as never, { operation: "release", write: false });
+    } finally {
+      restore();
+    }
+
+    expect(recorder.names()).toEqual(["runner.startDesktop"]);
+    expect(recorder.calls[0]?.args[1]).toEqual({ operation: "release" });
+  });
+
+  test("a desktop app with no server of its own follows akan start without starting one", async () => {
+    const { script, recorder, app, restore } = desktopDevHarness({ answers: false, carries: false });
+    script.startOne = async () => {
+      recorder.record("startOne");
+      return undefined as never;
+    };
+    try {
+      await script.startDesktop(app as never, { target: "default", write: false });
+    } finally {
+      restore();
+    }
+
+    expect(recorder.names()).toEqual(["runner.startDesktop"]);
+    expect(recorder.calls[0]?.args[1]).toEqual({ target: "default" });
+  });
+
+  test("buildDesktop builds the targets for this computer's desktop platform", async () => {
+    const script = CommandContainer.get(ApplicationScript);
+    const recorder = createCallRecorder();
+    const app = createFakeExecutor(
+      "demo",
+      { scanSync: async (...args: unknown[]) => recorder.record("scanSync", ...args) },
+      recorder,
+    );
+    const buildMobile = script.applicationRunner.buildMobile;
+    script.applicationRunner.buildMobile = async (...args: unknown[]) => {
+      recorder.record("runner.buildMobile", ...args);
+    };
+    const command = CommandContainer.get(ApplicationCommand);
+    const handler = getTargetMetas(ApplicationCommand).find((meta) => meta.key === "buildDesktop")?.handler;
+    try {
+      await script.buildDesktop(app as never, { target: "default", env: "develop", profile: "debug", write: false });
+      await handler?.call(command, app, "default", "main", false, true, false);
+    } finally {
+      script.applicationRunner.buildMobile = buildMobile;
+    }
 
     expect(recorder.calls).toContainEqual({ name: "scanSync", args: [{ write: false }] });
     expect(recorder.calls).toContainEqual({
-      name: "runner.startIos",
-      args: [
-        app,
-        {
-          open: false,
-          operation: "local",
-          env: "local",
-          target: "default",
-          regenerate: false,
-          noAllowProvisioningUpdates: true,
-        },
-      ],
+      name: "runner.buildMobile",
+      args: [app, NativeApp.desktopPlatform(), { target: "default", env: "develop", profile: "debug" }],
     });
-  });
-
-  test("startIos skips mobile dependency install when nothing is missing", async () => {
-    const script = CommandContainer.get(ApplicationScript);
-    const { app, getMissingMobileDependencySpecs, recorder } = createMobileApp();
-    stubMobileStart(script, recorder);
-
-    await script.startIos(app as never, { write: false });
-
-    expect(getMissingMobileDependencySpecs).toHaveBeenCalled();
-    expect(recorder.names()).not.toContain("confirmMobileInstall");
-    expect(recorder.names()).not.toContain("workspace.spawn");
-    expect(recorder.names()).toContain("runner.startIos");
-  });
-
-  test("startAndroid confirms and installs missing mobile dependencies before launch", async () => {
-    const script = CommandContainer.get(ApplicationScript);
-    const installSpecs = ["firebase@^12.13.0"];
-    const { app, recorder } = createMobileApp({ missingMobileSpecs: installSpecs });
-    stubMobileStart(script, recorder);
-
-    await script.startAndroid(app as never, { write: false });
-
-    expect(recorder.calls).toContainEqual({ name: "confirmMobileInstall", args: [installSpecs] });
     expect(recorder.calls).toContainEqual({
-      name: "workspace.spawn",
-      args: ["bun", ["add", ...installSpecs], { stdio: "inherit" }],
+      name: "runner.buildMobile",
+      args: [app, NativeApp.desktopPlatform(), { target: "default", env: "main", profile: "release", installer: true }],
     });
-    expect(recorder.calls).toContainEqual({ name: "workspace.getPackageJson", args: [{ refresh: true }] });
-    expect(recorder.names().indexOf("workspace.spawn")).toBeLessThan(recorder.names().indexOf("runner.startAndroid"));
+    const optionNames = getArgMetas(ApplicationCommand, "buildDesktop")[1].map((meta) => meta.name);
+    expect(optionNames).toEqual(["target", "env", "debug", "installer", "arch", "write"]);
   });
+});
 
-  test("startIos declares missing default Capacitor plugins in the app package.json before launch", async () => {
-    const script = CommandContainer.get(ApplicationScript);
-    const { app, recorder, getAppPackageJson } = createMobileApp({
-      appPlugins: ["@capacitor/core", "@capacitor/device", "@capacitor/browser"],
-      appDependencies: { "@capacitor/core": "^8.3.4" },
-    });
-    stubMobileStart(script, recorder);
+describe("ApplicationRunner mobile", () => {
+  const mobileApp = (targets: Record<string, object>) =>
+    ({
+      name: "demo",
+      cwdPath: "/repo/apps/demo",
+      workspace: { workspaceRoot: "/repo" },
+      getDevPort: async () => 1,
+      getConfig: async () => ({
+        basePaths: new Set<string>(),
+        i18n: { defaultLocale: "en", locales: ["en"] },
+        native: { targets },
+      }),
+    }) as unknown as AppExecutor;
+  const target = (name: string) => ({ name, appName: "Demo", appId: "com.demo.app", version: "1.0.0", buildNum: 1 });
 
-    await script.startIos(app as never, { write: false });
-
-    expect(getAppPackageJson().dependencies as Record<string, string>).toEqual({
-      "@capacitor/core": "^8.3.4",
-      "@capacitor/device": "*",
-      "@capacitor/browser": "*",
-    });
-    expect(recorder.calls).toContainEqual({ name: "app.setPackageJson", args: [getAppPackageJson()] });
-    expect(recorder.calls).toContainEqual({
-      name: "workspace.spawn",
-      args: ["bun", ["install"], { stdio: "inherit" }],
-    });
-    expect(recorder.names().indexOf("workspace.spawn")).toBeLessThan(recorder.names().indexOf("runner.startIos"));
-  });
-
-  test("startIos leaves the app package.json untouched when all default Capacitor plugins are present", async () => {
-    const script = CommandContainer.get(ApplicationScript);
-    const { app, recorder } = createMobileApp({
-      appPlugins: ["@capacitor/core", "@capacitor/device"],
-      appDependencies: { "@capacitor/core": "*", "@capacitor/device": "*" },
-    });
-    stubMobileStart(script, recorder);
-
-    await script.startIos(app as never, { write: false });
-
-    expect(recorder.names()).not.toContain("app.setPackageJson");
-    expect(recorder.calls).not.toContainEqual({
-      name: "workspace.spawn",
-      args: ["bun", ["install"], { stdio: "inherit" }],
-    });
-    expect(recorder.names()).toContain("runner.startIos");
-  });
-
-  test("startIos aborts before launch when mobile dependency install is declined", async () => {
-    const script = CommandContainer.get(ApplicationScript);
-    const installSpecs = ["firebase@^12.13.0"];
-    const { app, recorder } = createMobileApp({ missingMobileSpecs: installSpecs });
-    stubMobileStart(script, recorder, { confirmed: false });
-
-    await expect(script.startIos(app as never, { write: false })).rejects.toThrow(
-      "Mobile builds require missing dependencies",
+  test("a dev build needs `akan start` answering first", async () => {
+    await expect(new ApplicationRunner().startMobile(mobileApp({ default: target("default") }), "ios")).rejects.toThrow(
+      "No dev server answers on http://localhost:1; run `akan start demo` first.",
     );
+  });
 
-    expect(recorder.calls).toContainEqual({ name: "confirmMobileInstall", args: [installSpecs] });
-    expect(recorder.names()).not.toContain("workspace.spawn");
-    expect(recorder.names()).not.toContain("runner.startIos");
+  test("a dev server is reused only when it is this app's", async () => {
+    const serve = (appName?: string, pid?: number) =>
+      Bun.serve({
+        port: 0,
+        fetch: (req) => {
+          const { pathname } = new URL(req.url);
+          if (pathname === "/_akan/app/health") return Response.json({ status: "running", ...(pid ? { pid } : {}) });
+          if (pathname === "/_akan/app/info" && appName) return Response.json({ appName, environment: "local" });
+          return new Response("not found", { status: 404 });
+        },
+      });
+    const own = serve("demo");
+    const other = serve("admin");
+    const older = serve(undefined, 4242);
+    const foreign = serve();
+    try {
+      expect(await ApplicationRunner.answers(`http://localhost:${own.port}`, "demo", "/repo")).toBe(true);
+      await expect(ApplicationRunner.answers(`http://localhost:${other.port}`, "demo", "/repo")).rejects.toThrow(
+        `http://localhost:${other.port} is the dev server of admin, not demo.`,
+      );
+      await expect(ApplicationRunner.answers(`http://localhost:${older.port}`, "demo", "/repo")).rejects.toThrow(
+        `http://localhost:${older.port} is an akan dev server (pid 4242) too old to say which app it serves. Stop it (\`akan start demo --kill\` takes the port over)`,
+      );
+      await expect(ApplicationRunner.answers(`http://localhost:${foreign.port}`, "demo", "/repo")).rejects.toThrow(
+        "answers, but not as an akan dev server",
+      );
+    } finally {
+      for (const server of [own, other, older, foreign]) server.stop(true);
+    }
+    expect(await ApplicationRunner.answers(`http://localhost:${own.port}`, "demo", "/repo")).toBe(false);
+  });
+
+  test("a dev server of the same app is followed only from the checkout it runs from", async () => {
+    const [here, there] = [track(await createTempApp("demo")).root, track(await createTempApp("demo")).root];
+    const serve = (workspaceRoot?: string) =>
+      Bun.serve({
+        port: 0,
+        fetch: (req) => {
+          const { pathname } = new URL(req.url);
+          if (pathname === "/_akan/app/health") return Response.json({ status: "running" });
+          if (pathname === "/_akan/app/info")
+            return Response.json({
+              appName: "demo",
+              operationMode: "local",
+              ...(workspaceRoot ? { workspaceRoot } : {}),
+            });
+          return new Response("not found", { status: 404 });
+        },
+      });
+    const own = serve(here);
+    const other = serve(there);
+    const unnamed = serve();
+    try {
+      expect(await ApplicationRunner.answers(`http://localhost:${own.port}`, "demo", here)).toBe(true);
+      expect(await ApplicationRunner.answers(`http://localhost:${own.port}`, "demo", `${here}/apps/..`)).toBe(true);
+      await expect(ApplicationRunner.answers(`http://localhost:${other.port}`, "demo", here)).rejects.toThrow(
+        `http://localhost:${other.port} is the dev server of demo in ${there}, not in ${here}. Stop it (\`akan start demo --kill\` takes the port over)`,
+      );
+      expect(await ApplicationRunner.answers(`http://localhost:${unnamed.port}`, "demo", here)).toBe(true);
+    } finally {
+      for (const server of [own, other, unnamed]) server.stop(true);
+    }
+  });
+
+  test("publish-update checks every target's updates settings and signing key before it builds anything", async () => {
+    const home = track({ root: await mkdtemp(path.join(os.tmpdir(), "akan-native-home-")) }).root;
+    const pem = generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    await writeText(path.join(home, "keys", "com.demo.app.update.key"), pem);
+    const { x } = createPublicKey(createPrivateKey(pem)).export({ format: "jwk" });
+    const updates = {
+      url: "https://releases.example.com/demo",
+      publicKey: Buffer.from(x ?? "", "base64url").toString("base64"),
+    };
+    const recorder = createCallRecorder();
+    const publishing = (admin: object) =>
+      ({
+        name: "demo",
+        cwdPath: path.join(repoRoot, "apps/minimal"),
+        workspace: { workspaceRoot: repoRoot },
+        getScanInfo: () => ({ getLibs: () => [] }),
+        collectPlugins: async () => [],
+        getConfig: async () => ({
+          basePaths: new Set<string>(),
+          i18n: { defaultLocale: "en", locales: ["en"] },
+          native: { targets: { store: { ...target("store"), updates }, admin: { ...target("admin"), ...admin } } },
+        }),
+        prepareCommand: async () => {
+          recorder.record("build");
+          throw new Error("built");
+        },
+        logger: { warn: () => undefined },
+      }) as unknown as AppExecutor;
+    const saved = {
+      AKAN_NATIVE_HOME: process.env.AKAN_NATIVE_HOME,
+      AKAN_NATIVE_UPDATE_KEY: process.env.AKAN_NATIVE_UPDATE_KEY,
+    };
+    process.env.AKAN_NATIVE_HOME = home;
+    delete process.env.AKAN_NATIVE_UPDATE_KEY;
+    try {
+      await expect(new ApplicationRunner().publishUpdate(publishing({}), "android", { target: "all" })).rejects.toThrow(
+        "Native target 'admin' has no updates: add native.updates: { url, publicKey } to akan.config.ts",
+      );
+      const otherKey = Buffer.alloc(32, 7).toString("base64");
+      await expect(
+        new ApplicationRunner().publishUpdate(publishing({ updates: { ...updates, publicKey: otherKey } }), "android", {
+          target: "all",
+        }),
+      ).rejects.toThrow("Native target 'admin': the key at");
+    } finally {
+      for (const [key, value] of Object.entries(saved))
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+    }
+    expect(recorder.names()).toEqual([]);
+  });
+
+  test("only a desktop build of a target that declares desktop.server carries the server", () => {
+    const carrying = { name: "kiosk", config: { ...target("kiosk"), desktop: { server: true } } };
+    expect(ApplicationRunner.carriesServer(carrying, "windows")).toBe(true);
+    expect(ApplicationRunner.carriesServer(carrying, "macos")).toBe(true);
+    expect(ApplicationRunner.carriesServer(carrying, "android")).toBe(false);
+    expect(ApplicationRunner.carriesServer(carrying, "ios")).toBe(false);
+    expect(ApplicationRunner.carriesServer({ name: "store", config: target("store") }, "linux")).toBe(false);
+    const omitting = { name: "kiosk", config: { ...target("kiosk"), desktop: { server: { omit: ["rclnodejs"] } } } };
+    expect(ApplicationRunner.carriesServer(omitting, "macos")).toBe(true);
+    expect(
+      ApplicationRunner.carriesServer({ ...omitting, config: { ...target("k"), desktop: { server: false } } }),
+    ).toBe(false);
+  });
+
+  test("the targets that carry one build's server leave the same packages out of it", () => {
+    const carrying = (name: string, server: boolean | { omit: string[] }) => ({
+      name,
+      config: { ...target(name), desktop: { server } },
+    });
+    expect(ApplicationRunner.serverOmit([carrying("a", { omit: ["rclnodejs"] })], "macos")).toEqual(["rclnodejs"]);
+    expect(ApplicationRunner.serverOmit([carrying("a", true), { name: "b", config: target("b") }], "macos")).toEqual(
+      [],
+    );
+    expect(() =>
+      ApplicationRunner.serverOmit([carrying("a", { omit: ["rclnodejs"] }), carrying("b", true)], "macos"),
+    ).toThrow("omit different packages (a: rclnodejs; b: none)");
+  });
+
+  test("a dev build runs one target at a time", async () => {
+    const app = mobileApp({ store: target("store"), admin: target("admin") });
+    await expect(new ApplicationRunner().startMobile(app, "android", { target: "all" })).rejects.toThrow(
+      "start-android runs one native target at a time",
+    );
+  });
+
+  test("a desktop dev build names its own command when it is handed several targets", async () => {
+    const app = mobileApp({ store: target("store"), admin: target("admin") });
+    await expect(new ApplicationRunner().startDesktop(app, { target: "all" })).rejects.toThrow(
+      "start-desktop runs one native target at a time",
+    );
+  });
+
+  test("a desktop app carries its server only in database mode single, and says so before it builds", async () => {
+    const app = {
+      name: "demo",
+      cwdPath: "/repo/apps/demo",
+      getConfig: async () => ({
+        app: { name: "demo" },
+        basePaths: new Set<string>(),
+        database: { modes: ["cluster"] },
+        native: { targets: { default: { ...target("default"), desktop: { server: true } } } },
+      }),
+    } as unknown as AppExecutor;
+    await expect(new ApplicationRunner().buildDesktop(app)).rejects.toThrow(
+      "only database mode single runs (no Redis or Postgres); apps/demo/akan.config.ts declares cluster",
+    );
+    await expect(new ApplicationRunner().startDesktop(app, { operation: "release" })).rejects.toThrow(
+      "only database mode single runs",
+    );
+  });
+
+  test("an Android release says which signing keys are missing before it builds anything", async () => {
+    const saved = { ...process.env };
+    for (const key of Object.keys(process.env)) if (key.startsWith("MYAPP_RELEASE_")) delete process.env[key];
+    try {
+      await expect(
+        new ApplicationRunner().releaseAndroid(mobileApp({ default: target("default") }), "aab"),
+      ).rejects.toThrow("set MYAPP_RELEASE_STORE_FILE, MYAPP_RELEASE_STORE_PASSWORD, MYAPP_RELEASE_KEY_ALIAS");
+    } finally {
+      Object.assign(process.env, saved);
+    }
   });
 });
 

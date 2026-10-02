@@ -61,11 +61,19 @@ export type BackendLifecycleState = "starting" | "ready" | "restart-pending" | "
 /** Reported, not scraped: in interleaved child output "this app is up" reads like any line mentioning it. */
 export type DevHostState = "starting" | "ready" | "restarting" | "recovering" | "suspended" | "failed" | "stopped";
 
-export interface DevHostEvent {
+export interface DevHostStateEvent {
   app: string;
   state: DevHostState;
   detail?: string;
 }
+
+/** Sent once: the app serves and its boot builds have settled, which is what the next boot wave waits for. */
+export interface DevHostBootEvent {
+  app: string;
+  booted: true;
+}
+
+export type DevHostEvent = DevHostStateEvent | DevHostBootEvent;
 
 const devHostStateByBackendState = {
   starting: "starting",
@@ -112,13 +120,28 @@ export const isLegacyBackendFallbackFile = (file: string, workspaceRoot: string)
   );
 };
 
+//? The backend's rule (akanjs `DevBuildRecovery`), copied: no exported akanjs subpath reaches it from the CLI bundle.
 export const shouldMarkBuildPhaseRecovered = (
   previousByPhase: ReadonlyMap<BuildPhase, DevBuildStatus>,
   status: DevBuildStatus,
 ): boolean => {
   const previous = previousByPhase.get(status.phase);
-  return Boolean(previous && status.ok && !previous.ok && generationValue(status.generation) >= previous.generation);
+  if (!previous || previous.ok || !status.ok) return false;
+  const generation = generationValue(status.generation);
+  if (status.phase === "route" && status.scope !== undefined && previous.scope !== undefined)
+    return status.scope === previous.scope && generation >= previous.generation;
+  if (generation !== previous.generation) return generation > previous.generation;
+  return status.phase === "backend";
 };
+
+/** An ok that recovers nothing leaves the failure standing, for hello and for whatever waits on a clean build. */
+export const shouldKeepBuildFailure = (
+  previousByPhase: ReadonlyMap<BuildPhase, DevBuildStatus>,
+  status: DevBuildStatus,
+): boolean =>
+  status.ok &&
+  previousByPhase.get(status.phase)?.ok === false &&
+  !shouldMarkBuildPhaseRecovered(previousByPhase, status);
 
 export const createBackendBuildStatus = ({
   generation,
@@ -180,7 +203,8 @@ export const hasBuildFailureForGeneration = (
 ): boolean => {
   if (typeof generation !== "number") return false;
   for (const status of statusByPhase.values()) {
-    if (!status.ok && status.generation === generation) return true;
+    //? Not a route's: a replacement builder or a restarted dev host boots without building one, so it cannot hit it.
+    if (!status.ok && status.phase !== "route" && status.generation === generation) return true;
   }
   return false;
 };
@@ -268,8 +292,9 @@ export const resolveIdleSuspendMs = (raw: string | undefined): number | null => 
   return Math.round(parsed);
 };
 
+//? Not a route's: a broken route builds again on its next request, which wakes a suspended builder anyway.
 export const hasAnyBuildFailure = (statusByPhase: ReadonlyMap<BuildPhase, DevBuildStatus>): boolean =>
-  [...statusByPhase.values()].some((status) => !status.ok);
+  [...statusByPhase.values()].some((status) => !status.ok && status.phase !== "route");
 
 export const shouldRefreshConfigOnIdleWake = (batch: ChangeBatch | null): boolean =>
   !!batch && batch.kinds.has("config");

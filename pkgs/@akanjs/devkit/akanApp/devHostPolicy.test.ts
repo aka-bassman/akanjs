@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { BuilderMessage, BuildPhase, DevBuildStatus, DevChangeAction } from "akanjs/server";
+//? The source itself, not the package: the published akanjs exports no such subpath, and tests are not bundled.
+import { DevBuildRecovery } from "../../../akanjs/server/artifact/devBuildRecovery";
 import {
   backendRestartReasonFromMessage,
   buildStatusReplaySequence,
@@ -17,6 +19,7 @@ import {
   resolveIdleSuspendMs,
   shouldAbandonBackendRecovery,
   shouldHoldForReturningBuilder,
+  shouldKeepBuildFailure,
   shouldMarkBuildPhaseRecovered,
   shouldQueueBuildStatusReplay,
   shouldRefreshConfigOnIdleWake,
@@ -281,8 +284,9 @@ describe("dev idle suspend", () => {
     expect(resolveIdleSuspendMs("1500")).toBe(1_500);
   });
 
-  test("blocks a suspend on a failure in any phase, not just the newest generation", () => {
+  test("blocks a suspend on a failure in any phase but a route's, not just the newest generation", () => {
     expect(hasAnyBuildFailure(new Map())).toBe(false);
+    expect(hasAnyBuildFailure(new Map([["route", status("route", 1, false)]]))).toBe(false);
     expect(hasAnyBuildFailure(new Map([["scan", status("scan", 1, true)]]))).toBe(false);
     expect(
       hasAnyBuildFailure(
@@ -353,6 +357,67 @@ describe("build status helpers", () => {
 
     expect(shouldMarkBuildPhaseRecovered(previousByPhase, status("css", 12, true))).toBe(false);
     expect(shouldMarkBuildPhaseRecovered(previousByPhase, status("pages", 12, true))).toBe(true);
+  });
+
+  test("an ok of the failure's own generation neither recovers nor replaces it, except a backend's", () => {
+    const previousByPhase = new Map<DevBuildStatus["phase"], DevBuildStatus>([
+      ["ssr", status("ssr", 7, false)],
+      ["backend", status("backend", 7, false)],
+    ]);
+    expect(shouldMarkBuildPhaseRecovered(previousByPhase, status("ssr", 7, true))).toBe(false);
+    expect(shouldKeepBuildFailure(previousByPhase, status("ssr", 7, true))).toBe(true);
+    expect(shouldKeepBuildFailure(previousByPhase, status("ssr", 8, true))).toBe(false);
+    expect(shouldKeepBuildFailure(previousByPhase, status("ssr", 7, false))).toBe(false);
+    expect(shouldMarkBuildPhaseRecovered(previousByPhase, status("backend", 7, true))).toBe(true);
+  });
+
+  test("the same route built again recovers at the failure's generation or later, and another route's ok never does", () => {
+    const routeA = (ok: boolean, generation = 4) => ({ ...status("route", generation, ok), scope: "/:lang/a" });
+    const routeB = (ok: boolean, generation = 4) => ({ ...status("route", generation, ok), scope: "/:lang/b" });
+    const previousByPhase = new Map<DevBuildStatus["phase"], DevBuildStatus>([["route", routeA(false)]]);
+    expect(shouldMarkBuildPhaseRecovered(previousByPhase, routeA(true))).toBe(true);
+    expect(shouldKeepBuildFailure(previousByPhase, routeA(true))).toBe(false);
+    expect(shouldMarkBuildPhaseRecovered(previousByPhase, routeB(true))).toBe(false);
+    expect(shouldKeepBuildFailure(previousByPhase, routeB(true))).toBe(true);
+    expect(shouldMarkBuildPhaseRecovered(previousByPhase, routeB(true, 5))).toBe(false);
+    expect(shouldMarkBuildPhaseRecovered(previousByPhase, routeA(true, 5))).toBe(true);
+    expect(shouldKeepBuildFailure(previousByPhase, routeA(true, 3))).toBe(true);
+  });
+
+  test("judges recovery as the backend does (akanjs DevBuildRecovery), case for case", () => {
+    const at = (phase: BuildPhase, generation: number, ok: boolean, scope?: string): DevBuildStatus => ({
+      ...status(phase, generation, ok),
+      ...(scope ? { scope } : {}),
+    });
+    const cases: [DevBuildStatus | undefined, DevBuildStatus][] = [];
+    for (const phase of ["backend", "route", "scan", "pages", "ssr"] as BuildPhase[])
+      for (const [previousOk, ok] of [
+        [false, true],
+        [true, true],
+        [false, false],
+      ])
+        for (const generation of [3, 4, 5])
+          for (const [previousScope, scope] of [
+            [undefined, undefined],
+            ["/a", "/a"],
+            ["/a", "/b"],
+          ])
+            cases.push([at(phase, 4, previousOk, previousScope), at(phase, generation, ok, scope)]);
+    cases.push([undefined, at("pages", 4, true)]);
+    for (const [previous, next] of cases) {
+      const previousByPhase = new Map<BuildPhase, DevBuildStatus>(previous ? [[previous.phase, previous]] : []);
+      expect([previous, next, shouldMarkBuildPhaseRecovered(previousByPhase, next)]).toEqual([
+        previous,
+        next,
+        DevBuildRecovery.recovers(previous, next),
+      ]);
+    }
+  });
+
+  test("a builder that came back clears no config change still on hold, or one that failed to apply", () => {
+    const previousByPhase = new Map<DevBuildStatus["phase"], DevBuildStatus>([["scan", status("scan", 42, false)]]);
+    expect(shouldMarkBuildPhaseRecovered(previousByPhase, status("scan", 42, true))).toBe(false);
+    expect(shouldMarkBuildPhaseRecovered(previousByPhase, status("scan", 43, true))).toBe(true);
   });
 
   test("creates backend build-status payloads for lifecycle test hooks", () => {
@@ -438,6 +503,11 @@ describe("hasBuildFailureForGeneration", () => {
       ["barrel", status("barrel", 4, true)],
     ]);
     expect(hasBuildFailureForGeneration(statusByPhase, 4)).toBe(false);
+  });
+
+  test("leaves a route's failure out: nothing a replacement builder boots builds a route", () => {
+    const statusByPhase = new Map<DevBuildStatus["phase"], DevBuildStatus>([["route", status("route", 42, false)]]);
+    expect(hasBuildFailureForGeneration(statusByPhase, 42)).toBe(false);
   });
 
   test("treats unknown generations and green boards as healthy", () => {

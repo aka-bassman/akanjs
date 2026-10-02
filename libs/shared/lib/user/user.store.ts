@@ -1,5 +1,6 @@
 import { msg } from "@libs/shared/client";
 import { withRedirectQuery } from "@libs/shared/common";
+import { loadRefreshToken, saveRefreshToken } from "@libs/shared/webkit";
 import { type Dayjs, dayjs } from "akanjs/base";
 import { getCookie, router, setAuth, setCookie } from "akanjs/client";
 import { formatPhone, isPhoneNumber } from "akanjs/common";
@@ -8,6 +9,13 @@ import { store } from "akanjs/store";
 import * as cnst from "../cnst";
 import type { RootStore } from "../st";
 import { fetch, sig } from "../useClient";
+
+// Firefox and desktop Safari ship no Badging API, and reading a missing method off `navigator` and calling it
+// throws synchronously — which would take the whole badge action down with it.
+const setAppBadge = (count: number) => {
+  if (!("setAppBadge" in navigator)) return;
+  void navigator.setAppBadge(count);
+};
 
 export class UserStore extends store(sig.user, () => ({
   self: new cnst.User(),
@@ -22,6 +30,7 @@ export class UserStore extends store(sig.user, () => ({
   phoneCode: "",
   phoneCodeAt: null as Dayjs | null,
   phoneVerifiedAt: null as Dayjs | null,
+  emailCode: "",
   turnstileToken: null as string | null,
   sameAccountIdExists: "unknown" as "unknown" | boolean,
   sameNicknameExists: "unknown" as "unknown" | boolean,
@@ -38,7 +47,7 @@ export class UserStore extends store(sig.user, () => ({
     if (!self.id) return;
     const user = await fetch.addBadgeCount(self.id);
     this.set({ self: user });
-    void navigator.setAppBadge(user.badgeCount);
+    setAppBadge(user.badgeCount);
   }
 
   async subBadgeCount() {
@@ -46,19 +55,9 @@ export class UserStore extends store(sig.user, () => ({
     if (!self.id) return;
     const user = await fetch.subBadgeCount(self.id);
     this.set({ self: user });
-    void navigator.setAppBadge(user.badgeCount);
+    setAppBadge(user.badgeCount);
   }
 
-  async addNotiDeviceTokenOfSelf(notiDeviceToken: string) {
-    const { self } = this.get();
-    if (!self.id) return;
-    await fetch.addNotiDeviceTokenOfSelf(notiDeviceToken);
-  }
-  async subNotiDeviceTokenOfSelf(notiDeviceToken: string) {
-    const { self } = this.get();
-    if (!self.id) return;
-    await fetch.subNotiDeviceTokenOfSelf(notiDeviceToken);
-  }
   async setLeaveInfoOfSelf() {
     const { leaveInfo } = this.get();
     // voc 는 선택 항목이고 satisfaction 은 1이 유효한 값이라, 빈 값 검사로 설문 전체를 버리면 안 된다.
@@ -107,6 +106,7 @@ export class UserStore extends store(sig.user, () => ({
     if (agreePolicies?.length) await fetch.setAgreePoliciesOfPrepareUser(userId, agreePolicies);
     const accessToken = await fetch.activateUser(userId);
     setAuth(accessToken);
+    await saveRefreshToken("user", accessToken.refreshToken);
     await this.getSelf(accessToken);
     if (redirect) router.push(redirect);
   }
@@ -188,7 +188,13 @@ export class UserStore extends store(sig.user, () => ({
     await fetch.setAccountIdInPrepareUser(userId, accountId);
     router.push(withRedirectQuery(redirect, { userId }));
   }
-  async generatePrepareUserWithAccountId({ redirect }: { redirect: string }) {
+  async generatePrepareUserWithAccountId({
+    redirect,
+    requestEmailCode = false,
+  }: {
+    redirect: string;
+    requestEmailCode?: boolean;
+  }) {
     const { accountId } = this.get();
     if (!accountId) return;
     const accountIdExists = await fetch.userExistsHasAccountId(accountId);
@@ -197,7 +203,25 @@ export class UserStore extends store(sig.user, () => ({
       return;
     }
     const prepareUser = await fetch.generatePrepareUser(null, "dummy");
-    await this.setAccountIdInPrepareUser(prepareUser.id, { redirect });
+    if (!requestEmailCode) {
+      await this.setAccountIdInPrepareUser(prepareUser.id, { redirect });
+      return;
+    }
+    await fetch.setAccountIdInPrepareUser(prepareUser.id, accountId);
+    await this.requestEmailCodeInPrepareUser(prepareUser.id);
+    router.push(withRedirectQuery(redirect, { userId: prepareUser.id }));
+  }
+  async requestEmailCodeInPrepareUser(userId: string) {
+    await fetch.requestEmailCodeInPrepareUser(userId);
+    this.set({ emailCode: "" });
+    msg.success("user.emailCodeSentSuccess", { key: "emailCode" });
+  }
+  async verifyEmailInPrepareUser(userId: string, { redirect }: { redirect?: string } = {}) {
+    const { emailCode } = this.get();
+    if (emailCode.length !== 6) return;
+    await fetch.verifyEmailInPrepareUser(userId, emailCode);
+    this.set({ emailCode: "" });
+    if (redirect) router.push(withRedirectQuery(redirect, { userId }));
   }
   async setPasswordInPrepareUser(userId: string, { redirect }: { redirect: string }) {
     const { accountId, password, passwordConfirm } = this.get();
@@ -211,6 +235,7 @@ export class UserStore extends store(sig.user, () => ({
       const { accountId, password } = this.pick("accountId", "password");
       const accessToken = await fetch.signinWithPassword(accountId, password, turnstileToken ?? "dummy");
       setAuth(accessToken);
+      await saveRefreshToken("user", accessToken.refreshToken);
       await this.getSelf(accessToken);
       if (replace) router.replace(redirect);
       else router.push(redirect);
@@ -285,6 +310,7 @@ export class UserStore extends store(sig.user, () => ({
     this.set({ signToken });
     const accessToken = await fetch.signinWithSignToken(userId, signToken);
     setAuth(accessToken);
+    await saveRefreshToken("user", accessToken.refreshToken);
     await this.getSelf(accessToken);
     this.set({ signToken: null });
     router.push(redirect);
@@ -306,8 +332,9 @@ export class UserStore extends store(sig.user, () => ({
   //*================================================================*//
 
   async refreshJwt() {
-    const accessToken = await fetch.refreshJwt(null);
+    const accessToken = await fetch.refreshJwt(await loadRefreshToken("user"));
     setAuth(accessToken);
+    await saveRefreshToken("user", accessToken.refreshToken);
   }
 
   //*======================================================*//

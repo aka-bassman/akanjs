@@ -9,6 +9,7 @@ import type {
 } from "akanjs/client";
 import { type AkanI18nConfig, DEFAULT_AKAN_I18N, getBasePathFromPathname, Logger } from "akanjs/common";
 import {
+  type AkanTheme,
   getRequestDynamicUsage,
   getRequestFrameState,
   getRequestPolicy,
@@ -101,6 +102,7 @@ interface ReloadMsg {
   cssAssets?: Record<string, { cssUrl: string; cssRelPath: string }>;
   buildId: number;
   pagesBundlePath?: string;
+  reloadId?: number;
 }
 interface UpdateCssAssetsMsg {
   type: "updateCssAssets";
@@ -387,15 +389,24 @@ export class RscRenderer {
       this.#resultCache.clear();
       this.#patchResultCache.clear();
       this.#logger.verbose(`reload complete buildId=${msg.buildId} in ${Date.now() - startedAt}ms`);
-      this.#send({ type: "reloaded", buildId: msg.buildId });
+      this.#send({
+        type: "reloaded",
+        buildId: msg.buildId,
+        reloadId: msg.reloadId,
+        pagesBundlePath: nextPagesBundlePath,
+      });
     } catch (error) {
       this.#logger.error(
         `reload failed buildId=${msg.buildId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
       );
+      // The host settles on the latest reload alone; a superseded one's failure says nothing about it.
+      if (seq !== this.#reloadSeq) return;
       this.#send({
         type: "error",
         requestId: "__reload__",
         buildId: msg.buildId,
+        reloadId: msg.reloadId,
+        running: { pagesBundlePath: this.#pagesBundlePath, buildId: this.#pagesBundleBuildId },
         message: error instanceof Error ? error.message : String(error),
       });
     }
@@ -852,6 +863,7 @@ export class RscRenderer {
     let sentChunk = false;
     let lateControlSent = false;
     const chunks: Uint8Array[] = [];
+    let reportedTheme: AkanTheme | undefined;
     const sendMeta = () => {
       if (!options.requestId || sentMeta) return;
       sentMeta = true;
@@ -859,13 +871,22 @@ export class RscRenderer {
         const trace = getCurrentTrace();
         if (trace) trace.status = options.status;
       }
+      reportedTheme = getRequestTheme();
       this.#send({
         type: "meta",
         requestId: options.requestId,
-        theme: getRequestTheme(),
+        theme: reportedTheme,
         status: options.status,
         trace: options.trace,
       });
+    };
+    //? The provider names the theme when the root layout renders, usually after the first chunk has left; sent ahead of
+    //? the chunk carrying it, the host has it before the HTML shell (and its `<html data-theme>`) can be written.
+    const sendLateTheme = () => {
+      const theme = getRequestTheme();
+      if (!options.requestId || !sentMeta || theme === reportedTheme) return;
+      reportedTheme = theme;
+      this.#send({ type: "theme", requestId: options.requestId, theme });
     };
     const sendLateRedirect = () => {
       if (!options.requestId || lateControlSent || controlRef.current?.type !== "redirect") return;
@@ -898,6 +919,7 @@ export class RscRenderer {
         if (options.collectChunks) chunks.push(chunk);
         if (options.requestId) {
           sendMeta();
+          sendLateTheme();
           this.#send({ type: "chunk", requestId: options.requestId, data: chunk });
           sentChunk = true;
         }

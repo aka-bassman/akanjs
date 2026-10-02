@@ -24,7 +24,19 @@ const envKeys = [
   "AKAN_WS_PREFIX",
   "AKAN_PUBLIC_API_PREFIX",
   "AKAN_PUBLIC_WS_PREFIX",
+  "AKAN_PUBLIC_SERVER_URL",
 ] as const;
+
+// `getEnv` reads `window.location` on the client side; a URL object carries the same fields.
+const asPage = async <T>(href: string, run: () => Promise<T>): Promise<T> => {
+  const holder = globalThis as unknown as { window?: { location: URL } };
+  holder.window = { location: new URL(href) };
+  try {
+    return await run();
+  } finally {
+    delete holder.window;
+  }
+};
 
 const resetEnv = () => {
   for (const key of envKeys) delete process.env[key];
@@ -166,6 +178,213 @@ describe("getEnv", () => {
 
     const remote = await loadBaseEnv();
     expect(remote.getEnv().serverPort).toBe(8282);
+  });
+
+  test("a cloud CSR bundle in a native shell calls its cloud host on 443, whatever the page origin", async () => {
+    for (const href of ["app://localhost/", "https://app.localhost/"]) {
+      resetEnv();
+      process.env.AKAN_PUBLIC_ENV = "main";
+      const env = await asPage(href, async () => (await loadBaseEnv()).getEnv());
+
+      expect(env.serverHttpUri).toBe("https://minimal-main.example.com/api");
+      expect(env.serverWsUri).toBe("wss://minimal-main.example.com");
+    }
+  });
+
+  test("AKAN_PUBLIC_SERVER_URL names a CSR bundle's server, websocket included", async () => {
+    resetEnv();
+    Object.assign(process.env, { AKAN_PUBLIC_ENV: "local", AKAN_PUBLIC_SERVER_URL: "http://localhost:8282" });
+    const local = await asPage("app://localhost/en?csr=true", async () => (await loadBaseEnv()).getEnv());
+    expect(local.serverHttpUri).toBe("http://localhost:8282/api");
+    expect(local.serverWsUri).toBe("ws://localhost:8282");
+
+    resetEnv();
+    Object.assign(process.env, { AKAN_PUBLIC_ENV: "main", AKAN_PUBLIC_SERVER_URL: "https://api.example.com" });
+    const cloud = await asPage("https://app.localhost/", async () => (await loadBaseEnv()).getEnv());
+    expect(cloud.serverHttpUri).toBe("https://api.example.com/api");
+    expect(cloud.serverWsUri).toBe("wss://api.example.com");
+  });
+
+  test("an SSR tab ignores AKAN_PUBLIC_SERVER_URL and calls the origin that rendered it", async () => {
+    resetEnv();
+    Object.assign(process.env, {
+      AKAN_PUBLIC_ENV: "main",
+      AKAN_PUBLIC_RENDER_ENV: "ssr",
+      AKAN_PUBLIC_SERVER_URL: "https://api.example.com",
+    });
+    const env = await asPage("https://minimal.example.com/en", async () => (await loadBaseEnv()).getEnv());
+    expect(env.serverHttpUri).toBe("https://minimal.example.com/api");
+  });
+
+  test("a desktop app's launch env names the server it carries, ahead of the built-in URL and the dev gateway", async () => {
+    const holder = globalThis as {
+      __AKAN_NATIVE__?: { platform: string; env: Record<string, string> };
+      __AKAN_NATIVE_DEV__?: { gateway: string };
+    };
+    try {
+      for (const environment of ["local", "main"]) {
+        resetEnv();
+        Object.assign(process.env, { AKAN_PUBLIC_ENV: environment, AKAN_PUBLIC_SERVER_URL: "https://api.example.com" });
+        holder.__AKAN_NATIVE__ = { platform: "macos", env: { PUBLIC_AKAN_SERVER_URL: "http://127.0.0.1:52345" } };
+        holder.__AKAN_NATIVE_DEV__ = { gateway: "http://localhost:52011" };
+        const env = await asPage("app://localhost/en", async () => (await loadBaseEnv()).getEnv());
+        expect([environment, env.serverHttpUri, env.serverWsUri]).toEqual([
+          environment,
+          "http://127.0.0.1:52345/api",
+          "ws://127.0.0.1:52345",
+        ]);
+      }
+
+      resetEnv();
+      process.env.AKAN_PUBLIC_ENV = "main";
+      holder.__AKAN_NATIVE__ = { platform: "macos", env: { PUBLIC_AKAN_SERVER_URL: "app://localhost" } };
+      delete holder.__AKAN_NATIVE_DEV__;
+      await asPage("app://localhost/", async () => {
+        const { getEnv } = await loadBaseEnv();
+        expect(() => getEnv()).toThrow("PUBLIC_AKAN_SERVER_URL must be an http(s) URL");
+      });
+    } finally {
+      delete holder.__AKAN_NATIVE__;
+      delete holder.__AKAN_NATIVE_DEV__;
+      delete process.env.AKAN_PUBLIC_SERVER_URL;
+    }
+  });
+
+  test("AKAN_PUBLIC_SERVER_URL must be an http(s) URL", async () => {
+    resetEnv();
+    Object.assign(process.env, { AKAN_PUBLIC_ENV: "local", AKAN_PUBLIC_SERVER_URL: "app://localhost" });
+    await asPage("app://localhost/", async () => {
+      const { getEnv } = await loadBaseEnv();
+      expect(() => getEnv()).toThrow("AKAN_PUBLIC_SERVER_URL must be an http(s) URL");
+    });
+  });
+
+  test("a page the dev gateway served calls its own origin, which the shell and the gateway carry", async () => {
+    const holder = globalThis as { __AKAN_NATIVE__?: { platform: string }; __AKAN_NATIVE_DEV__?: { gateway: string } };
+    try {
+      for (const [platform, href, http, ws] of [
+        ["ios", "app://localhost/en?csr=true", "app://localhost/api", "app://localhost"],
+        ["android", "https://app.localhost/en?csr=true", "https://app.localhost/api", "wss://app.localhost"],
+      ] as const) {
+        for (const environment of ["local", "develop"]) {
+          resetEnv();
+          Object.assign(process.env, { AKAN_PUBLIC_ENV: environment, AKAN_PUBLIC_SERVER_PORT: "8283" });
+          holder.__AKAN_NATIVE__ = { platform };
+          holder.__AKAN_NATIVE_DEV__ = { gateway: "http://localhost:52011" };
+          const env = await asPage(href, async () => (await loadBaseEnv()).getEnv());
+          expect([platform, environment, env.serverHttpUri, env.serverWsUri]).toEqual([
+            platform,
+            environment,
+            http,
+            ws,
+          ]);
+        }
+      }
+
+      resetEnv();
+      Object.assign(process.env, { AKAN_PUBLIC_ENV: "local", AKAN_PUBLIC_SERVER_URL: "https://api.example.com" });
+      const pinned = await asPage("app://localhost/", async () => (await loadBaseEnv()).getEnv());
+      expect(pinned.serverHttpUri).toBe("https://api.example.com/api");
+    } finally {
+      delete holder.__AKAN_NATIVE__;
+      delete holder.__AKAN_NATIVE_DEV__;
+      delete process.env.AKAN_PUBLIC_SERVER_URL;
+    }
+  });
+
+  test("a local release bundle in a native shell calls the dev server on localhost", async () => {
+    const holder = globalThis as { __AKAN_NATIVE__?: { platform: string } };
+    try {
+      for (const [platform, href] of [
+        ["ios", "app://localhost/en?csr=true"],
+        ["android", "https://app.localhost/en?csr=true"],
+      ] as const) {
+        resetEnv();
+        Object.assign(process.env, { AKAN_PUBLIC_ENV: "local", AKAN_PUBLIC_SERVER_PORT: "8283" });
+        holder.__AKAN_NATIVE__ = { platform };
+        const env = await asPage(href, async () => (await loadBaseEnv()).getEnv());
+        expect(env.serverHttpUri).toBe("http://localhost:8283/api");
+        expect(env.serverWsUri).toBe("ws://localhost:8283");
+      }
+
+      resetEnv();
+      process.env.AKAN_PUBLIC_ENV = "main";
+      holder.__AKAN_NATIVE__ = { platform: "ios" };
+      const cloud = await asPage("app://localhost/", async () => (await loadBaseEnv()).getEnv());
+      expect(cloud.serverHttpUri).toBe("https://minimal-main.example.com/api");
+    } finally {
+      delete holder.__AKAN_NATIVE__;
+    }
+  });
+
+  test("getServerOrigin names what a browser outside the page opens: the dev server behind a gateway page", async () => {
+    const holder = globalThis as { __AKAN_NATIVE__?: { platform: string }; __AKAN_NATIVE_DEV__?: { gateway: string } };
+    const originOf = async (href: string) => asPage(href, async () => (await loadBaseEnv()).getServerOrigin());
+    try {
+      for (const [platform, href] of [
+        ["ios", "app://localhost/en?csr=true"],
+        ["android", "https://app.localhost/en?csr=true"],
+        ["macos", "app://localhost/en?csr=true"],
+      ] as const) {
+        for (const environment of ["local", "develop"]) {
+          resetEnv();
+          Object.assign(process.env, { AKAN_PUBLIC_ENV: environment, AKAN_PUBLIC_SERVER_PORT: "8283" });
+          holder.__AKAN_NATIVE__ = { platform };
+          holder.__AKAN_NATIVE_DEV__ = { gateway: "http://localhost:52011" };
+          expect([platform, environment, await originOf(href)]).toEqual([
+            platform,
+            environment,
+            "http://localhost:8283",
+          ]);
+        }
+      }
+      delete holder.__AKAN_NATIVE_DEV__;
+
+      resetEnv();
+      Object.assign(process.env, { AKAN_PUBLIC_ENV: "local", AKAN_PUBLIC_SERVER_PORT: "8283" });
+      holder.__AKAN_NATIVE__ = { platform: "android" };
+      expect(await originOf("https://app.localhost/en?csr=true")).toBe("http://localhost:8283");
+
+      resetEnv();
+      process.env.AKAN_PUBLIC_ENV = "main";
+      holder.__AKAN_NATIVE__ = { platform: "ios" };
+      expect(await originOf("app://localhost/")).toBe("https://minimal-main.example.com");
+
+      resetEnv();
+      Object.assign(process.env, { AKAN_PUBLIC_ENV: "main", AKAN_PUBLIC_SERVER_URL: "https://api.example.com/" });
+      expect(await originOf("app://localhost/")).toBe("https://api.example.com");
+      delete process.env.AKAN_PUBLIC_SERVER_URL;
+
+      resetEnv();
+      Object.assign(process.env, { AKAN_PUBLIC_ENV: "debug", AKAN_PUBLIC_SERVER_PORT: "8283" });
+      Object.assign(holder, {
+        __AKAN_NATIVE__: { platform: "macos", env: { PUBLIC_AKAN_SERVER_URL: "http://127.0.0.1:51234" } },
+        __AKAN_NATIVE_DEV__: { gateway: "http://localhost:52011" },
+      });
+      expect(await originOf("app://localhost/en?csr=true")).toBe("http://127.0.0.1:51234");
+      delete holder.__AKAN_NATIVE__;
+      delete holder.__AKAN_NATIVE_DEV__;
+
+      resetEnv();
+      Object.assign(process.env, { AKAN_PUBLIC_ENV: "main", AKAN_PUBLIC_RENDER_ENV: "ssr" });
+      expect(await originOf("https://minimal.example.com/en")).toBe("https://minimal.example.com");
+
+      resetEnv();
+      process.env.AKAN_PUBLIC_ENV = "local";
+      expect(await originOf("http://localhost:8282/en?csr=true")).toBe("http://localhost:8282");
+    } finally {
+      delete holder.__AKAN_NATIVE__;
+      delete holder.__AKAN_NATIVE_DEV__;
+      delete process.env.AKAN_PUBLIC_SERVER_URL;
+    }
+  });
+
+  test("a local CSR bundle on an http page keeps following the page", async () => {
+    resetEnv();
+    process.env.AKAN_PUBLIC_ENV = "local";
+    const env = await asPage("http://localhost:8282/en?csr=true", async () => (await loadBaseEnv()).getEnv());
+    expect(env.serverHttpUri).toBe("http://localhost:8282/api");
+    expect(env.serverWsUri).toBe("ws://localhost:8282");
   });
 
   test("caches the computed environment per module instance", async () => {

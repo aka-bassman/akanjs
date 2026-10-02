@@ -1,6 +1,6 @@
 {
   "name": "@akanjs/cli",
-  "version": "3.0.0-beta.20",
+  "version": "3.0.0-beta.31",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -41,8 +41,7 @@
     "@earendil-works/pi-tui": "0.86.1",
     "@inquirer/prompts": "^8.4.3",
     "@tailwindcss/node": "^4.3.0",
-    "@trapezedev/project": "^7.1.4",
-    "akanjs": "3.0.0-beta.20",
+    "akanjs": "3.0.0-beta.31",
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
     "dayjs": "^1.11.20",
@@ -52,7 +51,7 @@
     "ink": "^6.8.0",
     "ora": "^9.4.0",
     "qrcode": "^1.5.4",
-    "react": "19.2.7",
+    "react": "19.3.0",
     "ssh2": "^1.17.0",
     "string-width": "^8.2.1",
     "subset-font": "^2.5.0",

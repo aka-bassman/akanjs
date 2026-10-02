@@ -111,6 +111,39 @@ export const resetEnvCache = () => {
   cachedEnv = undefined;
 };
 
+// Read by a CSR bundle only: an SSR tab calls the origin that rendered it, and a server calls itself.
+//* A desktop app that carries its own server learns the loopback port only at launch, so the value the shell hands the
+//* page in `__AKAN_NATIVE__.env` outranks the one built into the bundle.
+const csrServerUrl = (): URL | null => {
+  const runtime = (globalThis as { __AKAN_NATIVE__?: { env?: Record<string, string | undefined> } }).__AKAN_NATIVE__
+    ?.env?.PUBLIC_AKAN_SERVER_URL;
+  const [key, value] = runtime
+    ? ["PUBLIC_AKAN_SERVER_URL", runtime]
+    : ["AKAN_PUBLIC_SERVER_URL", process.env.AKAN_PUBLIC_SERVER_URL];
+  if (!value) return null;
+  const url = new URL(value);
+  if (url.protocol !== "http:" && url.protocol !== "https:")
+    throw new Error(`${key} must be an http(s) URL, got "${value}".`);
+  return url;
+};
+
+//* A native dev build's page comes from the akan-native dev gateway on the app origin, and the gateway carries its API
+//* calls and sockets to the dev server as well, so the page calls its own origin: the path a phone on Wi-Fi takes too.
+//* The gateway's page shim marks the page; a debug build with no gateway behind it is not marked.
+const nativeDevGatewayOrigin = (): string | null =>
+  (globalThis as { __AKAN_NATIVE_DEV__?: { gateway?: string } }).__AKAN_NATIVE_DEV__?.gateway
+    ? `${window.location.protocol}//${window.location.host}`
+    : null;
+
+const devServerOrigin = () => `http://localhost:${process.env.AKAN_PUBLIC_SERVER_PORT ?? "8282"}`;
+
+//* A release build has no gateway behind it, so in local mode it calls the dev server itself.
+const nativeDevServerUrl = (operationMode: BaseEnv["operationMode"]): URL | null => {
+  const platform = (globalThis as { __AKAN_NATIVE__?: { platform?: string } }).__AKAN_NATIVE__?.platform;
+  if (operationMode !== "local" || !platform || platform === "web") return null;
+  return new URL(devServerOrigin());
+};
+
 const missingPublicEnv = (key: string) =>
   `getEnv() cannot run at build time: akan build does not inject ${key}. Call it from a runtime function instead of at module scope (e.g. env(() => getEnv()) in adapt(), a method body, or a default thunk).`;
 
@@ -158,7 +191,15 @@ export const getEnv = (): ClientEnv => {
         ? "http:"
         : "https:";
   const clientHttpUri = `${clientHttpProtocol}//${clientHost}${clientPort === 443 ? "" : `:${clientPort}`}`;
+  const csrClient = side === "client" && renderMode === "csr";
+  const pinnedServerUrl = csrClient ? csrServerUrl() : null;
+  const pageOrigin = csrClient && !pinnedServerUrl ? nativeDevGatewayOrigin() : null;
+  const serverUrl = csrClient && !pageOrigin ? (pinnedServerUrl ?? nativeDevServerUrl(operationMode)) : null;
+  // The port belongs to whoever named the host: a cloud CSR bundle's host is not the page's.
+  const hostFromPage =
+    side === "client" && !serverUrl && (!!pageOrigin || operationMode === "local" || renderMode !== "csr");
   const serverHost =
+    (pageOrigin ? window.location.hostname : serverUrl?.hostname) ??
     process.env.SERVER_HOST ??
     (operationMode === "local"
       ? typeof window === "undefined"
@@ -176,9 +217,14 @@ export const getEnv = (): ClientEnv => {
   const serverPort =
     side === "server"
       ? parseInt(process.env.AKAN_PUBLIC_SERVER_PORT ?? selfServerPort ?? "8282")
-      : parseInt(window.location.port || (window.location.protocol === "https:" ? "443" : "80"));
+      : serverUrl
+        ? parseInt(serverUrl.port || (serverUrl.protocol === "https:" ? "443" : "80"))
+        : hostFromPage
+          ? parseInt(window.location.port || (window.location.protocol === "https:" ? "443" : "80"))
+          : 443;
 
   const serverHttpProtocol: "http:" | "https:" =
+    ((pageOrigin ? window.location.protocol : serverUrl?.protocol) as "http:" | "https:" | undefined) ??
     (process.env.SERVER_HTTP_PROTOCOL as "http:" | "https:" | undefined) ??
     (operationMode === "local"
       ? side === "client"
@@ -191,9 +237,14 @@ export const getEnv = (): ClientEnv => {
           : ("http:" as const));
   const apiPrefix = getApiPrefix();
   const wsPrefix = getWsPrefix();
-  const serverHttpUri = `${serverHttpProtocol}//${serverHost}${serverPort === 443 ? "" : `:${serverPort}`}${apiPrefix}`;
+  //? iOS serves the page on app://localhost, which has no default port to leave out, so the origin is taken whole.
+  const serverHttpUri = pageOrigin
+    ? `${pageOrigin}${apiPrefix}`
+    : `${serverHttpProtocol}//${serverHost}${serverPort === 443 ? "" : `:${serverPort}`}${apiPrefix}`;
   const serverWsProtocol = serverHttpProtocol === "http:" ? "ws:" : "wss:";
-  const serverWsUri = `${serverWsProtocol}//${serverHost}${serverPort === 443 ? "" : `:${serverPort}`}`;
+  const serverWsUri = pageOrigin
+    ? pageOrigin.replace(/^http/, "ws")
+    : `${serverWsProtocol}//${serverHost}${serverPort === 443 ? "" : `:${serverPort}`}`;
 
   const env: ClientEnv = {
     ...baseEnv,
@@ -215,4 +266,14 @@ export const getEnv = (): ClientEnv => {
   } as const;
   cachedEnv = env;
   return env;
+};
+
+//* The server as a browser outside the page opens it — the system browser a native sign-in hands off to. A page the
+//* native dev gateway served calls it on the app's own origin, which no other browser can open, so that one names
+//* the dev server behind the gateway: the origin an OAuth redirect_uri is registered for.
+export const getServerOrigin = (): string => {
+  const env = getEnv();
+  const behindGateway =
+    env.side === "client" && env.renderMode === "csr" && !csrServerUrl() && !!nativeDevGatewayOrigin();
+  return behindGateway ? devServerOrigin() : new URL(env.serverHttpUri).origin;
 };

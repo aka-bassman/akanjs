@@ -125,7 +125,9 @@ export const getWebConfigFromEnv = (): AkanWebConfig => {
 
 export interface MobileDeepLinkAssociation {
   targetName: string;
-  appId: string;
+  /** Null when the target names no id for the platform; that platform then gets no association. */
+  iosAppId: string | null;
+  androidAppId: string | null;
   domains: string[];
   iosTeamId?: string;
   androidSha256CertFingerprints?: string[];
@@ -140,4 +142,10 @@ export interface RenderState {
   buildId: number;
   cssAssets: Record<string, CssAsset>;
   cssBytesByUrl: Record<string, Uint8Array>;
+  /** The newest CSR dev bundle generation; a CSR tab whose own generation differs has missed an update. */
+  csrGeneration?: number;
+  /** The newest SSR dev registry generation sent to the tabs; a tab whose registry differs has missed an update. */
+  ssrGeneration?: number;
+  /** When the SSR dev registry was last built whole; a tab booted from an earlier one reloads. */
+  ssrEpoch?: number;
 }

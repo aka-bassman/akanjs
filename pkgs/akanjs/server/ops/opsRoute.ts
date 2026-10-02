@@ -1,5 +1,6 @@
 import { Logger } from "akanjs/common";
 import { getEnv } from "../../base/baseEnv";
+import { SelfExec } from "../selfExec";
 import type { AppDetailInfo } from "./appInfo";
 import { OpsTokenVerifier } from "./opsToken";
 import { type SnapshotJobRequest, SnapshotJobs } from "./snapshotJobs";
@@ -67,8 +68,8 @@ export class OpsRoute {
     const args = ["ops", "snapshot", "--id", request.id, "--out", dir, "--db", sources.main, "--json"];
     if (sources.solid) args.push("--solid-db", sources.solid);
     if (request.includeSolid) args.push("--include-solid");
-    const proc = Bun.spawn([process.execPath, Bun.main, ...args], {
-      env: process.env,
+    const proc = Bun.spawn(SelfExec.command(Bun.main, ...args), {
+      env: SelfExec.env(),
       stdout: "pipe",
       stderr: "pipe",
     });

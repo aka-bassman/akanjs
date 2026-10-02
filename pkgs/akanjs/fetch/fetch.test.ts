@@ -166,6 +166,12 @@ const setAnsweringFetch = () => {
   }) as typeof globalThis.fetch;
   return signals;
 };
+//? A fixed delay loses to a stalled event loop: the timers it outwaits fire in its pass and schedule theirs after it.
+const waitUntil = async (done: () => boolean) => {
+  for (let tries = 0; !done() && tries < 1000; tries += 1) {
+    await new Promise((resolve) => originalSetTimeout(resolve, 1));
+  }
+};
 const captureWarnings = async (run: (warnings: string[]) => Promise<void>) => {
   const originalConsoleWarn = console.warn;
   const warnings: string[] = [];
@@ -1210,6 +1216,48 @@ describe("FetchClient HTTP generation", () => {
     ]);
   });
 
+  test("calls a globalPrefix: false endpoint at the origin's root, and every other endpoint under the API prefix", async () => {
+    setMockFetch();
+    jsonResponses.push("token", "revoked", "item");
+    const client = new FetchClient(
+      "https://api.example/api",
+      {},
+      {
+        oauth: {
+          endpoint: {
+            oauthMetadata: {
+              type: "query",
+              path: "/.well-known/oauth",
+              globalPrefix: false,
+              args: [],
+              returns: { refName: "String" },
+            },
+            exchangeToken: {
+              type: "mutation",
+              path: "/oauth/token",
+              globalPrefix: false,
+              args: [],
+              returns: { refName: "String" },
+            },
+            getItem: { type: "query", path: "/itemDrop/itemDrop", args: [], returns: { refName: "String" } },
+          },
+        },
+      },
+    );
+
+    await client.handler.oauthMetadata();
+    await client.handler.exchangeToken();
+    await client.handler.getItem();
+    await client.handler.exchangeToken({ origin: "https://other.example/api/" });
+
+    expect(fetchCalls.map((call) => call.url)).toEqual([
+      "https://api.example/.well-known/oauth",
+      "https://api.example/oauth/token",
+      "https://api.example/api/itemDrop/itemDrop",
+      "https://other.example/oauth/token",
+    ]);
+  });
+
   test("refreshes cached handlers when a serialized signal is applied again", async () => {
     setMockFetch();
     jsonResponses.push("before", "after");
@@ -1611,6 +1659,16 @@ describe("FetchClient database signal helpers", () => {
 });
 
 describe("WsClient", () => {
+  test("a URL the WebSocket constructor refuses is logged, not thrown into the caller's effect", () => {
+    const client = new WsClient("app://localhost:80/api/ws");
+    const errors: string[] = [];
+    client.logger.error = ((message: string) => errors.push(message)) as typeof client.logger.error;
+
+    expect(() => client.connect()).not.toThrow();
+    expect(errors).toEqual([expect.stringContaining("app://localhost:80/api/ws")]);
+    expect(client.connected).toBe(false);
+  });
+
   test("warns when realtime APIs are used and nothing ever connects", async () => {
     setFakeWebSocket();
     await captureWarnings(async (warnings) => {
@@ -1826,21 +1884,24 @@ describe("WsClient", () => {
     globalThis.setTimeout = ((handler: TimerHandler, _timeout?: number, ...args: unknown[]) =>
       originalSetTimeout(handler, 0, ...args)) as typeof setTimeout;
     const client = new WsClient("ws://example/ws");
-    client.subscribe({ key: "roomKey", data: ["r1"], handleEvent: () => undefined });
-    client.connect();
-    const ws = FakeWebSocket.instances[0];
-    ws.open();
+    try {
+      client.subscribe({ key: "roomKey", data: ["r1"], handleEvent: () => undefined });
+      client.connect();
+      const ws = FakeWebSocket.instances[0];
+      ws.open();
 
-    // A socket the network dropped without a FIN keeps accepting `send()`, so only the missing pong says so.
-    setSystemTime(new Date("2026-09-18T00:10:00Z"));
-    await new Promise((resolve) => originalSetTimeout(resolve, 10));
+      // A socket the network dropped without a FIN keeps accepting `send()`, so only the missing pong says so.
+      setSystemTime(new Date("2026-09-18T00:10:00Z"));
+      await waitUntil(() => FakeWebSocket.instances.length > 1);
 
-    expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
-    const reconnected = FakeWebSocket.instances[1];
-    expect(reconnected).toBeDefined();
-    reconnected.open();
-    expect(JSON.parse(reconnected.sent[0] ?? "{}")).toEqual({ key: "roomKey", data: ["r1"], subscribe: true });
-    client.destroy();
+      expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+      const reconnected = FakeWebSocket.instances[1];
+      expect(reconnected).toBeDefined();
+      reconnected.open();
+      expect(JSON.parse(reconnected.sent[0] ?? "{}")).toEqual({ key: "roomKey", data: ["r1"], subscribe: true });
+    } finally {
+      client.destroy();
+    }
   });
 
   test("resubscribes rooms on reconnect and destroy prevents reconnect", async () => {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { lstat, mkdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AkanAppConfig } from "./akanConfig";
@@ -324,6 +325,38 @@ describe("Workspace and app executor environment contracts", () => {
     expect(process.env.AKAN_PUBLIC_SERVER_PORT).toBeUndefined();
     expect((await stat(path.join(root, "dist/apps/demo/private"))).isDirectory()).toBe(true);
     expect((await stat(path.join(root, "dist/apps/demo/public"))).isDirectory()).toBe(true);
+  });
+
+  test("akan start clears the dev output and keeps native builds, update releases and the bin downloads", async () => {
+    const root = await makeTempRoot();
+    process.env.AKAN_PUBLIC_REPO_NAME = "repo";
+    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+    process.env.AKAN_PUBLIC_ENV = "local";
+    process.env.PORT_OFFSET = "0";
+    await writeJson(path.join(root, "package.json"), rootPackageJson());
+    await mkdir(path.join(root, "apps/startclean/page"), { recursive: true });
+    await writeFile(path.join(root, "apps/startclean/akan.config.ts"), "export default {};\n");
+    const akan = path.join(root, "apps/startclean/.akan");
+    const kept = [
+      "native/desktop/updates/macos-arm64/main.json",
+      "native/desktop/build/macos/App.app",
+      "cache/bin/ffmpeg",
+    ];
+    const removed = [
+      "artifact/client/app.js",
+      "generated/dict/index.ts",
+      "cache/cssCandidates.json",
+      "desktop/server/main.js",
+      "mobile/desktop/native/macos/App.app",
+    ];
+    for (const file of [...kept, ...removed]) await writeText(path.join(akan, file), "x");
+
+    const app = AppExecutor.from(new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" }), "startclean");
+    await app.prepareCommand("start");
+
+    for (const file of kept) expect(existsSync(path.join(akan, file))).toBe(true);
+    for (const file of [...removed, "artifact", "generated", "desktop", "mobile"])
+      expect(existsSync(path.join(akan, file))).toBe(false);
   });
 
   describe("syncPages", () => {
@@ -962,6 +995,17 @@ describe("WorkspaceExecutor listing", () => {
       ["shared", "util"],
       ["@sample/tool", "akanjs", "zeta-tool"],
     ]);
+  });
+
+  test("never takes a scratch workspace under a local/ folder for a package, app or lib", async () => {
+    const root = await makeTempRoot();
+    await writeJson(path.join(root, "pkgs/@akanjs/devkit/package.json"), { name: "@akanjs/devkit" });
+    await writeJson(path.join(root, "pkgs/@akanjs/devkit/local/akan-cli-x/package.json"), { name: "repo" });
+    await writeText(path.join(root, "apps/portal/akan.config.ts"), "");
+    await writeText(path.join(root, "libs/util/local/akan-cli-y/akan.config.ts"), "");
+
+    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+    expect(await workspace.getExecs()).toEqual([["portal"], [], ["@akanjs/devkit"]]);
   });
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_AKAN_I18N } from "akanjs/common";
 import { createRequestStore } from "akanjs/fetch";
+import type { RouteSeedIndex, RoutesManifest } from "./artifact";
 import {
   createRouteCacheEntry,
   isPublicRouteCacheableRequest,
@@ -64,10 +65,10 @@ interface FakeRscWorker {
   renderCalls: Request[];
   invalidations: Array<string | RouteCacheInvalidation | undefined>;
   ready: Promise<void>;
-  renderWithMeta(req: Request): Promise<RscRenderResult>;
+  renderWithMeta(req: Request, input?: { clientManifest?: Record<string, unknown> }): Promise<RscRenderResult>;
   invalidateRouteResultCache(invalidation?: string | RouteCacheInvalidation): void;
   kill(): void;
-  reload(): Promise<void>;
+  reload(): Promise<unknown>;
   getMetrics(): Record<string, unknown>;
 }
 
@@ -141,6 +142,8 @@ async function withFullSsrCacheHarness<T>(
     htmlCacheMaxBodyBytes?: string;
     appDir?: string;
     web?: { ssr: boolean; csr: boolean };
+    prebuilt?: RoutesManifest;
+    seedIndex?: RouteSeedIndex;
     onRenderInput?: (input: Parameters<SsrFromRscRenderer["render"]>[0]) => void;
   } = {},
 ): Promise<T> {
@@ -188,8 +191,9 @@ async function withFullSsrCacheHarness<T>(
     web: options.web ?? { ssr: true, csr: true },
     cssBytesByUrl: {},
     rsc: fakeWorker as never,
-    seedIndex: { entries: [], globalLayoutFiles: [] },
+    seedIndex: options.seedIndex ?? { entries: [], globalLayoutFiles: [] },
     upgradeHmrWs: () => false,
+    prebuilt: options.prebuilt,
   });
 
   try {
@@ -438,6 +442,55 @@ describe("WebRouter dev mode selection", () => {
   });
 });
 
+describe("WebRouter dev route builds", () => {
+  test("builds the nearest layout route for a path only a route prefix matches", async () => {
+    const originalSend = process.send;
+    const requestedRouteIds: string[] = [];
+    process.send = ((message: { type?: string; id?: number; routeId?: string }): boolean => {
+      if (message.type !== "build-route" || !message.routeId) return true;
+      requestedRouteIds.push(message.routeId);
+      const data = { manifestDelta: {}, ssrManifestDelta: {}, newEntries: [], clientDeps: [] };
+      queueMicrotask(() => process.emit("message", { type: "build-route-res", id: message.id, ok: true, data }));
+      return true;
+    }) as typeof process.send;
+    try {
+      await withFullSsrCacheHarness(
+        async ({ fullSsr }) => await fullSsr(new Request("https://example.test/ko/blog/missing")),
+        {
+          nodeEnv: "development",
+          commandType: "start",
+          seedIndex: {
+            entries: [
+              { routeId: "/:lang/blog", pattern: "/:lang/blog", seeds: ["/repo/apps/demo/page/blog/_layout.tsx"] },
+            ],
+            globalLayoutFiles: [],
+          },
+        },
+      );
+      expect(requestedRouteIds).toEqual(["/:lang/blog"]);
+    } finally {
+      process.send = originalSend;
+    }
+  });
+
+  test("keeps a dev document out of the browser's HTTP cache, and leaves production's to the cache policy", async () => {
+    const cacheControlOf = async (options: { nodeEnv: string; commandType?: string }) =>
+      await withFullSsrCacheHarness(async ({ fullSsr }) => {
+        const response = await fullSsr(new Request("https://example.test/en/page"));
+        expect(response.status).toBe(200);
+        return response.headers.get("Cache-Control");
+      }, options);
+    const originalSend = process.send;
+    process.send = ((): boolean => true) as typeof process.send;
+    try {
+      expect(await cacheControlOf({ nodeEnv: "development", commandType: "start" })).toBe("no-store");
+      expect(await cacheControlOf({ nodeEnv: "production" })).toBeNull();
+    } finally {
+      process.send = originalSend;
+    }
+  });
+});
+
 describe("WebRouter csr surface", () => {
   const routeKeys = async (web?: { ssr: boolean; csr: boolean }) =>
     await withFullSsrCacheHarness(async ({ renderEnvRoutes }) => Object.keys(renderEnvRoutes), { web });
@@ -470,14 +523,16 @@ describe("WebRouter deep link associations", () => {
     deepLinkAssociations: [
       {
         targetName: "default",
-        appId: "com.minimal.app",
+        iosAppId: "com.minimal.app",
+        androidAppId: "com.minimal.app",
         domains: ["minimal.app"],
         iosTeamId: "TEAMID",
         androidSha256CertFingerprints: ["AA:BB"],
       },
       {
         targetName: "admin",
-        appId: "com.minimal.admin",
+        iosAppId: "com.puffinplanet.admin",
+        androidAppId: "com.minimal.admin",
         domains: ["minimal.app"],
         iosTeamId: "ADMINTEAM",
         androidSha256CertFingerprints: ["CC:DD"],
@@ -485,7 +540,7 @@ describe("WebRouter deep link associations", () => {
     ],
   });
 
-  test("serves apple app site association from deep link metadata", async () => {
+  test("serves apple app site association from deep link metadata, each target under its iOS id", async () => {
     await withFullSsrCacheHarness(
       async ({ renderEnvRoutes }) => {
         const response = await renderEnvRoutes["/.well-known/apple-app-site-association"](
@@ -497,7 +552,7 @@ describe("WebRouter deep link associations", () => {
             apps: [],
             details: [
               { appIDs: ["TEAMID.com.minimal.app"], components: [{ "/": "/*" }] },
-              { appIDs: ["ADMINTEAM.com.minimal.admin"], components: [{ "/": "/*" }] },
+              { appIDs: ["ADMINTEAM.com.puffinplanet.admin"], components: [{ "/": "/*" }] },
             ],
           },
         });
@@ -1012,6 +1067,40 @@ describe("WebRouter HTML cache streaming", () => {
     await sleep(0);
 
     expect(cancelledReason).toBe(reason);
+  });
+});
+
+describe("WebRouter production boot", () => {
+  test("serves the prebuilt route manifest without waiting on a worker that has not loaded yet", async () => {
+    const worker = createFakeRscWorker();
+    let reloads = 0;
+    worker.reload = () => {
+      reloads += 1;
+      return new Promise(() => {});
+    };
+    const manifests: (Record<string, unknown> | undefined)[] = [];
+    const render = worker.renderWithMeta.bind(worker);
+    worker.renderWithMeta = async (req, input) => {
+      manifests.push(input?.clientManifest);
+      return await render(req);
+    };
+    const entry = { id: "/_akan/client/card.js", chunks: [], name: "Card", async: true };
+    await withFullSsrCacheHarness(
+      async ({ fullSsr }) => {
+        await fullSsr(new Request("https://example.test/docs"));
+        expect(reloads).toBe(0);
+        expect(manifests[0]).toMatchObject({ "apps/a/ui/Card.tsx#Card": entry });
+      },
+      {
+        worker,
+        prebuilt: {
+          routeIds: [],
+          clientManifest: { "apps/a/ui/Card.tsx#Card": entry },
+          ssrManifest: { moduleLoading: null, moduleMap: {} },
+          knownEntries: [],
+        },
+      },
+    );
   });
 });
 

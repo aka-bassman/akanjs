@@ -1,4 +1,4 @@
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import dayjs from "dayjs";
 import { FileSys } from "../fileSys";
 import { ConfigLock } from "./configLock";
@@ -39,7 +39,8 @@ export class GlobalConfig {
     const temp = `${configPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
     try {
       await writeFile(temp, JSON.stringify(akanConfig, null, 2), { mode: 0o600 });
-      await rename(temp, configPath);
+      // Every CLI reads this file outside the lock, which on Windows makes the rename wait for the reader.
+      await FileSys.replace(temp, configPath);
     } catch (error) {
       await rm(temp, { force: true });
       throw error;
