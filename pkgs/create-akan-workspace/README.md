@@ -1,102 +1,65 @@
-# 🚀 Create Akan Workspace
+# create-akan-workspace
 
-The quickest way to bootstrap a new Akan.js workspace with a single command. This package provides a streamlined entry point that automatically installs the Akan.js CLI and creates your workspace in one step.
+[한국어](https://github.com/akan-team/akanjs/blob/main/pkgs/create-akan-workspace/README.ko.md) | [Docs](https://akanjs.com/docs/intro/quickstart) | [npm](https://www.npmjs.com/package/create-akan-workspace)
 
-## ⚡ Get Started
-
-The fastest way to create a new Akan.js workspace:
+Create a new [Akan.js](https://akanjs.com) workspace with one command.
 
 ```bash
-bunx create-akan-workspace
+bunx create-akan-workspace@latest
 ```
 
-That's it! This single command will:
+It installs the `akan` CLI (`@akanjs/cli`, at this package's own version) globally, then runs
+`akan create-workspace`, which:
 
-1. Install the latest `akanjs` globally
-2. Run the interactive workspace creation wizard
-3. Set up your development environment
+1. asks for a workspace name and an app name, unless you passed them,
+2. creates `./<workspace>` and installs its dependencies,
+3. generates the first app with a sample `task` module and pages,
+4. writes `AGENTS.md`, `CLAUDE.md` and Cursor rules, and registers the Akan MCP server for Claude Code, Codex and
+   Cursor,
+5. makes the first git commit.
 
-### Quick Setup Examples
+Then start the app. It opens on `http://localhost:8282`.
 
 ```bash
-# Interactive mode (recommended)
-bunx create-akan-workspace
-
-# Specify organization name
-bunx create-akan-workspace "my-company"
-
-# Full setup with options
-bunx create-akan-workspace "my-company" --app "web-app" --dir "./projects"
+cd <workspace>
+akan start <app> --open
 ```
 
-## 📋 Options
+## With Your Coding Agent
 
-| Option             | Description                    | Example            |
-| ------------------ | ------------------------------ | ------------------ |
-| `[org]`            | Organization name (positional) | `my-company`       |
-| `-a, --app <name>` | Initial application name       | `--app web-app`    |
-| `-d, --dir <path>` | Target directory               | `--dir ./projects` |
-
-## 🎯 What Happens Next
-
-After running `create-akan-workspace`, you'll have:
-
-1. **✅ Akan.js CLI installed globally** - Access to all `akan` commands
-2. **🏗️ Workspace created** - Organized project structure
-3. **📱 Initial application** - Ready-to-run starter app
-4. **🔧 Development environment** - Configured tooling and dependencies
-
-### Start developing immediately:
+Pass both names and nothing is asked, so a coding agent can run it on its own:
 
 ```bash
-cd <workspace-name>
-akan start <app-name> --open
+bunx create-akan-workspace@latest my-company --app web
 ```
 
-Navigate to http://localhost:4200 to see your app running!
+The [quick start](https://akanjs.com/docs/intro/quickstart) has a prompt to paste into Claude Code or Codex that
+checks Bun, runs this, and starts the app. Reopen the agent inside the new workspace afterwards: its MCP server and
+rules load from there.
 
-## 🛠️ Requirements
+## Options
 
-- **Bun.js** >=1.3
+| Option | Description | Default |
+| --- | --- | --- |
+| `[org]` | Workspace (organization) name | asked |
+| `-a, --app <name>` | First application name | asked |
+| `-d, --dir <path>` | Directory to create the workspace in | `.` |
+| `-l, --libs <boolean>` | Also install the `shared` and `util` libraries (admin, user, file, and more) | `false` |
+| `-i, --init <boolean>` | Install the workspace's dependencies | `true` |
+| `-r, --registry <url>` | npm registry for the Akan packages (or `AKAN_NPM_REGISTRY`) | npmjs |
+| `-o, --owner <name>` | Owner of the workspace | — |
 
-## 🔗 What's Next?
+## Requirements
 
-After creating your workspace, explore the full power of Akan.js CLI:
+- [Bun](https://bun.sh) `>=1.4.0`
+- Git, for the first commit
 
-```bash
-# Scaffold a domain module
-akan create-module
+## Learn More
 
-# Run the dev server
-akan start <app-name>
+- [Quick start](https://akanjs.com/docs/intro/quickstart)
+- [`akanjs`](https://www.npmjs.com/package/akanjs), the framework
+- [`@akanjs/cli`](https://www.npmjs.com/package/@akanjs/cli), the `akan` command
 
-# Build for production
-akan build <app-name>
-```
+## License
 
-## 📚 Learn More
-
-- [`akanjs`](../akanjs) - Full CLI documentation and features
-- [Akan.js Documentation](https://docs.akanjs.com) - Complete development guide
-- [Examples](https://github.com/akan-team/examples) - Sample projects and tutorials
-
-## 🤝 Contributing
-
-This package is part of the Akan.js ecosystem. Contributions are welcome!
-
-1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
-
-## 📄 License
-
-This project is part of the Akan.js ecosystem. See the main repository for license information.
-
----
-
-<p align="center">
-  <strong>Built with ❤️ by the Akan.js team</strong><br>
-  <em></em>
-</p>
+MIT
