@@ -34,6 +34,7 @@ const getTranslatorState = (): TranslatorState => {
 };
 
 export class Translator {
+  static readonly #filledDicts = new WeakMap<AllDictionary, Map<string, Dictionary>>();
   constructor(dictionary: Record<string, Record<string, Record<string, unknown>>>) {
     Object.entries(dictionary).forEach(([lang, dict]) => {
       Translator.seed(lang, dict as Dictionary);
@@ -73,6 +74,31 @@ export class Translator {
   static #lookupDefault(lang: string, key: string) {
     const { defaultLocale } = parseAkanI18nEnv();
     return defaultLocale === lang ? undefined : Translator.#lookup(defaultLocale, key);
+  }
+  // An SSR client is seeded with one locale only, so `#lookupDefault` has nothing to reach there: ship the text inside it.
+  static withDefaultLocale(allDictionary: AllDictionary, lang: string): Dictionary | undefined {
+    const { defaultLocale } = parseAkanI18nEnv();
+    const fallback = allDictionary[defaultLocale];
+    if (lang === defaultLocale || !fallback) return allDictionary[lang];
+    const filledByLocale = Translator.#filledDicts.get(allDictionary) ?? new Map<string, Dictionary>();
+    Translator.#filledDicts.set(allDictionary, filledByLocale);
+    const filled =
+      filledByLocale.get(lang) ?? (Translator.#fillGaps(allDictionary[lang] ?? {}, fallback) as Dictionary);
+    filledByLocale.set(lang, filled);
+    return filled;
+  }
+  static #fillGaps(own: Record<string, unknown>, fallback: Record<string, unknown>): Record<string, unknown> {
+    const filled = { ...own };
+    for (const [key, value] of Object.entries(fallback)) {
+      const ownValue = filled[key];
+      if (ownValue === undefined) filled[key] = value;
+      else if (Translator.#isNode(ownValue) && Translator.#isNode(value))
+        filled[key] = Translator.#fillGaps(ownValue, value);
+    }
+    return filled;
+  }
+  static #isNode(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
   }
   // Merges without dropping existing keys; the same snapshot object is skipped.
   static seed(lang: string, dict: Dictionary | undefined) {

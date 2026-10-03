@@ -30,10 +30,14 @@ export default rootLayout()
       ],
     },
   ])
+  .theme("light")
   .head(
     <>
       <title>${dict.appName}</title>
-      <link rel="icon" href="/favicon.ico" />
+      <link rel="icon" href="/favicon.ico" sizes="32x32" />
+      <link rel="icon" type="image/png" sizes="512x512" href="/logo.png" />
+      <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+      <meta name="theme-color" content="#f1f1ee" />
     </>,
   )
   .render(({ children }) => {

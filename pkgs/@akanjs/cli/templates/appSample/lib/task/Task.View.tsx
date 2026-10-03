@@ -29,12 +29,12 @@ export const General = ({ className, task }: GeneralProps) => {
   return (
     <div className={cn("flex w-full flex-col gap-4", className)}>
       <div>
-        <h1 className="font-bold text-2xl text-foreground">{task.title}</h1>
+        <h1 className="font-black text-4xl text-foreground">{task.title}</h1>
         <div className={cn("mt-1 font-medium text-sm", statusColor)}>{l(\`taskStatus.\${task.status}\`)}</div>
       </div>
 
       {task.content && (
-        <div className="rounded-lg border border-foreground/10 bg-background p-4">
+        <div className="jelly-glass rounded-box p-5">
           <p className="whitespace-pre-wrap text-foreground/80 text-sm">{task.content}</p>
         </div>
       )}

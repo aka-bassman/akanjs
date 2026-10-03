@@ -30,7 +30,7 @@ export const Card = ({ task, className, href }: CardProps) => {
   return (
     <Layout.Unit
       className={cn(
-        "rounded-lg border border-foreground/10 bg-background p-4 transition-shadow hover:shadow-md",
+        "jelly-glass block rounded-box p-5 transition-transform duration-300 ease-jelly hover:-translate-y-0.5",
         className,
       )}
       href={href}

@@ -4,8 +4,9 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { a
   return {
     filename: "_index.tsx",
     content: `import { fetch, Task, usePage } from "@apps/${dict.appName}/client";
+import { jellyButtonRecipe } from "@apps/${dict.appName}/ui";
 import { page } from "akanjs/client";
-import { Link, buttonRecipe } from "akanjs/ui";
+import { Link } from "akanjs/ui";
 
 export default page().render(async () => {
   const { l } = usePage();
@@ -14,10 +15,10 @@ export default page().render(async () => {
     <main className="mx-auto max-w-4xl px-6 py-8">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="font-extrabold text-3xl text-foreground">{l("task.modelName")}</h1>
+          <h1 className="font-black text-4xl text-foreground">{l("task.modelName")}</h1>
           <p className="mt-1 text-foreground/60 text-sm">{l("task.modelDesc")}</p>
         </div>
-        <Link href="/task/new" className={buttonRecipe({ variant: "primary", size: "sm" })}>
+        <Link href="/task/new" className={jellyButtonRecipe({ variant: "primary", size: "sm" })}>
           {l("task.taskNew")}
         </Link>
       </div>

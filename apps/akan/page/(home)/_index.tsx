@@ -3,21 +3,19 @@ import {
   Code,
   Duet,
   Friend,
-  InstallCommand,
   JellyCast,
   JellyKicker,
   jellyButtonRecipe,
   Orrery,
   panelRecipe,
-  ShowcaseThumbnail,
   SkyBuild,
+  Start,
   StudioStar,
 } from "@apps/akan/ui";
 import { cn, page } from "akanjs/client";
-import { badgeRecipe, Clipboard, Image, Link } from "akanjs/ui";
+import { Clipboard, Image, Link } from "akanjs/ui";
 import { BsArrowDown, BsArrowRight, BsArrowUpRight } from "react-icons/bs";
 
-const installCommand = "bunx create-akan-workspace@latest";
 const mcpUrl = "https://akanjs.com/mcp";
 
 const screenCode = `export const Order = () => {
@@ -289,41 +287,6 @@ export default page().render(() => {
     },
     { value: "−33%", label: l.trans({ en: "Time for a 50-row list query", ko: "50행 목록 쿼리 시간" }) },
   ];
-  const showcasePreviews = [
-    {
-      name: "akanjs.com",
-      motif: "docs" as const,
-      tone: "primary" as const,
-      isSample: false,
-      badge: l.trans({ en: "Built by the Akan team", ko: "Akan 팀 제작" }),
-      description: l.trans({
-        en: "This site: docs, blog, full-text docs search and an in-page docs agent from one Akan.js app.",
-        ko: "지금 보고 계신 이 사이트입니다. 문서, 블로그, 문서 전문 검색, 인페이지 문서 에이전트가 하나의 Akan.js 앱에서 나옵니다.",
-      }),
-    },
-    {
-      name: "Frontline Rooms",
-      motif: "arena" as const,
-      tone: "primary" as const,
-      isSample: true,
-      badge: l.trans({ en: "Sample", ko: "샘플" }),
-      description: l.trans({
-        en: "A match server streaming 20 Hz state frames to each room over binary pubsub.",
-        ko: "초당 20번 상태 프레임을 바이너리 pubsub으로 룸마다 흘려보내는 게임 서버입니다.",
-      }),
-    },
-    {
-      name: "Ledgerline",
-      motif: "agent" as const,
-      tone: "success" as const,
-      isSample: true,
-      badge: l.trans({ en: "Sample", ko: "샘플" }),
-      description: l.trans({
-        en: "A finance console where an in-page agent fills the expense form and a person approves every change.",
-        ko: "인페이지 에이전트가 경비 폼을 채우고 모든 변경은 사람이 승인하는 재무 콘솔입니다.",
-      }),
-    },
-  ];
   const deploySteps = [
     {
       command: "akan login",
@@ -414,8 +377,17 @@ export default page().render(() => {
                 <Link href="/docs/intro/quickstart" className={jellyButtonRecipe({ size: "lg" })}>
                   {l.trans({ en: "Get started", ko: "시작하기" })} <BsArrowRight />
                 </Link>
-                <InstallCommand />
+                <Start.Copy />
               </div>
+              <p className="mt-4 text-foreground/50 text-sm leading-6">
+                {l.trans({
+                  en: "Paste it into Claude Code or Codex, and it sets up the workspace and starts your app.",
+                  ko: "Claude Code나 Codex에 붙여 넣으면 워크스페이스를 만들고 앱까지 띄워 줍니다.",
+                })}{" "}
+                <a href="#start" className="font-bold text-foreground/70 hover:text-foreground">
+                  {l.trans({ en: "See the prompt or the terminal command", ko: "프롬프트와 터미널 명령 보기" })} ↓
+                </a>
+              </p>
               <a
                 href="#how"
                 className="group mt-9 flex flex-wrap items-center gap-x-2 gap-y-2 font-bold text-foreground/55 text-xs transition hover:text-foreground"
@@ -693,43 +665,7 @@ export default page().render(() => {
       </section>
 
       <section className="relative mx-auto w-full max-w-7xl px-6 py-24 lg:px-8">
-        <header className="reveal-rise flex flex-col justify-between gap-6 md:flex-row md:items-end">
-          <div>
-            <JellyKicker>{l.trans({ en: "Shipped", ko: "출시" })}</JellyKicker>
-            <h2 className="mt-6 font-black text-3xl md:text-5xl">
-              {l.trans({ en: "Built with Akan.js", ko: "Akan.js로 만든 것들" })}
-            </h2>
-          </div>
-          <Link href="/showcase" className="flex items-center gap-2 font-bold text-primary hover:underline">
-            {l.trans({ en: "See all projects", ko: "모든 프로젝트 보기" })} <BsArrowRight />
-          </Link>
-        </header>
-        <div className="reveal-cascade mt-12 grid grid-cols-1 gap-5 md:grid-cols-3">
-          {showcasePreviews.map((item) => (
-            <Link
-              key={item.name}
-              href="/showcase"
-              className={panelRecipe({ tone: "jelly", radius: "3xl" }, "group squish block")}
-            >
-              <ShowcaseThumbnail className="rounded-2xl" motif={item.motif} tone={item.tone} />
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <h3 className="font-black text-lg group-hover:text-primary">{item.name}</h3>
-                <span
-                  className={badgeRecipe(
-                    { size: "sm" },
-                    item.isSample
-                      ? "rounded-full border-foreground/20 border-dashed bg-transparent text-foreground/50"
-                      : "rounded-full border-transparent bg-primary/10 text-primary",
-                  )}
-                >
-                  {item.badge}
-                </span>
-              </div>
-              <p className="mt-2 text-foreground/60 text-sm leading-6">{item.description}</p>
-            </Link>
-          ))}
-        </div>
-        <div className="reveal-rise mt-12 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="reveal-rise grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {proofItems.map((item) => (
             <div key={item.value} className={panelRecipe({ tone: "jelly", radius: "3xl" })}>
               <p className="font-black font-mono text-2xl text-primary">{item.value}</p>
@@ -778,7 +714,10 @@ export default page().render(() => {
         </div>
       </section>
 
-      <section className="relative mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-12 px-6 pt-16 pb-28 lg:grid-cols-[1.05fr_0.95fr] lg:px-8">
+      <section
+        id="start"
+        className="relative mx-auto grid w-full max-w-7xl scroll-mt-[var(--akanjs-header-offset)] grid-cols-1 items-center gap-12 px-6 pt-16 pb-28 lg:grid-cols-[1.05fr_0.95fr] lg:px-8"
+      >
         <div className="reveal-rise">
           <p className="font-bold text-primary text-sm uppercase tracking-[0.16em]">{tagline}</p>
           <h2 className="mt-5 text-balance font-black text-4xl sm:text-7xl">
@@ -789,15 +728,11 @@ export default page().render(() => {
           </h2>
           <p className="mt-6 max-w-xl text-foreground/65 text-lg leading-8">
             {l.trans({
-              en: "One command sets up the workspace. The next line you write ships to web, iOS, Android, desktop, your server and database — and to every agent your users talk to.",
-              ko: "명령어 한 줄이면 워크스페이스가 준비됩니다. 그다음 당신이 쓰는 한 줄이 웹, iOS, Android, 데스크톱, 서버와 DB, 그리고 사용자가 쓰는 모든 에이전트에게 닿습니다.",
+              en: "Hand one prompt to your coding agent, or run one command yourself, and the workspace is ready. The next line you write ships to web, iOS, Android, desktop, your server and database — and to every agent your users talk to.",
+              ko: "코딩 에이전트에게 프롬프트 하나를 건네거나 명령어 한 줄을 직접 실행하면 워크스페이스가 준비됩니다. 그다음 당신이 쓰는 한 줄이 웹, iOS, Android, 데스크톱, 서버와 DB, 그리고 사용자가 쓰는 모든 에이전트에게 닿습니다.",
             })}
           </p>
-          <div className="jelly-glass mt-9 inline-flex max-w-full items-center gap-3 rounded-full py-2 pr-2 pl-6 font-mono text-sm sm:text-lg">
-            <span className="select-none text-primary">$</span>
-            <span className="seed-scrub text-foreground/90 [--seed-chars:33]">{installCommand}</span>
-            <Clipboard className="relative shrink-0" text={installCommand} />
-          </div>
+          <Start.Tabs className="mt-9" />
           <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-4">
             <Link href="/docs/intro/quickstart" className={jellyButtonRecipe({ size: "lg" })}>
               {l.trans({ en: "Get started", ko: "시작하기" })} <BsArrowRight />
@@ -815,10 +750,10 @@ export default page().render(() => {
               MCP <BsArrowRight />
             </Link>
             <Link
-              href="/showcase"
+              href="/cases"
               className="flex items-center gap-2 font-bold text-foreground/70 text-sm hover:text-foreground"
             >
-              {l.trans({ en: "Showcase", ko: "쇼케이스" })} <BsArrowRight />
+              {l.trans({ en: "Case Studies", ko: "적용사례" })} <BsArrowRight />
             </Link>
           </div>
           <p className="mt-12 font-bold text-foreground/70">

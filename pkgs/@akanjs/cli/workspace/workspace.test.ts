@@ -153,7 +153,7 @@ describe("WorkspaceScript", () => {
       expect(recorder.calls.find((call) => call.name === "createApplication")?.args).toEqual([
         "demo",
         workspace,
-        { libs: ["util", "shared"] },
+        { libs: ["util", "shared"], sample: true },
       ]);
       expect(recorder.calls.find((call) => call.name === "agent")?.args).toEqual([
         workspace,

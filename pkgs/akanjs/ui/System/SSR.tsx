@@ -53,8 +53,8 @@ const SSRProvider = ({
   // Every locale, fresh, on the server (never shipped): no stale keys after a dictionary edit.
   if (allDictionary) for (const [lng, dict] of Object.entries(allDictionary)) Translator.replace(lng, dict);
 
-  // Only the active locale is serialized to the client.
-  const activeDictionary = allDictionary?.[activeLocale] ?? dictionary;
+  // Only the active locale is serialized to the client, with the default locale's text filled into its gaps.
+  const activeDictionary = (allDictionary && Translator.withDefaultLocale(allDictionary, activeLocale)) ?? dictionary;
   const pageState = getRequestFrameState<PageState>() ?? defaultPageState;
 
   return (

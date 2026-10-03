@@ -238,4 +238,31 @@ describe("Translator", () => {
 
     expect(await translator.getDictionary("en")).toBe(firstDictionary);
   });
+
+  test("fills the default locale's text into the one locale an SSR client is seeded with", () => {
+    const allDictionary = {
+      en: {
+        libOnly: { signin: { t: "Sign In" } },
+        app: { title: { t: "Title" }, partial: { t: "Partial" }, nested: { label: { t: "Label" } } },
+      },
+      ja: {
+        app: { title: { t: "タイトル" }, nested: {} },
+      },
+    };
+    const filled = Translator.withDefaultLocale(allDictionary, "ja");
+
+    expect(filled).toEqual({
+      libOnly: { signin: { t: "Sign In" } },
+      app: { title: { t: "タイトル" }, partial: { t: "Partial" }, nested: { label: { t: "Label" } } },
+    });
+    expect(allDictionary.ja).toEqual({ app: { title: { t: "タイトル" }, nested: {} } });
+    expect(Translator.withDefaultLocale(allDictionary, "ja")).toBe(filled);
+    expect(Translator.withDefaultLocale(allDictionary, "en")).toBe(allDictionary.en);
+    expect(Translator.withDefaultLocale(allDictionary, "th")).toEqual(allDictionary.en);
+
+    Translator.replace("ja", filled);
+    Translator.replace("en", {});
+    expect(Translator.translateByLocale("ja", "libOnly.signin")).toBe("Sign In");
+    expect(Translator.translateByLocale("ja", "app.title")).toBe("タイトル");
+  });
 });

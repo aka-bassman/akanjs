@@ -7,8 +7,8 @@ const track = tempRoots();
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const until = async (proc: Bun.Subprocess, what: string, condition: () => boolean) => {
-  const deadline = Date.now() + 20_000;
+const until = async (proc: Bun.Subprocess, what: string, condition: () => boolean, timeoutMs = 20_000) => {
+  const deadline = Date.now() + timeoutMs;
   while (!condition()) {
     if (proc.exitCode !== null || Date.now() > deadline) throw new Error(`the builder never sent ${what}`);
     await wait(20);
@@ -124,7 +124,8 @@ process.send({ type: "build-batch-result", data: { generation, errors: {}, artif
     const ssrRuns = async () =>
       (await Bun.file(runs).exists()) ? (await Bun.file(runs).text()).trim().split("\n").map(Number) : [];
     try {
-      await until(proc, "boot-armed", () => messages.some((message) => message.type === "boot-armed"));
+      //? boot-armed waits out the 10s crash window first, so 20s left a loaded machine too little for the rest.
+      await until(proc, "boot-armed", () => messages.some((message) => message.type === "boot-armed"), 30_000);
       const [first = 0, second = 0] = await ssrRuns();
       expect(await ssrRuns()).toHaveLength(2);
       expect(second - first).toBeGreaterThanOrEqual(9_500);

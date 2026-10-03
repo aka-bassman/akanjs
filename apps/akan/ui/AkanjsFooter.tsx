@@ -48,7 +48,7 @@ export const AkanjsFooter = ({ className }: AkanjsFooterProps) => {
           </div>
         </div>
         <div className="flex flex-col items-center gap-x-6 gap-y-1.5 border-foreground/8 border-t pt-6 text-center text-foreground/50 text-xs md:flex-row md:flex-wrap md:justify-between md:text-sm">
-          <span>
+          <span className="hidden">
             {l.trans({ en: "Official Akan.js Consulting on", ko: "Akan.js 공식 컨설팅 서비스" })}
             <Link href="https://soft.akanjs.com" target="_blank" rel="noopener noreferrer">
               <span className="ml-1 font-bold text-primary hover:underline">Akansoft</span>
