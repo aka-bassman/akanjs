@@ -93,10 +93,10 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   async createApplication(
     appName: string,
     workspace: Workspace,
-    { start = false, libs = [] }: { start?: boolean; libs?: string[] } = {},
+    { start = false, libs = [], sample = false }: { start?: boolean; libs?: string[]; sample?: boolean } = {},
   ) {
     const spinner = workspace.spinning("Creating application...");
-    const app = await this.applicationRunner.createApplication(appName, workspace, libs);
+    const app = await this.applicationRunner.createApplication(appName, workspace, libs, { sample });
     spinner.succeed(`Application created in apps/${app.name}`);
     await app.scanSync();
     if (start) await this.startOne(app, { open: true });

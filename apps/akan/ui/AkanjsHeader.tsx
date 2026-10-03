@@ -36,9 +36,9 @@ interface AkanjsHeaderProps {
 
 export const akanjsHomeHeaderLinks: AkanjsHeaderLink[] = [
   { href: "/docs", label: { en: "Docs", ko: "문서" } },
-  { href: "/showcase", label: { en: "Showcase", ko: "쇼케이스" } },
-  { href: "/roadmap", label: { en: "Roadmap", ko: "로드맵" } },
   { href: "/blog", label: { en: "Blog", ko: "블로그" } },
+  { href: "/cases", label: { en: "Case Studies", ko: "적용사례" } },
+  { href: "/roadmap", label: { en: "Roadmap", ko: "로드맵" } },
   { href: "https://cloud.akanjs.com", label: { en: "Deploy", ko: "배포" }, target: "_blank" },
 ];
 

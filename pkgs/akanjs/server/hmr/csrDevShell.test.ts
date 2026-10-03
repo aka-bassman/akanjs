@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rename, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -104,11 +104,15 @@ describe("CsrDevShell", () => {
     const moduleMap = path.join(dir, csrDevModuleFile("app/Card.tsx", ".js.map"));
     const writeMap = async (source: string) =>
       await Bun.write(moduleMap, JSON.stringify({ version: 3, sources: [source], names: [], mappings: "AAAA" }));
-    const writeLayout = async (lineCount: number) =>
+    //? Replaced like CsrDevArtifactWriter does: an in-place rewrite of the same size can share an NTFS mtime tick.
+    const writeLayout = async (lineCount: number) => {
+      const layoutPath = path.join(dir, "app.js.layout.json");
       await Bun.write(
-        path.join(dir, "app.js.layout.json"),
+        `${layoutPath}.tmp`,
         JSON.stringify({ lineCount, modules: [["app/Card.tsx", 1]] } satisfies CsrDevLayout),
       );
+      await rename(`${layoutPath}.tmp`, layoutPath);
+    };
     const sources = async () =>
       (
         (await (await shell.serve(new Request("http://localhost/_akan/csr-dev/app.js.map"))).json()) as {

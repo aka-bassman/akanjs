@@ -74,12 +74,17 @@ const loadBuildRunner = async () => (await import("@akanjs/devkit/applicationBui
 const loadPrompts = async () => await import("@inquirer/prompts");
 
 export class ApplicationRunner extends runner("application") {
-  async createApplication(appName: string, workspace: Workspace, libs: string[] = []) {
+  async createApplication(
+    appName: string,
+    workspace: Workspace,
+    libs: string[] = [],
+    { sample = false }: { sample?: boolean } = {},
+  ) {
     await workspace.applyTemplate({
       basePath: `apps/${appName}`,
       template: "app",
       dict: { appName },
-      options: { libs },
+      options: { libs, sample },
     });
     return AppExecutor.from(workspace, appName);
   }

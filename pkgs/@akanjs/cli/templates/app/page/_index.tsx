@@ -3,295 +3,294 @@ import type { AppInfo, LibInfo } from "akanjs";
 interface Dict {
   appName: string;
 }
-export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dict) {
+interface Options {
+  libs?: string[];
+  sample?: boolean;
+}
+export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dict, options: Options = {}) {
+  const sampleButton = options.sample
+    ? `
+              <Link className={jellyButtonRecipe({ variant: "default", size: "lg" })} href="/task">
+                {l.trans({ en: "Open the Sample", ko: "샘플 열어 보기" })}
+              </Link>`
+    : `
+              <Link
+                className={jellyButtonRecipe({ variant: "default", size: "lg" })}
+                href="https://akanjs.com/docs/intro/practice"
+                target="_blank"
+              >
+                {l.trans({ en: "Learn By Building", ko: "만들면서 배우기" })}
+              </Link>`;
+  const sampleStep = options.sample
+    ? `
+    {
+      title: l.trans({ en: "Read the sample module", ko: "샘플 모듈을 읽어 보세요" }),
+      body: l.trans({
+        en: "The task module walks one feature end to end — the model, its guarded API, the store and the pages.",
+        ko: "task 모듈이 모델부터 가드가 걸린 API, 스토어, 페이지까지 기능 하나를 처음부터 끝까지 보여 줍니다.",
+      }),
+      code: "lib/task",
+      href: "/task",
+    },`
+    : "";
   return {
     filename: "_index.tsx",
     content: `
+import { jellyButtonRecipe } from "@apps/${dict.appName}/ui";
 import { getEnv } from "akanjs/base";
-import { page, usePage } from "akanjs/client";
-import { Link, System } from "akanjs/ui";
-import {
-  FaBookOpen,
-  FaBoxOpen,
-  FaCheckCircle,
-  FaCodeBranch,
-  FaExternalLinkAlt,
-  FaLayerGroup,
-  FaRocket,
-  FaShieldAlt,
-  FaTerminal,
-} from "react-icons/fa";
+import { cn, page, usePage } from "akanjs/client";
+import { Image, Link, System } from "akanjs/ui";
+
+const friendFloat = {
+  planet: "[--float-delay:-0.4s] [--float-duration:6.2s]",
+  rocket: "[--float-delay:-2.2s] [--float-duration:5.2s] [--float-tilt:7deg]",
+  moon: "[--float-delay:-3.6s] [--float-duration:7s] [--float-tilt:-5deg]",
+  cloud: "[--float-delay:-1.4s] [--float-duration:8s] [--float-rise:0.6rem]",
+  comet: "[--float-delay:-4.8s] [--float-duration:4.6s] [--float-tilt:9deg]",
+} as const;
+
+const numeralTiles = [
+  "tint-planet text-white",
+  "tint-rocket text-black/70",
+  "tint-moon text-black/70",
+  "tint-comet text-white",
+] as const;
 
 export default page().render(() => {
   const appName = getEnv().appName;
   const { l } = usePage();
+  const friends = [
+    { name: "planet", role: l.trans({ en: "Web", ko: "웹" }) },
+    { name: "rocket", role: l.trans({ en: "App", ko: "앱" }) },
+    { name: "moon", role: l.trans({ en: "Server · DB", ko: "서버 · DB" }) },
+    { name: "cloud", role: l.trans({ en: "Infra", ko: "인프라" }) },
+    { name: "comet", role: l.trans({ en: "Agent", ko: "에이전트" }) },
+  ] as const;
+  const chapters = [
+    {
+      numeral: "1",
+      title: l.trans({ en: "The line you write.", ko: "당신이 쓰는 한 줄." }),
+      body: l.trans({
+        en: "A field is one declaration — a name and a type. The database, API, screens and agent tools all come from it.",
+        ko: "필드는 이름과 타입, 선언 한 줄입니다. DB, API, 화면, 에이전트 도구가 모두 이 한 줄에서 나옵니다.",
+      }),
+    },
+    {
+      numeral: "×8",
+      title: l.trans({ en: "Through every layer.", ko: "모든 레이어를 관통하고," }),
+      body: l.trans({
+        en: "Schema, query, service, API, fetch, client type, state and UI change together. Nothing to chase, nothing to miss.",
+        ko: "스키마, 쿼리, 서비스, API, fetch, 클라이언트 타입, 상태, UI가 함께 바뀝니다. 따라 고칠 곳도 빠뜨릴 곳도 없습니다.",
+      }),
+    },
+    {
+      numeral: "×6",
+      title: l.trans({ en: "Onto every platform.", ko: "모든 플랫폼에 닿고," }),
+      body: l.trans({
+        en: "The same code ships as SEO-ready web, iOS and Android apps, and macOS, Windows and Linux desktop apps.",
+        ko: "같은 코드가 SEO 웹, iOS·Android 앱, macOS·Windows·Linux 데스크톱 앱으로 배포됩니다.",
+      }),
+    },
+    {
+      numeral: "×2",
+      title: l.trans({ en: "For people and agents alike.", ko: "사람과 에이전트 모두에게." }),
+      body: l.trans({
+        en: "Guarded endpoints become MCP tools and on-screen controls become in-page agent tools, behind the same guards people pass.",
+        ko: "가드를 거친 엔드포인트는 MCP 도구가, 화면의 컨트롤은 인페이지 에이전트 도구가 됩니다. 사람과 같은 가드를 거쳐서요.",
+      }),
+    },
+  ];
+  const steps = [
+    {
+      title: l.trans({ en: "Make this page yours", ko: "이 페이지를 바꿔 보세요" }),
+      body: l.trans({
+        en: "This welcome screen is an ordinary page. Replace it with the first screen of your product.",
+        ko: "이 환영 화면은 평범한 페이지입니다. 제품의 첫 화면으로 바꿔 보세요.",
+      }),
+      code: "page/_index.tsx",
+    },
+    {
+      title: l.trans({ en: "Restyle the theme", ko: "테마를 바꿔 보세요" }),
+      body: l.trans({
+        en: "Swap the palette tokens, and every surface and button follows.",
+        ko: "팔레트 토큰을 바꾸면 모든 표면과 버튼이 따라옵니다.",
+      }),
+      code: "page/styles.css",
+    },
+    {
+      title: l.trans({ en: "Add a feature", ko: "기능을 추가해 보세요" }),
+      body: l.trans({
+        en: "One command scaffolds a domain module — model, service, API, store and UI.",
+        ko: "명령 하나로 도메인 모듈(모델, 서비스, API, 스토어, UI)을 만듭니다.",
+      }),
+      code: "akan create-module <name>",
+    },${sampleStep}
+    {
+      title: l.trans({ en: "Connect an agent", ko: "에이전트를 연결해 보세요" }),
+      body: l.trans({
+        en: "Every guarded endpoint is already published as an MCP tool.",
+        ko: "가드가 걸린 엔드포인트는 이미 MCP 도구로 공개되어 있습니다.",
+      }),
+      code: "POST /mcp",
+      href: "https://akanjs.com/docs/arch/agentic",
+    },
+  ];
   return (
-    <main className="relative min-h-screen overflow-hidden bg-background text-foreground">
-      <div className="absolute -top-48 -left-48 h-96 w-96 rounded-full bg-primary/25 blur-3xl" />
-      <div className="absolute -right-40 -bottom-56 h-112 w-md rounded-full bg-accent/20 blur-3xl" />
-      <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-primary/60 to-transparent" />
-
-      <section className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-8 lg:px-8">
-        <nav className="flex items-center justify-between">
+    <main className="relative min-h-screen overflow-x-clip break-keep text-foreground">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-6 lg:px-8">
+        <nav className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-background shadow-lg shadow-primary/20">
-              <img
-                src="/logo.png"
-                alt={l.trans({ en: "Akan.js logo", ko: "Akan.js 로고" })}
-                className="h-full w-full object-cover"
-              />
-            </div>
-            <div>
-              <p className="font-semibold text-primary text-sm tracking-[0.25em]">Akan.js</p>
-              <p className="text-foreground/60 text-xs">
-                {l.trans({ en: "Full-stack TypeScript framework", ko: "풀스택 타입스크립트 프레임워크" })}
+            <Image
+              alt={l.trans({ en: "Logo", ko: "로고" })}
+              className="jelly-breathe size-10"
+              height={80}
+              priority
+              src="/logo.png"
+              width={80}
+            />
+            <div className="leading-tight">
+              <p className="font-black text-lg tracking-tight">{appName}</p>
+              <p className="text-foreground/50 text-xs">
+                {l.trans({ en: "Built with Akan.js", ko: "Akan.js로 만든 앱" })}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <System.ThemeToggle themes={["light", "dark"]} />
             <System.SelectLanguage languages={["en", "ko"]} />
-            <Link href="https://akanjs.com" target="_blank">
-              <button className="inline-flex items-center gap-2 rounded-field border border-foreground/10 bg-foreground/10 px-3 py-2 text-foreground text-sm transition-colors hover:border-primary hover:bg-primary hover:text-background">
-                {l.trans({ en: "Official Site", ko: "공식 사이트" })}
-                <FaExternalLinkAlt />
-              </button>
+            <Link
+              className={jellyButtonRecipe({ variant: "default", size: "sm" }, "max-sm:hidden")}
+              href="https://akanjs.com"
+              target="_blank"
+            >
+              {l.trans({ en: "Official Site", ko: "공식 사이트" })} ↗
             </Link>
           </div>
         </nav>
 
-        <div className="grid flex-1 items-center gap-10 py-16 lg:grid-cols-[1.04fr_0.96fr] lg:py-10">
-          <div>
-            <div className="mb-6 inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-4 py-3 text-primary">
-              <FaCheckCircle />
+        <section className="grid min-h-[calc(100svh-5rem)] items-center gap-6 py-12 lg:grid-cols-[0.8fr_1.2fr] lg:gap-10">
+          <div className="intro-rise group relative mx-auto aspect-square w-48 sm:w-64 lg:w-full lg:max-w-md">
+            <div className="absolute inset-x-[16%] bottom-[3%] h-[7%] rounded-full bg-black/25 blur-xl dark:bg-black/60" />
+            <div className="jelly-breathe group-hover:jelly-wobble size-full">
+              <Image
+                alt=""
+                className="pointer-events-none size-full select-none object-contain"
+                draggable={false}
+                height={640}
+                priority
+                src="/jelly/star.webp"
+                width={640}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
+            <p className="intro-rise jelly-glass inline-flex items-center gap-2 rounded-full px-4 py-1.5 font-bold text-foreground/75 text-sm [--intro-delay:40ms]">
+              <span className="size-2 rounded-full bg-success ring-4 ring-success/20" />
               {l.trans({ en: "Your app is running", ko: "앱이 실행 중입니다" })}
-            </div>
-            <h1 className="max-w-4xl font-black text-5xl text-foreground tracking-tight sm:text-6xl lg:text-7xl">
-              {l.trans({
-                en: "Akan turns business intent into the whole product.",
-                ko: "Akan은 비즈니스 의도를 제품 전체로 바꿉니다.",
-              })}
+            </p>
+            <h1 className="intro-rise wrap-anywhere mt-6 max-w-full font-black text-[clamp(3.5rem,12vw,8.5rem)] leading-[0.85] tracking-[-0.06em] [--intro-delay:80ms]">
+              {appName}
             </h1>
-            <p className="mt-6 max-w-2xl text-foreground/70 text-lg leading-8">
+            <p className="intro-rise mt-6 max-w-xl font-bold text-foreground/60 text-lg leading-8 [--intro-delay:160ms]">
               {l.trans({
-                en: "Agents Write. Keep It Minimal. Always Readable. Nice To Review. Build with less code, fewer repeated decisions, and a clearer path from idea to production.",
-                ko: "Agents Write. Keep It Minimal. Always Readable. Nice To Review. 더 적은 코드, 더 적은 반복 결정, 더 선명한 출시 경로로 만드세요.",
+                en: "Built on Akan.js — the TypeScript framework, agents included.",
+                ko: "에이전트까지 들어 있는 TypeScript 프레임워크, Akan.js로 만들었습니다.",
               })}
             </p>
-
-            <div className="mt-8 flex flex-wrap gap-3">
-              <span className="inline-flex items-center gap-1 rounded-full border border-foreground/10 bg-foreground/10 px-4 py-1.5 text-foreground text-sm">
-                Agent-ready
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full border border-foreground/10 bg-foreground/10 px-4 py-1.5 text-foreground text-sm">
-                Minimal code
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full border border-foreground/10 bg-foreground/10 px-4 py-1.5 text-foreground text-sm">
-                Readable by default
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full border border-foreground/10 bg-foreground/10 px-4 py-1.5 text-foreground text-sm">
-                Review-friendly
-              </span>
-            </div>
-
-            <div className="mt-10 flex flex-col gap-3 sm:flex-row">
-              <Link href="https://akanjs.com/docs/intro/quickstart" target="_blank">
-                <button className="inline-flex items-center justify-center gap-2 rounded-field bg-primary px-4 py-2 text-background text-sm transition-colors hover:bg-primary/80">
-                  {l.trans({ en: "Read Quick Start", ko: "빠른 시작 읽기" })}
-                  <FaBookOpen />
-                </button>
-              </Link>
-              <Link href="https://akanjs.com/docs/intro/practice" target="_blank">
-                <button className="inline-flex items-center justify-center gap-2 rounded-field border border-foreground/10 bg-foreground/10 px-4 py-2 text-foreground text-sm transition-colors hover:border-foreground/20 hover:bg-foreground/15">
-                  {l.trans({ en: "Learn By Building", ko: "만들면서 배우기" })}
-                  <FaCodeBranch />
-                </button>
-              </Link>
+            <ul className="intro-rise mt-8 flex items-end gap-2 [--intro-delay:240ms] sm:gap-4">
+              {friends.map((friend) => (
+                <li className="group flex flex-col items-center gap-2" key={friend.name}>
+                  <span className={cn("jelly-float block", friendFloat[friend.name])}>
+                    <span className="group-hover:jelly-wobble block">
+                      <Image
+                        alt=""
+                        className="pointer-events-none size-14 select-none sm:size-18"
+                        draggable={false}
+                        height={200}
+                        src={\`/jelly/\${friend.name}.webp\`}
+                        width={200}
+                      />
+                    </span>
+                  </span>
+                  <span className="whitespace-nowrap rounded-full bg-foreground/6 px-2.5 py-0.5 font-bold text-[11px] text-foreground/60">
+                    {friend.role}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="intro-rise mt-10 flex flex-wrap justify-center gap-3 [--intro-delay:320ms] lg:justify-start">
+              <Link
+                className={jellyButtonRecipe({ size: "lg" })}
+                href="https://akanjs.com/docs/intro/quickstart"
+                target="_blank"
+              >
+                {l.trans({ en: "Read Quick Start", ko: "빠른 시작 읽기" })}
+              </Link>${sampleButton}
             </div>
           </div>
+        </section>
 
-          <div className="relative">
-            <div className="absolute inset-0 rotate-3 rounded-4xl bg-primary/20 blur-2xl" />
-            <div className="relative overflow-hidden rounded-4xl border border-foreground/10 bg-foreground/6 p-5 shadow-2xl backdrop-blur">
-              <div className="mb-5 flex items-center justify-between rounded-2xl border border-foreground/10 bg-background/70 px-4 py-3">
-                <div>
-                  <p className="text-foreground/40 text-xs uppercase tracking-[0.24em]">
-                    {l.trans({ en: "Akan Acrostic", ko: "Akan 사행시" })}
-                  </p>
-                  <p className="font-semibold text-foreground text-lg">
-                    {l.trans({ en: "A framework for focused builders", ko: "집중하는 빌더를 위한 프레임워크" })}
-                  </p>
-                </div>
-                <div className="rounded-xl bg-primary/10 px-3 py-2 font-medium text-primary text-sm">{appName}</div>
-              </div>
+        <section className="py-12">
+          <p className="font-bold text-primary text-sm">{l.trans({ en: "How it works", ko: "작동 방식" })}</p>
+          <h2 className="mt-2 font-black text-3xl sm:text-4xl">
+            {l.trans({ en: "One line reaches the whole product.", ko: "한 줄이 제품 전체에 닿습니다." })}
+          </h2>
+          <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {chapters.map((chapter, idx) => (
+              <article className="jelly-glass rounded-box p-6" key={chapter.numeral}>
+                <span
+                  className={cn(
+                    "jelly flex size-12 items-center justify-center rounded-2xl font-black text-xl",
+                    numeralTiles[idx],
+                  )}
+                >
+                  {chapter.numeral}
+                </span>
+                <h3 className="mt-5 font-bold text-lg">{chapter.title}</h3>
+                <p className="mt-2 text-foreground/60 text-sm leading-6">{chapter.body}</p>
+              </article>
+            ))}
+          </div>
+        </section>
 
-              <div className="grid gap-3">
-                <div className="rounded-2xl border border-foreground/10 bg-background/80 p-4">
-                  <div className="flex gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-background font-black text-primary text-xl">
-                      A
-                    </div>
-                    <div>
-                      <p className="font-bold text-foreground">Agents Write</p>
-                      <p className="mt-1 text-foreground/60 text-sm leading-6">
-                        {l.trans({
-                          en: "Business definitions become the source code, so teams and agents can focus on what to build.",
-                          ko: "비즈니스 정의가 소스 코드가 되므로, 팀과 에이전트는 무엇을 만들지에 집중할 수 있습니다.",
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-foreground/10 bg-background/80 p-4">
-                  <div className="flex gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-background font-black text-primary text-xl">
-                      K
-                    </div>
-                    <div>
-                      <p className="font-bold text-foreground">Keep It Minimal</p>
-                      <p className="mt-1 text-foreground/60 text-sm leading-6">
-                        {l.trans({
-                          en: "One definition flows into web, app, server, database, and infrastructure without repeated logic.",
-                          ko: "하나의 정의가 반복 로직 없이 웹, 앱, 서버, 데이터베이스, 인프라로 이어집니다.",
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-foreground/10 bg-background/80 p-4">
-                  <div className="flex gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-background font-black text-primary text-xl">
-                      A
-                    </div>
-                    <div>
-                      <p className="font-bold text-foreground">Always Readable</p>
-                      <p className="mt-1 text-foreground/60 text-sm leading-6">
-                        {l.trans({
-                          en: "Strict conventions keep the app easy to understand long after the first version ships.",
-                          ko: "엄격한 컨벤션은 첫 버전 출시 후에도 앱을 쉽게 이해할 수 있게 지켜줍니다.",
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-foreground/10 bg-background/80 p-4">
-                  <div className="flex gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-background font-black text-primary text-xl">
-                      N
-                    </div>
-                    <div>
-                      <p className="font-bold text-foreground">Nice To Review</p>
-                      <p className="mt-1 text-foreground/60 text-sm leading-6">
-                        {l.trans({
-                          en: "Focused changes make business intent clear, so reviews stay fast and releases stay calm.",
-                          ko: "집중된 변경은 비즈니스 의도를 선명하게 만들어 리뷰를 빠르게 하고 배포를 안정적으로 유지합니다.",
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-5 overflow-x-auto rounded-box border border-foreground/10 bg-background py-4 font-mono text-sm">
-                <pre className="px-6">
-                  <span className="select-none text-foreground/40">$ </span>
-                  <code className="text-primary">bun run akan start {appName}</code>
-                </pre>
-                <pre className="px-6">
-                  <span className="select-none text-foreground/40">✓ </span>
-                  <code className="text-accent">
-                    {l.trans({ en: "web, app, server, db, and infra ready", ko: "웹, 앱, 서버, DB, 인프라 준비 완료" })}
+        <section className="py-12">
+          <p className="font-bold text-primary text-sm">{l.trans({ en: "Next steps", ko: "다음 단계" })}</p>
+          <h2 className="mt-2 font-black text-3xl sm:text-4xl">
+            {l.trans({ en: "Start here.", ko: "여기서 시작하세요." })}
+          </h2>
+          <ol className="jelly-glass mt-8 divide-y divide-foreground/8 rounded-box">
+            {steps.map((step, idx) => (
+              <li className="flex items-start gap-4 p-5 sm:p-6" key={step.code}>
+                <span className="jelly tint-primary flex size-9 shrink-0 items-center justify-center rounded-full font-black text-primary-foreground text-sm">
+                  {idx + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold">{step.title}</h3>
+                  <p className="mt-1 text-foreground/60 text-sm leading-6">{step.body}</p>
+                  <code className="mt-2 inline-block rounded-full bg-foreground/6 px-3 py-1 font-mono text-foreground/75 text-xs">
+                    {step.code}
                   </code>
-                </pre>
-                <pre className="px-6">
-                  <span className="select-none text-foreground/40">→ </span>
-                  <code className="text-foreground/70">
-                    {l.trans({
-                      en: "edit page/_index.tsx around your business",
-                      ko: "비즈니스에 맞게 page/_index.tsx를 수정하세요",
-                    })}
-                  </code>
-                </pre>
-              </div>
-            </div>
-          </div>
-        </div>
+                </div>
+                {step.href ? (
+                  <Link
+                    aria-label={step.title}
+                    className={jellyButtonRecipe({ variant: "ghost", size: "icon" }, "shrink-0 self-center")}
+                    href={step.href}
+                    target={step.href.startsWith("http") ? "_blank" : undefined}
+                  >
+                    →
+                  </Link>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </section>
 
-        <div className="grid gap-4 pb-8 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-3xl border border-foreground/10 bg-foreground/4 p-6 backdrop-blur">
-            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary text-xl">
-              <FaTerminal />
-            </div>
-            <h2 className="font-bold text-foreground text-lg">
-              {l.trans({ en: "Agentic By Design", ko: "에이전틱 설계" })}
-            </h2>
-            <p className="mt-2 text-foreground/60 text-sm leading-6">
-              {l.trans({
-                en: "Describe the business once and let Akan shape the application surfaces around it.",
-                ko: "비즈니스를 한 번 설명하면 Akan이 그 주변의 애플리케이션 표면을 구성합니다.",
-              })}
-            </p>
-          </div>
-          <div className="rounded-3xl border border-foreground/10 bg-foreground/4 p-6 backdrop-blur">
-            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary text-xl">
-              <FaLayerGroup />
-            </div>
-            <h2 className="font-bold text-foreground text-lg">
-              {l.trans({ en: "One Definition", ko: "하나의 정의" })}
-            </h2>
-            <p className="mt-2 text-foreground/60 text-sm leading-6">
-              {l.trans({
-                en: "Pages, services, database models, and deployment artifacts stay connected in one workspace.",
-                ko: "페이지, 서비스, 데이터베이스 모델, 배포 산출물이 하나의 워크스페이스에서 연결됩니다.",
-              })}
-            </p>
-          </div>
-          <div className="rounded-3xl border border-foreground/10 bg-foreground/4 p-6 backdrop-blur">
-            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary text-xl">
-              <FaRocket />
-            </div>
-            <h2 className="font-bold text-foreground text-lg">
-              {l.trans({ en: "Less To Review", ko: "리뷰할 것이 적습니다" })}
-            </h2>
-            <p className="mt-2 text-foreground/60 text-sm leading-6">
-              {l.trans({
-                en: "Smaller code surfaces make intent easier to inspect, approve, and ship.",
-                ko: "더 작은 코드 표면은 의도를 확인하고 승인하고 배포하기 쉽게 만듭니다.",
-              })}
-            </p>
-          </div>
-          <div className="rounded-3xl border border-foreground/10 bg-foreground/4 p-6 backdrop-blur">
-            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary text-xl">
-              <FaShieldAlt />
-            </div>
-            <h2 className="font-bold text-foreground text-lg">
-              {l.trans({ en: "Type-Safe Growth", ko: "타입 안전한 성장" })}
-            </h2>
-            <p className="mt-2 text-foreground/60 text-sm leading-6">
-              {l.trans({
-                en: "Conventions and contracts keep the stack readable as the product expands.",
-                ko: "컨벤션과 계약은 제품이 확장되어도 스택을 읽기 쉽게 유지합니다.",
-              })}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-col items-start justify-between gap-4 rounded-3xl border border-foreground/10 bg-foreground/4 p-5 text-foreground/70 text-sm md:flex-row md:items-center">
-          <div className="flex items-center gap-3">
-            <FaTerminal className="text-primary" />
-            <span>
-              {l.trans({
-                en: "Next: define the business once, then let Akan carry it across every surface.",
-                ko: "다음 단계: 비즈니스를 한 번 정의하고, Akan이 모든 표면으로 이어가게 하세요.",
-              })}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-foreground/40">
-            <FaBoxOpen />
-            <span>{l.trans({ en: "Akan.js template", ko: "Akan.js 템플릿" })}</span>
-          </div>
-        </div>
-      </section>
+        <footer className="py-10 text-center text-foreground/45 text-sm">
+          {l.trans({ en: "Made with Akan.js · Powered by Bun", ko: "Akan.js로 만들고 Bun으로 구동합니다" })}
+        </footer>
+      </div>
     </main>
   );
 });`,

@@ -1,26 +1,15 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
-export default function getContent(
-  scanInfo: AppInfo | LibInfo | null,
-  dict: { appName: string },
-  options: { libs?: string[] } = {},
-) {
-  // Task writes are guarded by SignedIn, so the fixtures sign a user in through libs/shared when it is installed.
-  const signsIn = options.libs?.includes("shared") ?? false;
-  return `${
-    signsIn
-      ? `import * as userSpec from "@libs/shared/lib/user/user.signal.spec";
-`
-      : ""
-  }import type { DocumentModel } from "akanjs/constant";
-import { ${signsIn ? "" : "getOrSetupSignalTestFetch, "}sampleOf } from "akanjs/test";
+export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
+  return `import type { DocumentModel } from "akanjs/constant";
+import { getOrSetupSignalTestFetch, sampleOf } from "akanjs/test";
 
 import * as cnst from "../cnst";
 import type { fetch as appFetch } from "../useServer";
 
 type AppFetch = typeof appFetch;
 
-const getFetch = async () => ${signsIn ? "(await userSpec.getUserAgentWithPassword<AppFetch>()).fetch" : "await getOrSetupSignalTestFetch<AppFetch>()"};
+const getFetch = async () => await getOrSetupSignalTestFetch<AppFetch>();
 
 export interface TaskAgent {
   task: cnst.Task;

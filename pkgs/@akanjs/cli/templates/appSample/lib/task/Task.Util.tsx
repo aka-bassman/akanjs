@@ -5,7 +5,8 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { a
     filename: "Task.Util.tsx",
     content: `"use client";
 import { fetch, st, usePage } from "@apps/${dict.appName}/client";
-import { buttonRecipe, Dropdown, Model } from "akanjs/ui";
+import { jellyButtonRecipe } from "@apps/${dict.appName}/ui";
+import { Dropdown, Model } from "akanjs/ui";
 
 // ===== Task.Util.tsx =====
 // Convention: lib/<module>/ — PascalCase .tsx, Util suffix = action buttons/utility components.
@@ -19,10 +20,7 @@ interface StartProps {
 }
 
 export const Start = ({ taskId }: StartProps) => (
-  <button
-    className={buttonRecipe({ size: "xs" }, "border-primary/20 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground")}
-    onClick={() => st.do.startTask(taskId)}
-  >
+  <button className={jellyButtonRecipe({ variant: "primary", size: "xs" })} onClick={() => st.do.startTask(taskId)}>
     {usePage().l("task.taskStart")}
   </button>
 );
@@ -32,10 +30,7 @@ interface CompleteProps {
 }
 
 export const Complete = ({ taskId }: CompleteProps) => (
-  <button
-    className={buttonRecipe({ size: "xs" }, "border-success/20 bg-success/10 text-success hover:bg-success hover:text-success-foreground")}
-    onClick={() => st.do.completeTask(taskId)}
-  >
+  <button className={jellyButtonRecipe({ variant: "success", size: "xs" })} onClick={() => st.do.completeTask(taskId)}>
     {usePage().l("task.taskComplete")}
   </button>
 );
@@ -46,7 +41,9 @@ interface RemoveProps {
 
 export const Remove = ({ taskId }: RemoveProps) => (
   <Model.Remove modelId={taskId} slice={fetch.slice.task}>
-    <button className={buttonRecipe({ variant: "ghost", size: "xs" }, "text-destructive")}>{usePage().l("task.taskRemove")}</button>
+    <button className={jellyButtonRecipe({ variant: "ghost", size: "xs" }, "text-destructive")}>
+      {usePage().l("task.taskRemove")}
+    </button>
   </Model.Remove>
 );
 
@@ -59,9 +56,9 @@ export const Toolbox = ({ taskId, status }: ToolboxProps) => {
   const { l } = usePage();
   return (
     <Dropdown
-      buttonClassName={buttonRecipe({ variant: "ghost", size: "xs" })}
+      buttonClassName={jellyButtonRecipe({ variant: "ghost", size: "xs" })}
       value={<span>···</span>}
-      dropdownClassName="w-40 rounded-box border border-foreground/10 bg-background p-2"
+      dropdownClassName="jelly-glass w-40 rounded-box p-2"
       content={
         <>
           {status === "todo" && (
@@ -96,7 +93,7 @@ export const Toolbox = ({ taskId, status }: ToolboxProps) => {
 // New Task Button: Model.NewWrapper — triggers new Task creation form
 // export const NewTask = () => (
 //   <Model.NewWrapper partial={{}}>
-//     <button className={buttonRecipe({ variant: "primary", size: "sm" })}>+ New Task</button>
+//     <button className={jellyButtonRecipe({ variant: "primary", size: "sm" })}>+ New Task</button>
 //   </Model.NewWrapper>
 // );
 `,

@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { BrowserMockup, Code, Divider, Docs, DocsToc, MobileMockup } from "@apps/akan/ui";
+import { BrowserMockup, Code, Divider, Docs, DocsToc, MobileMockup, Start } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
@@ -77,8 +77,17 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "First, create a workspace with the workspace creator:",
-              ko: "먼저 workspace creator로 workspace를 생성합니다:",
+              en: "The quickest way is to let your coding agent do it. Open Claude Code or Codex in an empty directory and paste this prompt. It checks Bun, creates the workspace and starts the app:",
+              ko: "가장 빠른 방법은 코딩 에이전트에게 맡기는 것입니다. 빈 디렉터리에서 Claude Code나 Codex를 열고 이 프롬프트를 붙여 넣으세요. Bun을 확인하고 워크스페이스를 만든 뒤 앱까지 띄웁니다:",
+            })}
+          </div>
+        </Docs.Description>
+        <Start.Prompt className="my-3 w-full" />
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "To create it yourself, run the workspace creator. It asks for a workspace name and an app name:",
+              ko: "직접 만들려면 workspace creator를 실행합니다. 워크스페이스 이름과 앱 이름을 묻습니다:",
             })}
           </div>
         </Docs.Description>

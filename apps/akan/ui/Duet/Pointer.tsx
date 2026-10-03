@@ -3,7 +3,7 @@ import { cn } from "akanjs/client";
 interface ArrowProps {
   className?: string;
 }
-export const AgentArrow = ({ className }: ArrowProps) => {
+const AgentArrow = ({ className }: ArrowProps) => {
   return (
     <i
       aria-hidden="true"

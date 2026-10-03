@@ -1,8 +1,7 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
-  return `import { SignedIn } from "@apps/${dict.appName}/srvkit";
-import { endpoint, internal, None, Public, slice } from "akanjs/signal";
+  return `import { endpoint, internal, None, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
 import * as srv from "../srv";
@@ -23,23 +22,26 @@ import * as srv from "../srv";
 export class TaskInternal extends internal(srv.task, ({ interval }) => ({})) {}
 
 // Guards, per key: root = the generated admin API (runs any filter with caller-supplied args), get = reads,
-// cru = create/update/remove. root and cru are never Public; None here means "nobody until you name a guard".
-export class TaskSlice extends slice(srv.task, { guards: { root: None, get: Public, cru: SignedIn } }, (init) => ({
+// cru = create/update/remove. None here means "nobody until you name a guard".
+// The sample lets guests write so it works before the app has sign-in. Once it does, swap Public for SignedIn
+// (srvkit/guards.ts) on cru and on the mutations below — a real app never leaves writes Public.
+export class TaskSlice extends slice(srv.task, { guards: { root: None, get: Public, cru: Public } }, (init) => ({
   inPublic: init({ guards: [Public] }).exec(function () {
     return this.taskService.queryAny();
   }),
 })) {}
 
 // Every custom endpoint names its own guards array — the slice's map above only covers generated CRUD.
-// It is also the MCP decision: an endpoint declaring no guard is not published to agents at all.
+// It is also the MCP decision: an endpoint declaring no guard, or a mutation guarded only by Public, is not
+// published to agents at all.
 export class TaskEndpoint extends endpoint(srv.task, ({ mutation }) => ({
-  startTask: mutation(cnst.Task, { guards: [SignedIn] })
+  startTask: mutation(cnst.Task, { guards: [Public] })
     .param("taskId", String)
     .exec(async function (taskId) {
       return await this.taskService.startTask(taskId);
     }),
 
-  completeTask: mutation(cnst.Task, { guards: [SignedIn] })
+  completeTask: mutation(cnst.Task, { guards: [Public] })
     .param("taskId", String)
     .exec(async function (taskId) {
       return await this.taskService.completeTask(taskId);
