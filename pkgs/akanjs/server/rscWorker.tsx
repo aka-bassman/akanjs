@@ -17,6 +17,7 @@ import {
   pushRequestFallback,
   requestStorage,
   setRequestFrameState,
+  setRequestTheme,
   untrackedCookies,
   untrackedRequest,
   updateRequestPolicy,
@@ -1260,6 +1261,10 @@ export class RscRenderer {
       basePath: this.#getBasePath(url),
     });
     setRequestFrameState(pathRoute.pageState);
+    //? The provider names the theme only as it renders, which can be after the HTML shell and its data-theme are out.
+    const rootThemes = await Promise.all(pathRoute.renderRootLayouts.map((render) => render.getLayoutTheme?.()));
+    const rootTheme = rootThemes.find((theme) => theme !== undefined);
+    if (rootTheme) setRequestTheme(rootTheme);
     const routeHead = await RouteElementComposer.resolveHeadWithSnapshot({
       pathRoute,
       params: match.params,

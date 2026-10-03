@@ -249,6 +249,8 @@ try {
           AKAN_TEST_TARGET_TYPE: exec.type,
           AKAN_TEST_TARGET_NAME: exec.name,
           AKAN_TEST_LIBS: exec.getScanInfo({ allowEmpty: true })?.getLibs().join(",") ?? "",
+          //? The suite runs from the app or lib folder, where the cwd-relative default `local/` breaks the next sync.
+          AKAN_RUNTIME_DIR: path.join(exec.workspace.workspaceRoot, "local", `${exec.type}s`, exec.name, "runtime"),
         }
       : {};
     const args = preloadPath ? ["test", "--isolate", "--preload", preloadPath] : ["test", "--isolate"];

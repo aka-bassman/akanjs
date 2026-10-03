@@ -301,6 +301,10 @@ export class RouteTreeBuilder {
       routeRender.getRouteDefinition = async () => (await loadModule()).definition;
     } else {
       routeRender.getLayoutPageConfig = pageConfigOf;
+      routeRender.getLayoutTheme = async () => {
+        const { module: mod } = await loadModule();
+        return "theme" in mod ? (mod.theme as string | undefined) : undefined;
+      };
       routeRender.resolveNotFound = async () => syncFallbacks((await loadModule()).module as LayoutModule).NotFound;
       routeRender.resolveError = async () => syncFallbacks((await loadModule()).module as LayoutModule).Error;
     }

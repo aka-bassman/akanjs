@@ -583,10 +583,13 @@ describe("dev resource budgets", () => {
     expect(await DevStabilityHarness.buildWorkerProcess(host.proc.pid)).toBeNull();
   });
 
+  //? Between a fresh builder and one that has built a route, or the host stops enforcing it or never recycles.
+  //? macOS keeps the bundler arenas (~380MiB built); Linux measured 101-115MiB fresh, 157-176MiB built and settled.
+  const CEILING_MB = process.platform === "linux" ? 135 : 200;
+
   budgetTest("recycles the builder at an unmeetable ceiling and keeps developing through it", async () => {
     const harness = await createHarness();
-    // Below the builder once it has served the first route build (about 380MiB), which arms the recycle.
-    const host = await harness.startHost({ timeoutMs: BOOT_MS, env: { AKAN_BUILDER_MAX_RSS_MB: "200" } });
+    const host = await harness.startHost({ timeoutMs: BOOT_MS, env: { AKAN_BUILDER_MAX_RSS_MB: String(CEILING_MB) } });
     const start = host.markLog();
     await harness.waitForHttpText("initial-client-marker", WAIT_MS);
 
@@ -598,7 +601,7 @@ describe("dev resource budgets", () => {
 
     const recycleLog = await host.waitForLogSince(
       start,
-      /recycling builder pid=(\d+) \((rss=\d+MiB>=200MiB after \d+ build\(s\))\)/,
+      new RegExp(`recycling builder pid=(\\d+) \\((rss=\\d+MiB>=${CEILING_MB}MiB after \\d+ build\\(s\\))[;)]`),
       WAIT_MS,
     );
     await host.waitForLogSince(start, /exiting for recycle/, WAIT_MS);
@@ -634,7 +637,7 @@ describe("dev resource budgets", () => {
     const settled = await DevStabilityHarness.builderProcess(host.proc.pid);
     const warned = /ceiling costs about one boot build per interval/.test(host.logs.join("").slice(start));
     //? Past the interval (a slow machine) the next report recycles instead of warning: either answer settles it.
-    if ((settled?.rssBytes ?? 0) >= 200 * MB && !warned)
+    if ((settled?.rssBytes ?? 0) >= CEILING_MB * MB && !warned)
       await host.waitForLogSince(
         settledFrom,
         /ceiling costs about one boot build per interval|recycling builder pid=\d+|skipped: the builder fell to/,
@@ -645,7 +648,7 @@ describe("dev resource budgets", () => {
 
   budgetTest("serves a page requested while the builder is being replaced", async () => {
     const harness = await createHarness();
-    const host = await harness.startHost({ timeoutMs: BOOT_MS, env: { AKAN_BUILDER_MAX_RSS_MB: "200" } });
+    const host = await harness.startHost({ timeoutMs: BOOT_MS, env: { AKAN_BUILDER_MAX_RSS_MB: String(CEILING_MB) } });
     const port = await harness.resolvePort();
     await harness.waitForHttpText("initial-client-marker", WAIT_MS);
 

@@ -116,6 +116,8 @@ export interface RouteRender {
   resolveHead?: ResolveHead;
   getPageConfig?: () => PromiseOrObject<PageConfig | undefined>;
   getLayoutPageConfig?: () => PromiseOrObject<PageConfig | undefined>;
+  /** A root layout's `theme`, readable before it renders. */
+  getLayoutTheme?: () => PromiseOrObject<string | undefined>;
   /** The `page()` chain behind a page render, when it was declared as one — what a page prompt is read off. */
   getRouteDefinition?: () => PromiseOrObject<RouteDefinition | undefined>;
 }
