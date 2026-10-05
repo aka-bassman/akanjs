@@ -148,11 +148,33 @@ export default override({ Modal: BrandModal });`,
   });`,
     links: [{ href: "/docs/core/routing", label: { en: "Routing", ko: "라우팅" } }],
   },
+  {
+    no: "07",
+    title: { en: "Desktop apps for macOS, Windows and Linux", ko: "macOS·Windows·Linux 데스크톱 앱" },
+    paragraphs: [
+      {
+        en: "One codebase already shipped as a web app, iOS and Android apps, the server and the database. v3 adds the desktop: the native section that builds the phone apps now builds macOS, Windows and Linux apps too, running the same CSR bundle the phones carry. akan start-desktop runs a dev build against akan start, and akan build-desktop signs the app from the environment and, with --installer true, packs a dmg, a Windows setup or an AppImage.",
+        ko: "코드 하나가 이미 웹, iOS·Android 앱, 서버, 데이터베이스로 배포됐습니다. v3는 여기에 데스크톱을 더합니다. 폰 앱을 빌드하던 native 섹션이 이제 macOS, Windows, Linux 앱도 빌드하고, 폰이 싣는 것과 같은 CSR 번들로 돕니다. akan start-desktop은 akan start를 바라보는 개발 빌드를 띄우고, akan build-desktop은 환경 변수로 앱을 서명하며 --installer true를 주면 dmg, Windows 설치 프로그램, AppImage까지 만듭니다.",
+      },
+      {
+        en: "A desktop app can also carry the app's own server. With desktop: { server: true } it starts beside the window on a loopback port and keeps its data in SQLite on that computer, so the app works with no backend elsewhere. Installed apps take signed updates published with akan publish-update.",
+        ko: "데스크톱 앱은 앱의 서버를 함께 실을 수도 있습니다. desktop: { server: true }를 주면 서버가 창과 함께 loopback 포트로 떠서 데이터를 그 컴퓨터의 SQLite에 두므로, 다른 곳에 백엔드 없이 앱이 동작합니다. 설치된 앱은 akan publish-update로 배포한 서명된 업데이트를 받습니다.",
+      },
+    ],
+    codeTitle: "akan.config.ts",
+    code: `const config: AppConfig = {
+  native: { desktop: { server: true } },
+};`,
+    links: [
+      { href: "/cheatsheet/mobile/setup", label: { en: "Native setup", ko: "네이티브 설정" } },
+      { href: "/cheatsheet/mobile/desktop-release", label: { en: "Desktop release", ko: "데스크톱 배포" } },
+    ],
+  },
 ] as const;
 
 const moreChanges = [
   {
-    no: "07",
+    no: "08",
     title: { en: "Pages stream section by section", ko: "섹션 단위로 스트리밍되는 페이지" },
     desc: {
       en: "fetch.init*, view* and edit* split into one promise per field, so each section streams behind its own boundary. akan quality ssr measures how much of each app renders on the server and flags a “use client” nothing needs.",
@@ -161,7 +183,7 @@ const moreChanges = [
     href: "/docs/core/data-layer",
   },
   {
-    no: "08",
+    no: "09",
     title: { en: "Full-text search in a filter", ko: "필터 안의 전문 검색" },
     desc: {
       en: "Give a field a text role and write q.search(text) in a filter. SQLite FTS5 with bm25 ordering, and a role on a secret field is a compile error.",
@@ -170,7 +192,7 @@ const moreChanges = [
     href: "/cheatsheet/general/search",
   },
   {
-    no: "09",
+    no: "10",
     title: { en: "Live lists", ko: "실시간으로 갱신되는 목록" },
     desc: {
       en: ".live() on a slice pushes entered, updated and left events to every list showing it, and Load.Units applies them. No polling, and the room keeps the slice's guards.",
@@ -179,7 +201,7 @@ const moreChanges = [
     href: "/docs/tutorials/slice",
   },
   {
-    no: "10",
+    no: "11",
     title: { en: "Forms survive a close", ko: "닫아도 남는 폼" },
     desc: {
       en: "Edit and create shells save the form per user and per record and offer it back after an accidental close, a route change or a killed app. Secret fields are never saved.",
@@ -188,7 +210,7 @@ const moreChanges = [
     href: "/cheatsheet/interface/form",
   },
   {
-    no: "11",
+    no: "12",
     title: { en: "Cascade removal", ko: "연쇄 삭제" },
     desc: {
       en: "cascade: removeRef and removeWith declare which way a removal travels, and every filter also generates query-level remove and update for models with no removal side effect.",
@@ -197,7 +219,7 @@ const moreChanges = [
     href: "/conventions/module/constant",
   },
   {
-    no: "12",
+    no: "13",
     title: { en: "Timeouts, caches and binary frames", ko: "타임아웃, 캐시, 바이너리 프레임" },
     desc: {
       en: "An endpoint's { timeout } bounds both ends of a call, { cache } caches argument-free queries after the guards, pubsub(Binary) sends raw websocket frames, and API and websocket prefixes are configurable.",
@@ -206,7 +228,7 @@ const moreChanges = [
     href: "/cheatsheet/interface/endpoint",
   },
   {
-    no: "13",
+    no: "14",
     title: { en: "Leaner deploys", ko: "더 가벼운 배포" },
     desc: {
       en: "One replica runs in-process with no gateway, web: false or { csr: false } drops surfaces an app does not serve, and the generated image carries only what the app declares.",
@@ -215,7 +237,7 @@ const moreChanges = [
     href: "/docs/core/config",
   },
   {
-    no: "14",
+    no: "15",
     title: { en: "Logs you can follow", ko: "따라갈 수 있는 로그" },
     desc: {
       en: "Every log line is a structured record with a trace id. akan logs tails and filters a running server; ndjson stdout, an SSE stream, one canonical line per call and a flight recorder are each one env var away.",
@@ -224,7 +246,7 @@ const moreChanges = [
     href: "/cheatsheet/observability/logging",
   },
   {
-    no: "15",
+    no: "16",
     title: { en: "Several apps, one terminal", ko: "앱 여러 개, 터미널 하나" },
     desc: {
       en: "akan start a,b boots several apps in one full-screen view with a log file per app, and akan tunnel or --share puts a local app on a public URL.",
@@ -233,7 +255,7 @@ const moreChanges = [
     href: "/references/cli/application",
   },
   {
-    no: "16",
+    no: "17",
     title: { en: "A workspace built for coding agents", ko: "코딩 에이전트를 위한 워크스페이스" },
     desc: {
       en: "Every workspace carries a generated AGENTS.md, bundled guidelines, a plan-then-apply workflow MCP, and akan code, a terminal coding agent that works through them.",
@@ -242,7 +264,7 @@ const moreChanges = [
     href: "/references/cli/code",
   },
   {
-    no: "17",
+    no: "18",
     title: { en: "Push and deep links as plugins", ko: "플러그인이 된 푸시와 딥링크" },
     desc: {
       en: "Mobile push notifications and deep links are declared in the plugins list of akan.config.ts instead of living inside the framework.",
@@ -251,7 +273,7 @@ const moreChanges = [
     href: "/cheatsheet/mobile/push",
   },
   {
-    no: "18",
+    no: "19",
     title: { en: "Guardrails in lint", ko: "린트에 들어간 안전장치" },
     desc: {
       en: "New rules catch client/server import leaks, fetch.init* in client files, model-typed props on client components and raw Error throws before they ship.",
@@ -416,8 +438,8 @@ export default page().render(() => {
           </h1>
           <p className="mt-6 text-foreground/70 text-lg leading-8">
             {l.trans({
-              en: "v2 gave Akan one runtime. v3 gives every app a second kind of user. The guards that protect your screens now also publish them to AI agents, as MCP tools, as prompts, and as an assistant working inside the page, and the UI layer underneath has been rebuilt on native tokens and recipes — and it is faster than v2 on every number we measured. Here is what changed, in the order it matters when you build.",
-              ko: "v2가 Akan에 하나의 런타임을 줬다면, v3는 모든 앱에 두 번째 사용자를 줍니다. 화면을 지키던 가드가 이제 그 화면을 AI 에이전트에게도 공개합니다. MCP 도구로, 프롬프트로, 그리고 페이지 안에서 일하는 어시스턴트로요. 그 아래 UI 계층은 네이티브 토큰과 레시피로 새로 지었고, 측정한 모든 지표에서 v2보다 빠릅니다. 무엇이 바뀌었는지, 개발할 때 중요한 순서대로 정리합니다.",
+              en: "v2 gave Akan one runtime. v3 gives every app a second kind of user. The guards that protect your screens now also publish them to AI agents, as MCP tools, as prompts, and as an assistant working inside the page. The UI layer underneath has been rebuilt on native tokens and recipes, and beyond web, Android, iOS, the server and the database, the same code now ships as macOS, Windows and Linux desktop apps — and it is faster than v2 on every number we measured. Here is what changed, in the order it matters when you build.",
+              ko: "v2가 Akan에 하나의 런타임을 줬다면, v3는 모든 앱에 두 번째 사용자를 줍니다. 화면을 지키던 가드가 이제 그 화면을 AI 에이전트에게도 공개합니다. MCP 도구로, 프롬프트로, 그리고 페이지 안에서 일하는 어시스턴트로요. 그 아래 UI 계층은 네이티브 토큰과 레시피로 새로 지었고, 웹·Android·iOS·서버·DB를 넘어 같은 코드가 macOS·Windows·Linux 데스크톱 앱으로도 배포되며, 측정한 모든 지표에서 v2보다 빠릅니다. 무엇이 바뀌었는지, 개발할 때 중요한 순서대로 정리합니다.",
             })}
           </p>
           <nav className="mt-8 flex flex-wrap gap-2">
