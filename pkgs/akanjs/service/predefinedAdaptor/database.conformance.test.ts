@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { Any, dayjs, Int } from "akanjs/base";
+import { Logger } from "akanjs/common";
 import { type ConstantModel, ConstantRegistry, via } from "akanjs/constant";
 import {
   by,
@@ -13,6 +14,7 @@ import {
 } from "akanjs/document";
 import { ConformanceEnv, type SqlDriver, type SqlDriverKind } from "../../test/conformance";
 import { SqlDocumentStore } from "./database.adaptor";
+import { descriptorHash } from "./sql/values";
 
 // Every case states the SQLite answer, the contract live sync's in-memory evaluator is pinned to. A known divergence is
 // `test.failingIf(<driver>)` with its `local/database-modes/` id; fixing it turns the case red, the cue to drop it.
@@ -400,6 +402,74 @@ const describeDriver = (kind: SqlDriverKind) => {
       const rebuilt = await storeOf(await sibling(), uniqueConstant, uniqueDatabase, codeIndex(true));
       await expect(rebuilt.create({ label: "repeat", code: "A" })).rejects.toThrow();
       expect(await validIndexNamesOf(driver, "uniqueConf")).toEqual(["uniqueConf_code"]);
+    });
+
+    test("a MongoDB text index builds nothing and warns, the next index keeps its name, and a long value is written", async () => {
+      const warnings: string[] = [];
+      const removeSink = Logger.addSink((entry) => void warnings.push(entry.plainMessage), { minLevel: "warn" });
+      try {
+        const store = await storeOf(
+          driver,
+          confConstant,
+          confDatabase,
+          new DocumentSchema().index({ note: "text" }).index({ status: 1 }),
+        );
+        expect(await validIndexNamesOf(driver, "dialectConf")).toEqual(["dialectConf_status_1"]);
+        const textWarnings = warnings.filter((message) => message.includes("MongoDB's text index"));
+        expect(textWarnings).toHaveLength(1);
+        expect(textWarnings[0]).toContain('Index {"note":"text"} on dialectConf is not built');
+        expect(textWarnings[0]).toContain('field(String, { text: "desc" })');
+        expect(textWarnings[0]).not.toContain("Dropped");
+        const long = Array.from(crypto.getRandomValues(new Uint8Array(6000)), (byte) => byte.toString(16)).join("");
+        await store.create({ title: "long", note: long });
+        expect(titlesOf(await store.find({ note: long }))).toEqual(["long"]);
+      } finally {
+        removeSink();
+      }
+    });
+
+    test("the B-tree an earlier boot built from a text index is dropped on proof, and no other index", async () => {
+      const legacy = await storeOf(driver, confConstant, confDatabase);
+      const connection = driver.database.getConnection();
+      const legacyIndex = (name: string, path: string) =>
+        driver.dialect.createIndex({
+          name,
+          table: "dialectConf",
+          unique: false,
+          columns: [{ path, expr: legacy.compiler.fieldExpr(path), isArray: false }],
+        });
+      // What a boot before this release left: the B-tree and the hash of the descriptor that built it.
+      await connection.execute(legacyIndex("dialectConf_note_0", "note"));
+      await driver.database.setMeta(
+        "index:dialectConf:dialectConf_note_0",
+        await descriptorHash({ fields: { note: "text" } }),
+      );
+      await connection.execute(legacyIndex("dialectConf_title_1", "title"));
+
+      const warnings: string[] = [];
+      const removeSink = Logger.addSink((entry) => void warnings.push(entry.plainMessage), { minLevel: "warn" });
+      const textIndexes = () => new DocumentSchema().index({ note: "text" }).index({ title: "text" });
+      try {
+        await storeOf(await sibling(), confConstant, confDatabase, textIndexes());
+        expect(await validIndexNamesOf(driver, "dialectConf")).toEqual(["dialectConf_title_1"]);
+        expect(await driver.database.getMeta("index:dialectConf:dialectConf_note_0")).toBe("");
+        expect(warnings.filter((message) => message.includes("Dropped dialectConf_note_0"))).toHaveLength(1);
+        expect(warnings.filter((message) => message.includes("Dropped dialectConf_title_1"))).toHaveLength(0);
+
+        warnings.length = 0;
+        await storeOf(await sibling(), confConstant, confDatabase, textIndexes());
+        expect(warnings.filter((message) => message.includes("MongoDB's text index"))).toHaveLength(2);
+        expect(warnings.filter((message) => message.includes("Dropped"))).toHaveLength(0);
+
+        await storeOf(await sibling(), confConstant, confDatabase, new DocumentSchema().index({ note: 1 }));
+        expect((await validIndexNamesOf(driver, "dialectConf")).sort()).toEqual([
+          "dialectConf_note_0",
+          "dialectConf_title_1",
+        ]);
+        expect(warnings.filter((message) => message.includes("changed its descriptor"))).toHaveLength(0);
+      } finally {
+        removeSink();
+      }
     });
 
     test("[DDL-4] a rebuild the rows refuse leaves the old index in place", async () => {

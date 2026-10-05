@@ -60,6 +60,9 @@ interface DeclaredIndex {
   next: string;
   metaKey: string;
   hash: string;
+  fields: Record<string, unknown>;
+  /** A key ordered neither 1 nor -1, as MongoDB's `"text"`: no SQL index here stands for it. */
+  unbuilt: boolean;
   create: (name: string, concurrently: boolean) => string;
 }
 
@@ -105,7 +108,8 @@ export class SqlDocumentStore {
 
   async #ensure() {
     this.assertValidRefName(this.table);
-    const indexes = await this.#declaredIndexes();
+    const declared = await this.#declaredIndexes();
+    const indexes = declared.filter((index) => !index.unbuilt);
     const createSchema = async () => {
       const db = this.owner.getConnection();
       const existed = !!this.owner.buildIndexConcurrently && !!(await this.owner.hasTable?.(this.table));
@@ -124,6 +128,7 @@ export class SqlDocumentStore {
         `table:${this.table}`,
         await descriptorHash({ table: this.table, columns: ["id", "createdAt", "updatedAt", "removedAt", "_doc"] }),
       );
+      for (const index of declared) if (index.unbuilt) await this.#skipUnbuiltIndex(index, indexes);
       const concurrent: (DeclaredIndex & { replace: boolean })[] = [];
       for (const index of indexes) {
         const stored = await this.owner.getMeta(index.metaKey);
@@ -154,22 +159,28 @@ export class SqlDocumentStore {
     await this.owner.getSearchIndex()?.ensureRef(this.constant, this.database);
   }
 
+  // A skipped declaration keeps its position: a name carries its index, so filtering first would rename the rest.
   async #declaredIndexes(): Promise<DeclaredIndex[]> {
     return await Promise.all(
       this.schema.indexes.map(async (index, idx) => {
         const declared = index.name ?? `${this.table}_${Object.keys(index.fields).map(toSafeRefName).join("_")}_${idx}`;
         this.assertValidRefName(declared);
         const name = this.dialect.indexName(declared);
-        const columns = Object.keys(index.fields).map((path) => ({
-          path,
-          expr: this.compiler.fieldExpr(path),
-          isArray: this.compiler.isArrayPath(path),
-        }));
+        const unbuilt = Object.values(index.fields).some((order) => order !== 1 && order !== -1);
+        const columns = unbuilt
+          ? []
+          : Object.keys(index.fields).map((path) => ({
+              path,
+              expr: this.compiler.fieldExpr(path),
+              isArray: this.compiler.isArrayPath(path),
+            }));
         return {
           name,
           next: this.dialect.indexName(`${declared}_next`),
           metaKey: `index:${this.table}:${name}`,
           hash: await descriptorHash(index),
+          fields: index.fields,
+          unbuilt,
           create: (target: string, concurrently: boolean) =>
             this.dialect.createIndex({
               name: target,
@@ -180,6 +191,24 @@ export class SqlDocumentStore {
             }),
         };
       }),
+    );
+  }
+
+  // Dropped only on proof that this very descriptor built it (the hash `ensure` stored) and no built index has the name.
+  async #skipUnbuiltIndex(index: DeclaredIndex, built: DeclaredIndex[]) {
+    const dropped =
+      (await this.owner.getMeta(index.metaKey)) === index.hash && !built.some(({ name }) => name === index.name);
+    if (dropped) {
+      await this.owner.getConnection().execute(`DROP INDEX IF EXISTS ${quoteIdent(index.name)}`);
+      // Emptied, not deleted (the owner has no delete): an empty hash reads as no index, so no later boot drops again.
+      await this.owner.setMeta(index.metaKey, "");
+    }
+    const paths = Object.keys(index.fields);
+    SqlDocumentStore.#logger.warn(
+      `Index ${JSON.stringify(index.fields)} on ${this.table} is not built: only 1 and -1 order a key, and "text" is ` +
+        `MongoDB's text index, which as a B-tree would copy each whole value and fail long writes on Postgres. Search ` +
+        `${paths.join(", ")} through the full-text role, field(String, { text: "desc" }), or declare ` +
+        `{ ${paths[0]}: 1 } to look it up by equality.${dropped ? ` Dropped ${index.name}, which an earlier boot built from it.` : ""}`,
     );
   }
 
