@@ -32,6 +32,7 @@ import {
   mergeBackendRestartReasons,
   mergeInvalidateMessages,
   normalizeBackendReportedGeneration,
+  redisTunnelPolicy,
   resolveIdleSuspendMs,
   type SourceFingerprints,
   shouldAbandonBackendRecovery,
@@ -46,6 +47,7 @@ import {
   shouldRestartBuilderByDevPlan,
   shouldRestartDevHostByDevPlan,
   shouldWarnBuilderRssCeilingTight,
+  UNAVAILABLE_REDIS_HOST,
 } from "./devHostPolicy";
 
 const backendMsgTypeSet = new Set<BuilderMessage["type"]>(["build-route", "build-csr"]);
@@ -203,8 +205,17 @@ export class AkanAppHost {
 
   async #prepareDatabase(type: "redis") {
     const environment = WorkspaceExecutor.getBaseDevEnv().env;
-    if (environment === "local") return "localhost";
-    return await createTunnel(type, { app: this.app, environment });
+    const policy = redisTunnelPolicy({ environment, databaseMode: this.env.AKAN_DATABASE_MODE });
+    if (policy === "none") return "localhost";
+    if (policy === "required") return await createTunnel(type, { app: this.app, environment });
+    try {
+      return await createTunnel(type, { app: this.app, environment });
+    } catch (error) {
+      this.logger.warn(
+        `${error instanceof Error ? error.message : String(error)} - continuing without Redis: the single database mode does not use it unless an app adaptor does`,
+      );
+      return UNAVAILABLE_REDIS_HOST;
+    }
   }
   #startBackend(startStatus: { generation?: number; files: string[] } | null = null) {
     if (this.#stopping) return;

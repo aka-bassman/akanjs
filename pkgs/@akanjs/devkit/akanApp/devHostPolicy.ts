@@ -9,6 +9,17 @@ import type {
 } from "akanjs/server";
 import type { IncrementalBuilderStatus } from "../incrementalBuilder";
 
+export const UNAVAILABLE_REDIS_HOST = "redis-tunnel-unavailable.invalid";
+
+export const redisTunnelPolicy = ({
+  environment,
+  databaseMode,
+}: {
+  environment: string;
+  databaseMode?: string;
+}): "none" | "optional" | "required" =>
+  environment === "local" ? "none" : databaseMode === "single" ? "optional" : "required";
+
 const BACKEND_RECOVERY_MAX_ATTEMPTS = 5;
 
 // A page load asks for several routes, but a builder that never returns must not grow the hold queue unbounded.

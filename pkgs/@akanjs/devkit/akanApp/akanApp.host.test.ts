@@ -19,6 +19,68 @@ describe("readProcessRssBytes", () => {
   });
 });
 
+describe("Redis tunnels during dev startup", () => {
+  isolateEnv({ AKAN_PUBLIC_REPO_NAME: "repo", AKAN_PUBLIC_SERVE_DOMAIN: "localhost", AKAN_PUBLIC_ENV: "testing" });
+  const track = tempRoots();
+
+  test.each(["single", "multiple", "cluster", undefined, "local"] as const)(
+    "%s mode preserves its Redis startup requirement",
+    async (mode) => {
+      const { root, app } = track(await createTempApp("demo"));
+      await writeText(
+        path.join(root, "apps/demo/main.ts"),
+        'process.send?.({ type: "backend-ready", pid: process.pid });\nsetInterval(() => undefined, 1_000);\n',
+      );
+      const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+      const port = listener.port;
+      listener.stop(true);
+      process.env.SSH_TUNNEL_PORT = String(port);
+      if (mode === "local") process.env.AKAN_PUBLIC_ENV = "local";
+      const create = IncrementalBuilderHost.create;
+      IncrementalBuilderHost.create = async () =>
+        ({
+          status: "ready",
+          patcherOff: false,
+          start: ({ onReady }: { onReady?: () => void }) => onReady?.(),
+          send: () => true,
+          stop: () => undefined,
+        }) as unknown as IncrementalBuilderHost;
+      const ready = Promise.withResolvers<void>();
+      const env = { ...process.env } as Record<string, string>;
+      delete env.AKAN_DATABASE_MODE;
+      if (mode !== undefined && mode !== "local") env.AKAN_DATABASE_MODE = mode;
+      const host = new AkanAppHost(app, {
+        env,
+        onDevEvent: (event) => {
+          if ("state" in event && event.state === "ready") ready.resolve();
+        },
+      });
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      try {
+        if (mode === "single" || mode === "local") {
+          await host.start();
+          await Promise.race([
+            ready.promise,
+            new Promise<never>((_, reject) => {
+              deadline = setTimeout(() => reject(new Error("backend-ready IPC timed out")), 5_000);
+            }),
+          ]);
+          expect(host.env.REDIS_HOST).toBe(mode === "local" ? "localhost" : "redis-tunnel-unavailable.invalid");
+          if (mode === "single") expect(host.env.REDIS_HOST).not.toBe("localhost");
+        } else {
+          await expect(host.start()).rejects.toThrow(
+            new RegExp(`redis.*demo-testing\\.localhost:${port}.*ECONNREFUSED`),
+          );
+        }
+      } finally {
+        clearTimeout(deadline);
+        await host.stop();
+        IncrementalBuilderHost.create = create;
+      }
+    },
+  );
+});
+
 describe("a gateway whose replica crash-loops", () => {
   isolateEnv({ AKAN_PUBLIC_REPO_NAME: "repo", AKAN_PUBLIC_SERVE_DOMAIN: "localhost", AKAN_PUBLIC_ENV: "local" });
   const track = tempRoots();

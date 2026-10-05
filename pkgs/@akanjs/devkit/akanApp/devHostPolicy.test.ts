@@ -16,6 +16,7 @@ import {
   mergeBackendRestartReasons,
   mergeInvalidateMessages,
   normalizeBackendReportedGeneration,
+  redisTunnelPolicy,
   resolveIdleSuspendMs,
   shouldAbandonBackendRecovery,
   shouldHoldForReturningBuilder,
@@ -30,6 +31,19 @@ import {
   shouldRestartDevHostByDevPlan,
   shouldWarnBuilderRssCeilingTight,
 } from "./devHostPolicy";
+
+describe("redisTunnelPolicy", () => {
+  test.each([
+    ["local", "single", "none"],
+    ["local", "multiple", "none"],
+    ["testing", "single", "optional"],
+    ["testing", "multiple", "required"],
+    ["testing", "cluster", "required"],
+    ["testing", undefined, "required"],
+  ] as const)("%s with %s Redis is %s", (environment, databaseMode, expected) => {
+    expect(redisTunnelPolicy({ environment, databaseMode })).toBe(expected);
+  });
+});
 
 const status = (phase: BuildPhase, generation: number, ok: boolean): DevBuildStatus => ({
   generation,
