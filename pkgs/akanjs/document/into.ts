@@ -4,7 +4,7 @@ import type { DocumentModel, QueryOf } from "akanjs/constant";
 import type { FilterCls, FilterQueryOf, FilterSortOf, SchemaOf } from ".";
 import type { CacheDatabase, QueryMethodPart } from "./database";
 import type { DataLoader } from "./dataLoader";
-import type { DocumentQuery, DocumentUpdateInput, DocumentUpdateOptions } from "./documentQuery";
+import type { DocumentQuery, DocumentScopeOptions, DocumentUpdateInput, DocumentUpdateOptions } from "./documentQuery";
 import { type LoaderBuilder, type ModelCls, makeLoaderBuilder } from "./loaderInfo";
 import type { DocumentProjection } from "./types";
 
@@ -61,11 +61,15 @@ export type Mdl<
 > = DefaultMdlStats<Doc, _RawDoc, Partial<_RawDoc>, _RawQuery, _Projection> & {
   refName: string;
   new (data: Partial<_RawDoc> | Partial<Doc>): Doc;
-  find(query: _RawQuery, projection?: _Projection): FindManyChain<Doc>;
-  findOne(query: _RawQuery, projection?: _Projection): FindOneChain<Doc>;
-  findById(id: string | undefined, projection?: _Projection): Promise<Doc | null>;
-  count(query: _RawQuery): Promise<number>;
-  exists(query: _RawQuery): Promise<string | null>;
+  find(query: _RawQuery, projection?: _Projection | null, options?: DocumentScopeOptions): FindManyChain<Doc>;
+  findOne(query: _RawQuery, projection?: _Projection | null, options?: DocumentScopeOptions): FindOneChain<Doc>;
+  findById(
+    id: string | undefined,
+    projection?: _Projection | null,
+    options?: DocumentScopeOptions,
+  ): Promise<Doc | null>;
+  count(query: _RawQuery, options?: DocumentScopeOptions): Promise<number>;
+  exists(query: _RawQuery, options?: DocumentScopeOptions): Promise<string | null>;
   // `Many`/`One` stay spelled out here. A bare `update`/`remove` would read like the document-path `update(id)` and
   // `doc.remove()` while silently hitting every match — the one place the `find`/`findOne` split is worth breaking.
   updateOne(
@@ -73,7 +77,11 @@ export type Mdl<
     update: DocumentUpdateInput<_RawDoc>,
     options?: DocumentUpdateOptions,
   ): Promise<UpdateResult>;
-  updateMany(query: _RawQuery, update: DocumentUpdateInput<_RawDoc>): Promise<UpdateResult>;
+  updateMany(
+    query: _RawQuery,
+    update: DocumentUpdateInput<_RawDoc>,
+    options?: DocumentScopeOptions,
+  ): Promise<UpdateResult>;
   removeOne(query: _RawQuery): Promise<UpdateResult>;
   removeMany(query: _RawQuery): Promise<UpdateResult>;
   updateById(id: string, update: DocumentUpdateInput<_RawDoc>, options?: DocumentUpdateOptions): Promise<UpdateResult>;

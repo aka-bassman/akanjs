@@ -6,6 +6,7 @@ export * from "./documentQuery";
 export * from "./documentSchema";
 export * from "./filterMeta";
 export * from "./into";
+export * from "./liveRowScope";
 export * from "./loaderInfo";
 export * from "./noDocumentError";
 export * from "./queryEvaluator";

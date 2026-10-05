@@ -105,7 +105,12 @@ export type DocumentUpdate<T = any> = {
   [K in DocumentPath<T>]?: DocumentUpdateValue;
 };
 
-export interface DocumentUpdateOptions {
+/** Server-only: no endpoint or slice builds it from a request, so a caller can never widen a read to removed rows. */
+export interface DocumentScopeOptions {
+  withRemoved?: boolean;
+}
+
+export interface DocumentUpdateOptions extends DocumentScopeOptions {
   upsert?: boolean;
 }
 

@@ -140,8 +140,8 @@ const makeFakeStore = () => {
     findId: async (query: unknown, options?: unknown) => rec("findId", [query, options], "doc-1"),
     pickOne: async (query: unknown, options?: unknown) => rec("pickOne", [query, options], makeFakeDoc(calls, "doc-1")),
     pickById: async (id: string) => rec("pickById", [id], { id, title: "Alpha" }),
-    exists: async (query: unknown) => rec("exists", [query], "doc-1"),
-    count: async (query: unknown) => rec("count", [query], 1),
+    exists: async (...args: unknown[]) => rec("exists", args, "doc-1"),
+    count: async (...args: unknown[]) => rec("count", args, 1),
     insight: async (query: unknown) => rec("insight", [query], { total: 1 }),
     hydrate: async (data: Record<string, unknown>) => rec("hydrate", [data], { ...data, hydrated: true }),
     clone: async (data: Record<string, unknown>) => rec("clone", [data], { ...data, id: "clone-1" }),
@@ -152,7 +152,7 @@ const makeFakeStore = () => {
       rec("search", [text, options], { docs: [{ id: "doc-1" }], count: 1 }),
     updateOneByQuery: async (query: unknown, update: unknown, options?: unknown) =>
       rec("updateOneByQuery", [query, update, options], written()),
-    updateManyByQuery: async (query: unknown, update: unknown) => rec("updateManyByQuery", [query, update], written()),
+    updateManyByQuery: async (...args: unknown[]) => rec("updateManyByQuery", args, written()),
     removeManyByQuery: async (query: unknown) => rec("removeManyByQuery", [query], written()),
     removeOneByQuery: async (query: unknown) => rec("removeOneByQuery", [query], written()),
     bulkWrite: async (operations: unknown) => rec("bulkWrite", [operations], written()),
@@ -454,6 +454,69 @@ describe("DatabaseResolver declaration contracts", () => {
     } finally {
       await driver.close();
     }
+  });
+
+  test("threads { withRemoved: true } from the facade to the store, and leaves it out entirely when off", async () => {
+    const { instance } = await bootModel<{
+      __store: ReturnType<typeof makeFakeStore>;
+      __list: (query: unknown, queryOption?: unknown) => Promise<unknown[]>;
+      __find: (query: unknown, queryOption?: unknown) => Promise<unknown>;
+      listInCategory: (...args: unknown[]) => Promise<unknown[]>;
+      ServerResolverTestItem: {
+        find: (query: unknown, projection?: unknown, options?: unknown) => FindChain<unknown[]>;
+        findOne: (query: unknown, projection?: unknown, options?: unknown) => FindChain<unknown>;
+        findById: (id: string, projection?: unknown, options?: unknown) => Promise<unknown>;
+        count: (query: unknown, options?: unknown) => Promise<number>;
+        exists: (query: unknown, options?: unknown) => Promise<unknown>;
+        updateMany: (query: unknown, update: unknown, options?: unknown) => Promise<unknown>;
+        updateById: (id: string, update: unknown, options?: unknown) => Promise<unknown>;
+      };
+    }>();
+    const model = instance.ServerResolverTestItem;
+    const last = () => instance.__store.calls.at(-1);
+    const scope = { withRemoved: true };
+    const news = { category: "news" };
+
+    await model.find(news, null, scope).sort({ title: 1 }).skip(1).limit(2).select({ title: true });
+    expect(last()).toEqual({
+      method: "find",
+      args: [news, { select: { title: true }, withRemoved: true, sort: { title: 1 }, skip: 1, limit: 2 }],
+    });
+    await model.findOne(news, { title: true }, scope).sort({ title: -1 });
+    expect(last()).toEqual({
+      method: "findOne",
+      args: [news, { select: { title: true }, withRemoved: true, sort: { title: -1 } }],
+    });
+    await model.findById("doc-1", undefined, scope);
+    expect(last()).toEqual({ method: "findOne", args: [{ id: "doc-1" }, { select: undefined, withRemoved: true }] });
+    await model.count(news, scope);
+    expect(last()).toEqual({ method: "count", args: [news, scope] });
+    await model.exists(news, scope);
+    expect(last()).toEqual({ method: "exists", args: [news, scope] });
+    await model.updateMany(news, { title: "Beta" }, scope);
+    expect(last()).toEqual({ method: "updateManyByQuery", args: [news, { title: "Beta" }, scope] });
+    await model.updateById("doc-1", { removedAt: null }, scope);
+    expect(last()).toEqual({ method: "updateOneByQuery", args: [{ id: "doc-1" }, { removedAt: null }, scope] });
+
+    for (const off of [undefined, { withRemoved: false }]) {
+      await model.find(news, undefined, off);
+      expect(Object.keys(last()?.args[1] as object)).toEqual(["select"]);
+      await model.findById("doc-1", { title: true }, off);
+      expect(last()?.args[1]).toStrictEqual({ select: { title: true } });
+      await model.count(news, off);
+      expect(last()?.args).toStrictEqual([news]);
+      await model.exists(news, off);
+      expect(last()?.args).toStrictEqual([news]);
+      await model.updateMany(news, { title: "Beta" }, off);
+      expect(last()?.args).toStrictEqual([news, { title: "Beta" }]);
+    }
+
+    await instance.__list(news, { limit: 5, withRemoved: true });
+    expect(last()?.args[1]).not.toHaveProperty("withRemoved");
+    await instance.__find(news, { withRemoved: true });
+    expect(last()?.args[1]).not.toHaveProperty("withRemoved");
+    await instance.listInCategory("news", false, { limit: 5, withRemoved: true });
+    expect(last()?.args[1]).not.toHaveProperty("withRemoved");
   });
 
   test("narrows the by-id facade writes to a single id query", async () => {
