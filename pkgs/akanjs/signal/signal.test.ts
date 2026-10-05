@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { Any, ENDPOINT_META, ID, INJECT_META, INTERNAL_META, Int, SLICE_META } from "akanjs/base";
+import { Any, Binary, ENDPOINT_META, ID, INJECT_META, INTERNAL_META, Int, SLICE_META } from "akanjs/base";
 import { Logger, type LoggerSinkEntry } from "akanjs/common";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { by, type DatabaseCls, DatabaseRegistry, from, into, type ModelCls } from "akanjs/document";
@@ -1270,6 +1270,27 @@ describe("SignalContext guards", () => {
     expect(noGuards.status).toBe(200);
     expect(noGuards.body).toBe("passed");
     expect(guardTrace).toEqual(["exec"]);
+  });
+});
+
+describe("SignalContext byte returns", () => {
+  test("sends a Binary return over HTTP as base64, which the Binary parser reads back", async () => {
+    const endpointInfo = buildEndpoint.query(Binary).exec(() => new Uint8Array([1, 2, 3]));
+    const context = makeSignalContext({ endpointInfo });
+
+    await context.init();
+    const body = await ((await context.exec()) as Response).json();
+
+    expect(body).toBe("AQID");
+    expect(Binary.parseValue(body as string)).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  test("refuses bytes returned through Any instead of sending an empty object", async () => {
+    for (const bytes of [new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 3]).buffer]) {
+      const context = makeSignalContext({ endpointInfo: buildEndpoint.query(Any).exec(() => bytes) });
+      await context.init();
+      await expect(context.exec()).rejects.toThrow("returns bytes through Any");
+    }
   });
 });
 

@@ -1,6 +1,7 @@
 import {
   Any,
   type BackendEnv,
+  Binary,
   type Cls,
   FIELD_META,
   INTERNAL_META,
@@ -311,11 +312,21 @@ export class SignalContext<
     };
     if (!this.trace) {
       const resolved = await SignalContext.resolveReturn(result, resolveOption);
-      return this.ctx.makeResponse(this.#settleUndefined(resolved), this.endpointInfo);
+      return this.ctx.makeResponse(this.#settle(resolved), this.endpointInfo);
     }
     const resolved = await traceSpan("resolveReturn", () => SignalContext.resolveReturn(result, resolveOption));
-    return await traceSpan("serialize", async () =>
-      this.ctx.makeResponse(this.#settleUndefined(resolved), this.endpointInfo),
+    return await traceSpan("serialize", async () => this.ctx.makeResponse(this.#settle(resolved), this.endpointInfo));
+  }
+  #settle(resolved: unknown) {
+    this.#refuseBytesThroughAny(resolved);
+    return this.#settleUndefined(resolved);
+  }
+  //? JSON has no bytes: `Response.json` turns an ArrayBuffer into `{}` and a typed array into an index map.
+  #refuseBytesThroughAny(resolved: unknown) {
+    if (this.endpointInfo.returns.returnRef !== Any) return;
+    if (!(resolved instanceof ArrayBuffer) && !ArrayBuffer.isView(resolved)) return;
+    throw new Error(
+      `${this.endpointInfo.type} ${this.key} returns bytes through Any, which JSON cannot carry: declare Binary as its return`,
     );
   }
   //? A handler that falls off its end returns `undefined`, which Bun's `Response.json` refuses with an error naming
@@ -779,6 +790,9 @@ export class HttpExecutionContext<Appended = unknown> {
   makeResponse(result: unknown, endpointInfo: EndpointInfo) {
     if (result instanceof Response) return result;
     if (endpointInfo.returns.arrDepth === 0 && PrimitiveRegistry.has(endpointInfo.returns.returnRef as Cls)) {
+      // A JSON body carries Binary as base64, which the client's `Binary` parser turns back into bytes.
+      if (endpointInfo.returns.returnRef === Binary && result instanceof Uint8Array)
+        return this.res.json(Binary.serializeValue(result));
       return this.res.json(result);
     }
     const value = serialize(endpointInfo.returns.returnRef, endpointInfo.returns.arrDepth, result, "object", {
