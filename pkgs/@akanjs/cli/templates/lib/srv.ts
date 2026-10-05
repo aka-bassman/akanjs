@@ -12,15 +12,14 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { [
     .map(([module]) => module);
   const libs = scanInfo.getLibs();
   return `
-import { ServiceModel } from "akanjs/service";
+${databaseModules.length || serviceModules.length ? 'import { ServiceModel } from "akanjs/service";' : ""}
 ${
   libs.length
     ? libs.map((lib) => `import * as ${lib} from "@libs/${lib}/lib/option";`).join("\n")
     : 'import type { BackendEnv } from "akanjs/base";'
 }
 
-import * as cnst from "./cnst";
-import * as db from "./db";
+${databaseModules.length ? 'import * as cnst from "./cnst";\nimport * as db from "./db";' : ""}
 
 ${databaseModules.map((module) => `import { ${capitalize(module)}Service } from "./${module}/${module}.service";`).join("\n")}
 ${serviceModules.map((module) => `import { ${capitalize(module)}Service } from "./_${module}/${module}.service";`).join("\n")}

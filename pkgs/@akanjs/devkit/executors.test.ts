@@ -1106,6 +1106,32 @@ describe("SysExecutor scan", () => {
     expect(await lib.exists("ui")).toBe(false);
   });
 
+  test("imports into the generated lib/dict.ts and lib/srv.ts only the helpers their code calls", async () => {
+    const { lib: bare } = await createScannableLib("nomodulelib");
+    await bare.scan();
+    expect(await bare.readFile("lib/dict.ts")).toContain(
+      'import { makeDictionary, makeTrans, dictionary as base } from "akanjs/dictionary";',
+    );
+    const bareSrv = await bare.readFile("lib/srv.ts");
+    for (const unused of ["ServiceModel", '"./cnst"', '"./db"']) expect(bareSrv).not.toContain(unused);
+
+    const { lib: full } = await createScannableLib("allmodulelib", {
+      files: {
+        "lib/post/post.constant.ts": "export class Post {}\n",
+        "lib/post/post.service.ts": "export class PostService {}\n",
+        "lib/_mail/mail.service.ts": "export class MailService {}\n",
+        "lib/__scalar/money/money.constant.ts": "export class Money {}\n",
+      },
+    });
+    await full.scan();
+    expect(await full.readFile("lib/dict.ts")).toContain(
+      "import { makeDictionary, makeTrans, registerScalarTrans, registerServiceTrans, registerModelTrans, dictionary as base }",
+    );
+    const fullSrv = await full.readFile("lib/srv.ts");
+    expect(fullSrv).toContain('import { ServiceModel } from "akanjs/service";');
+    expect(fullSrv).toContain('import * as cnst from "./cnst";\nimport * as db from "./db";');
+  });
+
   test("refuses a hand-written ui/index.tsx beside the generated barrel, naming the file and the fix", async () => {
     const { lib } = await createScannableLib("shadowedbarrel", {
       files: {
