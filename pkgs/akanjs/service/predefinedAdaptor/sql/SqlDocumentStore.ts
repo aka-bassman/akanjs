@@ -1,6 +1,7 @@
 import { DEFAULT_VALUE, dayjs, FIELD_META } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import { type ConstantModel, freshPrimitiveValue, getDefault } from "akanjs/constant";
+import { Err } from "akanjs/dictionary";
 import {
   createDocumentId,
   type DatabaseModel,
@@ -759,9 +760,11 @@ export class SqlDocumentStore {
     if (!this.#immutableKeys.length) return;
     const changed = this.#immutableKeys.filter((key) => jsonStr(prepared[key]) !== jsonStr(originalData[key]));
     if (!changed.length) return;
-    // The values are left out of the message: an immutable field may also be `field.secret`.
-    throw new Error(
-      `Cannot modify immutable field${changed.length > 1 ? "s" : ""} on ${this.table} (${String(prepared.id)}): ${changed.join(", ")}`,
+    // The values are left out: an immutable field may also be `field.secret`.
+    throw new Err(
+      "base.error.immutableField",
+      { field: changed.join(", ") },
+      { details: { model: this.table, id: String(prepared.id) } },
     );
   }
 

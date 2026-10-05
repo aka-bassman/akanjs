@@ -48,6 +48,7 @@ export const baseDictionary = serviceDictionary(["en", "ko"])
       "The server returned an unexpected response ({status}).",
       "서버가 예상하지 못한 응답을 보냈습니다. ({status})",
     ],
+    immutableField: ["{field} cannot be changed after creation.", "{field}은(는) 생성 후에는 바꿀 수 없습니다."],
   })
   .translate({
     somethingWrong: ["Something's wrong!", "문제가 생겼어요!"],

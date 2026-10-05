@@ -113,6 +113,33 @@ const uniqueDatabase = DatabaseRegistry.buildModel(
   UniqueFilter,
 );
 
+class FrozenInput extends via((f) => ({ label: f(String), kind: f(String, { immutable: true }) })) {}
+class FrozenObject extends via(FrozenInput, () => ({})) {}
+class FrozenLight extends via(FrozenObject, ["label"] as const, () => ({})) {}
+class FrozenFull extends via(FrozenObject, FrozenLight, () => ({})) {}
+class FrozenInsight extends via(FrozenFull, (f) => ({ count: f(Int, { default: 0, accumulate: {} }) })) {}
+const frozenConstant = ConstantRegistry.buildModel(
+  "frozenConf",
+  FrozenInput,
+  FrozenObject,
+  FrozenFull,
+  FrozenLight,
+  FrozenInsight,
+  { FrozenInput, FrozenObject, FrozenFull, FrozenLight, FrozenInsight },
+);
+class FrozenFilter extends from(FrozenFull, () => ({ query: {}, sort: {} })) {}
+class FrozenDoc extends by(FrozenFull) {}
+class FrozenModel extends into(FrozenDoc, FrozenFilter, frozenConstant, () => ({})) {}
+const frozenDatabase = DatabaseRegistry.buildModel(
+  "frozenConf",
+  FrozenInput as unknown as DatabaseCls<InstanceType<typeof FrozenInput>>,
+  FrozenDoc,
+  FrozenModel,
+  FrozenObject,
+  FrozenInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
+  FrozenFilter,
+);
+
 const storeOf = async (
   driver: SqlDriver,
   constant: ConstantModel,
@@ -536,6 +563,24 @@ const describeDriver = (kind: SqlDriverKind) => {
       await held.set({ title: "Published" }).save();
       const saved = await store.pickById(id);
       expect([saved.title, saved.score]).toEqual(["Published", 3]);
+    });
+
+    test("changing an immutable field is a 400 naming the field, and the row keeps its value", async () => {
+      const frozen = await storeOf(driver, frozenConstant, frozenDatabase);
+      const { id } = await frozen.create({ label: "first", kind: "channel" });
+      await expect(frozen.update(id, { kind: "dm" })).rejects.toMatchObject({
+        message: "base.error.immutableField",
+        statusCode: 400,
+        data: { field: "kind" },
+      });
+      const held = await frozen.pickById(id);
+      await expect(held.set({ kind: "dm", label: "renamed" }).save()).rejects.toMatchObject({
+        data: { field: "kind" },
+      });
+      const stored = await frozen.pickById(id);
+      expect([stored.kind, stored.label]).toEqual(["channel", "first"]);
+      await held.set({ kind: "channel" }).save();
+      expect((await frozen.pickById(id)).label).toBe("renamed");
     });
 
     test("[D4] saving a document twice writes the second change only", async () => {
