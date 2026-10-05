@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 import {
   appRootAllowedDirs,
   appRootAllowedFiles,
@@ -89,5 +91,57 @@ describe("lib facet root allowlist", () => {
   test("rejects a hand-written file beside the barrels", () => {
     expect(isAllowedLibFacetRootFile("helper.ts")).toBe(false);
     expect(isAllowedLibFacetRootFile("user.test.ts")).toBe(false);
+  });
+});
+
+const templatesDir = path.join(import.meta.dir, "..", "cli", "templates");
+
+type TsConfig = { references?: { path: string }[] };
+
+const loadRootTemplate = async (dir: string): Promise<TsConfig> =>
+  JSON.parse(await Bun.file(path.join(templatesDir, dir, "tsconfig.json.template")).text());
+
+const templateDirsWithRootTsconfig = async (): Promise<string[]> => {
+  const entries = await readdir(templatesDir, { withFileTypes: true });
+  const dirs: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (await Bun.file(path.join(templatesDir, entry.name, "tsconfig.json.template")).exists()) dirs.push(entry.name);
+  }
+  return dirs.sort((a, b) => a.localeCompare(b));
+};
+
+describe("cli root tsconfig templates vs workspace scan allowlists", () => {
+  test("only the app and libRoot root templates may declare references", async () => {
+    const dirs = await templateDirsWithRootTsconfig();
+    for (const dir of ["app", "libRoot", "pkgRoot", "workspaceRoot"]) expect(dirs).toContain(dir);
+    for (const dir of dirs) {
+      const tsconfig = await loadRootTemplate(dir);
+      if (!tsconfig.references) continue;
+      expect(["app", "libRoot"], `${dir} template declares references`).toContain(dir);
+    }
+  });
+
+  test("app template references stay inside appRootAllowedFiles", async () => {
+    const tsconfig = await loadRootTemplate("app");
+    for (const reference of tsconfig.references ?? []) {
+      const filename = path.basename(reference.path);
+      expect(appRootAllowedFiles.has(filename), `app template references "${reference.path}"`).toBe(true);
+    }
+  });
+
+  test("libRoot template references stay inside libRootAllowedFiles", async () => {
+    const tsconfig = await loadRootTemplate("libRoot");
+    for (const reference of tsconfig.references ?? []) {
+      const filename = path.basename(reference.path);
+      expect(libRootAllowedFiles.has(filename), `libRoot template references "${reference.path}"`).toBe(true);
+    }
+  });
+
+  test("pkgRoot and workspaceRoot templates declare no references", async () => {
+    for (const dir of ["pkgRoot", "workspaceRoot"]) {
+      const tsconfig = await loadRootTemplate(dir);
+      expect(tsconfig.references, `${dir} template must not declare references`).toBeUndefined();
+    }
   });
 });

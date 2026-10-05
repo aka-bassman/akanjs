@@ -12,10 +12,5 @@
       }
     ]
   },
-  "include": ["./**/*.ts", "./**/*.tsx", ".next/types/**/*.ts"],
-  "references": [
-    {
-      "path": "./tsconfig.spec.json"
-    }
-  ]
+  "include": ["./**/*.ts", "./**/*.tsx", ".next/types/**/*.ts"]
 }
