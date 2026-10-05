@@ -5,14 +5,14 @@ import { Friend } from "./Friend";
 import { JellyStar } from "./JellyStar";
 
 const layers = [
-  { name: "ui", className: "tint-comet text-white", order: "[--i:0]" },
-  { name: "state", className: "tint-jelly text-white", order: "[--i:1]" },
-  { name: "type", className: "tint-warning text-black/70", order: "[--i:2]" },
-  { name: "fetch", className: "tint-moon text-black/70", order: "[--i:3]" },
-  { name: "api", className: "tint-rocket text-black/70", order: "[--i:4]" },
-  { name: "service", className: "tint-success text-white", order: "[--i:5]" },
-  { name: "query", className: "tint-planet text-white", order: "[--i:6]" },
-  { name: "schema", className: "tint-cloud text-white", order: "[--i:7]" },
+  { name: "ui", order: "[--i:0]" },
+  { name: "state", order: "[--i:1]" },
+  { name: "type", order: "[--i:2]" },
+  { name: "fetch", order: "[--i:3]" },
+  { name: "api", order: "[--i:4]" },
+  { name: "service", order: "[--i:5]" },
+  { name: "query", order: "[--i:6]" },
+  { name: "schema", order: "[--i:7]" },
 ] as const;
 
 const platformSlots = [
@@ -93,12 +93,12 @@ export const BuildStage = ({ className }: BuildStageProps) => {
         {layers.map((layer) => (
           <li
             className={cn(
-              "build-on-2 jelly flex h-[11%] items-center rounded-[2cqw] px-[3cqw] font-bold font-mono text-[2.8cqw] [--build-motion:build-drop]",
-              layer.className,
+              "build-on-2 jelly-glass flex h-[11%] items-center gap-[2cqw] rounded-[2cqw] px-[3cqw] font-bold font-mono text-[2.8cqw] text-foreground/80 [--build-motion:build-drop]",
               layer.order,
             )}
             key={layer.name}
           >
+            <span className="size-[1.3cqw] shrink-0 rounded-full bg-primary/70" />
             {layer.name}
           </li>
         ))}

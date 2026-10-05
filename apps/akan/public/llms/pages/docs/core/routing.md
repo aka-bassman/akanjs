@@ -15,6 +15,7 @@
 - Layout File Shape (#layout-module)
 - Root Layout Stages (#root-layout-exports)
 - Google Analytics (#google-analytics)
+- Search Engines (#search-engines)
 - Base Paths (#base-paths)
 - Library Pages (#library-pages)
 - Dev Only Routes (#dev-only-routes)
@@ -62,8 +63,6 @@ File
 - (group)/: Organizes files without adding a URL segment, such as (user) or (public).
 
 - [lang]/: Never written: Akan injects the locale.
-
-- robots.txt.tsx: The one route outside the locale: it serves /robots.txt, not /:lang/robots.txt.
 
 _index.tsx, _layout.tsx and _overrides.tsx are the only reserved names an underscore may introduce.
 
@@ -151,6 +150,18 @@ Google Analytics
 
 Akan has no analytics stage. Which tags load, in which environment and behind which consent banner are the app's decisions, so a tag is an ordinary client component that the root layout renders. The one below loads gtag.js once for the whole app.
 
+Search Engines
+
+Every page renders on the server, and a crawler — a search engine, an AI crawler or a link preview — gets it whole, with every section already in place. The two files crawlers look for are served as well.
+
+Path
+
+- /robots.txt: Opens public pages to every crawler, AI crawlers included, and closes the API and admin paths.
+
+- /sitemap.xml: Lists every static page once per locale; a page with a [param] segment is left out.
+
+To change either file, put your own `robots.txt` or `sitemap.xml` in `public/`, and it is served instead. A sitemap that has to list `[param]` pages can come from an endpoint, as in Serving a fixed path.
+
 Base Paths
 
 When an app defines base paths in akan.config.ts, page files must live under one of those base path folders. This keeps multi-service or multi-domain apps explicit.
@@ -178,15 +189,14 @@ page/
 ├── _layout.tsx
 ├── _index.tsx
 ├── (public)/
-│   └── signin.tsx
+│   ├── signin.tsx
 │   └── signup.tsx
-├── (user)/
-│   └── project/
-│       └── [projectId]/
-│           ├── _layout.tsx
-│           ├── _overrides.tsx
-│           └── _index.tsx
-└── robots.txt.tsx
+└── (user)/
+    └── project/
+        └── [projectId]/
+            ├── _layout.tsx
+            ├── _overrides.tsx
+            └── _index.tsx
 ```
 
 ### page/(user)/project/[projectId]/_index.tsx
@@ -335,6 +345,18 @@ export default rootLayout()
       {children}
     </>
   ));
+```
+
+### /robots.txt
+
+```yaml
+User-agent: *
+Allow: /
+Disallow: /api
+Disallow: /_akan
+Disallow: /admin
+Disallow: /manager
+Disallow: /private
 ```
 
 ### apps/myapp/akan.config.ts

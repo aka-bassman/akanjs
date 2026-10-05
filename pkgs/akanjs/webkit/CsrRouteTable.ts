@@ -177,7 +177,6 @@ export class CsrRouteTable {
           : {
               renderPage: routeRender,
               pageIncludesOwnLayout: parsed.leaf === "_index",
-              isSpecialRoute: parsed.isSpecialRoute,
               pageConfig: (page as RouteModuleWithConfig).pageConfig,
               PageConfig: (page as RouteModuleWithConfig).pageConfig,
             }),
@@ -214,7 +213,6 @@ export class CsrRouteTable {
                 renderPage: route.renderPage,
                 renderRootLayouts: layer.pageRenderRootLayouts,
                 renderLayouts: layer.pageRenderLayouts,
-                isSpecialRoute: route.isSpecialRoute,
                 pageState: route.pageState ?? pageState,
                 pageConfigChain: finalPageConfigChain,
                 explicitPageConfigKeys: getExplicitPageConfigKeys(finalPageConfigChain),

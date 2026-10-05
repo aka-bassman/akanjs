@@ -4,7 +4,7 @@ import { PromptCard } from "./PromptCard";
 import { installCommand } from "./start.util";
 
 const menuClassName = "rounded-full px-4 py-1.5 font-bold text-sm";
-const activeMenuClassName = "jelly tint-primary bg-primary text-primary-foreground";
+const activeMenuClassName = "jelly tint-secondary bg-secondary text-secondary-foreground";
 
 interface StartTabsProps {
   className?: string;

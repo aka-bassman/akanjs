@@ -37,12 +37,7 @@ import {
   resolveRouteCacheStoreTtl,
   shouldStoreRouteCache,
 } from "./cachePolicy";
-import {
-  createAkanLocaleAlternateHeadSnapshot,
-  mergeAkanHeadSnapshots,
-  renderAkanHeadSnapshot,
-  shouldRenderLocaleAlternates,
-} from "./head";
+import { createAkanLocaleAlternateHeadSnapshot, mergeAkanHeadSnapshots, renderAkanHeadSnapshot } from "./head";
 import { LogForwarder } from "./logging/logForwarder";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { RouteElementComposer } from "./routeElementComposer";
@@ -1230,7 +1225,7 @@ export class RscRenderer {
             searchParams,
           })
         : { node: undefined };
-    const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead, {});
+    const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead);
     return (
       <html lang={params.lang ?? getPathnameLocale(pathname, this.#i18n)} suppressHydrationWarning>
         <head key="head">
@@ -1270,9 +1265,7 @@ export class RscRenderer {
       params: match.params,
       searchParams,
     });
-    const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead, {
-      isSpecialRoute: pathRoute.isSpecialRoute,
-    });
+    const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead);
     const body = RouteElementComposer.compose({
       pathRoute,
       params: match.params,
@@ -1288,9 +1281,7 @@ export class RscRenderer {
           {routeHeadSnapshot
             ? renderAkanHeadSnapshot(routeHeadSnapshot)
             : (routeHead.node ?? this.#renderDefaultHead())}
-          {!routeHeadSnapshot && shouldRenderLocaleAlternates({ isSpecialRoute: pathRoute.isSpecialRoute })
-            ? this.#renderLocaleAlternates(url)
-            : null}
+          {routeHeadSnapshot ? null : this.#renderLocaleAlternates(url)}
           {this.#renderStylesheet(url.pathname)}
         </head>
         <body key="body">{body}</body>
@@ -1381,22 +1372,14 @@ export class RscRenderer {
       params: match.params,
       searchParams,
     });
-    return this.#createRouteHeadSnapshot(url, routeHead, {
-      isSpecialRoute: match.pathRoute.isSpecialRoute,
-    });
+    return this.#createRouteHeadSnapshot(url, routeHead);
   }
 
-  #createRouteHeadSnapshot(
-    url: URL,
-    routeHead: ResolvedHead,
-    options: { isSpecialRoute?: boolean },
-  ): ResolvedHead["headSnapshot"] {
+  #createRouteHeadSnapshot(url: URL, routeHead: ResolvedHead): ResolvedHead["headSnapshot"] {
     if (!routeHead.headSnapshot) return undefined;
     return mergeAkanHeadSnapshots(
       routeHead.headSnapshot,
-      shouldRenderLocaleAlternates(options)
-        ? createAkanLocaleAlternateHeadSnapshot(this.#getLocaleAlternateLanguages(url))
-        : undefined,
+      createAkanLocaleAlternateHeadSnapshot(this.#getLocaleAlternateLanguages(url)),
     );
   }
 

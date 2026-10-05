@@ -7,7 +7,7 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-beta.28 -->
+<!-- akan:agent:version 3.0.0 -->
 
 ## Workspace
 
@@ -112,6 +112,10 @@ back.
   class dispatches through `st.do.<action>()`, typed `void` / `Promise<void>`, so the value is unreachable — write
   it into state with `this.set({ ... })`. A bare `return;` guard, a `return` inside a nested callback, a getter,
   and a `static` helper are all still fine.
+- **Never declare a `static` on an `XObject` or `LightX` class** (`no-static-in-object-light-model.grit`). The full
+  model `via(XObject, LightX, …)` mixes in their prototypes only, so a static there never reaches `X` — put it on
+  `XInput` (or a scalar), `X`, or `XInsight`. The Object class is recognised by its `*Object` name and the Light
+  class by its `Light*` name or its `[...] as const` field tuple.
 - **Never redeclare a generated CRUD endpoint name** in `*.signal.ts` (`no-redeclare-predefined-endpoint.grit`).
 - **Never type a `*.Util.tsx` / `*.Zone.tsx` prop as a `cnst` model** (`no-model-type-in-util-zone.grit`). Those two
   roles are always client components, so a `cnst.Banner` / `cnst.LightBanner` prop is a class instance the server

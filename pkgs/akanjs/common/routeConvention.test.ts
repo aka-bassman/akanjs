@@ -97,26 +97,14 @@ describe("route convention", () => {
     expect(() => validatePageSourceFile("docs/intro/_helper.tsx")).toThrow("reserved route files");
   });
 
-  test("keeps robots outside implicit locale", () => {
-    expect(parseRouteModuleKey("./robots.txt.tsx")).toMatchObject({
-      kind: "page",
-      routeSegments: ["robots.txt"],
-      pattern: "/robots.txt",
-      isSpecialRoute: true,
-    });
-  });
-
   test("removed special route leaves use implicit locale", () => {
-    expect(parseRouteModuleKey("./opengraph-image.tsx")).toMatchObject({
-      routeSegments: ["[lang]", "opengraph-image"],
-      pattern: "/:lang/opengraph-image",
-      isSpecialRoute: false,
-    });
-    expect(parseRouteModuleKey("./manifest.json.tsx")).toMatchObject({
-      routeSegments: ["[lang]", "manifest.json"],
-      pattern: "/:lang/manifest.json",
-      isSpecialRoute: false,
-    });
+    for (const leaf of ["robots.txt", "opengraph-image", "manifest.json"]) {
+      expect(parseRouteModuleKey(`./${leaf}.tsx`)).toMatchObject({
+        kind: "page",
+        routeSegments: ["[lang]", leaf],
+        pattern: `/:lang/${leaf}`,
+      });
+    }
   });
 
   test("detects route conflicts", () => {

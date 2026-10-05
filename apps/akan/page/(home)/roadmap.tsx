@@ -1,13 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import {
-  Friend,
-  JellyKicker,
-  JellyStar,
-  jellyButtonRecipe,
-  panelRecipe,
-  RoadmapTrajectory,
-  StudioStar,
-} from "@apps/akan/ui";
+import { JellyKicker, jellyButtonRecipe, panelRecipe, RoadmapTrajectory, StudioStar } from "@apps/akan/ui";
 import { cn, page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
@@ -34,7 +26,6 @@ const stages = [
   },
   {
     key: "multi",
-    friend: "planet",
     label: { en: "Multi-build", ko: "다중 빌드" },
     caption: { en: "SSR / CSR / Server", ko: "SSR / CSR / Server" },
     title: { en: "One route, three outputs", ko: "라우트 하나, 결과물 셋" },
@@ -45,7 +36,6 @@ const stages = [
   },
   {
     key: "v2",
-    friend: "moon",
     label: "v2",
     caption: { en: "Bun-first", ko: "Bun-first" },
     title: { en: "Bun-first, Akan-owned", ko: "Bun 우선, Akan이 직접 소유" },
@@ -56,7 +46,6 @@ const stages = [
   },
   {
     key: "mobile",
-    friend: "rocket",
     label: { en: "Mobile", ko: "모바일" },
     caption: { en: "iOS / Android", ko: "iOS / Android" },
     title: { en: "Mobile from the same page", ko: "같은 페이지에서 나온 모바일" },
@@ -67,7 +56,6 @@ const stages = [
   },
   {
     key: "desktop",
-    friend: "rocket",
     label: { en: "Desktop", ko: "데스크톱" },
     caption: { en: "Linux / macOS / Windows", ko: "Linux / macOS / Windows" },
     title: { en: "Desktop without a second codebase", ko: "두 번째 코드베이스 없는 데스크톱" },
@@ -78,7 +66,6 @@ const stages = [
   },
   {
     key: "agentic",
-    friend: "comet",
     label: { en: "Agentic", ko: "에이전틱" },
     caption: { en: "MCP · in-page agent", ko: "MCP · 인페이지 에이전트" },
     title: { en: "The surface opens to agents", ko: "에이전트에게 열린 표현" },
@@ -92,7 +79,6 @@ const stages = [
 const committedEpics = [
   {
     code: "01",
-    friend: "comet",
     short: { en: "Agent network", ko: "에이전트 네트워크" },
     title: { en: "Agents across sessions, people and apps", ko: "세션, 사람, 앱을 넘나드는 에이전트" },
     flow: "session ↔ session ↔ app",
@@ -125,7 +111,6 @@ const committedEpics = [
   },
   {
     code: "02",
-    friend: "cloud",
     short: { en: "Cloud", ko: "클라우드" },
     title: { en: "Akan Cloud", ko: "Akan Cloud" },
     flow: "git push → production",
@@ -155,7 +140,6 @@ const committedEpics = [
 const proposedEpics = [
   {
     code: "03",
-    friend: "planet",
     short: { en: "Context-side rendering", ko: "컨텍스트사이드 렌더링" },
     title: { en: "Context-side rendering", ko: "컨텍스트사이드 렌더링" },
     flow: "SSR → CSR → context-side",
@@ -188,7 +172,6 @@ const proposedEpics = [
   },
   {
     code: "04",
-    friend: "comet",
     short: { en: "Autopilot", ko: "오토파일럿" },
     title: { en: "Autopilot", ko: "오토파일럿" },
     flow: "issue → diff → reviewed PR",
@@ -345,17 +328,7 @@ export default page().render(() => {
         <h2 className="font-black text-3xl">{l.trans({ en: "Stages so far", ko: "지나온 단계" })}</h2>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           {stages.map((stage) => (
-            <div
-              key={stage.key}
-              className={panelRecipe({ tone: "jelly", radius: "3xl", padding: "lg" }, "group relative pt-6")}
-            >
-              <span className="group-hover:jelly-wobble absolute -top-6 right-5 block">
-                {"friend" in stage ? (
-                  <Friend name={stage.friend} className="size-14" />
-                ) : (
-                  <JellyStar className="size-12" />
-                )}
-              </span>
+            <div key={stage.key} className={panelRecipe({ tone: "jelly", radius: "3xl", padding: "lg" }, "group pt-6")}>
               <p className="font-bold text-foreground/40 text-xs uppercase tracking-[0.16em]">
                 {typeof stage.label === "string" ? stage.label : l.trans(stage.label)} · {l.trans(stage.caption)}
               </p>
@@ -384,11 +357,8 @@ export default page().render(() => {
                     group.nodeClassName,
                   )}
                 />
-                <div className={panelRecipe({ tone: "jelly", radius: "3xl", padding: "lg" }, "relative md:p-7")}>
-                  <span className="jelly-float pointer-events-none absolute -top-6 right-6 block">
-                    <Friend name={epic.friend} className="size-14 md:size-16" />
-                  </span>
-                  <p className="pr-16 font-bold text-foreground/40 text-xs uppercase tracking-[0.16em]">
+                <div className={panelRecipe({ tone: "jelly", radius: "3xl", padding: "lg" }, "md:p-7")}>
+                  <p className="font-bold text-foreground/40 text-xs uppercase tracking-[0.16em]">
                     {epic.code} · {group.status} · {epic.flow}
                   </p>
                   <h3 className="mt-2 font-black text-xl tracking-tight">{l.trans(epic.title)}</h3>

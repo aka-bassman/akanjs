@@ -13,7 +13,7 @@ export const PromptCard = ({ className }: PromptCardProps) => {
       <pre className="wrap-break-word whitespace-pre-wrap font-mono text-foreground/80 text-xs leading-6">
         {l.trans(agentPrompt)}
       </pre>
-      <CopyPrompt className="mt-5" tone="primary" size="md" />
+      <CopyPrompt className="mt-5" tone="ink" size="md" />
     </div>
   );
 };

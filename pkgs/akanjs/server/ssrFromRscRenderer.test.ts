@@ -530,3 +530,43 @@ describe("SsrFromRscRenderer.holdPostShellErrors", () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe("SsrFromRscRenderer.renderDocument", () => {
+  const renderLargeBoundary = async (options: { waitForAllReady?: boolean; inlineBoundaries?: boolean }) => {
+    const { createElement, Suspense, use } = await import("react");
+    const body = sleep(20).then(() => "x".repeat(30_000));
+    const Article = () => createElement("main", null, createElement("h1", null, "Indexed headline"), use(body));
+    const page = createElement(
+      "html",
+      null,
+      createElement(
+        "body",
+        null,
+        createElement(Suspense, { fallback: createElement("p", null, "Loading") }, createElement(Article)),
+      ),
+    );
+    const stream = await SsrFromRscRenderer.renderDocument(page, { bootstrap: "", onError: () => {}, ...options });
+    return await new Response(stream).text();
+  };
+
+  test("a browser gets the fallback first and the boundary in a segment its script reveals", async () => {
+    const html = await renderLargeBoundary({});
+
+    expect(html).toContain("<p>Loading</p>");
+    expect(html).toContain('<div hidden id="S:');
+  });
+
+  test("allReady alone still leaves a large boundary in a hidden segment", async () => {
+    const html = await renderLargeBoundary({ waitForAllReady: true });
+
+    expect(html).toContain('<div hidden id="S:');
+  });
+
+  test("a crawler gets every boundary in place, readable without a script", async () => {
+    const html = await renderLargeBoundary({ inlineBoundaries: true });
+
+    expect(html).not.toContain('<div hidden id="S:');
+    expect(html).not.toContain("<p>Loading</p>");
+    expect(html).toContain("<h1>Indexed headline</h1>");
+  });
+});

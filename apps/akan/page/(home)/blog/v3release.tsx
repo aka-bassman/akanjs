@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Friend, JellyKicker, panelRecipe } from "@apps/akan/ui";
+import { Code, JellyKicker, panelRecipe } from "@apps/akan/ui";
 import { page } from "akanjs/client";
 import { badgeRecipe, Link } from "akanjs/ui";
 import { BsArrowRight } from "react-icons/bs";
@@ -404,7 +404,6 @@ export default page().render(() => {
         <header>
           <div className="mb-10 flex items-end justify-between gap-4">
             <JellyKicker>Akan.js v3</JellyKicker>
-            <Friend name="comet" className="jelly-float size-16 md:size-20" priority />
           </div>
           <p className="mb-4 text-foreground/50 text-sm">
             {l.trans({ en: "Release note · Sep 25, 2026", ko: "릴리즈 노트 · 2026년 9월 25일" })}

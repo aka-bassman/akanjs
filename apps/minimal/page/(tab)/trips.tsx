@@ -1,7 +1,7 @@
-import { appCard, appNavClass, Screen } from "@apps/minimal/ui";
+import { appCard, appNavClass, iconTileRecipe, Screen } from "@apps/minimal/ui";
 import { cn, page } from "akanjs/client";
-import { Layout, Link } from "akanjs/ui";
-import { AiOutlineCalendar, AiOutlineRight } from "react-icons/ai";
+import { Image, Layout, Link } from "akanjs/ui";
+import { AiOutlineCalendar, AiOutlineEdit, AiOutlineRight } from "react-icons/ai";
 
 const pageConfig = { topInset: 72 };
 
@@ -18,9 +18,9 @@ export default page()
           <AiOutlineCalendar className="text-2xl text-primary" />
         </div>
       </Layout.TopInset>
-      <section className="pt-5">
+      <section className="pt-5 md:mx-auto md:max-w-3xl">
         <Link className="block overflow-hidden rounded-[2rem] bg-muted text-foreground" href="/trips/detail">
-          <div className="h-36 bg-gradient-to-br from-primary via-secondary to-accent" />
+          <Image src="/stays/city.webp" alt="Seoul" width={1600} height={1000} className="h-48 w-full object-cover" />
           <div className="p-5">
             <p className="text-foreground/50 text-xs uppercase tracking-[0.24em]">Next trip</p>
             <div className="mt-2 flex items-center justify-between">
@@ -32,8 +32,18 @@ export default page()
             </div>
           </div>
         </Link>
-        <div className="mt-4 grid gap-3">
-          {["Check-in guide", "Host message", "Local places"].map((item) => (
+        <Link className={appCard(undefined, "mt-4 flex items-center gap-3 rounded-3xl p-4")} href="/memo">
+          <div className={iconTileRecipe()}>
+            <AiOutlineEdit />
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold">Trip notes</p>
+            <p className="text-foreground/50 text-sm">Shared with everyone on this trip, live</p>
+          </div>
+          <AiOutlineRight className="text-foreground/40" />
+        </Link>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {["Check-in guide", "Local places"].map((item) => (
             <div className={appCard(undefined, "rounded-3xl p-4")} key={item}>
               <p className="font-semibold">{item}</p>
               <p className="mt-1 text-foreground/50 text-sm">Helpful details are ready for you before your trip.</p>

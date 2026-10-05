@@ -1245,6 +1245,35 @@ describe("WebRouter full SSR cache orchestration", () => {
     );
   });
 
+  test("renders every boundary in place for a crawler and caches its HTML apart from a browser's", async () => {
+    const googlebot = { "user-agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" };
+    const inlineFlags: Array<boolean | undefined> = [];
+
+    await withFullSsrCacheHarness(
+      async ({ fullSsr, fakeWorker }) => {
+        const browser = await fullSsr(new Request("https://example.test/docs/seo"));
+        expect(browser.headers.get("X-Akan-Cache")).toBe("MISS");
+        await expect(browser.text()).resolves.toContain("/docs/seo:render-1");
+
+        const crawler = await fullSsr(new Request("https://example.test/docs/seo", { headers: googlebot }));
+        expect(crawler.headers.get("X-Akan-Cache")).toBe("MISS");
+        await expect(crawler.text()).resolves.toContain("/docs/seo:render-2");
+
+        const crawlerAgain = await fullSsr(new Request("https://example.test/docs/seo", { headers: googlebot }));
+        expect(crawlerAgain.headers.get("X-Akan-Cache")).toBe("HIT");
+        await expect(crawlerAgain.text()).resolves.toContain("/docs/seo:render-2");
+
+        const browserAgain = await fullSsr(new Request("https://example.test/docs/seo"));
+        expect(browserAgain.headers.get("X-Akan-Cache")).toBe("HIT");
+        await expect(browserAgain.text()).resolves.toContain("/docs/seo:render-1");
+        expect(fakeWorker.renderCalls).toHaveLength(2);
+      },
+      { onRenderInput: (input) => inlineFlags.push(input.inlineBoundaries) },
+    );
+
+    expect(inlineFlags).toEqual([false, true]);
+  });
+
   test("does not populate HTML cache from HEAD responses", async () => {
     await withFullSsrCacheHarness(async ({ fullSsr, fakeWorker }) => {
       const head = await fullSsr(new Request("https://example.test/docs/head", { method: "HEAD" }));

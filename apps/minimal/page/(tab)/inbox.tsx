@@ -20,7 +20,7 @@ export default page()
           </div>
         </div>
       </Layout.TopInset>
-      <div className="space-y-3 pt-5">
+      <div className="space-y-3 pt-5 md:mx-auto md:max-w-3xl">
         {[
           ["Seolleung host", "I sent the check-in instructions.", "2m"],
           ["Travel support", "Your reservation change request was received.", "1h"],

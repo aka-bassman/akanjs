@@ -1,11 +1,10 @@
 import { usePage } from "@apps/akan/client";
-import { Friend, type FriendProps, JellyKicker, panelRecipe, StudioStar } from "@apps/akan/ui";
+import { JellyKicker, panelRecipe, StudioStar } from "@apps/akan/ui";
 import { cn, page } from "akanjs/client";
 import { badgeRecipe, Link } from "akanjs/ui";
 
 interface BlogPost {
   href: string;
-  friend: FriendProps["name"];
   eyebrow: { en: string; ko: string };
   title: { en: string; ko: string };
   desc: { en: string; ko: string };
@@ -18,7 +17,6 @@ interface BlogPost {
 const posts: BlogPost[] = [
   {
     href: "/blog/v3release",
-    friend: "comet",
     eyebrow: { en: "Release Note", ko: "Release Note" },
     title: {
       en: "Akan.js v3: agents join the full stack",
@@ -35,7 +33,6 @@ const posts: BlogPost[] = [
   },
   {
     href: "/blog/production-stability",
-    friend: "moon",
     eyebrow: { en: "Production Stability", ko: "Production Stability" },
     title: {
       en: "Akan.js is production‑grade stable",
@@ -52,7 +49,6 @@ const posts: BlogPost[] = [
   },
   {
     href: "/blog/benchmark",
-    friend: "rocket",
     eyebrow: { en: "Benchmark", ko: "Benchmark" },
     title: {
       en: "Akan.js benchmark results",
@@ -69,7 +65,6 @@ const posts: BlogPost[] = [
   },
   {
     href: "/blog/v2release",
-    friend: "cloud",
     eyebrow: { en: "Release Note", ko: "Release Note" },
     title: {
       en: "Akan.js v2 is here",
@@ -86,7 +81,6 @@ const posts: BlogPost[] = [
   },
   {
     href: "/blog/manifesto",
-    friend: "planet",
     eyebrow: { en: "Manifesto", ko: "Manifesto" },
     title: {
       en: "Developers should spend their lives on work that matters",
@@ -133,9 +127,6 @@ export default page().render(() => {
               "group squish hover:tint-primary relative block p-5 transition-shadow md:p-6",
             )}
           >
-            <span className="absolute -top-5 right-6 block md:hidden">
-              <Friend name={post.friend} className="size-12" />
-            </span>
             <article className="grid gap-6 md:grid-cols-[1fr_220px] md:items-center">
               <div>
                 <span className={badgeRecipe({ size: "sm" }, "border-transparent bg-foreground/6 text-foreground/60")}>
@@ -157,9 +148,6 @@ export default page().render(() => {
                     className={cn("size-full transition duration-500 group-hover:scale-105", post.imageClassName)}
                   />
                 </div>
-                <span className="group-hover:jelly-wobble absolute -top-7 -right-4 block">
-                  <Friend name={post.friend} className="size-16" />
-                </span>
               </div>
             </article>
           </Link>

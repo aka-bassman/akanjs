@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { DocsList, Friend, JellyKicker } from "@apps/akan/ui";
+import { DocsList, JellyKicker } from "@apps/akan/ui";
 import { page } from "akanjs/client";
 
 const latestRun = "2026-05-30T17-11-35-780Z";
@@ -118,7 +118,6 @@ export default page().render(() => {
         <header>
           <div className="mb-10 flex items-end justify-between gap-4">
             <JellyKicker>Akan.js Benchmark</JellyKicker>
-            <Friend name="rocket" className="jelly-float size-16 md:size-20" priority />
           </div>
 
           <p className="mb-4 text-foreground/50 text-sm">

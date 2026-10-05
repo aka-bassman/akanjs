@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { DocsList, Friend, JellyKicker, panelRecipe } from "@apps/akan/ui";
+import { DocsList, JellyKicker, panelRecipe } from "@apps/akan/ui";
 import { page } from "akanjs/client";
 
 const changes = [
@@ -69,7 +69,6 @@ export default page().render(() => {
         <header>
           <div className="mb-10 flex items-end justify-between gap-4">
             <JellyKicker>{l.trans({ en: "Akan.js v2", ko: "Akan.js v2" })}</JellyKicker>
-            <Friend name="cloud" className="jelly-float size-16 md:size-20" priority />
           </div>
 
           <p className="mb-4 text-foreground/50 text-sm">{l.trans({ en: "Release note", ko: "릴리즈 노트" })}</p>

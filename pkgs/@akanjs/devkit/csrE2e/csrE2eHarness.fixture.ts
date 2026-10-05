@@ -203,9 +203,10 @@ export class CsrE2eHarness {
     await Bun.sleep(50);
   }
 
-  //? The CSR frame's own dev sync-navigation event: it calls the app router's push/replace, as a click would.
+  //? The CSR frame's own dev sync-navigation event: it calls the app router's push/replace, as a click would, and a
+  //? `back` onto the entry under the page goes back, as another screen's relayed back does.
   //? The frame drops a navigation that starts while a transition runs, so each one waits the transition out.
-  async navigate(href: string, kind: "push" | "replace" = "push", { settleMs = SETTLE_MS } = {}) {
+  async navigate(href: string, kind: "push" | "replace" | "back" = "push", { settleMs = SETTLE_MS } = {}) {
     const target = new URL(href, this.origin);
     await this.evaluate(
       (next: string, how: string) => {

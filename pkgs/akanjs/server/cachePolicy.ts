@@ -7,6 +7,7 @@ export interface RouteCacheKeyInput {
   request: Request;
   url: URL;
   theme?: string;
+  variant?: string;
 }
 
 export interface RouteCacheRenderState {
@@ -116,7 +117,7 @@ export function isRouteCachePathAllowed(
   return matches(allow);
 }
 
-export function createRouteCacheKey({ request, url, theme = "" }: RouteCacheKeyInput): string {
+export function createRouteCacheKey({ request, url, theme = "", variant }: RouteCacheKeyInput): string {
   return [
     getClientFacingOrigin(request, url),
     request.headers.get("x-base-path") ?? "",
@@ -126,6 +127,7 @@ export function createRouteCacheKey({ request, url, theme = "" }: RouteCacheKeyI
     url.search,
     request.headers.get("accept-language") ?? "",
     theme,
+    ...(variant ? [variant] : []),
   ].join("\n");
 }
 
@@ -153,7 +155,15 @@ export function resolvePublicRouteCacheEntryDecision(input: PublicRouteCacheEntr
     return { entry: null, reason: "path-excluded" };
   }
   if (!isPublicRouteCacheableRequest(input.request)) return { entry: null, reason: "request-not-public" };
-  return { entry: createRouteCacheEntry({ request: input.request, url: input.url, theme: input.theme, ttl }) };
+  return {
+    entry: createRouteCacheEntry({
+      request: input.request,
+      url: input.url,
+      theme: input.theme,
+      variant: input.variant,
+      ttl,
+    }),
+  };
 }
 
 export function resolveRouteCacheStoreTtl(baseTtl: number, state: RouteCacheRenderState): number | null {

@@ -36,7 +36,9 @@ Android Studio or Xcode for native app builds
 
 Create a Workspace
 
-First, create a workspace with the workspace creator:
+The quickest way is to let your coding agent do it. Open Claude Code or Codex in an empty directory and paste this prompt. It checks Bun, creates the workspace and starts the app:
+
+To create it yourself, run the workspace creator. It asks for a workspace name and an app name:
 
 Or use the globally installed akan command:
 

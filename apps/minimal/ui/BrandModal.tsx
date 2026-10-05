@@ -19,18 +19,14 @@ export const BrandModal: AkanModalComponent = ({
 }) => (
   <Dialog open={open}>
     <Dialog.Modal
-      className={`rounded-none border-4 border-primary bg-card shadow-none ${className ?? ""}`}
+      className={`overflow-hidden rounded-[2rem] border border-primary/30 bg-card shadow-2xl shadow-primary/20 ${className ?? ""}`}
       onCancel={onCancel}
       bodyClassName={bodyClassName}
       confirmClose={confirmClose}
     >
+      <div data-testid="brand-modal" className="h-1.5 shrink-0 bg-gradient-to-r from-primary via-accent to-primary" />
       {title ? <Dialog.Title>{title}</Dialog.Title> : null}
-      <Dialog.Content>
-        <div data-testid="brand-modal" className="mb-2 font-semibold text-primary">
-          🎨 BrandModal override active
-        </div>
-        {children}
-      </Dialog.Content>
+      <Dialog.Content>{children}</Dialog.Content>
       {action ? <Dialog.Action>{action}</Dialog.Action> : null}
     </Dialog.Modal>
   </Dialog>

@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Friend, JellyCast, JellyKicker, jellyButtonRecipe, panelRecipe } from "@apps/akan/ui";
+import { Friend, JellyKicker, jellyButtonRecipe, panelRecipe } from "@apps/akan/ui";
 import { cn, page } from "akanjs/client";
 import { badgeRecipe, Image, Link } from "akanjs/ui";
 
@@ -247,7 +247,6 @@ export default page()
               ko: "하나의 코드베이스가 웹, 앱, 서버, DB, 에이전트 표현까지 함께 배포합니다. 그게 제품이 되면 어떤 모습인지 모았습니다.",
             })}
           </p>
-          <JellyCast className="mt-8" friendClassName="size-12 md:size-16" />
           <div className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-3">
             {stats.map((stat) => (
               <div key={stat.value.en} className={panelRecipe({ tone: "jelly", radius: "3xl" })}>
