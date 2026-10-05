@@ -508,7 +508,12 @@ Full contract — credential handshake, room revalidation, socket cleanup scopin
 
 - Guards run on both HTTP and websocket calls. Read the caller with `context.get<T>("account")` instead of
   branching on `getHttpContext()` / `getWebSocketContext()`, and keep them side-effect free and safe to re-run —
-  a pubsub room's guards are re-run whenever the socket's credential changes.
+  a pubsub room's guards are re-run whenever the socket's credential changes, each time on a fresh context, so a
+  guard may memoize per context without replaying the verdict it gave at subscribe.
+- **Arguments are parsed after the `"account"` guards, and `"resource"` guards run after the parse**, whatever
+  order `guards: [...]` lists them in. A caller an account guard refuses never reaches an argument parser, so an
+  expensive scalar parser is not a pre-auth attack surface. A guard or middleware that reads an argument earlier
+  still gets it (parsed on first read). An unauthenticated call with a malformed argument answers 401/403, not 400.
 - Slice-level `guards` only reach the generated query/mutation endpoints. A `pubsub`/`message` endpoint is
   unguarded unless it declares its own `guards` in its signal option.
 - **Never read the caller's IP off the socket or the request peer — take `.with(Ip)`** (`context.getClientIp()`
@@ -538,13 +543,31 @@ Full contract — credential handshake, room revalidation, socket cleanup scopin
   per caller and one shared entry would be one caller's answer handed to the next — that endpoint and every
   `mutation` are named in the log and left uncached. The lookup runs after the guards, so a hit reaches only a
   caller they admitted; what is cached is the handler's result, so `resolveReturn` still masks fields and resolves
-  relations per call; a cache backend that is down is warned about and the call runs uncached. The default
-  middleware chain is `Logging → Timeout → <lib middlewares>`, then guards → internal arguments → cache →
-  handler, and there is no `Retry` middleware.
+  relations per call; a cache backend that is down is warned about and the call runs uncached. A call runs: the
+  cross-site check and an `ip` rate limit, the body read, then the middleware chain `Logging → Timeout → <lib
+  middlewares>`, then an `account` rate limit → account guards → argument parse → resource guards → internal
+  arguments → cache → handler. There is no `Retry` middleware.
+- **A rate limit is the endpoint's `{ rateLimit: { calls, windowMs?, by? } }`** — `windowMs` 60 000 unless named,
+  `by: "ip"` (counted before the body is read) or `"account"` (counted after the middlewares, before the guards;
+  a caller with no account counts by address). It answers 429 `base.error.tooManyRequests` with `{ seconds }` and
+  a `Retry-After` header. Counters share the cache across instances. An app tunes it in `option.ts` with
+  `option.setRateLimit({ budget, endpoints, accountKey })` — `budget` covers every endpoint that declares none,
+  `endpoints` overrides one by key (a lib's included, `false` exempts), `accountKey` names who `by: "account"`
+  counts — and `rateLimit: false` exempts an endpoint from the app's budget. `AKAN_RATE_LIMIT=off` turns every
+  budget off whatever the code says; budgets are off in a `local` environment unless `AKAN_RATE_LIMIT=on`. A
+  business key (a phone number, an email) is counted in a service with `plug(RateLimit)` and
+  `consume(key, { calls, windowMs })`, which no switch turns off. Callers whose address is unknown share one
+  budget, and a page's server-side fetches carry the visitor's address, not the server's.
 
 ### Authorization Defaults
 
 - **Every `slice()` takes an explicit `{ guards: {…} }` second argument, and `root:` is always `Admin`.**
+- **A generated verb is taken off HTTP with `guards: { cru: false }`** (or `get`/`create`/`update`/`remove:
+  false`), and a verb whose guards resolve to none is not mounted at all. `mcp: { cru: false }` does **not** do
+  this: it keeps the verbs off the agent shelf while HTTP serves them to whoever passes their guards.
+- **Every endpoint that declares no guards is named in a boot `warn`**, since it answers anyone over HTTP and
+  WebSocket — a named slice's `init()`, a root slice, a `pubsub`/`message`/`query`/`mutation`. Write
+  `guards: [Public]` to keep one open on purpose.
 - **Every custom `mutation` / `query` / `message` names its own `guards: [...]` array.** Never rely on the slice default. `Public` belongs on a slice `get:`, never on a mutation.
 - **The guards are also the MCP exposure decision** — see MCP Exposure. An endpoint that names none is not published to agents at all, and a mutation whose only guard is `Public` is refused, so a missing `guards` array now costs visibility as well as authorization.
 - Resource guards are `Can<Verb><Model>` classes in `srvkit/guards.ts` that `implements Guard` with an `async canPass(context)`. They **fail closed**: no resource named ⇒ `false`; a load that throws ⇒ `logger.warn` then `false`. Admin bypass goes first.
@@ -560,7 +583,8 @@ Full contract — credential handshake, room revalidation, socket cleanup scopin
 - `.body(...)` / `.param(...)` args accept `ConstantFieldTypeInput` only: scalars, model refs, or `enumOf(...)`.
 - Numbers must use `Int` or `Float` — `Number` is rejected (`pkgs/akanjs/signal/endpointInfo.ts`).
 - `Upload` is valid only inside a mutation flagged for file upload: `mutation([cnst.File], { fileUpload: true }).body("files", [Upload])`, as the `file` module does. It is not a model field type.
-- Bytes are `Binary`, never `Any` — see Scalar & Field Type Reference.
+- Bytes are `Binary`, never `Any` — see Scalar & Field Type Reference. A `Binary` return travels as base64 in an
+  HTTP body, and a return declared `Any` that turns out to be bytes fails instead of reaching the caller as `{}`.
 
 ### Binary Pubsub And Mutation Verbs
 
@@ -685,6 +709,8 @@ Conventions that hold for both shapes:
 - Best-effort code returns a sentinel (`null`, `undefined`, `[0, 0]`, `{}`). There are no Result/Either wrappers.
 - `try/catch` is rare and always converts an exception into a decision, never swallows one. Guards catch → `logger.warn` → `return false`; adapters catch → `logger.error` → `return null`; UI uses `try/finally` to reset a spinner. A bodyless `catch {}` is acceptable only with a one-line reason.
 - Store actions do not `try/catch` — let the framework toast the `Err`. Client-side validation failure is `msg.error("<key>")` plus an early return, never a throw.
+- **A server-side `fetch.clone({ origin })` opens no websocket unless `connect: true`**: it makes one-off calls to
+  another server, and a socket it opened would reconnect forever with nobody to close it.
 - **A failure another process reported travels as itself.** A server-to-server `fetch.<endpoint>(..., { origin })` restores the remote `Err` — the same class, key and `data` — so a hop that rethrows it answers its own caller with that error and the dictionary translates it. Never wrap the catch in a `new Error`, and never re-key it as a `new Err` of your own: both discard what the endpoint chose to say, and a bare `Error` is generalized to `Internal Server Error` on the way out.
 
 ### MCP Exposure
@@ -702,7 +728,8 @@ it.
   signal option (`mutation(Boolean, { guards: [Every], mcp: false })`, `init({ guards: [SignedIn], mcp: false })`),
   or as an `mcp` map on `slice()` that **mirrors the `guards` map key for key** (`mcp: { cru: false }`) — root
   slice and generated CRUD only, never a named slice or a custom endpoint. It is an opt-**out**, and it is
-  curation, not authorization: HTTP serves the endpoint exactly as before.
+  curation, not authorization: HTTP serves the endpoint exactly as before. To take generated CRUD off HTTP too,
+  write `guards: { cru: false }`.
 - **Narrow by cost, and read the boot log first.** MCP forbids a `$ref` across entries, so every entry inlines the
   schema of every model it mentions and the listing is re-sent whole to every agent that connects. By default a
   response schema names a nested model instead of inlining it (`outputSchema: "shallow"`; `"full"` restores the

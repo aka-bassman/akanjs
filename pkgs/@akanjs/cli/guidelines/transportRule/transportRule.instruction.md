@@ -8,7 +8,8 @@ mutation is mounted under. `conventions` carries the invariants — this is the 
 
 - Guards run on both HTTP and websocket calls. Read the caller with `context.get<T>("account")` (`pkgs/akanjs/signal/signalContext.ts`) instead of branching on `getHttpContext()` / `getWebSocketContext()`.
 - Slice-level `guards` only reach the generated query/mutation endpoints. A `pubsub`/`message` endpoint is unguarded unless it declares its own `guards` in its signal option.
-- A pubsub room is authorized once, at subscribe. When a socket's credential changes the framework re-runs each room's guards and unsubscribes the ones that now fail (`SignalResolver.revalidateWsRooms`), so guards must stay side-effect free and safe to re-run.
+- A pubsub room is authorized once, at subscribe. When a socket's credential changes the framework re-runs each room's guards and unsubscribes the ones that now fail (`SignalResolver.revalidateWsRooms`), so guards must stay side-effect free and safe to re-run. Each re-check runs on a fresh `SignalContext`, so a guard that memoizes per context answers anew.
+- **Arguments are parsed after the `"account"` guards** (`SignalContext.init` reads the body, `exec` parses): the order is middlewares → `account` guards → parse → `resource` guards → internal arguments → handler, whatever order `guards: [...]` lists them in. A caller an account guard refuses never reaches a scalar parser, which is what keeps a slow parser from being a pre-auth denial of service. A guard or middleware that reads `context.args` / `getArg()` earlier still gets the value, parsed on first read — a mismarked account guard keeps working. One visible consequence: an unauthenticated call with a malformed argument answers 401/403 instead of 400.
 - A websocket carries its credential in the handshake snapshot on `ws.data` (`AppWsData`); clients that hold the token in memory send it with `fetch.setJwt(...)`, which forwards an auth frame over the socket.
 - **Never read the caller's IP off the socket or the request peer — take `.with(Ip)`.** Whenever a federation
   gateway is in front, `ws.remoteAddress` and the child's own peer are the *gateway* (`127.0.0.1`) for every
@@ -74,10 +75,45 @@ mutation is mounted under. `conventions` carries the invariants — this is the 
   never cached, and a relation still costs its own load. The cache saves the handler, not the serialization.
 - **A cache backend that is down does not take the endpoint down.** A failed read is warned and the call runs
   uncached; a failed write is warned and dropped.
-- The default middleware chain is `Logging → Timeout → <lib middlewares>`, and the call inside it runs guards →
-  internal arguments → cache → handler: a hung cache backend is bounded by the same deadline as the handler it
-  stands in for. **`Retry` was removed** — an automatic re-run of an endpoint
+- The default middleware chain is `Logging → Timeout → <lib middlewares>`, and the call inside it runs an
+  `account` rate limit → account guards → argument parse → resource guards → internal arguments → cache →
+  handler: a hung cache backend is bounded by the same deadline as the handler it stands in for. **`Retry` was removed** — an automatic re-run of an endpoint
   whose failure it cannot classify replays whatever the first attempt already did.
+
+## Rate Limits
+
+- **`{ rateLimit: { calls, windowMs?, by? } }` in an endpoint's signal option** counts calls per caller per window
+  (`windowMs` 60 000 unless named). `by: "ip"` (the default) is checked in `SignalContext.init`, after the
+  cross-site check and before the body is read, so a refused flood costs no parse at all. `by: "account"` is
+  checked after the middlewares and before the guards, keyed by `accountKey(account)`; a caller it names nothing
+  for — an anonymous one — is counted by address. Leaving a pubsub room is never counted.
+- **The answer is 429 `base.error.tooManyRequests` with `data: { seconds }`** and a `Retry-After` header; a WS
+  call gets the same payload as its error frame, and the HTTP client restores a proxy's own non-JSON 429 under the
+  same key (seconds from its `Retry-After`, else 60). The first refusal per endpoint per process is warned once;
+  later ones log at `debug`, so a flood does not become a log flood.
+- **Keys and addresses.** The address is `context.getClientIp()` — the trusted-proxy answer, never a raw header
+  from an untrusted peer. Callers whose address is unknown share one `unknown` budget (fail closed), and the first
+  such call is warned about, since it usually means the proxy in front records no `X-Real-IP`/`X-Forwarded-For`
+  or is not trusted (`AKAN_TRUSTED_PROXIES`). A page's server-side fetches carry the visitor's address: the page
+  renderer hands the RSC worker the address it resolved as `x-real-ip`, and the server-side fetch client forwards
+  it on same-origin calls.
+- **Counters live in the cache** (`CacheAdaptor.incr`, epoch-aligned windows), so replicas draw on one budget; a
+  cache that fails falls back to counting per process, warned once. The MCP endpoint's own limiter is the same
+  `RateLimiter` under its own topic, and keys an anonymous MCP caller by the same trusted address.
+- **App and lib configuration** is `option.setRateLimit(...)` in `lib/option.ts`, merged in mount order with the
+  app last: `budget` is the default for every endpoint that declares none (unset leaves those unlimited),
+  `endpoints` overrides one by key — a lib's declared budget included — or exempts it with `false`, `accountKey`
+  names who `by: "account"` counts (default: `account.id ?? sub ?? sid`; a lib whose accounts carry `self`/`me`
+  should name `self.id ?? me.id`, or each session counts apart), and `enabled: false` (or `setRateLimit(false)`)
+  turns budgets off for a deployment rate-limited at its edge. `rateLimit: false` on an endpoint exempts it from
+  the app's `budget` only.
+- **`AKAN_RATE_LIMIT`**: `off` turns every budget off whatever the code says; `on` turns them on in a `local`
+  environment, where they are otherwise off; `<calls>[/<seconds>]` is the default budget wherever the code names
+  none. Tests run in the `testing` environment, where budgets apply.
+- **A business key is a service's own count**: `rateLimit: plug(RateLimit)` then
+  ``await this.rateLimit.consume(`otp:${phone}`, { calls: 5, windowMs: 3_600_000 })``, which answers
+  `{ ok: true } | { ok: false, retryAfterMs }` and is never switched off — throw the module's own `Err` with the
+  wait when it refuses.
 
 ## Binary Pubsub
 
