@@ -20,3 +20,9 @@ export class TaskInternal extends internal(srv.task, ({ interval, initialize }) 
 })) {}
 
 export const describeTask = () => query(cnst.Task); // @ok
+
+export class NoteSlice extends slice(srv.note, { guards: { root: [Admin, Owner], get: Public } }, () => ({}), libNoteSlice) {} // @ok
+export class LabelSlice extends slice(srv.label, { guards: { root: None, get: None, cru: None } }) {} // @ok
+export class TagSlice extends slice(srv.tag, sharedSliceOption, () => ({})) {} // @ok
+export class StampSlice extends slice(srv.stamp, { guards: { ...adminGuards, get: Public } }, () => ({})) {} // @ok
+export class SealSlice extends slice(srv.seal, { guards: sealGuards, mcp: { cru: false } }, () => ({})) {} // @ok

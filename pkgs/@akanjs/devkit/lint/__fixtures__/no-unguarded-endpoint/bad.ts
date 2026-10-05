@@ -13,3 +13,8 @@ export class TaskEndpoint extends endpoint(srv.task, ({ query, mutation, pubsub,
   taskEvents: pubsub(cnst.Task).exec(() => null), // @warn
   pingTask: message(Boolean, { timeout: 1000 }).exec(() => true), // @warn
 })) {}
+
+export class NoteSlice extends slice(srv.note, { guards: { get: Public, cru: Admin } }, () => ({})) {} // @warn
+export class LabelSlice extends slice(srv.label, { guards: { root: [], get: Public, cru: Admin } }, () => ({})) {} // @warn
+export class TagSlice extends slice(srv.tag, { mcp: false }, () => ({})) {} // @warn
+export class StampSlice extends slice(srv.stamp, {}, () => ({}), libStampSlice) {} // @warn
