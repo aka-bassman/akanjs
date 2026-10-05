@@ -7,9 +7,12 @@ fixture` fails when a rule is added without one.
 
 ## Contract
 
-- One case per line. `// @flag` marks a line the rule must report in `bad`; `// @ok` marks a line in `good`.
-- The `bad` assertion is set equality, not containment: a marked line nobody reported is a pattern that
-  stopped matching, and a reported line nobody marked is the rule reaching further than the fixture claims.
+- One case per line. In `bad`, `// @flag` marks a line the rule must report as an error and `// @warn` one it
+  must report as a warning; `// @ok` marks a line in `good`.
+- The `bad` assertion is exact, not containment: every marked line is reported once, at its marker's severity,
+  and nothing else is. A marked line nobody reported is a pattern that stopped matching, a reported line nobody
+  marked is the rule reaching further than the fixture claims, a line reported twice is one site reported
+  twice, and a different severity is a tier that moved.
 - `good` is the half that matters most: an over-matching rule is what makes developers distrust the gate.
 - `fixture.json` is optional:
   - `path` — where the source is written inside the temp workspace, for a rule that reads `$filename`

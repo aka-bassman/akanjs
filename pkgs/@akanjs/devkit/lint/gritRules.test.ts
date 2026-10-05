@@ -102,22 +102,26 @@ const lintFixture = async (fixture: FixtureCase, kind: "bad" | "good") => {
   const end = output.lastIndexOf("}");
   if (start === -1 || end < start)
     throw new Error(`biome produced no JSON for ${fixture.name}/${kind}: ${output.slice(0, 400)}`);
-  const diagnostics =
-    (JSON.parse(output.slice(start, end + 1)) as { diagnostics?: BiomeDiagnostic[] }).diagnostics ?? [];
-  return {
-    diagnostics,
-    lines: [...new Set(diagnostics.map((diagnostic) => diagnostic.location?.start?.line ?? 0))].sort(
-      (left, right) => left - right,
-    ),
-  };
+  return (JSON.parse(output.slice(start, end + 1)) as { diagnostics?: BiomeDiagnostic[] }).diagnostics ?? [];
 };
 
-//? One case per line is the fixture contract.
+//? One case per line is the fixture contract, and a `bad` line's marker names the severity it is reported at.
+const severityOfMarker = { "// @flag": "error", "// @warn": "warning" } as const;
+
 const markedLines = async (fixture: FixtureCase, kind: "bad" | "good", marker: string) =>
   (await readFixture(fixture, kind))
     .split("\n")
     .map((line, index) => (line.includes(marker) ? index + 1 : 0))
     .filter((line) => line > 0);
+
+const expectedReports = async (fixture: FixtureCase) =>
+  (await readFixture(fixture, "bad")).split("\n").flatMap((line, index) =>
+    Object.entries(severityOfMarker)
+      .filter(([marker]) => line.includes(marker))
+      .map(([, severity]) => `${index + 1}: ${severity}`),
+  );
+
+const byLine = (left: string, right: string) => Number.parseInt(left, 10) - Number.parseInt(right, 10);
 
 const fixtures = await collectCases();
 
@@ -140,22 +144,26 @@ describe("grit lint rules", () => {
   });
 
   for (const fixture of fixtures) {
-    test(`${fixture.name} flags exactly the marked lines in bad`, async () => {
-      const { lines, diagnostics } = await lintFixture(fixture, "bad");
+    test(`${fixture.name} reports each marked line in bad once, at its marker's severity`, async () => {
+      const diagnostics = await lintFixture(fixture, "bad");
       for (const diagnostic of diagnostics) expect(diagnostic.category).toBe("plugin");
       if (fixture.meta.expect === "file") {
         expect(diagnostics.length).toBeGreaterThan(0);
         return;
       }
-      const expected = await markedLines(fixture, "bad", "// @flag");
+      const expected = await expectedReports(fixture);
       expect(expected.length).toBeGreaterThan(0);
-      // Set equality: an unreported mark is a pattern that stopped matching, an unmarked report is overreach.
-      expect(lines).toEqual(expected);
+      // An unreported mark stopped matching, an unmarked report is overreach, a line reported twice is one site
+      // reported twice, and a severity that differs is a tier that moved.
+      const reported = diagnostics.map(
+        (diagnostic) => `${diagnostic.location?.start?.line ?? 0}: ${diagnostic.severity}`,
+      );
+      expect(reported.sort(byLine)).toEqual(expected.sort(byLine));
     });
 
     test(`${fixture.name} leaves good clean`, async () => {
       expect((await markedLines(fixture, "good", "// @ok")).length).toBeGreaterThan(0);
-      const { diagnostics } = await lintFixture(fixture, "good");
+      const diagnostics = await lintFixture(fixture, "good");
       expect(diagnostics.map((diagnostic) => `${diagnostic.location?.start?.line}: ${diagnostic.message}`)).toEqual([]);
     });
   }

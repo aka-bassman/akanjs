@@ -1,15 +1,15 @@
 export class TaskSlice extends slice(srv.task, { guards: { root: Admin, get: Public, cru: Admin } }, (init) => ({
-  inProject: init().param("projectId", ID).exec(() => null), // @flag
-  inOrg: init({ mcp: false }).param("orgId", ID).exec(() => null), // @flag
-  inAnyone: init({ guards: [] }).exec(() => null), // @flag
+  inProject: init().param("projectId", ID).exec(() => null), // @warn
+  inOrg: init({ mcp: false }).param("orgId", ID).exec(() => null), // @warn
+  inAnyone: init({ guards: [] }).exec(() => null), // @warn
 })) {}
 
 export class TaskEndpoint extends endpoint(srv.task, ({ query, mutation, pubsub, message }) => ({
-  taskCount: query(Int).exec(() => 0), // @flag
-  taskOfSlug: query(cnst.Task, { nullable: true }).param("slug", String).exec(() => null), // @flag
-  startTask: mutation(Boolean).exec(() => true), // @flag
-  archiveTask: mutation(Boolean, { guards: [] }).exec(() => true), // @flag
-  noteTask: mutation(Boolean, { nullable, timeout: 500 }).exec(() => true), // @flag
-  taskEvents: pubsub(cnst.Task).exec(() => null), // @flag
-  pingTask: message(Boolean, { timeout: 1000 }).exec(() => true), // @flag
+  taskCount: query(Int).exec(() => 0), // @warn
+  taskOfSlug: query(cnst.Task, { nullable: true }).param("slug", String).exec(() => null), // @warn
+  startTask: mutation(Boolean).exec(() => true), // @warn
+  archiveTask: mutation(Boolean, { guards: [] }).exec(() => true), // @warn
+  noteTask: mutation(Boolean, { nullable, timeout: 500 }).exec(() => true), // @warn
+  taskEvents: pubsub(cnst.Task).exec(() => null), // @warn
+  pingTask: message(Boolean, { timeout: 1000 }).exec(() => true), // @warn
 })) {}

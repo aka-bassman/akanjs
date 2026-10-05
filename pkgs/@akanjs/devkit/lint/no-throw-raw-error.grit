@@ -2,13 +2,24 @@ engine biome(1.0)
 language js(typescript, jsx)
 
 // A raw `Error` loses the translatable key and status `Err` carries whether it is thrown, rejected, returned or stored.
+// Thrown, it is an error; built anywhere else, a warning, so code written before the rule reached it is not broken.
 // No rewrite: `Err` takes a dictionary key, which an arbitrary message is not.
 // Node kinds, not snippets: a `new Error` snippet also matches the JSX text of `<code>new Error</code>`.
 // Single quotes in the message: Biome unescapes a `\"` in a GritQL string twice and corrupts the text.
 or { JsNewExpression(callee = `Error`), JsCallExpression(callee = `Error`) } as $error where {
-  register_diagnostic(
-    span = $error,
-    message = "Do not construct a raw `Error`: thrown, rejected, returned or stored, it carries no translatable key or status. Use the typed `Err` (import { Err } from the app/lib dict), e.g. new Err('<module>.error.<key>'), and register the key in that module's dictionary `.error({})`.",
-    severity = "error"
-  )
+  or {
+    and {
+      $error <: within JsThrowStatement(argument = $error),
+      register_diagnostic(
+        span = $error,
+        message = "Do not throw a raw `Error`: it carries no translatable key or status. Throw the typed `Err` (import { Err } from the app/lib dict), e.g. throw new Err('<module>.error.<key>'), and register the key in that module's dictionary `.error({})`.",
+        severity = "error"
+      )
+    },
+    register_diagnostic(
+      span = $error,
+      message = "Do not construct a raw `Error`: rejected, returned or stored, it carries no translatable key or status. Use the typed `Err` (import { Err } from the app/lib dict), e.g. new Err('<module>.error.<key>'), and register the key in that module's dictionary `.error({})`.",
+      severity = "warn"
+    )
+  }
 }
