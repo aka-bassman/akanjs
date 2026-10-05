@@ -1,0 +1,15 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+// `interpolateTranslation` replaces `{name}` only, so a `{{name}}` reaches the reader as typed. Only `.error()` and
+// `.translate()` entries receive data; a `{{` in a label or description is literal text, such as a syntax users type.
+JsCallExpression(callee = JsStaticMemberExpression(member = r"(?:error|translate)"), arguments = $entries) where {
+  $entries <: contains bubble or { JsStringLiteralExpression(), JsTemplateChunkElement() } as $s where {
+    $s <: r"[\s\S]*\{\{[\s\S]*",
+    register_diagnostic(
+      span = $s,
+      message = "`{{name}}` is never interpolated: a translation replaces `{name}` only, so the braces reach the reader as typed. Write `{name}`.",
+      severity = "error"
+    )
+  }
+}
