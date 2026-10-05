@@ -1233,7 +1233,7 @@ export class WebRouter {
   }
 
   // nosniff: Bun.file().type falls back to octet-stream, and a sniffing browser may run a public/ file as script.
-  // Referrer-Policy: paths carry ids. X-Frame-Options (HTML only): stops clickjacking of SameSite=None-cookie pages.
+  // Referrer-Policy: paths carry ids. X-Frame-Options (HTML only): stops clickjacking of cookie-authenticated pages.
   static #applySecurityHeaders(headers: Headers, { html = false } = {}): Headers {
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Referrer-Policy", "strict-origin-when-cross-origin");

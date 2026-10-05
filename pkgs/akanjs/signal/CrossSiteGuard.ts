@@ -8,9 +8,9 @@ export interface CrossSiteOption {
   enabled?: boolean;
 }
 
-// The `SameSite=None` auth cookie rides every cross-site request, so JSON-only bodies force a CORS preflight (which
-// only an allowlisted origin passes) and `Origin` covers multipart and bodiless mutations. No `Origin` is a
-// non-browser caller; `null` is refused.
+// A page on another origin of the same site (a sibling subdomain, another port) still sends the Lax auth cookie, so
+// JSON-only bodies force a CORS preflight (which only an allowlisted origin passes) and `Origin` covers multipart and
+// bodiless mutations. No `Origin` is a non-browser caller; `null` is refused.
 export class CrossSiteGuard {
   static readonly logger = new Logger("CrossSiteGuard");
   /** The native shell serves the page from `app://localhost` on iOS, macOS and Linux, `https://app.localhost` on
@@ -83,7 +83,7 @@ export class CrossSiteGuard {
     });
   }
 
-  // Never `access-control-allow-credentials`: the `SameSite=None` cookie would let an allowed origin ride a session.
+  // Never `access-control-allow-credentials`: the auth cookie would let an allowed origin ride a session.
   static withCors(req: Request, res: Response): Response {
     const origin = CrossSiteGuard.corsOrigin(req);
     if (!origin) return res;

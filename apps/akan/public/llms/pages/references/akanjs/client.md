@@ -458,7 +458,7 @@ Read cookies and the signed-in account from any component, server or browser. Th
 
 - getCookie(key): Reads a cookie, on the server and in the browser.
 
-- setCookie(key, value, options?): Writes a cookie in the browser (`path=/`, `SameSite=None`, `Secure`). Does nothing on the server.
+- setCookie(key, value, options?): Writes a cookie in the browser (`path=/`, `SameSite=Lax`, `Secure`; `options` overrides only the keys it names). Does nothing on the server.
 
 - removeCookie(key): Deletes a cookie in the browser.
 
