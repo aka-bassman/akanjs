@@ -1178,6 +1178,19 @@ describe("FetchClient HTTP generation", () => {
     });
   });
 
+  test("a server clone toward another origin opens no socket unless asked, a same-origin one still does", () => {
+    setFakeWebSocket();
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+
+    client.clone({ origin: "https://edge.example" });
+    expect(FakeWebSocket.instances.map((ws) => ws.url)).toEqual([]);
+
+    client.clone({ origin: "https://edge.example", connect: true });
+    client.clone({ jwt: "same-origin" });
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(FakeWebSocket.instances[0]?.url.startsWith("wss://edge.example")).toBe(true);
+  });
+
   test("clone with a different origin does not share the request-query cache with the original", async () => {
     if (!requestStorage) return;
     setMockFetch();

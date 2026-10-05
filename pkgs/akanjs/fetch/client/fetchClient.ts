@@ -238,7 +238,16 @@ export class FetchClient {
     for (const ws of this.#originWs.values()) ws.destroy();
     this.#originWs.clear();
   }
-  clone({ origin, connect = true, jwt }: { origin?: string; connect?: boolean; jwt?: string } = {}) {
+  // A server cloning toward another origin makes one-off calls; a socket it opened would reconnect forever, unclosed.
+  clone({
+    origin,
+    connect = !(origin && typeof window === "undefined"),
+    jwt,
+  }: {
+    origin?: string;
+    connect?: boolean;
+    jwt?: string;
+  } = {}) {
     const instance = new FetchClient(origin ?? this.origin, {}, this.serializedSignal, this.ErrorCls);
     Object.entries(this.handler).forEach(([key, handler]) => {
       if (!(key in instance.handler)) instance.handler[key] = handler;
