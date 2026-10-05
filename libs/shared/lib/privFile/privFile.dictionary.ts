@@ -47,6 +47,10 @@ export const dictionary = modelDictionary(["en", "ko"])
       "Private file is being uploaded, but not yet created",
       "비공개 파일이 업로드중이며 아직 생성되지 않았습니다",
     ]),
+    failed: t(["Failed", "실패"]).desc([
+      "The private file upload stopped before it finished; upload it again",
+      "비공개 파일 업로드가 끝나기 전에 멈췄습니다. 다시 올려야 합니다",
+    ]),
   }))
   .slice<PrivFileSlice>((fn) => ({}))
   .endpoint<PrivFileEndpoint>((fn) => ({}))

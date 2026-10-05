@@ -27,7 +27,7 @@ export type EnumInstance<RefName extends string = string, T = string | number> =
 export const isEnum = (enumRef: Cls) => Object.getPrototypeOf(Object.getPrototypeOf(enumRef) ?? {}) === EnumPrototype;
 
 /** `type` is `String` for string values, else `Int` when every value is an integer, else `Float`. */
-export const enumOf = <RefName extends string, T = string | number>(
+export const enumOf = <RefName extends string, const T = string | number>(
   refName: RefName,
   values: readonly T[],
 ): EnumInstance<RefName, T> => {
