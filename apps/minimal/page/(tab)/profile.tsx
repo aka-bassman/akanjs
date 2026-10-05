@@ -1,7 +1,14 @@
 import { appCard, appNavClass, iconTileRecipe, Screen } from "@apps/minimal/ui";
 import { cn, page } from "akanjs/client";
 import { Layout, Link } from "akanjs/ui";
-import { AiOutlineCreditCard, AiOutlineFileText, AiOutlineRight, AiOutlineUser } from "react-icons/ai";
+import {
+  AiOutlineBell,
+  AiOutlineCreditCard,
+  AiOutlineExperiment,
+  AiOutlineFileText,
+  AiOutlineRight,
+  AiOutlineUser,
+} from "react-icons/ai";
 
 const pageConfig = { topInset: 72 };
 
@@ -20,7 +27,7 @@ export default page()
           </div>
         </div>
       </Layout.TopInset>
-      <section className="pt-5">
+      <section className="pt-5 md:mx-auto md:max-w-3xl">
         <div className="rounded-[2rem] bg-gradient-to-br from-primary to-secondary p-5 text-primary-foreground">
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-primary-foreground/20 text-2xl">
@@ -53,6 +60,23 @@ export default page()
                 <p className="font-semibold">{title}</p>
                 <p className="text-foreground/50 text-sm">{desc}</p>
               </div>
+              <AiOutlineRight className="text-foreground/40" />
+            </Link>
+          ))}
+        </div>
+        <p className="mt-6 mb-2 px-1 text-foreground/40 text-xs uppercase tracking-[0.24em]">Developer</p>
+        <div className={appCard(undefined, "overflow-hidden rounded-[1.75rem]")}>
+          {[
+            ["/push-notification", "Push notification demo", <AiOutlineBell key="bell" />],
+            ["/lab", "UI lab", <AiOutlineExperiment key="lab" />],
+          ].map(([href, title, icon]) => (
+            <Link
+              className="flex items-center gap-3 border-foreground/10 border-b p-4 last:border-b-0"
+              href={href as string}
+              key={href as string}
+            >
+              <div className={iconTileRecipe()}>{icon}</div>
+              <p className="flex-1 font-semibold">{title}</p>
               <AiOutlineRight className="text-foreground/40" />
             </Link>
           ))}

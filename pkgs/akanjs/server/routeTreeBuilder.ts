@@ -171,7 +171,6 @@ export class RouteTreeBuilder {
         : {
             renderPage: routeRender,
             pageIncludesOwnLayout: parsed.leaf === "_index",
-            isSpecialRoute: parsed.isSpecialRoute,
           }),
     } as Route);
   }
@@ -198,7 +197,6 @@ export class RouteTreeBuilder {
               renderRootLayouts: layer.pageRenderRootLayouts,
               renderLayouts: layer.pageRenderLayouts,
               resolveHead: RouteTreeBuilder.#composeHeadResolvers(route.renderPage.resolveHead, pageHead),
-              isSpecialRoute: route.isSpecialRoute,
               pageState: route.pageState ?? defaultPageState,
             },
           ]
@@ -301,6 +299,10 @@ export class RouteTreeBuilder {
       routeRender.getRouteDefinition = async () => (await loadModule()).definition;
     } else {
       routeRender.getLayoutPageConfig = pageConfigOf;
+      routeRender.getLayoutTheme = async () => {
+        const { module: mod } = await loadModule();
+        return "theme" in mod ? (mod.theme as string | undefined) : undefined;
+      };
       routeRender.resolveNotFound = async () => syncFallbacks((await loadModule()).module as LayoutModule).NotFound;
       routeRender.resolveError = async () => syncFallbacks((await loadModule()).module as LayoutModule).Error;
     }

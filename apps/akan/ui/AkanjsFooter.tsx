@@ -1,9 +1,10 @@
 import { usePage } from "@apps/akan/client";
 import { cn } from "akanjs/client";
-import { Link } from "akanjs/ui";
+import { Clipboard, Link } from "akanjs/ui";
 import { FaDiscord, FaGithub } from "react-icons/fa";
 import { AkanLogo } from "./AkanLogo";
-import { JellyCast } from "./Jelly";
+
+const mcpUrl = "https://akanjs.com/mcp";
 
 const socialClassName =
   "jelly tint-secondary squish flex size-11 items-center justify-center rounded-full text-secondary-foreground text-xl hover:tint-primary hover:text-primary-foreground";
@@ -25,7 +26,16 @@ export const AkanjsFooter = ({ className }: AkanjsFooterProps) => {
               {l.trans({ en: "Released under the MIT License", ko: "MIT 라이선스 하에 배포되었습니다." })}
             </p>
           </div>
-          <JellyCast className="gap-1 sm:gap-2" friendClassName="size-10 md:size-12" showRole={false} />
+          <div className="flex flex-col items-center gap-2 md:items-start">
+            <p className="font-bold text-foreground/70 text-sm">
+              {l.trans({ en: "Connect your AI to these docs", ko: "내 AI에 이 문서 연결하기" })}
+            </p>
+            <div className="inline-flex max-w-full items-center gap-3 rounded-full bg-foreground/6 py-1 pr-1 pl-4 font-mono text-xs">
+              <span className="select-none font-bold text-primary">MCP</span>
+              <span className="truncate text-foreground/80">{mcpUrl}</span>
+              <Clipboard className="relative shrink-0" text={mcpUrl} />
+            </div>
+          </div>
           <div className="flex gap-3">
             <Link
               href="https://github.com/akan-team/akanjs"

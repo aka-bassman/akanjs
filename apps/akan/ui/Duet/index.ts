@@ -1,21 +1,11 @@
-import { DuetStage } from "./DuetStage";
-import { FirstProject } from "./FirstProject";
-import { GuardMatrix } from "./GuardMatrix";
+import { Benchmark } from "./Benchmark";
+import { GrowthPath } from "./GrowthPath";
 import { HumanArrow } from "./Pointer";
-import { ScreenStory } from "./ScreenStory";
-import { SecondProject } from "./SecondProject";
-import { ServerStory } from "./ServerStory";
-import { ViewDock } from "./ViewDock";
-import { ViewRemote } from "./ViewRemote";
+import { Recording } from "./Recording";
 
 export const Duet = {
-  Stage: DuetStage,
-  ScreenStory,
-  ServerStory,
-  Matrix: GuardMatrix,
-  Layers: FirstProject,
-  Files: SecondProject,
-  Dock: ViewDock,
-  Remote: ViewRemote,
+  Recording,
+  Growth: GrowthPath,
+  Benchmark,
   HumanArrow,
 };

@@ -36,6 +36,7 @@ import {
   shouldStoreRouteCache,
 } from "./cachePolicy";
 import { encodedFileResponse } from "./contentEncoding";
+import { isCrawlerUserAgent } from "./crawler";
 import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import { CSR_DEV_ROUTE_PREFIX, resolveDevCsrMode, SSR_DEV_DIRNAME, SSR_DEV_ROUTE_PREFIX } from "./hmr/csrDevManifest";
 import { CsrDevShell } from "./hmr/csrDevShell";
@@ -604,7 +605,8 @@ export class WebRouter {
         try {
           this.#requestStats.fullSsr += 1;
           const manifest = await this.#ensureRoute(url);
-          const htmlCacheDecision = this.#getHtmlCacheEntry(req, url);
+          const isCrawler = isCrawlerUserAgent(req.headers.get("user-agent"));
+          const htmlCacheDecision = this.#getHtmlCacheEntry(req, url, isCrawler);
           const htmlCacheEntry = htmlCacheDecision.entry;
           const cachedHtml = htmlCacheEntry ? this.#getCachedHtml(htmlCacheEntry.key) : null;
           if (cachedHtml) {
@@ -647,6 +649,7 @@ export class WebRouter {
             },
             lateControl: rscResult.lateControl,
             waitForAllReady: rscResult.trace?.ssrBlocking ?? false,
+            inlineBoundaries: isCrawler,
             onCancel: (reason: unknown) => {
               rscResult.cancel(reason);
             },
@@ -819,7 +822,7 @@ export class WebRouter {
     }
   }
 
-  #getHtmlCacheEntry(req: Request, url: URL): { entry: RouteCacheEntry | null; reason?: string } {
+  #getHtmlCacheEntry(req: Request, url: URL, isCrawler: boolean): { entry: RouteCacheEntry | null; reason?: string } {
     //? The dev registry's shim config is part of the HTML: a cached page would boot every reload beside the vendor file
     //? it was rendered with, and a tab that reloads onto the current pair would reload again until the entry expired.
     if (this.#ssrDevShell) {
@@ -830,6 +833,7 @@ export class WebRouter {
       request: req,
       url,
       theme: WebRouter.#cookieValue(req, "theme"),
+      variant: isCrawler ? "crawler" : undefined,
       defaultEnabled: this.#prodMode,
       defaultAllow: this.#prodMode,
       env: {

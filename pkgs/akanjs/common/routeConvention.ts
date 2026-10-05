@@ -3,7 +3,6 @@ const SOURCE_EXT_RE = /\.(tsx|ts|jsx|js)$/;
 const RESERVED_ROUTE_FILES = new Set(["_layout", "_index", "_overrides"]);
 const INTERNAL_ROOT_LAYOUT_LEAF = "__root_layout";
 const IMPLICIT_LOCALE_SEGMENT = "[lang]";
-const SPECIAL_ROUTE_LEAVES = new Set(["robots.txt"]);
 // Leaves that attach to their own directory node instead of creating a child route segment.
 const DIRECTORY_SCOPED_LEAVES = new Set(["_layout", "_index", "_overrides"]);
 
@@ -45,7 +44,6 @@ export interface ParsedRouteModuleKey {
   ext: string;
   leaf: string;
   pattern: string;
-  isSpecialRoute: boolean;
   isInternalRootLayout: boolean;
 }
 
@@ -140,8 +138,7 @@ export function parseRouteModuleKey(key: string): ParsedRouteModuleKey {
 
   const sourceRouteSegments =
     DIRECTORY_SCOPED_LEAVES.has(leaf) || isInternalRootLayout ? moduleSegments.slice(0, -1) : moduleSegments;
-  const isSpecialRoute = kind === "page" && SPECIAL_ROUTE_LEAVES.has(leaf);
-  const routeSegments = isSpecialRoute ? sourceRouteSegments : [IMPLICIT_LOCALE_SEGMENT, ...sourceRouteSegments];
+  const routeSegments = [IMPLICIT_LOCALE_SEGMENT, ...sourceRouteSegments];
   for (const segment of routeSegments) validateRouteSegment(segment, key);
 
   return {
@@ -153,13 +150,8 @@ export function parseRouteModuleKey(key: string): ParsedRouteModuleKey {
     ext,
     leaf,
     pattern: normalizeRoutePattern(routeSegments),
-    isSpecialRoute,
     isInternalRootLayout,
   };
-}
-
-export function isSpecialRouteLeaf(leaf: string): boolean {
-  return SPECIAL_ROUTE_LEAVES.has(leaf);
 }
 
 export function tryParseRouteModuleKey(key: string): ParsedRouteModuleKey | null {

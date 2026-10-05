@@ -9,7 +9,7 @@ import { renderToReadableStream } from "react-dom/server.browser";
 import { createFromNodeStream } from "react-server-dom-webpack/client.node";
 import { parsePositiveInt } from "./cachePolicy";
 import { concatBytes } from "./rscHttp";
-import type { SsrChunkRegistryStats, SsrFromRscInput, SsrLateRedirect } from "./ssrTypes";
+import type { SsrChunkRegistryStats, SsrDocumentOptions, SsrFromRscInput, SsrLateRedirect } from "./ssrTypes";
 
 const DEFAULT_SSR_CHUNK_REGISTRY_MAX_ENTRIES = 1024;
 const DEFAULT_MAX_PENDING_INLINE_RSC_SCRIPTS = 32;
@@ -598,23 +598,13 @@ export class SsrFromRscRenderer {
     const base = `${SsrFromRscRenderer.#clientBootstrap}${SsrFromRscRenderer.#prefixBootstrap()}`;
     const bootstrap = input.extraBootstrapInline ? `${base}\n${input.extraBootstrapInline}` : base;
 
-    // renderToReadableStream resolves at shell-ready and rejects on a shell error, so shell redirects stay catchable;
-    // only `block` routes await allReady, trading the Loading fallback for a clean page on a late non-redirect error.
-    const waitForAllReady = input.waitForAllReady || process.env.AKAN_SSR_WAIT_FOR_ALL_READY === "1";
-    const renderHtml = async () => {
-      const root = await thenable;
-      const stream = await renderToReadableStream(root, {
-        bootstrapScriptContent: bootstrap,
-        onError: (error) => SsrFromRscRenderer.#reportRenderError(error, input),
+    const renderHtml = async () =>
+      await SsrFromRscRenderer.renderDocument(await thenable, {
+        bootstrap,
+        waitForAllReady: input.waitForAllReady || process.env.AKAN_SSR_WAIT_FOR_ALL_READY === "1",
+        inlineBoundaries: input.inlineBoundaries,
+        onError: (error, phase) => SsrFromRscRenderer.#reportRenderError(error, input, phase),
       });
-      if (waitForAllReady) await stream.allReady;
-      else {
-        SsrFromRscRenderer.holdPostShellErrors(stream, (error) =>
-          SsrFromRscRenderer.#reportRenderError(error, input, "post-shell"),
-        );
-      }
-      return stream;
-    };
     const requestContext = input.requestStore ?? input.request;
     const htmlStream =
       requestContext && requestStorage ? await requestStorage.run(requestContext, renderHtml) : await renderHtml();
@@ -671,6 +661,21 @@ export class SsrFromRscRenderer {
       if (!mod) throw new Error(`[ssrFromRsc] module not loaded yet: ${id}`);
       return mod;
     };
+  }
+
+  // renderToReadableStream resolves at shell-ready and rejects on a shell error, so shell redirects stay catchable;
+  // only `block` routes await allReady, trading the Loading fallback for a clean page on a late non-redirect error,
+  // and so does a crawler, which runs no script to swap a streamed segment in.
+  static async renderDocument(root: ReactNode, options: SsrDocumentOptions): Promise<ReadableStream<Uint8Array>> {
+    const stream = await renderToReadableStream(root, {
+      bootstrapScriptContent: options.bootstrap,
+      //? Even after allReady, React outlines a boundary past this size into a hidden segment only `$RC` reveals.
+      ...(options.inlineBoundaries ? { progressiveChunkSize: Number.POSITIVE_INFINITY } : {}),
+      onError: (error) => options.onError(error),
+    });
+    if (options.waitForAllReady || options.inlineBoundaries) await stream.allReady;
+    else SsrFromRscRenderer.holdPostShellErrors(stream, (error) => options.onError(error, "post-shell"));
+    return stream;
   }
 
   // React rejects allReady on a post-shell fatal error but handles it itself only on the shell-error path; unheld,

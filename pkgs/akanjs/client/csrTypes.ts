@@ -116,6 +116,8 @@ export interface RouteRender {
   resolveHead?: ResolveHead;
   getPageConfig?: () => PromiseOrObject<PageConfig | undefined>;
   getLayoutPageConfig?: () => PromiseOrObject<PageConfig | undefined>;
+  /** A root layout's `theme`, readable before it renders. */
+  getLayoutTheme?: () => PromiseOrObject<string | undefined>;
   /** The `page()` chain behind a page render, when it was declared as one — what a page prompt is read off. */
   getRouteDefinition?: () => PromiseOrObject<RouteDefinition | undefined>;
 }
@@ -179,7 +181,6 @@ export interface Route {
   /** Synthetic layout render from a `_overrides.tsx` at this node; wraps the subtree in a UI-override provider. */
   renderOverrides?: RouteRender;
   pageIncludesOwnLayout?: boolean;
-  isSpecialRoute?: boolean;
   loader?: () => unknown;
   pageState?: PageState;
   pageConfigChain?: PageConfig[];
@@ -356,7 +357,6 @@ export interface PathRoute {
   renderRootLayouts: RouteRender[];
   renderLayouts: RouteRender[];
   resolveHead?: ResolveHead;
-  isSpecialRoute?: boolean;
 }
 
 export type FrameSlotScope = "page" | "layout";

@@ -4,4 +4,4 @@
  * 주입하면 아래처럼 공유 클래스 상수로 둔다.
  */
 /** 상단 내비 바 스킨 — Layout.Navbar / Layout.TopInset 의 className 에 주입하는 무변형 상수. */
-export const appNavClass = "border-foreground/10 border-b bg-background/80 px-5 backdrop-blur";
+export const appNavClass = "border-foreground/10 border-b bg-background/80 backdrop-blur";

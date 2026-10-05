@@ -1,0 +1,27 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+// `via(XObject, LightX, ...)` mixes in only the prototypes of XObject and LightX (applyMixins in
+// akanjs/common), so a static declared on either never reaches the full model `X`. Statics belong on
+// XInput (or a scalar), X, or XInsight. The Object class is recognised by its `*Object` name, because its
+// via() shape is identical to the Insight's; the Light class also by its `[...] as const` field tuple.
+or {
+  JsMethodClassMember(),
+  JsPropertyClassMember(),
+  JsGetterClassMember(),
+  JsSetterClassMember(),
+  JsStaticInitializationBlockClassMember()
+} as $member where {
+  $member <: r"(?:(?:public|protected|private|declare|override|readonly|accessor)\s+)*static\b[\s\S]*",
+  $member <: within JsClassDeclaration() as $model where {
+    $model <: or {
+      r"class\s+(?:Light[A-Za-z0-9_$]*|[A-Za-z0-9_$]*Object)\s+extends\s+via\([\s\S]*",
+      r"class\s+[A-Za-z0-9_$]+\s+extends\s+via\(\s*[A-Za-z0-9_$.]+\s*,\s*\[[\s\S]*"
+    }
+  },
+  register_diagnostic(
+    span = $member,
+    message = "A static on an XObject or LightX class never reaches the full model, because via() mixes in their prototypes only. Declare it on XInput, the full model X, or XInsight instead.",
+    severity = "error"
+  )
+}

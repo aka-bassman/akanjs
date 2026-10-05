@@ -599,6 +599,7 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
   const onBack = useRef<{ [K in TransitionType]?: () => Promise<void> }>({});
   const frameRootRef = useRef<HTMLDivElement>(null);
   const lastBroadcastSyncHref = useRef<string | null>(null);
+  const syncNavigationReset = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { getLocation } = useLocation({ rootRouteGuide });
   const [initialStack] = useState(() => {
@@ -848,7 +849,8 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
     });
   const applyingSyncNavigation = useRef(false);
   const broadcastSyncNavigation = useCallback((kind: "push" | "replace" | "back" | "pop", href: string) => {
-    if (applyingSyncNavigation.current) return;
+    if (applyingSyncNavigation.current || lastBroadcastSyncHref.current === href) return;
+    lastBroadcastSyncHref.current = href;
     const syncNavigation = (
       globalThis as typeof globalThis & {
         __AKAN_DEV_SYNC_NAVIGATION__?: (href: string, kind: "push" | "replace" | "back" | "pop") => void;
@@ -1063,12 +1065,13 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
         if (!targetLocation) return;
         const location = getCurrentLocation();
         debugFrame("router.back", { from: location.href, to: targetLocation.href, scrollToTop });
+        //? Sent before the animation, so the screens following this one play their back alongside it, not after it.
+        broadcastSyncNavigation("back", getSyncRouteHref(targetLocation));
         if (shouldPrepareFrameTransition()) await startFrameTransition();
         await onBack.current[location.pathRoute.pageState.transition]?.();
         const scrollTop = pageContentRef.current?.scrollTop ?? 0;
         setHistoryBack({ type: "back", location, scrollTop, scrollToTop });
         settle(getPrevLocation());
-        broadcastSyncNavigation("back", getSyncRouteHref(targetLocation));
         window.history.back();
       },
     };
@@ -1102,19 +1105,18 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
         broadcastSyncNavigation("pop", getSyncRouteHref(getLocation(href)));
         return;
       }
+      broadcastSyncNavigation(routeType === "back" ? "back" : "pop", getSyncRouteHref(getLocation(href)));
       if (routeType === "forward") {
         if (shouldPrepareFrameTransition(href)) await startFrameTransition();
         const location = getCurrentLocation();
         setHistoryForward({ type: "popForward", location, scrollTop });
         settle(location);
-        broadcastSyncNavigation("pop", getSyncRouteHref(getLocation(href)));
       } else {
         const location = getCurrentLocation();
         if (shouldPrepareFrameTransition(href)) await startFrameTransition();
         if (!isUaAnimated) await onBack.current[location.pathRoute.pageState.transition]?.();
         setHistoryBack({ type: "popBack", location, scrollTop });
         settle(getPrevLocation());
-        broadcastSyncNavigation("pop", getSyncRouteHref(getLocation(href)));
       }
     };
     return router;
@@ -1122,13 +1124,14 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
   const router = getRouter();
   useEffect(() => {
     const syncHref = getSyncRouteHref(resolvedLocation);
-    if (lastBroadcastSyncHref.current === null) {
+    if (
+      lastBroadcastSyncHref.current === null ||
+      applyingSyncNavigation.current ||
+      globalThis.__AKAN_DEV_SYNC_NAVIGATION_APPLYING__
+    ) {
       lastBroadcastSyncHref.current = syncHref;
       return;
     }
-    if (lastBroadcastSyncHref.current === syncHref) return;
-    lastBroadcastSyncHref.current = syncHref;
-    if (applyingSyncNavigation.current || globalThis.__AKAN_DEV_SYNC_NAVIGATION_APPLYING__) return;
     broadcastSyncNavigation(
       history.current.type === "back" ? "back" : history.current.type === "forward" ? "push" : "pop",
       syncHref,
@@ -1141,8 +1144,10 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
     history,
   ]);
   useEffect(() => {
+    //? Restarted per applied navigation: an earlier one's timer lapsing mid-way let this screen echo it to the sender.
     const resetSyncNavigation = () => {
-      window.setTimeout(() => {
+      if (syncNavigationReset.current) clearTimeout(syncNavigationReset.current);
+      syncNavigationReset.current = setTimeout(() => {
         applyingSyncNavigation.current = false;
         globalThis.__AKAN_DEV_SYNC_NAVIGATION_APPLYING__ = false;
       }, 1000);
@@ -1153,10 +1158,15 @@ export const useCsrValues = (rootRouteGuide: RouteGuide, pathRoutes: PathRoute[]
       if (!href) return;
       const target = new URL(href, window.location.origin);
       const targetHref = `${target.pathname}${target.search}${target.hash}`;
-      if (targetHref === getSyncRouteHref(getCurrentLocation())) return;
+      //? The place this screen last announced is already where it is or is heading; a back replayed onto it pops twice.
+      if (targetHref === getSyncRouteHref(getCurrentLocation()) || targetHref === lastBroadcastSyncHref.current) return;
       applyingSyncNavigation.current = true;
       globalThis.__AKAN_DEV_SYNC_NAVIGATION_APPLYING__ = true;
-      if (kind === "replace" || kind === "back" || kind === "pop")
+      const previous = getPrevLocation();
+      //? Replayed as a replace, a back would play no transition and leave this stack an entry deeper than the sender's.
+      if (kind !== "push" && kind !== "replace" && previous && getSyncRouteHref(previous) === targetHref)
+        clientRouter.back({ scrollToTop: false });
+      else if (kind === "replace" || kind === "back" || kind === "pop")
         clientRouter.replace(targetHref, { scrollToTop: false });
       else clientRouter.push(targetHref, { scrollToTop: false });
       resetSyncNavigation();

@@ -36,7 +36,7 @@ export const OverrideDemo = () => {
           </button>
         }
       >
-        <p>If you see the fuchsia border and the override label, the BrandModal override is active.</p>
+        <p>If you see the gradient bar along the top of this modal, the BrandModal override is active.</p>
       </Modal>
     </div>
   );

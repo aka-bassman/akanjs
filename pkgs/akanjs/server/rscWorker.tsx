@@ -17,6 +17,7 @@ import {
   pushRequestFallback,
   requestStorage,
   setRequestFrameState,
+  setRequestTheme,
   untrackedCookies,
   untrackedRequest,
   updateRequestPolicy,
@@ -36,12 +37,7 @@ import {
   resolveRouteCacheStoreTtl,
   shouldStoreRouteCache,
 } from "./cachePolicy";
-import {
-  createAkanLocaleAlternateHeadSnapshot,
-  mergeAkanHeadSnapshots,
-  renderAkanHeadSnapshot,
-  shouldRenderLocaleAlternates,
-} from "./head";
+import { createAkanLocaleAlternateHeadSnapshot, mergeAkanHeadSnapshots, renderAkanHeadSnapshot } from "./head";
 import { LogForwarder } from "./logging/logForwarder";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { RouteElementComposer } from "./routeElementComposer";
@@ -1229,7 +1225,7 @@ export class RscRenderer {
             searchParams,
           })
         : { node: undefined };
-    const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead, {});
+    const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead);
     return (
       <html lang={params.lang ?? getPathnameLocale(pathname, this.#i18n)} suppressHydrationWarning>
         <head key="head">
@@ -1260,14 +1256,16 @@ export class RscRenderer {
       basePath: this.#getBasePath(url),
     });
     setRequestFrameState(pathRoute.pageState);
+    //? The provider names the theme only as it renders, which can be after the HTML shell and its data-theme are out.
+    const rootThemes = await Promise.all(pathRoute.renderRootLayouts.map((render) => render.getLayoutTheme?.()));
+    const rootTheme = rootThemes.find((theme) => theme !== undefined);
+    if (rootTheme) setRequestTheme(rootTheme);
     const routeHead = await RouteElementComposer.resolveHeadWithSnapshot({
       pathRoute,
       params: match.params,
       searchParams,
     });
-    const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead, {
-      isSpecialRoute: pathRoute.isSpecialRoute,
-    });
+    const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead);
     const body = RouteElementComposer.compose({
       pathRoute,
       params: match.params,
@@ -1283,9 +1281,7 @@ export class RscRenderer {
           {routeHeadSnapshot
             ? renderAkanHeadSnapshot(routeHeadSnapshot)
             : (routeHead.node ?? this.#renderDefaultHead())}
-          {!routeHeadSnapshot && shouldRenderLocaleAlternates({ isSpecialRoute: pathRoute.isSpecialRoute })
-            ? this.#renderLocaleAlternates(url)
-            : null}
+          {routeHeadSnapshot ? null : this.#renderLocaleAlternates(url)}
           {this.#renderStylesheet(url.pathname)}
         </head>
         <body key="body">{body}</body>
@@ -1376,22 +1372,14 @@ export class RscRenderer {
       params: match.params,
       searchParams,
     });
-    return this.#createRouteHeadSnapshot(url, routeHead, {
-      isSpecialRoute: match.pathRoute.isSpecialRoute,
-    });
+    return this.#createRouteHeadSnapshot(url, routeHead);
   }
 
-  #createRouteHeadSnapshot(
-    url: URL,
-    routeHead: ResolvedHead,
-    options: { isSpecialRoute?: boolean },
-  ): ResolvedHead["headSnapshot"] {
+  #createRouteHeadSnapshot(url: URL, routeHead: ResolvedHead): ResolvedHead["headSnapshot"] {
     if (!routeHead.headSnapshot) return undefined;
     return mergeAkanHeadSnapshots(
       routeHead.headSnapshot,
-      shouldRenderLocaleAlternates(options)
-        ? createAkanLocaleAlternateHeadSnapshot(this.#getLocaleAlternateLanguages(url))
-        : undefined,
+      createAkanLocaleAlternateHeadSnapshot(this.#getLocaleAlternateLanguages(url)),
     );
   }
 

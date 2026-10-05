@@ -51,22 +51,16 @@ function findElementProp(node: ReactNode, type: unknown, propName: string): unkn
 }
 
 describe("RouteTreeBuilder implicit locale", () => {
-  test("matches locale-prefixed routes while keeping special routes at root", () => {
+  test("matches locale-prefixed routes", () => {
     const routes = new RouteTreeBuilder({
       "./__root_layout.tsx": async () => ({ default: ({ children }: { children: ReactNode }) => children }),
       "./foo.tsx": async () => ({ default: () => null }),
-      "./robots.txt.tsx": async () => ({ default: () => null }),
     }).build();
 
     const matched = RouteTreeBuilder.match("/ko/foo", routes);
     expect(matched?.params).toEqual({ lang: "ko" });
     expect(matched?.pathRoute.path).toBe("/:lang/foo");
     expect(matched?.pathRoute.renderRootLayouts).toHaveLength(1);
-
-    const robots = RouteTreeBuilder.match("/robots.txt", routes);
-    expect(robots?.params).toEqual({});
-    expect(robots?.pathRoute.isSpecialRoute).toBe(true);
-    expect(robots?.pathRoute.renderRootLayouts).toHaveLength(0);
   });
 
   test("uses the nearest route head without merging parents", async () => {

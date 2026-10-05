@@ -215,6 +215,7 @@ const defaultFonts = userFonts.filter((font) => font.default);
 if (defaultFonts.length > 1) throw new Error("[route-convention] only one default font is allowed per root layout");
 const defaultFont = defaultFonts[0];
 const defaultFontClassName = defaultFont ? (defaultFont.className ?? \`font-\${defaultFont.name}\`) : undefined;
+export const theme = userLayout.theme ?? inheritedLayout.theme;
 
 ${layoutExports}(
     <System.Provider
@@ -223,7 +224,7 @@ ${layoutExports}(
       ${prefix ? `prefix=${JSON.stringify(prefix)}\n      ` : ""}params={params}
       manifest={userLayout.manifest ?? inheritedLayout.manifest}
       env={env}
-      theme={userLayout.theme ?? inheritedLayout.theme}
+      theme={theme}
       fonts={loadFonts(userFonts)}
       className={defaultFontClassName}
       layoutStyle={userLayout.layoutStyle ?? inheritedLayout.layoutStyle}

@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import type { AkanMetricsReport } from "akanjs/service";
 import { LruTtlCache } from "./cachePolicy";
-import { shouldRenderLocaleAlternates } from "./head";
 import {
   type AkanRouterStateV1,
   type AkanRscPatchMetadata,
@@ -191,14 +190,6 @@ describe("RscWorker host pending chunk cap", () => {
   test("fails only after pending chunks exceed the configured cap", () => {
     expect(isRscHostPendingChunkOverflow(2, 2)).toBe(false);
     expect(isRscHostPendingChunkOverflow(3, 2)).toBe(true);
-  });
-});
-
-describe("RscWorker locale alternates policy", () => {
-  test("skips automatic alternates for special routes", () => {
-    expect(shouldRenderLocaleAlternates({})).toBe(true);
-    expect(shouldRenderLocaleAlternates({ isSpecialRoute: true })).toBe(false);
-    expect(shouldRenderLocaleAlternates({ isSpecialRoute: false })).toBe(true);
   });
 });
 
@@ -1229,6 +1220,30 @@ describe("RscWorker late theme", () => {
         if (themeWithBody === undefined && body.includes("themed body")) themeWithBody = result.theme ?? "(none)";
       }
       expect(themeWithBody).toBe("light");
+    } finally {
+      rsc.kill();
+      if (saved === undefined) delete process.env.AKAN_RSC_WORKER_PATH;
+      else process.env.AKAN_RSC_WORKER_PATH = saved;
+    }
+  }, 20_000);
+
+  test("names a theme the root layout declares before the first chunk, so the HTML shell can carry it", async () => {
+    const saved = process.env.AKAN_RSC_WORKER_PATH;
+    process.env.AKAN_RSC_WORKER_PATH = path.join(import.meta.dir, "rscWorker.tsx");
+    const segmentOutlet = "pkgs/akanjs/server/rscSegmentOutlet.tsx";
+    const rsc = new RscWorker({
+      pagesBundlePath: path.join(import.meta.dir, "rscWorkerDeclaredTheme.fixture.tsx"),
+      pagesBundleBuildId: 1,
+      rscRuntimeClientManifest: {
+        [`${segmentOutlet}#AkanSegmentOutlet`]: { id: segmentOutlet, chunks: [], name: "AkanSegmentOutlet" },
+      },
+    } as unknown as BaseBuildArtifact);
+    try {
+      await rsc.ready;
+      const result = await rsc.renderWithMeta(new Request("http://localhost/en/themed"));
+      if (result.type !== "stream") throw new Error(`expected a stream, got ${result.type}`);
+      expect(result.theme).toBe("light");
+      await result.stream.cancel();
     } finally {
       rsc.kill();
       if (saved === undefined) delete process.env.AKAN_RSC_WORKER_PATH;

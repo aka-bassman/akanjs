@@ -927,6 +927,7 @@ const runsSignalTargetTests = async () => {
         AKAN_TEST_TARGET_TYPE: "lib",
         AKAN_TEST_TARGET_NAME: "shared",
         AKAN_TEST_LIBS: "",
+        AKAN_RUNTIME_DIR: path.join(root, "local", "libs", "shared", "runtime"),
       },
       stdio: "inherit",
     },

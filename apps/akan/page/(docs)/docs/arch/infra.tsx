@@ -159,10 +159,7 @@ export default page().render(() => {
     {
       mode: "single",
       database: l.trans({ en: "One SQLite file", ko: "SQLite 파일 하나" }),
-      queue: l.trans({
-        en: "SQLite files: a key-value cache, and a queue and pubsub sped up by Bun IPC",
-        ko: "SQLite 파일 기반의 키-값 캐시, 그리고 Bun IPC로 가속한 큐와 PubSub",
-      }),
+      queue: "SQLite Solid",
       runs: l.trans({ en: "One container", ko: "컨테이너 하나" }),
     },
     {
@@ -190,6 +187,12 @@ export default page().render(() => {
             {l.trans({
               en: "The best start for MVPs, internal tools, admin pages, content sites and small-to-medium services.",
               ko: "MVP, 초기 내부 도구, 관리자 화면, 콘텐츠 사이트, 많은 중소규모 서비스의 출발점으로 가장 적합합니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "Cache, pubsub and queue run on SQLite files, sped up by Bun IPC.",
+              ko: "캐시, PubSub, 큐는 SQLite 파일 기반으로 돌아가며 Bun IPC로 가속합니다.",
             })}
           </div>
           <div className="font-medium text-foreground">
@@ -247,10 +250,8 @@ export default page().render(() => {
   const stableBadge = (
     <span className={badgeRecipe({ variant: "success", size: "sm" })}>{l.trans({ en: "Stable", ko: "안정" })}</span>
   );
-  const experimentalBadge = (
-    <span className={badgeRecipe({ variant: "warning", size: "sm" })}>
-      {l.trans({ en: "Experimental", ko: "실험적" })}
-    </span>
+  const betaBadge = (
+    <span className={badgeRecipe({ variant: "warning", size: "sm" })}>{l.trans({ en: "Beta", ko: "베타" })}</span>
   );
 
   const stageColumns = [
@@ -275,7 +276,7 @@ export default page().render(() => {
       stage: (
         <span className="flex flex-wrap items-center gap-2">
           {l.trans({ en: "2. Multiple containers", ko: "2. 다중 컨테이너" })}
-          {experimentalBadge}
+          {betaBadge}
         </span>
       ),
       servers: l.trans({ en: "one", ko: "1대" }),
@@ -286,7 +287,7 @@ export default page().render(() => {
       stage: (
         <span className="flex flex-wrap items-center gap-2">
           {l.trans({ en: "3. Cloud cluster", ko: "3. 클라우드 클러스터" })}
-          {experimentalBadge}
+          {betaBadge}
         </span>
       ),
       servers: l.trans({ en: "several", ko: "여러 대" }),
@@ -487,7 +488,7 @@ export default page().render(() => {
               ko: "처음에는 single 모드로 시작하세요. 대부분의 서비스는 첫날부터 별도 데이터베이스 클러스터가 필요하지 않습니다. 실제 성능 한계, 큐 처리, 다중 인스턴스 운영 요구가 생기면 앱의 비즈니스 구조를 바꾸지 않고 multiple 또는 cluster 모드로 올리면 됩니다.",
             })}
           </div>
-          <Docs.Table columns={modeColumns} rows={modeRows} stacked />
+          <Docs.Table columns={modeColumns} rows={modeRows} />
           <Docs.Alert type="info">
             {l.trans({
               en: (
@@ -1075,8 +1076,8 @@ AKAN_DATABASE_MODE=cluster POSTGRES_URL=postgres://… REDIS_URI=redis://… \\
           <Docs.Table columns={stageColumns} rows={stageRows} />
           <div>
             {l.trans({
-              en: "Stage 1 is stable, and stages 2 and 3 are experimental. Both have a recipe under Database Mode above: docker compose on one host for stage 2, the chart's cluster mode for stage 3.",
-              ko: "1단계는 안정화되어 있고, 2, 3단계는 실험적입니다. 두 단계의 구성 방법은 위 데이터베이스 모드에 있습니다. 2단계는 호스트 한 대의 docker compose, 3단계는 차트의 cluster 모드입니다.",
+              en: "Stage 1 is stable, and stages 2 and 3 are in beta. Both have a recipe under Database Mode above: docker compose on one host for stage 2, the chart's cluster mode for stage 3.",
+              ko: "1단계는 안정화되어 있고, 2, 3단계는 베타입니다. 두 단계의 구성 방법은 위 데이터베이스 모드에 있습니다. 2단계는 호스트 한 대의 docker compose, 3단계는 차트의 cluster 모드입니다.",
             })}
           </div>
           <div className="my-4 space-y-3">
@@ -1121,7 +1122,7 @@ AKAN_DATABASE_MODE=cluster POSTGRES_URL=postgres://… REDIS_URI=redis://… \\
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2 font-bold text-foreground">
                   {l.trans({ en: "2. Single server, multiple containers", ko: "2. 싱글 서버 다중 컨테이너" })}
-                  {experimentalBadge}
+                  {betaBadge}
                 </div>
                 <div className="text-foreground/70 text-sm">
                   {l.trans({
@@ -1175,7 +1176,7 @@ AKAN_DATABASE_MODE=cluster POSTGRES_URL=postgres://… REDIS_URI=redis://… \\
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2 font-bold text-foreground">
                   {l.trans({ en: "3. Cloud cluster scale", ko: "3. 클라우드 클러스터 확장" })}
-                  {experimentalBadge}
+                  {betaBadge}
                 </div>
                 <div className="text-foreground/70 text-sm">
                   {l.trans({
