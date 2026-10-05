@@ -14,12 +14,36 @@ const stored = {
   "memo/doc.pdf": "%PDF-1.4\n",
 };
 await Promise.all(Object.entries(stored).map(([path, body]) => Bun.write(`${storage.root}/${path}`, body)));
+await Bun.$`mkdir -p ${storage.root}/uploads`.quiet();
 
 afterAll(async () => {
   await Bun.$`rm -rf ${workspace}`.quiet();
 });
 
 describe("LocalFileService.serveLocalFile", () => {
+  test.each(["uploads/missing.png", "uploads%2fmissing.png", "..%2f..%2f.env", "uploads"])(
+    "rejects unavailable file %s with a 404",
+    async (path) => {
+      await expect(service.serveLocalFile(path)).rejects.toMatchObject({
+        statusCode: 404,
+        error: "localFile.error.fileNotFound",
+      });
+    },
+  );
+
+  test("serves existing files with identical body bytes", async () => {
+    const response = await service.serveLocalFile("memo/page.html");
+
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new TextEncoder().encode(stored["memo/page.html"]));
+  });
+
+  test("continues refusing private files with a 400", async () => {
+    await expect(service.serveLocalFile("private/x")).rejects.toMatchObject({
+      statusCode: 400,
+      error: "localFile.error.privateFilesNotServed",
+    });
+  });
+
   test("sandboxes every stored document but a PDF, which a browser's viewer refuses to show sandboxed", async () => {
     const page = await service.serveLocalFile("memo/page.html");
     const pdf = await service.serveLocalFile("memo/doc.pdf");

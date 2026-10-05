@@ -10,6 +10,7 @@ export const dictionary = serviceDictionary(["en", "ko"])
     ]),
   }))
   .error({
+    fileNotFound: ["File not found", "파일을 찾을 수 없습니다"],
     privateFilesNotServed: [
       "Private files are not served through localFile",
       "비공개 파일은 localFile을 통해 제공되지 않습니다",

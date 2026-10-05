@@ -11,6 +11,8 @@ export class LocalFileService extends serve("localFile" as const, ({ plug }) => 
 
   async readLocalFile(path: string) {
     if (path.startsWith("private/")) throw new Err("localFile.error.privateFilesNotServed");
+    if ((await this.blobStorageApi.getDataSize(path)) === null)
+      throw new Err("localFile.error.fileNotFound", undefined, { statusCode: 404 });
     return await this.blobStorageApi.readData(path);
   }
 
