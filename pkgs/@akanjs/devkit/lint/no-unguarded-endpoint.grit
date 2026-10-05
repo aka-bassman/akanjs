@@ -1,0 +1,37 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+// `SignalContext` checks `signalOption.guards ?? []`, so an endpoint or named slice declaring none is open to every
+// HTTP and websocket caller. An option the rule cannot read, a variable or a spread, is left alone.
+JsCallExpression(callee = $callee, arguments = JsCallArguments(args = $args)) as $call where {
+  or {
+    and {
+      $callee <: r"(?:query|mutation|pubsub|message)",
+      $call <: within JsCallExpression(callee = `endpoint`),
+      or { $args <: [$returns], $args <: [$returns, $option] }
+    },
+    and {
+      $callee <: `init`,
+      $call <: within JsCallExpression(callee = `slice`),
+      or { $args <: [], $args <: [$option] }
+    }
+  },
+  or {
+    $option <: undefined,
+    $option <: JsObjectExpression(members = $members) where {
+      or {
+        $members <: not some or {
+          JsPropertyObjectMember(name = r"(?:guards|\x22guards\x22|'guards')"),
+          JsShorthandPropertyObjectMember(name = r"guards"),
+          JsSpread()
+        },
+        $members <: some JsPropertyObjectMember(name = r"(?:guards|\x22guards\x22|'guards')", value = JsArrayExpression(elements = []))
+      }
+    }
+  },
+  register_diagnostic(
+    span = $callee,
+    message = "No `guards`, so every HTTP and websocket caller reaches this endpoint: a missing or empty `guards` fails open, which is also why MCP refuses it. Name the guards it needs, or write `guards: [Public]` when anonymous access is the intent.",
+    severity = "warn"
+  )
+}
