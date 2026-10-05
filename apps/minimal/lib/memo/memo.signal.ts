@@ -11,9 +11,11 @@ export class MemoSlice extends slice(
   srv.memo,
   { guards: { root: None, get: LocalOrEdge, cru: LocalOrEdge }, mcp: false },
   (init) => ({
-    inPublic: init({ guards: [LocalOrEdge], mcp: false }).exec(function () {
-      return this.memoService.queryAny();
-    }),
+    inPublic: init({ guards: [LocalOrEdge], mcp: false })
+      .live()
+      .exec(function () {
+        return this.memoService.queryAny();
+      }),
   }),
 ) {}
 

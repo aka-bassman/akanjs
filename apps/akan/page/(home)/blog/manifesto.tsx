@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Friend, JellyKicker, panelRecipe } from "@apps/akan/ui";
+import { JellyKicker, panelRecipe } from "@apps/akan/ui";
 import { page } from "akanjs/client";
 
 const principles = [
@@ -62,7 +62,6 @@ export default page().render(() => {
         <header>
           <div className="mb-10 flex items-end justify-between gap-4">
             <JellyKicker>{l.trans({ en: "Akan.js Manifesto", ko: "Akan.js Manifesto" })}</JellyKicker>
-            <Friend name="planet" className="jelly-float size-16 md:size-20" priority />
           </div>
 
           <p className="mb-4 text-foreground/50 text-sm">

@@ -63,6 +63,19 @@ describe.skipIf(!CsrE2eHarness.enabled)("CSR page stack (minimal, /e2e/stack)", 
     expect(await csr.reloaded()).toBe(false);
   }, 90_000);
 
+  test("a back relayed from another screen pops onto the entry under the page, keeping its state", async () => {
+    await csr.open(TAB_A);
+    await csr.navigate(item("31"));
+    await csr.type(currentInput, "thirty-one");
+    await csr.navigate(item("32"));
+    await csr.navigate(item("31"), "back");
+    expect(await itemIdsIn(CURRENT)).toEqual(["31"]);
+    expect(await csr.values(currentInput)).toEqual(["thirty-one"]);
+    await csr.back();
+    expect((await csr.currentPath()).split("?")[0]).toEndWith(TAB_A);
+    expect(await csr.reloaded()).toBe(false);
+  }, 60_000);
+
   test("a replace within one route updates the page in place", async () => {
     await csr.open(item("21"));
     await csr.type(currentInput, "kept");

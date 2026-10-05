@@ -1,0 +1,443 @@
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/flight/fonts/BarlowCondensed-Medium.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/flight/fonts/BarlowCondensed-SemiBold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/flight/fonts/BarlowCondensed-Bold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("/flight/fonts/JetBrainsMono.woff2") format("woff2");
+}
+
+/* The page ignores the site's light/dark switch: it is one drawing, ink on blueprint navy that climbs into daylight.
+   The semantic tokens are remapped here so akanjs/ui parts inside it follow the same sheet. */
+html:has(.flt) {
+  background-color: #0c1c35;
+}
+
+.flt {
+  --navy: #0c1c35;
+  --navy-hi: #122543;
+  --deep: #081427;
+  --screen: #050b14;
+  --line: #8fb6f2;
+  --ink: #e8eef9;
+  --burn: #ff5b1f;
+  --hud: #86f7b5;
+  --caution: #ffb547;
+  --jelly: var(--burn);
+  --background: var(--navy);
+  --foreground: var(--ink);
+  --primary: var(--burn);
+  --primary-foreground: #1c0900;
+  --secondary: var(--ink);
+  --secondary-foreground: var(--navy);
+  --accent: var(--line);
+  --accent-foreground: var(--navy);
+  --neutral: #1a3156;
+  --neutral-foreground: var(--ink);
+  --muted: #142a4c;
+  --muted-foreground: #93a6c6;
+  --card: #0f213d;
+  --card-foreground: var(--ink);
+  --popover: #10233f;
+  --popover-foreground: var(--ink);
+  --border: #23406b;
+  --input: #2b4b7c;
+  --ring: var(--burn);
+  --warning: var(--caution);
+  --warning-foreground: #1c1200;
+  --success: var(--hud);
+  --success-foreground: #04170c;
+  color-scheme: dark;
+  background-color: var(--navy);
+  color: var(--ink);
+}
+
+.flt-day {
+  --background: #f2f6fb;
+  --foreground: #0b1a2e;
+  --muted: #e2eaf4;
+  --muted-foreground: #4b5e79;
+  --border: #c6d5e8;
+  --card: #ffffff;
+  --card-foreground: #0b1a2e;
+  --popover: #ffffff;
+  --popover-foreground: #0b1a2e;
+  --line: #2f5da6;
+  --burn: #ec4511;
+  --primary: var(--burn);
+  --primary-foreground: #ffffff;
+  color-scheme: light;
+  color: var(--foreground);
+}
+
+.flt-grid {
+  --grid-major: color-mix(in oklab, var(--line) 8%, transparent);
+  --grid-minor: color-mix(in oklab, var(--line) 3.5%, transparent);
+  background-image:
+    linear-gradient(to right, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(to right, var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-minor) 1px, transparent 1px);
+  background-size:
+    120px 120px,
+    120px 120px,
+    24px 24px,
+    24px 24px;
+  background-position: center top;
+}
+
+.flt-grain {
+  pointer-events: none;
+  opacity: 0.08;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+}
+
+.flt-ticks {
+  --tick: color-mix(in oklab, var(--line) 62%, transparent);
+  --tick-size: 12px;
+  background-image:
+    linear-gradient(var(--tick), var(--tick)), linear-gradient(var(--tick), var(--tick)),
+    linear-gradient(var(--tick), var(--tick)), linear-gradient(var(--tick), var(--tick)),
+    linear-gradient(var(--tick), var(--tick)), linear-gradient(var(--tick), var(--tick)),
+    linear-gradient(var(--tick), var(--tick)), linear-gradient(var(--tick), var(--tick));
+  background-repeat: no-repeat;
+  background-size:
+    var(--tick-size) 1px,
+    1px var(--tick-size),
+    var(--tick-size) 1px,
+    1px var(--tick-size),
+    var(--tick-size) 1px,
+    1px var(--tick-size),
+    var(--tick-size) 1px,
+    1px var(--tick-size);
+  background-position:
+    left top,
+    left top,
+    right top,
+    right top,
+    left bottom,
+    left bottom,
+    right bottom,
+    right bottom;
+}
+
+.flt-hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in oklab, var(--line) 16%, transparent) 0 1px,
+    transparent 1px 7px
+  );
+}
+
+.flt-scanlines {
+  pointer-events: none;
+  background-image: repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.22) 0 1px, transparent 1px 3px);
+}
+
+.flt-phosphor {
+  color: var(--hud);
+  text-shadow: 0 0 10px color-mix(in oklab, var(--hud) 45%, transparent);
+}
+
+.flt-burn-glow {
+  text-shadow: 0 0 18px color-mix(in oklab, var(--burn) 55%, transparent);
+}
+
+.flt-code .shiki,
+.flt-code pre {
+  background-color: transparent !important;
+}
+
+.flt .flt-code .shiki span:not([class]) {
+  color: var(--shiki-dark);
+  font-style: var(--shiki-dark-font-style);
+  font-weight: var(--shiki-dark-font-weight);
+  text-decoration: var(--shiki-dark-text-decoration);
+}
+
+/* Sky bands the page climbs through: blueprint navy, the dusk runway of the takeoff film, then open daylight.
+   The stops at each seam repeat the film's own edge colors so the cut disappears. */
+.flt-to-dusk {
+  background-image: linear-gradient(to bottom, var(--navy), #1b2149);
+}
+
+.flt-runway {
+  background-image: linear-gradient(to bottom, #1b2149, #263264 34%, #3f3a62 52%, #6f4656 60%, #1a1c2d 68%, #101118);
+}
+
+.flt-dusk {
+  background-image: linear-gradient(
+    to bottom,
+    #101118 0%,
+    #1b1c33 14%,
+    #352a52 32%,
+    #6b3a5c 48%,
+    #b4565c 62%,
+    #e2885a 76%,
+    #f4b98a 90%,
+    #f8d9b6 100%
+  );
+}
+
+.flt-dawn {
+  background-image: linear-gradient(to bottom, #f8d9b6 0%, #f1e3d2 16%, #dfe8f1 40%, #cfe1f4 66%, #e4eef9 86%, #f2f6fb 100%);
+}
+
+/* Stage overlays: ScrollFilm writes data-stage on scroll; each overlay group names the stage it belongs to. */
+.flt-ov {
+  opacity: 0;
+  transition:
+    opacity 0.5s ease,
+    translate 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+  translate: 0 6px;
+}
+
+.flt-stage[data-stage="0"] .flt-ov[data-ov~="0"],
+.flt-stage[data-stage="1"] .flt-ov[data-ov~="1"],
+.flt-stage[data-stage="2"] .flt-ov[data-ov~="2"],
+.flt-stage[data-stage="3"] .flt-ov[data-ov~="3"],
+.flt-stage[data-stage="4"] .flt-ov[data-ov~="4"],
+.flt-stage[data-stage="5"] .flt-ov[data-ov~="5"] {
+  opacity: 1;
+  translate: 0 0;
+}
+
+.flt-rail-tick {
+  background-color: color-mix(in oklab, var(--line) 22%, transparent);
+  transition:
+    background-color 0.4s ease,
+    width 0.4s ease;
+}
+
+.flt-stage[data-stage="1"] .flt-rail-tick[data-tick="1"],
+.flt-stage[data-stage="2"] .flt-rail-tick[data-tick="2"],
+.flt-stage[data-stage="3"] .flt-rail-tick[data-tick="3"],
+.flt-stage[data-stage="4"] .flt-rail-tick[data-tick="4"],
+.flt-stage[data-stage="5"] .flt-rail-tick[data-tick="5"] {
+  background-color: var(--burn);
+  width: 2rem;
+}
+
+.flt-rail-label {
+  opacity: 0.35;
+  transition: opacity 0.4s ease;
+}
+
+.flt-stage[data-stage="1"] .flt-rail-label[data-tick="1"],
+.flt-stage[data-stage="2"] .flt-rail-label[data-tick="2"],
+.flt-stage[data-stage="3"] .flt-rail-label[data-tick="3"],
+.flt-stage[data-stage="4"] .flt-rail-label[data-tick="4"],
+.flt-stage[data-stage="5"] .flt-rail-label[data-tick="5"] {
+  opacity: 1;
+}
+
+/* SVG strokes carry pathLength="1", so one dash covers any path whatever its real length. */
+.flt-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+.flt-needle {
+  rotate: var(--to, 0deg);
+  transform-box: view-box;
+}
+
+.flt-pct {
+  counter-reset: pct var(--pct, 0);
+}
+
+.flt-pct::after {
+  content: counter(pct) "%";
+  color: var(--burn);
+}
+
+.flt-seq {
+  view-timeline-name: --flt-seq;
+}
+
+.flt-step {
+  opacity: 0.38;
+  transition: opacity 0.45s ease;
+}
+
+.flt-step-check {
+  opacity: 0;
+  scale: 0.6;
+  transition:
+    opacity 0.3s ease,
+    scale 0.3s ease;
+}
+
+.flt-stage[data-stage="1"] .flt-step[data-on~="1"],
+.flt-stage[data-stage="2"] .flt-step[data-on~="2"],
+.flt-stage[data-stage="3"] .flt-step[data-on~="3"],
+.flt-stage[data-stage="4"] .flt-step[data-on~="4"],
+.flt-stage[data-stage="5"] .flt-step[data-on~="5"] {
+  opacity: 1;
+}
+
+.flt-stage[data-stage="1"] .flt-step[data-on~="1"] .flt-step-check,
+.flt-stage[data-stage="2"] .flt-step[data-on~="2"] .flt-step-check,
+.flt-stage[data-stage="3"] .flt-step[data-on~="3"] .flt-step-check,
+.flt-stage[data-stage="4"] .flt-step[data-on~="4"] .flt-step-check,
+.flt-stage[data-stage="5"] .flt-step[data-on~="5"] .flt-step-check {
+  opacity: 1;
+  scale: 1;
+}
+
+.flt-scan {
+  opacity: 0;
+}
+
+.flt-idle {
+  opacity: 0.8;
+}
+
+/* Hangul has no caps to space out: the wide tracking the Latin labels use pulls a Korean word apart into letters. */
+html:lang(ko) .flt :is(.font-hud, .font-tech) {
+  letter-spacing: 0.04em;
+}
+
+@keyframes flt-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes flt-intro {
+  from {
+    opacity: 0;
+    translate: 0 1rem;
+    filter: blur(6px);
+  }
+}
+
+@keyframes flt-rise {
+  from {
+    opacity: 0;
+    translate: 0 1.75rem;
+  }
+}
+
+@keyframes flt-blink {
+  50% {
+    opacity: 0.15;
+  }
+}
+
+@keyframes flt-needle {
+  from {
+    rotate: var(--from, -120deg);
+  }
+  to {
+    rotate: var(--to, 0deg);
+  }
+}
+
+@keyframes flt-sweep {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@keyframes flt-scan {
+  0% {
+    translate: 0 0;
+    opacity: 0;
+  }
+  8%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    translate: 0 var(--scan-travel, 100%);
+    opacity: 0;
+  }
+}
+
+@keyframes flt-idle {
+  0%,
+  100% {
+    opacity: 0.55;
+    scale: 0.92;
+  }
+  50% {
+    opacity: 1;
+    scale: 1.08;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .flt-intro {
+    animation: flt-intro 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) var(--intro-delay, 0s) both;
+  }
+
+  .flt-blink {
+    animation: flt-blink 1.4s steps(1, end) infinite;
+  }
+
+  .flt-sweep {
+    animation: flt-sweep 3.6s linear infinite;
+  }
+
+  .flt-scan {
+    animation: flt-scan 3.2s cubic-bezier(0.45, 0, 0.3, 1) 0.6s 1 both;
+  }
+
+  .flt-idle {
+    animation: flt-idle 2.6s ease-in-out infinite;
+  }
+
+  @supports (animation-timeline: view()) {
+    .flt-reveal {
+      animation: flt-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 9rem;
+    }
+
+    .flt-draw-view {
+      animation: flt-draw linear both;
+      animation-timeline: view();
+      animation-range: entry 25% cover 50%;
+    }
+
+    .flt-needle {
+      animation: flt-needle linear both;
+      animation-timeline: view();
+      animation-range: entry 30% cover 55%;
+    }
+
+    .flt-seq-item {
+      animation: flt-rise linear both;
+      animation-timeline: --flt-seq;
+      animation-range: entry calc(55% + var(--i, 0) * 12%) entry calc(80% + var(--i, 0) * 12%);
+    }
+  }
+}

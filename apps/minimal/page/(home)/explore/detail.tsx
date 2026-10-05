@@ -1,59 +1,80 @@
+import { stays } from "@apps/minimal/common";
 import { appCard, appNavClass, Screen } from "@apps/minimal/ui";
 import { page } from "akanjs/client";
-import { buttonRecipe, Layout, Link } from "akanjs/ui";
-import { AiOutlineCalendar, AiOutlineHeart, AiOutlineStar } from "react-icons/ai";
+import { buttonRecipe, Image, Layout, Link } from "akanjs/ui";
+import { AiFillStar, AiOutlineCalendar, AiOutlineHeart } from "react-icons/ai";
 
 export default page()
-  .config({ topInset: 48, transition: "scaleOut" })
-  .render(() => (
-    <Screen className="pb-8">
-      <Layout.Navbar
-        right={<div className="font-semibold">Stay detail</div>}
-        className={appNavClass}
-        back
-      ></Layout.Navbar>
-      <div className="px-5 pt-5">
-        <div className="relative h-72 overflow-hidden rounded-[2rem] bg-gradient-to-br from-primary via-secondary to-accent">
-          <button className="absolute top-4 right-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-black/20 text-xl backdrop-blur">
-            <AiOutlineHeart />
-          </button>
-          <div className="absolute right-4 bottom-4 left-4 rounded-3xl bg-black/25 p-4 backdrop-blur">
-            <div className="flex items-center gap-1 text-warning">
-              <AiOutlineStar /> <span className="text-sm">4.92 · Super stay</span>
+  .search("stay", String)
+  .config({ topInset: 48, bottomInset: 88, transition: "stack" })
+  .render(({ stay }) => {
+    const id = stay && stay in stays ? (stay as keyof typeof stays) : "skyline";
+    const current = stays[id];
+    return (
+      <Screen className="pb-8">
+        <Layout.Navbar className={appNavClass} back>
+          <div className="font-semibold">Stay detail</div>
+        </Layout.Navbar>
+        <div className="px-5 pt-5 md:mx-auto md:max-w-3xl">
+          <div className="relative h-80 overflow-hidden rounded-[2rem] md:h-[26rem]">
+            <Image
+              src={current.image}
+              alt={current.title}
+              width={1600}
+              height={1000}
+              priority
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
+            <button className="absolute top-4 right-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-black/30 text-white text-xl backdrop-blur">
+              <AiOutlineHeart />
+            </button>
+            <div className="absolute right-5 bottom-5 left-5">
+              <div className="flex items-center gap-1 text-sm text-warning">
+                <AiFillStar /> {current.rating} · Super stay
+              </div>
+              <h1 className="mt-2 font-bold text-3xl text-white md:text-4xl">{current.title}</h1>
+              <p className="text-sm text-white/70">{current.area}</p>
             </div>
-            <h1 className="mt-2 font-bold text-3xl">Skyline Loft</h1>
-            <p className="text-sm text-white/70">Seolleung · Seoul</p>
           </div>
+          <div className="mt-5 grid grid-cols-3 gap-3 text-center">
+            {[
+              [String(current.guests), "guests"],
+              [String(current.bedrooms), "bedrooms"],
+              [current.view, "view"],
+            ].map(([value, label]) => (
+              <div className={appCard(undefined, "rounded-3xl p-4")} key={label}>
+                <p className="font-bold text-xl">{value}</p>
+                <p className="text-foreground/50 text-xs">{label}</p>
+              </div>
+            ))}
+          </div>
+          <section className={appCard(undefined, "mt-5 rounded-[1.75rem] p-5")}>
+            <h2 className="font-semibold text-xl">About this place</h2>
+            <p className="mt-2 text-foreground/60 text-sm leading-6">{current.summary}</p>
+          </section>
+          <Image
+            src="/stays/interior.webp"
+            alt="Living room"
+            width={1200}
+            height={800}
+            className="mt-5 h-56 w-full rounded-[1.75rem] object-cover md:h-72"
+          />
         </div>
-        <div className="mt-5 grid grid-cols-3 gap-3 text-center">
-          {[
-            ["2", "guests"],
-            ["1", "bedroom"],
-            ["27F", "view"],
-          ].map(([value, label]) => (
-            <div className={appCard(undefined, "rounded-3xl p-4")} key={label}>
-              <p className="font-bold text-xl">{value}</p>
-              <p className="text-foreground/50 text-xs">{label}</p>
+        <Layout.BottomInset className="flex h-full w-full items-center border-foreground/10 border-t bg-background/90 px-5 backdrop-blur">
+          <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4">
+            <div>
+              <p className="font-bold text-lg">₩{current.nightly.toLocaleString("en-US")}</p>
+              <p className="text-foreground/50 text-xs">per night</p>
             </div>
-          ))}
-        </div>
-        <section className={appCard(undefined, "mt-6 rounded-[1.75rem] p-5")}>
-          <h2 className="font-semibold text-xl">About this place</h2>
-          <p className="mt-2 text-foreground/50 text-sm leading-6">
-            A calm lounge with city views, perfect for late check-ins and short work stays.
-          </p>
-        </section>
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <Link className={buttonRecipe({ variant: "outline" }, "rounded-2xl")} href="/profile/payments">
-            <AiOutlineCalendar /> Book now
-          </Link>
-          <Link className={buttonRecipe({ variant: "primary" }, "rounded-2xl border-0")} href="/profile/self">
-            View profile
-          </Link>
-        </div>
-        {/* <div className={appCard(undefined, "mt-5 rounded-[1.75rem] p-4")}>
-          <User.Util.SignInPassword redirect="/explore/detail" />
-        </div> */}
-      </div>
-    </Screen>
-  ));
+            <Link
+              className={buttonRecipe({ variant: "primary" }, "h-12 rounded-2xl border-0 px-8")}
+              href={`/explore/book?stay=${id}`}
+            >
+              <AiOutlineCalendar /> Book now
+            </Link>
+          </div>
+        </Layout.BottomInset>
+      </Screen>
+    );
+  });

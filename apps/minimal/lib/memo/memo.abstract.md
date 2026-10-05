@@ -11,3 +11,5 @@ stored through the util lib's blob storage.
 - An attached image is a PNG, JPEG, WebP or GIF of at most 5 MB, stored under a name made from that type; the uploaded
   file name is not kept.
 - Removal is soft: a removed memo keeps its row with `removedAt` set, and its image stays in storage.
+- The public list (`inPublic`) is live: a memo created, renamed or removed reaches every open screen showing the list
+  without a refetch.

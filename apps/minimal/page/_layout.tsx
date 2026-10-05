@@ -10,5 +10,5 @@ export default rootLayout()
     },
   ])
   .theme("dark")
-  .head(<title>apptest</title>)
+  .head(<title>minimal</title>)
   .render(({ children }) => <>{children}</>);
