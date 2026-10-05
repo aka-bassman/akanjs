@@ -20,6 +20,12 @@ describe("recipe factory — buttonRecipe", () => {
     expect(t).not.toContain("bg-primary");
   });
 
+  test("xl is one step past lg", () => {
+    const t = tokens(buttonRecipe({ size: "xl" }));
+    expect(t).toEqual(expect.arrayContaining(["h-14", "px-8", "text-xl"]));
+    expect(t).not.toContain("h-12");
+  });
+
   test("second arg appends custom classes", () => {
     expect(tokens(buttonRecipe({ variant: "primary" }, "w-full rounded-2xl"))).toEqual(
       expect.arrayContaining(["w-full", "rounded-2xl"]),
@@ -124,6 +130,24 @@ describe("recipe factory — inputRecipe", () => {
     const t = tokens(inputRecipe({ kind: "area", size: "lg" }));
     expect(t).not.toContain("h-12");
     expect(t).toContain("text-base");
+  });
+
+  test("select draws its own chevron over the surface and takes h-10 at md", () => {
+    const t = tokens(inputRecipe({ kind: "select", size: "md" }));
+    expect(t).toEqual(expect.arrayContaining(["appearance-none", "bg-no-repeat", "pr-7", "pl-3", "h-10"]));
+    expect(t.some((token) => token.startsWith("bg-[image:"))).toBe(true);
+    expect(t).toContain("bg-background");
+    expect(t).not.toContain("px-3");
+  });
+
+  test("select shares the field height at every size, and area still takes none", () => {
+    const heightsOf = (classes: string) => tokens(classes).filter((token) => /^h-\d+$/.test(token));
+    for (const size of ["xs", "sm", "md", "lg", "xl"] as const) {
+      const field = heightsOf(inputRecipe({ kind: "field", size }));
+      expect(field).toHaveLength(1);
+      expect(heightsOf(inputRecipe({ kind: "select", size }))).toEqual(field);
+      expect(heightsOf(inputRecipe({ kind: "area", size }))).toEqual([]);
+    }
   });
 
   test("error tone swaps the border to destructive", () => {

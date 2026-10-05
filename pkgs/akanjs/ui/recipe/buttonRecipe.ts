@@ -26,6 +26,7 @@ export const buttonRecipe = recipe(
         sm: "h-8 px-3 text-sm",
         md: "h-10 px-4",
         lg: "h-12 px-6 text-lg",
+        xl: "h-14 px-8 text-xl",
         icon: "h-10 w-10 px-0",
       },
       // `size` sets h-*, so squaring the aspect keeps every size square without a shape×size matrix.
