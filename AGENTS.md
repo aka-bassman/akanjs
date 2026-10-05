@@ -72,9 +72,13 @@ back.
   `foreground`, `<color>-foreground`, `destructive`), and color literals in `style={{...}}`. Use semantic tokens
   (`bg-primary`, `text-foreground/70`). A legitimate fixed color (OS-chrome mockups, data-viz) takes a
   `// biome-ignore lint/plugin: <reason>`. (`no-raw-palette-class`, `no-arbitrary-color`, `no-daisyui-legacy-class`,
-  `no-inline-color`, `no-interpolated-arbitrary-class`)
-- **Never `throw new Error`.** Throw `new Err("<module>.error.<key>")` and register the key as `[en, ko]` in that
-  module's dictionary `.error({})`. Import `Err` from `"../dict"` on the server and from `"@libs/<lib>/client"` or
+  `no-inline-color`, `no-interpolated-arbitrary-class`) Color literals in SVG color attributes (`fill`, `stroke`,
+  `stopColor`, `floodColor`, `lightingColor`, `color`) and in `el.style.<prop> = …` / `el.style.setProperty(…)`
+  writes are flagged as warnings for now; `currentColor`, `none`, `transparent`, `var(--…)` and `url(#id)` stay legal.
+- **Never `throw new Error`, and never construct a raw `Error` at all.** Throw `new Err("<module>.error.<key>")` and
+  register the key as `[en, ko]` in that module's dictionary `.error({})`. A raw `Error` passed to `reject(...)`,
+  returned or stored loses the key and the status just the same; that shape is flagged as a warning for now, a
+  `throw` as an error. Import `Err` from `"../dict"` on the server and from `"@libs/<lib>/client"` or
   `"@apps/<app>/client"` in UI. `no-throw-raw-error.grit` exempts tests, `*.constant.ts`, `common/**`, `env/**`, and
   a root `native/` folder — `common/` and `env/` have no legal `Err` import path, so keep throwing code out of them,
   and a native plugin throws `AkanNativeError`, the error its bridge carries back to the page.
@@ -95,12 +99,20 @@ back.
   `*.constant.ts`, `*.store.ts`, and the five module component suffixes (`no-bang-comment-in-client.grit`). Bun
   classifies `//!` and `/*!` as legal comments and keeps them through minification, so the note ships to every
   visitor. Use `// FIXME:` there; `//!` stays legal in server, `srvkit/`, and CLI files.
+- **Write `{name}`, never `{{name}}`, in a dictionary `.error()` / `.translate()` entry**
+  (`no-double-brace-placeholder.grit`): interpolation replaces single braces only, so a doubled one renders as typed.
+- **Every endpoint and named slice names its guards** (`no-unguarded-endpoint.grit`, a warning). A
+  `query` / `mutation` / `pubsub` / `message`, a named slice's `init()`, or a `slice()` guards map without `root`
+  that declares no guards (or `guards: []`) answers every HTTP and websocket caller. Write `guards: [Public]` when
+  anonymous access is the intent.
 - **Never touch `document.cookie`, `localStorage` or `sessionStorage` in app or lib code** (`no-document-cookie.grit`,
   `no-web-storage.grit`). A native shell serves the page from `app://localhost` on iOS, macOS and Linux, which keeps
   no cookies: `document.cookie` reads `""` and a write is dropped, so the value exists in the browser and vanishes in
   the app. Web Storage does work in the shells, but it bypasses the store akanjs picks per platform (the shell's
   Preferences in an app) and throws during SSR. Use `getCookie` / `setCookie` / `removeCookie`, `storage`, and
-  `secretStorage` for tokens and credentials, all from `akanjs/client`.
+  `secretStorage` for tokens and credentials, all from `akanjs/client`. `setCookie` writes `path=/; SameSite=Lax;
+  Secure`, and an options object overrides only the keys it names — pass `sameSite: "none"` only for a cookie a
+  cross-site POST must carry back.
 - **Browser APIs an app WebView lacks live in `webkit/`** (`no-web-only-api-outside-webkit.grit`, a warning):
   `navigator.share` / `canShare` (Android's WebView has none), `navigator.serviceWorker` and
   `Notification.requestPermission` / `.permission` (no app page has them), `navigator.geolocation` (use
@@ -195,7 +207,7 @@ back.
 - Never use a non-null assertion. Narrow with `?.`, an early return, or a type predicate such as `.filter((id): id is string => !!id)`.
 - Escape with `as unknown as T`. Never `as any`.
 - Never annotate a component's return type. Annotate a helper only when the return is a union, a tuple, or a type predicate.
-- Use `as const` on every `enumOf(...)` array, every `via(Model, [...] as const, …)` Light tuple, and every module-scope lookup map. Never use the TypeScript `enum` keyword.
+- Use `as const` on every `enumOf(...)` array, every `via(Model, [...] as const, …)` Light tuple, and every module-scope lookup map. Never use the TypeScript `enum` keyword. (`enumOf` infers its literal values even without `as const`, so a typo there fails to compile; write it anyway for consistency.)
 - Async functions carry no `Async` suffix.
 
 ### Test Code
@@ -473,6 +485,12 @@ so chains compose (`org.removeUser(id).removeInvite(id).save()`). Put a one-line
 transition. Atomic counters live on the Model class with the updater-callback form, returning `!!modifiedCount`.
 Indexes and derived totals go in `static override _onSchema`, not in the service. **Removal is always soft** — the
 framework has no hard delete for a model table, and `delete` is deliberately left unused so it can mean one later.
+Every read and query-level write sees live rows only (`removedAt IS NULL`). `{ withRemoved: true }` reaches removed
+rows: the third argument of `find` / `findOne` / `findById` (projection second, `null` when none), the last of
+`count` / `exists` / `updateMany`, or inside `updateOne` / `updateById`'s options. Without it, a `removedAt`
+condition only a removed row can meet (`q.exists("removedAt")`, a comparison) throws `can never match`. Removes,
+slices, filter methods, loaders and `pickById` stay live-only, a removed document is read-only (`save()` throws),
+and `updateById(id, { removedAt: null }, { withRemoved: true })` revives one without hooks.
 The facade spells `Many`/`One` out on its writes (`updateOne` / `updateMany` / `removeOne` / `removeMany`); only the
 count was shortened to `count(query)`, with `countDocuments` kept as `@deprecated`. `updateById(id, update)` and
 `removeById(id)` are those same query-level writes narrowed to one id, **not** the document path: they fire no hooks,
@@ -640,8 +658,12 @@ Full contract — filter-arg `ref` pickers, `getQueryMeta` summary counters, `la
 - **A projection is bare on the facade and nested under `select` on a filter accessor.** `pickById(id, { secret:
   true })` and `find`/`findOne`/`findById`/`pickOne` take the projection as their second argument; a generated
   `findBy<Filter>(...args, { select: { secret: true } })` takes it inside the option object. The shapes do not swap
-  — `{ select: … }` handed to the facade projects a field named `select`, which no model has, and the read comes
-  back empty with no error. This is the only way to read a `field.secret(...)` value.
+  — `{ select: … }` handed to the facade projects a field named `select` and throws `Unknown document field path`.
+  The facade's third argument is the scope (`{ withRemoved: true }`), never a field. This is the only way to read a
+  `field.secret(...)` value.
+- **`limit: 0` means every row on the server, never on the client.** A server `list<Filter>(…, { limit: 0 })`
+  reads without a ceiling, like an omitted limit, and `null` pages at 20. A client's `0` (`initX(…, { limit: 0 })`)
+  is served `MAX_PAGE_SIZE` (500) with a one-time warn. Paginate (`loadMoreOf<Model>`) or name a page size.
 - **A slice list is either one window or an accumulated one.** `setPageOf<Model>` swaps the window;
   `loadMoreOf<Model>()` appends the rows after the ones loaded and takes **no page number** — it skips by
   `<model>List.length`, so the offset cannot drift from what is on screen when a live insertion moves the server's
@@ -858,6 +880,8 @@ what every developer must know even when not building one.
 - Follow the established model layering pattern in this order: `Input`, `Object`, `Light<Model>`, full `<Model>`, and `<Model>Insight`. Write all five, and write `<Model>Insight` even when it is empty.
 - Put display and predicate logic on the `Light<Model>` class rather than in a util module — see Module File Playbook.
 - Defaults are a literal for scalars and a thunk for anything constructed. Arrays are `field([T])`; optional is the postfix `.optional()`.
+- A document-path change to an `{ immutable: true }` field is refused with `base.error.immutableField` (400,
+  `data.field`), which the client toasts in the user's language; query-level writes are not checked.
 - **`field.visual(T)` is a field the page renders and an agent never sees** — a blur placeholder, a rendered HTML body, a serialized geometry. It stays an ordinary stored `property` (persistence, search, forms and the page response untouched) and is stripped wherever a value is masked for an AI caller: every in-page-agent read and every MCP result, along with the MCP readable schema. Unlike `hidden`/`secret` it is cost, not secrecy — nothing is refused over one. Reach for it whenever a field is bulky and useless to a model; that is cheaper than every tool learning to avoid it.
 - **A `field.hidden` / `field.secret` value reads `null` on the client, and the type still declares it.** `SignalContext.resolveReturn` skips both field types while it builds an endpoint's response, and hydration writes `null` over the key rather than leaving it absent — the first branch of the loop in `constant/getDefault.ts`, ahead of the field's own default. So the value is a deliberate `null` behind a type promising a `string`, every use of it typechecks, and the failure lands wherever it is finally dereferenced instead of where it was read. **Guard with `??` or `== null`**: `=== undefined`, a destructuring default and an optional parameter default all catch only a missing key and sail straight past this one. A projection (`pickById(id, { secret: true })`) widens the *server's* read, never the response. If a screen needs the value, the field is neither hidden nor secret; if it only needs to be cheap for a model rather than unseen, that is `field.visual`.
 
@@ -888,6 +912,7 @@ Full contract — the trigger-maintained mirror, tokenizer changes, `AKAN_SEARCH
   `filter` 0): `title` is the one line a human scans for, `desc` is prose, `tag` is a keyword list, `filter` is a
   scoping value (status, owner, role) that must be matchable but must never outrank a real title hit. `thumb` is
   mirrored for rendering a hit and is **not** indexed — never expect it to match.
+- `schema.index({ x: "text" })` (a Mongo text spec) builds nothing and warns at boot: full-text search is this role.
 - **`field.secret`, `field.hidden` and `resolve()` take no `text` role — it is a compile error**, because the
   mirror is plaintext and an indexed secret would leak through search. The same refusal throws at runtime as a
   backstop, including for a `text` field *underneath* one of those. Do not work around either.
@@ -1137,8 +1162,8 @@ re-implement the same look inline in several places, and never author a near-dup
 
 Import from `akanjs/ui`:
 - `badgeRecipe`(variant: default*|primary|secondary|accent|neutral|success|warning|info|error|outline · size: xs|sm|md*|lg · outline?) — 뱃지 look — 시맨틱 variant × size, outline 플래그는 색을 유지한 외곽선 스타일. `<Badge>` 가 소비하며, recipes.badge 슬롯으로 교체 가능.
-- `buttonRecipe`(variant: default|primary*|secondary|accent|neutral|outline|ghost|destructive|success|warning|info|link · size: xs|sm|md*|lg|icon · shape: default*|square|circle · outline?) — 버튼 look — 시맨틱 variant × size × shape, outline 플래그는 색을 유지한 외곽선 스타일. `<Button>` 이 소비하며, `_overrides.tsx` 의 recipes.button 슬롯으로 교체 가능.
-- `inputRecipe`(kind: field*|area · size: xs|sm|md*|lg|xl · tone: default*|primary|error) — 입력 표면 look — Input/TextArea/DatePicker 가 공유하는 필드 셸. kind 로 한 줄 필드(field)/멀티라인(area), tone 으로 강조/오류 상태를 고른다.
+- `buttonRecipe`(variant: default|primary*|secondary|accent|neutral|outline|ghost|destructive|success|warning|info|link · size: xs|sm|md*|lg|xl|icon · shape: default*|square|circle · outline?) — 버튼 look — 시맨틱 variant × size × shape, outline 플래그는 색을 유지한 외곽선 스타일. `<Button>` 이 소비하며, `_overrides.tsx` 의 recipes.button 슬롯으로 교체 가능.
+- `inputRecipe`(kind: field*|area|select · size: xs|sm|md*|lg|xl · tone: default*|primary|error) — 입력 표면 look — Input/TextArea/DatePicker 가 공유하는 필드 셸. kind 로 한 줄 필드(field)/멀티라인(area)/네이티브 `<select>`(select), tone 으로 강조/오류 상태를 고른다.
 
 App and lib recipes are **not** listed here. Each app/lib carries its own generated index —
 `apps/<app>/AGENTS.md` / `libs/<lib>/AGENTS.md` (`## Recipes In Scope`) — regenerated by `akan sync` and
