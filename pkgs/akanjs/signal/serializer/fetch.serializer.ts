@@ -8,6 +8,7 @@ import type {
   EndpointArgProps,
   EndpointCls,
   EndpointInfo,
+  ResolvedSliceCrud,
   SerializedArg,
   SerializedEndpoint,
   SerializedFilter,
@@ -157,6 +158,7 @@ export class FetchSerializer {
         sliceCls.removeGuards !== sliceCls.cruGuards,
       ),
       ...FetchSerializer.#serializeSliceMcp(sliceCls),
+      ...FetchSerializer.#serializeSliceCrud(sliceCls),
       ...FetchSerializer.#serializeSliceAgents(sliceCls),
       endpoint: FetchSerializer.#serializeEndpoints(endpointCls),
     };
@@ -186,12 +188,21 @@ export class FetchSerializer {
   }
 
   static #serializeSliceMcp(sliceCls: SliceCls): { mcp?: SerializedSignalMcp } {
-    const mcp = Object.fromEntries(
-      Object.entries(sliceCls.mcp ?? {})
-        .filter(([, published]) => !published)
+    const mcp = FetchSerializer.#offVerbs(sliceCls.mcp);
+    return Object.keys(mcp).length ? { mcp } : {};
+  }
+
+  static #serializeSliceCrud(sliceCls: SliceCls): { crud?: SerializedSignalMcp } {
+    const crud = FetchSerializer.#offVerbs(sliceCls.crud);
+    return Object.keys(crud).length ? { crud } : {};
+  }
+
+  static #offVerbs(verbs: ResolvedSliceCrud | undefined): SerializedSignalMcp {
+    return Object.fromEntries(
+      Object.entries(verbs ?? {})
+        .filter(([, on]) => !on)
         .map(([verb]) => [verb, false]),
     ) as SerializedSignalMcp;
-    return Object.keys(mcp).length ? { mcp } : {};
   }
 
   static serializeServiceSignal(endpointCls: EndpointCls): SerializedSignal {

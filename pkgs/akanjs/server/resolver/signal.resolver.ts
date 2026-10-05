@@ -442,41 +442,46 @@ export class SignalResolver {
           });
       });
 
-      endpointObj[refName] = (builder as any)
-        .query(cnst.full, { guards: sliceCls.getGuards })
-        .param(`${refName}Id`, ID)
-        .exec(async function (this: any, id: string) {
-          return await this[serviceName][`get${capitalizedRefName}`](id);
-        });
+      if (sliceCls.crud.get) {
+        endpointObj[refName] = (builder as any)
+          .query(cnst.full, { guards: sliceCls.getGuards })
+          .param(`${refName}Id`, ID)
+          .exec(async function (this: any, id: string) {
+            return await this[serviceName][`get${capitalizedRefName}`](id);
+          });
 
-      endpointObj[`light${capitalizedRefName}`] = (builder as any)
-        .query(cnst.light, { guards: sliceCls.getGuards })
-        .param(`${refName}Id`, ID)
-        .exec(async function (this: any, id: string) {
-          return await this[serviceName][`get${capitalizedRefName}`](id);
-        });
+        endpointObj[`light${capitalizedRefName}`] = (builder as any)
+          .query(cnst.light, { guards: sliceCls.getGuards })
+          .param(`${refName}Id`, ID)
+          .exec(async function (this: any, id: string) {
+            return await this[serviceName][`get${capitalizedRefName}`](id);
+          });
+      }
 
-      endpointObj[`create${capitalizedRefName}`] = (builder as any)
-        .mutation(cnst.full, { guards: sliceCls.createGuards })
-        .body("data", cnst.input)
-        .exec(async function (this: any, data: any) {
-          return await this[serviceName].__create(data);
-        });
+      if (sliceCls.crud.create)
+        endpointObj[`create${capitalizedRefName}`] = (builder as any)
+          .mutation(cnst.full, { guards: sliceCls.createGuards })
+          .body("data", cnst.input)
+          .exec(async function (this: any, data: any) {
+            return await this[serviceName].__create(data);
+          });
 
-      endpointObj[`update${capitalizedRefName}`] = (builder as any)
-        .mutation(cnst.full, { guards: sliceCls.updateGuards })
-        .param(`${refName}Id`, ID)
-        .body("data", cnst.input)
-        .exec(async function (this: any, id: string, data: any) {
-          return await this[serviceName].__update(id, data);
-        });
+      if (sliceCls.crud.update)
+        endpointObj[`update${capitalizedRefName}`] = (builder as any)
+          .mutation(cnst.full, { guards: sliceCls.updateGuards })
+          .param(`${refName}Id`, ID)
+          .body("data", cnst.input)
+          .exec(async function (this: any, id: string, data: any) {
+            return await this[serviceName].__update(id, data);
+          });
 
-      endpointObj[`remove${capitalizedRefName}`] = (builder as any)
-        .mutation(cnst.full, { guards: sliceCls.removeGuards })
-        .param(`${refName}Id`, ID)
-        .exec(async function (this: any, id: string) {
-          return await this[serviceName].__remove(id);
-        });
+      if (sliceCls.crud.remove)
+        endpointObj[`remove${capitalizedRefName}`] = (builder as any)
+          .mutation(cnst.full, { guards: sliceCls.removeGuards })
+          .param(`${refName}Id`, ID)
+          .exec(async function (this: any, id: string) {
+            return await this[serviceName].__remove(id);
+          });
       return endpointObj;
     }) {}
     return SliceEndpoint;
@@ -607,6 +612,7 @@ export class SignalResolver {
     const routeOptions: NonNullable<SignalRoutes["routeOptions"]> = {};
     const wsRoutes: WebsocketRoutes = {};
     const defaultPrefix = endpointCls.srv.cnst?.refName;
+    SignalResolver.#warnUnguarded(endpointMeta);
     Object.entries(endpointMeta).forEach(([key, endpointInfo]) => {
       const path = endpointInfo.getRoutePath(key, defaultPrefix);
       if (endpointInfo.signalOption.globalPrefix !== undefined) {
@@ -740,6 +746,16 @@ export class SignalResolver {
     return { routes, wsRoutes, routeOptions };
   }
 
+  // Security: guards are the only gate a transport has, so an endpoint naming none answers anyone over HTTP and WS.
+  static #warnUnguarded(endpointMeta: { [key: string]: EndpointInfo }) {
+    const open = Object.entries(endpointMeta)
+      .filter(([, endpointInfo]) => !endpointInfo.signalOption.guards?.length)
+      .map(([key]) => key);
+    if (!open.length) return;
+    SignalResolver.logger.warn(
+      `${open.join(", ")} declare${open.length === 1 ? "s" : ""} no guards, so anyone can call ${open.length === 1 ? "it" : "them"} over HTTP and WebSocket. Name the guards, or \`guards: [Public]\` to keep one open on purpose.`,
+    );
+  }
   static #selectCache = new WeakMap<Cls, Record<string, true>>();
   static #selectForConstant(constant: Cls): Record<string, true> | undefined {
     const cached = SignalResolver.#selectCache.get(constant);

@@ -39,6 +39,7 @@ export type SliceCls<
   updateGuards: GuardCls[];
   removeGuards: GuardCls[];
   mcp: ResolvedSliceMcp;
+  crud: ResolvedSliceCrud;
 };
 
 /** `root` is absent: it rides on the root slice itself. */
@@ -49,14 +50,26 @@ export interface ResolvedSliceMcp {
   remove: boolean;
 }
 
+/** Which generated verbs the server mounts: a verb whose guards resolve to none (or `false`) has no route at all. */
+export interface ResolvedSliceCrud {
+  get: boolean;
+  create: boolean;
+  update: boolean;
+  remove: boolean;
+}
+
 interface RootSliceOption {
+  /**
+   * `false` (or no guard at all) mounts no generated endpoint for that verb, which is the only way to take one off
+   * HTTP: `mcp: { cru: false }` merely keeps it off the agent shelf. `create`/`update`/`remove` fall back to `cru`.
+   */
   guards?: {
     root?: GuardCls | GuardCls[];
-    get?: GuardCls | GuardCls[];
-    cru?: GuardCls | GuardCls[];
-    create?: GuardCls | GuardCls[];
-    update?: GuardCls | GuardCls[];
-    remove?: GuardCls | GuardCls[];
+    get?: GuardCls | GuardCls[] | false;
+    cru?: GuardCls | GuardCls[] | false;
+    create?: GuardCls | GuardCls[] | false;
+    update?: GuardCls | GuardCls[] | false;
+    remove?: GuardCls | GuardCls[] | false;
   };
   /**
    * Keyed like `guards`, for the root slice and generated CRUD only; `create`/`update`/`remove` fall back to `cru`
@@ -148,14 +161,22 @@ export function slice<
   if (!srv.cnst || !srv.db) throw new Error("cnst and db are required");
   const filterRef = srv.db.filter;
   const init = buildSlice(srv.srv.refName, srv.cnst.input, srv.cnst.full, srv.cnst.light, srv.cnst.insight, filterRef);
-  const toGuards = (guard?: GuardCls | GuardCls[]) => (guard ? (Array.isArray(guard) ? guard : [guard]) : []);
+  const toGuards = (guard?: GuardCls | GuardCls[] | false) => (guard ? (Array.isArray(guard) ? guard : [guard]) : []);
   const rootGuards = toGuards(option.guards?.root);
   const getGuards = toGuards(option.guards?.get);
   const cruGuards = toGuards(option.guards?.cru);
   // An omitted override keeps the same `cruGuards` reference: serialization detects "not overridden" by identity.
-  const createGuards = option.guards?.create ? toGuards(option.guards.create) : cruGuards;
-  const updateGuards = option.guards?.update ? toGuards(option.guards.update) : cruGuards;
-  const removeGuards = option.guards?.remove ? toGuards(option.guards.remove) : cruGuards;
+  const createGuards = option.guards?.create !== undefined ? toGuards(option.guards.create) : cruGuards;
+  const updateGuards = option.guards?.update !== undefined ? toGuards(option.guards.update) : cruGuards;
+  const removeGuards = option.guards?.remove !== undefined ? toGuards(option.guards.remove) : cruGuards;
+  // Security: a generated verb with no guard used to be mounted open; the client never synthesized it, so only a
+  // stranger calling the route by hand could reach it.
+  const crud: ResolvedSliceCrud = {
+    get: getGuards.length > 0,
+    create: createGuards.length > 0,
+    update: updateGuards.length > 0,
+    remove: removeGuards.length > 0,
+  };
   const mcpOption =
     typeof option.mcp === "boolean" ? { root: option.mcp, get: option.mcp, cru: option.mcp } : option.mcp;
   const cruMcp = mcpOption?.cru !== false;
@@ -179,6 +200,7 @@ export function slice<
     static updateGuards = updateGuards;
     static removeGuards = removeGuards;
     static mcp = mcp;
+    static crud = crud;
     // The app's own slices go last: its root slice resolves its own filter, which already includes the lib's filters.
     static [SLICE_META] = Object.assign(
       {},

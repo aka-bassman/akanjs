@@ -1327,6 +1327,53 @@ describe("SignalResolver declaration contracts", () => {
     ).toThrow(/which the model does not have/);
   });
 
+  test("mounts no generated verb whose guards are false or name none, and tells the client which", () => {
+    const resolve = (guards: Parameters<typeof slice>[1]["guards"]) => {
+      class GatedSlice extends slice(serverResolverTestServiceModel, { guards }, () => ({})) {}
+      const keys = Object.keys(SignalResolver.resolveSlice(GatedSlice)[ENDPOINT_META]);
+      const signal = FetchSerializer.serializeDatabaseSignal(GatedSlice, ServerResolverTestEndpoint);
+      const synthesized = Object.keys(FetchClient.getBaseEndpoint("serverResolverTestItem", signal));
+      return { keys, crud: signal.crud, synthesized };
+    };
+    const generated = (verbs: string[]) =>
+      verbs.map((verb) => (verb === "get" ? "serverResolverTestItem" : `${verb}ServerResolverTestItem`));
+
+    const cruOff = resolve({ root: Public, get: Public, cru: false });
+    expect(cruOff.keys).toEqual(expect.arrayContaining(generated(["get", "light"])));
+    expect(cruOff.keys).not.toEqual(expect.arrayContaining(generated(["create"])));
+    expect(cruOff.keys.filter((key) => /^(create|update|remove)/.test(key))).toEqual([]);
+    expect(cruOff.crud).toEqual({ create: false, update: false, remove: false });
+    expect(cruOff.synthesized.sort()).toEqual(generated(["get", "light"]).sort());
+
+    const createOff = resolve({ root: Public, get: Public, cru: Public, create: false });
+    expect(createOff.keys).toEqual(expect.arrayContaining(generated(["update", "remove"])));
+    expect(createOff.keys).not.toContain("createServerResolverTestItem");
+    expect(createOff.crud).toEqual({ create: false });
+    expect(createOff.synthesized).not.toContain("createServerResolverTestItem");
+    expect(createOff.synthesized).toContain("updateServerResolverTestItem");
+
+    const unguarded = resolve({ root: Public });
+    expect(unguarded.keys.filter((key) => !/List|Insight/.test(key))).toEqual([]);
+    expect(unguarded.crud).toEqual({ get: false, create: false, update: false, remove: false });
+    expect(unguarded.synthesized).toEqual([]);
+  });
+
+  test("warns at resolve time about every endpoint that declares no guards", () => {
+    class OpenEndpoint extends endpoint(serverResolverTestServiceModel, ({ query }) => ({
+      openRead: query(String).exec(() => "open"),
+      publicRead: query(String, { guards: [Public] }).exec(() => "public"),
+    })) {}
+    const warn = spyOn(SignalResolver.logger, "warn");
+    try {
+      resolveWith(OpenEndpoint, new OpenEndpoint());
+      const lines = warn.mock.calls.map(([line]) => String(line));
+      expect(lines.some((line) => line.startsWith("openRead declares no guards"))).toBe(true);
+      expect(lines.some((line) => line.includes("publicRead"))).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test("turns slice declarations into CRUD/list/insight endpoint declarations", async () => {
     const SliceEndpoint = SignalResolver.resolveSlice(ServerResolverTestSlice);
     const endpointMeta = SliceEndpoint[ENDPOINT_META];

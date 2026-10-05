@@ -187,6 +187,8 @@ export interface SerializedSignal {
   removeGuards?: string[];
   /** Generated CRUD verbs kept off the agent shelf, carried here because `FetchClient.getBaseEndpoint` synthesizes them. */
   mcp?: SerializedSignalMcp;
+  /** Generated CRUD verbs the server does not mount at all, so no client synthesizes them. */
+  crud?: SerializedSignalMcp;
   /** Which generated CRUD verbs a person-only guard protects, by the same verb map; only the `false` keys travel. */
   agents?: SerializedSignalMcp;
 }

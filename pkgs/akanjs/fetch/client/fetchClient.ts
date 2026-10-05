@@ -440,16 +440,16 @@ export class FetchClient {
       modelId: `${refName}Id`,
       lightModel: `light${capRefName}`,
     };
-    const createGuards = signal.createGuards ?? signal.cruGuards;
-    const updateGuards = signal.updateGuards ?? signal.cruGuards;
-    const removeGuards = signal.removeGuards ?? signal.cruGuards;
+    const createGuards = FetchClient.#mountedGuards(signal, "create");
+    const updateGuards = FetchClient.#mountedGuards(signal, "update");
+    const removeGuards = FetchClient.#mountedGuards(signal, "remove");
     // Stamped on here, where these endpoints are born, so every reader sees one resolved field.
     const mcp = (verb: keyof NonNullable<SerializedSignal["mcp"]>) => ({
       ...(signal.mcp?.[verb] === false ? { mcp: false as const } : {}),
       ...(signal.agents?.[verb] === false ? { agents: false as const } : {}),
     });
     const endpoint: { [key: string]: SerializedEndpoint } = {};
-    if (signal.getGuards) {
+    if (FetchClient.#mountedGuards(signal, "get")) {
       endpoint[names.model] = {
         type: "query",
         args: [{ type: "param", name: names.modelId, refName: "ID" }],
@@ -497,6 +497,11 @@ export class FetchClient {
     }
     return endpoint;
   }
+  static #mountedGuards(signal: SerializedSignal, verb: "get" | "create" | "update" | "remove") {
+    if (signal.crud?.[verb] === false) return undefined;
+    if (verb === "get") return signal.getGuards;
+    return signal[`${verb}Guards`] ?? signal.cruGuards;
+  }
   #registerModelBaseEndpoint(refName: string, signal: SerializedSignal) {
     const capRefName = capitalize(refName);
     const names = {
@@ -515,15 +520,17 @@ export class FetchClient {
     });
 
     // view/edit exist exactly when the get handler does; edit also needs a write endpoint; merge wraps updateModel.
-    const anyCruGuards = signal.cruGuards ?? signal.createGuards ?? signal.updateGuards ?? signal.removeGuards;
-    const updateGuards = signal.updateGuards ?? signal.cruGuards;
-    if (signal.getGuards) {
+    const getGuards = FetchClient.#mountedGuards(signal, "get");
+    const updateGuards = FetchClient.#mountedGuards(signal, "update");
+    const anyCruGuards =
+      FetchClient.#mountedGuards(signal, "create") ?? updateGuards ?? FetchClient.#mountedGuards(signal, "remove");
+    if (getGuards) {
       this.#setHandlerFactory(names.viewModel, () =>
         this.#makeModelHandleFn(refName, names.model, names.viewModel, `${refName}View`),
       );
       this.#setHandlerFactory(names.getModelView, () => this.#makeModelObjFn(refName, names.getModelView));
     }
-    if (signal.getGuards && anyCruGuards) {
+    if (getGuards && anyCruGuards) {
       this.#setHandlerFactory(names.editModel, () =>
         this.#makeModelHandleFn(refName, names.model, names.editModel, `${refName}Edit`),
       );
