@@ -35,6 +35,8 @@ Each of these made a rule silently report nothing, and each was found by adding 
   that is `no-bang-comment-in-client`'s blind spot, and why its fixture puts the marker between statements.
 - A regex capture (`r"..."($var)`) carries no source range: a diagnostic spanned on one gets no location,
   and `$var` does not interpolate into a `message`.
+- A code snippet also matches JSX text that parses as it: `` `new Error` `` reports `<code>new Error</code>` in a
+  docs page. Where a rule meets `.tsx`, match the node kind instead (`JsNewExpression(callee = `Error`)`).
 
 The five vocabulary fixtures were ported from `frontendBuild/styleGuard.test.ts`, the pre-grit
 implementation of the same rules, when that scanner was retired.
