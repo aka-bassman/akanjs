@@ -7,6 +7,7 @@ import type * as cnst from "../cnst";
 import type { fetch as sharedFetch } from "../useServer";
 
 type SharedFetch = typeof sharedFetch;
+type UploaderFetch = Pick<SharedFetch, "addFiles" | "lightFile">;
 
 const getFetch = async () => await getOrSetupSignalTestFetch<SharedFetch>();
 
@@ -24,7 +25,7 @@ export const addAndWaitActiveFiles = async (
   metas: cnst.FileMeta[],
   type = "test",
   parentId?: string,
-  uploaderFetch?: SharedFetch,
+  uploaderFetch?: UploaderFetch,
 ) => {
   const fetch = uploaderFetch ?? (await getFetch());
   // 1. 파일 업로드
@@ -52,7 +53,7 @@ export const addAndWaitActiveFiles = async (
   return activeFiles;
 };
 
-export const getActiveFiles = async (num = 1, uploaderFetch?: SharedFetch): Promise<cnst.LightFile[]> => {
+export const getActiveFiles = async (num = 1, uploaderFetch?: UploaderFetch): Promise<cnst.LightFile[]> => {
   const [fileList, metas] = getFileInputSamples(num);
   const files = await addAndWaitActiveFiles(fileList, metas, "test", undefined, uploaderFetch);
   return files;

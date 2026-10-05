@@ -1,12 +1,15 @@
 "use client";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { Err } from "@libs/shared/client";
 import { capitalize } from "akanjs/common";
 import { FormFields } from "akanjs/store";
-import type { EditorState } from "lexical";
+import { $setSelection, type EditorState } from "lexical";
 import { type ReactNode, useMemo } from "react";
 
 import { type AgentField, AgentFieldProvider } from "../agentField";
 import type { EditorFeature } from "../feature";
+
+const commitTimeoutMs = 5_000;
 
 interface AgentFieldPluginProps {
   /** The `set<Field>On<Model>` this editor writes, or null to publish nothing. Frozen at mount. */
@@ -36,9 +39,21 @@ export const AgentFieldPlugin = ({ name, blocks = true, features, flush, childre
       features,
       content: () => editor.getEditorState().toJSON(),
       commit: async (mutate) => {
-        await new Promise<void>((resolve) => {
-          editor.update(mutate, { onUpdate: resolve });
-        });
+        // An update Lexical rejects goes to the composer's onError and never reaches onUpdate, so an unbounded
+        // wait here hangs the agent's whole turn; a caret left on a block the write removes is the usual cause.
+        const applied = await Promise.race([
+          new Promise<boolean>((resolve) => {
+            editor.update(
+              () => {
+                $setSelection(null);
+                mutate();
+              },
+              { onUpdate: () => resolve(true) },
+            );
+          }),
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), commitTimeoutMs)),
+        ]);
+        if (!applied) throw new Err("shared.error.editorWriteNotApplied");
         flush(editor.getEditorState());
       },
     };

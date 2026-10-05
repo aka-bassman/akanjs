@@ -1,10 +1,10 @@
-import type { BlobStorageApi } from "@libs/util/srvkit";
+import { BlobStorageApi } from "@libs/util/srvkit";
 import { serve } from "akanjs/service";
 
 import { Err } from "../dict";
 
-export class LocalFileService extends serve("localFile" as const, ({ use }) => ({
-  blobStorageApi: use<BlobStorageApi>(),
+export class LocalFileService extends serve("localFile" as const, ({ plug }) => ({
+  blobStorageApi: plug(BlobStorageApi),
 })) {
   //? An uploaded page or SVG would run on the API's origin; <img> and <video> ignore this, a PDF viewer refuses it.
   static readonly sandbox = "default-src 'none'; style-src 'unsafe-inline'; sandbox";

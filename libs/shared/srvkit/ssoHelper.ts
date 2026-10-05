@@ -268,9 +268,13 @@ export const getSsoOrigin = (request: Bun.BunRequest) => {
   return origin;
 };
 
-export const makeOAuthRedirectResponse = (type: OAuthType, req: Bun.BunRequest) => {
-  const state = new URL(req.url).searchParams.get("state") ?? undefined;
-  return Response.redirect(getOAuthRedirectUrl(getSsoOrigin(req), type, state), 302);
+export const makeOAuthRedirectResponse = (
+  type: OAuthType,
+  req: Bun.BunRequest,
+  native?: { origin: string; state: string },
+) => {
+  const state = native?.state ?? new URL(req.url).searchParams.get("state") ?? undefined;
+  return Response.redirect(getOAuthRedirectUrl(native?.origin ?? getSsoOrigin(req), type, state), 302);
 };
 
 const exchangeCodeForToken = async (

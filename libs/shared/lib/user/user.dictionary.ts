@@ -418,6 +418,18 @@ export const dictionary = modelDictionary(["en", "ko"])
     googleCallback: fn(["Google Callback", "구글 콜백"]).desc(["Google Callback", "구글 콜백"]),
     naver: fn(["Naver", "네이버"]).desc(["Naver", "네이버"]),
     naverCallback: fn(["Naver Callback", "네이버 콜백"]).desc(["Naver Callback", "네이버 콜백"]),
+    exchangeSsoCode: fn(["Exchange SSO Code", "SSO 코드 교환"])
+      .desc([
+        "Exchanges a native app's one-time SSO code and PKCE verifier for a session or a sign-up",
+        "네이티브 앱의 일회용 SSO 코드와 PKCE verifier를 세션 또는 가입으로 교환",
+      ])
+      .arg((t) => ({
+        code: t(["Code", "코드"]).desc(["One-time code from the SSO deep link", "SSO 딥링크로 받은 일회용 코드"]),
+        codeVerifier: t(["Code Verifier", "코드 검증값"]).desc([
+          "PKCE verifier the app generated at the start",
+          "앱이 시작할 때 만든 PKCE 검증값",
+        ]),
+      })),
     apple: fn(["Apple", "애플"]).desc(["Apple", "애플"]),
     appleCallback: fn(["Apple Callback", "애플 콜백"])
       .desc(["Apple Callback", "애플 콜백"])
@@ -458,6 +470,14 @@ export const dictionary = modelDictionary(["en", "ko"])
     invalidAccountId: ["Invalid accountId", "유효하지 않은 아이디입니다"],
     noPasswordInUser: ["No password in this user", "이 유저에 비밀번호가 없습니다"],
     noSsoTypeInUser: ["No ssoType in this user", "이 유저에 해당 SSO 유형이 없습니다"],
+    ssoCallbackSchemeNotAllowed: [
+      "{scheme} is not an allowed SSO callback scheme",
+      "{scheme}은(는) 허용된 SSO 콜백 스킴이 아닙니다",
+    ],
+    invalidSsoCode: [
+      "The SSO code is unknown, expired or already used",
+      "SSO 코드가 없거나 만료되었거나 이미 사용되었습니다",
+    ],
     tooManyPhoneCodes: ["Too many phone codes, try later", "인증번호 요청이 너무 많습니다. 나중에 다시 시도해주세요"],
     phoneAlreadyExists: ["Phone already exists", "이미 존재하는 휴대폰 번호입니다"],
     invalidPhoneNumber: ["Invalid phone number", "유효하지 않은 휴대폰 번호입니다"],
@@ -500,6 +520,14 @@ export const dictionary = modelDictionary(["en", "ko"])
     signup: ["Create new account", "회원가입"],
     signWithGithub: ["Sign in with Github", "Github로 시작하기"],
     signWithGoogle: ["Sign in with Google", "구글로 시작하기"],
+    ssoWaitTitle: ["Continue in your browser", "브라우저에서 로그인을 계속하세요"],
+    ssoWaitDesc: [
+      "A sign-in page opened in your browser. Finish signing in there and you will come back here on your own.",
+      "기본 브라우저에 로그인 페이지가 열렸습니다. 그곳에서 로그인을 마치면 이 앱으로 자동으로 돌아옵니다.",
+    ],
+    ssoWaitReopen: ["Open the browser again", "브라우저 다시 열기"],
+    ssoWaitCancel: ["Cancel", "취소"],
+    ssoSigninFailed: ["Sign-in did not finish. Please try again.", "로그인을 완료하지 못했습니다. 다시 시도해주세요."],
     signWithFacebook: ["Sign in with Facebook", "페이스북로 시작하기"],
     signWithTwitter: ["Sign in with Twitter", "트위터로 시작하기"],
     signWithNaver: ["Sign in with Naver", "네이버로 시작하기"],

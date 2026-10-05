@@ -1,7 +1,8 @@
 import { createPrivateKey } from "node:crypto";
-import { Logger } from "akanjs/common";
+import { adapt } from "akanjs/service";
 import { importPKCS8, SignJWT } from "jose";
 import { Err } from "../lib/dict";
+import type { ModulesOptions } from "../lib/option";
 import {
   execAsync,
   githubShellQuote,
@@ -33,13 +34,19 @@ import type {
   GithubWebhookDto,
 } from "./githubTypes";
 
-export class GithubApp {
-  readonly #logger = new Logger("GithubApp");
+export class GithubApp extends adapt("githubApp", ({ env }) => ({
+  options: env((options: ModulesOptions) => options.githubAppInfo),
+})) {
   readonly #baseUrl = "https://api.github.com";
   readonly #headers = { Accept: "application/json" };
-  readonly #options: GithubOptions;
-  constructor(options: GithubOptions) {
-    this.#options = options;
+
+  get configured() {
+    return !!this.options;
+  }
+  #requireOptions(): GithubOptions {
+    if (!this.options)
+      throw new Err("util.error.adaptorNotConfigured", { adaptor: "GithubApp", option: "githubAppInfo" });
+    return this.options;
   }
 
   async #api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
@@ -53,10 +60,11 @@ export class GithubApp {
   }
 
   async getAccessToken(code: string): Promise<GithubAccessToken> {
+    const { clientId, clientSecret } = this.#requireOptions();
     const data = await this.#api<GithubAccessTokenDto>("https://github.com/login/oauth/access_token", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ client_id: this.#options.clientId, client_secret: this.#options.clientSecret, code }),
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code }),
     });
     return toGithubAccessToken(data);
   }
@@ -249,7 +257,7 @@ export class GithubApp {
     );
     if (!Array.isArray(contents)) {
       const reason = this.#formatApiError(contents);
-      this.#logger.error(
+      this.logger.error(
         `[GithubApp] listRepositoryAppNames failed owner=${owner} repo=${repo} ref=${ref ?? "(default)"} reason=${reason} body=${JSON.stringify(contents)}`,
       );
       throw new Err("util.error.githubRepositoryAppsListFailed", { reason });
@@ -523,20 +531,21 @@ export class GithubApp {
   }
 
   async #createAppJwt() {
-    if (!this.#options.privateKey) throw new Err("util.error.githubPrivateKeyNotConfigured");
+    const { id, privateKey } = this.#requireOptions();
+    if (!privateKey) throw new Err("util.error.githubPrivateKeyNotConfigured");
 
     const now = Math.floor(Date.now() / 1000);
-    const key = await importPKCS8(this.#normalizePrivateKey(), "RS256");
+    const key = await importPKCS8(GithubApp.#normalizePrivateKey(privateKey), "RS256");
     return await new SignJWT({})
       .setProtectedHeader({ alg: "RS256" })
       .setIssuedAt(now - 60)
       .setExpirationTime(now + 9 * 60)
-      .setIssuer(this.#options.id)
+      .setIssuer(id)
       .sign(key);
   }
 
-  #normalizePrivateKey() {
-    const privateKey = this.#options.privateKey?.replace(/\\n/g, "\n") ?? "";
+  static #normalizePrivateKey(rawPrivateKey: string) {
+    const privateKey = rawPrivateKey.replace(/\\n/g, "\n");
     if (!privateKey.includes("BEGIN RSA PRIVATE KEY")) return privateKey;
 
     return createPrivateKey(privateKey).export({

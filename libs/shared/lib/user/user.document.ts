@@ -16,9 +16,6 @@ import * as cnst from "../cnst";
 import type * as db from "../db";
 import { Err } from "../dict";
 
-/** cnst.UserInput 의 nickname maxlength 와 같아야 한다. */
-const NICKNAME_MAX_LENGTH = 12;
-
 export class UserFilter extends from(cnst.User, (filter) => ({
   query: {
     byStatuses: filter()
@@ -109,6 +106,9 @@ export class User extends by(cnst.User) {
 }
 
 export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
+  /** cnst.UserInput 의 nickname maxlength 와 같아야 한다. */
+  private static readonly nicknameMaxLength = 12;
+
   static override _onSchema(schema: SchemaOf<UserModel, User>) {
     schema.pre<User>("save", function (next) {
       if (this.isModified("images")) {
@@ -434,13 +434,14 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
   }
   /** SSO 프로필 이름을 nickname 규격(최대 12자, active 유저와 중복 불가)으로 다듬는다. */
   async makeUniqueNickname(seed: string, fallback = "user") {
-    const base = (seed.split("@")[0] ?? "").replace(/\s+/gu, " ").trim().slice(0, NICKNAME_MAX_LENGTH) || fallback;
+    const base =
+      (seed.split("@")[0] ?? "").replace(/\s+/gu, " ").trim().slice(0, UserModel.nicknameMaxLength) || fallback;
     for (let count = 0; count < 100; count++) {
       const suffix = count ? String(count) : "";
-      const nickname = `${base.slice(0, NICKNAME_MAX_LENGTH - suffix.length)}${suffix}`;
+      const nickname = `${base.slice(0, UserModel.nicknameMaxLength - suffix.length)}${suffix}`;
       if (!(await this.findIdByNickname(nickname, "active"))) return nickname;
     }
-    return `${base.slice(0, NICKNAME_MAX_LENGTH - 6)}${randomString(6)}`;
+    return `${base.slice(0, UserModel.nicknameMaxLength - 6)}${randomString(6)}`;
   }
   async setNickname(userId: string, nickname: string) {
     const { modifiedCount } = await this.User.updateOne({ id: userId }, { nickname });

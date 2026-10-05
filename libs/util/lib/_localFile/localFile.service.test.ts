@@ -3,8 +3,10 @@ import { BlobStorageApi } from "@libs/util/srvkit";
 import { LocalFileService } from "./localFile.service";
 
 const workspace = `${Bun.env.TMPDIR ?? Bun.env.TEMP ?? "/tmp"}/local-file-${crypto.randomUUID()}`;
-process.env.AKAN_WORKSPACE_ROOT = workspace;
-const storage = new BlobStorageApi("util", {});
+const storage = Object.assign(new BlobStorageApi(), {
+  root: `${workspace}/backend`,
+  privateRoot: `${workspace}/private`,
+});
 const service = Object.assign(new LocalFileService(), { blobStorageApi: storage });
 const stored = {
   "memo/page.html": "<script>fetch('/api/memo/createMemo')</script>",

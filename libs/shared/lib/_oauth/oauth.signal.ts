@@ -7,20 +7,27 @@ import * as srv from "../srv";
 
 export class OauthInternal extends internal(srv.oauth, () => ({})) {}
 
-// The protocol endpoints live at the origin's root, where RFC 8414 and the clients look for them, and are `mcp: false`
-// because they are the way onto the shelf rather than anything on it. `[Public]` is the decision: a client holds no
-// credential yet, which is what it is here to obtain.
-const protocolRoute = { guards: [Public], prefix: false as const, globalPrefix: false as const, mcp: false as const };
-
 export class OauthEndpoint extends endpoint(srv.oauth, ({ query, mutation }) => ({
+  // The protocol endpoints live at the origin's root, where RFC 8414 and the clients look for them, and are `mcp: false`
+  // because they are the way onto the shelf rather than anything on it. `[Public]` is the decision: a client holds no
+  // credential yet, which is what it is here to obtain.
   oauthAuthorizationServerMetadata: query(Any, {
-    ...protocolRoute,
+    guards: [Public],
+    prefix: false,
+    globalPrefix: false,
+    mcp: false,
     path: ".well-known/oauth-authorization-server",
   }).exec(function () {
     return this.oauthService.metadata();
   }),
 
-  authorizeOAuth: query(Any, { ...protocolRoute, path: "oauth/authorize" })
+  authorizeOAuth: query(Any, {
+    guards: [Public],
+    prefix: false,
+    globalPrefix: false,
+    mcp: false,
+    path: "oauth/authorize",
+  })
     .with(Req)
     .with(Account, { nullable: true })
     .exec(async function (req, account) {
@@ -29,20 +36,38 @@ export class OauthEndpoint extends endpoint(srv.oauth, ({ query, mutation }) => 
 
   // Nullable: a child reached over a unix socket learns the caller only from the gateway's headers, and a
   // deployment that lost them should register under a shared, wider bucket rather than refuse every client.
-  registerOAuthClient: mutation(Any, { ...protocolRoute, path: "oauth/register" })
+  registerOAuthClient: mutation(Any, {
+    guards: [Public],
+    prefix: false,
+    globalPrefix: false,
+    mcp: false,
+    path: "oauth/register",
+  })
     .with(Req)
     .with(Ip, { nullable: true })
     .exec(async function (req, ip) {
       return await this.oauthService.register(await req.json().catch(() => null), ip);
     }),
 
-  exchangeOAuthToken: mutation(Any, { ...protocolRoute, path: "oauth/token" })
+  exchangeOAuthToken: mutation(Any, {
+    guards: [Public],
+    prefix: false,
+    globalPrefix: false,
+    mcp: false,
+    path: "oauth/token",
+  })
     .with(Req)
     .exec(async function (req) {
       return await this.oauthService.exchange(req);
     }),
 
-  revokeOAuthToken: mutation(Any, { ...protocolRoute, path: "oauth/revoke" })
+  revokeOAuthToken: mutation(Any, {
+    guards: [Public],
+    prefix: false,
+    globalPrefix: false,
+    mcp: false,
+    path: "oauth/revoke",
+  })
     .with(Req)
     .exec(async function (req) {
       return await this.oauthService.revoke(req);

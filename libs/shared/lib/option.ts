@@ -28,12 +28,22 @@ export interface SignupPolicy {
   activateVerifies: cnst.Verify["value"][];
 }
 
+export interface NativeSsoOptions {
+  // Deep link schemes a native app may take an SSO code back on; unset admits the app's own name only.
+  callbackSchemes?: string[];
+}
+
+export interface NativeSsoPolicy {
+  callbackSchemes: string[];
+}
+
 const emailVerifies = ["email", "google", "kakao", "naver", "apple", "facebook"] as const;
 
 export type ModulesOptions = LibOptions & {
   rootAdminInfo?: AccountInfo;
   oauth?: OAuthOptions;
   signup?: SignupOptions;
+  nativeSso?: NativeSsoOptions;
 };
 
 export const option = new AkanOption<ModulesOptions>()
@@ -46,6 +56,9 @@ export const option = new AkanOption<ModulesOptions>()
         activateVerifies:
           options.signup?.activateVerifies ?? (options.signup?.requireVerifiedEmail ? [...emailVerifies] : []),
       } satisfies SignupPolicy,
+      nativeSsoPolicy: {
+        callbackSchemes: options.nativeSso?.callbackSchemes ?? [getEnv().appName],
+      } satisfies NativeSsoPolicy,
     };
   })
   // The MCP resource server trusts exactly the tokens this lib's authorization server mints: same signing secret,

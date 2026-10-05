@@ -390,10 +390,49 @@ export const SSOButtons = ({
       </button>
     ),
   };
+  const ssoAttempt = st.use.ssoAttempt();
   const mainSsoTypes = mainSsos.filter((ssoType) => !!mainSsoButtonMap[ssoType]);
   const subSsoTypes = subSsos.filter((ssoType) => !!subSsoButtonMap[ssoType]);
   return (
     <div className={cn("flex w-full flex-col justify-between gap-1.5 md:gap-3", className)}>
+      <Modal
+        open={!!ssoAttempt}
+        onCancel={() => {
+          st.do.setSsoAttempt(null);
+        }}
+        title={l("user.ssoWaitTitle")}
+        action={
+          <div className="flex w-full gap-2">
+            <button
+              className={buttonRecipe({ variant: "outline" }, "flex-1")}
+              onClick={() => {
+                st.do.setSsoAttempt(null);
+              }}
+            >
+              {l("user.ssoWaitCancel")}
+            </button>
+            <button
+              className={buttonRecipe({ variant: "primary" }, "flex-1")}
+              onClick={() => {
+                if (ssoAttempt)
+                  void st.do.ssoSigninUser(ssoAttempt.ssoType, {
+                    signinRedirect,
+                    signupRedirect,
+                    errorRedirect,
+                    replace,
+                  });
+              }}
+            >
+              {l("user.ssoWaitReopen")}
+            </button>
+          </div>
+        }
+      >
+        <div className="flex flex-col items-center gap-5 py-6 text-center">
+          <Loading.Spin />
+          <p className="text-foreground/70 text-sm">{l("user.ssoWaitDesc")}</p>
+        </div>
+      </Modal>
       {mainSsoTypes.map((ssoType) => (
         <a
           key={ssoType}

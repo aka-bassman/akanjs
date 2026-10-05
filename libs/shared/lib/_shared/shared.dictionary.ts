@@ -17,6 +17,10 @@ export const dictionary = serviceDictionary(["en", "ko"])
     ssoNotConfigured: ["{type} SSO not configured", "{type} SSO가 설정되지 않았습니다"],
     invalidSsoCallbackMissingCode: ["Invalid SSO callback: missing code", "잘못된 SSO 콜백입니다: 코드 누락"],
     invalidSsoCallbackMissingOrigin: ["Invalid SSO callback: missing origin", "잘못된 SSO 콜백입니다: origin 누락"],
+    invalidNativeSsoStart: [
+      "Invalid native SSO start: codeChallenge and state are required",
+      "잘못된 네이티브 SSO 요청입니다: codeChallenge와 state가 필요합니다",
+    ],
     failedToGetAccessToken: ["Failed to get access token from {type}", "{type}에서 액세스 토큰을 가져오지 못했습니다"],
     noAppleIdToken: ["No id_token found in Apple's response", "Apple 응답에서 id_token을 찾을 수 없습니다"],
     fileUploadNotConfigured: ["File upload is not configured.", "파일 업로드가 설정되지 않았습니다."],
@@ -31,8 +35,18 @@ export const dictionary = serviceDictionary(["en", "ko"])
     ],
     fileTypeNotAllowed: ["File type is not allowed: {fileType}", "허용되지 않는 파일 형식입니다: {fileType}"],
     addressNotFound: ["Address not found.", "주소를 찾을 수 없습니다."],
+    editorWriteNotApplied: ["The editor did not apply the change.", "에디터가 변경을 적용하지 못했습니다."],
   })
   .translate({
+    ssoReturnDoneTitle: ["You are signed in", "로그인되었습니다"],
+    ssoReturnDoneDesc: [
+      "Go back to the app to continue. If it did not open, press the button below.",
+      "앱으로 돌아가 계속 진행하세요. 앱이 열리지 않았다면 아래 버튼을 눌러주세요.",
+    ],
+    ssoReturnFailedTitle: ["Sign-in did not finish", "로그인하지 못했습니다"],
+    ssoReturnFailedDesc: ["Go back to the app and try again.", "앱으로 돌아가 다시 시도해주세요."],
+    ssoReturnOpenApp: ["Open the app", "앱 열기"],
+    ssoReturnCloseTab: ["You can close this tab.", "이 탭은 닫아도 됩니다."],
     logout: ["Logout", "로그아웃"],
     newest: ["Newest", "최신순"],
     oldest: ["Oldest", "오래된순"],

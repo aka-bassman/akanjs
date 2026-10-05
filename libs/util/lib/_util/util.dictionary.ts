@@ -94,6 +94,10 @@ export const dictionary = serviceDictionary(["en", "ko"])
       "잘못된 기본 URL로 데이터를 삭제할 수 없습니다",
     ],
     cloudFrontNotInitialized: ["CloudFront is not initialized", "CloudFront가 초기화되지 않았습니다"],
+    adaptorNotConfigured: [
+      "{adaptor} is not configured: set `{option}` in the server env",
+      "{adaptor} 설정이 없습니다. 서버 env 에 `{option}` 을 지정해야 합니다",
+    ],
     invalidServiceType: ["Invalid service type", "잘못된 서비스 유형입니다"],
     slideProviderRequiresSlide: [
       "SlideProvider requires at least one Slide component",

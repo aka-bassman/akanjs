@@ -2,6 +2,10 @@ import {
   type AuthTokenMeta,
   getRefreshSession,
   listRefreshSessions,
+  type OauthCodeGrantParams,
+  type OauthLineage,
+  type OauthRefreshParams,
+  type OauthSubject,
   type RefreshSession,
   type ResolvedOAuthOptions,
   RevokedSessions,
@@ -23,19 +27,12 @@ import {
   OAuthRegistration,
   OAuthRevocation,
   OAuthToken,
-  type OAuthTokenParams,
 } from "akanjs/server";
 import { serve } from "akanjs/service";
 
 import * as cnst from "../cnst";
 import { Err } from "../dict";
 import type * as srv from "../srv";
-
-type Subject = { type: cnst.OauthSubjectType["value"]; id: string };
-type CodeGrantParams = Extract<OAuthTokenParams, { grantType: "authorization_code" }>;
-type RefreshParams = Extract<OAuthTokenParams, { grantType: "refresh_token" }>;
-/** What a token names about its grant: enough to find the lineage and to check the client presenting it owns it. */
-type Lineage = Pick<RefreshSession, "id" | "subject" | "subjectId" | "clientId">;
 
 export class OauthService extends serve("oauth" as const, ({ use, service, memory }) => ({
   securityService: service<srv.util.SecurityService>(),
@@ -306,7 +303,7 @@ export class OauthService extends serve("oauth" as const, ({ use, service, memor
    * A refresh token is found by its hash in either subject's cache; an access token carries its lineage as `sid` and
    * its subject as `sub`, and is believed only with this app's signature, app and environment on it.
    */
-  private async lineageOf(token: string): Promise<Lineage | null> {
+  private async lineageOf(token: string): Promise<OauthLineage | null> {
     const hash = hashToken(token);
     const refresh =
       (await getRefreshSession(this.userService.userModel.userCache, hash)) ??
@@ -324,7 +321,7 @@ export class OauthService extends serve("oauth" as const, ({ use, service, memor
     return { id: claims.sid, subject, subjectId, clientId: claims.client_id };
   }
 
-  private async revokeLineage({ id, subject, subjectId }: Lineage) {
+  private async revokeLineage({ id, subject, subjectId }: OauthLineage) {
     await revokeRefreshSessionBySid(this.cacheOf(subject), subject, subjectId, id);
     // Access tokens are stateless, so the lineage id every one of them carries as `sid` is denied for the longest
     // one could still be valid; `AccountMiddleware` and the `/mcp` verifier both ask `RevokedSessions`.
@@ -344,7 +341,7 @@ export class OauthService extends serve("oauth" as const, ({ use, service, memor
     return (await this.clients.get(clientId))?.clientName ?? "";
   }
 
-  private async exchangeCode(client: OAuthClientRecord, params: CodeGrantParams): Promise<Response> {
+  private async exchangeCode(client: OAuthClientRecord, params: OauthCodeGrantParams): Promise<Response> {
     const codeHash = hashToken(params.code);
     // Consumed before it is judged: a code that fails any check below is spent, so a second attempt cannot fish for
     // the one thing it lacked — and of two exchanges racing on one code, only one receives it.
@@ -374,7 +371,7 @@ export class OauthService extends serve("oauth" as const, ({ use, service, memor
     }
   }
 
-  private async refresh(client: OAuthClientRecord, params: RefreshParams): Promise<Response> {
+  private async refresh(client: OAuthClientRecord, params: OauthRefreshParams): Promise<Response> {
     const next = this.securityService.createRefreshToken();
     const presented = hashToken(params.refreshToken);
     const invalid = (description: string) => OAuthErrors.token("invalid_grant", description, params.client);
@@ -420,7 +417,7 @@ export class OauthService extends serve("oauth" as const, ({ use, service, memor
     }
   }
 
-  private async issue(client: OAuthClientRecord, subject: Subject, userAgent?: string): Promise<Response> {
+  private async issue(client: OAuthClientRecord, subject: OauthSubject, userAgent?: string): Promise<Response> {
     const refresh = this.securityService.createRefreshToken();
     const session =
       subject.type === "user"
@@ -445,7 +442,7 @@ export class OauthService extends serve("oauth" as const, ({ use, service, memor
    * The same claims a browser session carries, plus the OAuth ones: `AccountMiddleware` reads `self`/`me` as before,
    * `McpAuth` reads `aud`. Minted from the live account, not from a snapshot, so a role change reaches the next token.
    */
-  private async mint(client: OAuthClientRecord, subject: Subject, sid: string, refreshToken: string) {
+  private async mint(client: OAuthClientRecord, subject: OauthSubject, sid: string, refreshToken: string) {
     const identity =
       subject.type === "user"
         ? { self: await this.userService.makeSelf(await this.userService.getActiveUser(subject.id)) }
@@ -489,7 +486,7 @@ export class OauthService extends serve("oauth" as const, ({ use, service, memor
     };
   }
 
-  private static subjectOf(account: SerAccount | null): Subject | null {
+  private static subjectOf(account: SerAccount | null): OauthSubject | null {
     const { self, me } = (account ?? {}) as SerAccount<{ self?: { id?: string }; me?: { id?: string } }>;
     if (self?.id) return { type: "user", id: self.id };
     if (me?.id) return { type: "admin", id: me.id };

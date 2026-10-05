@@ -1,12 +1,12 @@
-import { FileManager, type StorageApi } from "@libs/util/srvkit";
+import { FileManager, StorageApi } from "@libs/util/srvkit";
 import type { LocalFile } from "akanjs/server";
 import { serve } from "akanjs/service";
 
 import * as db from "../db";
 import { Err } from "../dict";
 
-export class PrivFileService extends serve(db.privFile, ({ use }) => ({
-  privStorageApi: use<StorageApi>(),
+export class PrivFileService extends serve(db.privFile, ({ plug }) => ({
+  privStorageApi: plug(StorageApi, (storageApi) => storageApi.privateStorage),
 })) {
   override async _postRemove(privFile: db.PrivFile) {
     if (privFile.privatePath) await this.privStorageApi.deleteDataByPath(privFile.privatePath);

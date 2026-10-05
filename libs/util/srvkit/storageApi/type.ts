@@ -48,7 +48,7 @@ export interface UploadProgress {
   part?: number;
 }
 
-export interface StorageApi {
+export interface StorageBackend {
   logger: Logger;
   root: string;
   urlPrefix: string;

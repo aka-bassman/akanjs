@@ -1,14 +1,15 @@
 import { rename } from "node:fs/promises";
-import { Logger } from "akanjs/common";
+import { getEnv } from "akanjs/base";
 import { Try } from "akanjs/server";
+import { adapt } from "akanjs/service";
 import { Err } from "../../lib/dict";
-import type { BlobStorageOptions } from "./blobStorageApi.helper";
+import type { ModulesOptions } from "../../lib/option";
 import { ensureReadableStreamReady } from "./ensureReadableStreamReady";
 import type {
   CopyRequest,
   DownloadRequest,
   LocalFilePath,
-  StorageApi,
+  StorageBackend,
   UploadFromStreamRequest,
   UploadReadableStreamRequest,
   UploadRequest,
@@ -16,19 +17,18 @@ import type {
 } from "./type";
 import { writeReadableStreamToFile } from "./writeReadableStreamToFile";
 
-export class BlobStorageApi implements StorageApi {
-  readonly logger = new Logger("BlobStorageApi");
-  readonly root: string;
-  readonly privateRoot: string;
-  readonly urlPrefix: string;
-  constructor(
-    appName: string,
-    { baseDir = "local", privateBaseDir = "local", urlPrefix = "/api/localFile/getBlob" }: BlobStorageOptions,
-  ) {
-    this.root = `${process.env.AKAN_WORKSPACE_ROOT ?? "."}/${baseDir}/${appName}/backend`;
-    this.privateRoot = `${process.env.AKAN_WORKSPACE_ROOT ?? "."}/${privateBaseDir}/${appName}/server-private`;
-    this.urlPrefix = urlPrefix;
-  }
+export class BlobStorageApi
+  extends adapt("blobStorageApi", ({ env }) => ({
+    root: env(() => `${process.env.AKAN_WORKSPACE_ROOT ?? "."}/local/${getEnv().appName}/backend`),
+    privateRoot: env(() => `${process.env.AKAN_WORKSPACE_ROOT ?? "."}/local/${getEnv().appName}/server-private`),
+    urlPrefix: env((options: ModulesOptions) =>
+      getEnv().operationMode === "local"
+        ? `http://localhost:${process.env.PORT ?? options.port ?? 8282}/api/localFile/getBlob`
+        : "/api/localFile/getBlob",
+    ),
+  }))
+  implements StorageBackend
+{
   #localPathToUrl(path: string) {
     return `${this.urlPrefix}/${path}`;
   }

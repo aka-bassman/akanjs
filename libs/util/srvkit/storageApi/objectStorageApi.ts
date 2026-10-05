@@ -9,7 +9,7 @@ import type {
   CopyRequest,
   DownloadRequest,
   LocalFilePath,
-  StorageApi,
+  StorageBackend,
   UploadFromStreamRequest,
   UploadReadableStreamRequest,
   UploadRequest,
@@ -25,7 +25,7 @@ function loadCloudFront(): Promise<CloudFrontSdk> {
   return cloudFrontLoad;
 }
 
-export class ObjectStorageApi implements StorageApi {
+export class ObjectStorageApi implements StorageBackend {
   readonly logger = new Logger("ObjectStorageApi");
   readonly root: string;
   readonly bucket: string;

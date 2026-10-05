@@ -1,14 +1,7 @@
-import { Logger } from "akanjs/common";
+import { adapt } from "akanjs/service";
+import { Err } from "../lib/dict";
+import type { ModulesOptions } from "../lib/option";
 import type { SendMailOptions, Transporter } from "./emailApi.helper";
-
-type Nodemailer = typeof import("nodemailer");
-
-let nodemailerLoad: Promise<Nodemailer> | null = null;
-
-function loadNodemailer(): Promise<Nodemailer> {
-  nodemailerLoad ??= import("nodemailer");
-  return nodemailerLoad;
-}
 
 export interface EmailApiOptions {
   address: string;
@@ -16,16 +9,24 @@ export interface EmailApiOptions {
   auth: { user: string; pass: string };
 }
 
-export class EmailApi {
-  readonly #logger = new Logger("EmailApi");
-  readonly #options: EmailApiOptions;
+export class EmailApi extends adapt("emailApi", ({ env }) => ({
+  options: env((options: ModulesOptions) => options.mailer),
+})) {
+  static #nodemailerLoad: Promise<typeof import("nodemailer")> | null = null;
   #mailerLoad: Promise<Transporter> | null = null;
-  constructor(options: EmailApiOptions) {
-    this.#options = options;
+
+  get configured() {
+    return !!this.options;
+  }
+  #requireOptions(): EmailApiOptions {
+    if (!this.options) throw new Err("util.error.adaptorNotConfigured", { adaptor: "EmailApi", option: "mailer" });
+    return this.options;
   }
   #getMailer(): Promise<Transporter> {
-    this.#mailerLoad ??= loadNodemailer().then(({ createTransport }) =>
-      createTransport({ host: this.#options.address, port: 587, secure: false, auth: this.#options.auth }),
+    const { address, auth } = this.#requireOptions();
+    EmailApi.#nodemailerLoad ??= import("nodemailer");
+    this.#mailerLoad ??= EmailApi.#nodemailerLoad.then(({ createTransport }) =>
+      createTransport({ host: address, port: 587, secure: false, auth }),
     );
     return this.#mailerLoad;
   }
@@ -111,21 +112,22 @@ export class EmailApi {
   }
   async sendMail(mail: SendMailOptions) {
     try {
+      const { auth } = this.#requireOptions();
       const mailer = await this.#getMailer();
-      const res = await mailer.sendMail({ from: this.#options.auth.user, ...mail });
+      const res = await mailer.sendMail({ from: auth.user, ...mail });
       const toAddresses = Array.isArray(mail.to)
         ? mail.to.map((t) => (typeof t === "string" ? t : t.address)).join(",")
         : typeof mail.to === "string"
           ? mail.to
           : mail.to?.address;
-      this.#logger.debug(`sendMail: ${toAddresses} ${mail.subject} ${res.accepted.length}`);
+      this.logger.debug(`sendMail: ${toAddresses} ${mail.subject} ${res.accepted.length}`);
       return !!res.accepted.length;
     } catch (error) {
-      this.#logger.error(error instanceof Error ? error.message : typeof error === "string" ? error : "unknown error");
+      this.logger.error(error instanceof Error ? error.message : typeof error === "string" ? error : "unknown error");
       return false;
     }
   }
-  async sendPasswordResetMail(to: string, password: string, serviceName: string, from = this.#options.auth.user) {
+  async sendPasswordResetMail(to: string, password: string, serviceName: string, from = this.options?.auth.user) {
     const html = EmailApi.getHtmlContent(to, password, serviceName);
     await this.sendMail({ to, subject: "Password Reset", html, from });
     return true;
@@ -153,7 +155,7 @@ export class EmailApi {
 </html>
       `;
   }
-  async sendVerificationCodeMail(to: string, code: string, serviceName: string, from = this.#options.auth.user) {
+  async sendVerificationCodeMail(to: string, code: string, serviceName: string, from = this.options?.auth.user) {
     const html = EmailApi.getVerificationCodeHtml(code, serviceName);
     return await this.sendMail({ to, subject: `[${serviceName}] Email verification code`, html, from });
   }

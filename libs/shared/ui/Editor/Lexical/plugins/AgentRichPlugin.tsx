@@ -1,13 +1,21 @@
 "use client";
 import { $convertFromMarkdownString, $generateNodesFromMarkdownString, type Transformer } from "@lexical/markdown";
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { st } from "@libs/shared/client";
 import { Int } from "akanjs/base";
-import { $createParagraphNode, $isDecoratorNode, $isElementNode, type LexicalNode } from "lexical";
+import { $createParagraphNode, $getRoot, $isDecoratorNode, $isElementNode, type LexicalNode } from "lexical";
 
 import { useAgentField } from "../agentField";
 import { lossesOf, syntaxOf, transformersOf } from "../feature";
 import { $spliceRichBlocks, type RichBlockOp, richBlockOps } from "./agentRichPlugin.command";
-import { isEmptyRichContent, lossSentence, lossyNodesOf, richBlockListing, richBlocksOf } from "./agentRichPlugin.util";
+import {
+  isEmptyRichContent,
+  lossSentence,
+  lossyNodesOf,
+  revealBlocks,
+  richBlockListing,
+  richBlocksOf,
+} from "./agentRichPlugin.util";
 
 const isBlockNode = (node: LexicalNode) => ($isElementNode(node) || $isDecoratorNode(node)) && !node.isInline();
 
@@ -37,6 +45,7 @@ const $blocksFromMarkdown = (markdown: string, transformers: Transformer[]) =>
  * skip-while-focused guard — so a write lands even with the caret in the box.
  */
 export const AgentRichPlugin = () => {
+  const [editor] = useLexicalComposerContext();
   const { name, blockBase, features, content, commit } = useAgentField();
   const losses = lossesOf(features);
   const transformers = transformersOf(features);
@@ -48,8 +57,8 @@ export const AgentRichPlugin = () => {
       return found.length
         ? `This field already holds content, including ${lossSentence(
             found,
-          )} that markdown cannot carry. Edit it by block instead, or pass replaceAll: true to lose them.`
-        : "This field already holds text. Edit it by block instead, or pass replaceAll: true to overwrite it.";
+          )} that markdown cannot carry. Edit it by block instead; pass replaceAll: true only when the user asked to replace it and lose them.`
+        : "This field already holds text someone wrote. Edit it by block instead; pass replaceAll: true only when the user asked to replace it.";
     },
   })
     .desc(
@@ -64,9 +73,12 @@ export const AgentRichPlugin = () => {
     .arg("markdown", String)
     .opt("replaceAll", Boolean)
     .exec(async (markdown) => {
+      let written: string[] = [];
       await commit(() => {
         $convertFromMarkdownString(markdown, transformers);
+        written = $getRoot().getChildrenKeys();
       });
+      await revealBlocks(editor, written);
     });
 
   st.tool(blockBase ? `read${blockBase}` : null, { settle: false })
@@ -100,9 +112,13 @@ export const AgentRichPlugin = () => {
     .opt("index", Int)
     .opt("markdown", String)
     .exec(async (op, index, markdown) => {
+      let written: string[] = [];
       await commit(() => {
-        $spliceRichBlocks(op, index ?? 0, op === "remove" ? [] : $blocksFromMarkdown(markdown ?? "", transformers));
+        const blocks = op === "remove" ? [] : $blocksFromMarkdown(markdown ?? "", transformers);
+        $spliceRichBlocks(op, index ?? 0, blocks);
+        written = blocks.map((block) => block.getKey());
       });
+      await revealBlocks(editor, written);
       return richBlockListing(content());
     });
   return null;

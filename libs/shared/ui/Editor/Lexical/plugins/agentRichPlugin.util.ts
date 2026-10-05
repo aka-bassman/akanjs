@@ -1,4 +1,5 @@
 import { RichEditor } from "@libs/shared/common";
+import type { LexicalEditor } from "lexical";
 
 import type { EditorLosses, EditorNodeLike } from "../feature";
 
@@ -87,4 +88,27 @@ export const richBlockListing = (content: unknown): string => {
   if (listed < blocks.length)
     lines.push(`… ${blocks.length - listed} more, at indices ${listed}-${blocks.length - 1}.`);
   return lines.join("\n");
+};
+
+const revealMs = 320;
+const revealBudgetMs = 1_500;
+
+export const revealBlocks = async (editor: LexicalEditor, keys: string[]) => {
+  if (!keys.length || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const step = Math.min(70, revealBudgetMs / keys.length);
+  keys.forEach((key, idx) => {
+    editor.getElementByKey(key)?.animate(
+      [
+        { opacity: 0, transform: "translateY(6px)" },
+        { opacity: 1, transform: "none" },
+      ],
+      {
+        duration: revealMs,
+        delay: idx * step,
+        easing: "ease-out",
+        fill: "backwards",
+      },
+    );
+  });
+  await new Promise((resolve) => setTimeout(resolve, keys.length * step + revealMs));
 };

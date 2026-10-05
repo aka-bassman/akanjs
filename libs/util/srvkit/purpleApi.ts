@@ -1,12 +1,16 @@
 import { dayjs } from "akanjs/base";
-import { Logger } from "akanjs/common";
+import { adapt } from "akanjs/service";
+import { Err } from "../lib/dict";
+import type { ModulesOptions } from "../lib/option";
 
 export interface PurpleApiOptions {
   phone: string;
   apiKey: string;
   apiSecret: string;
 }
-export class PurpleApi {
+export class PurpleApi extends adapt("purpleApi", ({ env }) => ({
+  options: env((options: ModulesOptions) => options.message),
+})) {
   private static solapiLoad: Promise<{
     SolapiMessageService: new (
       apiKey: string,
@@ -21,26 +25,28 @@ export class PurpleApi {
     return PurpleApi.solapiLoad;
   }
 
-  readonly #logger = new Logger("PurpleApi");
-  readonly #options: PurpleApiOptions;
   #message: InstanceType<Awaited<ReturnType<typeof PurpleApi.loadSolapi>>["SolapiMessageService"]> | null = null;
-  constructor(options: PurpleApiOptions) {
-    this.#options = options;
+
+  get configured() {
+    return !!this.options;
+  }
+  #requireOptions(): PurpleApiOptions {
+    if (!this.options) throw new Err("util.error.adaptorNotConfigured", { adaptor: "PurpleApi", option: "message" });
+    return this.options;
   }
   async #getMessage() {
-    this.#message ??= new (await PurpleApi.loadSolapi()).SolapiMessageService(
-      this.#options.apiKey,
-      this.#options.apiSecret,
-    );
+    const { apiKey, apiSecret } = this.#requireOptions();
+    this.#message ??= new (await PurpleApi.loadSolapi()).SolapiMessageService(apiKey, apiSecret);
     return this.#message;
   }
   async send(to: string, text: string, at = new Date()) {
+    const { phone } = this.#requireOptions();
     const message = await this.#getMessage();
     await message.send(
-      { from: this.#options.phone, to: to.replace(/-/g, ""), text },
+      { from: phone, to: to.replace(/-/g, ""), text },
       { scheduledDate: dayjs(at).format("YYYY-MM-DD HH:mm:ss") },
     );
-    this.#logger.info(`send: ${to} ${text} ${at}`);
+    this.logger.info(`send: ${to} ${text} ${at}`);
     return true;
   }
   async sendPhoneCode(to: string, phoneCode: string, hash: string) {

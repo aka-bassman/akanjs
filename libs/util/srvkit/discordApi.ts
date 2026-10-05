@@ -1,5 +1,7 @@
+import { adapt } from "akanjs/service";
 import type * as discord from "discord.js";
 import { Err } from "../lib/dict";
+import type { ModulesOptions } from "../lib/option";
 import type {
   DiscordBot,
   DiscordButton,
@@ -8,33 +10,33 @@ import type {
   SendWebhookMessageWithEmbedType,
 } from "./discordApi.helper";
 
-type Discord = typeof import("discord.js");
-
-let discordLoad: Promise<Discord> | null = null;
-
-function loadDiscord(): Promise<Discord> {
-  discordLoad ??= import("discord.js");
-  return discordLoad;
-}
-
 export interface DiscordApiOptions {
   tokens: DiscordToken[];
   webhook: string;
 }
 
-export class DiscordApi {
-  readonly #options: DiscordApiOptions;
+export class DiscordApi extends adapt("discordApi", ({ env }) => ({
+  options: env((options: ModulesOptions) => options.discord),
+})) {
+  static #discordLoad: Promise<typeof import("discord.js")> | null = null;
   #webhookLoad: Promise<discord.WebhookClient> | null = null;
   #bots: Map<string, DiscordBot> = new Map<string, DiscordBot>();
-  constructor(options: DiscordApiOptions) {
-    this.#options = options;
+
+  static #loadDiscord() {
+    DiscordApi.#discordLoad ??= import("discord.js");
+    return DiscordApi.#discordLoad;
+  }
+  get configured() {
+    return !!this.options;
   }
   #getWebhook(): Promise<discord.WebhookClient> {
-    this.#webhookLoad ??= loadDiscord().then(({ WebhookClient }) => new WebhookClient({ url: this.#options.webhook }));
+    if (!this.options) throw new Err("util.error.adaptorNotConfigured", { adaptor: "DiscordApi", option: "discord" });
+    const { webhook } = this.options;
+    this.#webhookLoad ??= DiscordApi.#loadDiscord().then(({ WebhookClient }) => new WebhookClient({ url: webhook }));
     return this.#webhookLoad;
   }
   static async makeDiscordBot({ token, serverId }: DiscordToken): Promise<DiscordBot> {
-    const discord = await loadDiscord();
+    const discord = await DiscordApi.#loadDiscord();
     const client = new discord.Client({
       intents: [
         discord.IntentsBitField.Flags.Guilds,
@@ -69,11 +71,6 @@ export class DiscordApi {
       }),
     );
     return bots;
-  }
-  async initBots() {
-    // ! disabled for quota, if you just need to send message to discord, use webhook instead.
-    // this.#bots = await DiscordApi.makeDiscordBots(this.#options.tokens);
-    return this;
   }
   async log(message: string) {
     const webhook = await this.#getWebhook();

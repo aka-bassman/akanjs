@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
-import { refreshRotationGraceMs } from "@libs/shared/srvkit";
+import { type NativeSsoResult, refreshRotationGraceMs } from "@libs/shared/srvkit";
+import { createOpaqueToken } from "@libs/util/srvkit";
 import { dayjs } from "akanjs/base";
 import { CacheDatabase } from "akanjs/document";
+import { OAuthPkce } from "akanjs/server";
 import { ConformanceEnv } from "akanjs/test";
 
 import * as cnst from "../cnst";
@@ -137,5 +139,132 @@ describe("UserService push devices", () => {
     const { service, tokensOf } = pushServiceOn([deviceOf("phone-token", "phone"), deviceOf("tablet-token", "tablet")]);
     await service.signoutUser({ self: { id: user.id } } as never, "phone");
     expect(await tokensOf()).toEqual(["tablet-token"]);
+  });
+});
+
+describe("UserService native SSO handoff", () => {
+  const prepareUserId = "65f0c0ffee0123456789abcd";
+  const memoryMap = () => {
+    const map = new Map<string, cnst.SsoHandoff>();
+    return {
+      set: async (key: string, value: cnst.SsoHandoff) => {
+        map.set(key, value);
+      },
+      getDel: async (key: string) => {
+        const value = map.get(key);
+        map.delete(key);
+        return value;
+      },
+    };
+  };
+  const nativeServiceOn = ({ knownAccountId }: { knownAccountId?: string } = {}) => {
+    const prepared: { accountId?: string; nickname?: string } = {};
+    const userModel = new UserModel();
+    Object.defineProperty(userModel, "findIdByAccountId", {
+      value: async (accountId: string) => (accountId === knownAccountId ? user.id : null),
+    });
+    Object.defineProperty(userModel, "getActiveUserBySso", { value: async () => user });
+    Object.defineProperty(userModel, "generatePrepareUser", {
+      value: async () => ({ id: prepareUserId, nickname: "" }),
+    });
+    Object.defineProperty(userModel, "setSsoInPrepareUser", {
+      value: async (_userId: string, accountId: string) => {
+        prepared.accountId = accountId;
+      },
+    });
+    Object.defineProperty(userModel, "makeUniqueNickname", { value: async (nickname: string) => nickname });
+    Object.defineProperty(userModel, "setNickname", {
+      value: async (_userId: string, nickname: string) => {
+        prepared.nickname = nickname;
+      },
+    });
+    const service = new UserService();
+    Object.defineProperty(service, "userModel", { value: userModel });
+    Object.defineProperty(service, "nativeSsoPolicy", { value: { callbackSchemes: ["angelo"] } });
+    Object.defineProperty(service, "ssoStarts", { value: memoryMap() });
+    Object.defineProperty(service, "ssoCodes", { value: memoryMap() });
+    Object.defineProperty(service, "_issueUserToken", { value: async () => ({ jwt: "jwt", refreshToken: "refresh" }) });
+    return { service, prepared };
+  };
+  const startOf = (verifier: string) => ({
+    callbackScheme: "angelo",
+    codeChallenge: OAuthPkce.challengeOf(verifier),
+    nonce: "app-nonce",
+    origin: "https://office.akanjs.com",
+    lang: "ko",
+    returnPage: true,
+  });
+  const handOff = async (service: UserService, verifier: string, accountId = "ann@example.com") => {
+    const state = await service.startNativeSso("google", startOf(verifier));
+    const start = await service.takeNativeSso(state);
+    if (!start) throw new Error("the start was not stored");
+    return await service.handOffNativeSso(start, async () => ({ accountId, nickname: "Ann" }));
+  };
+  const codeOf = (result: NativeSsoResult) => ("code" in result ? result.code : "");
+
+  test("a callback scheme outside the allowed list is refused", async () => {
+    const { service } = nativeServiceOn();
+    const start = { ...startOf(createOpaqueToken()), callbackScheme: "otherapp" };
+    await expect(service.startNativeSso("google", start)).rejects.toThrow();
+  });
+
+  test("the start is consumed by the first callback that names its state", async () => {
+    const { service } = nativeServiceOn();
+    const state = await service.startNativeSso("google", startOf(createOpaqueToken()));
+    expect(await service.takeNativeSso(state)).not.toBeNull();
+    expect(await service.takeNativeSso(state)).toBeNull();
+  });
+
+  test("the provider's answer becomes a one-time code, never a token", async () => {
+    const { service } = nativeServiceOn({ knownAccountId: "ann@example.com" });
+    const result = await handOff(service, createOpaqueToken());
+    expect(Object.keys(result)).toEqual(["code"]);
+    expect(codeOf(result)).not.toBe("");
+  });
+
+  test("the start keeps what the browser's last page needs", async () => {
+    const { service } = nativeServiceOn();
+    const start = await service.takeNativeSso(await service.startNativeSso("google", startOf(createOpaqueToken())));
+    expect(start?.lang).toBe("ko");
+    expect(start?.returnPage).toBe(true);
+  });
+
+  test("a known account exchanges the code and its verifier for a session, once", async () => {
+    const { service } = nativeServiceOn({ knownAccountId: "ann@example.com" });
+    const verifier = createOpaqueToken();
+    const code = codeOf(await handOff(service, verifier));
+    const signin = await service.exchangeNativeSsoCode(code, verifier);
+    expect(signin.jwt).toBe("jwt");
+    expect(signin.refreshToken).toBe("refresh");
+    expect(signin.prepareUserId).toBeFalsy();
+    await expect(service.exchangeNativeSsoCode(code, verifier)).rejects.toThrow();
+  });
+
+  test("a wrong verifier spends the code, so the right one cannot follow", async () => {
+    const { service } = nativeServiceOn({ knownAccountId: "ann@example.com" });
+    const verifier = createOpaqueToken();
+    const code = codeOf(await handOff(service, verifier));
+    await expect(service.exchangeNativeSsoCode(code, createOpaqueToken())).rejects.toThrow();
+    await expect(service.exchangeNativeSsoCode(code, verifier)).rejects.toThrow();
+  });
+
+  test("a new account comes back as a prepare user named after the provider profile", async () => {
+    const { service, prepared } = nativeServiceOn();
+    const verifier = createOpaqueToken();
+    const signin = await service.exchangeNativeSsoCode(codeOf(await handOff(service, verifier)), verifier);
+    expect(signin.prepareUserId).toBe(prepareUserId);
+    expect(signin.jwt).toBeFalsy();
+    expect(prepared).toEqual({ accountId: "ann@example.com", nickname: "Ann" });
+  });
+
+  test("a provider failure returns to the app as an error, not a code", async () => {
+    const { service } = nativeServiceOn();
+    const state = await service.startNativeSso("google", startOf(createOpaqueToken()));
+    const start = await service.takeNativeSso(state);
+    if (!start) throw new Error("the start was not stored");
+    const result = await service.handOffNativeSso(start, async () => {
+      throw new Error("access_denied");
+    });
+    expect(result).toEqual({ error: "access_denied" });
   });
 });

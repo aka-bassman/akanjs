@@ -1,6 +1,7 @@
 import { webcrypto } from "node:crypto";
-import { Logger } from "akanjs/common";
+import { adapt } from "akanjs/service";
 import { Err } from "../lib/dict";
+import type { ModulesOptions } from "../lib/option";
 import type { CloudflareResponse, Dns, DnsInput } from "./cloudflareApi.helper";
 
 export interface CloudflareApiOptions {
@@ -11,26 +12,31 @@ export interface CloudflareApiOptions {
   turnstileSecret: string;
 }
 
-export class CloudflareApi {
-  readonly #logger = new Logger("CloudflareApi");
-  readonly #options: CloudflareApiOptions;
+export class CloudflareApi extends adapt("cloudflareApi", ({ env }) => ({
+  options: env((options: ModulesOptions) => options.cloudflare),
+})) {
   readonly #baseUrl = "https://api.cloudflare.com/client/v4";
-  readonly #headers: Record<string, string>;
 
-  constructor(options: CloudflareApiOptions) {
-    this.#options = options;
-    this.#headers = {
-      "Content-Type": "application/json",
-      "X-Auth-Key": options.authKey,
-      "X-Auth-Email": options.authEmail,
-      Authorization: `Bearer ${options.token}`,
-    };
+  get configured() {
+    return !!this.options;
+  }
+  #requireOptions(): CloudflareApiOptions {
+    if (!this.options)
+      throw new Err("util.error.adaptorNotConfigured", { adaptor: "CloudflareApi", option: "cloudflare" });
+    return this.options;
   }
 
   async #api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+    const { authKey, authEmail, token } = this.#requireOptions();
     const response = await fetch(`${this.#baseUrl}${path}`, {
       ...init,
-      headers: { ...this.#headers, ...init?.headers },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Auth-Key": authKey,
+        "X-Auth-Email": authEmail,
+        Authorization: `Bearer ${token}`,
+        ...init?.headers,
+      },
       signal: AbortSignal.timeout(20_000),
     });
     return (await response.json()) as T;
@@ -89,7 +95,7 @@ export class CloudflareApi {
       if (!data.success)
         throw new Err("util.error.cloudflareDnsRecordUpdateFailed", { errors: JSON.stringify(data.errors) });
     }
-    this.#logger.info(`${toCreate.length} records created, ${toUpdate.length} records updated`);
+    this.logger.info(`${toCreate.length} records created, ${toUpdate.length} records updated`);
     return true;
   }
   async deleteDnsRecords(zoneId: string, records: DnsInput[]) {
@@ -99,9 +105,10 @@ export class CloudflareApi {
     return true;
   }
   async createSignedUrlToken(videoUid: string, expireTimeMs: number) {
+    const { accountId } = this.#requireOptions();
     const {
       result: { id: keyId, jwk: jwkKey },
-    } = await this.#api<{ result: { id: string; jwk: string } }>(`/accounts/${this.#options.accountId}/stream/keys`, {
+    } = await this.#api<{ result: { id: string; jwk: string } }>(`/accounts/${accountId}/stream/keys`, {
       method: "POST",
     });
     const encoder = new TextEncoder();
@@ -119,7 +126,7 @@ export class CloudflareApi {
   }
   async isVerified(token: string) {
     const formData = new FormData();
-    formData.append("secret", this.#options.turnstileSecret);
+    formData.append("secret", this.#requireOptions().turnstileSecret);
     formData.append("response", token);
     const response = await fetch(`https://challenges.cloudflare.com/turnstile/v0/siteverify`, {
       method: "POST",

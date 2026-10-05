@@ -1,3 +1,4 @@
+import type { PushOutcome, PushPayload } from "@libs/shared/srvkit";
 import { PushNotificationServer } from "@libs/util/srvkit";
 import { dayjs } from "akanjs/base";
 import { parseAkanI18nEnv } from "akanjs/common";
@@ -8,40 +9,15 @@ import type * as cnst from "../cnst";
 import * as db from "../db";
 import type * as srv from "../srv";
 
-// `fewer` keeps only what the person has to act on. Every other level is silenced for that setting.
-const levelsSurvivingFewer: cnst.NotiLevel["value"][] = ["actionRequired", "essential"];
-
-const megaphonePageSize = 500;
-
-export interface PushPayload {
-  title: string;
-  content?: string;
-  /**
-   * A dictionary key for the body, for a caller that ships no copy of its own — a shared library cannot hold a
-   * Korean string, and translations belong in the owning module's dictionary. Resolved in the app's default
-   * locale: a person carries no locale of their own yet.
-   */
-  contentKey?: string;
-  level: cnst.NotiLevel["value"];
-  url?: string;
-  // Collapse key — a second notification about the same conversation replaces the first instead of stacking.
-  tag?: string;
-  imageUrl?: string;
-  badge?: number;
-}
-
-export interface PushOutcome {
-  targetUserIds: string[];
-  tokenNum: number;
-  successCount: number;
-  prunedTokens: string[];
-}
-
 export class NotificationService extends serve(db.notification, ({ service, plug }) => ({
   fileService: service<srv.FileService>(),
   userService: service<srv.UserService>(),
   pushNotificationServer: plug(PushNotificationServer),
 })) {
+  // `fewer` keeps only what the person has to act on. Every other level is silenced for that setting.
+  private static readonly levelsSurvivingFewer: cnst.NotiLevel["value"][] = ["actionRequired", "essential"];
+  private static readonly megaphonePageSize = 500;
+
   private dictionaryLookup: DictionaryLookup | null = null;
 
   /**
@@ -52,7 +28,7 @@ export class NotificationService extends serve(db.notification, ({ service, plug
   static accepts(notiInfo: db.NotiInfo | cnst.NotiInfo | undefined, level: cnst.NotiLevel["value"], now = dayjs()) {
     if (!notiInfo) return false;
     if (notiInfo.setting === "block" || notiInfo.setting === "disagree") return false;
-    if (notiInfo.setting === "fewer" && !levelsSurvivingFewer.includes(level)) return false;
+    if (notiInfo.setting === "fewer" && !NotificationService.levelsSurvivingFewer.includes(level)) return false;
     if (notiInfo.pauseUntil && dayjs(notiInfo.pauseUntil).isAfter(now)) return false;
     return notiInfo.deviceTokens.length > 0;
   }
@@ -107,14 +83,14 @@ export class NotificationService extends serve(db.notification, ({ service, plug
   // The megaphone: every active user, a page at a time, each through the same recipient gate as `push()`.
   async pushToAll(payload: PushPayload): Promise<PushOutcome> {
     const outcome: PushOutcome = { targetUserIds: [], tokenNum: 0, successCount: 0, prunedTokens: [] };
-    for (let skip = 0; ; skip += megaphonePageSize) {
-      const userIds = await this.userService.listActiveUserIds({ skip, limit: megaphonePageSize });
+    for (let skip = 0; ; skip += NotificationService.megaphonePageSize) {
+      const userIds = await this.userService.listActiveUserIds({ skip, limit: NotificationService.megaphonePageSize });
       const page = await this.push(userIds, payload);
       outcome.targetUserIds.push(...page.targetUserIds);
       outcome.tokenNum += page.tokenNum;
       outcome.successCount += page.successCount;
       outcome.prunedTokens.push(...page.prunedTokens);
-      if (userIds.length < megaphonePageSize) break;
+      if (userIds.length < NotificationService.megaphonePageSize) break;
     }
     return outcome;
   }

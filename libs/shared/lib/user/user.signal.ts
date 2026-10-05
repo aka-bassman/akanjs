@@ -17,6 +17,7 @@ import {
   makeOAuthRedirectResponse,
   makeSignoutResponse,
   makeSsoRedirectResponse,
+  NativeSso,
   type NaverResponse,
   readRefreshTokenCookie,
   Self,
@@ -426,11 +427,28 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
   //*====================== SSO Area ======================*//
   github: query(Any, { guards: [SSO.Github] })
     .with(Req)
-    .exec((request) => makeOAuthRedirectResponse("github", request as Bun.BunRequest)),
+    .exec(async function (request) {
+      const req = request as Bun.BunRequest;
+      const start = NativeSso.parseStart(req);
+      if (!start) return makeOAuthRedirectResponse("github", req);
+      return makeOAuthRedirectResponse("github", req, {
+        origin: start.origin,
+        state: await this.userService.startNativeSso("github", start),
+      });
+    }),
   githubCallback: query(Any, { guards: [SSO.Github], path: "github/callback" })
     .with(Req)
     .exec(async function (request) {
       const req = request as Bun.BunRequest & { user?: GithubResponse; account?: SerAccount };
+      const start = await this.userService.takeNativeSso(NativeSso.stateOf(req));
+      if (start)
+        return NativeSso.respond(
+          start,
+          await this.userService.handOffNativeSso(start, async () => {
+            const githubUser = await extractGithubProfile(getSsoCode(req), start.origin);
+            return { accountId: githubUser.username, nickname: githubUser.displayName };
+          }),
+        );
       const githubUser = req.user ?? (await extractGithubProfile(getSsoCode(req), getSsoOrigin(req)));
       const { username: accountId } = githubUser;
       const { cookie, redirect } = await this.userService.handleSsoCallback(
@@ -444,11 +462,28 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     }),
   google: query(Any, { guards: [SSO.Google] })
     .with(Req)
-    .exec((request) => makeOAuthRedirectResponse("google", request as Bun.BunRequest)),
+    .exec(async function (request) {
+      const req = request as Bun.BunRequest;
+      const start = NativeSso.parseStart(req);
+      if (!start) return makeOAuthRedirectResponse("google", req);
+      return makeOAuthRedirectResponse("google", req, {
+        origin: start.origin,
+        state: await this.userService.startNativeSso("google", start),
+      });
+    }),
   googleCallback: query(Any, { guards: [SSO.Google], path: "google/callback" })
     .with(Req)
     .exec(async function (request) {
       const req = request as Bun.BunRequest & { user?: GoogleResponse; account?: SerAccount };
+      const start = await this.userService.takeNativeSso(NativeSso.stateOf(req));
+      if (start)
+        return NativeSso.respond(
+          start,
+          await this.userService.handOffNativeSso(start, async () => {
+            const googleUser = await extractGoogleProfile(getSsoCode(req), start.origin);
+            return { accountId: googleUser.emails[0].value, nickname: googleUser.displayName };
+          }),
+        );
       const googleUser = req.user ?? (await extractGoogleProfile(getSsoCode(req), getSsoOrigin(req)));
       const accountId = googleUser.emails[0].value;
       const { cookie, redirect } = await this.userService.handleSsoCallback(
@@ -462,11 +497,29 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     }),
   facebook: query(Any, { guards: [SSO.Facebook] })
     .with(Req)
-    .exec((request) => makeOAuthRedirectResponse("facebook", request as Bun.BunRequest)),
+    .exec(async function (request) {
+      const req = request as Bun.BunRequest;
+      const start = NativeSso.parseStart(req);
+      if (!start) return makeOAuthRedirectResponse("facebook", req);
+      return makeOAuthRedirectResponse("facebook", req, {
+        origin: start.origin,
+        state: await this.userService.startNativeSso("facebook", start),
+      });
+    }),
   facebookCallback: query(Any, { guards: [SSO.Facebook], path: "facebook/callback" })
     .with(Req)
     .exec(async function (request) {
       const req = request as Bun.BunRequest & { user?: FacebookResponse; account?: SerAccount };
+      const start = await this.userService.takeNativeSso(NativeSso.stateOf(req));
+      if (start)
+        return NativeSso.respond(
+          start,
+          await this.userService.handOffNativeSso(start, async () => {
+            const facebookUser = await extractFacebookProfile(getSsoCode(req), start.origin);
+            const nickname = [facebookUser.name.givenName, facebookUser.name.familyName].filter(Boolean).join(" ");
+            return { accountId: facebookUser.emails[0].value, nickname };
+          }),
+        );
       const facebookUser = req.user ?? (await extractFacebookProfile(getSsoCode(req), getSsoOrigin(req)));
       const accountId = facebookUser.emails[0].value;
       const { cookie, redirect } = await this.userService.handleSsoCallback(
@@ -488,11 +541,28 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     }),
   kakao: query(Any, { guards: [SSO.Kakao] })
     .with(Req)
-    .exec((request) => makeOAuthRedirectResponse("kakao", request as Bun.BunRequest)),
+    .exec(async function (request) {
+      const req = request as Bun.BunRequest;
+      const start = NativeSso.parseStart(req);
+      if (!start) return makeOAuthRedirectResponse("kakao", req);
+      return makeOAuthRedirectResponse("kakao", req, {
+        origin: start.origin,
+        state: await this.userService.startNativeSso("kakao", start),
+      });
+    }),
   kakaoCallback: query(Any, { guards: [SSO.Kakao], path: "kakao/callback" })
     .with(Req)
     .exec(async function (request) {
       const req = request as Bun.BunRequest & { user?: KakaoResponse; account?: SerAccount };
+      const start = await this.userService.takeNativeSso(NativeSso.stateOf(req));
+      if (start)
+        return NativeSso.respond(
+          start,
+          await this.userService.handOffNativeSso(start, async () => {
+            const { email: accountId, name } = await extractKakaoProfile(getSsoCode(req), start.origin);
+            return { accountId, nickname: name };
+          }),
+        );
       const { email: accountId, name } = req.user ?? (await extractKakaoProfile(getSsoCode(req), getSsoOrigin(req)));
       const { cookie, redirect } = await this.userService.handleSsoCallback(
         accountId,
@@ -505,11 +575,28 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     }),
   naver: query(Any, { guards: [SSO.Naver] })
     .with(Req)
-    .exec((request) => makeOAuthRedirectResponse("naver", request as Bun.BunRequest)),
+    .exec(async function (request) {
+      const req = request as Bun.BunRequest;
+      const start = NativeSso.parseStart(req);
+      if (!start) return makeOAuthRedirectResponse("naver", req);
+      return makeOAuthRedirectResponse("naver", req, {
+        origin: start.origin,
+        state: await this.userService.startNativeSso("naver", start),
+      });
+    }),
   naverCallback: query(Any, { guards: [SSO.Naver], path: "naver/callback" })
     .with(Req)
     .exec(async function (request) {
       const req = request as Bun.BunRequest & { user?: NaverResponse; account?: SerAccount };
+      const start = await this.userService.takeNativeSso(NativeSso.stateOf(req));
+      if (start)
+        return NativeSso.respond(
+          start,
+          await this.userService.handOffNativeSso(start, async () => {
+            const { email: accountId, name } = await extractNaverProfile(getSsoCode(req), start.origin);
+            return { accountId, nickname: name };
+          }),
+        );
       const { email: accountId, name } = req.user ?? (await extractNaverProfile(getSsoCode(req), getSsoOrigin(req)));
       const { cookie, redirect } = await this.userService.handleSsoCallback(
         accountId,
@@ -519,6 +606,13 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
         name,
       );
       return makeSsoRedirectResponse(redirect, cookie);
+    }),
+  exchangeSsoCode: mutation(cnst.SsoSignin)
+    .body("code", String)
+    .body("codeVerifier", String)
+    .with(Account)
+    .exec(async function (code, codeVerifier, account) {
+      return await this.userService.exchangeNativeSsoCode(code, codeVerifier, account);
     }),
   //*====================== SSO Area ======================*//
   //*======================================================*//

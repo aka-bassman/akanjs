@@ -1,21 +1,15 @@
 import { msg } from "@libs/shared/client";
-import { withRedirectQuery } from "@libs/shared/common";
+import { pkcePair, withRedirectQuery } from "@libs/shared/common";
 import { loadRefreshToken, saveRefreshToken } from "@libs/shared/webkit";
-import { type Dayjs, dayjs } from "akanjs/base";
+import { type Dayjs, dayjs, getApiPrefix, getEnv, getServerOrigin } from "akanjs/base";
 import { getCookie, router, setAuth, setCookie } from "akanjs/client";
+import { AkanNativeError, authSession, desktopPlatform, isNativeShell } from "akanjs/client/native";
 import { formatPhone, isPhoneNumber } from "akanjs/common";
 import { store } from "akanjs/store";
 
 import * as cnst from "../cnst";
 import type { RootStore } from "../st";
 import { fetch, sig } from "../useClient";
-
-// Firefox and desktop Safari ship no Badging API, and reading a missing method off `navigator` and calling it
-// throws synchronously — which would take the whole badge action down with it.
-const setAppBadge = (count: number) => {
-  if (!("setAppBadge" in navigator)) return;
-  void navigator.setAppBadge(count);
-};
 
 export class UserStore extends store(sig.user, () => ({
   self: new cnst.User(),
@@ -35,9 +29,17 @@ export class UserStore extends store(sig.user, () => ({
   sameAccountIdExists: "unknown" as "unknown" | boolean,
   sameNicknameExists: "unknown" as "unknown" | boolean,
   signToken: null as string | null,
+  ssoAttempt: null as { ssoType: cnst.SsoType["value"]; nonce: string } | null,
   leaveInfo: new cnst.LeaveInfo(),
   agreePolicies: [] as string[],
 })) {
+  // Firefox and desktop Safari ship no Badging API, and reading a missing method off `navigator` and calling it
+  // throws synchronously — which would take the whole badge action down with it.
+  private static setAppBadge(count: number) {
+    if (!("setAppBadge" in navigator)) return;
+    void navigator.setAppBadge(count);
+  }
+
   async getSelf({ jwt }: { jwt?: string } = {}) {
     this.set({ self: (await fetch.getSelf({ token: jwt })) ?? new cnst.User() });
   }
@@ -47,7 +49,7 @@ export class UserStore extends store(sig.user, () => ({
     if (!self.id) return;
     const user = await fetch.addBadgeCount(self.id);
     this.set({ self: user });
-    setAppBadge(user.badgeCount);
+    UserStore.setAppBadge(user.badgeCount);
   }
 
   async subBadgeCount() {
@@ -55,7 +57,7 @@ export class UserStore extends store(sig.user, () => ({
     if (!self.id) return;
     const user = await fetch.subBadgeCount(self.id);
     this.set({ self: user });
-    setAppBadge(user.badgeCount);
+    UserStore.setAppBadge(user.badgeCount);
   }
 
   async setLeaveInfoOfSelf() {
@@ -339,7 +341,7 @@ export class UserStore extends store(sig.user, () => ({
 
   //*======================================================*//
   //*====================== SSO Area ======================*//
-  ssoSigninUser(
+  async ssoSigninUser(
     ssoType: cnst.SsoType["value"],
     {
       signinRedirect,
@@ -348,6 +350,50 @@ export class UserStore extends store(sig.user, () => ({
       replace,
     }: { signinRedirect: string; signupRedirect: string; errorRedirect: string; replace?: boolean },
   ) {
+    const navigate = (path: string) => (replace ? router.replace(path) : router.push(path));
+    //* A native page (app://localhost) keeps no session cookie: the provider runs in the system browser instead.
+    if (isNativeShell()) {
+      const callbackScheme = getEnv().appName;
+      const nonce = crypto.randomUUID();
+      const { verifier, challenge } = await pkcePair();
+      const start = new URL(`${getServerOrigin()}${getApiPrefix()}/user/${ssoType}`);
+      start.search = new URLSearchParams({
+        callbackScheme,
+        codeChallenge: challenge,
+        state: nonce,
+        lang: document.documentElement.lang,
+        ...(desktopPlatform() ? { returnPage: "1" } : {}),
+      }).toString();
+      this.set({ ssoAttempt: { ssoType, nonce } });
+      const isCurrent = () => this.get().ssoAttempt?.nonce === nonce;
+      const callback = await authSession
+        .start({ url: start.href, callbackScheme })
+        .then(({ url }) => new URL(url).searchParams)
+        .catch((error: unknown) => {
+          if (isCurrent()) this.set({ ssoAttempt: null });
+          if (error instanceof AkanNativeError && error.code === "CANCELLED") return null;
+          throw error;
+        });
+      //? A retry replaced this attempt, or the person cancelled the wait: the late answer is dropped.
+      if (!callback || !isCurrent()) return;
+      this.set({ ssoAttempt: null });
+      const code = callback.get("code");
+      if (!code) {
+        msg.error("user.ssoSigninFailed");
+        return;
+      }
+      const { jwt, refreshToken, prepareUserId } = await fetch.exchangeSsoCode(code, verifier);
+      if (prepareUserId) {
+        navigate(withRedirectQuery(signupRedirect, { userId: prepareUserId }));
+        return;
+      }
+      if (!jwt) return;
+      setAuth({ jwt });
+      await saveRefreshToken("user", refreshToken);
+      await this.getSelf({ jwt });
+      navigate(signinRedirect);
+      return;
+    }
     setCookie("ssoFor", "user");
     setCookie("signinRedirect", encodeURIComponent(router.getPrefixedPath(signinRedirect)));
     setCookie("signupRedirect", encodeURIComponent(router.getPrefixedPath(signupRedirect)));

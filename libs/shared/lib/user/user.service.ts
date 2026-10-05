@@ -2,31 +2,39 @@ import type { Self } from "@libs/shared/common";
 import { withRedirectQuery } from "@libs/shared/common";
 import {
   type AuthTokenMeta,
+  NativeSso,
+  type NativeSsoIdentity,
+  type NativeSsoResult,
+  type NativeSsoStart,
   type RotateRefreshSessionOptions,
   type SsoCookie,
   ssoSessionCookies,
 } from "@libs/shared/srvkit";
-import type { EmailApi, PurpleApi } from "@libs/util/srvkit";
-import type { Dayjs } from "akanjs/base";
+import { createOpaqueToken, EmailApi, hashToken, PurpleApi } from "@libs/util/srvkit";
+import { type Dayjs, dayjs } from "akanjs/base";
 import { isEmail } from "akanjs/common";
 import type { Account } from "akanjs/fetch";
+import { OAuthPkce } from "akanjs/server";
 import { serve } from "akanjs/service";
-import type * as cnst from "../cnst";
+import * as cnst from "../cnst";
 import * as db from "../db";
 import { Err } from "../dict";
 import type * as option from "../option";
 import type * as srv from "../srv";
 
-export class UserService extends serve(db.user, ({ use, service, env }) => ({
+export class UserService extends serve(db.user, ({ use, service, env, plug, memory }) => ({
   adminService: service<srv.AdminService>(),
   fileService: service<srv.FileService>(),
   securityService: service<srv.util.SecurityService>(),
   settingService: service<srv.SettingService>(),
   summaryService: service<srv.SummaryService>(),
   host: use<string>(),
-  emailApi: use<EmailApi>(),
-  purpleApi: use<PurpleApi>(),
+  emailApi: plug(EmailApi),
+  purpleApi: plug(PurpleApi),
   signupPolicy: use<option.SignupPolicy>(),
+  nativeSsoPolicy: use<option.NativeSsoPolicy>(),
+  ssoStarts: memory(Map, { of: cnst.SsoHandoff }),
+  ssoCodes: memory(Map, { of: cnst.SsoHandoff }),
   masterPhones: env(() => process.env.MASTER_PHONES?.split(",") ?? []),
   masterPhoneCode: env(() => process.env.MASTER_PHONECODE),
   masterEmailCode: env(() => process.env.MASTER_EMAILCODE),
@@ -334,29 +342,80 @@ export class UserService extends serve(db.user, ({ use, service, env }) => ({
           redirect: adminRedirect ?? "/admin",
         };
       } else {
-        const userId = await this.userModel.findIdByAccountId(accountId, ["active", "restricted", "dormant"]);
-        if (userId) {
-          const user = await this.userModel.getActiveUserBySso(accountId, ssoType);
-          const accessToken = await this._issueUserToken(user, account);
-          return {
-            cookie: ssoSessionCookies(accessToken.jwt, accessToken.refreshToken ?? "", "user"),
-            redirect: signinRedirect,
-          };
-        } else {
-          const user = await this.generatePrepareUser(prepareUserId);
-          await this.userModel.setSsoInPrepareUser(user.id, accountId, ssoType);
-          // 가입 화면에서 닉네임을 따로 받지 않는다 — SSO 프로필 이름을 그대로 쓰고, 비면 계정 아이디에서 만든다.
-          if (!user.nickname) {
-            const nickname = await this.userModel.makeUniqueNickname(ssoNickname || accountId);
-            await this.userModel.setNickname(user.id, nickname);
-          }
-          return { redirect: withRedirectQuery(signupRedirect, { userId: user.id }) };
-        }
+        const signin = await this._resolveSsoUser(accountId, ssoType, {
+          account,
+          nickname: ssoNickname,
+          prepareUserId,
+        });
+        if (signin.prepareUserId)
+          return { redirect: withRedirectQuery(signupRedirect, { userId: signin.prepareUserId }) };
+        return {
+          cookie: ssoSessionCookies(signin.jwt ?? "", signin.refreshToken ?? "", "user"),
+          redirect: signinRedirect,
+        };
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
       return { redirect: `${errorRedirect ?? "/error"}?error=${encodeURIComponent(errMsg)}` };
     }
+  }
+  async startNativeSso(ssoType: cnst.SsoType["value"], start: NativeSsoStart): Promise<string> {
+    if (!this.nativeSsoPolicy.callbackSchemes.includes(start.callbackScheme))
+      throw new Err("user.error.ssoCallbackSchemeNotAllowed", { scheme: start.callbackScheme });
+    const state = createOpaqueToken();
+    const expiresAt = dayjs().add(NativeSso.startMinutes, "minute");
+    await this.ssoStarts.set(hashToken(state), new cnst.SsoHandoff().set({ ssoType, ...start, expiresAt }), {
+      expireAt: expiresAt,
+    });
+    return state;
+  }
+  async takeNativeSso(state: string | null) {
+    if (!state) return null;
+    return (await this.ssoStarts.getDel(hashToken(state))) ?? null;
+  }
+  async handOffNativeSso(start: cnst.SsoHandoff, identify: () => Promise<NativeSsoIdentity>): Promise<NativeSsoResult> {
+    try {
+      const { accountId, nickname } = await identify();
+      const code = createOpaqueToken();
+      const expiresAt = dayjs().add(NativeSso.codeSeconds, "second");
+      const handoff = new cnst.SsoHandoff().set(start).set({ accountId, nickname, expiresAt });
+      await this.ssoCodes.set(hashToken(code), handoff, { expireAt: expiresAt });
+      return { code };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  async exchangeNativeSsoCode(code: string, codeVerifier: string, account?: Account): Promise<cnst.SsoSignin> {
+    const handoff = await this.ssoCodes.getDel(hashToken(code));
+    if (
+      !handoff?.accountId ||
+      dayjs(handoff.expiresAt).isBefore(dayjs()) ||
+      !OAuthPkce.verify(codeVerifier, handoff.codeChallenge)
+    )
+      throw new Err("user.error.invalidSsoCode");
+    return await this._resolveSsoUser(handoff.accountId, handoff.ssoType, { account, nickname: handoff.nickname });
+  }
+  protected async _resolveSsoUser(
+    accountId: string,
+    ssoType: cnst.SsoType["value"],
+    {
+      account,
+      nickname,
+      prepareUserId,
+    }: { account?: Account; nickname?: string | null; prepareUserId?: string | null } = {},
+  ): Promise<cnst.SsoSignin> {
+    const userId = await this.userModel.findIdByAccountId(accountId, ["active", "restricted", "dormant"]);
+    if (userId) {
+      const user = await this.userModel.getActiveUserBySso(accountId, ssoType);
+      const { jwt, refreshToken } = await this._issueUserToken(user, account);
+      return new cnst.SsoSignin().set({ jwt, refreshToken });
+    }
+    const user = await this.generatePrepareUser(prepareUserId);
+    await this.userModel.setSsoInPrepareUser(user.id, accountId, ssoType);
+    // 가입 화면에서 닉네임을 따로 받지 않는다 — SSO 프로필 이름을 그대로 쓰고, 비면 계정 아이디에서 만든다.
+    if (!user.nickname)
+      await this.userModel.setNickname(user.id, await this.userModel.makeUniqueNickname(nickname || accountId));
+    return new cnst.SsoSignin().set({ prepareUserId: user.id });
   }
   //*======================= SSO Signing Area =======================*//
   //*================================================================*//
