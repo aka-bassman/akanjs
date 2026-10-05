@@ -45,8 +45,9 @@ import { getRootBoundarySegments, isRootBoundarySegments } from "./artifact/impl
 import { CodegenLock } from "./codegenLock";
 import { FileSys, getDirname } from "./fileSys";
 import { Linter } from "./linter";
+import { ManifestDependencies } from "./manifestDependencies";
 import { resolveRepoName } from "./repoIdentity";
-import { AppInfo, LibInfo, PkgInfo, WorkspaceInfo } from "./scanInfo";
+import { AppInfo, isAkanFrameworkDependency, LibInfo, PkgInfo, WorkspaceInfo } from "./scanInfo";
 import { Spinner } from "./spinner";
 // Type-only: `getTypeChecker` loads it on demand to keep `typescript` out of the resident module graph.
 import type { TypeChecker } from "./typeChecker";
@@ -935,11 +936,9 @@ export class SysExecutor extends Executor {
       await CodegenLock.run(this.workspace.workspaceRoot, `scan:${this.name}`, async () => {
         await Promise.all(this.#getScanTemplateTasks(scanInfo));
         await this.writeJson(`akan.${this.type}.json`, scanInfo.getScanResult());
-        if (this.type === "lib") this.#updateDependencies(scanInfo);
-
+        await this.#updateDependencies(scanInfo);
         if (writeLib) {
           const libInfos = [...scanInfo.getLibInfos().values()];
-          await this.#updateDependencies(scanInfo);
           await Promise.all(libInfos.flatMap((libInfo) => libInfo.exec.#getScanTemplateTasks(libInfo)));
         }
         await this.syncAgentsIndex(scanInfo);
@@ -961,39 +960,35 @@ export class SysExecutor extends Executor {
     // CLAUDE.md 는 얇은 포인터라 최초 1회만 깔아준다 — 사용자가 지우거나 고친 것을 되살리지 않는다.
     if (!(await this.exists("CLAUDE.md"))) await this.writeFile("CLAUDE.md", renderScopeClaudeMd(scope));
   }
+  //* The root is the cached copy the dependency scan read, so a name it declares is judged by the same snapshot.
   async #updateDependencies(scanInfo: AppInfo | LibInfo) {
-    const rootPackageJson = await this.workspace.getPackageJson();
-    const libPackageJson = await this.getPackageJson();
-    const dependencies = scanInfo.getScanResult().dependencies;
-    const devDependencies = scanInfo.getScanResult().devDependencies;
-    const dependencySet = new Set(dependencies);
-    const devDependencySet = new Set(devDependencies);
-    const libPkgJsonWithDeps: PackageJson = {
-      ...libPackageJson,
-      dependencies: {
-        ...Object.fromEntries(
-          Object.entries(libPackageJson.dependencies ?? {}).filter(([dep]) => !devDependencySet.has(dep)),
-        ),
-        ...(Object.fromEntries(
-          dependencies
-            .filter((dep) => rootPackageJson.dependencies?.[dep])
-            .sort()
-            .map((dep) => [dep, rootPackageJson.dependencies?.[dep]]),
-        ) as Record<string, string>),
-      },
-      devDependencies: {
-        ...Object.fromEntries(
-          Object.entries(libPackageJson.devDependencies ?? {}).filter(([dep]) => !dependencySet.has(dep)),
-        ),
-        ...(Object.fromEntries(
-          devDependencies
-            .filter((dep) => rootPackageJson.dependencies?.[dep] || rootPackageJson.devDependencies?.[dep])
-            .sort()
-            .map((dep) => [dep, rootPackageJson.devDependencies?.[dep] ?? rootPackageJson.dependencies?.[dep]]),
-        ) as Record<string, string>),
-      },
-    };
-    await this.setPackageJson(libPkgJsonWithDeps);
+    const [rootPackageJson, packageJson] = await Promise.all([
+      this.workspace.getPackageJson(),
+      this.getPackageJson({ refresh: true }),
+    ]);
+    const { dependencies: runtime, devDependencies: typeOnly, akanConfig } = scanInfo.getScanResult();
+    const kept = new Set([
+      ...ManifestDependencies.keptBy(packageJson),
+      ...akanConfig.externalLibs,
+      ...akanConfig.trustedDependencies,
+    ]);
+    //? The scan leaves the framework out of its imports on purpose, so it is never a prune candidate.
+    const isKept = (dep: string) => kept.has(dep) || isAkanFrameworkDependency(dep);
+    const { dependencies, devDependencies, removed, unverifiable } = new ManifestDependencies(
+      rootPackageJson,
+      { runtime, typeOnly },
+      isKept,
+    ).realign(packageJson);
+    const manifestPath = `${this.type}s/${this.name}/package.json`;
+    if (removed.length)
+      this.logger.info(
+        `Removed from ${manifestPath}, declared by the root and imported nowhere: ${removed.join(", ")} (list one in akan.keepDependencies to keep it)`,
+      );
+    if (unverifiable.length)
+      this.logger.warn(
+        `${manifestPath} lists ${unverifiable.join(", ")}, which the root package.json does not declare, so sync cannot tell whether it is used; kept as is`,
+      );
+    await this.setPackageJson({ ...packageJson, dependencies, devDependencies });
   }
   override async getLocalFile(targetPath: string) {
     const filePath = path.isAbsolute(targetPath) ? targetPath : `${this.type}s/${this.name}/${targetPath}`;

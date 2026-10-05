@@ -287,7 +287,7 @@ class ScanInfo {
   }
 }
 
-const isAkanFrameworkDependency = (dep: string) => dep === "akanjs" || dep.startsWith("akanjs/");
+export const isAkanFrameworkDependency = (dep: string) => dep === "akanjs" || dep.startsWith("akanjs/");
 export class AppInfo extends ScanInfo {
   readonly type = "app";
   readonly exec: AppExecutor;
