@@ -40,6 +40,10 @@ export const baseDictionary = serviceDictionary(["en", "ko"])
       "The server took too long to answer. Please try again in a moment.",
       "서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.",
     ],
+    tooManyRequests: [
+      "Too many requests. Please try again in {seconds} seconds.",
+      "요청이 너무 많습니다. {seconds}초 후 다시 시도해주세요.",
+    ],
     unexpectedResponse: [
       "The server returned an unexpected response ({status}).",
       "서버가 예상하지 못한 응답을 보냈습니다. ({status})",

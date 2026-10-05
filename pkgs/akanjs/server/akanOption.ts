@@ -1,6 +1,13 @@
 import type { BackendEnv, PromiseOrObject } from "akanjs/base";
 import type { Adaptor, AdaptorCls, LlmOption } from "akanjs/service";
-import type { AgentQuotaHook, AgentUsageHook, CrossSiteOption, GuardCls, MiddlewareCls } from "akanjs/signal";
+import type {
+  AgentQuotaHook,
+  AgentUsageHook,
+  CrossSiteOption,
+  GuardCls,
+  MiddlewareCls,
+  RateLimitSetting,
+} from "akanjs/signal";
 import type { McpServerOption } from "./akanServer";
 import type { WebProxyRegistration } from "./proxy";
 import { HostBasePathWebProxy, LocaleWebProxy } from "./proxy";
@@ -21,6 +28,7 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   #agentUsage: AgentUsageHook | null | undefined;
   #agentQuota: AgentQuotaHook | null | undefined;
   #crossSite: CrossSiteOption | undefined;
+  #getRateLimit: ((env: Env) => RateLimitSetting | false) | undefined;
   use(fnOrObject: ((env: Env) => Record<string, PromiseOrObject<unknown>>) | Record<string, PromiseOrObject<unknown>>) {
     if (typeof fnOrObject === "function")
       this.#getUses.push(fnOrObject as (env: Env) => Record<string, PromiseOrObject<unknown>>);
@@ -65,6 +73,14 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
     this.#crossSite = crossSite;
     return this;
   }
+  /**
+   * Endpoint budgets: a default for endpoints that declare none, overrides by endpoint key, and who `by: "account"`
+   * counts. Merged in mount order, the app's last; `AKAN_RATE_LIMIT=off` still turns them all off.
+   */
+  setRateLimit(settingOrFn: RateLimitSetting | false | ((env: Env) => RateLimitSetting | false)) {
+    this.#getRateLimit = typeof settingOrFn === "function" ? settingOrFn : () => settingOrFn;
+    return this;
+  }
   /** Injected into the `LlmAdaptorRole` adaptor as the `llmOption` use; merged in mount order, the app's last. */
   setLlm<Option extends LlmOption>(llmOrFn: Option | ((env: Env) => Option)) {
     if (typeof llmOrFn === "function") this.#getLlms.push(llmOrFn);
@@ -98,6 +114,9 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   }
   getCrossSite(): CrossSiteOption | undefined {
     return this.#crossSite;
+  }
+  getRateLimit(env: Env): RateLimitSetting | false | undefined {
+    return this.#getRateLimit?.(env);
   }
   getLlm(env: Env): LlmOption {
     return Object.assign({}, ...this.#getLlms.map((fn) => fn(env)));

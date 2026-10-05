@@ -677,6 +677,20 @@ describe("HttpClient", () => {
     expect(error).toMatchObject({ statusCode: 503, details: "No healthy federation child is ready" });
   });
 
+  test("restores a proxy's own 429 with the wait its Retry-After names, else a minute", async () => {
+    setMockFetch();
+    rawResponses.push(new Response("Too Many Requests", { status: 429, headers: { "retry-after": "30" } }));
+    rawResponses.push(new Response("Too Many Requests", { status: 429 }));
+    const client = new HttpClient("https://api.example", { ErrorCls: TestErr });
+
+    const named = (await client.get("/items").catch((error: unknown) => error)) as TestErr;
+    const unnamed = (await client.get("/items").catch((error: unknown) => error)) as TestErr;
+
+    expect(named.message).toBe("base.error.tooManyRequests");
+    expect(named).toMatchObject({ statusCode: 429, data: { status: 429, seconds: 30 } });
+    expect(unnamed).toMatchObject({ statusCode: 429, data: { status: 429, seconds: 60 } });
+  });
+
   test("caps the transport error detail so a page body never becomes the message", async () => {
     setMockFetch();
     rawResponses.push(new Response("x".repeat(5000), { status: 500, headers: { "content-type": "text/plain" } }));

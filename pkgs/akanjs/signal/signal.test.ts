@@ -778,8 +778,9 @@ describe("SignalContext execution", () => {
     expect(empty.args).toEqual([null]);
 
     const malformed = contextOf("http://localhost/items?args=not-json");
-    // `SignalContext.try` wraps init at the route, so a bad value answers 400 instead of a 500.
-    await expect(malformed.init()).rejects.toMatchObject({ message: 'Invalid JSON in "args"', statusCode: 400 });
+    await malformed.init();
+    // Parsed inside `exec`, after the account guards; `SignalContext.try` wraps both, so a bad value answers 400.
+    await expect(malformed.exec()).rejects.toMatchObject({ message: 'Invalid JSON in "args"', statusCode: 400 });
   });
 
   test("parses websocket message and pubsub room args", async () => {
@@ -1272,6 +1273,85 @@ describe("SignalContext guards", () => {
   });
 });
 
+describe("SignalContext argument parsing", () => {
+  class AccountDeny implements Guard {
+    static name = "AccountDeny";
+    static scope: GuardScope = "account";
+    canPass() {
+      return false;
+    }
+  }
+
+  test("parses arguments only after the account guards admit the caller", async () => {
+    const statusWith = async (guards: GuardCls[]) => {
+      const endpointInfo = buildEndpoint
+        .query(String, { guards })
+        .search("args", Any)
+        .exec(() => "ok");
+      const adaptor = new (adapt("signalTestParseOrderAdaptor"))();
+      const request = makeHttpRequest({ url: "http://localhost/items?args=not-json" });
+      const response = (await SignalContext.try(adaptor, endpointInfo, "parseOrder", async () => {
+        const context = makeSignalContext({ endpointInfo, adaptor, request });
+        await context.init();
+        return (await context.exec()) as Response;
+      })) as Response;
+      return response.status;
+    };
+
+    expect(await statusWith([AccountDeny as GuardCls])).toBe(403);
+    expect(await statusWith([TestAdmin as GuardCls])).toBe(400);
+  });
+
+  test("runs account guards before resource guards, which read the parsed arguments", async () => {
+    const trace: string[] = [];
+    class ResourceReads implements Guard {
+      static name = "ResourceReads";
+      static scope: GuardScope = "resource";
+      canPass(context: SignalContext) {
+        trace.push(`resource:${context.getArg<string>("id")}`);
+        return true;
+      }
+    }
+    class AccountFirst implements Guard {
+      static name = "AccountFirst";
+      static scope: GuardScope = "account";
+      canPass() {
+        trace.push("account");
+        return true;
+      }
+    }
+    const endpointInfo = buildEndpoint
+      .query(String, { guards: [ResourceReads as GuardCls, AccountFirst as GuardCls] })
+      .param("id", String)
+      .exec((id) => id);
+    const context = makeSignalContext({ endpointInfo });
+
+    await context.init();
+    await context.exec();
+
+    expect(trace).toEqual(["account", "resource:123"]);
+  });
+
+  test("an account guard that reads an argument still gets it", async () => {
+    class Mismarked implements Guard {
+      static name = "Mismarked";
+      static scope: GuardScope = "account";
+      canPass(context: SignalContext) {
+        return context.getArg<string>("id") === "123";
+      }
+    }
+    const endpointInfo = buildEndpoint
+      .query(String, { guards: [Mismarked as GuardCls] })
+      .param("id", String)
+      .exec((id) => id);
+    const context = makeSignalContext({ endpointInfo });
+
+    await context.init();
+
+    expect(await ((await context.exec()) as Response).json()).toBe("123");
+  });
+});
+
 describe("SignalContext return resolution", () => {
   test("resolves primitives, arrays, hidden fields, scalar fields, nested documents, and resolve fields", async () => {
     const live = getDefaultLiveRegistry();
@@ -1623,6 +1703,36 @@ describe("SignalContext websocket authorization", () => {
 
     expect(await context.authorize()).toBe(true);
     expect(signalTestOrder).toEqual(["global:before", "global:after"]);
+  });
+
+  test("authorize judges on a fresh context, so a guard's per-context memo cannot replay the subscribe verdict", async () => {
+    const memo = new WeakMap<SignalContext, boolean>();
+    class MemoGuard implements Guard {
+      static name = "MemoGuard";
+      static scope: GuardScope = "account";
+      canPass(context: SignalContext): boolean {
+        const known = memo.get(context);
+        if (known !== undefined) return known;
+        const verdict = !!context.get<{ role?: string }>("account")?.role;
+        memo.set(context, verdict);
+        return verdict;
+      }
+    }
+    const wsData: Record<string, unknown> = { token: "admin" };
+    const context = makeWsContext({
+      endpointInfo: buildEndpoint
+        .pubsub(String, { guards: [MemoGuard as GuardCls] })
+        .room("roomId", String)
+        .exec(() => undefined),
+      wsData,
+      middlewareMap: new Map([["wsAccount", WsAccountMiddleware]]) as never,
+    });
+
+    await context.init();
+    await context.exec();
+    wsData.token = undefined;
+
+    expect(await context.authorize()).toBe(false);
   });
 });
 

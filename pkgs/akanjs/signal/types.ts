@@ -1,5 +1,6 @@
 import type { DefaultPrimitiveName, UnCls } from "akanjs/base";
 import type { ServiceModel } from "akanjs/service";
+import type { RateLimitBudget } from "./endpointRateLimit";
 import type { GuardCls } from "./guard";
 import type { MiddlewareCls } from "./middleware";
 import type { SliceCls } from "./slice";
@@ -94,6 +95,11 @@ export interface SignalOption<Response = any, Nullable extends boolean = false, 
    * internal argument may carry one (those answer per caller), and the lookup runs after the guards.
    */
   cache?: number;
+  /**
+   * Calls per caller per window, refused with 429 `base.error.tooManyRequests`. `by: "ip"` is counted before the body
+   * is read, `by: "account"` after the middlewares and before the guards; `false` exempts it from the app's default.
+   */
+  rateLimit?: RateLimitBudget | false;
   guards?: GuardCls[];
   middlewares?: MiddlewareCls[];
   prefix?: false | string;

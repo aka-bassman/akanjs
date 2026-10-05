@@ -5,6 +5,7 @@ export * from "./injectInfo";
 export * from "./ipcTypes";
 export * from "./liveSyncHub";
 export * from "./predefinedAdaptor";
+export * from "./rateLimiter";
 export * from "./serve";
 export * from "./serviceModule";
 export * from "./serviceRegistry";

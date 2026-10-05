@@ -1,6 +1,6 @@
 import type { BackendEnv, Cls, PromiseOrObject } from "akanjs/base";
 import { Logger } from "akanjs/common";
-import { Exception } from "./exception";
+import { Exception, isExceptionLike } from "./exception";
 import type { SignalContext } from "./signalContext";
 
 export interface Middleware<Env extends BackendEnv = BackendEnv> {
@@ -34,10 +34,11 @@ export class Logging extends middleware("logging") {
         }
         return result;
       } catch (error) {
-        const duration = Date.now() - start;
-        context.adaptor.logger.error(
-          `Error ${context.endpointInfo.type}-${context.key} / ${duration}ms: ${String(error)}`,
-        );
+        const line = `Error ${context.endpointInfo.type}-${context.key} / ${Date.now() - start}ms: ${String(error)}`;
+        // A refused flood would write a line per call; `EndpointRateLimit` already warned once for the endpoint.
+        if (isExceptionLike(error) && error.statusCode === 429) {
+          if (debug) context.adaptor.logger.debug(line);
+        } else context.adaptor.logger.error(line);
         throw error;
       }
     };

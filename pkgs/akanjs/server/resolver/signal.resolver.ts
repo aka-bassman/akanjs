@@ -30,6 +30,7 @@ import {
 import { websocketRoomContract } from "../../common/websocketContract";
 import { type Endpoint, type EndpointCls, sliceEndpoint } from "../../signal/endpoint";
 import type { EndpointInfo } from "../../signal/endpointInfo";
+import { EndpointRateLimit } from "../../signal/endpointRateLimit";
 import type { Internal, InternalCls } from "../../signal/internal";
 import type { InternalInfo } from "../../signal/internalInfo";
 import type { MiddlewareCls } from "../../signal/middleware";
@@ -633,7 +634,7 @@ export class SignalResolver {
           SignalResolver.#mountHttpRoute(
             routes,
             path,
-            SignalResolver.#canUsePrimitiveQueryFastPath(endpointInfo, middleware)
+            SignalResolver.#canUsePrimitiveQueryFastPath(key, endpointInfo, middleware)
               ? {
                   GET: async (req) => {
                     if (req.headers.get("authorization") || cookieHeaderHasAuthToken(req.headers.get("cookie")))
@@ -750,9 +751,14 @@ export class SignalResolver {
     return select;
   }
 
-  static #canUsePrimitiveQueryFastPath(endpointInfo: EndpointInfo, middleware: Map<string, MiddlewareCls>) {
+  static #canUsePrimitiveQueryFastPath(
+    key: string,
+    endpointInfo: EndpointInfo,
+    middleware: Map<string, MiddlewareCls>,
+  ) {
     return (
       process.env.AKAN_TRACE !== "1" &&
+      !EndpointRateLimit.budgetOf(key, endpointInfo) &&
       endpointInfo.args.length === 0 &&
       endpointInfo.internalArgs.length === 0 &&
       (endpointInfo.signalOption.guards?.length ?? 0) === 0 &&
