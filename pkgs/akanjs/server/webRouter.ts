@@ -13,6 +13,7 @@ import {
 import { type AkanRequestStore, createRequestStore, parseCookieHeader } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
 import type { PagePromptSource } from "../signal/mcp/pagePrompt";
+import { SignalContext } from "../signal/signalContext";
 import {
   type BuilderRpc,
   type MergedManifest,
@@ -505,6 +506,7 @@ export class WebRouter {
           const result = await this.#rsc.renderWithMeta(rscReq, {
             clientManifest: manifest.clientManifest,
             signal: req.signal,
+            clientIp: SignalContext.clientIpOf(req),
           });
           if (result.type === "redirect")
             return createRscRedirectResponse(result.location, result.method, result.status);
@@ -617,6 +619,7 @@ export class WebRouter {
           const rscResult = await this.#rsc.renderWithMeta(req, {
             clientManifest: manifest.clientManifest,
             signal: req.signal,
+            clientIp: SignalContext.clientIpOf(req),
           });
           if (rscResult.type === "redirect")
             return Response.redirect(new URL(rscResult.location, url.origin), rscResult.status);

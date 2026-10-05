@@ -1178,6 +1178,24 @@ describe("FetchClient HTTP generation", () => {
     });
   });
 
+  test("forwards the page request's x-real-ip on a same-origin call made while rendering, never to another origin", async () => {
+    if (!requestStorage) return;
+    setMockFetch();
+    jsonResponses.push("same", "other");
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+    const page = new Request("https://example.test", { headers: { "x-real-ip": "203.0.113.5" } });
+
+    await requestStorage.run(page, async () => {
+      setAkanPublicEnv();
+      await client.handler.getThing("abcdefabcdefabcdefabcdef", [], null);
+      await client.handler.getThing("abcdefabcdefabcdefabcdef", [], null, { origin: "https://edge.example" });
+    });
+
+    const forwarded = (idx: number) => new Headers(fetchCalls[idx]?.init?.headers as HeadersInit).get("x-real-ip");
+    expect(forwarded(0)).toBe("203.0.113.5");
+    expect(forwarded(1)).toBeNull();
+  });
+
   test("a server clone toward another origin opens no socket unless asked, a same-origin one still does", () => {
     setFakeWebSocket();
     const client = new FetchClient("https://api.example", {}, { service: serviceSignal });

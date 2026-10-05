@@ -635,8 +635,15 @@ export class SignalContext<
     if (!ws.data.headers) return ws.remoteAddress ? normalizeIpAddress(ws.remoteAddress) : null;
     return TrustedProxy.clientAddress(ws.data.headers, ws.remoteAddress);
   }
-  /** `getClientIp` for a request no context wraps, as the MCP router holds one. */
+  static #carriedIps = new WeakMap<Request, string | null>();
+  /** A request a proxy rebuilt has no socket behind it for `requestIP`, so it keeps the address its original resolved. */
+  static carryClientIp(target: Request, source: Request) {
+    if (target !== source) SignalContext.#carriedIps.set(target, SignalContext.clientIpOf(source));
+  }
+  /** `getClientIp` for a request no context wraps, as the MCP router and the page renderer hold one. */
   static clientIpOf(req: Request): string | null {
+    const carried = SignalContext.#carriedIps.get(req);
+    if (carried !== undefined) return carried;
     // A resolver answering `null` is an addressless unix socket (a local hop); no resolver is an unknown peer.
     const peer = SignalContext.#httpPeer?.(req);
     return TrustedProxy.clientAddress(req.headers, peer === undefined ? undefined : (peer?.address ?? null));

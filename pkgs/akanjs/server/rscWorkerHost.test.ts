@@ -115,6 +115,15 @@ const streamResultOf = async (harness: ReturnType<typeof createHostRenderHarness
   return result;
 };
 
+describe("RscWorker worker headers", () => {
+  test("hands the worker only the client address the host resolved", () => {
+    const req = new Request("http://localhost/en", { headers: { "x-real-ip": "203.0.113.66", cookie: "a=1" } });
+
+    expect(RscWorker.workerHeaders(req, "198.51.100.7")).toMatchObject({ "x-real-ip": "198.51.100.7", cookie: "a=1" });
+    expect(RscWorker.workerHeaders(req, null)["x-real-ip"]).toBeUndefined();
+  });
+});
+
 describe("RscWorker process metric projection", () => {
   const processLevelKeys = [
     "role",

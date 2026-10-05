@@ -1,3 +1,4 @@
+import { SignalContext } from "../../signal/signalContext";
 import {
   WEB_PROXY_RESULT,
   type WebProxy,
@@ -9,6 +10,7 @@ import {
 } from "./types";
 
 export const copyBunRequestFields = (target: Request, source: Request): Request => {
+  SignalContext.carryClientIp(target, source);
   const sourceWithParams = source as Request & { params?: Record<string, string> };
   if (sourceWithParams.params) {
     Object.defineProperty(target, "params", {

@@ -1760,6 +1760,18 @@ describe("SignalContext websocket authorization", () => {
 describe("SignalContext caller address", () => {
   afterEach(() => SignalContext.setHttpPeerResolver(null));
 
+  test("a rebuilt request keeps the address its original resolved, not the headers it copied", () => {
+    SignalContext.setHttpPeerResolver((req) =>
+      req.url.endsWith("/original") ? { address: "198.51.100.7", port: 50_000 } : null,
+    );
+    const original = new Request("http://localhost/original", { headers: { "x-real-ip": "203.0.113.66" } });
+    const rebuilt = new Request("http://localhost/rebuilt", { headers: original.headers });
+
+    expect(SignalContext.clientIpOf(rebuilt)).toBe("203.0.113.66");
+    SignalContext.carryClientIp(rebuilt, original);
+    expect(SignalContext.clientIpOf(rebuilt)).toBe("198.51.100.7");
+  });
+
   test("prefers a proxy's header over the socket peer", () => {
     SignalContext.setHttpPeerResolver(() => ({ address: "10.0.0.9", port: 55_000 }));
     const context = makeSignalContext({

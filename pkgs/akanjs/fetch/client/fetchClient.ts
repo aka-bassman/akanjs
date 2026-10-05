@@ -274,6 +274,21 @@ export class FetchClient {
     ws.connect();
     return ws;
   }
+  #makeRequestHeaders(option?: FetchPolicy): Record<string, string> {
+    return { ...this.#makeAuthHeaders(option), ...FetchClient.#forwardedClientIp(option) };
+  }
+  // A call made while rendering reaches this server from its own address; the page request's `x-real-ip` (which the
+  // page renderer resolved) keeps rate limits and `.with(Ip)` about the person.
+  static #forwardedClientIp(option?: FetchPolicy): Record<string, string> {
+    if (option?.origin) return {};
+    try {
+      if (getEnv().side !== "server") return {};
+      const clientIp = requestHeaders().get("x-real-ip");
+      return clientIp ? { "x-real-ip": clientIp } : {};
+    } catch {
+      return {};
+    }
+  }
   #makeAuthHeaders(option?: FetchPolicy): Record<string, string> {
     if (option?.token) return { Authorization: `Bearer ${option.token}` };
     try {
@@ -309,7 +324,7 @@ export class FetchClient {
       case "query":
         return async (...argData: unknown[]) => {
           const { option, argMap, url } = requestOf(argData);
-          const headers = this.#makeAuthHeaders(option);
+          const headers = this.#makeRequestHeaders(option);
           const baseUrl = this.#baseUrlOf(endpoint, option?.origin);
           const timeout = option?.timeout ?? endpoint.timeout;
           // An origin override targets another server, so it bypasses the request-query cache keyed by this origin.
@@ -329,7 +344,7 @@ export class FetchClient {
           const { option, argMap, url } = requestOf(argData);
           const body = HttpClient.makeBody(bodyArgs, uploadArgs, argMap);
           const response = await this.http.send(endpoint.method ?? "POST", url, body, {
-            headers: this.#makeAuthHeaders(option),
+            headers: this.#makeRequestHeaders(option),
             baseUrl: this.#baseUrlOf(endpoint, option?.origin),
             timeout: option?.timeout ?? endpoint.timeout,
           });
@@ -566,7 +581,7 @@ export class FetchClient {
           if (parentId) formData.append(fields.parentId, parentId);
           const url = FetchClient.makeHttpUrl(cap.endpointKey, endpoint, cap.prefix, new Map());
           return await this.http.post(url, formData, {
-            headers: this.#makeAuthHeaders(option),
+            headers: this.#makeRequestHeaders(option),
             baseUrl: this.#baseUrlOf(endpoint),
           });
         }) as FetchHandler,

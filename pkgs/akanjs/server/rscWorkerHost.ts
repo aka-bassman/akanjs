@@ -456,13 +456,13 @@ export class RscWorker {
 
   renderWithMeta(
     req: Request,
-    options: { clientManifest?: ClientManifest; signal?: AbortSignal } = {},
+    options: { clientManifest?: ClientManifest; signal?: AbortSignal; clientIp?: string | null } = {},
   ): Promise<RscRenderResult> {
     const requestId = crypto.randomUUID();
     return createRscHostRenderStream({
       setPending: (pending) => this.#pending.set(requestId, pending),
       deletePending: () => this.#pending.delete(requestId),
-      sendRenderOrQueue: () => this.#sendRenderOrQueue(requestId, req, options.clientManifest),
+      sendRenderOrQueue: () => this.#sendRenderOrQueue(requestId, req, options.clientManifest, options.clientIp),
       cancelRender: () => this.#cancelRender(requestId),
       signal: options.signal,
       onPendingChunkOverflow: () => {
@@ -867,14 +867,23 @@ export class RscWorker {
     this.#pending.delete(requestId);
   }
 
-  #sendRenderOrQueue(requestId: string, req: Request, clientManifest?: ClientManifest): void {
+  /** The page request's headers as the worker sees them, `x-real-ip` being only the address the host resolved. */
+  static workerHeaders(req: Request, clientIp: string | null | undefined): Record<string, string> {
+    const headers: Record<string, string> = {};
+    req.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
+    // Security: the worker's fetch hands `x-real-ip` to a loopback that trusts it, so a browser's own one never passes.
+    delete headers["x-real-ip"];
+    if (clientIp) headers["x-real-ip"] = clientIp;
+    return headers;
+  }
+
+  #sendRenderOrQueue(requestId: string, req: Request, clientManifest?: ClientManifest, clientIp?: string | null): void {
     const send = () => {
       if (!this.#pending.has(requestId)) return;
       try {
-        const headers: Record<string, string> = {};
-        req.headers.forEach((value, key) => {
-          headers[key] = value;
-        });
+        const headers = RscWorker.workerHeaders(req, clientIp);
         this.#proc.send({ type: "render", requestId, url: req.url, method: req.method, headers, clientManifest });
       } catch (err) {
         this.#resolvePending(requestId, (p) =>
