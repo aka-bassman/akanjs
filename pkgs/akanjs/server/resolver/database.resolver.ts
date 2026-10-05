@@ -70,9 +70,9 @@ export class DatabaseResolver {
       find: query ?? {},
       sort: resolveSort(queryOption?.sort),
       skip: resolvePageSkip(queryOption?.skip),
-      // undefined: a server caller naming no page gets no ceiling (client paths were clamped by the slice endpoint).
-      // An explicit null means "page this, I have no number" and lands on the default page size.
-      limit: queryOption?.limit === undefined ? 0 : resolvePageLimit(queryOption.limit),
+      // undefined or 0: a server caller naming no page, or asking for every row, gets no ceiling (client paths were
+      // clamped by the slice endpoint). An explicit null means "page this, I have no number": the default page size.
+      limit: queryOption?.limit === undefined || queryOption.limit === 0 ? 0 : resolvePageLimit(queryOption.limit),
       select: queryOption?.select,
       sample: queryOption?.sample,
     });

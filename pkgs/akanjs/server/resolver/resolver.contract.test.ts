@@ -24,6 +24,7 @@ import { Ws } from "../../signal/internalArg";
 import { FetchSerializer } from "../../signal/serializer";
 import type { SignalContext } from "../../signal/signalContext";
 import { slice } from "../../signal/slice";
+import { ConformanceEnv } from "../../test/conformance";
 import { CascadeRunner } from "./CascadeRunner";
 import { DatabaseResolver } from "./database.resolver";
 import {
@@ -410,6 +411,49 @@ describe("DatabaseResolver declaration contracts", () => {
     await instance.listInCategory("news", true, { limit: 5 });
     expect(queryOf(instance.__store.calls.at(-1))).toEqual({ kind: "all", queries: [{ category: "news" }, {}] });
     expect(optionOf(instance.__store.calls.at(-1))).toMatchObject({ limit: 5 });
+  });
+
+  test("reads every row for a server caller's limit 0, as for an omitted one, and pages a null one", async () => {
+    const { instance } = await bootModel<{
+      __store: ReturnType<typeof makeFakeStore>;
+      listInCategory: (...args: unknown[]) => Promise<unknown[]>;
+      listIdsInCategory: (...args: unknown[]) => Promise<string[]>;
+      __list: (query: unknown, queryOption?: unknown) => Promise<unknown[]>;
+    }>();
+    const limitOf = (call?: { args: unknown[] }) => (call?.args[1] as { limit?: unknown } | undefined)?.limit;
+
+    await instance.listInCategory("news", { limit: 0 });
+    expect(limitOf(instance.__store.calls.at(-1))).toBe(0);
+    await instance.listIdsInCategory("news", { limit: 0 });
+    expect(instance.__store.calls.at(-1)?.method).toBe("findIds");
+    expect(limitOf(instance.__store.calls.at(-1))).toBe(0);
+    await instance.__list({ category: "news" }, { limit: 0, sort: "titleAsc" });
+    expect(limitOf(instance.__store.calls.at(-1))).toBe(0);
+
+    await instance.listInCategory("news");
+    expect(limitOf(instance.__store.calls.at(-1))).toBe(0);
+    await instance.listInCategory("news", { limit: null });
+    expect(limitOf(instance.__store.calls.at(-1))).toBe(20);
+    await instance.listIdsInCategory("news", { limit: 7 });
+    expect(limitOf(instance.__store.calls.at(-1))).toBe(7);
+  });
+
+  test("hands a server caller every stored row for limit 0, past the default page size", async () => {
+    const driver = await ConformanceEnv.openSqlDriver("sqlite", { memory: true });
+    try {
+      const { instance } = await bootModel<{
+        __create: (data: Record<string, unknown>) => Promise<unknown>;
+        listInCategory: (...args: unknown[]) => Promise<unknown[]>;
+        listIdsInCategory: (...args: unknown[]) => Promise<string[]>;
+      }>(driver.database as unknown as FakeSqliteDatabase);
+      const row = { ownerId: validId, category: "news", nested: { label: "n" }, secret: "s", resolvedLabel: "r" };
+      for (let idx = 0; idx < 25; idx += 1) await instance.__create({ ...row, title: `t${idx}` });
+      expect(await instance.listInCategory("news", { limit: 0 })).toHaveLength(25);
+      expect(await instance.listIdsInCategory("news", { limit: 0 })).toHaveLength(25);
+      expect(await instance.listInCategory("news", { limit: null })).toHaveLength(20);
+    } finally {
+      await driver.close();
+    }
   });
 
   test("narrows the by-id facade writes to a single id query", async () => {
@@ -1429,6 +1473,26 @@ describe("SignalResolver declaration contracts", () => {
         },
       ],
     });
+
+    const listedLimit = async (key: string, ...args: unknown[]) => {
+      await endpointMeta[key].execFn?.call(sliceEndpoint, ...args);
+      return (calls.at(-1)?.args[1] as { limit: number } | undefined)?.limit;
+    };
+    const warn = spyOn(SignalResolver.logger, "warn");
+    try {
+      expect(await listedLimit("serverResolverTestItemListInCategory", "news", 0, 0, "titleAsc")).toBe(500);
+      expect(await listedLimit("serverResolverTestItemListInCategory", "news", 0, 0, "titleAsc")).toBe(500);
+      expect(await listedLimit("serverResolverTestItemList", undefined, undefined, 0, 0, "latest")).toBe(500);
+      expect(await listedLimit("serverResolverTestItemListInCategory", "news", 0, null, "titleAsc")).toBe(20);
+      expect(await listedLimit("serverResolverTestItemListInCategory", "news", 0, undefined, "titleAsc")).toBe(20);
+      expect(await listedLimit("serverResolverTestItemListInCategory", "news", 0, 9999, "titleAsc")).toBe(500);
+      const askedEveryRow = warn.mock.calls.map(([message]) => String(message)).filter((m) => m.includes("limit: 0"));
+      expect(askedEveryRow).toHaveLength(2);
+      expect(askedEveryRow[0]).toContain("serverResolverTestItemListInCategory was asked for limit: 0 and served 500");
+      expect(askedEveryRow[1]).toContain("serverResolverTestItemList was asked for limit: 0");
+    } finally {
+      warn.mockRestore();
+    }
 
     await endpointMeta.serverResolverTestItemInsightInCategory.execFn?.call(sliceEndpoint, "news");
     expect(calls.at(-1)).toEqual({ method: "__insight", args: [{ category: "news" }] });

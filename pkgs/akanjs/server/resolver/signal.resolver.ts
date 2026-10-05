@@ -15,7 +15,14 @@ import {
   SLICE_META,
 } from "akanjs/base";
 import { capitalize, cookieHeaderHasAuthToken, Logger } from "akanjs/common";
-import { type ConstantField, deserialize, resolvePageLimit, resolvePageSkip, serialize } from "akanjs/constant";
+import {
+  type ConstantField,
+  deserialize,
+  MAX_PAGE_SIZE,
+  resolvePageLimit,
+  resolvePageSkip,
+  serialize,
+} from "akanjs/constant";
 import { baseDocumentColumns, documentQueryHelper, getFilterSortByKey, type QueryFieldMap } from "akanjs/document";
 import {
   type AkanJob,
@@ -66,6 +73,7 @@ export class SignalResolver {
   };
   static readonly #coalescingRooms = new Set<string>();
   static readonly #liveRoutes = new Map<string, { store: DocumentStore; route: LiveRoute }>();
+  static readonly #everyRowAsked = new Set<string>();
 
   static coalescesRoom(roomId: string): boolean {
     const separator = roomId.indexOf("-");
@@ -327,6 +335,18 @@ export class SignalResolver {
     else SignalResolver.logger.warn(message);
   }
 
+  // `limit: 0` is Mongo's "every row", which a client is never served: it gets the most one page may hold instead.
+  static #clientPageLimit(listKey: string, asked: unknown) {
+    if (asked !== 0) return resolvePageLimit(asked);
+    if (!SignalResolver.#everyRowAsked.has(listKey)) {
+      SignalResolver.#everyRowAsked.add(listKey);
+      SignalResolver.logger.warn(
+        `${listKey} was asked for limit: 0 and served ${MAX_PAGE_SIZE} rows, the most a client may take; paginate, or name a page size`,
+      );
+    }
+    return MAX_PAGE_SIZE;
+  }
+
   static #getJobArgs(key: string, internalInfo: InternalInfo, job: AkanJob): unknown[] {
     const data = Array.isArray(job.data) ? (job.data as unknown[]) : job.data === undefined ? [] : [job.data];
     return internalInfo.args.map((arg, idx) =>
@@ -375,7 +395,7 @@ export class SignalResolver {
           .exec(async function (this: any, ...requestArgs: any) {
             const args = requestArgs.slice(0, argLength);
             const skip = resolvePageSkip(requestArgs[argLength]);
-            const limit = resolvePageLimit(requestArgs[argLength + 1]);
+            const limit = SignalResolver.#clientPageLimit(listKey, requestArgs[argLength + 1]);
             const sort = requestArgs[argLength + 2] ?? "latest";
             const internalArgs = requestArgs.slice(argLength + 3);
             const query = assertSliceQuery(
