@@ -44,6 +44,7 @@ import { AkanAppConfig, AkanLibConfig, decreaseBuildNum, increaseBuildNum } from
 import { getRootBoundarySegments, isRootBoundarySegments } from "./artifact/implicitRootLayout";
 import { CodegenLock } from "./codegenLock";
 import { FileSys, getDirname } from "./fileSys";
+import { JsonFormatter } from "./jsonFormatter";
 import { Linter } from "./linter";
 import { ManifestDependencies } from "./manifestDependencies";
 import { resolveRepoName } from "./repoIdentity";
@@ -305,8 +306,7 @@ export class Executor {
     const writePath = this.getPath(filePath);
     const dir = path.dirname(writePath);
     if (!(await FileSys.dirExists(dir))) await mkdir(dir, { recursive: true });
-    //? Biome ends every .json with a newline; without one, `akan lint` and `akan sync` would flip-flop the file.
-    let contentStr = typeof content === "string" ? content : `${JSON.stringify(content, null, 2)}\n`;
+    let contentStr = typeof content === "string" ? content : JsonFormatter.stringify(content, writePath);
 
     if (await FileSys.fileExists(writePath)) {
       const currentContent = await FileSys.readText(writePath);

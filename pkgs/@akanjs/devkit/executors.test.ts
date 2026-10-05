@@ -11,8 +11,18 @@ import {
   PkgExecutor,
   WorkspaceExecutor,
 } from "./executors";
+import { DevGeneratedIndexSync } from "./frontendBuild/devGeneratedIndexSync";
 import { AppInfo } from "./scanInfo";
-import { createTempLib, isolateEnv, tempDirs, tempRoots, writeJson, writeText } from "./testHelpers";
+import {
+  createTempLib,
+  formatWithBiome,
+  hasBiome,
+  isolateEnv,
+  tempDirs,
+  tempRoots,
+  writeJson,
+  writeText,
+} from "./testHelpers";
 import type { PackageJson } from "./types";
 
 isolateEnv();
@@ -1137,6 +1147,43 @@ describe("SysExecutor scan", () => {
     const fullSrv = await full.readFile("lib/srv.ts");
     expect(fullSrv).toContain('import { ServiceModel } from "akanjs/service";');
     expect(fullSrv).toContain('import * as cnst from "./cnst";\nimport * as db from "./db";');
+  });
+
+  test.skipIf(!hasBiome)("writes barrels, module indexes and akan.lib.json the way Biome prints them", async () => {
+    const component = "export const C = () => null;\n";
+    const uiFiles = ["QRCode", "Qa", "SSOButton", "Select", "Icon10", "Icon2"].map((name) => [
+      `ui/${name}.tsx`,
+      component,
+    ]);
+    const srvkitFiles = ["aB", "aa", "a10", "a9"].map((name) => [`srvkit/${name}.ts`, "export const x = 1;\n"]);
+    const moduleFiles = ["Template", "Unit", "View"].map((role) => [`lib/post/Post.${role}.tsx`, component]);
+    const { root, lib, libDir } = await createScannableLib("biomestable", {
+      files: Object.fromEntries([
+        ...uiFiles,
+        ...srvkitFiles,
+        ...moduleFiles,
+        ["lib/post/post.constant.ts", "export class Post {}\n"],
+      ]),
+    });
+    expect(await formatWithBiome('export * from "./b";\nexport * from "./a";\n', "libs/x/srvkit/index.ts")).toBe(
+      'export * from "./a";\nexport * from "./b";\n',
+    );
+
+    await lib.scan();
+
+    expect(await lib.readFile("ui/index.ts")).toBe(
+      ["Icon2", "Icon10", "Qa", "QRCode", "Select", "SSOButton"].map((name) => `export * from "./${name}";\n`).join(""),
+    );
+    expect(await lib.readFile("srvkit/index.ts")).toBe(
+      ["a9", "a10", "aa", "aB"].map((name) => `export * from "./${name}";\n`).join(""),
+    );
+    for (const file of ["ui/index.ts", "srvkit/index.ts", "lib/post/index.ts", "akan.lib.json"]) {
+      const generated = await lib.readFile(file);
+      expect(await formatWithBiome(generated, `libs/biomestable/${file}`)).toBe(generated);
+    }
+    const devSync = new DevGeneratedIndexSync({ workspaceRoot: root });
+    const events = ["ui/QRCode.tsx", "srvkit/a9.ts", "lib/post"].map((file) => path.join(libDir, file));
+    expect(await devSync.syncForBatch(events)).toEqual({ changedFiles: [], errors: [] });
   });
 
   test("refuses a hand-written ui/index.tsx beside the generated barrel, naming the file and the fix", async () => {
