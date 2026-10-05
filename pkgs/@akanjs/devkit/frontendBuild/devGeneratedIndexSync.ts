@@ -114,7 +114,8 @@ export class DevGeneratedIndexSync {
 
   async #facetContent(dir: string): Promise<string | null> {
     const nameCasePattern = path.basename(dir) === "ui" ? FACET_PASCAL_CASE_RE : FACET_CAMEL_CASE_RE;
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
+    if (!entries) return null;
     const exportNames = entries
       .flatMap((entry) => {
         const name = entry.name;
@@ -126,7 +127,7 @@ export class DevGeneratedIndexSync {
         return nameCasePattern.test(exportName) ? [exportName] : [];
       })
       .sort();
-    if (exportNames.length === 0) return null;
+    if (exportNames.length === 0) return "export {};\n";
     return `${exportNames.map((name) => `export * from "./${name}";`).join("\n")}\n`;
   }
 

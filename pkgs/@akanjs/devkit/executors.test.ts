@@ -5,11 +5,12 @@ import path from "node:path";
 import { AkanAppConfig } from "./akanConfig";
 import { AppExecutor, CommandExecutionError, Executor, PkgExecutor, WorkspaceExecutor } from "./executors";
 import { AppInfo } from "./scanInfo";
-import { isolateEnv, tempDirs, writeJson, writeText } from "./testHelpers";
+import { createTempLib, isolateEnv, tempDirs, tempRoots, writeJson, writeText } from "./testHelpers";
 import type { PackageJson } from "./types";
 
 isolateEnv();
 const makeTempRoot = tempDirs("akan-devkit-");
+const trackRoot = tempRoots();
 
 const PAGE_SOURCE = "export default function Page() {\n  return null;\n}\n";
 
@@ -1053,5 +1054,55 @@ describe("SysExecutor module listing", () => {
     expect(await app.getScalarDictionaryFiles()).toEqual([
       { filePath: "apps/scalardict/lib/__scalar/money/money.dictionary.ts", content: "export const money = {};\n" },
     ]);
+  });
+});
+
+interface ScannableLibOptions {
+  root?: Pick<PackageJson, "dependencies" | "devDependencies">;
+  manifest?: Partial<PackageJson>;
+  config?: string;
+  files?: Record<string, string>;
+}
+
+//* `LibInfo.libInfos` caches a scan by lib name for the whole file, so every test passes a name of its own.
+const createScannableLib = async (
+  libName: string,
+  { root = {}, manifest = {}, config = "export default {};\n", files = {} }: ScannableLibOptions = {},
+) => {
+  const temp = trackRoot(await createTempLib(libName));
+  const libDir = path.join(temp.root, "libs", libName);
+  await writeJson(path.join(temp.root, "package.json"), {
+    name: "repo",
+    version: "1.0.0",
+    description: "repo",
+    ...root,
+  });
+  await writeJson(path.join(libDir, "package.json"), {
+    type: "module",
+    name: `@${libName}`,
+    version: "0.0.1",
+    ...manifest,
+  });
+  await writeJson(path.join(libDir, "tsconfig.json"), { compilerOptions: { target: "ESNext", paths: {} } });
+  await writeText(path.join(libDir, "akan.config.ts"), config);
+  await mkdir(path.join(libDir, "lib", "__scalar"), { recursive: true });
+  for (const [file, content] of Object.entries(files)) await writeText(path.join(libDir, file), content);
+  return { ...temp, libDir };
+};
+
+describe("SysExecutor scan", () => {
+  test("gives a facet folder with nothing to export an empty barrel, so a barrel a deleted file left heals", async () => {
+    const { lib } = await createScannableLib("barrelheal", {
+      files: {
+        "common/index.ts": 'export * from "./commonLogic";\n',
+        "webkit/thing.helper.ts": "export const thing = 1;\n",
+      },
+    });
+
+    await lib.scan();
+
+    expect(await lib.readFile("common/index.ts")).toBe("export {};\n");
+    expect(await lib.readFile("webkit/index.ts")).toBe("export {};\n");
+    expect(await lib.exists("ui")).toBe(false);
   });
 });

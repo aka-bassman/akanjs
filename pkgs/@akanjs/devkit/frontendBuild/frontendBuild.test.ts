@@ -354,7 +354,7 @@ describe("DevGeneratedIndexSync", () => {
 
     expect(removed.errors).toEqual([]);
     expect(removed.changedFiles).toEqual([index]);
-    expect(await Bun.file(index).exists()).toBe(false);
+    expect(await readFile(index, "utf8")).toBe("export {};\n");
   });
 
   test("ignores server/client folders as barrel facets", async () => {

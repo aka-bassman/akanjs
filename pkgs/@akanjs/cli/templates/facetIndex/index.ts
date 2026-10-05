@@ -33,9 +33,9 @@ export default async function getContent(scanInfo: AppInfo | LibInfo | null, dic
     .filter((name) => nameCasePattern.test(name))
     .sort();
 
-  if (exportNames.length === 0) return null;
-  return {
-    filename: "index.ts",
-    content: `${exportNames.map((name) => `export * from "./${name}";`).join("\n")}\n`,
-  };
+  //? Not null: a null result writes nothing, so a barrel still exporting a deleted file would outlive the file.
+  const content = exportNames.length
+    ? `${exportNames.map((name) => `export * from "./${name}";`).join("\n")}\n`
+    : "export {};\n";
+  return { filename: "index.ts", content };
 }

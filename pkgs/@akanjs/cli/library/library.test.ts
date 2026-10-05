@@ -78,6 +78,21 @@ describe("LibraryRunner", () => {
     expect(workspace.commit).toHaveBeenCalledWith("Merge shared library dependencies");
   });
 
+  test("a new library holds an empty barrel in each facet folder, the one sync writes, and no placeholder", async () => {
+    const { root, workspace } = track(await createTempLib("fresh"));
+    const libDir = `${root}/libs/fresh`;
+    const facetFiles = () => [...new Bun.Glob("{common,srvkit,ui,webkit}/**").scanSync({ cwd: libDir })].sort();
+    const barrels = ["common/index.ts", "srvkit/index.ts", "ui/index.ts", "webkit/index.ts"];
+
+    const lib = await new LibraryRunner().createLibrary("fresh", workspace);
+    expect(facetFiles()).toEqual(barrels);
+    for (const barrel of barrels) expect(await Bun.file(`${libDir}/${barrel}`).text()).toBe("export {};\n");
+
+    await lib.scan();
+    expect(facetFiles()).toEqual(barrels);
+    for (const barrel of barrels) expect(await Bun.file(`${libDir}/${barrel}`).text()).toBe("export {};\n");
+  });
+
   // `installLibrary` commits and hashes the copy via `git ls-files`, so the fixture is a real repo, `commit` mocked.
   const createInstallableLib = async (libName: string) => {
     const { root, workspace } = track(await createTempLib(libName));
