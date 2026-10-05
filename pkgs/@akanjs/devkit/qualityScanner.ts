@@ -333,6 +333,8 @@ export class AkanQualityScanner {
     for (const declaration of getTopLevelDeclarations(sourceFile)) {
       if (declaration.kind === "class" && exportedClassNames.includes(declaration.name)) continue;
       if (declaration.kind === "interface" && allowedInterfaceNames.has(declaration.name)) continue;
+      //? A shape only this class reads (a vendor response it parses) is erased at build; a sibling file buys nothing.
+      if ((declaration.kind === "interface" || declaration.kind === "type") && !declaration.exported) continue;
       warnings.push(
         fileWarning(
           "akan.file.class-export-global-declaration",

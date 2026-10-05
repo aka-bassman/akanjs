@@ -247,6 +247,43 @@ describe("AkanQualityScanner layout rules", () => {
   });
 });
 
+describe("AkanQualityScanner class export files", () => {
+  test("allow a type only the class reads, and flag an exported type and any helper beside the class", async () => {
+    const root = await makeWorkspace({
+      "libs/demo/srvkit/vendorApi.ts": [
+        "interface VendorUser {",
+        "  id: string;",
+        "}",
+        "type VendorPage = { items: VendorUser[] };",
+        "export interface VendorApiOptions {",
+        "  key: string;",
+        "}",
+        "export interface VendorReceipt {",
+        "  id: string;",
+        "}",
+        'export type VendorStatus = "ok" | "fail";',
+        "enum VendorRegion {",
+        "  Kr,",
+        "}",
+        "const pageSize = 100;",
+        "const toUser = (page: VendorPage) => page.items[0];",
+        "export class VendorApi {}",
+        "",
+      ].join("\n"),
+    });
+
+    const warnings = rulesOf(await new AkanQualityScanner().scan(root), "akan.file.class-export-global-declaration");
+
+    expect(warnings.map((warning) => /"(\w+)"/.exec(warning.message)?.[1])).toEqual([
+      "VendorReceipt",
+      "VendorStatus",
+      "VendorRegion",
+      "pageSize",
+      "toUser",
+    ]);
+  });
+});
+
 describe("bang comments in browser-reachable files", () => {
   const bangWarningsIn = async (files: Record<string, string>) => {
     const result = await new AkanQualityScanner().scan(await makeWorkspace(files));
