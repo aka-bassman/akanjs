@@ -39,10 +39,6 @@ export function renderAkanHeadSnapshot(snapshot: AkanHeadSnapshotV1): Head {
   );
 }
 
-export function shouldRenderLocaleAlternates(options: { isSpecialRoute?: boolean }): boolean {
-  return options.isSpecialRoute !== true;
-}
-
 function isResolvedHead(value: unknown): value is ResolvedHead {
   return isRecord(value) && "node" in value;
 }

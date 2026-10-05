@@ -304,6 +304,8 @@ A playground page that slides up, pads for the notch, and never ships to product
 
 **block trades speed for a clean error page.** With `ssr: "block"` the Loading fallback never reaches the browser. Use it only where SEO and first paint do not matter.
 
+**Crawlers always get the whole page.** A search engine, an AI crawler or a link preview receives every section already in place, whatever `ssr` says: it runs no script to reveal a streamed one.
+
 prompt
 
 `.prompt(name, description)` publishes a page as an MCP prompt, so an agent can open the same screen a person sees. The description is the whole instruction the model gets, in English.

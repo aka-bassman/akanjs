@@ -171,7 +171,6 @@ export class RouteTreeBuilder {
         : {
             renderPage: routeRender,
             pageIncludesOwnLayout: parsed.leaf === "_index",
-            isSpecialRoute: parsed.isSpecialRoute,
           }),
     } as Route);
   }
@@ -198,7 +197,6 @@ export class RouteTreeBuilder {
               renderRootLayouts: layer.pageRenderRootLayouts,
               renderLayouts: layer.pageRenderLayouts,
               resolveHead: RouteTreeBuilder.#composeHeadResolvers(route.renderPage.resolveHead, pageHead),
-              isSpecialRoute: route.isSpecialRoute,
               pageState: route.pageState ?? defaultPageState,
             },
           ]

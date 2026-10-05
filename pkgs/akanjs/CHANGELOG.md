@@ -1,5 +1,16 @@
 # akanjs
 
+## 3.0.1
+
+### Minor Changes
+
+- 4871ae5: The default `robots.txt` no longer disallows AI crawlers. GPTBot, ClaudeBot, PerplexityBot, Google-Extended and the rest may read public pages like any other crawler; `/api` (the configured prefix), `/_akan`, `/admin`, `/manager` and `/private` stay disallowed. An app that wants to keep AI crawlers out puts its own `robots.txt` in `public/`, which is served ahead of the generated one.
+
+### Patch Changes
+
+- 4871ae5: Send crawlers the whole page. A request whose user agent names a search engine, an AI crawler or a link-preview fetcher (Googlebot, GPTBot, ClaudeBot, Yeti, facebookexternalhit and the like) now waits for every Suspense boundary and gets each one rendered in place. Before, it got the Loading fallback with the content parked in hidden segments that only a script reveals — and even `ssr: "block"` left a large boundary there. Browsers keep streaming, and the HTML result cache keeps the crawler page apart from the browser page.
+- 4871ae5: Drop the `robots.txt.tsx` special route. `/robots.txt` was always answered first by `public/robots.txt` or the generated file, so the page never rendered; a `robots.txt.tsx` file is now an ordinary page under the locale, and `isSpecialRouteLeaf` is gone from `akanjs/common`. Change the file by putting your own `robots.txt` in `public/`.
+
 ## 3.0.0
 
 ### Minor Changes

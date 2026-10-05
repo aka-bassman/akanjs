@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import type { AkanMetricsReport } from "akanjs/service";
 import { LruTtlCache } from "./cachePolicy";
-import { shouldRenderLocaleAlternates } from "./head";
 import {
   type AkanRouterStateV1,
   type AkanRscPatchMetadata,
@@ -191,14 +190,6 @@ describe("RscWorker host pending chunk cap", () => {
   test("fails only after pending chunks exceed the configured cap", () => {
     expect(isRscHostPendingChunkOverflow(2, 2)).toBe(false);
     expect(isRscHostPendingChunkOverflow(3, 2)).toBe(true);
-  });
-});
-
-describe("RscWorker locale alternates policy", () => {
-  test("skips automatic alternates for special routes", () => {
-    expect(shouldRenderLocaleAlternates({})).toBe(true);
-    expect(shouldRenderLocaleAlternates({ isSpecialRoute: true })).toBe(false);
-    expect(shouldRenderLocaleAlternates({ isSpecialRoute: false })).toBe(true);
   });
 });
 

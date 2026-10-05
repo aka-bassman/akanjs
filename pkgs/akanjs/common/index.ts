@@ -139,7 +139,6 @@ export {
   getPageSourceFileViolation,
   getRouteExports,
   isRouteSourceFile,
-  isSpecialRouteLeaf,
   LAYOUT_ROUTE_EXPORTS,
   matchRoutePattern,
   normalizeRoutePattern,

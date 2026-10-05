@@ -16,12 +16,9 @@ and verified by `akan lint akan`.
 
 Import from `@apps/akan/ui`:
 - `cardGridRecipe`(cols: two*|three|mdTwo) — 카드/셀 그리드 — `grid gap-3` 위에 cols 브레이크포인트를 얹는다.
-- `flightButtonRecipe`(tone: burn*|line|day · size: md*|lg) — 전투기 시안(/testhome) 버튼 — burn 은 모서리를 깎은 애프터버너 주황 판, line 은 청사진 선만 두른 판, day 는 밝은 하늘 위의 잉크 판.
-- `flightPanelRecipe`(tone: sheet*|glass|day · padding: none|sm|md*|lg · ticks?) — 전투기 시안(/testhome) 도면 패널 — sheet 는 남색 도면지, glass 는 선만 비치는 판, day 는 밝은 하늘 위의 흰 판. ticks 는 네 모서리의 맞춤 표시.
 - `jellyButtonRecipe`(tone: primary*|ink|moon|planet|glass · size: md*|lg) — 구미 젤리 버튼 — `jelly` 표면 위에 스프링 squish, tone 은 젤리 색(`tint-*`)을, glass 는 투명한 `jelly-glass` 판을 고른다.
 - `jellyUiButtonRecipe`(variant: default|primary*|secondary|accent|neutral|outline|ghost|destructive|success|warning|info|link · size: xs|sm|md*|lg|icon · shape: default*|square|circle · outline: true|false) — `akanjs/ui` 버튼의 젤리 look — `_overrides.tsx` 의 recipes.button 슬롯용. 색 variant 는 설탕 젤리, ghost/outline/link 는 표면 없이.
 - `panelRecipe`(tone: solid*|glass|jelly · radius: none|lg|xl*|2xl|3xl|4xl · padding: none|sm|md*|lg|xl|row · shadow?) — 콘텐츠 표면 패널 — `rounded-* border bg-background p-*` 계열 통합. row 는 리스트/행 표면(px만), jelly 는 젤리 별 테마의 투명 젤리 판.
-- `plateRecipe`(tone: plain*|primary · padding: md*|lg) — 모서리 재단 표식 판 — 테두리 없이 `crop-marks` 네 모서리와 옅은 바탕만 남긴 표면. primary 는 표식·바탕을 강조색으로.
 
 Import from `@libs/util/ui`:
 - `alertRecipe`(variant: default*|info|success|warning|error) — Alert bar. Mirrors daisyUI's grid-flow-col layout and padding; the tinted variants replace

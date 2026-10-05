@@ -1635,6 +1635,24 @@ export default page()
                 ),
               })}
             </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Crawlers always get the whole page.</strong> A search engine, an AI crawler or a link
+                    preview receives every section already in place, whatever <code>ssr</code> says: it runs no script
+                    to reveal a streamed one.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>크롤러는 언제나 완성된 페이지를 받습니다.</strong> 검색엔진, AI 크롤러, 링크 미리보기는{" "}
+                    <code>ssr</code> 값과 상관없이 모든 섹션이 제자리에 들어간 HTML을 받습니다. 스트리밍된 섹션을 드러낼
+                    스크립트를 실행하지 않기 때문입니다.
+                  </span>
+                ),
+              })}
+            </li>
           </ul>
         </Docs.Description>
       </Scroll.Slide>

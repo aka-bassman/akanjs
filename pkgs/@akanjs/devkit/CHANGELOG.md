@@ -1,5 +1,18 @@
 # @akanjs/devkit
 
+## 3.0.1
+
+### Minor Changes
+
+- 4871ae5: New lint rule `no-static-in-object-light-model` for `*.constant.ts`: a `static` on an `XObject` or `LightX` class is an error. The full model `via(XObject, LightX, …)` mixes in their prototypes only, so such a static never reaches `X`; declare it on `XInput` (or a scalar), `X`, or `XInsight` instead.
+
+### Patch Changes
+
+- Updated dependencies [4871ae5]
+- Updated dependencies [4871ae5]
+- Updated dependencies [4871ae5]
+  - akanjs@3.1.0
+
 ## 3.0.0
 
 ### Minor Changes
@@ -542,11 +555,11 @@
 
   **Lint config now extends a config shipped in the package.** `@akanjs/devkit/biome.base.json` carries the
   formatter, the rule set, and every grit plugin registration; a workspace `biome.json` is `extends` plus its own
-  `files.includes`. Biome resolves the specifier through node_modules (it does not consult the package `exports`
+  `files.includes`. Biome resolves the specifier through node*modules (it does not consult the package `exports`
   map), and `plugins` paths inside an extended config resolve from the entry config's directory, so the
   `./node_modules/@akanjs/devkit/lint/*.grit` form the template already used is correct. Rule changes now reach a
   workspace on `bun update` with no command to run. Two merge behaviours decided the split: `overrides` concatenate,
-  so the generated-file opt-out moved there from `files.includes`, which _replaces_ and would silently drop the base
+  so the generated-file opt-out moved there from `files.includes`, which \_replaces* and would silently drop the base
   list the moment a workspace added one exclusion of its own. Because Biome moves rules between groups across minors
   (`noUnnecessaryConditions` is `nursery` at 2.4 and `suspicious` at 2.5, and the old position is a hard error), the
   base config and the Biome version travel together: `biomeBase.ts` pins the version `createWorkspace` installs

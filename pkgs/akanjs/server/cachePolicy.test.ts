@@ -54,6 +54,7 @@ describe("route cache policy helpers", () => {
       ttl: 45,
     });
     expect(createRouteCacheEntry({ request, url, theme: "dark", ttl: 60 }).key).toBe(key);
+    expect(createRouteCacheKey({ request, url, theme: "dark", variant: "crawler" })).toBe(`${key}\ncrawler`);
   });
 
   test("separates cache keys by proxy-resolved locale and path headers", () => {

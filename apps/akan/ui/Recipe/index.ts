@@ -16,9 +16,6 @@ export {
   inputRecipe,
 } from "akanjs/ui";
 export { type CardGridVariants, cardGridRecipe } from "./cardGrid";
-export { type FlightButtonVariants, flightButtonRecipe } from "./flightButton";
-export { type FlightPanelVariants, flightPanelRecipe } from "./flightPanel";
 export { type JellyButtonVariants, jellyButtonRecipe } from "./jellyButton";
 export { type JellyUiButtonVariants, jellyUiButtonRecipe } from "./jellyUiButton";
 export { type PanelVariants, panelRecipe } from "./panel";
-export { type PlateVariants, plateRecipe } from "./plate";

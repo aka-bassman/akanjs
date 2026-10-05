@@ -62,4 +62,13 @@ export interface SsrFromRscInput {
   onCancel?: (reason?: unknown) => void;
   /** Buffers until `stream.allReady` (`pageConfig.ssr: "block"`); `AKAN_SSR_WAIT_FOR_ALL_READY=1` forces it globally. */
   waitForAllReady?: boolean;
+  /** Buffers like `waitForAllReady` and writes every Suspense boundary in place, for a reader that runs no script. */
+  inlineBoundaries?: boolean;
+}
+
+export interface SsrDocumentOptions {
+  bootstrap: string;
+  waitForAllReady?: boolean;
+  inlineBoundaries?: boolean;
+  onError: (error: unknown, phase?: string) => void;
 }

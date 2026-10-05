@@ -1,13 +1,22 @@
 import { usePage } from "@apps/akan/client";
 import { cn } from "akanjs/client";
+import { CueSync } from "./CueSync";
+
+interface RecordingCue {
+  start: number;
+  end: number;
+  text: string;
+}
 
 interface RecordingProps {
   className?: string;
   src: string;
   isRealtime?: boolean;
+  cues?: RecordingCue[];
 }
-export const Recording = ({ className, src, isRealtime = true }: RecordingProps) => {
+export const Recording = ({ className, src, isRealtime = true, cues }: RecordingProps) => {
   const { l } = usePage();
+  const video = <video className="aspect-video w-full object-cover" src={src} autoPlay muted loop playsInline />;
   return (
     <figure
       className={cn(
@@ -15,7 +24,25 @@ export const Recording = ({ className, src, isRealtime = true }: RecordingProps)
         className,
       )}
     >
-      <video className="aspect-video w-full object-cover" src={src} autoPlay muted loop playsInline />
+      {cues ? (
+        <CueSync>
+          {video}
+          <ol className="pointer-events-none absolute inset-x-0 bottom-[2.5%] grid place-items-center px-4">
+            {cues.map(({ start, end, text }) => (
+              <li
+                key={start}
+                data-cue-start={start}
+                data-cue-end={end}
+                className="rounded-full bg-background/85 px-3 py-1 font-bold text-[11px] text-foreground opacity-0 backdrop-blur transition-opacity duration-300 [grid-area:1/1] data-active:opacity-100 sm:px-4 sm:py-1.5 sm:text-sm"
+              >
+                {text}
+              </li>
+            ))}
+          </ol>
+        </CueSync>
+      ) : (
+        video
+      )}
       {isRealtime ? (
         <figcaption className="absolute top-3 left-3 flex items-center gap-2 rounded-full bg-background/85 px-3 py-1.5 font-mono text-[11px] text-foreground/80 tracking-[0.12em] backdrop-blur">
           <span className="size-1.5 animate-pulse rounded-full bg-primary" />

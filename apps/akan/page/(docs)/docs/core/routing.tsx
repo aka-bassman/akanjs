@@ -2,6 +2,7 @@ import { usePage } from "@apps/akan/client";
 import { badgeRecipe, Code, Divider, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
+import { Link } from "akanjs/ui";
 
 const routeFiles = [
   {
@@ -39,10 +40,18 @@ const routeFiles = [
     en: "Never written: Akan injects the locale.",
     ko: "직접 쓰지 않습니다. Akan이 locale을 주입합니다.",
   },
+];
+
+const crawlerFiles = [
   {
-    name: "robots.txt.tsx",
-    en: "The one route outside the locale: it serves /robots.txt, not /:lang/robots.txt.",
-    ko: "locale 밖에 놓이는 유일한 라우트로, /:lang/robots.txt가 아니라 /robots.txt를 제공합니다.",
+    name: "/robots.txt",
+    en: "Opens public pages to every crawler, AI crawlers included, and closes the API and admin paths.",
+    ko: "AI 크롤러를 포함한 모든 크롤러에게 공개 페이지를 열고, API와 관리자 경로는 닫습니다.",
+  },
+  {
+    name: "/sitemap.xml",
+    en: "Lists every static page once per locale; a page with a [param] segment is left out.",
+    ko: "정적 페이지를 언어마다 모두 나열합니다. [param] 세그먼트가 있는 페이지는 빠집니다.",
   },
 ];
 
@@ -310,15 +319,14 @@ export default page().render(() => {
 ├── _layout.tsx
 ├── _index.tsx
 ├── (public)/
-│   └── signin.tsx
+│   ├── signin.tsx
 │   └── signup.tsx
-├── (user)/
-│   └── project/
-│       └── [projectId]/
-│           ├── _layout.tsx
-│           ├── _overrides.tsx
-│           └── _index.tsx
-└── robots.txt.tsx`}
+└── (user)/
+    └── project/
+        └── [projectId]/
+            ├── _layout.tsx
+            ├── _overrides.tsx
+            └── _index.tsx`}
         />
         <Docs.IntroTable
           type={l.trans({ en: "File", ko: "파일" })}
@@ -609,6 +617,60 @@ export default rootLayout()
     </>
   ));`}
         />
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="search-engines" title={l.trans({ en: "Search Engines", ko: "검색엔진" })}>
+        <Docs.Title>{l.trans({ en: "Search Engines", ko: "검색엔진" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Every page renders on the server, and a crawler — a search engine, an AI crawler or a link preview — gets it whole, with every section already in place. The two files crawlers look for are served as well.",
+              ko: "모든 페이지는 서버에서 렌더링되고, 검색엔진·AI 크롤러·링크 미리보기 같은 크롤러는 모든 섹션이 제자리에 들어간 완성된 페이지를 받습니다. 크롤러가 찾는 파일 두 개도 함께 제공됩니다.",
+            })}
+          </div>
+        </Docs.Description>
+        <Docs.IntroTable
+          type={l.trans({ en: "Path", ko: "경로" })}
+          items={crawlerFiles.map(({ name, en, ko }) => ({ name, desc: l.trans({ en, ko }) }))}
+        />
+        <Code.Snippet
+          className="w-full"
+          title="/robots.txt"
+          language="yaml"
+          code={`User-agent: *
+Allow: /
+Disallow: /api
+Disallow: /_akan
+Disallow: /admin
+Disallow: /manager
+Disallow: /private`}
+        />
+        <Docs.Alert type="info">
+          {l.trans({
+            en: (
+              <span>
+                To change either file, put your own <code>robots.txt</code> or <code>sitemap.xml</code> in{" "}
+                <code>public/</code>, and it is served instead. A sitemap that has to list <code>[param]</code> pages
+                can come from an endpoint, as in{" "}
+                <Link href="/conventions/module/signal#endpoint-signal" className="text-primary">
+                  Serving a fixed path
+                </Link>
+                .
+              </span>
+            ),
+            ko: (
+              <span>
+                바꾸려면 <code>public/</code>에 직접 쓴 <code>robots.txt</code>나 <code>sitemap.xml</code>을 두면 그
+                파일이 대신 나갑니다. <code>[param]</code> 페이지까지 담아야 하는 sitemap은{" "}
+                <Link href="/conventions/module/signal#endpoint-signal" className="text-primary">
+                  고정 경로로 제공하기
+                </Link>
+                처럼 endpoint에서 만들 수 있습니다.
+              </span>
+            ),
+          })}
+        </Docs.Alert>
       </Scroll.Slide>
       <Divider />
 

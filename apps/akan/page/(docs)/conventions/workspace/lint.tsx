@@ -57,8 +57,8 @@ export default page().render(() => {
     {
       name: l.trans({ en: "grit plugin", ko: "grit 플러그인" }),
       desc: l.trans({
-        en: "A lint rule written in GritQL for Akan and run by Biome. There are 25.",
-        ko: "Akan을 위해 GritQL로 쓴 린트 규칙이며, Biome이 실행합니다. 모두 25개입니다.",
+        en: "A lint rule written in GritQL for Akan and run by Biome. There are 26.",
+        ko: "Akan을 위해 GritQL로 쓴 린트 규칙이며, Biome이 실행합니다. 모두 26개입니다.",
       }),
     },
     {
@@ -472,6 +472,14 @@ async refreshStock() {
       desc: l.trans({
         en: "A `#private` method. Use a TypeScript `private _method()` instead.",
         ko: "`#private` 메서드입니다. 대신 TypeScript `private _method()`를 씁니다.",
+      }),
+    },
+    {
+      rule: "no-static-in-object-light-model",
+      scope: "`*.constant.ts`",
+      desc: l.trans({
+        en: "A `static` on `XObject` or `LightX`, which never reaches the full model. Declare it on `XInput`, `X` or `XInsight`.",
+        ko: "`XObject`나 `LightX`에 쓴 `static`이며, 전체 모델에 닿지 않습니다. `XInput`, `X`, `XInsight`에 선언합니다.",
       }),
     },
   ];
@@ -913,14 +921,14 @@ async refreshStock() {
             {l.trans({
               en: (
                 <span>
-                  Twenty-two are grit plugins written for Akan, and every one of them is an error. The rest are
+                  Twenty-six are grit plugins written for Akan, and every one of them is an error. The rest are
                   Biome&apos;s own. Each plugin looks only at its scope, so a plain package under <code>pkgs/</code>{" "}
                   never trips the module rules.
                 </span>
               ),
               ko: (
                 <span>
-                  스물두 개는 Akan을 위해 쓴 grit 플러그인이고, 모두 error입니다. 나머지는 Biome 자체 규칙입니다.
+                  스물여섯 개는 Akan을 위해 쓴 grit 플러그인이고, 모두 error입니다. 나머지는 Biome 자체 규칙입니다.
                   플러그인은 자기 적용 범위만 보므로, <code>pkgs/</code> 아래의 평범한 패키지는 모듈 규칙에 걸리지
                   않습니다.
                 </span>

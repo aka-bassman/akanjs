@@ -181,7 +181,6 @@ export interface Route {
   /** Synthetic layout render from a `_overrides.tsx` at this node; wraps the subtree in a UI-override provider. */
   renderOverrides?: RouteRender;
   pageIncludesOwnLayout?: boolean;
-  isSpecialRoute?: boolean;
   loader?: () => unknown;
   pageState?: PageState;
   pageConfigChain?: PageConfig[];
@@ -358,7 +357,6 @@ export interface PathRoute {
   renderRootLayouts: RouteRender[];
   renderLayouts: RouteRender[];
   resolveHead?: ResolveHead;
-  isSpecialRoute?: boolean;
 }
 
 export type FrameSlotScope = "page" | "layout";

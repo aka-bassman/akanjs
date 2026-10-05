@@ -33,20 +33,6 @@ describe("computeRouteSeedIndex", () => {
     ).toThrow("route conflict");
   });
 
-  test("keeps special route seeds outside implicit locale", () => {
-    const index = computeRouteSeedIndex([
-      {
-        key: "./__root_layout.tsx",
-        moduleAbsPath: "/app/.akan/generated/root-layouts/__root_layout.tsx",
-        seedAbsPaths: ["/app/page/_layout.tsx"],
-      },
-      { key: "./robots.txt.tsx", moduleAbsPath: "/app/page/robots.txt.tsx" },
-    ]);
-    const robots = index.entries.find((entry) => entry.routeId === "/robots.txt");
-    expect(robots?.seeds).not.toContain(path.resolve("/app/.akan/generated/root-layouts/__root_layout.tsx"));
-    expect(robots?.seeds).not.toContain(path.resolve("/app/page/_layout.tsx"));
-  });
-
   test("serializes seed paths relative to the artifact directory", () => {
     const artifactDir = "/repo/dist/apps/akan/.akan/artifact";
     const serialized = serializeRouteSeedIndexForArtifact(

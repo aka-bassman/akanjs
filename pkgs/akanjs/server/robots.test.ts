@@ -2,16 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { createDefaultRobotsTxt } from "./robots";
 
 describe("createDefaultRobotsTxt", () => {
-  test("allows public paths while blocking internal paths and AI crawlers", () => {
+  test("allows public paths to every crawler, AI crawlers included, while blocking internal paths", () => {
     const robots = createDefaultRobotsTxt();
 
     expect(robots).toContain("User-agent: *\nAllow: /");
     for (const path of ["/api", "/_akan", "/admin", "/manager", "/private"]) {
       expect(robots).toContain(`Disallow: ${path}`);
     }
-    for (const crawler of ["GPTBot", "PerplexityBot", "CCBot", "ClaudeBot", "Google-Extended"]) {
-      expect(robots).toContain(`User-agent: ${crawler}\nDisallow: /`);
-    }
+    expect(robots.match(/^User-agent: .*$/gm)).toEqual(["User-agent: *"]);
+    expect(robots).not.toContain("Disallow: /\n");
   });
 
   test("blocks the configured api prefix rather than a literal /api", () => {
