@@ -37,6 +37,10 @@ Each of these made a rule silently report nothing, and each was found by adding 
   and `$var` does not interpolate into a `message`.
 - A code snippet also matches JSX text that parses as it: `` `new Error` `` reports `<code>new Error</code>` in a
   docs page. Where a rule meets `.tsx`, match the node kind instead (`JsNewExpression(callee = `Error`)`).
+- A regex is anchored by bare concatenation, so a top-level alternation leaks out of the anchors: `r"fill|stroke"`
+  is `^fill|stroke$` and matches `fillOpacity`. Group it: `r"(?:fill|stroke)"`.
+- A `\"` in a GritQL string is unescaped twice and corrupts it: messages quote with `'`, and a regex spells the
+  character `\x22`.
 
 The five vocabulary fixtures were ported from `frontendBuild/styleGuard.test.ts`, the pre-grit
 implementation of the same rules, when that scanner was retired.
