@@ -51,6 +51,7 @@ import { Spinner } from "./spinner";
 // Type-only: `getTypeChecker` loads it on demand to keep `typescript` out of the resident module graph.
 import type { TypeChecker } from "./typeChecker";
 import type { FileContent, PackageJson, TsConfigJson } from "./types";
+import { barrelFacetDirs } from "./workspaceLayout";
 
 export interface PageRoot {
   /** App-relative location of the route files, i.e. the symlink for a synced lib. */
@@ -839,8 +840,6 @@ interface SysExecutorOptions extends NamedExecutorOptions {
   type: "app" | "lib";
 }
 
-const scanFacetDirs = ["ui", "webkit", "srvkit", "common", "plugin"] as const;
-
 export class SysExecutor extends Executor {
   workspace: WorkspaceExecutor;
   override name: string;
@@ -896,7 +895,7 @@ export class SysExecutor extends Executor {
       this._applyTemplate({ basePath: ".", template: "server.ts", scanInfo }),
       this._applyTemplate({ basePath: ".", template: "client.ts", scanInfo }),
       this.type === "lib" ? this._applyTemplate({ basePath: ".", template: "index.ts", scanInfo }) : null,
-      ...scanFacetDirs.map((facet) =>
+      ...barrelFacetDirs.map((facet) =>
         this._applyTemplate({
           basePath: facet,
           template: "facetIndex/index.ts",

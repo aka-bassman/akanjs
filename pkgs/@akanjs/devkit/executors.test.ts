@@ -1105,4 +1105,23 @@ describe("SysExecutor scan", () => {
     expect(await lib.readFile("webkit/index.ts")).toBe("export {};\n");
     expect(await lib.exists("ui")).toBe(false);
   });
+
+  test("refuses a hand-written ui/index.tsx beside the generated barrel, naming the file and the fix", async () => {
+    const { lib } = await createScannableLib("shadowedbarrel", {
+      files: {
+        "ui/Chat.tsx": "export const Chat = () => null;\n",
+        "ui/index.tsx": 'export { Chat } from "./Chat";\n',
+        "ui/Page/index.tsx": 'export { Inner } from "./Inner";\n',
+        "ui/Page/index_.tsx": '"use client";\nexport { Inner } from "./Inner";\n',
+      },
+    });
+
+    const error = await lib.scan().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    const { message } = error as Error;
+    expect(message).toContain("libs/shadowedbarrel/ui/index.tsx: shadows the generated ui/index.ts");
+    expect(message).toContain("Delete it");
+    expect(message).not.toContain("ui/Page/");
+  });
 });

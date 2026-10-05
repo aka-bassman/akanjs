@@ -84,6 +84,23 @@ const libFacetRootTestPattern = /^[A-Za-z][A-Za-z0-9_-]*\.signal\.(test|spec)\.(
 export const isAllowedLibFacetRootFile = (filename: string) =>
   libFacetRootAllowedFiles.has(filename) || libFacetRootTestPattern.test(filename);
 
+export const barrelFacetDirs = ["ui", "webkit", "srvkit", "common", "plugin"] as const;
+
+//* Bun resolves a folder import to `index.tsx`, `index.jsx` or `index.mts` ahead of `index.ts`, and TypeScript to
+//* `index.ts` first, so one of these beside the generated barrel typechecks every name the barrel adds and serves none.
+const barrelShadowingIndexFiles = new Set(["index.tsx", "index.jsx", "index.mts"]);
+
+export const facetIndexShadowOf = (sysRelativePath: string) => {
+  const [facet, filename = "", ...nested] = sysRelativePath.split("/");
+  if (nested.length || !barrelShadowingIndexFiles.has(filename) || !barrelFacetDirs.some((dir) => dir === facet))
+    return null;
+  return (
+    `shadows the generated ${facet}/index.ts: Bun loads ${filename} and TypeScript checks index.ts, so a name only ` +
+    `the generated barrel exports typechecks and is undefined at runtime. Delete it, since the generated barrel ` +
+    `re-exports every file and folder in ${facet}/; a namespace it builds belongs in ${facet}/<Folder>/index.tsx`
+  );
+};
+
 //* What a Capacitor app kept in its root. The native runtime generates its projects under `.akan/native/<target>`, so
 //* these are named as leftovers instead of as unknown entries.
 const retiredAppRootEntries = new Set([

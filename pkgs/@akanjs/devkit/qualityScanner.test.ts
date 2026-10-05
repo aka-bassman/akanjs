@@ -219,6 +219,20 @@ describe("AkanQualityScanner layout rules", () => {
     ]);
   });
 
+  test("flags a hand-written facet index beside the generated barrel, but not a folder namespace", async () => {
+    const root = await makeWorkspace({
+      "libs/demo/ui/index.tsx": 'export { Chat } from "./Chat";\n',
+      "libs/demo/ui/Chat.tsx": "export const Chat = () => null;\n",
+      "libs/demo/ui/Page/index.tsx": 'export { Inner } from "./Inner";\n',
+    });
+
+    const warnings = rulesOf(await new AkanQualityScanner().scan(root), "akan.layout.facet-index-shadow");
+
+    expect(warnings.map((warning) => warning.file)).toEqual(["libs/demo/ui/index.tsx"]);
+    expect(warnings[0]?.message).toContain("index.tsx shadows the generated ui/index.ts");
+    expect(warnings[0]?.fix).toContain("akan sync");
+  });
+
   test("keeps a root signal test out of the lib facet rule", async () => {
     const root = await makeWorkspace({
       "libs/demo/lib/cnst.ts": "export const cnst = 1;\n",
