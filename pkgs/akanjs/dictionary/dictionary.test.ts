@@ -472,6 +472,25 @@ describe("makeTrans", () => {
     expect((second.getAllDictionary().en.hotReloadService as Record<string, unknown>).stale).toBeUndefined();
   });
 
+  test("an Err read as a string carries its data, a secret-named key masked", () => {
+    const err = new trans.Err("dictionaryTestItem.error.notFound" as never, {
+      exitCode: 1,
+      stderr: "boom",
+      nested: { apiKey: "k-123", status: 502 },
+      token: "t-456",
+    });
+
+    expect(String(err)).toBe(
+      'Err: dictionaryTestItem.error.notFound {"exitCode":1,"stderr":"boom","nested":{"apiKey":"[redacted]","status":502},"token":"[redacted]"}',
+    );
+    expect(`${new trans.Err("dictionaryTestItem.error.notFound" as never)}`).toBe(
+      "Err: dictionaryTestItem.error.notFound",
+    );
+    expect(String(new trans.Err("dictionaryTestItem.error.notFound" as never, { stderr: "x".repeat(600) }))).toEndWith(
+      "…",
+    );
+  });
+
   test("creates Err exceptions with dictionary error keys", () => {
     const err = new trans.Err("dictionaryTestItem.error.notFound" as never, { id: "1" });
     const conflict = new trans.Err.Conflict("dictionaryTestItem.error.notFound" as never);

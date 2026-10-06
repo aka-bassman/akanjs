@@ -1,5 +1,5 @@
 import type { GetStateObject, ObjectAssign, Prettify } from "akanjs/base";
-import { interpolateTranslation, parseAkanI18nEnv, pathGetLoose } from "akanjs/common";
+import { interpolateTranslation, Logger, parseAkanI18nEnv, pathGetLoose } from "akanjs/common";
 
 import { DictionaryRegistry } from "./dictionaryRegistry";
 import type { DictModule } from "./locale";
@@ -123,6 +123,13 @@ export const makeTrans = <
       this.data = data;
       this.path = option.path;
       this.timestamp = option.timestamp;
+    }
+
+    // `String(err)` is what a log line splices in, and the key alone drops what failed (an exit code, a status).
+    override toString() {
+      return this.data === undefined
+        ? `${this.name}: ${this.message}`
+        : `${this.name}: ${this.message} ${Logger.inlineData(this.data)}`;
     }
 
     toJSON() {
