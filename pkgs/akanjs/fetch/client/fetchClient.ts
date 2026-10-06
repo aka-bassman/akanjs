@@ -92,6 +92,9 @@ export class FetchClient {
   readonly #handlerStore: Record<string, FetchHandler> = {};
   readonly #handlerFactory = new Map<string, FetchHandlerFactory>();
   #sharedRegistryAppliedVersion = 0;
+  #clientIp: string | null = null;
+  static #testClientIps = false;
+  static #testClientIpSeq = 0;
   serializedSignal: { [key: string]: SerializedSignal } = {};
   jwt: string | null = null;
 
@@ -119,6 +122,19 @@ export class FetchClient {
   static resetSharedClient() {
     sharedClientState.proxy = null;
     sharedClientState.origin = null;
+  }
+  /**
+   * In a signal test every agent reaches the test server from loopback, so an IP rate limit would count them all as
+   * one caller: from here on each clone names its own address (RFC 2544's benchmarking range), which loopback is
+   * trusted to report.
+   */
+  static useTestClientIps(enabled = true) {
+    FetchClient.#testClientIps = enabled;
+    FetchClient.#testClientIpSeq = 0;
+  }
+  static #nextTestClientIp() {
+    const seq = ++FetchClient.#testClientIpSeq;
+    return `198.${18 + ((seq >> 16) & 1)}.${(seq >> 8) & 255}.${seq & 255}`;
   }
   static #resolveSharedClientProxy(origin: string, Err?: ErrorConstructor) {
     if (typeof window === "undefined") return null;
@@ -243,12 +259,17 @@ export class FetchClient {
     origin,
     connect = !(origin && typeof window === "undefined"),
     jwt,
+    clientIp,
   }: {
     origin?: string;
     connect?: boolean;
     jwt?: string;
+    /** Sent as `x-real-ip`, which a server believes only from a trusted proxy — a test's loopback is one. */
+    clientIp?: string | null;
   } = {}) {
     const instance = new FetchClient(origin ?? this.origin, {}, this.serializedSignal, this.ErrorCls);
+    instance.#clientIp =
+      clientIp !== undefined ? clientIp : FetchClient.#testClientIps ? FetchClient.#nextTestClientIp() : this.#clientIp;
     Object.entries(this.handler).forEach(([key, handler]) => {
       if (!(key in instance.handler)) instance.handler[key] = handler;
     });
@@ -275,7 +296,8 @@ export class FetchClient {
     return ws;
   }
   #makeRequestHeaders(option?: FetchPolicy): Record<string, string> {
-    return { ...this.#makeAuthHeaders(option), ...FetchClient.#forwardedClientIp(option) };
+    const clientIp = this.#clientIp ? { "x-real-ip": this.#clientIp } : FetchClient.#forwardedClientIp(option);
+    return { ...this.#makeAuthHeaders(option), ...clientIp };
   }
   // A call made while rendering reaches this server from its own address; the page request's `x-real-ip` (which the
   // page renderer resolved) keeps rate limits and `.with(Ip)` about the person.

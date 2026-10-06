@@ -1196,6 +1196,28 @@ describe("FetchClient HTTP generation", () => {
     expect(forwarded(1)).toBeNull();
   });
 
+  test("in a signal test each clone names its own client address, unless given one", async () => {
+    setMockFetch();
+    jsonResponses.push("root", "a", "b", "named");
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+    FetchClient.useTestClientIps();
+    try {
+      const [agentA, agentB] = [client.clone({ connect: false }), client.clone({ connect: false })] as unknown as {
+        getThing: (id: string, tags: string[], empty: null) => Promise<unknown>;
+      }[];
+      const named = client.clone({ connect: false, clientIp: "203.0.113.9" }) as unknown as typeof agentA;
+      await client.handler.getThing("1234567890abcdef12345678", [], null);
+      await agentA?.getThing("1234567890abcdef12345678", [], null);
+      await agentB?.getThing("1234567890abcdef12345678", [], null);
+      await named.getThing("1234567890abcdef12345678", [], null);
+    } finally {
+      FetchClient.useTestClientIps(false);
+    }
+
+    const sentIp = (idx: number) => new Headers(fetchCalls[idx]?.init?.headers as HeadersInit).get("x-real-ip");
+    expect([sentIp(0), sentIp(1), sentIp(2), sentIp(3)]).toEqual([null, "198.18.0.1", "198.18.0.2", "203.0.113.9"]);
+  });
+
   test("a server clone toward another origin opens no socket unless asked, a same-origin one still does", () => {
     setFakeWebSocket();
     const client = new FetchClient("https://api.example", {}, { service: serviceSignal });

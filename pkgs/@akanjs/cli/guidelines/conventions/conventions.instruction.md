@@ -195,6 +195,9 @@ back.
 ### Test Code
 
 - Write TypeScript tests with Bun's test runner and import `describe`, `expect`, and `test` from `bun:test`.
+- In a signal test every `fetch.clone()` reports its own client address (`198.18.x.y`), so an `ip` rate limit counts
+  each agent apart. Clone once per simulated user, signup steps included, rather than driving many users through
+  the root `fetch`; `clone({ clientIp })` names one explicitly.
 - Keep tests colocated with the source they cover using `*.test.ts` or `*.spec.ts`, following the existing nearby pattern.
 - Prefer focused behavior tests for public contracts and edge cases over implementation-detail assertions.
 - Run package suites with `bun run akan test <pkg>` from the repo root, or `cd <pkg> && bun test --isolate`. Plain `bun test` without `--isolate` shares one global object across test files and fails dozens of tests from cross-file state pollution (`bunfig.toml` `[test] isolate` is not honored as of Bun 1.3), and running `bun test` from the repo root breaks subprocess stdio pipes.
@@ -586,7 +589,7 @@ Full contract — credential handshake, room revalidation, socket cleanup scopin
 - **Every endpoint that declares no guards is named in a boot `warn`**, since it answers anyone over HTTP and
   WebSocket — a named slice's `init()`, a root slice, a `pubsub`/`message`/`query`/`mutation`. Write
   `guards: [Public]` to keep one open on purpose.
-- **Every custom `mutation` / `query` / `message` names its own `guards: [...]` array.** Never rely on the slice default. `Public` belongs on a slice `get:`, never on a mutation.
+- **Every custom `mutation` / `query` / `message` names its own `guards: [...]` array.** Never rely on the slice default. `Public` belongs on a slice `get:`; on a mutation it is reserved for an act that must work signed out — signing up or in, a token refresh, an OAuth protocol route — and such a mutation also declares a `rateLimit`. MCP refuses a mutation whose only guard is `Public`, so it never reaches an agent.
 - **The guards are also the MCP exposure decision** — see MCP Exposure. An endpoint that names none is not published to agents at all, and a mutation whose only guard is `Public` is refused, so a missing `guards` array now costs visibility as well as authorization.
 - Resource guards are `Can<Verb><Model>` classes in `srvkit/guards.ts` that `implements Guard` with an `async canPass(context)`. They **fail closed**: no resource named ⇒ `false`; a load that throws ⇒ `logger.warn` then `false`. Admin bypass goes first.
 - Keep `static name = "User";` on guard classes. `fetch` serializes guard names and the API explorer filters on them; it looks like dead code, and deleting it breaks the UI. Comment it so the next reader knows.
