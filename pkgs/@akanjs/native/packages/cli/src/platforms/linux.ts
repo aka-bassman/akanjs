@@ -4,14 +4,17 @@
 //   <name>/
 //     <exe>                      bun build --compile (main + plugin host Worker)
 //     lib/libakan_native_desktop.so     native/desktop (Rust cdylib; WebKitGTK 4.1 and GTK 3 from the system)
-//     resources/                 platforms/desktop.ts, plus icon.rgba (the window icon)
+//     resources/                 platforms/desktop.ts, plus icon.rgba (the window icon) and icon.png (the desktop
+//                                entry's, which the deep links install: packages/desktop/src/deeplinks.ts)
 
 import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ParsedArgs } from "../lib/args.ts";
 import { iconArt, windowIcon } from "../lib/icons.ts";
+import { resize } from "../lib/image.ts";
 import type { Launched, LaunchOptions } from "../lib/launch.ts";
 import { dim, log } from "../lib/log.ts";
+import { encodePng } from "../lib/png.ts";
 import type { BuildContext } from "../lib/prepare.ts";
 import {
   buildNativeLibrary,
@@ -45,7 +48,10 @@ export async function buildLinux(ctx: BuildContext): Promise<string> {
   const resources = resourcesOf("linux", dir);
   writeDesktopResources(ctx, resources, "linux");
   const art = iconArt(config);
-  if (art) writeFileSync(join(resources, "icon.rgba"), windowIcon(art.master));
+  if (art) {
+    writeFileSync(join(resources, "icon.rgba"), windowIcon(art.master));
+    writeFileSync(join(resources, "icon.png"), encodePng(resize(art.master, 256, 256)));
+  }
   if (ctx.linux?.appImage) ctx.artifacts.push({ kind: "installer", path: await buildAppImage(ctx, dir) });
   const size = await folderSize(dir);
   if (size) log.info(dim(`size ${size}`));

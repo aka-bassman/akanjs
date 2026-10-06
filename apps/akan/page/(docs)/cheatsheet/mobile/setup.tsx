@@ -40,7 +40,7 @@ export default page().render(() => {
       }),
     },
     {
-      name: ".akan/native/<target>",
+      name: "dist/native/<app>/<target>",
       desc: l.trans({
         en: "Each run's web root and builds for the target; generated and git-ignored, with no Xcode project to edit.",
         ko: "실행할 때마다 target의 웹 루트와 빌드를 쓰는 곳입니다. 생성되고 git에서 제외되며, 고칠 Xcode 프로젝트는 없습니다.",
@@ -642,13 +642,13 @@ export default page().render(() => {
     l.trans({
       en: (
         <>
-          <strong>Where the file lands.</strong> <code>apps/myapp/.akan/native/default/build/android</code>.{" "}
+          <strong>Where the file lands.</strong> <code>dist/native/myapp/default/build/android</code>.{" "}
           <code>release-android</code> prints the path.
         </>
       ),
       ko: (
         <>
-          <strong>결과물 위치.</strong> <code>apps/myapp/.akan/native/default/build/android</code>에 생기며,{" "}
+          <strong>결과물 위치.</strong> <code>dist/native/myapp/default/build/android</code>에 생기며,{" "}
           <code>release-android</code>가 경로를 출력합니다.
         </>
       ),
@@ -1839,7 +1839,7 @@ const output = await NativeFile.resolve(saveGrant, "write"); // from filePicker.
                   An installed app updates itself from releases you sign. <code>akan update-keygen</code> makes the key
                   once and prints its public half for <code>native.updates</code>; <code>akan publish-update</code>{" "}
                   builds a release (the whole app on the desktop, the web bundle on a phone) into{" "}
-                  <code>.akan/native/&lt;target&gt;/updates</code>, which holds only what you upload to{" "}
+                  <code>dist/native/&lt;app&gt;/&lt;target&gt;/updates</code>, which holds only what you upload to{" "}
                   <code>updates.url</code>, the manifests last. A new release runs on trial until its first page mounts.
                   A phone looks for a newer web bundle by itself, at start and on each return to the front, and runs it
                   from the next cold start; on the desktop a release is the whole app and a relaunch, so when to check,
@@ -1851,9 +1851,9 @@ const output = await NativeFile.resolve(saveGrant, "write"); // from filePicker.
                 <span>
                   설치된 앱은 직접 서명한 릴리스로 스스로 업데이트합니다. <code>akan update-keygen</code>이 키를 한 번
                   만들고 <code>native.updates</code>에 넣을 공개 키를 출력합니다. <code>akan publish-update</code>는
-                  릴리스(데스크톱은 앱 전체, 폰은 웹 번들)를 <code>.akan/native/&lt;target&gt;/updates</code>에
-                  빌드합니다. 그 폴더에는 <code>updates.url</code>에 올릴 것만 있으며, manifest를 마지막에 올립니다. 새
-                  릴리스는 첫 페이지가 마운트될 때까지 시험 실행입니다. 폰은 시작할 때와 앞으로 돌아올 때마다 새 웹
+                  릴리스(데스크톱은 앱 전체, 폰은 웹 번들)를 <code>dist/native/&lt;app&gt;/&lt;target&gt;/updates</code>
+                  에 빌드합니다. 그 폴더에는 <code>updates.url</code>에 올릴 것만 있으며, manifest를 마지막에 올립니다.
+                  새 릴리스는 첫 페이지가 마운트될 때까지 시험 실행입니다. 폰은 시작할 때와 앞으로 돌아올 때마다 새 웹
                   번들을 스스로 찾아 받고 다음 콜드 스타트부터 씁니다. 데스크톱은 릴리스가 앱 전체이고 재실행이 따르므로
                   언제 확인·다운로드·적용할지는 앱이 정합니다. <code>akan pack-update</code>는 키를 다른 곳에 두는
                   서명자를 위해 폰 업데이트를 서명 없이 씁니다.

@@ -209,13 +209,22 @@ describe.skipIf(!CsrE2eHarness.enabled)("CSR page stack (minimal, /e2e/stack)", 
     expect(await csr.reloaded()).toBe(false);
   }, 60_000);
 
-  test("an async render that throws is logged with its route instead of leaving a blank page in silence", async () => {
+  test("an async render that throws is logged with its route and shows a retry instead of a blank page", async () => {
     await csr.open("/e2e/stack/broken");
-    await csr.waitFor(() => true);
-    await Bun.sleep(500);
+    await csr.waitFor(() => !!document.querySelector("[role=alert] button"), { timeout: 10_000 });
     expect(
       csr.consoleMessages().some((line) => /render of page \d+ of \S*\/e2e\/stack\/broken failed/.test(line)),
     ).toBe(true);
+    const failure = await csr.evaluate(() => {
+      const alert = document.querySelector("[role=alert]");
+      const button = alert?.querySelector("button");
+      return {
+        message: alert?.querySelector("p")?.textContent ?? "",
+        retry: button?.textContent ?? "",
+        painted: button ? getComputedStyle(button).backgroundColor !== "rgba(0, 0, 0, 0)" : false,
+      };
+    });
+    expect(failure).toEqual({ message: "This page could not be loaded.", retry: "Try again", painted: true });
   }, 60_000);
 
   test("the memory frame trace records navigation without writing it to the console", async () => {

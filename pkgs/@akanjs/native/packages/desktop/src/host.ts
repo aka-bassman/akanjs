@@ -470,7 +470,7 @@ export function startHost(plugins: DesktopPlugin[]): void {
       if (typeof launch.exit === "number") return;
       // A cold start by deep link (Windows, Linux); the app plugin keeps it for the page (C2).
       openLinks(process.argv.slice(2));
-      registerDeepLinks(boot.app, deepLinkSchemes).catch((error) =>
+      registerDeepLinks(boot.app, deepLinkSchemes, { icon: join(paths.resources, "icon.png") }).catch((error) =>
         console.warn("[akan-native] cannot register the deep link schemes", error),
       );
     })

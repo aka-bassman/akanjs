@@ -678,6 +678,9 @@ describe("AkanAppConfig", () => {
     expect(make({ native: { server: { url: "http://x" } } })).toThrow(
       "native.server in apps/portal/akan.config.ts is not a native setting",
     );
+    expect(make({ native: { desktop: { dmg: { backgroundImage: "bg.png" } } } })).toThrow(
+      "native.desktop.dmg.backgroundImage in apps/portal/akan.config.ts is not a native setting",
+    );
   });
 
   test("derives a repo-scoped default appId and records an explicit native section", () => {

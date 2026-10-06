@@ -154,7 +154,6 @@ export class CsrDevModuleCompiler {
         naming: { entry: "[dir]/[name].[ext]", asset: "assets/[name]-[hash].[ext]" },
         publicPath: this.#routePrefix,
         metafile: true,
-        env: "AKAN_PUBLIC_*",
         //? A factory runs as a classic script, where `import.meta` is a SyntaxError that takes the whole vendor file
         //? down, and Bun's cjs output keeps `import.meta.env` and spells `import.meta.url` as this disk's `file://` path.
         define: { ...this.#context.define, "import.meta": "__akanMeta" },

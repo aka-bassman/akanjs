@@ -283,7 +283,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .option("target", String, mobileTargetOption)
     .option("env", String, releaseEnvOption)
     .option("out", String, {
-      desc: "output folder (default: .akan/native/<target>/updates/<platform>)",
+      desc: "output folder (default: dist/native/<app>/<target>/updates/<platform>)",
       nullable: true,
     })
     .option("against", String, {

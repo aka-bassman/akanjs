@@ -23,6 +23,7 @@ const target = { name: "default", appName: "Demo", appId: "com.demo.app", versio
 const app = {
   name: "demo",
   cwdPath: "/repo/apps/demo",
+  workspace: { workspaceRoot: "/repo" },
   getConfig: async () => ({
     app: { name: "demo" },
     basePaths: new Set<string>(),

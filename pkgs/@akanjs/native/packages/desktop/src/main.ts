@@ -177,7 +177,7 @@ export async function startMain(workerUrl: string): Promise<never> {
     // Windows and Linux: the webview's storage (paths.ts) and the window icon (CLI icons.ts windowIcon).
     ...(appId && webviewDataDir(appId) ? { dataDir: webviewDataDir(appId) } : {}),
     ...(existsSync(join(paths.resources, "icon.rgba")) ? { icon: join(paths.resources, "icon.rgba") } : {}),
-    // Linux: the desktop entry the dock plugin's launcher badge names (<app id>.desktop).
+    // Linux: the window's program name, which a dock matches to <app id>.desktop (deeplinks.ts, the dock plugin).
     ...(appId ? { appId } : {}),
   };
   const code = lib.symbols.akan_native_run(cstr(JSON.stringify(config)));

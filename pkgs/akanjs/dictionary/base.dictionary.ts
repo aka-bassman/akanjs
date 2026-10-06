@@ -74,6 +74,8 @@ export const baseDictionary = serviceDictionary(["en", "ko"])
     phoneInvalidError: ["Phone is not valid", "유효하지 않은 전화번호입니다."],
     ok: ["OK", "확인"],
     cancel: ["Cancel", "취소"],
+    retry: ["Try again", "다시 시도"],
+    pageLoadFailed: ["This page could not be loaded.", "이 화면을 불러오지 못했습니다."],
     unauthorized: ["Unauthorized", "권한 없음"],
     agent: ["Agent", "에이전트"],
     agentIntro: ["Ask about this page or tell the agent what to do.", "이 화면에 대해 묻거나 할 일을 지시해 보세요."],

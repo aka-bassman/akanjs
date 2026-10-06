@@ -24,8 +24,8 @@ export default page().render(() => {
     {
       name: "native shell",
       desc: l.trans({
-        en: "The small native app around your web client, built under .akan/native/<target>/build: icon, ID, signing.",
-        ko: "웹 클라이언트를 감싸는 작은 네이티브 앱이며, .akan/native/<target>/build 아래에 생성되어 앱 아이콘, ID, 서명을 가집니다.",
+        en: "The small native app around your web client, built under dist/native/<app>/<target>/build: icon, ID, signing.",
+        ko: "웹 클라이언트를 감싸는 작은 네이티브 앱이며, dist/native/<app>/<target>/build 아래에 생성되어 앱 아이콘, ID, 서명을 가집니다.",
       }),
     },
     {

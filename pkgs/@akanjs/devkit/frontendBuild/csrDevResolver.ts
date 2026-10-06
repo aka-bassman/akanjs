@@ -88,7 +88,6 @@ export class CsrDevResolver {
       target: "browser",
       metafile: true,
       external: [...(this.#context.externals ?? [])],
-      env: "AKAN_PUBLIC_*",
       define: this.#context.define,
       optimizeImports: this.#context.optimizeImports,
       plugins: [PagesBundleBuilder.createCssStubPlugin()],
@@ -112,7 +111,6 @@ export class CsrDevResolver {
       metafile: true,
       throw: false,
       external: [...(this.#context.externals ?? [])],
-      env: "AKAN_PUBLIC_*",
       define: this.#context.define,
       plugins: [
         {

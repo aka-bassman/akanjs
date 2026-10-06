@@ -45,11 +45,33 @@ const adminTarget: AkanNativeTarget = {
 const updatesKey = Buffer.alloc(32, 7).toString("base64");
 
 describe("NativeConfig.build", () => {
+  test("hands the dmg window over with its pictures resolved against the app folder", () => {
+    const build = (dmg: NonNullable<AkanNativeTarget["desktop"]>["dmg"]) =>
+      NativeConfig.build({
+        appPath: "/repo/apps/minimal",
+        target: { ...minimalTarget, desktop: { dmg } },
+        webDir: "/repo/dist/native/minimal/default/web",
+        contributions: [],
+        locales: ["en"],
+        platform: "macos",
+      }).config.desktop?.dmg;
+
+    expect(build({ background: "assets/dmg.png", background2x: "assets/dmg@2x.png", app: { x: 150, y: 190 } })).toEqual(
+      {
+        background: path.resolve("/repo/apps/minimal", "assets/dmg.png"),
+        background2x: path.resolve("/repo/apps/minimal", "assets/dmg@2x.png"),
+        app: { x: 150, y: 190 },
+      },
+    );
+    expect(build({ background: false, iconSize: 96 })).toEqual({ background: false, iconSize: 96 });
+    expect(build(undefined)).toBeUndefined();
+  });
+
   test("turns the minimal app's push target into the runtime's config, single-instance carrying its link scheme", () => {
     const { config, warnings } = NativeConfig.build({
       appPath: "/repo/apps/minimal",
       target: minimalTarget,
-      webDir: "/repo/apps/minimal/.akan/native/default/web",
+      webDir: "/repo/dist/native/minimal/default/web",
       contributions: [{ permission: "push", plugins: ["push"] }],
       locales: ["en", "ko"],
       platform: "android",
@@ -58,7 +80,7 @@ describe("NativeConfig.build", () => {
     expect(warnings).toEqual([]);
     expect(config).toEqual({
       app: { id: "com.minimal.dev.app", name: "minimal", fileName: "minimal", version: "0.0.1", build: 1 },
-      web: { dir: "/repo/apps/minimal/.akan/native/default/web" },
+      web: { dir: "/repo/dist/native/minimal/default/web" },
       plugins: [...NativeConfig.basePlugins, "single-instance", "push"],
       capabilities: [
         {
@@ -80,7 +102,7 @@ describe("NativeConfig.build", () => {
     const { config, warnings } = NativeConfig.build({
       appPath: "/repo/apps/portal",
       target: adminTarget,
-      webDir: "/repo/apps/portal/.akan/native/admin/web",
+      webDir: "/repo/dist/native/portal/admin/web",
       contributions: [],
       locales: ["en", "ko"],
       platform: "android",
@@ -89,7 +111,7 @@ describe("NativeConfig.build", () => {
     expect(warnings).toEqual(["Permission 'speech' has no native plugin yet; the app ships without it."]);
     expect(config).toEqual({
       app: { id: "com.portal.admin", name: "Portal Admin", fileName: "portal-admin", version: "2.1.0", build: 42 },
-      web: { dir: "/repo/apps/portal/.akan/native/admin/web" },
+      web: { dir: "/repo/dist/native/portal/admin/web" },
       plugins: [...NativeConfig.basePlugins, "camera", "geolocation", "contacts", "iap"],
       capabilities: [
         {

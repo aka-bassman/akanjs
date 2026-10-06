@@ -3,8 +3,8 @@
 //
 //   <fileName>-<version>-<arch>.AppImage = the type 2 runtime (pinned, lib/toolchains.ts) + a squashfs of:
 //     AppRun                  starts the executable beside it
-//     <fileName>.desktop      the launcher entry (name, icon, the deep link schemes it handles)
-//     <fileName>.png, .DirIcon  the icon
+//     <app id>.desktop        the launcher entry (name, icon, the deep link schemes it handles)
+//     <app id>.png, .DirIcon  the icon
 //     <exe>, lib/, resources/  the app folder as `build linux` makes it
 //
 // appimagetool does the same, but is itself an AppImage that needs FUSE and downloads an unpinned runtime.
@@ -20,15 +20,20 @@ import type { BuildContext } from "../lib/prepare.ts";
 import { ensureInstalled, TOOLCHAIN } from "../lib/toolchains.ts";
 import { targetArch } from "./desktop.ts";
 
-/** The launcher entry (freedesktop Desktop Entry): what a menu shows and which link schemes open the app. */
-export function desktopEntry(input: { name: string; fileName: string; schemes: string[] }): string {
+/**
+ * The launcher entry (freedesktop Desktop Entry): what a menu shows and which link schemes open the app. Named and
+ * matched by the app id, the window's program name (native/desktop lib.rs): AppImageLauncher and appimaged rename the
+ * file they install, so StartupWMClass is what still ties the window to it.
+ */
+export function desktopEntry(input: { id: string; name: string; fileName: string; schemes: string[] }): string {
   const escape = (value: string) => value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n");
   return [
     "[Desktop Entry]",
     "Type=Application",
     `Name=${escape(input.name)}`,
     `Exec=${input.fileName} %u`,
-    `Icon=${input.fileName}`,
+    `Icon=${input.id}`,
+    `StartupWMClass=${input.id}`,
     "Terminal=false",
     "Categories=Utility;",
     ...(input.schemes.length ? [`MimeType=${input.schemes.map((s) => `x-scheme-handler/${s};`).join("")}`] : []),
@@ -68,13 +73,18 @@ export async function buildAppImage(ctx: BuildContext, folder: string): Promise<
   writeFileSync(join(appDir, "AppRun"), appRun(config.app.fileName));
   chmodSync(join(appDir, "AppRun"), 0o755);
   writeFileSync(
-    join(appDir, `${config.app.fileName}.desktop`),
-    desktopEntry({ name: config.app.name, fileName: config.app.fileName, schemes: config.deepLinks.schemes }),
+    join(appDir, `${config.app.id}.desktop`),
+    desktopEntry({
+      id: config.app.id,
+      name: config.app.name,
+      fileName: config.app.fileName,
+      schemes: config.deepLinks.schemes,
+    }),
   );
   const art = iconArt(config);
   if (art) {
-    writeFileSync(join(appDir, `${config.app.fileName}.png`), encodePng(resize(art.master, 256, 256)));
-    symlinkSync(`${config.app.fileName}.png`, join(appDir, ".DirIcon"));
+    writeFileSync(join(appDir, `${config.app.id}.png`), encodePng(resize(art.master, 256, 256)));
+    symlinkSync(`${config.app.id}.png`, join(appDir, ".DirIcon"));
   }
 
   log.step("installer: AppImage");

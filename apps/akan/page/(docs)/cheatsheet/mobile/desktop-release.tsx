@@ -71,9 +71,9 @@ jobs:
         with:
           name: myapp-\${{ runner.os }}-\${{ matrix.arch }}
           path: |
-            apps/myapp/.akan/native/*/build/*/*.dmg
-            apps/myapp/.akan/native/*/build/*/*-setup.exe
-            apps/myapp/.akan/native/*/build/*/*.AppImage
+            dist/native/myapp/*/build/*/*.dmg
+            dist/native/myapp/*/build/*/*-setup.exe
+            dist/native/myapp/*/build/*/*.AppImage
           if-no-files-found: error`;
 
 export default page().render(() => {
@@ -143,8 +143,8 @@ export default page().render(() => {
       os: "macOS",
       file: "<fileName>-<version>-<arch>.dmg",
       desc: l.trans({
-        en: "The app beside an Applications link. Signed, notarized and stapled like the app.",
-        ko: "앱과 Applications 바로가기가 든 디스크 이미지입니다. 앱처럼 서명·공증·staple합니다.",
+        en: "The app beside an Applications link, opening on a drag-to-Applications window with the app's icon on the disk. `native.desktop.dmg` replaces the background (`background`, `background2x`) and moves the window and icons. Signed, notarized and stapled like the app.",
+        ko: "앱과 Applications 바로가기가 든 디스크 이미지입니다. 열면 Applications로 끌어다 놓으라는 창이 뜨고, 디스크 아이콘은 앱 아이콘입니다. `native.desktop.dmg`로 배경(`background`, `background2x`)을 바꾸고 창과 아이콘 위치를 옮깁니다. 앱처럼 서명·공증·staple합니다.",
       }),
     },
     {

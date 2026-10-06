@@ -22,6 +22,10 @@ describe("deep links on Windows and Linux (D6)", () => {
     expect(entry).toContain('Exec="/opt/akan-native/akan-native-sample" %u\n');
     expect(entry).toContain("MimeType=x-scheme-handler/akansample;x-scheme-handler/akan2;\n");
     expect(entry).toContain("NoDisplay=true\n");
+    expect(entry).not.toContain("StartupWMClass");
+    const named = desktopEntry("Akan Native Sample", "/opt/s", ["akansample"], { id: "com.akanjs.sample", icon: true });
+    expect(named).toContain("Icon=com.akanjs.sample\nStartupWMClass=com.akanjs.sample\n");
+    expect(desktopEntry("S", "/opt/s", ["akansample"], { id: "com.akanjs.sample" })).not.toContain("Icon=");
   });
 
   test("mimeapps.list: sets the defaults, keeps everything else", () => {
@@ -65,6 +69,25 @@ describe("deep links on Windows and Linux (D6)", () => {
       run,
     });
     expect(runs).toHaveLength(1); // unchanged: nothing rewritten
+  });
+
+  test("Linux: an AppImage's entry starts the AppImage, not its mount point, and shows the app's icon", async () => {
+    const home = mkdtempSync(join(tmpdir(), "akan-native-links-"));
+    const run = async () => ({ code: 0, stdout: "" });
+    const env = {
+      XDG_DATA_HOME: join(home, "data"),
+      XDG_CONFIG_HOME: join(home, "config"),
+      APPIMAGE: "/home/u/Sample.AppImage",
+    };
+    const icon = join(home, "icon.png");
+    writeFileSync(icon, "png");
+    await registerDeepLinks(app, ["akansample"], { platform: "linux", env, home, run, icon });
+    const entry = readFileSync(join(env.XDG_DATA_HOME, "applications", "com.akanjs.sample.desktop"), "utf8");
+    expect(entry).toContain('Exec="/home/u/Sample.AppImage" %u\n');
+    expect(entry).toContain("Icon=com.akanjs.sample\n");
+    expect(
+      readFileSync(join(env.XDG_DATA_HOME, "icons", "hicolor", "256x256", "apps", "com.akanjs.sample.png"), "utf8"),
+    ).toBe("png");
   });
 
   test("Windows: HKCU\\Software\\Classes keys, skipped when the command is already ours", async () => {

@@ -106,7 +106,10 @@ describe("LibraryRunner", () => {
   test("a new library holds an empty barrel in each facet folder, the one sync writes, and no placeholder", async () => {
     const { root, workspace } = track(await createTempLib("fresh"));
     const libDir = `${root}/libs/fresh`;
-    const facetFiles = () => [...new Bun.Glob("{common,srvkit,ui,webkit}/**").scanSync({ cwd: libDir })].sort();
+    const facetFiles = () =>
+      [...new Bun.Glob("{common,srvkit,ui,webkit}/**").scanSync({ cwd: libDir })]
+        .map((file) => file.replaceAll("\\", "/"))
+        .sort((a, b) => a.localeCompare(b));
     const barrels = ["common/index.ts", "srvkit/index.ts", "ui/index.ts", "webkit/index.ts"];
 
     const lib = await new LibraryRunner().createLibrary("fresh", workspace);

@@ -40,6 +40,15 @@ const KNOWN: Shape = {
     screenCapture: true,
     server: { dir: true, entry: true, env: true },
     bin: true,
+    dmg: {
+      background: true,
+      background2x: true,
+      window: { x: true, y: true, width: true, height: true },
+      iconSize: true,
+      textSize: true,
+      app: { x: true, y: true },
+      applications: { x: true, y: true },
+    },
   },
   keyboard: { resize: true },
   push: {

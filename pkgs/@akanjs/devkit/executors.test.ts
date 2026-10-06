@@ -327,11 +327,16 @@ describe("Workspace and app executor environment contracts", () => {
     expect(env.EXTRA).toBe("ok");
 
     const shellOperationMode = process.env.AKAN_PUBLIC_OPERATION_MODE;
+    const shellServerPort = process.env.AKAN_PUBLIC_SERVER_PORT;
     process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+    process.env.AKAN_PUBLIC_SERVER_PORT = "8282";
     const prepared = await app.prepareCommand("build");
     const bakedOperationMode = process.env.AKAN_PUBLIC_OPERATION_MODE;
+    const bakedServerPort = process.env.AKAN_PUBLIC_SERVER_PORT;
     if (shellOperationMode === undefined) delete process.env.AKAN_PUBLIC_OPERATION_MODE;
     else process.env.AKAN_PUBLIC_OPERATION_MODE = shellOperationMode;
+    if (shellServerPort !== undefined) process.env.AKAN_PUBLIC_SERVER_PORT = shellServerPort;
+    expect(bakedServerPort).toBeUndefined();
     expect(bakedOperationMode).toBeUndefined();
     expect(prepared.env.AKAN_COMMAND_TYPE).toBe("build");
     expect(prepared.env.AKAN_PUBLIC_BASE_PATHS).toBe("admin");
@@ -345,7 +350,7 @@ describe("Workspace and app executor environment contracts", () => {
     expect((await stat(path.join(root, "dist/apps/demo/public"))).isDirectory()).toBe(true);
   });
 
-  test("akan start clears the dev output and keeps native builds, update releases and the bin downloads", async () => {
+  test("akan start clears the dev output and keeps the bin downloads and a native folder from before dist/native", async () => {
     const root = await makeTempRoot();
     process.env.AKAN_PUBLIC_REPO_NAME = "repo";
     process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";

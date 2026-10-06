@@ -395,7 +395,7 @@ Full contract: `get_guideline` with `runtimeRule`, or `akan guideline show runti
   the same shape and overrides the section field by field — objects merge key by key, a list or any other value
   replaces the section's. `akan start-ios` / `start-android` / `start-desktop` run a dev build that loads its pages
   from `akan start`; `build-ios` / `build-android` / `build-desktop` write
-  `apps/<app>/.akan/native/<target>/build/<platform>`, a desktop app only for the OS that builds it — `--arch` picks
+  `dist/native/<app>/<target>/build/<platform>`, a desktop app only for the OS that builds it — `--arch` picks
   a Windows or Linux app's CPU, and a macOS app is Apple silicon only. `--installer true` adds a Windows setup, a
   macOS dmg or a Linux AppImage; `AKAN_NATIVE_MACOS_*` signs with a Developer ID and notarizes,
   `AKAN_NATIVE_WINDOWS_*` signs with Authenticode. With `updates: { url, publicKey }` an installed app takes the signed
@@ -1029,7 +1029,7 @@ export default page()
 - `apps/<appName>` root may only contain these files: `AGENTS.md`, `CLAUDE.md`, `akan.app.json`, `akan.config.ts`, `client.ts`, `main.ts`, `package.json`, `server.ts`, `tsconfig.json`, `tsconfig.tsbuildinfo`.
 - `apps/<appName>` root may only contain these folders: `.akan`, `common`, `env`, `lib`, `native`, `page`, `plugin`, `private`, `public`, `script`, `secrets`, `srvkit`, `ui`, `webkit`.
 - `libs/<libName>` root may only contain these files: `AGENTS.md`, `CLAUDE.md`, `README.md`, `akan.config.ts`, `akan.lib.json`, `client.ts`, `index.ts`, `package.json`, `server.ts`, `tsconfig.json`, `tsconfig.spec.json`, `tsconfig.tsbuildinfo`.
-- `libs/<libName>` root may only contain these folders: `common`, `env`, `lib`, `native`, `page`, `plugin`, `private`, `public`, `srvkit`, `ui`, `webkit`. A library is never booted or packaged as an app, so the run and mobile entries an app carries (`main.ts`, `.akan`, `script`, `secrets`) are rejected there. A Capacitor-era `ios` / `android` / `mobile` folder or `capacitor.config.*` is refused in an app root too, named as a leftover: the native runtime generates its projects under `.akan/native/<target>`.
+- `libs/<libName>` root may only contain these folders: `common`, `env`, `lib`, `native`, `page`, `plugin`, `private`, `public`, `srvkit`, `ui`, `webkit`. A library is never booted or packaged as an app, so the run and mobile entries an app carries (`main.ts`, `.akan`, `script`, `secrets`) are rejected there. A Capacitor-era `ios` / `android` / `mobile` folder or `capacitor.config.*` is refused in an app root too, named as a leftover: the native runtime generates its projects under `dist/native/<app>/<target>`.
 - Both allowlists have one source — `pkgs/@akanjs/devkit/workspaceLayout.ts`. `akan sync` (error), `akan doctor`
   (diagnostic), and `akan quality scan` (warning) all read it, so add a new root entry there and mirror it into this
   list, never into one of the three call sites.

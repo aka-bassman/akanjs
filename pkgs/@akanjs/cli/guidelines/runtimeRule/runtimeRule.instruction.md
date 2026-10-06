@@ -18,7 +18,7 @@ const config: AppConfig = { web: false }; // api only
 - **`web: { csr: false }`** drops the CSR build phase and the `/__csr` + `?csr=true` routes. The CSR bundle is
   what the native apps ship, so a web-only deployment never needs it — and an app that declares a `native` section
   is refused, because every native build copies `dist/apps/<app>/csr/<target>.html` into the target's web root,
-  `.akan/native/<target>/web`.
+  `dist/native/<app>/<target>/web`.
 - **`web: false`** is an API-only build: no base artifact, no pages or client bundles, no RSC worker
   entrypoint, and no `public/` in the image (the web router's catch-all is its only reader). Nothing under
   `page/` is served, including routes a lib contributed through `syncPageLibs`.
@@ -236,17 +236,22 @@ const config: AppConfig = {
   none is a template, and `--target <basePath>` builds that client from it.
 - Every native command takes `--target <name>`. `build-*`, `release-*`, `update-keygen` and `publish-update` also
   take `all`; `start-*` and `pack-update` handle one target at a time.
-- **Everything a build makes is under `apps/<app>/.akan/native/<target>/`**: `build/<platform>` (`build-ios`,
+- **Everything a build makes is under `dist/native/<app>/<target>/`**: `build/<platform>` (`build-ios`,
   `build-android`, `build-desktop`), `dev/<platform>` (the dev builds `start-*` run), `updates` (what
-  `publish-update` signs and `pack-update` packs), `web` (the bundle the app loads) and `bin`. `akan start` leaves
-  the folder alone.
+  `publish-update` signs and `pack-update` packs), `web` (the bundle the app loads) and `bin`. It sits outside
+  `dist/apps/<app>`, which every `akan build` empties, so a signed release waiting for upload survives the next
+  build; `akan start` leaves it alone too.
 - **`start-ios` / `start-android` / `start-desktop` run a dev build that loads its pages from `akan start`.** It has
   to be running — except for a desktop app that carries its server, which starts it when none of this checkout
   answers. `--release true` runs a release build of the app's own bundle instead.
 - **A desktop app builds only for the computer that builds it** — a `.app` on macOS, and an unsigned folder on
   Windows and Linux. `build-desktop --installer true` adds what a person downloads: a per-user NSIS setup on Windows
   (`/S` installs silently), a dmg on macOS, an AppImage on Linux (it needs `mksquashfs`; an AppImage cannot update
-  itself, so a release with `updates` ships a new one). `--arch arm64|x64` builds a Windows or Linux app for the
+  itself, so a release with `updates` ships a new one). The dmg opens on a drag-to-Applications window with the app's
+  icon on the mounted disk, laid out without Finder so CI builds it too; `native.desktop.dmg` (per target as well)
+  replaces the background (`background`, `background2x` for Retina) and moves the window and the icons (`window`,
+  `iconSize`, `textSize`, `app`, `applications`, in points) — the default background lines up with the default icon
+  positions only. `--arch arm64|x64` builds a Windows or Linux app for the
   other CPU of that OS: the Rust library, Bun's executable, the server's `bun install --cpu` and each `bin` file
   follow it, and a server addon with no binary for that CPU stops the build. A macOS app is Apple silicon only —
   Intel Macs are not a target, so `--arch x64` on macOS is refused.

@@ -235,7 +235,7 @@ Akan Native Sample.app/Contents/
 - 패키지:
   ```
   Windows  <Name>\<exe>.exe · akan_native_desktop.dll · resources\ (+ icon.rgba)
-  Linux    <name>/<exe> · lib/libakan_native_desktop.so · resources/ (+ icon.rgba)
+  Linux    <name>/<exe> · lib/libakan_native_desktop.so · resources/ (+ icon.rgba, icon.png)
   ```
   - Windows exe는 `bun build --compile --windows-hide-console`로 만들고, 아이콘(.ico)과 버전 정보를 넣는다.
   - DLL은 C 런타임을 정적으로 링크한다(`+crt-static`). 그래서 VC++ 재배포 패키지가 필요 없다.

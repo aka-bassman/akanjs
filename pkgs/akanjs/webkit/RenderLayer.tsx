@@ -1,8 +1,9 @@
 "use client";
 import { debugFrame, RouteDefinition, type RouteRender, router, usePathCtx } from "akanjs/client";
 import { isThenable, Logger } from "akanjs/common";
-import { createContext, createElement, memo, type ReactNode, useContext, useEffect, useRef } from "react";
+import { createContext, createElement, memo, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { CsrFrameDump } from "./csrFrameDump";
+import { RenderFailure } from "./RenderFailure";
 import { useFetch } from "./useFetch";
 import { usePageActivity } from "./usePageActivity";
 
@@ -19,6 +20,8 @@ interface RenderedRoute {
   record: ReturnType<typeof CsrFrameDump.track> | null;
   /** A redirect was issued while the render ran, so what it drew is not the page. */
   redirected: boolean;
+  /** The render rejected while its page stayed: what the layer draws instead, with a retry. */
+  failure: { error: unknown } | null;
 }
 
 interface RenderLayerProps {
@@ -38,6 +41,7 @@ export const RenderLayer = memo(({ renders, index, params, searchParams, leaf = 
   const routeRender = renders[index];
   const isAsyncRender = isAsyncRouteRender(routeRender);
   const renderedRef = useRef<RenderedRoute | null>(null);
+  const [, setFailures] = useState(0);
   const activity = usePageActivity();
   //? Effects stop while the page is hidden, so a cleanup is the one place that sees it leave the screen.
   const onScreenRef = useRef(activity === "current");
@@ -78,13 +82,18 @@ export const RenderLayer = memo(({ renders, index, params, searchParams, leaf = 
         result,
         record: isThenable(result) ? CsrFrameDump.track(layer, result as Promise<ReactNode>) : null,
         redirected: false,
+        failure: null,
       };
       if (isThenable(result))
         (result as Promise<ReactNode>).then(
           () => {
             next.redirected = router.redirectCount() !== redirectsBefore;
           },
-          () => undefined,
+          (error: unknown) => {
+            if (router.redirectCount() !== redirectsBefore || renderedRef.current !== next) return;
+            next.failure = { error };
+            setFailures((count) => count + 1);
+          },
         );
       renderedRef.current = next;
     }
@@ -101,6 +110,17 @@ export const RenderLayer = memo(({ renders, index, params, searchParams, leaf = 
   }, [record]);
   if (!routeRender) return null;
   if (!isAsyncRender) return createElement(routeRender.render as never, { children, params, searchParams } as never);
+  const failure = renderedRef.current?.failure;
+  if (failure)
+    return (
+      <RenderFailure
+        error={failure.error}
+        onRetry={() => {
+          renderedRef.current = null;
+          setFailures((count) => count + 1);
+        }}
+      />
+    );
   if (!value) return <>{composeLoadingFallback(renders.slice(index), params)}</>;
   return <layerChildContext.Provider value={children}>{value}</layerChildContext.Provider>;
 });

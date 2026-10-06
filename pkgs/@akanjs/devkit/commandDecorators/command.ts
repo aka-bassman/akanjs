@@ -128,6 +128,8 @@ export const getOptionValue = async (argMeta: ArgMeta, opt: Record<string, unkno
     assertEnumChoice(argMeta, opt[argMeta.name]);
     return convertArgValue(opt[argMeta.name] as string, type ?? "string");
   } else if (defaultValue !== undefined) return defaultValue;
+  //? Before the choices: a nullable option left out means something (`--arch`: this computer's), so it is not asked.
+  else if (nullable) return null;
 
   if (enumChoices) {
     const choices = normalizeEnumChoices(
@@ -135,8 +137,7 @@ export const getOptionValue = async (argMeta: ArgMeta, opt: Record<string, unkno
     );
     if (choices.length === 1) return choices[0]?.value;
     return await select({ message: ask ?? desc ?? `Select the ${name} value`, choices });
-  } else if (nullable) return null;
-  else if (type === "boolean") {
+  } else if (type === "boolean") {
     const message = ask ?? desc ?? `Do you want to set ${name}? ${desc ? ` (${desc})` : ""}: `;
     return await confirm({ message });
   } else return convertArgValue(await input({ message: inputMessageOf(argMeta) }), type ?? "string");

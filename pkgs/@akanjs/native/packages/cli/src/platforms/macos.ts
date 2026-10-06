@@ -25,6 +25,7 @@ import {
 } from "node:fs";
 import { basename, join } from "node:path";
 import type { ParsedArgs } from "../lib/args.ts";
+import { buildDmg } from "../lib/dmg.ts";
 import { execOrThrow } from "../lib/exec.ts";
 import { icns, iconArt, macosIconImage } from "../lib/icons.ts";
 import type { Launched, LaunchOptions } from "../lib/launch.ts";
@@ -32,7 +33,6 @@ import { dim, log } from "../lib/log.ts";
 import {
   appEntitlements,
   assessGatekeeper,
-  buildDmg,
   codesign,
   notarize,
   type ResolvedMacosIdentity,
@@ -155,7 +155,10 @@ export async function buildMacos(ctx: BuildContext): Promise<string> {
       if (ctx.macos?.dmg) {
         const dmg = join(outDir, `${config.app.fileName}-${config.app.version}-${ctx.arch ?? hostArch()}.dmg`);
         log.step(`dmg: ${basename(dmg)}`);
-        await buildDmg(appPath, dmg, config.app.name, join(outDir, "gen"));
+        await buildDmg(appPath, dmg, config.app.name, join(outDir, "gen"), {
+          layout: config.desktop.dmg,
+          volumeIcon: join(resources, "AppIcon.icns"),
+        });
         //? A disk image is signed with a timestamp but takes no runtime: it is not code that runs.
         if (identity.sign !== "-") await codesign(identity, dmg, { hardened: false, timestamp: team });
         if (notarization) {

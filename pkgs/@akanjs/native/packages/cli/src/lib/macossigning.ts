@@ -6,7 +6,7 @@
 // Only Apple's command line tools: security, codesign, notarytool, stapler, hdiutil, ditto, spctl.
 
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { exec, execOrThrow } from "./exec.ts";
@@ -289,33 +289,6 @@ export async function zipForNotary(appPath: string, zip: string): Promise<void> 
 }
 
 /** A compressed disk image of the app beside a link to /Applications, the window people drag it into. */
-export async function buildDmg(appPath: string, dmgPath: string, volumeName: string, workDir: string): Promise<void> {
-  const staging = join(workDir, "dmg");
-  rmSync(staging, { recursive: true, force: true });
-  mkdirSync(staging, { recursive: true });
-  await execOrThrow(["ditto", appPath, join(staging, basename(appPath))], { echo: false });
-  symlinkSync("/Applications", join(staging, "Applications"));
-  rmSync(dmgPath, { force: true });
-  await execOrThrow(
-    [
-      "hdiutil",
-      "create",
-      "-volname",
-      volumeName,
-      "-srcfolder",
-      staging,
-      "-ov",
-      "-fs",
-      "HFS+",
-      "-format",
-      "UDZO",
-      dmgPath,
-    ],
-    { echo: false },
-  );
-  rmSync(staging, { recursive: true, force: true });
-}
-
 /** What Gatekeeper says of a notarized app or disk image, as a downloaded copy would be judged. */
 export async function assessGatekeeper(file: string, type: "execute" | "open"): Promise<void> {
   const args =

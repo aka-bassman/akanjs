@@ -42,7 +42,7 @@ interface TaskOptions {
   /** akan-native.config.ts가 default export하는 것과 같은 모양(AkanNativeConfig). 파일을 읽지 않는다. */
   config: AkanNativeConfig;
   platform: "web" | "macos" | "windows" | "linux" | "ios" | "android";
-  /** 산출물 폴더. 기본 <appDir>/.akan/native/build/<platform>. akanjs: .akan/native/<target>/build/<platform> */
+  /** 산출물 폴더. 기본 <appDir>/.akan/native/build/<platform>. akanjs: <workspace>/dist/native/<app>/<target>/build/<platform> */
   outDir?: string;
   /** .env.<mode>를 고른다. 기본 build·release는 "production", run·dev는 "development". */
   mode?: string;
@@ -130,6 +130,8 @@ interface MacosBuild {
 - shell.json `signing`은 팀 서명이면 `"team"`(secure-storage가 in-process Keychain 항목을 쓴다), 자체 서명이면 `"identity"`, 아니면 `"adhoc"`이다.
 - `notarize`가 있으면 앱을 zip(`ditto --keepParent`)으로 `xcrun notarytool submit --wait`에 내고, Accepted가 아니면 `notarytool log`의 문제 목록과 함께 `SIGNING_FAILED`로 끝난다. 받아들여지면 `stapler staple`과 `spctl --assess --type execute`로 확인한다. dmg도 같은 순서로 서명(타임스탬프만, runtime 없음)·공증·staple·확인(`--type open`)한다. Developer ID가 아닌 서명이나 debug 빌드의 공증은 거부한다.
 - release 빌드가 Developer ID로 서명되지 않았거나 공증되지 않았으면 경고한다. 내려받은 사본은 Gatekeeper가 막기 때문이다.
+- dmg 창은 설정 `desktop.dmg`(akanjs `native.desktop.dmg`)가 정한다(`lib/dmg.ts`). 툴바·사이드바·상태바 없이 아이콘 보기로 열리고, 배경 위에 앱과 Applications 아이콘을 둔다. 앱의 `AppIcon.icns`는 `.VolumeIcon.icns`가 되어 마운트된 디스크 아이콘이 된다. 설정이 없으면 660×400pt 창에 패키지 기본 배경(`native/macos/dmg/background.png`·`@2x`, 앱 (180, 170)에서 Applications (480, 170)으로 가는 화살표)을 쓴다. `background`(PNG 또는 TIFF, `false`면 배경 없음)·`background2x`(2배 픽셀, 둘을 `tiffutil`로 multi-resolution TIFF 하나로 묶는다)·`window`(제목 표시줄 아래 영역, pt. 기본 배경 크기, 위치 200, 120)·`iconSize`(128)·`textSize`(13)·`app`·`applications`(아이콘 중심, 창 왼쪽 위에서 pt)를 덮어쓸 수 있다.
+- Finder나 AppleScript는 쓰지 않는다. GUI 세션이 없는 CI에서도 되도록, UDRW 이미지를 마운트해 `.DS_Store`(`lib/dsStore.ts`, 배경은 alias v2 레코드 `lib/macAlias.ts`로 가리킨다)를 직접 쓰고, 보조 파일(`.background`, `.VolumeIcon.icns`, `.DS_Store`, `.fseventsd`)을 숨긴 뒤 UDZO로 바꾼다. 서명·공증·staple은 그 UDZO에 한다.
 - `publishUpdate`도 `macos: { signing, notarize }`를 받는다. 업데이터가 설치된 앱의 서명을 확인하므로(`codesign --verify --deep --strict`), 업데이트 릴리스는 내려받은 앱과 같은 인증서로 서명해야 한다. dmg는 만들지 않는다.
 - API는 환경 변수를 읽지 않는다. `macosDistributionFromEnv(env)`가 `AKAN_NATIVE_MACOS_IDENTITY`, `AKAN_NATIVE_MACOS_CERTIFICATE`·`_CERTIFICATE_PASSWORD`, `AKAN_NATIVE_MACOS_NOTARY_KEY`·`_KEY_ID`·`_ISSUER` 또는 `AKAN_NATIVE_MACOS_NOTARY_PROFILE`을 `MacosBuild`로 바꿔 준다. CLI `akan-native build macos`와 akanjs `akan build-desktop`·`publish-update`가 이것을 쓴다. CLI `--installer`는 macOS에서 dmg다.
 
@@ -142,8 +144,10 @@ interface MacosBuild {
 
 #### Linux AppImage (CLI-9)
 
-- `linux: { appImage: true }`(CLI `--installer`)면 앱 폴더 옆에 `<fileName>-<version>-<arch>.AppImage`를 만든다(`platforms/linux-appimage.ts`). 앱 폴더에 `AppRun`(옆의 실행 파일을 인자 그대로 실행), `<fileName>.desktop`(이름, 아이콘, `deepLinks.schemes`의 `x-scheme-handler/<scheme>`), 256px 아이콘과 `.DirIcon`을 더해 `mksquashfs -comp zstd -root-owned`로 묶고, 고정한 AppImage type 2 runtime(`lib/toolchains.ts`의 `appimageRuntime`, 날짜 릴리스와 SHA-256, `~/.akan/native/toolchains`에 받는다) 뒤에 붙인다. appimagetool은 쓰지 않는다. 그 자체가 FUSE가 필요한 AppImage이고 고정하지 않은 runtime을 내려받기 때문이다.
+- `linux: { appImage: true }`(CLI `--installer`)면 앱 폴더 옆에 `<fileName>-<version>-<arch>.AppImage`를 만든다(`platforms/linux-appimage.ts`). 앱 폴더에 `AppRun`(옆의 실행 파일을 인자 그대로 실행), `<app id>.desktop`(이름, 아이콘, `StartupWMClass=<app id>`, `deepLinks.schemes`의 `x-scheme-handler/<scheme>`), 256px 아이콘 `<app id>.png`와 `.DirIcon`을 더해 `mksquashfs -comp zstd -root-owned`로 묶고, 고정한 AppImage type 2 runtime(`lib/toolchains.ts`의 `appimageRuntime`, 날짜 릴리스와 SHA-256, `~/.akan/native/toolchains`에 받는다) 뒤에 붙인다. appimagetool은 쓰지 않는다. 그 자체가 FUSE가 필요한 AppImage이고 고정하지 않은 runtime을 내려받기 때문이다.
 - `mksquashfs`가 필요하다(`apt install squashfs-tools`). 사용자 쪽은 폴더와 같이 시스템의 WebKitGTK 4.1·GTK 3을 쓰고, FUSE가 없으면 `--appimage-extract-and-run`으로 돈다.
+- 셸은 Linux에서 창의 프로그램 이름(X11 WM_CLASS, Wayland app_id)을 앱 id로 정한다. 독과 작업 표시줄은 이 이름으로 `<app id>.desktop`이나 `StartupWMClass`가 같은 항목을 찾아 그 이름과 아이콘을 창에 붙인다. AppImageLauncher·appimaged는 설치하는 파일 이름을 바꾸므로 `StartupWMClass`로 이어진다. tao의 `with_app_id`는 쓰지 않는다. 두 번째 실행이 D-Bus로 첫 번째를 깨우고 single-instance보다 먼저 끝나기 때문이다.
+- 딥 링크 항목(`$XDG_DATA_HOME/applications/<app id>.desktop`, 숨김)은 AppImage에서 `$APPIMAGE`를 실행한다(마운트 지점은 실행마다 바뀌고 끝나면 사라진다). 빌드가 쓰는 `resources/icon.png`가 있으면 `$XDG_DATA_HOME/icons/hicolor/256x256/apps/<app id>.png`로 복사하고 `Icon=<app id>`를 단다.
 - AppImage는 읽기 전용 이미지에서 돌므로 updates 플러그인이 자신을 바꿀 수 없다. `updates`가 있는 앱이면 경고한다. 릴리스마다 새 AppImage를 낸다.
 
 #### Windows 배포 서명 (CLI-9)

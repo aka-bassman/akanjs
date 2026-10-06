@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { AkanNativeConfig } from "@akanjs/native/config";
-import type { AkanNativeTarget, AkanNativeValue, AkanPluginNativeConfig, NativeEnv, NativePermission } from "akanjs";
+import type {
+  AkanNativeDmgConfig,
+  AkanNativeTarget,
+  AkanNativeValue,
+  AkanPluginNativeConfig,
+  NativeEnv,
+  NativePermission,
+} from "akanjs";
 import type { DesktopServerBundle } from "./desktopServerStage";
 import { type NativePlatform, resolveAppId } from "./mobileTarget";
 import type { NativePluginFolder } from "./nativePluginFolders";
@@ -171,6 +178,7 @@ export class NativeConfig {
       window: NativeConfig.#compact({ ...target.desktop?.window }),
       server: desktopServer,
       bin: desktopBin,
+      dmg: NativeConfig.#dmg(target.desktop?.dmg, abs),
     });
     const config: AkanNativeConfig = {
       app: {
@@ -232,6 +240,16 @@ export class NativeConfig {
   ): NonNullable<AkanNativeConfig["splash"]> {
     if (typeof splash === "string") return { image: abs(splash) };
     return { ...splash, ...(splash.image ? { image: abs(splash.image) } : {}) };
+  }
+
+  static #dmg(dmg: AkanNativeDmgConfig | undefined, abs: (relative: string) => string) {
+    if (!dmg) return undefined;
+    const { background, background2x, ...layout } = dmg;
+    return {
+      ...layout,
+      ...(background === undefined ? {} : { background: background === false ? false : abs(background) }),
+      ...(background2x ? { background2x: abs(background2x) } : {}),
+    };
   }
 
   //? akanConfig refuses a target whose merged updates lack url or publicKey; the type still has them optional.

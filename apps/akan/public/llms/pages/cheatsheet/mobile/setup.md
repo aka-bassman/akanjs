@@ -36,7 +36,7 @@ Term
 
 - appId: The app's permanent ID: the package name on Android and the bundle ID on iOS.
 
-- .akan/native/<target>: Each run's web root and builds for the target; generated and git-ignored, with no Xcode project to edit.
+- dist/native/<app>/<target>: Each run's web root and builds for the target; generated and git-ignored, with no Xcode project to edit.
 
 - plugin: A native runtime module such as camera or push. The app ships it when a permission or `native.plugins` names it.
 
@@ -224,7 +224,7 @@ Open the Android app signing docs
 
 **Keep passwords out of git.** A CI sets the same names as secrets. The passwords reach the signer through the environment, never the command line or the log.
 
-**Where the file lands.** `apps/myapp/.akan/native/default/build/android`. `release-android` prints the path.
+**Where the file lands.** `dist/native/myapp/default/build/android`. `release-android` prints the path.
 
 Mobile command flags
 
@@ -330,7 +330,7 @@ The build follows the CPU of the Bun that runs it, so an ARM64 Windows machine b
 
 Updates
 
-An installed app updates itself from releases you sign. `akan update-keygen` makes the key once and prints its public half for `native.updates`; `akan publish-update` builds a release (the whole app on the desktop, the web bundle on a phone) into `.akan/native/<target>/updates`, which holds only what you upload to `updates.url`, the manifests last. A new release runs on trial until its first page mounts. A phone looks for a newer web bundle by itself, at start and on each return to the front, and runs it from the next cold start; on the desktop a release is the whole app and a relaunch, so when to check, download and apply is the app's call. `akan pack-update` writes a phone update unsigned instead, for a signer that keeps the key elsewhere.
+An installed app updates itself from releases you sign. `akan update-keygen` makes the key once and prints its public half for `native.updates`; `akan publish-update` builds a release (the whole app on the desktop, the web bundle on a phone) into `dist/native/<app>/<target>/updates`, which holds only what you upload to `updates.url`, the manifests last. A new release runs on trial until its first page mounts. A phone looks for a newer web bundle by itself, at start and on each return to the front, and runs it from the next cold start; on the desktop a release is the whole app and a relaunch, so when to check, download and apply is the app's call. `akan pack-update` writes a phone update unsigned instead, for a signer that keeps the key elsewhere.
 
 Anyone who can reach `updates.url` can read everything under it, and the updater sends no credentials. A desktop release is the whole app, so it holds the carried server's `private/` (the app's and its libs') and its env file: keep out of them what the installed app may not hold either.
 

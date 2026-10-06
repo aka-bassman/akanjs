@@ -855,6 +855,7 @@ describe("ApplicationRunner mobile", () => {
     const app = {
       name: "demo",
       cwdPath: "/repo/apps/demo",
+      workspace: { workspaceRoot: "/repo" },
       getConfig: async () => ({
         app: { name: "demo" },
         basePaths: new Set<string>(),

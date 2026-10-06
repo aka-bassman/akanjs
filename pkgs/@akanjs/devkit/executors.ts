@@ -1113,13 +1113,21 @@ export class AppExecutor extends SysExecutor {
   static from(executor: SysExecutor | WorkspaceExecutor, name: string) {
     return new AppExecutor({ workspace: executor instanceof WorkspaceExecutor ? executor : executor.workspace, name });
   }
-  //* Not dev output: native builds and the update releases waiting to be uploaded, and the downloaded `bin` sources.
-  static readonly #keptOnStart = [path.join(".akan", "native"), path.join(".akan", "cache", "bin")];
+  //* Not dev output: the downloaded `bin` sources.
+  static readonly #keptOnStart = [path.join(".akan", "cache", "bin")];
+  //* Native builds moved to dist/native/<app>; the old folder may hold a signed release nobody uploaded yet.
+  static readonly #legacyNative = path.join(".akan", "native");
   async #removeDevOutput(dir = ".akan") {
     const entries = await readDirEntries(this.getPath(dir)).catch(() => [] as string[]);
     await Promise.all(
       entries.map(async (name) => {
         const entry = path.join(dir, name);
+        if (entry === AppExecutor.#legacyNative) {
+          this.logger.warn(
+            `apps/${this.name}/.akan/native holds native builds from before they moved to dist/native/${this.name}: upload any release waiting in its updates folders, then delete it.`,
+          );
+          return;
+        }
         if (AppExecutor.#keptOnStart.includes(entry)) return;
         if (AppExecutor.#keptOnStart.some((kept) => kept.startsWith(`${entry}${path.sep}`)))
           return await this.#removeDevOutput(entry);
@@ -1203,10 +1211,10 @@ export class AppExecutor extends SysExecutor {
     // Ports and the operation mode are dropped: `define` would bake them in and outrank the container's own values.
     if (type === "build") {
       const buildEnv = { ...env };
-      delete buildEnv.AKAN_PUBLIC_CLIENT_PORT;
-      delete buildEnv.AKAN_PUBLIC_SERVER_PORT;
-      delete buildEnv.AKAN_PUBLIC_OPERATION_MODE;
-      delete process.env.AKAN_PUBLIC_OPERATION_MODE;
+      for (const key of ["AKAN_PUBLIC_CLIENT_PORT", "AKAN_PUBLIC_SERVER_PORT", "AKAN_PUBLIC_OPERATION_MODE"]) {
+        delete buildEnv[key];
+        delete process.env[key];
+      }
       Object.assign(process.env, buildEnv);
     }
     return { env };

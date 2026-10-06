@@ -22,6 +22,7 @@ const target = (config: Partial<AkanNativeTarget> = {}) => ({
 });
 
 const appDir = "/repo/apps/portal";
+const nativeDir = "/repo/dist/native/portal";
 
 const fakeApp = (plugins: AkanPlugin[] = []) =>
   ({
@@ -31,24 +32,67 @@ const fakeApp = (plugins: AkanPlugin[] = []) =>
     getScanInfo: () => ({ getLibs: () => [] }),
     dist: { cwdPath: "/repo/dist/apps/portal" },
     getConfig: async () => ({ i18n: { locales: ["en", "ko"] }, api: { prefix: "/api", websocketPrefix: "/ws" } }),
+    getDevPort: async () => 8284,
     collectPlugins: async () => plugins,
     logger: { warn: () => undefined },
   }) as unknown as App;
 
 describe("NativeApp", () => {
-  test("keeps each target's web root and each platform's output apart", () => {
+  test("keeps each target's web root and each platform's output apart, outside the dist akan build empties", () => {
     const admin = new NativeApp(fakeApp(), target({ name: "admin", basePath: "admin" }));
 
-    expect(admin.web.dir).toBe(path.join(appDir, ".akan/native/admin/web"));
-    expect(admin.outDir("ios")).toBe(path.join(appDir, ".akan/native/admin/build/ios"));
-    expect(admin.outDir("android")).toBe(path.join(appDir, ".akan/native/admin/build/android"));
-    expect(admin.devOutDir("macos")).toBe(path.join(appDir, ".akan/native/admin/dev/macos"));
+    expect(admin.web.dir).toBe(path.join(nativeDir, "admin/web"));
+    expect(admin.outDir("ios")).toBe(path.join(nativeDir, "admin/build/ios"));
+    expect(admin.outDir("android")).toBe(path.join(nativeDir, "admin/build/android"));
+    expect(admin.devOutDir("macos")).toBe(path.join(nativeDir, "admin/dev/macos"));
+    expect(admin.updatesDir).toBe(path.join(nativeDir, "admin/updates"));
+    expect(path.relative("/repo/dist/apps/portal", admin.targetRoot)).toStartWith("..");
+  });
+
+  describe("the server a release build's page calls", () => {
+    const runtimeEnvOf = async (env: "local" | "debug", options: { server?: boolean } = {}) => {
+      const nativeApp = new NativeApp(fakeApp(), target(), env);
+      let seen: Record<string, string> | undefined;
+      nativeApp.assembleWeb = async () => undefined as never;
+      nativeApp.prepare = async () =>
+        ({
+          config: {},
+          api: {
+            build: async ({ env }: { env?: Record<string, string> }) => {
+              seen = env;
+              return { artifacts: [], warnings: [] };
+            },
+          },
+        }) as never;
+      await nativeApp.build("linux", options.server ? { server: { dir: "/s", entry: "main.js", env: {} } } : {});
+      return seen;
+    };
+
+    test("a local release calls the app's own dev server, not 8282", async () => {
+      expect(await runtimeEnvOf("local")).toEqual({ PUBLIC_AKAN_SERVER_URL: "http://localhost:8284" });
+    });
+
+    test("a cloud release and a release carrying its server name none", async () => {
+      expect(await runtimeEnvOf("debug")).toEqual({});
+      expect(await runtimeEnvOf("local", { server: true })).toEqual({});
+    });
+
+    test("an AKAN_PUBLIC_SERVER_URL the bundle was built with is left to win", async () => {
+      process.env.AKAN_PUBLIC_SERVER_URL = "http://192.168.0.10:8284";
+      try {
+        expect(await runtimeEnvOf("local")).toEqual({});
+      } finally {
+        delete process.env.AKAN_PUBLIC_SERVER_URL;
+      }
+    });
   });
 
   test("a dev build bundles no page a release build left, and builds apart from the release it would empty", async () => {
+    const root = await makeTempRoot();
     const app = {
       ...fakeApp(),
-      cwdPath: await makeTempRoot(),
+      cwdPath: path.join(root, "apps/portal"),
+      workspace: { workspaceRoot: root },
       logger: { info: () => undefined, debug: () => undefined, warn: () => undefined },
     } as unknown as App;
     const nativeApp = new NativeApp(app, target());
@@ -118,7 +162,12 @@ describe("NativeApp", () => {
   test("assembles each platform's web root with that platform's indexPath", async () => {
     const root = await makeTempRoot();
     await writeText(path.join(root, "dist/csr/index.html"), "<html><head></head><body></body></html>");
-    const app = { ...fakeApp(), cwdPath: root, dist: { cwdPath: path.join(root, "dist") } } as unknown as App;
+    const app = {
+      ...fakeApp(),
+      cwdPath: root,
+      workspace: { workspaceRoot: root },
+      dist: { cwdPath: path.join(root, "dist") },
+    } as unknown as App;
     const nativeApp = new NativeApp(app, target({ indexPath: "/mobile", desktop: { indexPath: "/console" } }));
     const injected = async () => await Bun.file(path.join(nativeApp.web.dir, "index.html")).text();
 
@@ -139,7 +188,7 @@ describe("NativeApp", () => {
 
     expect(warnings).toEqual([]);
     expect(config.plugins).toEqual([...NativeConfig.basePlugins, "push"]);
-    expect(config.web.dir).toBe(path.join(appDir, ".akan/native/default/web"));
+    expect(config.web.dir).toBe(path.join(nativeDir, "default/web"));
   });
 
   test("a config nothing is built from (the update key's) stages no desktop bin", async () => {

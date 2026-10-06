@@ -63,7 +63,8 @@ export class NativeApp {
     readonly target: ResolvedMobileTarget,
     readonly env?: NativeEnv,
   ) {
-    this.targetRoot = path.join(app.cwdPath, ".akan", "native", target.name);
+    //* Outside `dist/apps/<app>`, which every `akan build` empties: a signed release waiting for upload lives here.
+    this.targetRoot = path.join(app.workspace.workspaceRoot, "dist", "native", app.name, target.name);
     this.web = new NativeWebDir(path.join(this.targetRoot, "web"));
   }
 
@@ -161,13 +162,18 @@ export class NativeApp {
   };
 
   //* `AKAN_PUBLIC_*` is already inlined into the CSR bundle, so the runtime reads no .env file of its own.
-  #task(platform: NativePlatform, config: AkanNativeConfig, outDir = this.outDir(platform)): TaskOptions {
+  #task(
+    platform: NativePlatform,
+    config: AkanNativeConfig,
+    { outDir = this.outDir(platform), env = {} }: { outDir?: string; env?: Record<string, string> } = {},
+  ): TaskOptions {
     return {
       appDir: this.app.cwdPath,
       config,
       platform,
       outDir,
       envFiles: false,
+      env,
       skipWebBuild: true,
       log: (event) => {
         if (event.level === "error") this.app.logger.error(event.message);
@@ -179,6 +185,13 @@ export class NativeApp {
     };
   }
 
+  //* A local release has no dev gateway behind it, so its page calls the app's dev server (baseEnv csrServerUrl), on
+  //* the port `akan start` gives this app. A carried server hands the page its own URL at launch instead.
+  async #runtimeEnv(server?: DesktopServerBundle): Promise<Record<string, string>> {
+    if (this.env !== "local" || server || process.env.AKAN_PUBLIC_SERVER_URL) return {};
+    return { PUBLIC_AKAN_SERVER_URL: `http://localhost:${await this.app.getDevPort()}` };
+  }
+
   async build(
     platform: NativePlatform,
     { profile = "release", server, installer = false, arch }: NativeBuildOptions = {},
@@ -188,7 +201,7 @@ export class NativeApp {
     await this.assembleWeb(platform);
     const { api, config } = await this.prepare(platform, server, arch);
     return await api.build({
-      ...this.#task(platform, config),
+      ...this.#task(platform, config, { env: await this.#runtimeEnv(server) }),
       profile,
       ...(arch ? { arch } : {}),
       ...(platform === "windows"
@@ -219,7 +232,7 @@ export class NativeApp {
     await this.assembleWeb(platform);
     const { api, config } = await this.prepare(platform, server);
     return await api.run({
-      ...this.#task(platform, config),
+      ...this.#task(platform, config, { env: await this.#runtimeEnv(server) }),
       profile,
       onLine: this.#appLine,
       ...(device ? { device } : {}),
@@ -238,7 +251,7 @@ export class NativeApp {
       await this.web.clear();
       const [{ api, config }, { api: routes }] = await Promise.all([this.prepare(platform), this.app.getConfig()]);
       const session = await api.dev({
-        ...this.#task(platform, config, this.devOutDir(platform)),
+        ...this.#task(platform, config, { outDir: this.devOutDir(platform) }),
         upstream,
         hmrPath: "/_akan/hmr",
         //? A dev page calls its own origin (akanjs baseEnv), so the gateway relays the socket it opens for the API too.
@@ -279,7 +292,7 @@ export class NativeApp {
     await this.assembleWeb("ios");
     const { api, config } = await this.prepare("ios");
     return await api.release({
-      ...this.#task("ios", config),
+      ...this.#task("ios", config, { env: await this.#runtimeEnv() }),
       platform: "ios",
       signing: { ...(teamId ? { teamId } : {}), ...(adHoc ? { distribution: "ad-hoc" as const } : {}) },
     });
@@ -300,7 +313,7 @@ export class NativeApp {
     await this.assembleWeb(platform);
     const { api, config } = await this.prepare(platform, server);
     return await api.publishUpdate({
-      ...this.#task(platform, config),
+      ...this.#task(platform, config, { env: await this.#runtimeEnv(server) }),
       platform,
       out: this.updatesDir,
       ...(channel ? { channel } : {}),
@@ -363,7 +376,12 @@ export class NativeApp {
     const signing = NativeApp.androidSigning();
     await this.assembleWeb("android");
     const { api, config } = await this.prepare("android");
-    return await api.release({ ...this.#task("android", config), platform: "android", signing, formats });
+    return await api.release({
+      ...this.#task("android", config, { env: await this.#runtimeEnv() }),
+      platform: "android",
+      signing,
+      formats,
+    });
   }
 
   /** An unsigned OTA update of this target's web bundle for `platform`, and the channel its binary follows. */
@@ -377,7 +395,7 @@ export class NativeApp {
     const packed = await api.packUpdate({
       ...this.#task(platform, config),
       platform,
-      out: out ?? path.join(this.targetRoot, "updates", platform),
+      out: out ?? path.join(this.updatesDir, platform),
     });
     return { ...packed, channel: config.updates.channel ?? "production" };
   }

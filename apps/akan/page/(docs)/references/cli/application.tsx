@@ -143,15 +143,15 @@ export default page().render(() => {
   const outputNote = (platform: string): ReferenceRow => ({
     name: l.trans({ en: "output", ko: "결과물" }),
     desc: l.trans({
-      en: `Written under \`apps/<app>/.akan/native/<target>/build/${platform}\`; the command prints each file's path.`,
-      ko: `\`apps/<app>/.akan/native/<target>/build/${platform}\` 아래에 만들어지며, 명령이 파일마다 경로를 출력합니다.`,
+      en: `Written under \`dist/native/<app>/<target>/build/${platform}\`; the command prints each file's path.`,
+      ko: `\`dist/native/<app>/<target>/build/${platform}\` 아래에 만들어지며, 명령이 파일마다 경로를 출력합니다.`,
     }),
   });
   const devOutputNote = (platform: string): ReferenceRow => ({
     name: l.trans({ en: "output", ko: "결과물" }),
     desc: l.trans({
-      en: `A dev build goes under \`apps/<app>/.akan/native/<target>/dev/${platform}\`; a \`--release\` run under \`…/build/${platform}\`.`,
-      ko: `개발 빌드는 \`apps/<app>/.akan/native/<target>/dev/${platform}\`, \`--release\` 실행은 \`…/build/${platform}\` 아래에 만들어집니다.`,
+      en: `A dev build goes under \`dist/native/<app>/<target>/dev/${platform}\`; a \`--release\` run under \`…/build/${platform}\`.`,
+      ko: `개발 빌드는 \`dist/native/<app>/<target>/dev/${platform}\`, \`--release\` 실행은 \`…/build/${platform}\` 아래에 만들어집니다.`,
     }),
   });
   const androidSigningNote: ReferenceRow = {
@@ -1219,8 +1219,8 @@ akan update-keygen myapp --platform android`,
       signature:
         "akan publish-update <app> [--platform <platform>] [--target <target>] [--env <env>] [--channel <channel>] [--write <boolean>] [--allow-local-release <boolean>]",
       desc: l.trans({
-        en: "Build a release and sign it for installed apps: the whole app for a desktop (this computer's OS and CPU, delta from the release before), the web bundle for Android and iOS. It writes `<channel>.json`, its signature and its files under `.akan/native/<target>/updates`, which holds only what you upload: upload that folder to `native.updates.url`, `<channel>.json` and its `.sig` last and together, and keep a CDN from caching those two apart. A desktop release of a target that carries its server carries it too.",
-        ko: "릴리스를 빌드해 설치된 앱용으로 서명합니다. 데스크톱은 앱 전체(이 컴퓨터의 OS와 CPU, 이전 릴리스와의 delta 포함), Android와 iOS는 웹 번들입니다. `.akan/native/<target>/updates` 아래에 `<channel>.json`, 서명, 파일을 쓰며, 그 폴더에는 올릴 것만 있습니다. 그 폴더를 `native.updates.url`에 올리되 `<channel>.json`과 `.sig`는 마지막에 함께 올리고, CDN이 두 파일을 따로 캐시하지 않게 합니다. 서버를 싣는 타깃의 데스크톱 릴리스에는 서버도 들어갑니다.",
+        en: "Build a release and sign it for installed apps: the whole app for a desktop (this computer's OS and CPU, delta from the release before), the web bundle for Android and iOS. It writes `<channel>.json`, its signature and its files under `dist/native/<app>/<target>/updates`, which holds only what you upload: upload that folder to `native.updates.url`, `<channel>.json` and its `.sig` last and together, and keep a CDN from caching those two apart. A desktop release of a target that carries its server carries it too.",
+        ko: "릴리스를 빌드해 설치된 앱용으로 서명합니다. 데스크톱은 앱 전체(이 컴퓨터의 OS와 CPU, 이전 릴리스와의 delta 포함), Android와 iOS는 웹 번들입니다. `dist/native/<app>/<target>/updates` 아래에 `<channel>.json`, 서명, 파일을 쓰며, 그 폴더에는 올릴 것만 있습니다. 그 폴더를 `native.updates.url`에 올리되 `<channel>.json`과 `.sig`는 마지막에 함께 올리고, CDN이 두 파일을 따로 캐시하지 않게 합니다. 서버를 싣는 타깃의 데스크톱 릴리스에는 서버도 들어갑니다.",
       }),
       options: [
         {
@@ -1302,8 +1302,8 @@ akan publish-update myapp --platform android --env main`,
           name: "--out",
           type: "String",
           desc: l.trans({
-            en: "Default `.akan/native/<target>/updates/<platform>`.",
-            ko: "기본값은 `.akan/native/<target>/updates/<platform>`입니다.",
+            en: "Default `dist/native/<app>/<target>/updates/<platform>`.",
+            ko: "기본값은 `dist/native/<app>/<target>/updates/<platform>`입니다.",
           }),
         },
         {

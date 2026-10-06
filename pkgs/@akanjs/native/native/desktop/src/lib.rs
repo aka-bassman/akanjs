@@ -759,7 +759,7 @@ struct Config {
   data_dir: Option<PathBuf>,
   /// Window icon (Windows, Linux): [u32 width LE][u32 height LE][RGBA], written by the CLI.
   icon: Option<PathBuf>,
-  /// app.id (Linux: the desktop entry the dock plugin's launcher badge names).
+  /// app.id (Linux: the window's program name, so the dock matches it to <app id>.desktop).
   app_id: String,
   /// security.shell.externalSchemes (L0): schemes links may also hand to the OS (navigation.rs).
   external_schemes: Vec<String>,
@@ -1805,6 +1805,13 @@ pub unsafe extern "C" fn akan_native_run(config_json: *const c_char) -> i32 {
     log!("pages from {base} (akan-native dev --hmr)");
   }
   navigation::set_extra_schemes(cfg.external_schemes.clone());
+  // Linux: GTK names the window after the program (X11 WM_CLASS, Wayland app_id), and a dock shows the <name>.desktop
+  // that matches it, so the name is the app id the deep links and the dock plugin write their entry under. Not tao's
+  // with_app_id: a second launch would then hand itself to the first over D-Bus and exit before single-instance runs.
+  #[cfg(target_os = "linux")]
+  if !cfg.app_id.is_empty() {
+    gtk::glib::set_prgname(Some(cfg.app_id.as_str()));
+  }
   #[cfg(not(target_os = "windows"))]
   #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
   let mut event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();

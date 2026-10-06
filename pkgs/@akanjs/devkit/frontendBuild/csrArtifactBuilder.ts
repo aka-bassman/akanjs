@@ -54,18 +54,11 @@ export class CsrArtifactBuilder {
     );
 
     const result = await Bun.build({
-      target: "browser",
+      ...CsrArtifactBuilder.bundleOptions(this.#app, this.#command, akanConfig.optimizeImports),
       entrypoints: htmlBasePaths.map((basePath) => this.#generatedPath(CsrArtifactBuilder.htmlFilename(basePath))),
       files: generatedFiles,
       root: this.#generatedDir,
       outdir: this.#outputDir,
-      splitting: false,
-      minify: true,
-      env: "AKAN_PUBLIC_*",
-      define: bundleDefine(this.#app, this.#command, "csr"),
-      optimizeImports: akanConfig.optimizeImports,
-      // A raw `.css` in the route graph is Tailwind source; the base artifact's compiled sheet is the only stylesheet.
-      plugins: [PagesBundleBuilder.createCssStubPlugin()],
     });
 
     if (!result.success) {
@@ -76,6 +69,19 @@ export class CsrArtifactBuilder {
     await this.#inlineCsrArtifacts(cssAssets);
     this.#app.verbose(`[csr-build] output -> ${this.#outputDir}`);
     return { outputDir: this.#outputDir };
+  }
+
+  //? No `env` option: Bun inlines the `.env` it read at process start over `define`, so a native build's `--env` lost.
+  static bundleOptions(app: App, command: "build" | "start", optimizeImports: string[] = []) {
+    return {
+      target: "browser" as const,
+      splitting: false,
+      minify: true,
+      define: bundleDefine(app, command, "csr"),
+      optimizeImports,
+      // A raw `.css` in the route graph is Tailwind source; the base artifact's compiled sheet is the only stylesheet.
+      plugins: [PagesBundleBuilder.createCssStubPlugin()],
+    };
   }
 
   /** The routes one basePath's HTML boots: its own plus every route outside any basePath, matching `bootCsr`. */
