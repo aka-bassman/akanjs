@@ -239,7 +239,7 @@ export const TARGETS: Record<string, Target> = {
     env: {
       NODE_ENV: "production",
       USE_AKANJS_PKGS: "true",
-      AKAN_PUBLIC_REPO_NAME: process.env.AKAN_PUBLIC_REPO_NAME ?? "Ieading-flight-guidance",
+      AKAN_PUBLIC_REPO_NAME: process.env.AKAN_PUBLIC_REPO_NAME ?? "akanjs",
       AKAN_PUBLIC_SERVE_DOMAIN: process.env.AKAN_PUBLIC_SERVE_DOMAIN ?? "akanjs.com",
       AKAN_PUBLIC_APP_NAME: AKAN_APP_NAME,
       AKAN_PUBLIC_ENV: process.env.AKAN_PUBLIC_ENV ?? "local",

@@ -253,8 +253,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Before it copies the server, the build reads every `.node` file by package and stops, with the list, on what would fail at the first require on a user's computer: no binary for the target OS and CPU, a link or rpath to a library outside the system (a ROS install under /opt, Homebrew), or a `binding.gyp` its install never compiled — Bun runs no install script of an untrusted package, so add it to `trustedDependencies`. An addon compiled on the build machine only warns.",
-              ko: "서버를 복사하기 전에 `.node` 파일을 패키지별로 읽고, 사용자 컴퓨터에서 처음 require할 때 실패할 것이 있으면 목록과 함께 빌드를 멈춥니다. 대상 OS·CPU용 바이너리가 없는 패키지, 시스템 밖의 라이브러리를 링크하거나 그런 rpath를 가진 바이너리(/opt의 ROS, Homebrew), 설치 때 컴파일되지 않은 `binding.gyp`입니다. Bun은 신뢰하지 않은 패키지의 설치 스크립트를 돌리지 않으므로 `trustedDependencies`에 더합니다. 빌드 머신에서 컴파일된 애드온은 경고만 합니다.",
+              en: "A server package with a `.node` addon needs a binary for the target OS and CPU that links nothing outside the system, such as a ROS install under /opt or Homebrew. One that compiles itself at install goes in `trustedDependencies`, since Bun runs no install script of an untrusted package. The build lists any addon that would fail on a user's computer and stops.",
+              ko: "`.node` 애드온이 있는 서버 패키지에는 대상 OS·CPU용 바이너리가 있어야 하고, /opt의 ROS나 Homebrew처럼 시스템 밖의 라이브러리를 링크하면 안 됩니다. 설치하면서 스스로 컴파일하는 패키지는 `trustedDependencies`에 적습니다. Bun은 신뢰하지 않은 패키지의 설치 스크립트를 돌리지 않기 때문입니다. 빌드는 사용자 컴퓨터에서 실패할 애드온을 나열하고 멈춥니다.",
             })}
           </div>
         </Docs.Description>

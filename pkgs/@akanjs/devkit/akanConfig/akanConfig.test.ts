@@ -696,7 +696,7 @@ describe("AkanAppConfig", () => {
 
 describe("deriveDefaultAppId", () => {
   test("sanitizes org/app names into a valid reverse-DNS bundle id", () => {
-    expect(deriveDefaultAppId("leading-flight-guidance", "myapp")).toBe("com.leadingflightguidance.myapp");
+    expect(deriveDefaultAppId("my-org", "myapp")).toBe("com.myorg.myapp");
     expect(deriveDefaultAppId("Acme Corp", "Store")).toBe("com.acmecorp.store");
     // Empty org and digit-leading segments stay valid package identifiers.
     expect(deriveDefaultAppId("", "app")).toBe("com.app.app");

@@ -1,5 +1,6 @@
 import { usePage } from "@apps/akan/client";
-import { Code, JellyKicker, panelRecipe } from "@apps/akan/ui";
+import { Code, DocsToc, JellyKicker, panelRecipe } from "@apps/akan/ui";
+import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 import { badgeRecipe, Link } from "akanjs/ui";
 import { BsArrowRight } from "react-icons/bs";
@@ -464,9 +465,9 @@ export default page().render(() => {
           </nav>
         </header>
 
-        <section className="mt-14 grid gap-12">
+        <Scroll className="mt-14">
           {headlines.map((item) => (
-            <div key={item.no} id={`v3-${item.no}`} className="scroll-mt-28">
+            <Scroll.Slide key={item.no} id={`v3-${item.no}`} title={l.trans(item.title)} className="not-first:mt-12">
               <p className="font-black font-mono text-primary text-sm">{item.no}</p>
               <h2 className="mt-2 font-black text-3xl">{l.trans(item.title)}</h2>
               <div className="mt-4 space-y-4 text-foreground/75 leading-7">
@@ -486,221 +487,234 @@ export default page().render(() => {
                   </Link>
                 ))}
               </div>
-            </div>
+            </Scroll.Slide>
           ))}
-        </section>
 
-        <section id="v3-performance" className="mt-16 scroll-mt-28">
-          <p className="font-bold text-primary text-sm uppercase tracking-[0.2em]">
-            {l.trans({ en: "Faster and smaller", ko: "더 빠르고 더 작게" })}
-          </p>
-          <h2 className="mt-3 font-black text-3xl">
-            {l.trans({
-              en: "Faster than v2 on every number we measured",
-              ko: "측정한 모든 지표에서 v2보다 빠릅니다",
-            })}
-          </h2>
-          <p className="mt-4 text-foreground/75 leading-7">
-            {l.trans({
-              en: "Agents, MCP and a new UI system could easily have cost speed, so we ran the same benchmark as for v2. v3 is faster, uses less memory, and starts twice as fast.",
-              ko: "에이전트, MCP, 새로운 UI 시스템을 더하면서 속도를 잃지 않았는지 확인하려고 v2 때와 같은 벤치마크를 다시 돌렸습니다. v3는 더 빠르고, 메모리를 덜 쓰고, 두 배 빨리 시작합니다.",
-            })}
-          </p>
-          <div className="jelly-glass mt-6 overflow-x-auto rounded-3xl px-5 py-2">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-border border-b">
-                  <th className="py-3 pr-4 font-semibold text-foreground/45">
-                    {l.trans({ en: "Metric", ko: "지표" })}
-                  </th>
-                  <th className="px-4 py-3 text-right font-semibold text-foreground/45">v2</th>
-                  <th className="px-4 py-3 text-right font-semibold text-foreground/45">v3</th>
-                  <th className="py-3 pl-4 text-right font-semibold text-foreground/45">
-                    {l.trans({ en: "Change", ko: "변화" })}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {versionMetrics.map((row) => (
-                  <tr key={row.metric.en} className="border-muted border-b last:border-none">
-                    <td className="py-3 pr-4 text-foreground/80">{l.trans(row.metric)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-foreground/55">{row.v2}</td>
-                    <td className="px-4 py-3 text-right font-mono text-primary">{row.v3}</td>
-                    <td className="py-3 pl-4 text-right font-mono text-primary">{row.change}</td>
+          <Scroll.Slide id="v3-performance" title={l.trans({ en: "Performance", ko: "성능" })} className="mt-16">
+            <p className="font-bold text-primary text-sm uppercase tracking-[0.2em]">
+              {l.trans({ en: "Faster and smaller", ko: "더 빠르고 더 작게" })}
+            </p>
+            <h2 className="mt-3 font-black text-3xl">
+              {l.trans({
+                en: "Faster than v2 on every number we measured",
+                ko: "측정한 모든 지표에서 v2보다 빠릅니다",
+              })}
+            </h2>
+            <p className="mt-4 text-foreground/75 leading-7">
+              {l.trans({
+                en: "Agents, MCP and a new UI system could easily have cost speed, so we ran the same benchmark as for v2. v3 is faster, uses less memory, and starts twice as fast.",
+                ko: "에이전트, MCP, 새로운 UI 시스템을 더하면서 속도를 잃지 않았는지 확인하려고 v2 때와 같은 벤치마크를 다시 돌렸습니다. v3는 더 빠르고, 메모리를 덜 쓰고, 두 배 빨리 시작합니다.",
+              })}
+            </p>
+            <div className="jelly-glass mt-6 overflow-x-auto rounded-3xl px-5 py-2">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-border border-b">
+                    <th className="py-3 pr-4 font-semibold text-foreground/45">
+                      {l.trans({ en: "Metric", ko: "지표" })}
+                    </th>
+                    <th className="px-4 py-3 text-right font-semibold text-foreground/45">v2</th>
+                    <th className="px-4 py-3 text-right font-semibold text-foreground/45">v3</th>
+                    <th className="py-3 pl-4 text-right font-semibold text-foreground/45">
+                      {l.trans({ en: "Change", ko: "변화" })}
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-6 grid gap-3 md:grid-cols-3">
-            {improvements.map((item) => (
-              <div key={item.title.en} className="jelly-glass rounded-3xl p-5">
-                <h3 className="font-semibold">{l.trans(item.title)}</h3>
-                <p className="mt-2 text-foreground/70 text-sm leading-6">{l.trans(item.body)}</p>
-              </div>
-            ))}
-          </div>
-
-          <h3 className="mt-12 font-bold text-xl">
-            {l.trans({ en: "Side by side with other frameworks", ko: "다른 프레임워크와 나란히" })}
-          </h3>
-          <p className="mt-3 text-foreground/75 leading-7">
-            {l.trans({
-              en: "Akan.js does far more than a plain router — database, auth, server rendering and agents come built in — and it still keeps pace with the lightweight Bun frameworks.",
-              ko: "Akan.js는 단순한 라우터보다 훨씬 많은 일을 합니다. 데이터베이스, 인증, 서버 렌더링, 에이전트가 모두 내장되어 있는데도 가벼운 Bun 프레임워크들과 속도를 나란히 합니다.",
-            })}
-          </p>
-          <p className="mt-6 mb-3 font-semibold text-foreground/60 text-xs uppercase tracking-widest">
-            {l.trans({ en: "Requests per second", ko: "초당 요청 수" })}
-          </p>
-          <div className="space-y-2">
-            {frameworkComparison.map((item) => (
-              <div key={item.name}>
-                <div className="mb-1 flex flex-wrap justify-between gap-2 text-sm">
-                  <span className={item.isAkan ? "font-medium text-primary" : "font-medium"}>
-                    {item.name} ({item.runtime})
-                  </span>
-                  <span className={item.isAkan ? "font-mono text-primary/80" : "font-mono text-foreground/55"}>
-                    {item.rps.toLocaleString("en-US")} RPS
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-foreground/10">
-                  <div
-                    className={item.isAkan ? "h-full rounded-full bg-primary" : "h-full rounded-full bg-foreground/50"}
-                    style={{ width: `${Math.max(4, (item.rps / maxRps) * 100)}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="jelly-glass mt-8 overflow-x-auto rounded-3xl px-5 py-2">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-border border-b">
-                  <th className="py-2 pr-4 font-semibold text-foreground/45">
-                    {l.trans({ en: "Framework", ko: "프레임워크" })}
-                  </th>
-                  <th className="px-4 py-2 text-right font-semibold text-foreground/45">
-                    {l.trans({ en: "Startup", ko: "시작 시간" })}
-                  </th>
-                  <th className="py-2 pl-4 text-right font-semibold text-foreground/45">
-                    {l.trans({ en: "Memory at rest", ko: "대기 메모리" })}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {frameworkComparison.map((item) => (
-                  <tr
-                    key={item.name}
-                    className={item.isAkan ? "border-muted border-b bg-primary/5" : "border-muted border-b"}
-                  >
-                    <td className={item.isAkan ? "py-2 pr-4 font-semibold text-primary" : "py-2 pr-4"}>
-                      {item.name}
-                      <span className="ml-1 text-foreground/35 text-xs">({item.runtime})</span>
-                    </td>
-                    <td
-                      className={`px-4 py-2 text-right font-mono ${item.isAkan ? "text-primary" : "text-foreground/70"}`}
-                    >
-                      {item.coldP50.toFixed(1)} ms
-                    </td>
-                    <td
-                      className={`py-2 pl-4 text-right font-mono ${item.isAkan ? "text-primary" : "text-foreground/70"}`}
-                    >
-                      {item.idleRss.toFixed(1)} MB
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-4 text-foreground/45 text-xs leading-5">
-            {l.trans({
-              en: "Measured on an Apple M4 Pro MacBook Pro with production builds, 50 concurrent users. Fastify runs on Node, so its number partly reflects the runtime. Raw data and the benchmark harness live in benchmarks/api-benchmark.",
-              ko: "Apple M4 Pro MacBook Pro에서 production 빌드, 동시 사용자 50명으로 측정했습니다. Fastify는 Node에서 실행되어 런타임 차이가 일부 반영됩니다. 원시 데이터와 벤치마크 하네스는 benchmarks/api-benchmark에 있습니다.",
-            })}
-          </p>
-
-          <div className="jelly-glass mt-12 rounded-4xl p-6 md:p-8">
-            <h3 className="font-bold text-xl">
-              {l.trans({ en: "Smaller builds and payloads", ko: "더 작아진 빌드와 전송량" })}
-            </h3>
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              {numbers.map((item) => (
-                <div key={item.value} className="rounded-2xl bg-background/70 p-5">
-                  <p className="font-black font-mono text-2xl text-primary">{item.value}</p>
-                  <p className="mt-2 text-foreground/65 text-sm leading-6">{l.trans(item.label)}</p>
+                </thead>
+                <tbody>
+                  {versionMetrics.map((row) => (
+                    <tr key={row.metric.en} className="border-muted border-b last:border-none">
+                      <td className="py-3 pr-4 text-foreground/80">{l.trans(row.metric)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-foreground/55">{row.v2}</td>
+                      <td className="px-4 py-3 text-right font-mono text-primary">{row.v3}</td>
+                      <td className="py-3 pl-4 text-right font-mono text-primary">{row.change}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-6 grid gap-3 md:grid-cols-3">
+              {improvements.map((item) => (
+                <div key={item.title.en} className="jelly-glass rounded-3xl p-5">
+                  <h3 className="font-semibold">{l.trans(item.title)}</h3>
+                  <p className="mt-2 text-foreground/70 text-sm leading-6">{l.trans(item.body)}</p>
                 </div>
               ))}
             </div>
-          </div>
-          <p className="jelly-callout tint-primary mt-8 rounded-3xl p-6 text-foreground/75 leading-7 md:p-8">
-            {l.trans({
-              en: "v3 adds more than any release before it and is still faster than v2 on every number we measured. Upgrade and your app gets quicker, lighter and faster to start — the speed comes with the framework, not with your code.",
-              ko: "v3는 어떤 릴리즈보다 많은 기능을 더했지만, 측정한 모든 지표에서 v2보다 빠릅니다. 업그레이드하면 앱이 더 빠르고, 가볍고, 빨리 시작합니다. 그 속도는 여러분의 코드가 아니라 프레임워크에서 옵니다.",
-            })}
-          </p>
-        </section>
 
-        <section className="mt-16">
-          <h2 className="font-black text-2xl md:text-3xl">{l.trans({ en: "Also new in v3", ko: "v3의 다른 변화" })}</h2>
-          <div className="mt-6 grid gap-3 md:grid-cols-2">
-            {moreChanges.map((item) => (
-              <Link
-                key={item.no}
-                href={item.href}
-                className={panelRecipe(
-                  { tone: "jelly", radius: "3xl", padding: "none" },
-                  "group squish hover:tint-primary p-5 transition-shadow",
-                )}
-              >
-                <p className="font-mono text-foreground/40 text-xs">{item.no}</p>
-                <h3 className="mt-1 font-bold text-lg group-hover:text-primary">{l.trans(item.title)}</h3>
-                <p className="mt-2 text-foreground/65 text-sm leading-6">{l.trans(item.desc)}</p>
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-16">
-          <h2 className="font-black text-2xl md:text-3xl">
-            {l.trans({ en: "Upgrading from v2", ko: "v2에서 올라올 때" })}
-          </h2>
-          <p className="mt-3 text-foreground/65 leading-7">
-            {l.trans({
-              en: "These are the changes that need a hand. akan lint and akan typecheck point at most of them.",
-              ko: "손이 가야 하는 변경입니다. 대부분은 akan lint와 akan typecheck가 위치를 짚어 줍니다.",
-            })}
-          </p>
-          <ol className="mt-6 grid gap-3">
-            {breakingChanges.map((item, idx) => (
-              <li key={item.text.en} className="jelly-glass flex gap-4 rounded-3xl p-4">
-                <span className="font-black font-mono text-foreground/30">{String(idx + 1).padStart(2, "0")}</span>
-                <div className="text-sm leading-6">
-                  <p className="text-foreground/80">{l.trans(item.text)}</p>
-                  <Link href={item.href} className="mt-1 inline-block font-semibold text-primary hover:underline">
-                    {item.href}
-                  </Link>
+            <h3 className="mt-12 font-bold text-xl">
+              {l.trans({ en: "Side by side with other frameworks", ko: "다른 프레임워크와 나란히" })}
+            </h3>
+            <p className="mt-3 text-foreground/75 leading-7">
+              {l.trans({
+                en: "Akan.js does far more than a plain router — database, auth, server rendering and agents come built in — and it still keeps pace with the lightweight Bun frameworks.",
+                ko: "Akan.js는 단순한 라우터보다 훨씬 많은 일을 합니다. 데이터베이스, 인증, 서버 렌더링, 에이전트가 모두 내장되어 있는데도 가벼운 Bun 프레임워크들과 속도를 나란히 합니다.",
+              })}
+            </p>
+            <p className="mt-6 mb-3 font-semibold text-foreground/60 text-xs uppercase tracking-widest">
+              {l.trans({ en: "Requests per second", ko: "초당 요청 수" })}
+            </p>
+            <div className="space-y-2">
+              {frameworkComparison.map((item) => (
+                <div key={item.name}>
+                  <div className="mb-1 flex flex-wrap justify-between gap-2 text-sm">
+                    <span className={item.isAkan ? "font-medium text-primary" : "font-medium"}>
+                      {item.name} ({item.runtime})
+                    </span>
+                    <span className={item.isAkan ? "font-mono text-primary/80" : "font-mono text-foreground/55"}>
+                      {item.rps.toLocaleString("en-US")} RPS
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-foreground/10">
+                    <div
+                      className={
+                        item.isAkan ? "h-full rounded-full bg-primary" : "h-full rounded-full bg-foreground/50"
+                      }
+                      style={{ width: `${Math.max(4, (item.rps / maxRps) * 100)}%` }}
+                    />
+                  </div>
                 </div>
-              </li>
-            ))}
-          </ol>
-        </section>
+              ))}
+            </div>
+            <div className="jelly-glass mt-8 overflow-x-auto rounded-3xl px-5 py-2">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-border border-b">
+                    <th className="py-2 pr-4 font-semibold text-foreground/45">
+                      {l.trans({ en: "Framework", ko: "프레임워크" })}
+                    </th>
+                    <th className="px-4 py-2 text-right font-semibold text-foreground/45">
+                      {l.trans({ en: "Startup", ko: "시작 시간" })}
+                    </th>
+                    <th className="py-2 pl-4 text-right font-semibold text-foreground/45">
+                      {l.trans({ en: "Memory at rest", ko: "대기 메모리" })}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {frameworkComparison.map((item) => (
+                    <tr
+                      key={item.name}
+                      className={item.isAkan ? "border-muted border-b bg-primary/5" : "border-muted border-b"}
+                    >
+                      <td className={item.isAkan ? "py-2 pr-4 font-semibold text-primary" : "py-2 pr-4"}>
+                        {item.name}
+                        <span className="ml-1 text-foreground/35 text-xs">({item.runtime})</span>
+                      </td>
+                      <td
+                        className={`px-4 py-2 text-right font-mono ${item.isAkan ? "text-primary" : "text-foreground/70"}`}
+                      >
+                        {item.coldP50.toFixed(1)} ms
+                      </td>
+                      <td
+                        className={`py-2 pl-4 text-right font-mono ${item.isAkan ? "text-primary" : "text-foreground/70"}`}
+                      >
+                        {item.idleRss.toFixed(1)} MB
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-4 text-foreground/45 text-xs leading-5">
+              {l.trans({
+                en: "Measured on an Apple M4 Pro MacBook Pro with production builds, 50 concurrent users. Fastify runs on Node, so its number partly reflects the runtime. Raw data and the benchmark harness live in benchmarks/api-benchmark.",
+                ko: "Apple M4 Pro MacBook Pro에서 production 빌드, 동시 사용자 50명으로 측정했습니다. Fastify는 Node에서 실행되어 런타임 차이가 일부 반영됩니다. 원시 데이터와 벤치마크 하네스는 benchmarks/api-benchmark에 있습니다.",
+              })}
+            </p>
 
-        <section className="jelly-callout tint-primary mt-16 rounded-3xl p-6 md:p-8">
-          <h2 className="font-black text-2xl md:text-3xl">{l.trans({ en: "What comes next", ko: "다음은" })}</h2>
-          <p className="mt-4 text-foreground/75 leading-7">
-            {l.trans({
-              en: "v3 is the stage where agents joined the full stack. What comes next is the agent network across sessions, people and apps, Akan Cloud for deployment, context-side rendering as the agentic rendering step after SSR and CSR, and a repository engine that changes and extends the app itself.",
-              ko: "v3는 에이전트가 풀스택에 합류한 단계입니다. 다음은 세션과 사람, 앱을 넘나드는 에이전트 네트워크, 배포를 맡는 Akan Cloud, SSR·CSR 다음의 에이전틱 렌더링인 컨텍스트사이드 렌더링, 그리고 앱을 직접 변경·확장하는 레포지토리 엔진입니다.",
-            })}
-          </p>
-          <Link
-            href="/roadmap"
-            className="mt-4 inline-flex items-center gap-2 font-semibold text-primary hover:underline"
+            <div className="jelly-glass mt-12 rounded-4xl p-6 md:p-8">
+              <h3 className="font-bold text-xl">
+                {l.trans({ en: "Smaller builds and payloads", ko: "더 작아진 빌드와 전송량" })}
+              </h3>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                {numbers.map((item) => (
+                  <div key={item.value} className="rounded-2xl bg-background/70 p-5">
+                    <p className="font-black font-mono text-2xl text-primary">{item.value}</p>
+                    <p className="mt-2 text-foreground/65 text-sm leading-6">{l.trans(item.label)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <p className="jelly-callout tint-primary mt-8 rounded-3xl p-6 text-foreground/75 leading-7 md:p-8">
+              {l.trans({
+                en: "v3 adds more than any release before it and is still faster than v2 on every number we measured. Upgrade and your app gets quicker, lighter and faster to start — the speed comes with the framework, not with your code.",
+                ko: "v3는 어떤 릴리즈보다 많은 기능을 더했지만, 측정한 모든 지표에서 v2보다 빠릅니다. 업그레이드하면 앱이 더 빠르고, 가볍고, 빨리 시작합니다. 그 속도는 여러분의 코드가 아니라 프레임워크에서 옵니다.",
+              })}
+            </p>
+          </Scroll.Slide>
+
+          <Scroll.Slide id="v3-more" title={l.trans({ en: "Also new in v3", ko: "v3의 다른 변화" })} className="mt-16">
+            <h2 className="font-black text-2xl md:text-3xl">
+              {l.trans({ en: "Also new in v3", ko: "v3의 다른 변화" })}
+            </h2>
+            <div className="mt-6 grid gap-3 md:grid-cols-2">
+              {moreChanges.map((item) => (
+                <Link
+                  key={item.no}
+                  href={item.href}
+                  className={panelRecipe(
+                    { tone: "jelly", radius: "3xl", padding: "none" },
+                    "group squish hover:tint-primary p-5 transition-shadow",
+                  )}
+                >
+                  <p className="font-mono text-foreground/40 text-xs">{item.no}</p>
+                  <h3 className="mt-1 font-bold text-lg group-hover:text-primary">{l.trans(item.title)}</h3>
+                  <p className="mt-2 text-foreground/65 text-sm leading-6">{l.trans(item.desc)}</p>
+                </Link>
+              ))}
+            </div>
+          </Scroll.Slide>
+
+          <Scroll.Slide
+            id="v3-upgrade"
+            title={l.trans({ en: "Upgrading from v2", ko: "v2에서 올라올 때" })}
+            className="mt-16"
           >
-            {l.trans({ en: "See the roadmap", ko: "로드맵 보기" })} <BsArrowRight />
-          </Link>
-        </section>
+            <h2 className="font-black text-2xl md:text-3xl">
+              {l.trans({ en: "Upgrading from v2", ko: "v2에서 올라올 때" })}
+            </h2>
+            <p className="mt-3 text-foreground/65 leading-7">
+              {l.trans({
+                en: "These are the changes that need a hand. akan lint and akan typecheck point at most of them.",
+                ko: "손이 가야 하는 변경입니다. 대부분은 akan lint와 akan typecheck가 위치를 짚어 줍니다.",
+              })}
+            </p>
+            <ol className="mt-6 grid gap-3">
+              {breakingChanges.map((item, idx) => (
+                <li key={item.text.en} className="jelly-glass flex gap-4 rounded-3xl p-4">
+                  <span className="font-black font-mono text-foreground/30">{String(idx + 1).padStart(2, "0")}</span>
+                  <div className="text-sm leading-6">
+                    <p className="text-foreground/80">{l.trans(item.text)}</p>
+                    <Link href={item.href} className="mt-1 inline-block font-semibold text-primary hover:underline">
+                      {item.href}
+                    </Link>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </Scroll.Slide>
+
+          <Scroll.Slide
+            id="v3-next"
+            title={l.trans({ en: "What comes next", ko: "다음은" })}
+            className="jelly-callout tint-primary mt-16 rounded-3xl p-6 md:p-8"
+          >
+            <h2 className="font-black text-2xl md:text-3xl">{l.trans({ en: "What comes next", ko: "다음은" })}</h2>
+            <p className="mt-4 text-foreground/75 leading-7">
+              {l.trans({
+                en: "v3 is the stage where agents joined the full stack. What comes next is the agent network across sessions, people and apps, Akan Cloud for deployment, context-side rendering as the agentic rendering step after SSR and CSR, and a repository engine that changes and extends the app itself.",
+                ko: "v3는 에이전트가 풀스택에 합류한 단계입니다. 다음은 세션과 사람, 앱을 넘나드는 에이전트 네트워크, 배포를 맡는 Akan Cloud, SSR·CSR 다음의 에이전틱 렌더링인 컨텍스트사이드 렌더링, 그리고 앱을 직접 변경·확장하는 레포지토리 엔진입니다.",
+              })}
+            </p>
+            <Link
+              href="/roadmap"
+              className="mt-4 inline-flex items-center gap-2 font-semibold text-primary hover:underline"
+            >
+              {l.trans({ en: "See the roadmap", ko: "로드맵 보기" })} <BsArrowRight />
+            </Link>
+          </Scroll.Slide>
+          <DocsToc />
+        </Scroll>
       </article>
     </main>
   );

@@ -1,5 +1,6 @@
 import { usePage } from "@apps/akan/client";
-import { JellyKicker, panelRecipe } from "@apps/akan/ui";
+import { DocsToc, JellyKicker, panelRecipe } from "@apps/akan/ui";
+import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
 const principles = [
@@ -80,99 +81,117 @@ export default page().render(() => {
             })}
           </p>
         </header>
-
-        <section className="jelly-glass mt-12 rounded-4xl p-6 md:p-8">
-          <p className="font-bold text-primary text-sm uppercase tracking-[0.2em]">
-            {l.trans({ en: "The problem", ko: "문제의식" })}
-          </p>
-          <h2 className="mt-3 font-black text-2xl md:text-3xl">
-            {l.trans({ en: "Too much work is not product work", ko: "너무 많은 일이 제품을 위한 일이 아니다" })}
-          </h2>
-          <div className="mt-4 space-y-4 text-foreground/75 leading-7">
-            <p>
-              {l.trans({
-                en: "A business usually needs a frontend, backend, database model, mobile surface, admin screen, deployment pipeline, test setup, and monitoring path. The intent is often the same, but each layer asks developers to repeat it in a different language.",
-                ko: "하나의 비즈니스에는 보통 frontend, backend, database model, mobile surface, admin screen, deployment pipeline, test setup, monitoring path가 필요합니다. 의도는 같은데 각 계층은 개발자에게 그것을 다른 언어로 반복해서 설명하라고 요구합니다.",
-              })}
+        <Scroll>
+          <Scroll.Slide
+            id="problem"
+            title={l.trans({ en: "Too much work is not product work", ko: "너무 많은 일이 제품을 위한 일이 아니다" })}
+            className="jelly-glass mt-12 rounded-4xl p-6 md:p-8"
+          >
+            <p className="font-bold text-primary text-sm uppercase tracking-[0.2em]">
+              {l.trans({ en: "The problem", ko: "문제의식" })}
             </p>
-            <p>
-              {l.trans({
-                en: "As teams grow, style differences become another hidden tax. People spend time asking where code should live, how a feature should be named, how data should move, and why another module looks different from the one they just touched.",
-                ko: "팀이 커질수록 코딩 스타일의 차이는 또 다른 숨은 비용이 됩니다. 사람들은 코드가 어디에 있어야 하는지, 기능 이름을 어떻게 붙여야 하는지, 데이터가 어떻게 이동해야 하는지, 왜 방금 본 모듈과 다른 모듈의 모양이 다른지 묻는 데 시간을 씁니다.",
-              })}
-            </p>
-            <p>
-              {l.trans({
-                en: "That time has a human cost. Developers should not waste evenings and vacations on avoidable wiring and configuration. We should do the necessary work well, then go live our lives.",
-                ko: "그 시간에는 인간적인 비용이 있습니다. 개발자는 피할 수 있는 와이어링과 설정 때문에 밤과 휴가를 낭비해서는 안 됩니다. 필요한 일을 제대로 하고, 그 다음에는 우리의 삶을 살아야 합니다.",
-              })}
-            </p>
-          </div>
-        </section>
-
-        <section className="mt-12">
-          <h2 className="font-black text-2xl md:text-3xl">
-            {l.trans({ en: "Convention is a communication tool", ko: "컨벤션은 의사소통 도구다" })}
-          </h2>
-          <div className="mt-4 space-y-4 text-foreground/75 leading-7">
-            <p>
-              {l.trans({
-                en: "Ruby on Rails gave the industry a powerful phrase: convention over configuration. Akan.js takes that idea seriously for both human programmers and AI coding agents.",
-                ko: "Ruby on Rails는 업계에 convention over configuration이라는 강력한 문장을 남겼습니다. Akan.js는 이 개념이 인간 프로그래머와 AI 코딩 에이전트 모두에게 필요하다고 봅니다.",
-              })}
-            </p>
-            <p>
-              {l.trans({
-                en: "When a workspace is shaped by shared rules, communication gets cheaper. A service, signal, document, store, and page each have a known role. You can open an unfamiliar feature and still know where to start.",
-                ko: "workspace가 공유된 규칙으로 정렬되어 있으면 의사소통 비용이 줄어듭니다. service, signal, document, store, page는 각자의 역할을 갖습니다. 낯선 기능을 열어도 어디서 시작해야 하는지 알 수 있습니다.",
-              })}
-            </p>
-            <p>
-              {l.trans({
-                en: "For AI agents, convention is even more direct leverage. Predictable files and contracts reduce search space, lower error rates, and save tokens because the agent can infer the next shape from the existing one.",
-                ko: "AI 에이전트에게 컨벤션은 더 직접적인 레버리지입니다. 예측 가능한 파일과 계약은 탐색 공간을 줄이고, 오류율을 낮추며, 기존 형태에서 다음 형태를 추론할 수 있게 해 토큰 사용량을 크게 줄입니다.",
-              })}
-            </p>
-          </div>
-        </section>
-
-        <section className="mt-12 grid gap-4 md:grid-cols-3">
-          {principles.map((principle) => (
-            <div key={principle.title.en} className={panelRecipe({ tone: "jelly", radius: "3xl", padding: "lg" })}>
-              <h3 className="font-bold text-lg">{l.trans(principle.title)}</h3>
-              <p className="mt-3 text-foreground/70 text-sm leading-6">{l.trans(principle.desc)}</p>
+            <h2 className="mt-3 font-black text-2xl md:text-3xl">
+              {l.trans({ en: "Too much work is not product work", ko: "너무 많은 일이 제품을 위한 일이 아니다" })}
+            </h2>
+            <div className="mt-4 space-y-4 text-foreground/75 leading-7">
+              <p>
+                {l.trans({
+                  en: "A business usually needs a frontend, backend, database model, mobile surface, admin screen, deployment pipeline, test setup, and monitoring path. The intent is often the same, but each layer asks developers to repeat it in a different language.",
+                  ko: "하나의 비즈니스에는 보통 frontend, backend, database model, mobile surface, admin screen, deployment pipeline, test setup, monitoring path가 필요합니다. 의도는 같은데 각 계층은 개발자에게 그것을 다른 언어로 반복해서 설명하라고 요구합니다.",
+                })}
+              </p>
+              <p>
+                {l.trans({
+                  en: "As teams grow, style differences become another hidden tax. People spend time asking where code should live, how a feature should be named, how data should move, and why another module looks different from the one they just touched.",
+                  ko: "팀이 커질수록 코딩 스타일의 차이는 또 다른 숨은 비용이 됩니다. 사람들은 코드가 어디에 있어야 하는지, 기능 이름을 어떻게 붙여야 하는지, 데이터가 어떻게 이동해야 하는지, 왜 방금 본 모듈과 다른 모듈의 모양이 다른지 묻는 데 시간을 씁니다.",
+                })}
+              </p>
+              <p>
+                {l.trans({
+                  en: "That time has a human cost. Developers should not waste evenings and vacations on avoidable wiring and configuration. We should do the necessary work well, then go live our lives.",
+                  ko: "그 시간에는 인간적인 비용이 있습니다. 개발자는 피할 수 있는 와이어링과 설정 때문에 밤과 휴가를 낭비해서는 안 됩니다. 필요한 일을 제대로 하고, 그 다음에는 우리의 삶을 살아야 합니다.",
+                })}
+              </p>
             </div>
-          ))}
-        </section>
+          </Scroll.Slide>
 
-        <section className="mt-12">
-          <h2 className="font-black text-2xl md:text-3xl">
-            {l.trans({ en: "From meta-framework to runtime", ko: "메타프레임워크에서 런타임으로" })}
-          </h2>
-          <div className="mt-6 space-y-4">
-            {timeline.map((item) => (
-              <div key={item.year} className="jelly-glass rounded-3xl p-5">
-                <div className="flex flex-wrap items-baseline gap-3">
-                  <span className="font-black text-2xl text-primary">{item.year}</span>
-                  <h3 className="font-bold text-lg">{l.trans(item.title)}</h3>
-                </div>
-                <p className="mt-3 text-foreground/70 leading-7">{l.trans(item.desc)}</p>
+          <Scroll.Slide
+            id="convention"
+            title={l.trans({ en: "Convention is a communication tool", ko: "컨벤션은 의사소통 도구다" })}
+            className="mt-12"
+          >
+            <h2 className="font-black text-2xl md:text-3xl">
+              {l.trans({ en: "Convention is a communication tool", ko: "컨벤션은 의사소통 도구다" })}
+            </h2>
+            <div className="mt-4 space-y-4 text-foreground/75 leading-7">
+              <p>
+                {l.trans({
+                  en: "Ruby on Rails gave the industry a powerful phrase: convention over configuration. Akan.js takes that idea seriously for both human programmers and AI coding agents.",
+                  ko: "Ruby on Rails는 업계에 convention over configuration이라는 강력한 문장을 남겼습니다. Akan.js는 이 개념이 인간 프로그래머와 AI 코딩 에이전트 모두에게 필요하다고 봅니다.",
+                })}
+              </p>
+              <p>
+                {l.trans({
+                  en: "When a workspace is shaped by shared rules, communication gets cheaper. A service, signal, document, store, and page each have a known role. You can open an unfamiliar feature and still know where to start.",
+                  ko: "workspace가 공유된 규칙으로 정렬되어 있으면 의사소통 비용이 줄어듭니다. service, signal, document, store, page는 각자의 역할을 갖습니다. 낯선 기능을 열어도 어디서 시작해야 하는지 알 수 있습니다.",
+                })}
+              </p>
+              <p>
+                {l.trans({
+                  en: "For AI agents, convention is even more direct leverage. Predictable files and contracts reduce search space, lower error rates, and save tokens because the agent can infer the next shape from the existing one.",
+                  ko: "AI 에이전트에게 컨벤션은 더 직접적인 레버리지입니다. 예측 가능한 파일과 계약은 탐색 공간을 줄이고, 오류율을 낮추며, 기존 형태에서 다음 형태를 추론할 수 있게 해 토큰 사용량을 크게 줄입니다.",
+                })}
+              </p>
+            </div>
+          </Scroll.Slide>
+
+          <section className="mt-12 grid gap-4 md:grid-cols-3">
+            {principles.map((principle) => (
+              <div key={principle.title.en} className={panelRecipe({ tone: "jelly", radius: "3xl", padding: "lg" })}>
+                <h3 className="font-bold text-lg">{l.trans(principle.title)}</h3>
+                <p className="mt-3 text-foreground/70 text-sm leading-6">{l.trans(principle.desc)}</p>
               </div>
             ))}
-          </div>
-        </section>
+          </section>
 
-        <section className="jelly-callout tint-primary mt-12 rounded-3xl p-6 md:p-8">
-          <h2 className="font-black text-2xl md:text-3xl">
-            {l.trans({ en: "What Akan.js is trying to protect", ko: "Akan.js가 지키려는 것" })}
-          </h2>
-          <p className="mt-4 text-foreground/75 leading-7">
-            {l.trans({
-              en: "Akan.js is not only a faster stack or a different folder rule. It is an attempt to protect developer attention. Source code should be reusable, business intent should stay unified, and product teams should not burn their lives on accidental complexity.",
-              ko: "Akan.js는 단지 더 빠른 스택이나 다른 폴더 규칙이 아닙니다. 개발자의 주의력을 지키려는 시도입니다. 소스코드는 재사용 가능해야 하고, 비즈니스 의도는 통합되어 있어야 하며, 제품 팀은 우연한 복잡성 때문에 삶을 태워서는 안 됩니다.",
-            })}
-          </p>
-        </section>
+          <Scroll.Slide
+            id="runtime"
+            title={l.trans({ en: "From meta-framework to runtime", ko: "메타프레임워크에서 런타임으로" })}
+            className="mt-12"
+          >
+            <h2 className="font-black text-2xl md:text-3xl">
+              {l.trans({ en: "From meta-framework to runtime", ko: "메타프레임워크에서 런타임으로" })}
+            </h2>
+            <div className="mt-6 space-y-4">
+              {timeline.map((item) => (
+                <div key={item.year} className="jelly-glass rounded-3xl p-5">
+                  <div className="flex flex-wrap items-baseline gap-3">
+                    <span className="font-black text-2xl text-primary">{item.year}</span>
+                    <h3 className="font-bold text-lg">{l.trans(item.title)}</h3>
+                  </div>
+                  <p className="mt-3 text-foreground/70 leading-7">{l.trans(item.desc)}</p>
+                </div>
+              ))}
+            </div>
+          </Scroll.Slide>
+
+          <Scroll.Slide
+            id="protect"
+            title={l.trans({ en: "What Akan.js is trying to protect", ko: "Akan.js가 지키려는 것" })}
+            className="jelly-callout tint-primary mt-12 rounded-3xl p-6 md:p-8"
+          >
+            <h2 className="font-black text-2xl md:text-3xl">
+              {l.trans({ en: "What Akan.js is trying to protect", ko: "Akan.js가 지키려는 것" })}
+            </h2>
+            <p className="mt-4 text-foreground/75 leading-7">
+              {l.trans({
+                en: "Akan.js is not only a faster stack or a different folder rule. It is an attempt to protect developer attention. Source code should be reusable, business intent should stay unified, and product teams should not burn their lives on accidental complexity.",
+                ko: "Akan.js는 단지 더 빠른 스택이나 다른 폴더 규칙이 아닙니다. 개발자의 주의력을 지키려는 시도입니다. 소스코드는 재사용 가능해야 하고, 비즈니스 의도는 통합되어 있어야 하며, 제품 팀은 우연한 복잡성 때문에 삶을 태워서는 안 됩니다.",
+              })}
+            </p>
+          </Scroll.Slide>
+          <DocsToc />
+        </Scroll>
       </article>
     </main>
   );
