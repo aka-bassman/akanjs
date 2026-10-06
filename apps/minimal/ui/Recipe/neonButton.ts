@@ -33,6 +33,7 @@ export const neonButtonRecipe = recipe(
         sm: "h-8 px-3 text-sm",
         md: "h-10 px-4",
         lg: "h-12 px-6 text-lg",
+        xl: "h-14 px-8 text-xl",
         icon: "h-10 w-10",
       },
       shape: {

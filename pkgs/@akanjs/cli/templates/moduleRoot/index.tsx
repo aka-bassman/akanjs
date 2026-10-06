@@ -23,9 +23,9 @@ export default function getContent(scanInfo: AppInfo | LibInfo, dict: Dict) {
   if (fileTypes.length === 0) return null;
   return {
     filename: "index.ts",
-    content: `
-${fileTypes.map((type) => `import * as ${type} from "./${dict.Model}.${type}";`).join("\n")}
+    content: `${fileTypes.map((type) => `import * as ${type} from "./${dict.Model}.${type}";`).join("\n")}
 
-export const ${dict.Model} = { ${fileTypes.join(", ")} };`,
+export const ${dict.Model} = { ${fileTypes.join(", ")} };
+`,
   };
 }

@@ -40,10 +40,15 @@ export const baseDictionary = serviceDictionary(["en", "ko"])
       "The server took too long to answer. Please try again in a moment.",
       "서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.",
     ],
+    tooManyRequests: [
+      "Too many requests. Please try again in {seconds} seconds.",
+      "요청이 너무 많습니다. {seconds}초 후 다시 시도해주세요.",
+    ],
     unexpectedResponse: [
       "The server returned an unexpected response ({status}).",
       "서버가 예상하지 못한 응답을 보냈습니다. ({status})",
     ],
+    immutableField: ["{field} cannot be changed after creation.", "{field}은(는) 생성 후에는 바꿀 수 없습니다."],
   })
   .translate({
     somethingWrong: ["Something's wrong!", "문제가 생겼어요!"],
@@ -69,6 +74,8 @@ export const baseDictionary = serviceDictionary(["en", "ko"])
     phoneInvalidError: ["Phone is not valid", "유효하지 않은 전화번호입니다."],
     ok: ["OK", "확인"],
     cancel: ["Cancel", "취소"],
+    retry: ["Try again", "다시 시도"],
+    pageLoadFailed: ["This page could not be loaded.", "이 화면을 불러오지 못했습니다."],
     unauthorized: ["Unauthorized", "권한 없음"],
     agent: ["Agent", "에이전트"],
     agentIntro: ["Ask about this page or tell the agent what to do.", "이 화면에 대해 묻거나 할 일을 지시해 보세요."],

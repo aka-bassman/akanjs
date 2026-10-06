@@ -241,10 +241,13 @@ describe("DesktopServerStage", () => {
   });
 
   test("a phone build cannot carry the server", async () => {
-    const app = new NativeApp({ cwdPath: "/repo/apps/portal" } as never, {
-      name: "default",
-      config: { name: "default", appName: "Portal", appId: "com.portal.app", version: "1.0.0", buildNum: 1 },
-    });
+    const app = new NativeApp(
+      { name: "portal", cwdPath: "/repo/apps/portal", workspace: { workspaceRoot: "/repo" } } as never,
+      {
+        name: "default",
+        config: { name: "default", appName: "Portal", appId: "com.portal.app", version: "1.0.0", buildNum: 1 },
+      },
+    );
     const server = { dir: "/tmp/server", entry: "main.js", env: {} };
     await expect(app.build("ios", { server })).rejects.toThrow("Only a desktop app carries its server");
     await expect(app.run("android", { server })).rejects.toThrow("Only a desktop app carries its server");

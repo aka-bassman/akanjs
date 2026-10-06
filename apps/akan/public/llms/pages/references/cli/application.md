@@ -278,7 +278,7 @@ Run the iOS app on a simulator or a paired iPhone. By default it is a debug buil
 
 - one target: Runs one native target at a time; with several, pass `--target <name>`.
 
-- output: A dev build goes under `apps/<app>/.akan/native/<target>/dev/ios`; a `--release` run under `…/build/ios`.
+- output: A dev build goes under `dist/native/<app>/<target>/dev/ios`; a `--release` run under `…/build/ios`.
 
 `akan start-android <app> [--target <target>] [--env <env>] [--release <boolean>] [--device <device>] [--write <boolean>]`
 
@@ -300,7 +300,7 @@ Run the Android app on an emulator or a connected device. It works like `start-i
 
 - one target: Runs one native target at a time; with several, pass `--target <name>`.
 
-- output: A dev build goes under `apps/<app>/.akan/native/<target>/dev/android`; a `--release` run under `…/build/android`.
+- output: A dev build goes under `dist/native/<app>/<target>/dev/android`; a `--release` run under `…/build/android`.
 
 `akan start-desktop <app> [--target <target>] [--env <env>] [--release <boolean>] [--write <boolean>]`
 
@@ -328,7 +328,7 @@ Run a native target as a desktop app on this computer: macOS, Windows or Linux, 
 
 - one target: Runs one native target at a time; with several, pass `--target <name>`.
 
-- output: A dev build goes under `apps/<app>/.akan/native/<target>/dev/<macos|windows|linux>`; a `--release` run under `…/build/<macos|windows|linux>`.
+- output: A dev build goes under `dist/native/<app>/<target>/dev/<macos|windows|linux>`; a `--release` run under `…/build/<macos|windows|linux>`.
 
 `akan build-ios <app> [--target <target>] [--env <env>] [--debug <boolean>] [--write <boolean>]`
 
@@ -344,7 +344,7 @@ Build the iOS app on the native runtime. It first makes a production web build a
 
 - alias: `akan bi` runs this command.
 
-- output: Written under `apps/<app>/.akan/native/<target>/build/ios`; the command prints each file's path.
+- output: Written under `dist/native/<app>/<target>/build/ios`; the command prints each file's path.
 
 `akan build-android <app> [--target <target>] [--env <env>] [--debug <boolean>] [--write <boolean>]`
 
@@ -362,7 +362,7 @@ Build an APK of the Android app on the native runtime. Like `build-ios`, it make
 
 - signing: Signed with `~/.akan/native/debug.keystore`, which is fine for testing; a Play Store file comes from `release-android`.
 
-- output: Written under `apps/<app>/.akan/native/<target>/build/android`; the command prints each file's path.
+- output: Written under `dist/native/<app>/<target>/build/android`; the command prints each file's path.
 
 `akan build-desktop <app> [--target <target>] [--env <env>] [--debug <boolean>] [--installer <boolean>] [--arch <arm64|x64>] [--write <boolean>]`
 
@@ -392,7 +392,7 @@ Build the desktop app on this computer's OS: a `.app` on macOS and an app folder
 
 - reinstall: `/D=<folder>` picks the install folder. Run again without it, the setup installs where the app already is; one started while another runs refuses to start.
 
-- output: Written under `apps/<app>/.akan/native/<target>/build/<macos|windows|linux>`; the command prints each file's path.
+- output: Written under `dist/native/<app>/<target>/build/<macos|windows|linux>`; the command prints each file's path.
 
 `akan release-ios <app> [--target <target>] [--env <env>] [--team <team>] [--ad-hoc <boolean>] [--write <boolean>] [--allow-local-release <boolean>]`
 
@@ -412,7 +412,7 @@ Build and sign the iOS app for an App Store release: an iPhone app and its `.ipa
 
 - signing: The certificate and profile are found among the ones Xcode keeps on this Mac: the profile must cover the app id and every capability the app asks for. The command prints the one it used.
 
-- output: Written under `apps/<app>/.akan/native/<target>/build/ios`; the command prints each file's path.
+- output: Written under `dist/native/<app>/<target>/build/ios`; the command prints each file's path.
 
 `akan release-android <app> [--assemble-type <type>] [--target <target>] [--env <env>] [--write <boolean>] [--allow-local-release <boolean>]`
 
@@ -430,7 +430,7 @@ Build and sign the Android app for a Play Store release, as an AAB or an APK. Li
 
 - signing: Signed with the upload key the environment names: `MYAPP_RELEASE_STORE_FILE`, `MYAPP_RELEASE_STORE_PASSWORD` and `MYAPP_RELEASE_KEY_ALIAS`, plus `MYAPP_RELEASE_KEY_PASSWORD` when the key has its own. A missing one stops the command before it builds.
 
-- output: Written under `apps/<app>/.akan/native/<target>/build/android`; the command prints each file's path.
+- output: Written under `dist/native/<app>/<target>/build/android`; the command prints each file's path.
 
 `akan update-keygen <app> [--platform <platform>] [--target <target>]`
 
@@ -442,7 +442,7 @@ Make, once per app id, the Ed25519 key update releases are signed with, and prin
 
 `akan publish-update <app> [--platform <platform>] [--target <target>] [--env <env>] [--channel <channel>] [--write <boolean>] [--allow-local-release <boolean>]`
 
-Build a release and sign it for installed apps: the whole app for a desktop (this computer's OS and CPU, delta from the release before), the web bundle for Android and iOS. It writes `<channel>.json`, its signature and its files under `.akan/native/<target>/updates`, which holds only what you upload: upload that folder to `native.updates.url`, `<channel>.json` and its `.sig` last and together, and keep a CDN from caching those two apart. A desktop release of a target that carries its server carries it too.
+Build a release and sign it for installed apps: the whole app for a desktop (this computer's OS and CPU, delta from the release before), the web bundle for Android and iOS. It writes `<channel>.json`, its signature and its files under `dist/native/<app>/<target>/updates`, which holds only what you upload: upload that folder to `native.updates.url`, `<channel>.json` and its `.sig` last and together, and keep a CDN from caching those two apart. A desktop release of a target that carries its server carries it too.
 
 - --platform (String, default desktop, desktop | android | ios): `desktop` is this computer's own OS and CPU.
 
@@ -476,7 +476,7 @@ Pack an Android or iOS web bundle update unsigned, for a signer that keeps the k
 
 - --env (String, default main, debug | develop | main | local): Backend environment the app connects to.
 
-- --out (String): Default `.akan/native/<target>/updates/<platform>`.
+- --out (String): Default `dist/native/<app>/<target>/updates/<platform>`.
 
 - --against (String): The `bundle.json` of the store build it must run in: writes `compat.json`, and fails when the bundle needs a new binary.
 

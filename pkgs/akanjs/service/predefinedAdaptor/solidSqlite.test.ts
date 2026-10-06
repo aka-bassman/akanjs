@@ -14,6 +14,9 @@ import {
   from,
   into,
 } from "akanjs/document";
+import { buildEndpoint } from "../../signal/endpointInfo";
+import { SignalContext } from "../../signal/signalContext";
+import { adapt } from "../adapt";
 import {
   type AkanSqlClient,
   type AkanSqlStatement,
@@ -796,17 +799,41 @@ describe("solid sqlite utilities", () => {
       await doc.save();
       expect((await store.pickById(created.id)).title).toBe("Renamed");
 
-      await expect(store.update(created.id, { ownerId: "user-2" })).rejects.toThrow(
-        /immutable field on sqliteImmutableTest \(.+\): ownerId/,
-      );
+      await expect(store.update(created.id, { ownerId: "user-2" })).rejects.toMatchObject({
+        message: "base.error.immutableField",
+        statusCode: 400,
+        data: { field: "ownerId" },
+        details: { model: "sqliteImmutableTest", id: created.id },
+      });
       expect((await store.pickById(created.id)).ownerId).toBe("user-1");
 
       const stale = await store.pickById(created.id);
       stale.set({ ownerId: "user-2", origin: "moved" });
-      await expect(stale.save()).rejects.toThrow(/immutable fields on sqliteImmutableTest \(.+\): ownerId, origin/);
+      await expect(stale.save()).rejects.toMatchObject({
+        message: "base.error.immutableField",
+        data: { field: "ownerId, origin" },
+      });
 
       await store.updateManyByQuery({ id: created.id }, { ownerId: set("user-3") });
       expect((await store.pickById(created.id)).ownerId).toBe("user-3");
+    });
+  });
+
+  test("answers an immutable field change as a 400 carrying its dictionary key, not a generalized 500", async () => {
+    await withStore(immutableTestConstant, immutableTestDatabase, async ({ store }) => {
+      const created = await store.create({ title: "First", ownerId: "user-1" });
+      const endpointInfo = buildEndpoint.mutation(String).exec(() => "unreached");
+      const adaptor = new (adapt("sqliteImmutableTestEndpoint"))();
+      const response = (await SignalContext.try(adaptor, endpointInfo, "updateSqliteImmutableTest", async () => {
+        await store.update(created.id, { ownerId: "user-2" });
+        return undefined;
+      })) as Response;
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        error: "base.error.immutableField",
+        statusCode: 400,
+        data: { field: "ownerId" },
+      });
     });
   });
 

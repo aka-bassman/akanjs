@@ -230,6 +230,19 @@ describe("BarrelAnalyzer and rewriteBarrelImports", () => {
     expect(secondMap?.get("b2")).toEqual({ subpath: "second/b2", originalName: "b2" });
   });
 
+  test("an empty facet barrel maps no name, so an import from it is left as written", async () => {
+    const root = await makeTempRoot();
+    const pkgDir = path.join(root, "common");
+    await write(path.join(pkgDir, "index.ts"), "export {};\n");
+    const analyzer = new BarrelAnalyzer({
+      resolvePackage: async () => ({ pkgName: "@libs/util/common", entryFile: path.join(pkgDir, "index.ts"), pkgDir }),
+    });
+
+    expect(await analyzer.analyze("@libs/util/common")).toEqual(new Map());
+    const source = 'import { pad } from "@libs/util/common";\n';
+    expect(await rewriteBarrelImports(source, ["@libs/util/common"], analyzer)).toBeNull();
+  });
+
   test("rewrites flattenable named imports and preserves default, type, and unknown imports", async () => {
     const analyzer = fakeAnalyzer([
       ["A", { subpath: "@scope/pkg/leaf", originalName: "A" }],

@@ -10,7 +10,14 @@ import type {
 } from "./akanConfig";
 import { AkanAppConfig } from "./akanConfig";
 import { AppExecutor, LibExecutor, PkgExecutor, WorkspaceExecutor } from "./executors";
-import { isAllowedLibFacetRootFile, rootAllowedDirs, rootAllowedFiles, rootEntryHintOf } from "./workspaceLayout";
+import {
+  barrelFacetDirs,
+  facetIndexShadowOf,
+  isAllowedLibFacetRootFile,
+  rootAllowedDirs,
+  rootAllowedFiles,
+  rootEntryHintOf,
+} from "./workspaceLayout";
 
 const scalarFileTypes = ["constant", "dictionary", "document", "template", "unit", "util", "view", "zone"] as const;
 type ScalarFileType = (typeof scalarFileTypes)[number];
@@ -74,6 +81,11 @@ async function assertScanConvention(exec: AppExecutor | LibExecutor, libRoot: { 
   for (const dirname of dirs)
     if (!allowedRootDirs.has(dirname))
       addViolation(dirname, rootEntryHintOf(exec.type, dirname) ?? `unsupported ${exec.type} root folder`);
+  for (const facet of barrelFacetDirs)
+    for (const filename of await exec.readdir(facet)) {
+      const shadow = facetIndexShadowOf(`${facet}/${filename}`);
+      if (shadow) addViolation(path.join(facet, filename), shadow);
+    }
 
   //* A lib has no `getPageKeys`, so its own route files are validated here.
   if (exec.type === "lib")
@@ -275,7 +287,7 @@ class ScanInfo {
   }
 }
 
-const isAkanFrameworkDependency = (dep: string) => dep === "akanjs" || dep.startsWith("akanjs/");
+export const isAkanFrameworkDependency = (dep: string) => dep === "akanjs" || dep.startsWith("akanjs/");
 export class AppInfo extends ScanInfo {
   readonly type = "app";
   readonly exec: AppExecutor;

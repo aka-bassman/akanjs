@@ -114,7 +114,8 @@ export class DevGeneratedIndexSync {
 
   async #facetContent(dir: string): Promise<string | null> {
     const nameCasePattern = path.basename(dir) === "ui" ? FACET_PASCAL_CASE_RE : FACET_CAMEL_CASE_RE;
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
+    if (!entries) return null;
     const exportNames = entries
       .flatMap((entry) => {
         const name = entry.name;
@@ -125,8 +126,8 @@ export class DevGeneratedIndexSync {
         const exportName = name.replace(FACET_SOURCE_FILE_RE, "");
         return nameCasePattern.test(exportName) ? [exportName] : [];
       })
-      .sort();
-    if (exportNames.length === 0) return null;
+      .sort(compareExportNames);
+    if (exportNames.length === 0) return "export {};\n";
     return `${exportNames.map((name) => `export * from "./${name}";`).join("\n")}\n`;
   }
 
@@ -149,9 +150,25 @@ export class DevGeneratedIndexSync {
       if (await exists(path.join(dir, `${modelName}.${type}.tsx`))) fileTypes.push(type);
     }
     if (fileTypes.length === 0) return null;
-    return `\n${fileTypes.map((type) => `import * as ${type} from "./${modelName}.${type}";`).join("\n")}\n\nexport const ${modelName} = { ${fileTypes.join(", ")} };`;
+    return `${fileTypes.map((type) => `import * as ${type} from "./${modelName}.${type}";`).join("\n")}\n\nexport const ${modelName} = { ${fileTypes.join(", ")} };\n`;
   }
 }
+
+//? Biome's organizeImports order, or `akan lint` reorders the barrel: A < a < B < b, a digit before a letter, and a
+//? run of digits compared by its length first. The facetIndex template sorts the same way.
+const letterRankOf = (char: string) => char.toLowerCase().charCodeAt(0) * 2 + (char === char.toLowerCase() ? 1 : 0);
+const digitRunAt = (name: string, idx: number) => /^\d+/.exec(name.slice(idx))?.[0] ?? "";
+const compareExportNames = (a: string, b: string) => {
+  for (let idx = 0; idx < a.length && idx < b.length; ) {
+    const [runA, runB] = [digitRunAt(a, idx), digitRunAt(b, idx)];
+    if (runA && runB && runA !== runB) return runA.length - runB.length || (runA < runB ? -1 : 1);
+    if (runA && runB) idx += runA.length;
+    else if (runA || runB) return runA ? -1 : 1;
+    else if (a.charAt(idx) !== b.charAt(idx)) return letterRankOf(a.charAt(idx)) - letterRankOf(b.charAt(idx));
+    else idx++;
+  }
+  return a.length - b.length;
+};
 
 const exists = async (file: string) =>
   stat(file)

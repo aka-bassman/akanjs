@@ -36,7 +36,9 @@ export interface PlatformRunContext {
 export abstract class PlatformTestTarget {
   static readonly installIdleMs = 5 * 60_000;
   static readonly testIdleMs = 2 * 60_000;
-  protected static readonly gitIdentityEnv = {
+  protected static readonly remoteEnv = {
+    //? No suite drives puppeteer's Chrome, and downloading it into every fresh container fails install on a DNS blip.
+    PUPPETEER_SKIP_DOWNLOAD: "true",
     GIT_AUTHOR_NAME: "akan-test",
     GIT_AUTHOR_EMAIL: "akan-test@localhost",
     GIT_COMMITTER_NAME: "akan-test",

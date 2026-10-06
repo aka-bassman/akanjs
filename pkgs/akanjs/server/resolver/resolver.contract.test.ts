@@ -24,6 +24,7 @@ import { Ws } from "../../signal/internalArg";
 import { FetchSerializer } from "../../signal/serializer";
 import type { SignalContext } from "../../signal/signalContext";
 import { slice } from "../../signal/slice";
+import { ConformanceEnv } from "../../test/conformance";
 import { CascadeRunner } from "./CascadeRunner";
 import { DatabaseResolver } from "./database.resolver";
 import {
@@ -139,8 +140,8 @@ const makeFakeStore = () => {
     findId: async (query: unknown, options?: unknown) => rec("findId", [query, options], "doc-1"),
     pickOne: async (query: unknown, options?: unknown) => rec("pickOne", [query, options], makeFakeDoc(calls, "doc-1")),
     pickById: async (id: string) => rec("pickById", [id], { id, title: "Alpha" }),
-    exists: async (query: unknown) => rec("exists", [query], "doc-1"),
-    count: async (query: unknown) => rec("count", [query], 1),
+    exists: async (...args: unknown[]) => rec("exists", args, "doc-1"),
+    count: async (...args: unknown[]) => rec("count", args, 1),
     insight: async (query: unknown) => rec("insight", [query], { total: 1 }),
     hydrate: async (data: Record<string, unknown>) => rec("hydrate", [data], { ...data, hydrated: true }),
     clone: async (data: Record<string, unknown>) => rec("clone", [data], { ...data, id: "clone-1" }),
@@ -151,7 +152,7 @@ const makeFakeStore = () => {
       rec("search", [text, options], { docs: [{ id: "doc-1" }], count: 1 }),
     updateOneByQuery: async (query: unknown, update: unknown, options?: unknown) =>
       rec("updateOneByQuery", [query, update, options], written()),
-    updateManyByQuery: async (query: unknown, update: unknown) => rec("updateManyByQuery", [query, update], written()),
+    updateManyByQuery: async (...args: unknown[]) => rec("updateManyByQuery", args, written()),
     removeManyByQuery: async (query: unknown) => rec("removeManyByQuery", [query], written()),
     removeOneByQuery: async (query: unknown) => rec("removeOneByQuery", [query], written()),
     bulkWrite: async (operations: unknown) => rec("bulkWrite", [operations], written()),
@@ -410,6 +411,112 @@ describe("DatabaseResolver declaration contracts", () => {
     await instance.listInCategory("news", true, { limit: 5 });
     expect(queryOf(instance.__store.calls.at(-1))).toEqual({ kind: "all", queries: [{ category: "news" }, {}] });
     expect(optionOf(instance.__store.calls.at(-1))).toMatchObject({ limit: 5 });
+  });
+
+  test("reads every row for a server caller's limit 0, as for an omitted one, and pages a null one", async () => {
+    const { instance } = await bootModel<{
+      __store: ReturnType<typeof makeFakeStore>;
+      listInCategory: (...args: unknown[]) => Promise<unknown[]>;
+      listIdsInCategory: (...args: unknown[]) => Promise<string[]>;
+      __list: (query: unknown, queryOption?: unknown) => Promise<unknown[]>;
+    }>();
+    const limitOf = (call?: { args: unknown[] }) => (call?.args[1] as { limit?: unknown } | undefined)?.limit;
+
+    await instance.listInCategory("news", { limit: 0 });
+    expect(limitOf(instance.__store.calls.at(-1))).toBe(0);
+    await instance.listIdsInCategory("news", { limit: 0 });
+    expect(instance.__store.calls.at(-1)?.method).toBe("findIds");
+    expect(limitOf(instance.__store.calls.at(-1))).toBe(0);
+    await instance.__list({ category: "news" }, { limit: 0, sort: "titleAsc" });
+    expect(limitOf(instance.__store.calls.at(-1))).toBe(0);
+
+    await instance.listInCategory("news");
+    expect(limitOf(instance.__store.calls.at(-1))).toBe(0);
+    await instance.listInCategory("news", { limit: null });
+    expect(limitOf(instance.__store.calls.at(-1))).toBe(20);
+    await instance.listIdsInCategory("news", { limit: 7 });
+    expect(limitOf(instance.__store.calls.at(-1))).toBe(7);
+  });
+
+  test("hands a server caller every stored row for limit 0, past the default page size", async () => {
+    const driver = await ConformanceEnv.openSqlDriver("sqlite", { memory: true });
+    try {
+      const { instance } = await bootModel<{
+        __create: (data: Record<string, unknown>) => Promise<unknown>;
+        listInCategory: (...args: unknown[]) => Promise<unknown[]>;
+        listIdsInCategory: (...args: unknown[]) => Promise<string[]>;
+      }>(driver.database as unknown as FakeSqliteDatabase);
+      const row = { ownerId: validId, category: "news", nested: { label: "n" }, secret: "s", resolvedLabel: "r" };
+      for (let idx = 0; idx < 25; idx += 1) await instance.__create({ ...row, title: `t${idx}` });
+      expect(await instance.listInCategory("news", { limit: 0 })).toHaveLength(25);
+      expect(await instance.listIdsInCategory("news", { limit: 0 })).toHaveLength(25);
+      expect(await instance.listInCategory("news", { limit: null })).toHaveLength(20);
+    } finally {
+      await driver.close();
+    }
+  });
+
+  test("threads { withRemoved: true } from the facade to the store, and leaves it out entirely when off", async () => {
+    const { instance } = await bootModel<{
+      __store: ReturnType<typeof makeFakeStore>;
+      __list: (query: unknown, queryOption?: unknown) => Promise<unknown[]>;
+      __find: (query: unknown, queryOption?: unknown) => Promise<unknown>;
+      listInCategory: (...args: unknown[]) => Promise<unknown[]>;
+      ServerResolverTestItem: {
+        find: (query: unknown, projection?: unknown, options?: unknown) => FindChain<unknown[]>;
+        findOne: (query: unknown, projection?: unknown, options?: unknown) => FindChain<unknown>;
+        findById: (id: string, projection?: unknown, options?: unknown) => Promise<unknown>;
+        count: (query: unknown, options?: unknown) => Promise<number>;
+        exists: (query: unknown, options?: unknown) => Promise<unknown>;
+        updateMany: (query: unknown, update: unknown, options?: unknown) => Promise<unknown>;
+        updateById: (id: string, update: unknown, options?: unknown) => Promise<unknown>;
+      };
+    }>();
+    const model = instance.ServerResolverTestItem;
+    const last = () => instance.__store.calls.at(-1);
+    const scope = { withRemoved: true };
+    const news = { category: "news" };
+
+    await model.find(news, null, scope).sort({ title: 1 }).skip(1).limit(2).select({ title: true });
+    expect(last()).toEqual({
+      method: "find",
+      args: [news, { select: { title: true }, withRemoved: true, sort: { title: 1 }, skip: 1, limit: 2 }],
+    });
+    await model.findOne(news, { title: true }, scope).sort({ title: -1 });
+    expect(last()).toEqual({
+      method: "findOne",
+      args: [news, { select: { title: true }, withRemoved: true, sort: { title: -1 } }],
+    });
+    await model.findById("doc-1", undefined, scope);
+    expect(last()).toEqual({ method: "findOne", args: [{ id: "doc-1" }, { select: undefined, withRemoved: true }] });
+    await model.count(news, scope);
+    expect(last()).toEqual({ method: "count", args: [news, scope] });
+    await model.exists(news, scope);
+    expect(last()).toEqual({ method: "exists", args: [news, scope] });
+    await model.updateMany(news, { title: "Beta" }, scope);
+    expect(last()).toEqual({ method: "updateManyByQuery", args: [news, { title: "Beta" }, scope] });
+    await model.updateById("doc-1", { removedAt: null }, scope);
+    expect(last()).toEqual({ method: "updateOneByQuery", args: [{ id: "doc-1" }, { removedAt: null }, scope] });
+
+    for (const off of [undefined, { withRemoved: false }]) {
+      await model.find(news, undefined, off);
+      expect(Object.keys(last()?.args[1] as object)).toEqual(["select"]);
+      await model.findById("doc-1", { title: true }, off);
+      expect(last()?.args[1]).toStrictEqual({ select: { title: true } });
+      await model.count(news, off);
+      expect(last()?.args).toStrictEqual([news]);
+      await model.exists(news, off);
+      expect(last()?.args).toStrictEqual([news]);
+      await model.updateMany(news, { title: "Beta" }, off);
+      expect(last()?.args).toStrictEqual([news, { title: "Beta" }]);
+    }
+
+    await instance.__list(news, { limit: 5, withRemoved: true });
+    expect(last()?.args[1]).not.toHaveProperty("withRemoved");
+    await instance.__find(news, { withRemoved: true });
+    expect(last()?.args[1]).not.toHaveProperty("withRemoved");
+    await instance.listInCategory("news", false, { limit: 5, withRemoved: true });
+    expect(last()?.args[1]).not.toHaveProperty("withRemoved");
   });
 
   test("narrows the by-id facade writes to a single id query", async () => {
@@ -1327,6 +1434,53 @@ describe("SignalResolver declaration contracts", () => {
     ).toThrow(/which the model does not have/);
   });
 
+  test("mounts no generated verb whose guards are false or name none, and tells the client which", () => {
+    const resolve = (guards: Parameters<typeof slice>[1]["guards"]) => {
+      class GatedSlice extends slice(serverResolverTestServiceModel, { guards }, () => ({})) {}
+      const keys = Object.keys(SignalResolver.resolveSlice(GatedSlice)[ENDPOINT_META]);
+      const signal = FetchSerializer.serializeDatabaseSignal(GatedSlice, ServerResolverTestEndpoint);
+      const synthesized = Object.keys(FetchClient.getBaseEndpoint("serverResolverTestItem", signal));
+      return { keys, crud: signal.crud, synthesized };
+    };
+    const generated = (verbs: string[]) =>
+      verbs.map((verb) => (verb === "get" ? "serverResolverTestItem" : `${verb}ServerResolverTestItem`));
+
+    const cruOff = resolve({ root: Public, get: Public, cru: false });
+    expect(cruOff.keys).toEqual(expect.arrayContaining(generated(["get", "light"])));
+    expect(cruOff.keys).not.toEqual(expect.arrayContaining(generated(["create"])));
+    expect(cruOff.keys.filter((key) => /^(create|update|remove)/.test(key))).toEqual([]);
+    expect(cruOff.crud).toEqual({ create: false, update: false, remove: false });
+    expect(cruOff.synthesized.sort()).toEqual(generated(["get", "light"]).sort());
+
+    const createOff = resolve({ root: Public, get: Public, cru: Public, create: false });
+    expect(createOff.keys).toEqual(expect.arrayContaining(generated(["update", "remove"])));
+    expect(createOff.keys).not.toContain("createServerResolverTestItem");
+    expect(createOff.crud).toEqual({ create: false });
+    expect(createOff.synthesized).not.toContain("createServerResolverTestItem");
+    expect(createOff.synthesized).toContain("updateServerResolverTestItem");
+
+    const unguarded = resolve({ root: Public });
+    expect(unguarded.keys.filter((key) => !/List|Insight/.test(key))).toEqual([]);
+    expect(unguarded.crud).toEqual({ get: false, create: false, update: false, remove: false });
+    expect(unguarded.synthesized).toEqual([]);
+  });
+
+  test("warns at resolve time about every endpoint that declares no guards", () => {
+    class OpenEndpoint extends endpoint(serverResolverTestServiceModel, ({ query }) => ({
+      openRead: query(String).exec(() => "open"),
+      publicRead: query(String, { guards: [Public] }).exec(() => "public"),
+    })) {}
+    const warn = spyOn(SignalResolver.logger, "warn");
+    try {
+      resolveWith(OpenEndpoint, new OpenEndpoint());
+      const lines = warn.mock.calls.map(([line]) => String(line));
+      expect(lines.some((line) => line.startsWith("openRead declares no guards"))).toBe(true);
+      expect(lines.some((line) => line.includes("publicRead"))).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test("turns slice declarations into CRUD/list/insight endpoint declarations", async () => {
     const SliceEndpoint = SignalResolver.resolveSlice(ServerResolverTestSlice);
     const endpointMeta = SliceEndpoint[ENDPOINT_META];
@@ -1382,6 +1536,26 @@ describe("SignalResolver declaration contracts", () => {
         },
       ],
     });
+
+    const listedLimit = async (key: string, ...args: unknown[]) => {
+      await endpointMeta[key].execFn?.call(sliceEndpoint, ...args);
+      return (calls.at(-1)?.args[1] as { limit: number } | undefined)?.limit;
+    };
+    const warn = spyOn(SignalResolver.logger, "warn");
+    try {
+      expect(await listedLimit("serverResolverTestItemListInCategory", "news", 0, 0, "titleAsc")).toBe(500);
+      expect(await listedLimit("serverResolverTestItemListInCategory", "news", 0, 0, "titleAsc")).toBe(500);
+      expect(await listedLimit("serverResolverTestItemList", undefined, undefined, 0, 0, "latest")).toBe(500);
+      expect(await listedLimit("serverResolverTestItemListInCategory", "news", 0, null, "titleAsc")).toBe(20);
+      expect(await listedLimit("serverResolverTestItemListInCategory", "news", 0, undefined, "titleAsc")).toBe(20);
+      expect(await listedLimit("serverResolverTestItemListInCategory", "news", 0, 9999, "titleAsc")).toBe(500);
+      const askedEveryRow = warn.mock.calls.map(([message]) => String(message)).filter((m) => m.includes("limit: 0"));
+      expect(askedEveryRow).toHaveLength(2);
+      expect(askedEveryRow[0]).toContain("serverResolverTestItemListInCategory was asked for limit: 0 and served 500");
+      expect(askedEveryRow[1]).toContain("serverResolverTestItemList was asked for limit: 0");
+    } finally {
+      warn.mockRestore();
+    }
 
     await endpointMeta.serverResolverTestItemInsightInCategory.execFn?.call(sliceEndpoint, "news");
     expect(calls.at(-1)).toEqual({ method: "__insight", args: [{ category: "news" }] });

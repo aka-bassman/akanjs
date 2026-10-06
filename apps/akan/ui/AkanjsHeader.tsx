@@ -5,7 +5,7 @@ import { cn } from "akanjs/client";
 import { Link, System } from "akanjs/ui";
 import { useEffect, useState } from "react";
 import { BsArrowUpRight } from "react-icons/bs";
-import { FaBars, FaDiscord, FaGithub } from "react-icons/fa";
+import { FaBars, FaDiscord, FaGithub, FaTimes } from "react-icons/fa";
 import { AkanLogo } from "./AkanLogo";
 import { JellyThemeToggle } from "./Jelly";
 
@@ -72,6 +72,7 @@ export const AkanjsHeader = ({
 }: AkanjsHeaderProps) => {
   const { l } = usePage();
   const [isMobileSubMenuVisible, setIsMobileSubMenuVisible] = useState(true);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!collapseMobileSubMenuOnScroll) return;
@@ -106,12 +107,14 @@ export const AkanjsHeader = ({
       <div className={cn("fixed top-0 z-50 w-full", className)}>
         <div className="relative z-10 grid h-16 w-full grid-cols-[auto_1fr_auto] items-center border-foreground/6 border-b bg-background/70 px-6 text-foreground backdrop-blur-xl backdrop-saturate-150 md:h-20 lg:grid-cols-[1fr_auto_1fr]">
           <div className="block lg:hidden">
-            <label
-              htmlFor="mobile-menu-toggle"
-              className="cursor-pointer text-2xl text-foreground transition-colors hover:text-primary"
+            <button
+              type="button"
+              aria-expanded={isMobileMenuOpen}
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="flex cursor-pointer items-center text-2xl text-foreground transition-colors hover:text-primary"
             >
-              <FaBars />
-            </label>
+              {isMobileMenuOpen ? <FaTimes /> : <FaBars />}
+            </button>
           </div>
           <div className="hidden items-center gap-4 lg:flex">
             <Link href="/" className="flex items-center gap-2 font-bold">
@@ -164,7 +167,7 @@ export const AkanjsHeader = ({
                   <FaDiscord />
                 </Link>
               </div>
-              <Link href="/">
+              <Link href="/" onClick={() => setIsMobileMenuOpen(false)}>
                 <AkanLogo className="w-24 font-bold text-lg" />
               </Link>
             </div>
@@ -176,7 +179,11 @@ export const AkanjsHeader = ({
             className="flex w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 border-foreground/6 border-b bg-primary/8 px-4 py-2 text-center font-medium text-foreground text-xs backdrop-blur-xl md:text-sm"
           >
             <span>{l.trans(notice.text)}</span>
-            <Link href={notice.link.href} className="font-bold text-primary underline-offset-4 hover:underline">
+            <Link
+              href={notice.link.href}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="font-bold text-primary underline-offset-4 hover:underline"
+            >
               {l.trans(notice.link.label)}
             </Link>
           </div>
@@ -197,6 +204,7 @@ export const AkanjsHeader = ({
                 key={link.href}
                 href={link.href}
                 target={link.target}
+                onClick={() => setIsMobileMenuOpen(false)}
                 className={navLinkClassName}
                 activeClassName={navActiveClassName}
               >
@@ -208,27 +216,30 @@ export const AkanjsHeader = ({
         </div>
       </div>
       {mobileDrawerLinks ? (
-        <>
-          <input type="checkbox" id="mobile-menu-toggle" className="peer hidden" />
-          <div className="fixed inset-y-0 left-0 z-40 w-full -translate-x-full transform transition-transform duration-50 ease-in-out peer-checked:translate-x-0 lg:hidden">
-            <div className="h-full overflow-y-auto bg-background/95 shadow-2xl backdrop-blur-xl">
-              <div className="mt-[var(--akanjs-header-offset)] flex flex-col gap-1 p-5">
-                {mobileDrawerLinks.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    target={link.target}
-                    className="block rounded-full px-4 py-2.5 font-bold text-base text-foreground/75 transition-colors hover:bg-foreground/6 hover:text-foreground"
-                    activeClassName={navActiveClassName}
-                  >
-                    {l.trans(link.label)}
-                    {link.target === "_blank" ? <BsArrowUpRight className="-mt-0.5 ml-1 inline size-3" /> : null}
-                  </Link>
-                ))}
-              </div>
+        <div
+          className={cn(
+            "fixed inset-y-0 left-0 z-40 w-full transform transition-transform duration-50 ease-in-out lg:hidden",
+            isMobileMenuOpen ? "translate-x-0" : "-translate-x-full",
+          )}
+        >
+          <div className="h-full overflow-y-auto bg-background/95 shadow-2xl backdrop-blur-xl">
+            <div className="mt-[var(--akanjs-header-offset)] flex flex-col gap-1 p-5">
+              {mobileDrawerLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  target={link.target}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="block rounded-full px-4 py-2.5 font-bold text-base text-foreground/75 transition-colors hover:bg-foreground/6 hover:text-foreground"
+                  activeClassName={navActiveClassName}
+                >
+                  {l.trans(link.label)}
+                  {link.target === "_blank" ? <BsArrowUpRight className="-mt-0.5 ml-1 inline size-3" /> : null}
+                </Link>
+              ))}
             </div>
           </div>
-        </>
+        </div>
       ) : null}
     </>
   );

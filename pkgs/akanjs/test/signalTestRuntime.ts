@@ -1,5 +1,5 @@
 import type { BackendEnv, BaseEnv } from "akanjs/base";
-import type { FetchProxy } from "akanjs/fetch";
+import { FetchClient, type FetchProxy } from "akanjs/fetch";
 import type { AkanLib } from "akanjs/server";
 import { type TestEnv, TestServer, type TestServerOptions } from "./testServer";
 
@@ -115,6 +115,7 @@ export const setupSignalTestTarget = async <Fetch = FetchProxy>(
       storage: "memory",
       ...resolvedOptions,
     });
+    FetchClient.useTestClientIps();
     await testServer.init();
     currentContext = {
       fetch: target.fetch,

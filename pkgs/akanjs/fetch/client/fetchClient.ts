@@ -92,6 +92,9 @@ export class FetchClient {
   readonly #handlerStore: Record<string, FetchHandler> = {};
   readonly #handlerFactory = new Map<string, FetchHandlerFactory>();
   #sharedRegistryAppliedVersion = 0;
+  #clientIp: string | null = null;
+  static #testClientIps = false;
+  static #testClientIpSeq = 0;
   serializedSignal: { [key: string]: SerializedSignal } = {};
   jwt: string | null = null;
 
@@ -119,6 +122,19 @@ export class FetchClient {
   static resetSharedClient() {
     sharedClientState.proxy = null;
     sharedClientState.origin = null;
+  }
+  /**
+   * In a signal test every agent reaches the test server from loopback, so an IP rate limit would count them all as
+   * one caller: from here on each clone names its own address (RFC 2544's benchmarking range), which loopback is
+   * trusted to report.
+   */
+  static useTestClientIps(enabled = true) {
+    FetchClient.#testClientIps = enabled;
+    FetchClient.#testClientIpSeq = 0;
+  }
+  static #nextTestClientIp() {
+    const seq = ++FetchClient.#testClientIpSeq;
+    return `198.${18 + ((seq >> 16) & 1)}.${(seq >> 8) & 255}.${seq & 255}`;
   }
   static #resolveSharedClientProxy(origin: string, Err?: ErrorConstructor) {
     if (typeof window === "undefined") return null;
@@ -238,8 +254,22 @@ export class FetchClient {
     for (const ws of this.#originWs.values()) ws.destroy();
     this.#originWs.clear();
   }
-  clone({ origin, connect = true, jwt }: { origin?: string; connect?: boolean; jwt?: string } = {}) {
+  // A server cloning toward another origin makes one-off calls; a socket it opened would reconnect forever, unclosed.
+  clone({
+    origin,
+    connect = !(origin && typeof window === "undefined"),
+    jwt,
+    clientIp,
+  }: {
+    origin?: string;
+    connect?: boolean;
+    jwt?: string;
+    /** Sent as `x-real-ip`, which a server believes only from a trusted proxy — a test's loopback is one. */
+    clientIp?: string | null;
+  } = {}) {
     const instance = new FetchClient(origin ?? this.origin, {}, this.serializedSignal, this.ErrorCls);
+    instance.#clientIp =
+      clientIp !== undefined ? clientIp : FetchClient.#testClientIps ? FetchClient.#nextTestClientIp() : this.#clientIp;
     Object.entries(this.handler).forEach(([key, handler]) => {
       if (!(key in instance.handler)) instance.handler[key] = handler;
     });
@@ -264,6 +294,22 @@ export class FetchClient {
     ws.setJwt(this.jwt);
     ws.connect();
     return ws;
+  }
+  #makeRequestHeaders(option?: FetchPolicy): Record<string, string> {
+    const clientIp = this.#clientIp ? { "x-real-ip": this.#clientIp } : FetchClient.#forwardedClientIp(option);
+    return { ...this.#makeAuthHeaders(option), ...clientIp };
+  }
+  // A call made while rendering reaches this server from its own address; the page request's `x-real-ip` (which the
+  // page renderer resolved) keeps rate limits and `.with(Ip)` about the person.
+  static #forwardedClientIp(option?: FetchPolicy): Record<string, string> {
+    if (option?.origin) return {};
+    try {
+      if (getEnv().side !== "server") return {};
+      const clientIp = requestHeaders().get("x-real-ip");
+      return clientIp ? { "x-real-ip": clientIp } : {};
+    } catch {
+      return {};
+    }
   }
   #makeAuthHeaders(option?: FetchPolicy): Record<string, string> {
     if (option?.token) return { Authorization: `Bearer ${option.token}` };
@@ -300,7 +346,7 @@ export class FetchClient {
       case "query":
         return async (...argData: unknown[]) => {
           const { option, argMap, url } = requestOf(argData);
-          const headers = this.#makeAuthHeaders(option);
+          const headers = this.#makeRequestHeaders(option);
           const baseUrl = this.#baseUrlOf(endpoint, option?.origin);
           const timeout = option?.timeout ?? endpoint.timeout;
           // An origin override targets another server, so it bypasses the request-query cache keyed by this origin.
@@ -320,7 +366,7 @@ export class FetchClient {
           const { option, argMap, url } = requestOf(argData);
           const body = HttpClient.makeBody(bodyArgs, uploadArgs, argMap);
           const response = await this.http.send(endpoint.method ?? "POST", url, body, {
-            headers: this.#makeAuthHeaders(option),
+            headers: this.#makeRequestHeaders(option),
             baseUrl: this.#baseUrlOf(endpoint, option?.origin),
             timeout: option?.timeout ?? endpoint.timeout,
           });
@@ -431,16 +477,16 @@ export class FetchClient {
       modelId: `${refName}Id`,
       lightModel: `light${capRefName}`,
     };
-    const createGuards = signal.createGuards ?? signal.cruGuards;
-    const updateGuards = signal.updateGuards ?? signal.cruGuards;
-    const removeGuards = signal.removeGuards ?? signal.cruGuards;
+    const createGuards = FetchClient.#mountedGuards(signal, "create");
+    const updateGuards = FetchClient.#mountedGuards(signal, "update");
+    const removeGuards = FetchClient.#mountedGuards(signal, "remove");
     // Stamped on here, where these endpoints are born, so every reader sees one resolved field.
     const mcp = (verb: keyof NonNullable<SerializedSignal["mcp"]>) => ({
       ...(signal.mcp?.[verb] === false ? { mcp: false as const } : {}),
       ...(signal.agents?.[verb] === false ? { agents: false as const } : {}),
     });
     const endpoint: { [key: string]: SerializedEndpoint } = {};
-    if (signal.getGuards) {
+    if (FetchClient.#mountedGuards(signal, "get")) {
       endpoint[names.model] = {
         type: "query",
         args: [{ type: "param", name: names.modelId, refName: "ID" }],
@@ -488,6 +534,11 @@ export class FetchClient {
     }
     return endpoint;
   }
+  static #mountedGuards(signal: SerializedSignal, verb: "get" | "create" | "update" | "remove") {
+    if (signal.crud?.[verb] === false) return undefined;
+    if (verb === "get") return signal.getGuards;
+    return signal[`${verb}Guards`] ?? signal.cruGuards;
+  }
   #registerModelBaseEndpoint(refName: string, signal: SerializedSignal) {
     const capRefName = capitalize(refName);
     const names = {
@@ -506,15 +557,17 @@ export class FetchClient {
     });
 
     // view/edit exist exactly when the get handler does; edit also needs a write endpoint; merge wraps updateModel.
-    const anyCruGuards = signal.cruGuards ?? signal.createGuards ?? signal.updateGuards ?? signal.removeGuards;
-    const updateGuards = signal.updateGuards ?? signal.cruGuards;
-    if (signal.getGuards) {
+    const getGuards = FetchClient.#mountedGuards(signal, "get");
+    const updateGuards = FetchClient.#mountedGuards(signal, "update");
+    const anyCruGuards =
+      FetchClient.#mountedGuards(signal, "create") ?? updateGuards ?? FetchClient.#mountedGuards(signal, "remove");
+    if (getGuards) {
       this.#setHandlerFactory(names.viewModel, () =>
         this.#makeModelHandleFn(refName, names.model, names.viewModel, `${refName}View`),
       );
       this.#setHandlerFactory(names.getModelView, () => this.#makeModelObjFn(refName, names.getModelView));
     }
-    if (signal.getGuards && anyCruGuards) {
+    if (getGuards && anyCruGuards) {
       this.#setHandlerFactory(names.editModel, () =>
         this.#makeModelHandleFn(refName, names.model, names.editModel, `${refName}Edit`),
       );
@@ -550,7 +603,7 @@ export class FetchClient {
           if (parentId) formData.append(fields.parentId, parentId);
           const url = FetchClient.makeHttpUrl(cap.endpointKey, endpoint, cap.prefix, new Map());
           return await this.http.post(url, formData, {
-            headers: this.#makeAuthHeaders(option),
+            headers: this.#makeRequestHeaders(option),
             baseUrl: this.#baseUrlOf(endpoint),
           });
         }) as FetchHandler,

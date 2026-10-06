@@ -56,31 +56,39 @@ export class LibraryRunner extends runner("library") {
     const libNames = await workspace.getLibs();
     return await Promise.all(libNames.map((libName) => new LibSource(LibExecutor.from(workspace, libName)).status()));
   }
+  //* The root wins: a lib's manifest carries the versions of the workspace it was copied from, not this one's.
   async mergeLibraryDependencies(lib: Lib) {
-    const libPackageJson = await lib.getPackageJson();
-    const rootPackageJson = await lib.workspace.getPackageJson();
-    const dependencies: Record<string, string> = {};
-    const devDependencies: Record<string, string> = {};
-    const libDependencies = { ...libPackageJson.dependencies, ...libPackageJson.devDependencies };
-    const rootDependencies = { ...rootPackageJson.dependencies, ...rootPackageJson.devDependencies };
-    const allDependencies = Object.fromEntries(
-      Object.keys({ ...libDependencies, ...rootDependencies }).map((dep) => {
-        const libVersion = libDependencies[dep] ?? "0.0.0";
-        const rootVersion = rootDependencies[dep] ?? "0.0.0";
-        const newerVersion = compareSemver(rootVersion, libVersion) > 0 ? rootVersion : libVersion;
-        return [dep, newerVersion];
-      }),
+    const [libPackageJson, rootPackageJson] = await Promise.all([lib.getPackageJson(), lib.workspace.getPackageJson()]);
+    const rootVersionOf = (dep: string) =>
+      rootPackageJson.dependencies?.[dep] ?? rootPackageJson.devDependencies?.[dep];
+    const missingFrom = (deps: Record<string, string> = {}) =>
+      Object.entries(deps).filter(([dep]) => !rootVersionOf(dep));
+    const dependencies = missingFrom(libPackageJson.dependencies);
+    const devDependencies = missingFrom(libPackageJson.devDependencies).filter(
+      ([dep]) => !libPackageJson.dependencies?.[dep],
     );
-    Object.keys(allDependencies)
-      .sort()
-      .forEach((dep) => {
-        if (libPackageJson.dependencies?.[dep] || rootPackageJson.dependencies?.[dep])
-          dependencies[dep] = allDependencies[dep];
-        else devDependencies[dep] = allDependencies[dep];
+    const behind = Object.entries({ ...libPackageJson.devDependencies, ...libPackageJson.dependencies }).flatMap(
+      ([dep, version]) => {
+        const rootVersion = rootVersionOf(dep);
+        return rootVersion && compareSemver(version, rootVersion) > 0
+          ? [`${dep} ${rootVersion} (lib: ${version})`]
+          : [];
+      },
+    );
+    if (behind.length)
+      lib.logger.warn(`Kept the root versions of packages libs/${lib.name} lists newer: ${behind.join(", ")}`);
+    if (dependencies.length || devDependencies.length) {
+      await lib.workspace.setPackageJson({
+        ...rootPackageJson,
+        dependencies: this.#withAdded(rootPackageJson.dependencies, dependencies),
+        devDependencies: this.#withAdded(rootPackageJson.devDependencies, devDependencies),
       });
-    const newRootPackageJson = { ...rootPackageJson, dependencies, devDependencies };
-    await lib.workspace.setPackageJson(newRootPackageJson);
-    await lib.workspace.spawn("bun", ["install"]);
-    await lib.workspace.commit(`Merge ${lib.name} library dependencies`);
+      await lib.workspace.spawn("bun", ["install"]);
+    }
+    if (await lib.workspace.hasChanges()) await lib.workspace.commit(`Merge ${lib.name} library dependencies`);
+  }
+  #withAdded(deps: Record<string, string> | undefined, added: [string, string][]) {
+    if (!added.length) return deps;
+    return Object.fromEntries([...Object.entries(deps ?? {}), ...added].sort(([a], [b]) => (a < b ? -1 : 1)));
   }
 }

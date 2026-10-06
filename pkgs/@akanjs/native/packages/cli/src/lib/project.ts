@@ -8,6 +8,7 @@ import { manifestPermissionProblems, type PermissionSet, resolveAcl } from "./ac
 import { unknownConfigKeys } from "./configkeys.ts";
 import { validateCsp, validateExternalSchemes } from "./csp.ts";
 import { type DesktopServerConfig, validateDesktopServer } from "./desktop-server.ts";
+import { type ResolvedDmg, validateDmg } from "./dmg.ts";
 import { type EnvConfig, validateEnvConfig } from "./env.ts";
 import { CliError } from "./log.ts";
 import { type PermissionsConfig, validatePermissions } from "./permissions.ts";
@@ -18,7 +19,8 @@ import { type UpdatesConfig, validateUpdates } from "./updates.ts";
 
 const CONFIG_FILES = ["akan-native.config.ts", "akan-native.config.js", "akan-native.config.mjs"];
 
-export interface ResolvedConfig extends Omit<AkanNativeConfig, "icon" | "splash" | "permissions" | "updates"> {
+export interface ResolvedConfig
+  extends Omit<AkanNativeConfig, "icon" | "splash" | "permissions" | "updates" | "desktop"> {
   app: Required<AkanNativeConfig["app"]>;
   web: Required<Pick<AkanNativeConfig["web"], "dir" | "base">> & { build?: string; devEntry?: string };
   plugins: string[];
@@ -35,6 +37,7 @@ export interface ResolvedConfig extends Omit<AkanNativeConfig, "icon" | "splash"
     server?: DesktopServerConfig;
     /** Absolute. */
     bin?: string;
+    dmg: ResolvedDmg;
   };
   updates: UpdatesConfig | null;
   /** Absolute image path. */
@@ -212,6 +215,7 @@ export function projectFromConfig(raw: AkanNativeConfig, appDir: string, options
   if (bin !== undefined && !(binDir && existsSync(binDir) && statSync(binDir).isDirectory()))
     problems.push(`desktop.bin must be a folder (got ${JSON.stringify(bin)})`);
   const desktopServer = validateDesktopServer(raw.desktop, appDir, problems);
+  const dmg = validateDmg(raw.desktop?.dmg, appDir, problems);
   if (raw.keyboard?.resize !== undefined && raw.keyboard.resize !== "resize" && raw.keyboard.resize !== "none") {
     problems.push(`keyboard.resize must be "resize" or "none" (got ${JSON.stringify(raw.keyboard.resize)})`);
   }
@@ -281,6 +285,7 @@ export function projectFromConfig(raw: AkanNativeConfig, appDir: string, options
       },
       ...(desktopServer ? { server: desktopServer } : {}),
       ...(binDir ? { bin: binDir } : {}),
+      dmg,
     },
     updates,
     icon: icon ? { ...icon, image: resolve(appDir, icon.image) } : null,

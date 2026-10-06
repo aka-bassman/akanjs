@@ -86,6 +86,19 @@ describe("ContextRunner", () => {
     );
   });
 
+  test("reports a hand-written facet index that shadows the generated barrel, but not a folder namespace", async () => {
+    const { workspace, app } = track(await createTempApp("demo"));
+    await writeText(`${app.cwdPath}/ui/index.tsx`, 'export { Chat } from "./Chat";\n');
+    await writeText(`${app.cwdPath}/ui/Chat/index.tsx`, "export const Chat = () => null;\n");
+
+    const result = await AkanContextAnalyzer.doctor(workspace);
+    const shadows = result.diagnostics.filter((diagnostic) => diagnostic.code === "facet-index-shadowed");
+
+    expect(result.status).toBe("failed");
+    expect(shadows).toEqual([expect.objectContaining({ severity: "error", path: "apps/demo/ui/index.tsx" })]);
+    expect(shadows[0]?.message).toContain("apps/demo/ui/index.tsx shadows the generated ui/index.ts");
+  });
+
   test("explains core agent-facing commands", () => {
     const runner = new ContextRunner();
 

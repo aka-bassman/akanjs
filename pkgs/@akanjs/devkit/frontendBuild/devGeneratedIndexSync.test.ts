@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tempDirs } from "../testHelpers";
 import { DevGeneratedIndexSync } from "./devGeneratedIndexSync";
@@ -38,6 +38,18 @@ describe("DevGeneratedIndexSync facet barrels", () => {
       trigger: "aes.ts",
     });
     expect(content).toBe(`export * from "./aes";\nexport * from "./cloudflareApi";\nexport * from "./storageApi";\n`);
+  });
+
+  test("a facet with nothing to export keeps an empty barrel, and a deleted facet gets none", async () => {
+    const root = await makeTempRoot();
+    const content = await barrelFor(root, "common", { files: ["foo.helper.ts"], dirs: [], trigger: "foo.helper.ts" });
+    expect(content).toBe("export {};\n");
+
+    const dir = path.join(root, "libs", "util", "common");
+    await rm(dir, { recursive: true });
+    const sync = new DevGeneratedIndexSync({ workspaceRoot: root });
+    expect(await sync.syncForBatch([path.join(dir, "foo.helper.ts")])).toEqual({ changedFiles: [], errors: [] });
+    expect(await Bun.file(path.join(dir, "index.ts")).exists()).toBe(false);
   });
 
   test("ui facet exports only clean PascalCase names", async () => {

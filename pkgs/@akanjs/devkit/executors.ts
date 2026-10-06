@@ -44,13 +44,16 @@ import { AkanAppConfig, AkanLibConfig, decreaseBuildNum, increaseBuildNum } from
 import { getRootBoundarySegments, isRootBoundarySegments } from "./artifact/implicitRootLayout";
 import { CodegenLock } from "./codegenLock";
 import { FileSys, getDirname } from "./fileSys";
+import { JsonFormatter } from "./jsonFormatter";
 import { Linter } from "./linter";
+import { ManifestDependencies } from "./manifestDependencies";
 import { resolveRepoName } from "./repoIdentity";
-import { AppInfo, LibInfo, PkgInfo, WorkspaceInfo } from "./scanInfo";
+import { AppInfo, isAkanFrameworkDependency, LibInfo, PkgInfo, WorkspaceInfo } from "./scanInfo";
 import { Spinner } from "./spinner";
 // Type-only: `getTypeChecker` loads it on demand to keep `typescript` out of the resident module graph.
 import type { TypeChecker } from "./typeChecker";
 import type { FileContent, PackageJson, TsConfigJson } from "./types";
+import { barrelFacetDirs } from "./workspaceLayout";
 
 export interface PageRoot {
   /** App-relative location of the route files, i.e. the symlink for a synced lib. */
@@ -303,8 +306,7 @@ export class Executor {
     const writePath = this.getPath(filePath);
     const dir = path.dirname(writePath);
     if (!(await FileSys.dirExists(dir))) await mkdir(dir, { recursive: true });
-    //? Biome ends every .json with a newline; without one, `akan lint` and `akan sync` would flip-flop the file.
-    let contentStr = typeof content === "string" ? content : `${JSON.stringify(content, null, 2)}\n`;
+    let contentStr = typeof content === "string" ? content : JsonFormatter.stringify(content, writePath);
 
     if (await FileSys.fileExists(writePath)) {
       const currentContent = await FileSys.readText(writePath);
@@ -839,8 +841,6 @@ interface SysExecutorOptions extends NamedExecutorOptions {
   type: "app" | "lib";
 }
 
-const scanFacetDirs = ["ui", "webkit", "srvkit", "common", "plugin"] as const;
-
 export class SysExecutor extends Executor {
   workspace: WorkspaceExecutor;
   override name: string;
@@ -896,7 +896,7 @@ export class SysExecutor extends Executor {
       this._applyTemplate({ basePath: ".", template: "server.ts", scanInfo }),
       this._applyTemplate({ basePath: ".", template: "client.ts", scanInfo }),
       this.type === "lib" ? this._applyTemplate({ basePath: ".", template: "index.ts", scanInfo }) : null,
-      ...scanFacetDirs.map((facet) =>
+      ...barrelFacetDirs.map((facet) =>
         this._applyTemplate({
           basePath: facet,
           template: "facetIndex/index.ts",
@@ -936,11 +936,9 @@ export class SysExecutor extends Executor {
       await CodegenLock.run(this.workspace.workspaceRoot, `scan:${this.name}`, async () => {
         await Promise.all(this.#getScanTemplateTasks(scanInfo));
         await this.writeJson(`akan.${this.type}.json`, scanInfo.getScanResult());
-        if (this.type === "lib") this.#updateDependencies(scanInfo);
-
+        await this.#updateDependencies(scanInfo);
         if (writeLib) {
           const libInfos = [...scanInfo.getLibInfos().values()];
-          await this.#updateDependencies(scanInfo);
           await Promise.all(libInfos.flatMap((libInfo) => libInfo.exec.#getScanTemplateTasks(libInfo)));
         }
         await this.syncAgentsIndex(scanInfo);
@@ -962,39 +960,35 @@ export class SysExecutor extends Executor {
     // CLAUDE.md 는 얇은 포인터라 최초 1회만 깔아준다 — 사용자가 지우거나 고친 것을 되살리지 않는다.
     if (!(await this.exists("CLAUDE.md"))) await this.writeFile("CLAUDE.md", renderScopeClaudeMd(scope));
   }
+  //* The root is the cached copy the dependency scan read, so a name it declares is judged by the same snapshot.
   async #updateDependencies(scanInfo: AppInfo | LibInfo) {
-    const rootPackageJson = await this.workspace.getPackageJson();
-    const libPackageJson = await this.getPackageJson();
-    const dependencies = scanInfo.getScanResult().dependencies;
-    const devDependencies = scanInfo.getScanResult().devDependencies;
-    const dependencySet = new Set(dependencies);
-    const devDependencySet = new Set(devDependencies);
-    const libPkgJsonWithDeps: PackageJson = {
-      ...libPackageJson,
-      dependencies: {
-        ...Object.fromEntries(
-          Object.entries(libPackageJson.dependencies ?? {}).filter(([dep]) => !devDependencySet.has(dep)),
-        ),
-        ...(Object.fromEntries(
-          dependencies
-            .filter((dep) => rootPackageJson.dependencies?.[dep])
-            .sort()
-            .map((dep) => [dep, rootPackageJson.dependencies?.[dep]]),
-        ) as Record<string, string>),
-      },
-      devDependencies: {
-        ...Object.fromEntries(
-          Object.entries(libPackageJson.devDependencies ?? {}).filter(([dep]) => !dependencySet.has(dep)),
-        ),
-        ...(Object.fromEntries(
-          devDependencies
-            .filter((dep) => rootPackageJson.dependencies?.[dep] || rootPackageJson.devDependencies?.[dep])
-            .sort()
-            .map((dep) => [dep, rootPackageJson.devDependencies?.[dep] ?? rootPackageJson.dependencies?.[dep]]),
-        ) as Record<string, string>),
-      },
-    };
-    await this.setPackageJson(libPkgJsonWithDeps);
+    const [rootPackageJson, packageJson] = await Promise.all([
+      this.workspace.getPackageJson(),
+      this.getPackageJson({ refresh: true }),
+    ]);
+    const { dependencies: runtime, devDependencies: typeOnly, akanConfig } = scanInfo.getScanResult();
+    const kept = new Set([
+      ...ManifestDependencies.keptBy(packageJson),
+      ...akanConfig.externalLibs,
+      ...akanConfig.trustedDependencies,
+    ]);
+    //? The scan leaves the framework out of its imports on purpose, so it is never a prune candidate.
+    const isKept = (dep: string) => kept.has(dep) || isAkanFrameworkDependency(dep);
+    const { dependencies, devDependencies, removed, unverifiable } = new ManifestDependencies(
+      rootPackageJson,
+      { runtime, typeOnly },
+      isKept,
+    ).realign(packageJson);
+    const manifestPath = `${this.type}s/${this.name}/package.json`;
+    if (removed.length)
+      this.logger.info(
+        `Removed from ${manifestPath}, declared by the root and imported nowhere: ${removed.join(", ")} (list one in akan.keepDependencies to keep it)`,
+      );
+    if (unverifiable.length)
+      this.logger.warn(
+        `${manifestPath} lists ${unverifiable.join(", ")}, which the root package.json does not declare, so sync cannot tell whether it is used; kept as is`,
+      );
+    await this.setPackageJson({ ...packageJson, dependencies, devDependencies });
   }
   override async getLocalFile(targetPath: string) {
     const filePath = path.isAbsolute(targetPath) ? targetPath : `${this.type}s/${this.name}/${targetPath}`;
@@ -1119,13 +1113,21 @@ export class AppExecutor extends SysExecutor {
   static from(executor: SysExecutor | WorkspaceExecutor, name: string) {
     return new AppExecutor({ workspace: executor instanceof WorkspaceExecutor ? executor : executor.workspace, name });
   }
-  //* Not dev output: native builds and the update releases waiting to be uploaded, and the downloaded `bin` sources.
-  static readonly #keptOnStart = [path.join(".akan", "native"), path.join(".akan", "cache", "bin")];
+  //* Not dev output: the downloaded `bin` sources.
+  static readonly #keptOnStart = [path.join(".akan", "cache", "bin")];
+  //* Native builds moved to dist/native/<app>; the old folder may hold a signed release nobody uploaded yet.
+  static readonly #legacyNative = path.join(".akan", "native");
   async #removeDevOutput(dir = ".akan") {
     const entries = await readDirEntries(this.getPath(dir)).catch(() => [] as string[]);
     await Promise.all(
       entries.map(async (name) => {
         const entry = path.join(dir, name);
+        if (entry === AppExecutor.#legacyNative) {
+          this.logger.warn(
+            `apps/${this.name}/.akan/native holds native builds from before they moved to dist/native/${this.name}: upload any release waiting in its updates folders, then delete it.`,
+          );
+          return;
+        }
         if (AppExecutor.#keptOnStart.includes(entry)) return;
         if (AppExecutor.#keptOnStart.some((kept) => kept.startsWith(`${entry}${path.sep}`)))
           return await this.#removeDevOutput(entry);
@@ -1209,10 +1211,10 @@ export class AppExecutor extends SysExecutor {
     // Ports and the operation mode are dropped: `define` would bake them in and outrank the container's own values.
     if (type === "build") {
       const buildEnv = { ...env };
-      delete buildEnv.AKAN_PUBLIC_CLIENT_PORT;
-      delete buildEnv.AKAN_PUBLIC_SERVER_PORT;
-      delete buildEnv.AKAN_PUBLIC_OPERATION_MODE;
-      delete process.env.AKAN_PUBLIC_OPERATION_MODE;
+      for (const key of ["AKAN_PUBLIC_CLIENT_PORT", "AKAN_PUBLIC_SERVER_PORT", "AKAN_PUBLIC_OPERATION_MODE"]) {
+        delete buildEnv[key];
+        delete process.env[key];
+      }
       Object.assign(process.env, buildEnv);
     }
     return { env };

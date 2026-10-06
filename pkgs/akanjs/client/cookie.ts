@@ -47,19 +47,17 @@ export const cookies = (): Map<string, { name: string; value: string }> => {
 export const setCookie = (
   key: string,
   value: string,
-  options: CookieOptions = { path: "/", sameSite: "none", secure: true },
+  { path = "/", sameSite = "lax", secure = true }: CookieOptions = {},
 ) => {
   if (getEnv().side === "server") return;
   if (!pageKeepsCookies()) {
     writeCookieJar({ ...readCookieJar(), [key]: value });
     return;
   }
-  const encoded = `${key}=${value}`;
-  const path = options.path ? `; path=${options.path}` : "";
-  const sameSite = options.sameSite ? `; SameSite=${options.sameSite}` : "";
-  const secure = options.secure ? "; Secure" : "";
+  const pathAttr = path ? `; path=${path}` : "";
+  const secureAttr = secure ? "; Secure" : "";
   // biome-ignore lint/suspicious/noDocumentCookie: Akan auth helpers intentionally manage browser cookies.
-  document.cookie = `${encoded}${path}${sameSite}${secure}`;
+  document.cookie = `${key}=${value}${pathAttr}; SameSite=${sameSite}${secureAttr}`;
 };
 
 /** Reads through `cookies()` on both sides: a hand-rolled `split("=")` cuts base64 padding and skips the `j:` form. */

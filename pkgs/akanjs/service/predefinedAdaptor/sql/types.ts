@@ -5,6 +5,7 @@ import type {
   DocumentQuery,
   DocumentQueryNode,
   DocumentSchema,
+  DocumentScopeOptions,
   DocumentUpdateInput,
   DocumentUpdateOperator,
   DocumentUpdateOptions,
@@ -65,6 +66,7 @@ export interface DocumentStore {
   updateManyByQuery(
     query: DocumentQuery,
     update: DocumentUpdateInput,
+    options?: DocumentScopeOptions,
   ): Promise<{ acknowledged: boolean; matchedCount: number; modifiedCount: number }>;
   removeManyByQuery(
     query: DocumentQuery,
@@ -76,19 +78,13 @@ export interface DocumentStore {
     operations: { updateOne: { filter: DocumentQuery; update: DocumentUpdateInput; upsert?: boolean } }[],
   ): Promise<{ acknowledged: boolean; matchedCount: number; modifiedCount: number; upsertedId: string | null }>;
   find(query?: DocumentQuery, options?: FindManyOptions): Promise<any[]>;
-  findIds(
-    query?: DocumentQuery,
-    options?: { sort?: SortOption; skip?: number | null; limit?: number | null; sample?: number },
-  ): Promise<string[]>;
+  findIds(query?: DocumentQuery, options?: Omit<FindManyOptions, "select">): Promise<string[]>;
   findOne(query?: DocumentQuery, options?: FindOneOptions): Promise<any | null>;
-  findId(
-    query?: DocumentQuery,
-    options?: { sort?: SortOption; skip?: number | null; sample?: boolean },
-  ): Promise<string | null>;
+  findId(query?: DocumentQuery, options?: FindIdOptions): Promise<string | null>;
   pickOne(query?: DocumentQuery, options?: FindOneOptions): Promise<any>;
   pickById(id: string): Promise<any>;
-  exists(query?: DocumentQuery): Promise<string | null>;
-  count(query?: DocumentQuery): Promise<number>;
+  exists(query?: DocumentQuery, options?: DocumentScopeOptions): Promise<string | null>;
+  count(query?: DocumentQuery, options?: DocumentScopeOptions): Promise<number>;
   insight(query?: DocumentQuery): Promise<any>;
   hydrate(data: DocumentRecord, originalData?: DocumentRecord, options?: { track?: boolean }): any;
   /** A document as text that another process turns back into the same document. */
@@ -156,14 +152,20 @@ export type MutableDocumentRecord = Record<string, unknown>;
 export type FieldMap = Record<string, { getProps: () => Record<string, unknown>; [key: string]: unknown }>;
 export type SortOption = Record<string, 1 | -1> | null | undefined;
 export type ProjectionOption = Partial<Record<string, boolean>> | null | undefined;
-export type FindManyOptions = {
+export type FindManyOptions = DocumentScopeOptions & {
   sort?: SortOption;
   skip?: number | null;
   limit?: number | null;
   sample?: number;
   select?: ProjectionOption;
 };
-export type FindOneOptions = { sort?: SortOption; skip?: number | null; sample?: boolean; select?: ProjectionOption };
+export type FindOneOptions = DocumentScopeOptions & {
+  sort?: SortOption;
+  skip?: number | null;
+  sample?: boolean;
+  select?: ProjectionOption;
+};
+export type FindIdOptions = DocumentScopeOptions & { sort?: SortOption; skip?: number | null; sample?: boolean };
 export type WriteHookOptions = { runSaveHooks?: boolean; crudType?: "update" | "remove" };
 export type QueryOperatorName = Extract<DocumentQueryNode, { kind: "op" }>["op"];
 export interface SqliteDocumentRow {

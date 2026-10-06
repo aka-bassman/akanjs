@@ -15,7 +15,14 @@ import {
   SLICE_META,
 } from "akanjs/base";
 import { capitalize, cookieHeaderHasAuthToken, Logger } from "akanjs/common";
-import { type ConstantField, deserialize, resolvePageLimit, resolvePageSkip, serialize } from "akanjs/constant";
+import {
+  type ConstantField,
+  deserialize,
+  MAX_PAGE_SIZE,
+  resolvePageLimit,
+  resolvePageSkip,
+  serialize,
+} from "akanjs/constant";
 import { baseDocumentColumns, documentQueryHelper, getFilterSortByKey, type QueryFieldMap } from "akanjs/document";
 import {
   type AkanJob,
@@ -30,6 +37,7 @@ import {
 import { websocketRoomContract } from "../../common/websocketContract";
 import { type Endpoint, type EndpointCls, sliceEndpoint } from "../../signal/endpoint";
 import type { EndpointInfo } from "../../signal/endpointInfo";
+import { EndpointRateLimit } from "../../signal/endpointRateLimit";
 import type { Internal, InternalCls } from "../../signal/internal";
 import type { InternalInfo } from "../../signal/internalInfo";
 import type { MiddlewareCls } from "../../signal/middleware";
@@ -65,6 +73,7 @@ export class SignalResolver {
   };
   static readonly #coalescingRooms = new Set<string>();
   static readonly #liveRoutes = new Map<string, { store: DocumentStore; route: LiveRoute }>();
+  static readonly #everyRowAsked = new Set<string>();
 
   static coalescesRoom(roomId: string): boolean {
     const separator = roomId.indexOf("-");
@@ -326,6 +335,18 @@ export class SignalResolver {
     else SignalResolver.logger.warn(message);
   }
 
+  // `limit: 0` is Mongo's "every row", which a client is never served: it gets the most one page may hold instead.
+  static #clientPageLimit(listKey: string, asked: unknown) {
+    if (asked !== 0) return resolvePageLimit(asked);
+    if (!SignalResolver.#everyRowAsked.has(listKey)) {
+      SignalResolver.#everyRowAsked.add(listKey);
+      SignalResolver.logger.warn(
+        `${listKey} was asked for limit: 0 and served ${MAX_PAGE_SIZE} rows, the most a client may take; paginate, or name a page size`,
+      );
+    }
+    return MAX_PAGE_SIZE;
+  }
+
   static #getJobArgs(key: string, internalInfo: InternalInfo, job: AkanJob): unknown[] {
     const data = Array.isArray(job.data) ? (job.data as unknown[]) : job.data === undefined ? [] : [job.data];
     return internalInfo.args.map((arg, idx) =>
@@ -374,7 +395,7 @@ export class SignalResolver {
           .exec(async function (this: any, ...requestArgs: any) {
             const args = requestArgs.slice(0, argLength);
             const skip = resolvePageSkip(requestArgs[argLength]);
-            const limit = resolvePageLimit(requestArgs[argLength + 1]);
+            const limit = SignalResolver.#clientPageLimit(listKey, requestArgs[argLength + 1]);
             const sort = requestArgs[argLength + 2] ?? "latest";
             const internalArgs = requestArgs.slice(argLength + 3);
             const query = assertSliceQuery(
@@ -441,41 +462,46 @@ export class SignalResolver {
           });
       });
 
-      endpointObj[refName] = (builder as any)
-        .query(cnst.full, { guards: sliceCls.getGuards })
-        .param(`${refName}Id`, ID)
-        .exec(async function (this: any, id: string) {
-          return await this[serviceName][`get${capitalizedRefName}`](id);
-        });
+      if (sliceCls.crud.get) {
+        endpointObj[refName] = (builder as any)
+          .query(cnst.full, { guards: sliceCls.getGuards })
+          .param(`${refName}Id`, ID)
+          .exec(async function (this: any, id: string) {
+            return await this[serviceName][`get${capitalizedRefName}`](id);
+          });
 
-      endpointObj[`light${capitalizedRefName}`] = (builder as any)
-        .query(cnst.light, { guards: sliceCls.getGuards })
-        .param(`${refName}Id`, ID)
-        .exec(async function (this: any, id: string) {
-          return await this[serviceName][`get${capitalizedRefName}`](id);
-        });
+        endpointObj[`light${capitalizedRefName}`] = (builder as any)
+          .query(cnst.light, { guards: sliceCls.getGuards })
+          .param(`${refName}Id`, ID)
+          .exec(async function (this: any, id: string) {
+            return await this[serviceName][`get${capitalizedRefName}`](id);
+          });
+      }
 
-      endpointObj[`create${capitalizedRefName}`] = (builder as any)
-        .mutation(cnst.full, { guards: sliceCls.createGuards })
-        .body("data", cnst.input)
-        .exec(async function (this: any, data: any) {
-          return await this[serviceName].__create(data);
-        });
+      if (sliceCls.crud.create)
+        endpointObj[`create${capitalizedRefName}`] = (builder as any)
+          .mutation(cnst.full, { guards: sliceCls.createGuards })
+          .body("data", cnst.input)
+          .exec(async function (this: any, data: any) {
+            return await this[serviceName].__create(data);
+          });
 
-      endpointObj[`update${capitalizedRefName}`] = (builder as any)
-        .mutation(cnst.full, { guards: sliceCls.updateGuards })
-        .param(`${refName}Id`, ID)
-        .body("data", cnst.input)
-        .exec(async function (this: any, id: string, data: any) {
-          return await this[serviceName].__update(id, data);
-        });
+      if (sliceCls.crud.update)
+        endpointObj[`update${capitalizedRefName}`] = (builder as any)
+          .mutation(cnst.full, { guards: sliceCls.updateGuards })
+          .param(`${refName}Id`, ID)
+          .body("data", cnst.input)
+          .exec(async function (this: any, id: string, data: any) {
+            return await this[serviceName].__update(id, data);
+          });
 
-      endpointObj[`remove${capitalizedRefName}`] = (builder as any)
-        .mutation(cnst.full, { guards: sliceCls.removeGuards })
-        .param(`${refName}Id`, ID)
-        .exec(async function (this: any, id: string) {
-          return await this[serviceName].__remove(id);
-        });
+      if (sliceCls.crud.remove)
+        endpointObj[`remove${capitalizedRefName}`] = (builder as any)
+          .mutation(cnst.full, { guards: sliceCls.removeGuards })
+          .param(`${refName}Id`, ID)
+          .exec(async function (this: any, id: string) {
+            return await this[serviceName].__remove(id);
+          });
       return endpointObj;
     }) {}
     return SliceEndpoint;
@@ -606,6 +632,7 @@ export class SignalResolver {
     const routeOptions: NonNullable<SignalRoutes["routeOptions"]> = {};
     const wsRoutes: WebsocketRoutes = {};
     const defaultPrefix = endpointCls.srv.cnst?.refName;
+    SignalResolver.#warnUnguarded(endpointMeta);
     Object.entries(endpointMeta).forEach(([key, endpointInfo]) => {
       const path = endpointInfo.getRoutePath(key, defaultPrefix);
       if (endpointInfo.signalOption.globalPrefix !== undefined) {
@@ -633,7 +660,7 @@ export class SignalResolver {
           SignalResolver.#mountHttpRoute(
             routes,
             path,
-            SignalResolver.#canUsePrimitiveQueryFastPath(endpointInfo, middleware)
+            SignalResolver.#canUsePrimitiveQueryFastPath(key, endpointInfo, middleware)
               ? {
                   GET: async (req) => {
                     if (req.headers.get("authorization") || cookieHeaderHasAuthToken(req.headers.get("cookie")))
@@ -739,6 +766,16 @@ export class SignalResolver {
     return { routes, wsRoutes, routeOptions };
   }
 
+  // Security: guards are the only gate a transport has, so an endpoint naming none answers anyone over HTTP and WS.
+  static #warnUnguarded(endpointMeta: { [key: string]: EndpointInfo }) {
+    const open = Object.entries(endpointMeta)
+      .filter(([, endpointInfo]) => !endpointInfo.signalOption.guards?.length)
+      .map(([key]) => key);
+    if (!open.length) return;
+    SignalResolver.logger.warn(
+      `${open.join(", ")} declare${open.length === 1 ? "s" : ""} no guards, so anyone can call ${open.length === 1 ? "it" : "them"} over HTTP and WebSocket. Name the guards, or \`guards: [Public]\` to keep one open on purpose.`,
+    );
+  }
   static #selectCache = new WeakMap<Cls, Record<string, true>>();
   static #selectForConstant(constant: Cls): Record<string, true> | undefined {
     const cached = SignalResolver.#selectCache.get(constant);
@@ -750,9 +787,14 @@ export class SignalResolver {
     return select;
   }
 
-  static #canUsePrimitiveQueryFastPath(endpointInfo: EndpointInfo, middleware: Map<string, MiddlewareCls>) {
+  static #canUsePrimitiveQueryFastPath(
+    key: string,
+    endpointInfo: EndpointInfo,
+    middleware: Map<string, MiddlewareCls>,
+  ) {
     return (
       process.env.AKAN_TRACE !== "1" &&
+      !EndpointRateLimit.budgetOf(key, endpointInfo) &&
       endpointInfo.args.length === 0 &&
       endpointInfo.internalArgs.length === 0 &&
       (endpointInfo.signalOption.guards?.length ?? 0) === 0 &&

@@ -7,8 +7,8 @@ export type DocumentHookName = `before${Capitalize<SaveEventType>}` | `after${Ca
 
 export interface DocumentIndexDescriptor {
   name?: string;
-  // `"text"` is a Mongo-era alias for `1`. Do not rewrite existing call sites: the descriptor hash in `_akan_meta`
-  // would change and `ensure()` throws `Index descriptor mismatch` on every live database.
+  // Only 1 and -1 build a key. `"text"` (MongoDB's text index) builds nothing and warns, and the B-tree an earlier
+  // version built from it is dropped: full-text search is a field's `text` role.
   fields: Record<string, 1 | -1 | "text" | boolean>;
   unique?: boolean;
   where?: DocumentQuery;

@@ -6,7 +6,8 @@
 //   with shell\open\command `"<exe>" "%1"`,
 //   Linux a hidden <app id>.desktop in $XDG_DATA_HOME/applications with x-scheme-handler MIME
 //   types, made the default in $XDG_CONFIG_HOME/mimeapps.list. As tauri-plugins-workspace
-//   deep-link's register() does (plugins/deep-link/src/lib.rs), without xdg-mime.
+//   deep-link's register() does (plugins/deep-link/src/lib.rs), without xdg-mime. The shell names
+//   its window after the app id (lib.rs), so a dock takes this entry's name and icon for it.
 // - A cold start's link is in process.argv; a link while the app runs starts a second process,
 //   which single-instance hands over (DesktopContext.openUrls). Only a single argument that is a
 //   URL of one of the app's schemes counts as a link (the same rule as deep-link's
@@ -37,12 +38,19 @@ export function desktopExec(exe: string): string {
   return `"${exe.replace(/[\\"`$]/g, (c) => `\\${c}`)}" %u`;
 }
 
-export function desktopEntry(name: string, exe: string, schemes: readonly string[]): string {
+export function desktopEntry(
+  name: string,
+  exe: string,
+  schemes: readonly string[],
+  { id, icon = false }: { id?: string; icon?: boolean } = {},
+): string {
   return [
     "[Desktop Entry]",
     "Type=Application",
     `Name=${name.replace(/[\r\n]/g, " ")}`,
     `Exec=${desktopExec(exe)}`,
+    ...(id && icon ? [`Icon=${id}`] : []),
+    ...(id ? [`StartupWMClass=${id}`] : []),
     "Terminal=false",
     // A link handler, not a launcher entry: the app's package (CLI-9) brings the visible one.
     "NoDisplay=true",
@@ -81,17 +89,28 @@ function writeIfChanged(path: string, text: string): boolean {
   return true;
 }
 
+/** Copies the app's icon into the user's hicolor theme as <app id>.png; false without one. */
+function installIcon(dataHome: string, id: string, icon: string | undefined): boolean {
+  if (!icon || !existsSync(icon)) return false;
+  const target = join(dataHome, "icons", "hicolor", "256x256", "apps", `${id}.png`);
+  const bytes = readFileSync(icon);
+  if (existsSync(target) && readFileSync(target).equals(bytes)) return true;
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, bytes);
+  return true;
+}
+
 async function registerLinux(
   app: { id: string; name: string },
   exe: string,
   schemes: readonly string[],
-  env: Env,
-  home: string,
-  runner: Runner,
+  { env, home, runner, icon }: { env: Env; home: string; runner: Runner; icon?: string },
 ): Promise<void> {
   const file = `${app.id}.desktop`;
-  const applications = join(xdg(env.XDG_DATA_HOME, join(home, ".local", "share")), "applications");
-  const entryChanged = writeIfChanged(join(applications, file), desktopEntry(app.name, exe, schemes));
+  const dataHome = xdg(env.XDG_DATA_HOME, join(home, ".local", "share"));
+  const applications = join(dataHome, "applications");
+  const entry = desktopEntry(app.name, exe, schemes, { id: app.id, icon: installIcon(dataHome, app.id, icon) });
+  const entryChanged = writeIfChanged(join(applications, file), entry);
   const listPath = join(xdg(env.XDG_CONFIG_HOME, join(home, ".config")), "mimeapps.list");
   const list = existsSync(listPath) ? readFileSync(listPath, "utf8") : "";
   writeIfChanged(listPath, withDefaults(list, file, schemes));
@@ -140,16 +159,21 @@ async function registerWindows(
   }
 }
 
-/** Makes this executable the current user's handler of the app's schemes (Windows, Linux). */
+/**
+ * Makes this executable the current user's handler of the app's schemes (Windows, Linux). `icon`: a 256 px PNG the
+ * Linux entry shows (resources/icon.png).
+ */
 export async function registerDeepLinks(
   app: { id: string; name: string },
   schemes: readonly string[],
-  options: { exe?: string; platform?: NodeJS.Platform; env?: Env; home?: string; run?: Runner } = {},
+  options: { exe?: string; platform?: NodeJS.Platform; env?: Env; home?: string; run?: Runner; icon?: string } = {},
 ): Promise<void> {
   const platform = options.platform ?? process.platform;
   if (!schemes.length || (platform !== "win32" && platform !== "linux")) return;
-  const exe = options.exe ?? process.execPath;
+  const env = options.env ?? process.env;
+  // An AppImage runs from a mount point made anew at every start and gone at exit; $APPIMAGE is the file itself.
+  const exe = options.exe ?? (env.APPIMAGE || process.execPath);
   const runner = options.run ?? run;
   if (platform === "win32") await registerWindows(app, exe, schemes, runner);
-  else await registerLinux(app, exe, schemes, options.env ?? process.env, options.home ?? homedir(), runner);
+  else await registerLinux(app, exe, schemes, { env, home: options.home ?? homedir(), runner, icon: options.icon });
 }

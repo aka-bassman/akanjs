@@ -24,7 +24,8 @@ export const createTunnel = async (
       dstHost,
       dstPort,
       sshOptions: {
-        host,
+        //? RFC 6761 makes *.localhost loopback, but only macOS resolves it; glibc without systemd-resolved and Windows answer ENOTFOUND
+        host: host.endsWith(".localhost") ? "localhost" : host,
         port: sshPort,
         username: process.env.SSH_TUNNEL_USERNAME ?? "root",
         password: process.env.SSH_TUNNEL_PASSWORD ?? repoName,

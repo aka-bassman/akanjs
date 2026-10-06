@@ -20,7 +20,7 @@ Runtime And Infra
 
 Stable
 
-Experimental
+Beta
 
 Infra Architecture
 
@@ -128,7 +128,7 @@ Where it runs
 
 Cache · queue · pubsub
 
-- single — One SQLite file — SQLite files: a key-value cache, and a queue and pubsub sped up by Bun IPC — One container
+- single — One SQLite file — SQLite Solid — One container
 
 - multiple — One SQLite file (WAL) on a host volume that every container opens — Redis — Several containers on one host
 
@@ -140,7 +140,7 @@ When to pick each mode
 
 When → what you get
 
-- single: The best start for MVPs, internal tools, admin pages, content sites and small-to-medium services.→ Enough for most products under roughly 10k DAU, especially with WAL mode.
+- single: The best start for MVPs, internal tools, admin pages, content sites and small-to-medium services.Cache, pubsub and queue run on SQLite files, sped up by Bun IPC.→ Enough for most products under roughly 10k DAU, especially with WAL mode.
 
 - multiple: When one host runs several containers that need a shared cache, pub/sub and queue.→ Lighter than cluster: cache and background work move to Redis, the data stays in one SQLite file.
 
@@ -230,11 +230,11 @@ Database mode
 
 - 1. Single serverStable — one — one — single
 
-- 2. Multiple containersExperimental — one — several — multiple / cluster
+- 2. Multiple containersBeta — one — several — multiple / cluster
 
-- 3. Cloud clusterExperimental — several — several — cluster
+- 3. Cloud clusterBeta — several — several — cluster
 
-Stage 1 is stable, and stages 2 and 3 are experimental. Both have a recipe under Database Mode above: docker compose on one host for stage 2, the chart's cluster mode for stage 3.
+Stage 1 is stable, and stages 2 and 3 are in beta. Both have a recipe under Database Mode above: docker compose on one host for stage 2, the chart's cluster mode for stage 3.
 
 1. Single server
 

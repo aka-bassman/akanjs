@@ -32,7 +32,7 @@ module files, `page/**`, barrels
 
 `apps/**` `libs/**`, except tests, `*.constant.ts`, `common/**`, `env/**`
 
-A thrown `Error`. Throw `new Err("<module>.error.<key>")` and register the key.
+A thrown `Error`. Throw `new Err("<module>.error.<key>")` and register the key. An `Error` built anywhere else, to reject, return or store, is a warning.
 
 `logger.log()` reads like its own level but emits at `info`. Write `.info()`.
 
@@ -64,7 +64,15 @@ A `cnst` model as a prop type of an always-client file. Take an id instead.
 
 An endpoint that reuses a generated CRUD name, such as `create<Model>` or `view<Model>`.
 
+`*.signal.ts` — a warning
+
+An endpoint or slice `init()` with no `guards` or `guards: []`, and a slice with no `guards` or no `root`. Each is open to every caller; write `guards: [Public]` when that is the intent.
+
+`{{name}}` in an `.error()` or `.translate()` entry is never filled in and shows as typed. Write `{name}`.
+
 A `#private` method. Use a TypeScript `private _method()` instead.
+
+A `static` on `XObject` or `LightX`, which never reaches the full model. Declare it on `XInput`, `X` or `XInsight`.
 
 A React hook or `st` imported into a server component. Move the interaction out.
 
@@ -104,7 +112,7 @@ Term
 
 - Biome: The formatter and linter this workspace uses. `akan lint` runs it for you.
 
-- grit plugin: A lint rule written in GritQL for Akan and run by Biome. There are 25.
+- grit plugin: A lint rule written in GritQL for Akan and run by Biome. There are 28.
 
 - diagnostic: One finding Biome prints: the file, the line, the rule name and a message.
 
@@ -150,7 +158,7 @@ Each diagnostic prints the name of the rule that fired. Find that name below; th
 
 Every Rule That Breaks The Build
 
-Twenty-two are grit plugins written for Akan, and every one of them is an error. The rest are Biome's own. Each plugin looks only at its scope, so a plain package under `pkgs/` never trips the module rules.
+Twenty-eight are grit plugins written for Akan, each an error unless its row names a warning, which prints without failing the build. The rest are Biome's own. Each plugin looks only at its scope, so a plain package under `pkgs/` never trips the module rules.
 
 Colour vocabulary
 
@@ -162,7 +170,7 @@ All five look at every `.ts` and `.tsx` file in `apps/` and `libs/`, except test
 
 - no-daisyui-legacy-class: Removed daisyUI classes such as `btn-primary`, `card-body` and `bg-base-100` render unstyled.
 
-- no-inline-color: A colour literal in `style={{ ... }}` or a `<style>` body skips tokens and theme switching.
+- no-inline-color: A colour literal in `style={{ ... }}` or a `<style>` body skips tokens and theme switching. The same literal in an SVG colour attribute (`fill`, `stroke`, `stopColor`, …) or an `el.style` write is a warning.
 
 - no-interpolated-arbitrary-class: A runtime-built arbitrary value like `min-h-[${n}px]` has no CSS. Use `style` or literal classes.
 

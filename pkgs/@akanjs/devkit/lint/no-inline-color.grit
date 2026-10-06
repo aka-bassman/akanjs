@@ -7,15 +7,31 @@ language js(typescript, jsx)
 // The `<style>` arm covers the same literal in a tag body, which is the other way a color reaches
 // the page without passing the vocabulary. Both arms are needed because the two sites are different
 // node kinds — a string in an object property, and a chunk of a template literal.
+// SVG color attributes and `element.style` writes are the same bypass outside a style object. They are
+// warnings, not errors, so code written before the rule reached them is not broken.
+// The hex arm skips `url(#id)`: a paint-server id such as `#fade` is spelled in hex digits.
 // Cases: lint/__fixtures__/no-inline-color/{bad,good}.tsx
 or {
-  JsStringLiteralExpression() as $s where { $s <: within `style={$obj}` },
-  JsTemplateChunkElement() as $s where { $s <: within `<style>$body</style>` }
+  or {
+    JsStringLiteralExpression() as $s where { $s <: within `style={$obj}` },
+    JsTemplateChunkElement() as $s where { $s <: within `<style>$body</style>` }
+  } where { $tier = "error" },
+  or {
+    or { JsxString(), JsStringLiteralExpression(), JsTemplateChunkElement() } as $s where {
+      $s <: within JsxAttribute(name = r"(?:fill|stroke|stopColor|floodColor|lightingColor|color|stop-color|flood-color|lighting-color)")
+    },
+    or { JsStringLiteralExpression(), JsTemplateChunkElement() } as $s where {
+      $s <: within or { `$el.style.$prop = $value`, `$el.style[$prop] = $value`, `$el.style.setProperty($prop, $value)` }
+    }
+  } where { $tier = "warn" }
 } where {
-  $s <: r"[\s\S]*(?:#[0-9a-fA-F]{3,8}|(?:rgb|rgba|hsl|hsla|oklch|oklab|lab|lch|hwb)\()[\s\S]*",
+  $s <: or {
+    r"[\s\S]*(?:(?:^|[^(\x22'])#|(?:^|[^lL])\([\x22']?#|(?:^|[^rR])[lL]\([\x22']?#|(?:^|[^uU])[rR][lL]\([\x22']?#|(?:^|[^(])[\x22']#)[0-9a-fA-F]{3,8}(?:$|[^0-9A-Za-z_-])[\s\S]*",
+    r"[\s\S]*(?:rgb|rgba|hsl|hsla|oklch|oklab|lab|lch|hwb)\([\s\S]*"
+  },
   register_diagnostic(
     span = $s,
-    message = "Inline color literal bypasses semantic tokens and theme switching. Use a token class, or style={{ color: 'var(--primary)' }} when a runtime value is unavoidable.",
-    severity = "error"
+    message = "Inline color literal bypasses semantic tokens and theme switching. Use a token class, currentColor, or a token variable: style={{ color: 'var(--primary)' }}, fill='currentColor', el.style.color = 'var(--primary)'. A fixed brand or data-viz color takes // biome-ignore lint/plugin: <reason>.",
+    severity = $tier
   )
 }

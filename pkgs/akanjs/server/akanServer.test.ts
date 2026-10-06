@@ -507,6 +507,32 @@ describe("AkanServer agent relay access", () => {
   });
 });
 
+describe("AkanServer rate limit", () => {
+  test("applies the budget an option.ts declares, and AKAN_RATE_LIMIT=off wins over it", async () => {
+    const { EndpointRateLimit } = await import("../signal/endpointRateLimit");
+    const { buildEndpoint } = await import("../signal/endpointInfo");
+    const { AkanOption, AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-rate-"));
+    const previous = process.env.AKAN_RATE_LIMIT;
+    const undeclared = buildEndpoint.query(String).exec(() => "ok");
+    const option = () => new AkanOption().setRateLimit({ enabled: true, budget: { calls: 10 } });
+    try {
+      delete process.env.AKAN_RATE_LIMIT;
+      new AkanServer("serverGet", createEnv(tmp), "all", createLib(option()));
+      expect(EndpointRateLimit.budgetOf("any", undeclared)).toEqual({ calls: 10, windowMs: 60_000, by: "ip" });
+
+      process.env.AKAN_RATE_LIMIT = "off";
+      new AkanServer("serverGet", createEnv(tmp), "all", createLib(option()));
+      expect(EndpointRateLimit.budgetOf("any", undeclared)).toBeNull();
+    } finally {
+      if (previous === undefined) delete process.env.AKAN_RATE_LIMIT;
+      else process.env.AKAN_RATE_LIMIT = previous;
+      EndpointRateLimit.reset();
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("AkanServer module exclusion", () => {
   test("takes a module out of the container, from the option or from the env", async () => {
     delete process.env.AKAN_DISABLE_MODULES;

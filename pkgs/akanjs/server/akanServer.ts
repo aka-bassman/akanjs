@@ -15,6 +15,7 @@ import type {
 import type { ServerSignal, ServerSignalCls, WebsocketPublishData } from "akanjs/signal";
 import { AgentMeter } from "../signal/agentMeter";
 import { CrossSiteGuard } from "../signal/CrossSiteGuard";
+import { EndpointRateLimit } from "../signal/endpointRateLimit";
 import { AgentRelayAccess } from "../signal/guards";
 import { createOpenApiDocument } from "../signal/openapi";
 import { FetchSerializer } from "../signal/serializer";
@@ -189,6 +190,7 @@ export class AkanServer {
     this.env = { ...env };
     this.openapi = options?.openapi ?? this.openapi;
     // Each lib's `option.ts` in mount order, the app's last, and an option passed here over all of them.
+    EndpointRateLimit.reset();
     libs.forEach((lib) => {
       const mcp = lib.option.getMcp(this.env);
       if (mcp !== undefined) this.setMcp(mcp);
@@ -198,7 +200,10 @@ export class AkanServer {
       if (usage !== undefined || quota !== undefined) AgentMeter.use({ usage, quota });
       const crossSite = lib.option.getCrossSite();
       if (crossSite !== undefined) CrossSiteGuard.configure(crossSite);
+      const rateLimit = lib.option.getRateLimit(this.env);
+      if (rateLimit !== undefined) EndpointRateLimit.configure(rateLimit);
     });
+    EndpointRateLimit.applyEnv(process.env.AKAN_RATE_LIMIT, getEnv().environment);
     this.setMcp(options?.mcp ?? this.mcp);
     this.serverMode = serverMode;
     // `AKAN_MODULES` is how a gateway hands its own `modules` option to the child that mounts the container.

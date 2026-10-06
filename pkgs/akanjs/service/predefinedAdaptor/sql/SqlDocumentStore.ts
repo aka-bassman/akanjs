@@ -1,11 +1,13 @@
 import { DEFAULT_VALUE, dayjs, FIELD_META } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import { type ConstantModel, freshPrimitiveValue, getDefault } from "akanjs/constant";
+import { Err } from "akanjs/dictionary";
 import {
   createDocumentId,
   type DatabaseModel,
   type DocumentQuery,
   type DocumentSchema,
+  type DocumentScopeOptions,
   type DocumentUpdate,
   type DocumentUpdateInput,
   type DocumentUpdateNode,
@@ -13,6 +15,7 @@ import {
   documentQueryHelper,
   isDocumentId,
   isDocumentUpdateNode,
+  LiveRowScope,
   NoDocumentError,
   resolveDocumentUpdate,
   sanitizeJson,
@@ -26,6 +29,7 @@ import {
   type DocumentDatabaseOwner,
   type DocumentRecord,
   type FieldMap,
+  type FindIdOptions,
   type FindManyOptions,
   type FindOneOptions,
   MODIFICATION_STATE,
@@ -59,6 +63,9 @@ interface DeclaredIndex {
   next: string;
   metaKey: string;
   hash: string;
+  fields: Record<string, unknown>;
+  /** A key ordered neither 1 nor -1, as MongoDB's `"text"`: no SQL index here stands for it. */
+  unbuilt: boolean;
   create: (name: string, concurrently: boolean) => string;
 }
 
@@ -80,6 +87,8 @@ export class SqlDocumentStore {
   static readonly #logger = new Logger("SqlDocumentStore");
   /** The row a document was read or last written as. */
   static readonly #storedRow = Symbol("akan.storedRow");
+  /** Set on a document read as removed, which only a `withRemoved` read hands out. */
+  static readonly #readRemoved = Symbol("akan.readRemoved");
 
   constructor(
     private readonly owner: DocumentDatabaseOwner,
@@ -104,7 +113,8 @@ export class SqlDocumentStore {
 
   async #ensure() {
     this.assertValidRefName(this.table);
-    const indexes = await this.#declaredIndexes();
+    const declared = await this.#declaredIndexes();
+    const indexes = declared.filter((index) => !index.unbuilt);
     const createSchema = async () => {
       const db = this.owner.getConnection();
       const existed = !!this.owner.buildIndexConcurrently && !!(await this.owner.hasTable?.(this.table));
@@ -123,6 +133,7 @@ export class SqlDocumentStore {
         `table:${this.table}`,
         await descriptorHash({ table: this.table, columns: ["id", "createdAt", "updatedAt", "removedAt", "_doc"] }),
       );
+      for (const index of declared) if (index.unbuilt) await this.#skipUnbuiltIndex(index, indexes);
       const concurrent: (DeclaredIndex & { replace: boolean })[] = [];
       for (const index of indexes) {
         const stored = await this.owner.getMeta(index.metaKey);
@@ -153,22 +164,28 @@ export class SqlDocumentStore {
     await this.owner.getSearchIndex()?.ensureRef(this.constant, this.database);
   }
 
+  // A skipped declaration keeps its position: a name carries its index, so filtering first would rename the rest.
   async #declaredIndexes(): Promise<DeclaredIndex[]> {
     return await Promise.all(
       this.schema.indexes.map(async (index, idx) => {
         const declared = index.name ?? `${this.table}_${Object.keys(index.fields).map(toSafeRefName).join("_")}_${idx}`;
         this.assertValidRefName(declared);
         const name = this.dialect.indexName(declared);
-        const columns = Object.keys(index.fields).map((path) => ({
-          path,
-          expr: this.compiler.fieldExpr(path),
-          isArray: this.compiler.isArrayPath(path),
-        }));
+        const unbuilt = Object.values(index.fields).some((order) => order !== 1 && order !== -1);
+        const columns = unbuilt
+          ? []
+          : Object.keys(index.fields).map((path) => ({
+              path,
+              expr: this.compiler.fieldExpr(path),
+              isArray: this.compiler.isArrayPath(path),
+            }));
         return {
           name,
           next: this.dialect.indexName(`${declared}_next`),
           metaKey: `index:${this.table}:${name}`,
           hash: await descriptorHash(index),
+          fields: index.fields,
+          unbuilt,
           create: (target: string, concurrently: boolean) =>
             this.dialect.createIndex({
               name: target,
@@ -179,6 +196,24 @@ export class SqlDocumentStore {
             }),
         };
       }),
+    );
+  }
+
+  // Dropped only on proof that this very descriptor built it (the hash `ensure` stored) and no built index has the name.
+  async #skipUnbuiltIndex(index: DeclaredIndex, built: DeclaredIndex[]) {
+    const dropped =
+      (await this.owner.getMeta(index.metaKey)) === index.hash && !built.some(({ name }) => name === index.name);
+    if (dropped) {
+      await this.owner.getConnection().execute(`DROP INDEX IF EXISTS ${quoteIdent(index.name)}`);
+      // Emptied, not deleted (the owner has no delete): an empty hash reads as no index, so no later boot drops again.
+      await this.owner.setMeta(index.metaKey, "");
+    }
+    const paths = Object.keys(index.fields);
+    SqlDocumentStore.#logger.warn(
+      `Index ${JSON.stringify(index.fields)} on ${this.table} is not built: only 1 and -1 order a key, and "text" is ` +
+        `MongoDB's text index, which as a B-tree would copy each whole value and fail long writes on Postgres. Search ` +
+        `${paths.join(", ")} through the full-text role, field(String, { text: "desc" }), or declare ` +
+        `{ ${paths[0]}: 1 } to look it up by equality.${dropped ? ` Dropped ${index.name}, which an earlier boot built from it.` : ""}`,
     );
   }
 
@@ -268,9 +303,22 @@ export class SqlDocumentStore {
   // One atomic UPDATE firing no document hooks, as MongoDB query middleware skips document middleware; per-document
   // hooks need `create`/`update(id)`/`remove(id)`/`.save()`.
   async updateOneByQuery(query: DocumentQuery, update: DocumentUpdateInput, options: DocumentUpdateOptions = {}) {
+    if (options.upsert && options.withRemoved)
+      throw new Error(
+        `updateOneByQuery on "${this.table}" takes upsert or { withRemoved: true }, not both: a match would stay removed while a miss inserts a live row`,
+      );
+    return await this.#updateOne(query, update, options, "updateOneByQuery");
+  }
+
+  async #updateOne(
+    query: DocumentQuery,
+    update: DocumentUpdateInput,
+    options: DocumentUpdateOptions,
+    operation: string,
+  ) {
     const resolved = resolveDocumentUpdate(update);
     const { assignments, params } = this.compiledUpdate(resolved);
-    const { where, params: whereParams } = this.writeQuery(query, "updateOneByQuery");
+    const { where, params: whereParams } = this.writeQuery(query, operation, options);
     const subquery = `SELECT ${quoteIdent("id")} FROM ${quoteIdent(this.table)} WHERE ${where} ORDER BY ${this.compiler.orderBy()} LIMIT 1`;
     const sql = `UPDATE ${quoteIdent(this.table)} SET ${assignments.join(", ")} WHERE ${quoteIdent("id")} IN (${subquery})`;
     const changes = this.dialect.affectedRows(
@@ -287,9 +335,18 @@ export class SqlDocumentStore {
     return { acknowledged: true, matchedCount: 0, modifiedCount: 1, upsertedId: inserted.id };
   }
 
-  async updateManyByQuery(query: DocumentQuery, update: DocumentUpdateInput) {
+  async updateManyByQuery(query: DocumentQuery, update: DocumentUpdateInput, options: DocumentScopeOptions = {}) {
+    return await this.#updateMany(query, update, options, "updateManyByQuery");
+  }
+
+  async #updateMany(
+    query: DocumentQuery,
+    update: DocumentUpdateInput,
+    options: DocumentScopeOptions,
+    operation: string,
+  ) {
     const { assignments, params } = this.compiledUpdate(resolveDocumentUpdate(update));
-    const { where, params: whereParams } = this.writeQuery(query, "updateManyByQuery");
+    const { where, params: whereParams } = this.writeQuery(query, operation, options);
     const sql = `UPDATE ${quoteIdent(this.table)} SET ${assignments.join(", ")} WHERE ${where}`;
     const changes = this.dialect.affectedRows(
       await this.owner
@@ -300,14 +357,15 @@ export class SqlDocumentStore {
     return { acknowledged: true, matchedCount: changes, modifiedCount: changes };
   }
 
+  // No scope: an already-removed row keeps its `removedAt`, so a cascade reaching it again changes nothing.
   async removeManyByQuery(query: DocumentQuery) {
     // "remove", not "delete": the row survives, and `delete` stays free to mean an actual DELETE some day.
-    return this.updateManyByQuery(query, { removedAt: dayjs() });
+    return await this.#updateMany(query, { removedAt: dayjs() }, {}, "removeManyByQuery");
   }
 
   async removeOneByQuery(query: DocumentQuery) {
     // The newest match, reported as counts rather than an id: for "at most one of these", not a queue.
-    return this.updateOneByQuery(query, { removedAt: dayjs() });
+    return await this.#updateOne(query, { removedAt: dayjs() }, {}, "removeOneByQuery");
   }
 
   private compiledUpdate(update: DocumentUpdate) {
@@ -344,20 +402,24 @@ export class SqlDocumentStore {
       const rows = await this.prepareStmt(
         `SELECT ${this.projectionSql(projection)} ${tail}`,
       ).all<ProjectedSqliteDocumentRow>(...args);
-      return rows.map((row) => this.hydrate(this.fromProjectedRow(row, projection), undefined, { track: false }));
+      return rows.map((row) =>
+        this.#readAs(this.hydrate(this.fromProjectedRow(row, projection), undefined, { track: false }), row),
+      );
     }
     const rows = await this.prepareStmt(`SELECT ${star} ${tail}`).all<SqliteDocumentRow>(...args);
-    return rows.map((row) => this.#withStoredRow(this.hydrate(this.fromRow(row), undefined, { track: false }), row));
+    return rows.map((row) =>
+      this.#readAs(this.#withStoredRow(this.hydrate(this.fromRow(row), undefined, { track: false }), row), row),
+    );
   }
 
   async findIds(query?: DocumentQuery, options: Omit<FindManyOptions, "select"> = {}) {
-    const { tail, args } = this.listQuery(query, options);
+    const { tail, args } = this.listQuery(query, options, "findIds");
     const rows = await this.prepareStmt(`SELECT ${quoteIdent(this.table)}."id" ${tail}`).all<{ id: string }>(...args);
     return rows.map((row) => row.id);
   }
 
-  private listQuery(query: DocumentQuery | undefined, options: FindManyOptions) {
-    const { where, params, joins } = this.safeQuery(query);
+  private listQuery(query: DocumentQuery | undefined, options: FindManyOptions, operation = "find") {
+    const { where, params, joins } = this.safeQuery(query, operation, options);
     const limitValue = Number(options.limit ?? 0);
     const skipValue = Number(options.skip ?? 0);
     const order = options.sample ? "ORDER BY random()" : `ORDER BY ${this.orderBy(options.sort, joins)}`;
@@ -374,7 +436,7 @@ export class SqlDocumentStore {
     return (await this.find(query, { ...options, limit: 1, sample: options.sample ? 1 : undefined })).at(0) ?? null;
   }
 
-  async findId(query?: DocumentQuery, options: { sort?: SortOption; skip?: number | null; sample?: boolean } = {}) {
+  async findId(query?: DocumentQuery, options: FindIdOptions = {}) {
     return (await this.findIds(query, { ...options, limit: 1, sample: options.sample ? 1 : undefined })).at(0) ?? null;
   }
 
@@ -390,12 +452,12 @@ export class SqlDocumentStore {
     return doc;
   }
 
-  async exists(query?: DocumentQuery) {
-    return this.findId(query);
+  async exists(query?: DocumentQuery, options: DocumentScopeOptions = {}) {
+    return this.findId(query, options);
   }
 
-  async count(query?: DocumentQuery) {
-    const { where, params, joins } = this.safeQuery(query);
+  async count(query?: DocumentQuery, options: DocumentScopeOptions = {}) {
+    const { where, params, joins } = this.safeQuery(query, "count", options);
     const row = await this.prepareStmt(
       `SELECT count(*) as count FROM ${quoteIdent(this.table)}${this.joinSql(joins)} WHERE ${where}`,
     ).get<{ count: number }>(...this.joinParams(joins), ...params);
@@ -421,13 +483,28 @@ export class SqlDocumentStore {
     return result;
   }
 
-  private safeQuery(query?: DocumentQuery) {
+  private safeQuery(
+    query: DocumentQuery | undefined,
+    operation: string,
+    { withRemoved = false }: DocumentScopeOptions,
+  ) {
+    if (withRemoved) {
+      const compiled = this.compiler.compile(query ?? {});
+      // The search mirror drops a row when it is removed, so the join would silently leave every removed row out.
+      if (compiled.joins.length) throw new Error(`q.search() cannot see removed rows on "${this.table}"`);
+      return compiled;
+    }
+    const conflict = LiveRowScope.conflictOf(query);
+    if (conflict)
+      throw new Error(
+        `${operation} on "${this.table}" can never match (${conflict}); ${operation.startsWith("remove") ? "a remove reaches live rows only" : "pass { withRemoved: true }"}`,
+      );
     return this.compiler.compile(documentQueryHelper.all(documentQueryHelper.empty("removedAt"), query ?? {}));
   }
 
   // An atomic write has no join for the search; ignoring it would widen the write to every other match.
-  private writeQuery(query: DocumentQuery | undefined, operation: string) {
-    const compiled = this.safeQuery(query);
+  private writeQuery(query: DocumentQuery | undefined, operation: string, options: DocumentScopeOptions) {
+    const compiled = this.safeQuery(query, operation, options);
     if (compiled.joins.length)
       throw new Error(`q.search() cannot be used in ${operation} on "${this.table}"; query-level writes take no join.`);
     return compiled;
@@ -750,6 +827,21 @@ export class SqlDocumentStore {
     return doc;
   }
 
+  // Marked on both read paths: a model with a `field.secret` reads every document projected, with no stored row.
+  #readAs<Doc extends object>(doc: Doc, { removedAt }: { removedAt?: unknown }): Doc {
+    if (removedAt != null)
+      Object.defineProperty(doc, SqlDocumentStore.#readRemoved, { value: true, configurable: true });
+    return doc;
+  }
+
+  // A removed row is outside the write path's scope, where `update` would answer a misleading NoDocumentError.
+  #assertLiveRow(doc: DocumentRecord) {
+    if (!(doc as Record<symbol, unknown>)[SqlDocumentStore.#readRemoved]) return;
+    throw new Error(
+      `read-only: a removed ${this.table} is revived with updateById(id, { removedAt: null }, { withRemoved: true })`,
+    );
+  }
+
   // The document path only, as mongoose exempts `bulkWrite`; checked before save hooks so the error names the
   // caller's change, not a hook's.
   #assertImmutableUnchanged(prepared: DocumentRecord, originalData: DocumentRecord) {
@@ -759,9 +851,11 @@ export class SqlDocumentStore {
     if (!this.#immutableKeys.length) return;
     const changed = this.#immutableKeys.filter((key) => jsonStr(prepared[key]) !== jsonStr(originalData[key]));
     if (!changed.length) return;
-    // The values are left out of the message: an immutable field may also be `field.secret`.
-    throw new Error(
-      `Cannot modify immutable field${changed.length > 1 ? "s" : ""} on ${this.table} (${String(prepared.id)}): ${changed.join(", ")}`,
+    // The values are left out: an immutable field may also be `field.secret`.
+    throw new Err(
+      "base.error.immutableField",
+      { field: changed.join(", ") },
+      { details: { model: this.table, id: String(prepared.id) } },
     );
   }
 
@@ -902,13 +996,16 @@ export class SqlDocumentStore {
       },
       save: {
         async value(this: DocumentRecord) {
-          return this.id ? store.update(this.id as string, store.#changesOf(this)) : store.create(this);
+          if (!this.id) return store.create(this);
+          store.#assertLiveRow(this);
+          return store.update(this.id as string, store.#changesOf(this));
         },
       },
       refresh: {
         async value(this: DocumentRecord) {
           const fresh = (await store.pickById(this.id as string)) as DocumentRecord & Record<symbol, StoredRow>;
           Object.assign(this, fresh);
+          Reflect.deleteProperty(this, SqlDocumentStore.#readRemoved);
           return store.#withStoredRow(this, fresh[SqlDocumentStore.#storedRow]);
         },
       },

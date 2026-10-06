@@ -171,6 +171,16 @@ export class Logger {
   static isPromoted(record: LogRecord) {
     return record.attrs?.flight === true || record.attrs?.debug === true;
   }
+  /** `value` as one line of JSON for a message, a secret-named key masked at any depth and the text cut at `max`. */
+  static inlineData(value: unknown, max = 500): string {
+    let text: string;
+    try {
+      text = JSON.stringify(value, (key, val) => (key && redactedAttrKey.test(key) ? "[redacted]" : val)) ?? "";
+    } catch {
+      text = "[unserializable]";
+    }
+    return text.length > max ? `${text.slice(0, max)}…` : text;
+  }
   static redactAttrs(attrs: LogAttrs): LogAttrs {
     let redacted: LogAttrs | null = null;
     for (const key of Object.keys(attrs)) {

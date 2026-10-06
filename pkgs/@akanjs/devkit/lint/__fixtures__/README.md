@@ -7,9 +7,12 @@ fixture` fails when a rule is added without one.
 
 ## Contract
 
-- One case per line. `// @flag` marks a line the rule must report in `bad`; `// @ok` marks a line in `good`.
-- The `bad` assertion is set equality, not containment: a marked line nobody reported is a pattern that
-  stopped matching, and a reported line nobody marked is the rule reaching further than the fixture claims.
+- One case per line. In `bad`, `// @flag` marks a line the rule must report as an error and `// @warn` one it
+  must report as a warning; `// @ok` marks a line in `good`.
+- The `bad` assertion is exact, not containment: every marked line is reported once, at its marker's severity,
+  and nothing else is. A marked line nobody reported is a pattern that stopped matching, a reported line nobody
+  marked is the rule reaching further than the fixture claims, a line reported twice is one site reported
+  twice, and a different severity is a tier that moved.
 - `good` is the half that matters most: an over-matching rule is what makes developers distrust the gate.
 - `fixture.json` is optional:
   - `path` — where the source is written inside the temp workspace, for a rule that reads `$filename`
@@ -35,6 +38,12 @@ Each of these made a rule silently report nothing, and each was found by adding 
   that is `no-bang-comment-in-client`'s blind spot, and why its fixture puts the marker between statements.
 - A regex capture (`r"..."($var)`) carries no source range: a diagnostic spanned on one gets no location,
   and `$var` does not interpolate into a `message`.
+- A code snippet also matches JSX text that parses as it: `` `new Error` `` reports `<code>new Error</code>` in a
+  docs page. Where a rule meets `.tsx`, match the node kind instead (`JsNewExpression(callee = `Error`)`).
+- A regex is anchored by bare concatenation, so a top-level alternation leaks out of the anchors: `r"fill|stroke"`
+  is `^fill|stroke$` and matches `fillOpacity`. Group it: `r"(?:fill|stroke)"`.
+- A `\"` in a GritQL string is unescaped twice and corrupts it: messages quote with `'`, and a regex spells the
+  character `\x22`.
 
 The five vocabulary fixtures were ported from `frontendBuild/styleGuard.test.ts`, the pre-grit
 implementation of the same rules, when that scanner was retired.

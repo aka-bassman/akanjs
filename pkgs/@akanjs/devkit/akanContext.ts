@@ -16,7 +16,14 @@ import {
   workflowRunArtifactPath,
   workflowSyncDir,
 } from "./workflow";
-import { isScannedRootEntry, rootAllowedDirs, rootAllowedFiles, rootEntryHintOf } from "./workspaceLayout";
+import {
+  barrelFacetDirs,
+  facetIndexShadowOf,
+  isScannedRootEntry,
+  rootAllowedDirs,
+  rootAllowedFiles,
+  rootEntryHintOf,
+} from "./workspaceLayout";
 
 export type AkanContextFormat = "json" | "markdown";
 export type AkanModuleKind = "domain" | "service" | "scalar";
@@ -676,6 +683,16 @@ export class AkanContextAnalyzer {
             ),
           );
       }
+      for (const facet of barrelFacetDirs)
+        for (const entry of await safeReadDir(path.join(sysPath, facet))) {
+          const shadow = entry.isDirectory() ? null : facetIndexShadowOf(`${facet}/${entry.name}`);
+          if (!shadow) continue;
+          const entryPath = `${sys.path}/${facet}/${entry.name}`;
+          report(
+            { severity: "error", code: "facet-index-shadowed", path: entryPath, message: `${entryPath} ${shadow}` },
+            repairAction("generated", `akan sync ${sys.name}`, `Delete ${entryPath} by hand, then sync.`, false),
+          );
+        }
     }
 
     const agentDrift = await AkanContextAnalyzer.#agentGuideDrift(workspace);

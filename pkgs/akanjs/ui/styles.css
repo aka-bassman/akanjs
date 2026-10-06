@@ -1,4 +1,5 @@
 @source "./**/*";
+@source "../webkit/RenderFailure.tsx";
 @plugin "tailwind-scrollbar";
 
 /* data-theme=dark 를 Tailwind dark: 변형에 연결. 프레임워크(system)가 소유하므로

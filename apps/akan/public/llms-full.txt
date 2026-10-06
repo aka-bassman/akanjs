@@ -257,7 +257,7 @@ Runtime And Infra
 
 Stable
 
-Experimental
+Beta
 
 Infra Architecture
 
@@ -345,7 +345,7 @@ Term
 
 - native runtime: @akanjs/native, shipped inside akanjs. It builds your CSR client into iOS, Android, macOS, Windows and Linux apps, with no Xcode project, Gradle files or CocoaPods to keep.
 
-- native shell: The small native app around your web client, built under .akan/native/<target>/build: icon, ID, signing.
+- native shell: The small native app around your web client, built under dist/native/<app>/<target>/build: icon, ID, signing.
 
 - plugin: A native runtime plugin that exposes one device feature to JavaScript, such as camera, push or iap. This is the native bridge.
 
@@ -4413,7 +4413,7 @@ module files, `page/**`, barrels
 
 `apps/**` `libs/**`, except tests, `*.constant.ts`, `common/**`, `env/**`
 
-A thrown `Error`. Throw `new Err("<module>.error.<key>")` and register the key.
+A thrown `Error`. Throw `new Err("<module>.error.<key>")` and register the key. An `Error` built anywhere else, to reject, return or store, is a warning.
 
 `logger.log()` reads like its own level but emits at `info`. Write `.info()`.
 
@@ -5995,7 +5995,7 @@ Term
 
 - appId: The app's permanent ID: the package name on Android and the bundle ID on iOS.
 
-- .akan/native/<target>: Each run's web root and builds for the target; generated and git-ignored, with no Xcode project to edit.
+- dist/native/<app>/<target>: Each run's web root and builds for the target; generated and git-ignored, with no Xcode project to edit.
 
 - plugin: A native runtime module such as camera or push. The app ships it when a permission or `native.plugins` names it.
 

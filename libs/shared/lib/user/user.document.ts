@@ -10,7 +10,7 @@ import {
 import { randomString } from "@libs/util/common";
 import { dayjs } from "akanjs/base";
 import { plainFieldsOf } from "akanjs/common";
-import { by, documentQueryHelper, from, into, type SchemaOf } from "akanjs/document";
+import { by, from, into, type SchemaOf } from "akanjs/document";
 
 import * as cnst from "../cnst";
 import type * as db from "../db";
@@ -184,12 +184,8 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     return accountId as Throw extends true ? string : string | null;
   }
   async setAccountIdInPrepareUser(userId: string, accountId: string, resignupDays = 0) {
-    const q = documentQueryHelper;
     const userExists = await this.existsByAccountId(accountId, ["active", "dormant", "restricted"]);
     if (userExists) throw new Err("user.error.accountIdAlreadyExists");
-    const inactiveUser = await this.User.findOne(q.all({ accountId }, q.exists("removedAt"))).sort({ createdAt: -1 });
-    const isSignable = inactiveUser ? inactiveUser.createdAt.isBefore(dayjs().subtract(resignupDays, "day")) : true;
-    if (!isSignable) throw new Err("user.error.resignupNotAvailable", { days: resignupDays });
     await this.User.updateMany({ accountId, status: "prepare" }, ({ unset }) => ({ accountId: unset() }));
     // A verified email belongs to the address it was sent to, so a new address starts unverified again.
     await this.User.updateOne({ id: userId }, ({ pull }) => ({ verifies: pull("email") }));
@@ -360,12 +356,8 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     return !!modifiedCount;
   }
   async setPhoneInPrepareUser(userId: string, phone: string, resignupDays = 0) {
-    const q = documentQueryHelper;
     const userExists = await this.existsByPhone(phone, ["active", "dormant", "restricted"]);
     if (userExists) throw new Err("user.error.phoneAlreadyExists");
-    const inactiveUser = await this.User.findOne(q.all({ phone }, q.exists("removedAt"))).sort({ createdAt: -1 });
-    const isSignable = inactiveUser ? inactiveUser.createdAt.isBefore(dayjs().subtract(resignupDays, "day")) : true;
-    if (!isSignable) throw new Err("user.error.resignupNotAvailable", { days: resignupDays });
     const { modifiedCount } = await this.User.updateOne({ id: userId }, { phone });
     return !!modifiedCount;
   }
@@ -403,12 +395,8 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
   }
 
   async setSsoInPrepareUser(userId: string, accountId: string, ssoType: cnst.SsoType["value"], resignupDays = 0) {
-    const q = documentQueryHelper;
     const userExists = await this.existsByAccountId(accountId, ["active", "dormant", "restricted"]);
     if (userExists) throw new Err("user.error.accountIdAlreadyExists");
-    const inactiveUser = await this.User.findOne(q.all({ accountId }, q.exists("removedAt"))).sort({ createdAt: -1 });
-    const isSignable = inactiveUser ? inactiveUser.createdAt.isBefore(dayjs().subtract(resignupDays, "day")) : true;
-    if (!isSignable) throw new Err("user.error.resignupNotAvailable", { days: resignupDays });
     await this.User.updateMany({ accountId, status: "prepare" }, ({ unset, pull }) => ({
       accountId: unset(),
       verifies: pull(ssoType),

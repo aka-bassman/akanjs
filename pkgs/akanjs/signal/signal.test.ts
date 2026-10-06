@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { Any, ENDPOINT_META, ID, INJECT_META, INTERNAL_META, Int, SLICE_META } from "akanjs/base";
+import { Any, Binary, ENDPOINT_META, ID, INJECT_META, INTERNAL_META, Int, SLICE_META } from "akanjs/base";
 import { Logger, type LoggerSinkEntry } from "akanjs/common";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { by, type DatabaseCls, DatabaseRegistry, from, into, type ModelCls } from "akanjs/document";
@@ -778,8 +778,9 @@ describe("SignalContext execution", () => {
     expect(empty.args).toEqual([null]);
 
     const malformed = contextOf("http://localhost/items?args=not-json");
-    // `SignalContext.try` wraps init at the route, so a bad value answers 400 instead of a 500.
-    await expect(malformed.init()).rejects.toMatchObject({ message: 'Invalid JSON in "args"', statusCode: 400 });
+    await malformed.init();
+    // Parsed inside `exec`, after the account guards; `SignalContext.try` wraps both, so a bad value answers 400.
+    await expect(malformed.exec()).rejects.toMatchObject({ message: 'Invalid JSON in "args"', statusCode: 400 });
   });
 
   test("parses websocket message and pubsub room args", async () => {
@@ -1272,6 +1273,106 @@ describe("SignalContext guards", () => {
   });
 });
 
+describe("SignalContext byte returns", () => {
+  test("sends a Binary return over HTTP as base64, which the Binary parser reads back", async () => {
+    const endpointInfo = buildEndpoint.query(Binary).exec(() => new Uint8Array([1, 2, 3]));
+    const context = makeSignalContext({ endpointInfo });
+
+    await context.init();
+    const body = await ((await context.exec()) as Response).json();
+
+    expect(body).toBe("AQID");
+    expect(Binary.parseValue(body as string)).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  test("refuses bytes returned through Any instead of sending an empty object", async () => {
+    for (const bytes of [new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 3]).buffer]) {
+      const context = makeSignalContext({ endpointInfo: buildEndpoint.query(Any).exec(() => bytes) });
+      await context.init();
+      await expect(context.exec()).rejects.toThrow("returns bytes through Any");
+    }
+  });
+});
+
+describe("SignalContext argument parsing", () => {
+  class AccountDeny implements Guard {
+    static name = "AccountDeny";
+    static scope: GuardScope = "account";
+    canPass() {
+      return false;
+    }
+  }
+
+  test("parses arguments only after the account guards admit the caller", async () => {
+    const statusWith = async (guards: GuardCls[]) => {
+      const endpointInfo = buildEndpoint
+        .query(String, { guards })
+        .search("args", Any)
+        .exec(() => "ok");
+      const adaptor = new (adapt("signalTestParseOrderAdaptor"))();
+      const request = makeHttpRequest({ url: "http://localhost/items?args=not-json" });
+      const response = (await SignalContext.try(adaptor, endpointInfo, "parseOrder", async () => {
+        const context = makeSignalContext({ endpointInfo, adaptor, request });
+        await context.init();
+        return (await context.exec()) as Response;
+      })) as Response;
+      return response.status;
+    };
+
+    expect(await statusWith([AccountDeny as GuardCls])).toBe(403);
+    expect(await statusWith([TestAdmin as GuardCls])).toBe(400);
+  });
+
+  test("runs account guards before resource guards, which read the parsed arguments", async () => {
+    const trace: string[] = [];
+    class ResourceReads implements Guard {
+      static name = "ResourceReads";
+      static scope: GuardScope = "resource";
+      canPass(context: SignalContext) {
+        trace.push(`resource:${context.getArg<string>("id")}`);
+        return true;
+      }
+    }
+    class AccountFirst implements Guard {
+      static name = "AccountFirst";
+      static scope: GuardScope = "account";
+      canPass() {
+        trace.push("account");
+        return true;
+      }
+    }
+    const endpointInfo = buildEndpoint
+      .query(String, { guards: [ResourceReads as GuardCls, AccountFirst as GuardCls] })
+      .param("id", String)
+      .exec((id) => id);
+    const context = makeSignalContext({ endpointInfo });
+
+    await context.init();
+    await context.exec();
+
+    expect(trace).toEqual(["account", "resource:123"]);
+  });
+
+  test("an account guard that reads an argument still gets it", async () => {
+    class Mismarked implements Guard {
+      static name = "Mismarked";
+      static scope: GuardScope = "account";
+      canPass(context: SignalContext) {
+        return context.getArg<string>("id") === "123";
+      }
+    }
+    const endpointInfo = buildEndpoint
+      .query(String, { guards: [Mismarked as GuardCls] })
+      .param("id", String)
+      .exec((id) => id);
+    const context = makeSignalContext({ endpointInfo });
+
+    await context.init();
+
+    expect(await ((await context.exec()) as Response).json()).toBe("123");
+  });
+});
+
 describe("SignalContext return resolution", () => {
   test("resolves primitives, arrays, hidden fields, scalar fields, nested documents, and resolve fields", async () => {
     const live = getDefaultLiveRegistry();
@@ -1624,10 +1725,52 @@ describe("SignalContext websocket authorization", () => {
     expect(await context.authorize()).toBe(true);
     expect(signalTestOrder).toEqual(["global:before", "global:after"]);
   });
+
+  test("authorize judges on a fresh context, so a guard's per-context memo cannot replay the subscribe verdict", async () => {
+    const memo = new WeakMap<SignalContext, boolean>();
+    class MemoGuard implements Guard {
+      static name = "MemoGuard";
+      static scope: GuardScope = "account";
+      canPass(context: SignalContext): boolean {
+        const known = memo.get(context);
+        if (known !== undefined) return known;
+        const verdict = !!context.get<{ role?: string }>("account")?.role;
+        memo.set(context, verdict);
+        return verdict;
+      }
+    }
+    const wsData: Record<string, unknown> = { token: "admin" };
+    const context = makeWsContext({
+      endpointInfo: buildEndpoint
+        .pubsub(String, { guards: [MemoGuard as GuardCls] })
+        .room("roomId", String)
+        .exec(() => undefined),
+      wsData,
+      middlewareMap: new Map([["wsAccount", WsAccountMiddleware]]) as never,
+    });
+
+    await context.init();
+    await context.exec();
+    wsData.token = undefined;
+
+    expect(await context.authorize()).toBe(false);
+  });
 });
 
 describe("SignalContext caller address", () => {
   afterEach(() => SignalContext.setHttpPeerResolver(null));
+
+  test("a rebuilt request keeps the address its original resolved, not the headers it copied", () => {
+    SignalContext.setHttpPeerResolver((req) =>
+      req.url.endsWith("/original") ? { address: "198.51.100.7", port: 50_000 } : null,
+    );
+    const original = new Request("http://localhost/original", { headers: { "x-real-ip": "203.0.113.66" } });
+    const rebuilt = new Request("http://localhost/rebuilt", { headers: original.headers });
+
+    expect(SignalContext.clientIpOf(rebuilt)).toBe("203.0.113.66");
+    SignalContext.carryClientIp(rebuilt, original);
+    expect(SignalContext.clientIpOf(rebuilt)).toBe("198.51.100.7");
+  });
 
   test("prefers a proxy's header over the socket peer", () => {
     SignalContext.setHttpPeerResolver(() => ({ address: "10.0.0.9", port: 55_000 }));

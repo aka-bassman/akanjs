@@ -186,7 +186,14 @@
     },
     {
       "includes": ["{apps,libs}/**/*.signal.ts"],
-      "plugins": ["./node_modules/@akanjs/devkit/lint/no-redeclare-predefined-endpoint.grit"]
+      "plugins": [
+        "./node_modules/@akanjs/devkit/lint/no-redeclare-predefined-endpoint.grit",
+        "./node_modules/@akanjs/devkit/lint/no-unguarded-endpoint.grit"
+      ]
+    },
+    {
+      "includes": ["{apps,libs}/**/*.dictionary.ts"],
+      "plugins": ["./node_modules/@akanjs/devkit/lint/no-double-brace-placeholder.grit"]
     },
     {
       "includes": ["{apps,libs}/**/*.Util.tsx", "{apps,libs}/**/*.Zone.tsx"],

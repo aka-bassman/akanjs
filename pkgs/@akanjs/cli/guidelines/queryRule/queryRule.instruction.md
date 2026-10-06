@@ -192,6 +192,8 @@ shape, so `cascade` never means "related" — it means one of exactly these:
 - **Query-level removes fire no hooks and therefore no cascade** — `removeManyByQuery` / `updateManyByQuery`, the
   generated `remove<Filter>` / `update<Filter>`, and the facade's `removeById` / `updateById`. Remove one document
   at a time when it cascades.
-- Cascades are **idempotent**: `removedAt IS NULL` is ANDed into every query-level write. Cycles are cut by a
-  visited set carried down the whole chain, with a depth cap of 16.
+- Cascades are **idempotent**: `removedAt IS NULL` is ANDed into every query-level write, and a remove never takes
+  `{ withRemoved: true }`, so an already-removed row keeps its original `removedAt`. Cycles are cut by a visited set
+  carried down the whole chain, with a depth cap of 16. `q.search()` cannot see removed rows (the mirror drops
+  them), so search with the flag throws, as does `upsert` with it.
 

@@ -35,7 +35,7 @@ Term
 
 - native runtime: @akanjs/native, shipped inside akanjs. It builds your CSR client into iOS, Android, macOS, Windows and Linux apps, with no Xcode project, Gradle files or CocoaPods to keep.
 
-- native shell: The small native app around your web client, built under .akan/native/<target>/build: icon, ID, signing.
+- native shell: The small native app around your web client, built under dist/native/<app>/<target>/build: icon, ID, signing.
 
 - plugin: A native runtime plugin that exposes one device feature to JavaScript, such as camera, push or iap. This is the native bridge.
 

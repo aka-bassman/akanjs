@@ -401,8 +401,9 @@ export class AkanAppConfig implements AppConfigResult {
       "activity",
       "files",
     ],
-    desktop: ["indexPath", "server", "recovery", "window", "screenCapture", "entitlements"],
+    desktop: ["indexPath", "server", "recovery", "window", "screenCapture", "entitlements", "dmg"],
     desktopServer: ["omit"],
+    dmg: ["background", "background2x", "window", "iconSize", "textSize", "app", "applications"],
     deepLinks: ["schemes", "domains"],
   } as const;
   //* Settings that moved when `mobile` became `native` are named with where they went, instead of "unknown".
@@ -440,6 +441,7 @@ export class AkanAppConfig implements AppConfigResult {
       `${where}.desktop.server`,
       "desktopServer",
     );
+    check(settings.desktop?.dmg, AkanAppConfig.#nativeKeys.dmg, `${where}.desktop.dmg`, "dmg");
     check(settings.deepLinks, AkanAppConfig.#nativeKeys.deepLinks, `${where}.deepLinks`, "deepLinks");
   }
   static readonly #androidFilePattern = /^(?:res\/[^/]+\/[^/]+|assets\/.+)$/;

@@ -275,6 +275,14 @@ export interface AkanNativeConfig {
      * macOS builds sign every Mach-O file in it.
      */
     bin?: string;
+    /**
+     * macOS: the Finder window the disk image (`--installer`, API `macos.dmg`) opens in: no toolbar, sidebar or status
+     * bar, the app's and the Applications link's icons on a background, and the app's icon on the mounted disk. Without
+     * it the window is 660×400 pt on akan-native's background, an arrow from the app at (180, 170) to Applications at
+     * (480, 170). A position is an icon's center, in points from the window's top left; the default background lines
+     * up with the default positions only.
+     */
+    dmg?: DmgConfig;
   };
   /**
    * App icon for every platform, generated from one square PNG, ideally 1024×1024 (CLI-8).
@@ -298,6 +306,21 @@ export interface AkanNativeConfig {
     /** Hide after this many milliseconds at the latest, with a warning. Default 10000. */
     timeout?: number;
   };
+}
+
+export interface DmgConfig {
+  /** A PNG (or TIFF) the size of the window in points, or false for a plain window. */
+  background?: string | false;
+  /** The same picture at twice the pixels, for a Retina display: the disk image carries both in one TIFF. */
+  background2x?: string;
+  /** In points. Default the background's size (660×400 without one) at 200, 120 on the screen. */
+  window?: { x?: number; y?: number; width?: number; height?: number };
+  /** Default 128. */
+  iconSize?: number;
+  /** Default 13. */
+  textSize?: number;
+  app?: { x: number; y: number };
+  applications?: { x: number; y: number };
 }
 
 export function defineConfig(config: AkanNativeConfig): AkanNativeConfig {

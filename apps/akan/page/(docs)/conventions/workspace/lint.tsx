@@ -57,8 +57,8 @@ export default page().render(() => {
     {
       name: l.trans({ en: "grit plugin", ko: "grit 플러그인" }),
       desc: l.trans({
-        en: "A lint rule written in GritQL for Akan and run by Biome. There are 26.",
-        ko: "Akan을 위해 GritQL로 쓴 린트 규칙이며, Biome이 실행합니다. 모두 26개입니다.",
+        en: "A lint rule written in GritQL for Akan and run by Biome. There are 28.",
+        ko: "Akan을 위해 GritQL로 쓴 린트 규칙이며, Biome이 실행합니다. 모두 28개입니다.",
       }),
     },
     {
@@ -326,8 +326,8 @@ async refreshStock() {
     {
       name: "no-inline-color",
       desc: l.trans({
-        en: "A colour literal in `style={{ ... }}` or a `<style>` body skips tokens and theme switching.",
-        ko: "`style={{ ... }}`이나 `<style>` 본문의 색 리터럴은 토큰과 테마 전환을 건너뜁니다.",
+        en: "A colour literal in `style={{ ... }}` or a `<style>` body skips tokens and theme switching. The same literal in an SVG colour attribute (`fill`, `stroke`, `stopColor`, …) or an `el.style` write is a warning.",
+        ko: "`style={{ ... }}`이나 `<style>` 본문의 색 리터럴은 토큰과 테마 전환을 건너뜁니다. SVG 색 속성(`fill`, `stroke`, `stopColor` 등)이나 `el.style` 대입에 쓴 같은 리터럴은 경고입니다.",
       }),
     },
     {
@@ -373,8 +373,8 @@ async refreshStock() {
         ko: "`apps/**` `libs/**` (테스트, `*.constant.ts`, `common/**`, `env/**` 제외)",
       }),
       desc: l.trans({
-        en: 'A thrown `Error`. Throw `new Err("<module>.error.<key>")` and register the key.',
-        ko: '던진 `Error`입니다. `new Err("<module>.error.<key>")`를 던지고 key를 등록합니다.',
+        en: 'A thrown `Error`. Throw `new Err("<module>.error.<key>")` and register the key. An `Error` built anywhere else, to reject, return or store, is a warning.',
+        ko: '던진 `Error`입니다. `new Err("<module>.error.<key>")`를 던지고 key를 등록합니다. 그 밖에서 만든 `Error`(reject, return, 보관)는 경고입니다.',
       }),
     },
     {
@@ -464,6 +464,22 @@ async refreshStock() {
       desc: l.trans({
         en: "An endpoint that reuses a generated CRUD name, such as `create<Model>` or `view<Model>`.",
         ko: "`create<Model>`, `view<Model>`처럼 생성된 CRUD 이름을 다시 쓴 엔드포인트입니다.",
+      }),
+    },
+    {
+      rule: "no-unguarded-endpoint",
+      scope: l.trans({ en: "`*.signal.ts` — a warning", ko: "`*.signal.ts` — 경고" }),
+      desc: l.trans({
+        en: "An endpoint or slice `init()` with no `guards` or `guards: []`, and a slice with no `guards` or no `root`. Each is open to every caller; write `guards: [Public]` when that is the intent.",
+        ko: "`guards`가 없거나 `guards: []`인 엔드포인트와 slice의 `init()`, 그리고 `guards`나 `root`가 없는 slice입니다. 모두 누구에게나 열립니다. 의도한 것이라면 `guards: [Public]`을 씁니다.",
+      }),
+    },
+    {
+      rule: "no-double-brace-placeholder",
+      scope: "`*.dictionary.ts`",
+      desc: l.trans({
+        en: "`{{name}}` in an `.error()` or `.translate()` entry is never filled in and shows as typed. Write `{name}`.",
+        ko: "`.error()`·`.translate()` 항목의 `{{name}}`은 값이 채워지지 않고 적힌 그대로 보입니다. `{name}`으로 씁니다.",
       }),
     },
     {
@@ -921,16 +937,16 @@ async refreshStock() {
             {l.trans({
               en: (
                 <span>
-                  Twenty-six are grit plugins written for Akan, and every one of them is an error. The rest are
-                  Biome&apos;s own. Each plugin looks only at its scope, so a plain package under <code>pkgs/</code>{" "}
-                  never trips the module rules.
+                  Twenty-eight are grit plugins written for Akan, each an error unless its row names a warning, which
+                  prints without failing the build. The rest are Biome&apos;s own. Each plugin looks only at its scope,
+                  so a plain package under <code>pkgs/</code> never trips the module rules.
                 </span>
               ),
               ko: (
                 <span>
-                  스물여섯 개는 Akan을 위해 쓴 grit 플러그인이고, 모두 error입니다. 나머지는 Biome 자체 규칙입니다.
-                  플러그인은 자기 적용 범위만 보므로, <code>pkgs/</code> 아래의 평범한 패키지는 모듈 규칙에 걸리지
-                  않습니다.
+                  스물여덟 개는 Akan을 위해 쓴 grit 플러그인이고, 표에 경고라고 적힌 것 말고는 모두 error입니다. 경고는
+                  출력되지만 빌드를 깨지 않습니다. 나머지는 Biome 자체 규칙입니다. 플러그인은 자기 적용 범위만 보므로,{" "}
+                  <code>pkgs/</code> 아래의 평범한 패키지는 모듈 규칙에 걸리지 않습니다.
                 </span>
               ),
             })}

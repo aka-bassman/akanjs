@@ -5,21 +5,26 @@ import { appRun, desktopEntry } from "../src/platforms/linux-appimage.ts";
 // CLI-9: a Linux AppImage of the app folder.
 
 describe("the Linux AppImage", () => {
-  test("its launcher entry names the app, its icon and the link schemes it opens", () => {
-    expect(desktopEntry({ name: "Board\nSign", fileName: "board", schemes: ["board", "board-dev"] })).toBe(
+  test("its launcher entry names the app, its icon, the window it matches and the link schemes it opens", () => {
+    expect(
+      desktopEntry({ id: "com.acme.board", name: "Board\nSign", fileName: "board", schemes: ["board", "board-dev"] }),
+    ).toBe(
       [
         "[Desktop Entry]",
         "Type=Application",
         "Name=Board\\nSign",
         "Exec=board %u",
-        "Icon=board",
+        "Icon=com.acme.board",
+        "StartupWMClass=com.acme.board",
         "Terminal=false",
         "Categories=Utility;",
         "MimeType=x-scheme-handler/board;x-scheme-handler/board-dev;",
         "",
       ].join("\n"),
     );
-    expect(desktopEntry({ name: "Board", fileName: "board", schemes: [] })).not.toContain("MimeType");
+    expect(desktopEntry({ id: "com.acme.board", name: "Board", fileName: "board", schemes: [] })).not.toContain(
+      "MimeType",
+    );
   });
 
   test("AppRun starts the executable beside it with the arguments it was given", () => {

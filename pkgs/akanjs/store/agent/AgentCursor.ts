@@ -98,7 +98,8 @@ export class AgentCursor {
     AgentCursor.#at = null;
     const el = AgentCursor.#el;
     setTimeout(() => {
-      if (el && !el.classList.contains(`${AgentCursor.className}-shown`)) el.remove();
+      if (!el || el.classList.contains(`${AgentCursor.className}-shown`)) return;
+      el.remove();
       if (AgentCursor.#el === el) AgentCursor.#el = null;
     }, 400);
   }

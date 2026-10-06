@@ -71,7 +71,7 @@ export class WindowsSshTarget extends PlatformTestTarget {
       "$ProgressPreference = 'SilentlyContinue'",
       "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
       "'PID=' + $PID",
-      ...Object.entries(PlatformTestTarget.gitIdentityEnv).map(([key, value]) => `$env:${key} = '${value}'`),
+      ...Object.entries(PlatformTestTarget.remoteEnv).map(([key, value]) => `$env:${key} = '${value}'`),
       `Set-Location -LiteralPath '${runDir}\\w'`,
       `cmd /c "${command} 2>&1"`,
       "exit $LASTEXITCODE",

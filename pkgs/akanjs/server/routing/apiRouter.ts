@@ -79,8 +79,9 @@ export class ApiRouter {
     const endpointPaths = new Set([...endpointEntries.map(([path]) => path), ...builtinEntries.map(([path]) => path)]);
     const routeTable = {
       [`${prefix}${websocketPrefix}` as "/api/ws"]: (req) => {
-        //? A socket has no CORS: a page on another site that opens one reads every room it may subscribe to, and it
-        //? carries the SameSite=None auth cookie. The browser only sends Origin; the server is the one to refuse it.
+        //? A socket has no CORS: a page on another origin that opens one reads every room it may subscribe to, and
+        //? from the same site (a sibling subdomain, another port) it carries the Lax auth cookie. The browser only
+        //? sends Origin; the server is the one to refuse it.
         try {
           CrossSiteGuard.assertOrigin(req, new URL(req.url), "websocket");
         } catch {

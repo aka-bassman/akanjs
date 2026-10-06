@@ -1,0 +1,73 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+// `SignalContext` checks `signalOption.guards ?? []`, so an endpoint, a named slice, or a slice's root query declaring
+// none is open to every HTTP and websocket caller. An option the rule cannot read, a variable or a spread, is left alone.
+or {
+  JsCallExpression(callee = $callee, arguments = JsCallArguments(args = $args)) as $call where {
+    or {
+      and {
+        $callee <: r"(?:query|mutation|pubsub|message)",
+        $call <: within JsCallExpression(callee = `endpoint`),
+        or { $args <: [$returns], $args <: [$returns, $option] }
+      },
+      and {
+        $callee <: `init`,
+        $call <: within JsCallExpression(callee = `slice`),
+        or { $args <: [], $args <: [$option] }
+      }
+    },
+    or {
+      $option <: undefined,
+      $option <: JsObjectExpression(members = $members) where {
+        or {
+          $members <: not some or {
+            JsPropertyObjectMember(name = r"(?:guards|\x22guards\x22|'guards')"),
+            JsShorthandPropertyObjectMember(name = r"guards"),
+            JsSpread()
+          },
+          $members <: some JsPropertyObjectMember(name = r"(?:guards|\x22guards\x22|'guards')", value = JsArrayExpression(elements = []))
+        }
+      }
+    },
+    register_diagnostic(
+      span = $callee,
+      message = "No `guards`, so every HTTP and websocket caller reaches this endpoint: a missing or empty `guards` fails open, which is also why MCP refuses it. Name the guards it needs, or write `guards: [Public]` when anonymous access is the intent.",
+      severity = "warn"
+    )
+  },
+  JsCallExpression(callee = `slice`, arguments = JsCallArguments(args = [$srv, $sliceOption, ...])) where {
+    $sliceOption <: JsObjectExpression(members = $sliceMembers),
+    or {
+      and {
+        $sliceMembers <: not some or {
+          JsPropertyObjectMember(name = r"(?:guards|\x22guards\x22|'guards')"),
+          JsShorthandPropertyObjectMember(name = r"guards"),
+          JsSpread()
+        },
+        register_diagnostic(
+          span = $sliceOption,
+          message = "No `guards` on this slice, so every HTTP and websocket caller reaches its root query and generated reads and writes: a missing guard fails open. Pass { guards: { root: Admin, get: …, cru: … } }, naming `Public` where anonymous access is the intent.",
+          severity = "warn"
+        )
+      },
+      and {
+        $sliceMembers <: some JsPropertyObjectMember(name = r"(?:guards|\x22guards\x22|'guards')", value = $guardMap),
+        $guardMap <: JsObjectExpression(members = $guardKeys),
+        or {
+          $guardKeys <: not some or {
+            JsPropertyObjectMember(name = r"(?:root|\x22root\x22|'root')"),
+            JsShorthandPropertyObjectMember(name = r"root"),
+            JsSpread()
+          },
+          $guardKeys <: some JsPropertyObjectMember(name = r"(?:root|\x22root\x22|'root')", value = JsArrayExpression(elements = []))
+        },
+        register_diagnostic(
+          span = $guardMap,
+          message = "No `root` guard on this slice, so its root query lists any filter to every HTTP and websocket caller: a missing or empty `root` fails open. Write `root: Admin`.",
+          severity = "warn"
+        )
+      }
+    }
+  }
+}

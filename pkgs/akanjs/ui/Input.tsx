@@ -362,6 +362,13 @@ const DefaultEmail = ({
   );
 };
 
+// A formatter adds separators and units: keep the digits, the first decimal point, and a leading minus.
+const parseTypedNumber = (text: string) => {
+  const kept = text.replace(/[^\d.-]/g, "");
+  const [whole = "", ...fraction] = kept.replace(/-/g, "").split(".");
+  return parseFloat(`${kept.startsWith("-") ? "-" : ""}${whole}${fraction.length ? `.${fraction.join("")}` : ""}`);
+};
+
 export type NumberProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "type" | "onChange"> & {
   value: number | null;
   nullable?: boolean;
@@ -420,7 +427,7 @@ const DefaultNumber = ({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter" && e.key !== "Escape") return;
-    const numberValue = parseFloat(e.currentTarget.value.replace(/[^\d-]/g, ""));
+    const numberValue = parseTypedNumber(e.currentTarget.value);
     if (Number.isNaN(numberValue)) {
       e.currentTarget.value = "";
       setFormatValue("");

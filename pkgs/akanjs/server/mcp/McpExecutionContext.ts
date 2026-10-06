@@ -16,30 +16,31 @@ export class McpExecutionContext extends HttpExecutionContext {
   readonly #arguments: Record<string, unknown>;
 
   constructor(req: Request, args: Record<string, unknown>) {
-    // Not a `BunRequest`: it carries no route `params`, which is exactly why `getArgs` is overridden below.
+    // Not a `BunRequest`: it carries no route `params`, which is exactly why `readArgs` is overridden below.
     super(req as Bun.BunRequest);
     this.#arguments = args;
   }
 
   // Absent values become null, as a missing query string does. Undeclared names are refused: clients often ignore
   // `additionalProperties: false`, and an unpublished `Any` arg would let an agent pass an arbitrary query.
-  override async getArgs(endpointInfo: EndpointInfo): Promise<unknown[]> {
+  override async readArgs(endpointInfo: EndpointInfo): Promise<unknown[]> {
     const declared = new Set(endpointInfo.args.filter(McpExecutionContext.#describable).map((arg) => arg.name));
     const undeclared = Object.keys(this.#arguments).find((name) => !declared.has(name));
     if (undeclared) throw new McpArgumentError(`Unknown argument "${undeclared}".`);
-    return endpointInfo.args.map((arg) => {
-      const value = McpExecutionContext.#lift(arg, this.#arguments[arg.name] ?? null);
-      try {
-        return deserialize(arg.argRef, arg.arrDepth, value, {
-          key: arg.name,
-          nullable: arg.option?.nullable,
-          enum: arg.enum,
-        });
-      } catch {
-        // The parser's message names internals; an agent retries on this one, so it must read as its own mistake.
-        throw new McpArgumentError(McpExecutionContext.#argumentMessage(arg, value));
-      }
-    });
+    return endpointInfo.args.map((arg) => McpExecutionContext.#lift(arg, this.#arguments[arg.name] ?? null));
+  }
+
+  override parseArg(arg: McpArg, value: unknown): unknown {
+    try {
+      return deserialize(arg.argRef, arg.arrDepth, value, {
+        key: arg.name,
+        nullable: arg.option?.nullable,
+        enum: arg.enum,
+      });
+    } catch {
+      // The parser's message names internals; an agent retries on this one, so it must read as its own mistake.
+      throw new McpArgumentError(McpExecutionContext.#argumentMessage(arg, value));
+    }
   }
 
   // Returns the serialized value, not a Response: the signature is the base class's, as WebSocketExecutionContext's is.

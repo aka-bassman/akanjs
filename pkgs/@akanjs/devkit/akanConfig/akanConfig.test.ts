@@ -678,6 +678,9 @@ describe("AkanAppConfig", () => {
     expect(make({ native: { server: { url: "http://x" } } })).toThrow(
       "native.server in apps/portal/akan.config.ts is not a native setting",
     );
+    expect(make({ native: { desktop: { dmg: { backgroundImage: "bg.png" } } } })).toThrow(
+      "native.desktop.dmg.backgroundImage in apps/portal/akan.config.ts is not a native setting",
+    );
   });
 
   test("derives a repo-scoped default appId and records an explicit native section", () => {
@@ -693,7 +696,7 @@ describe("AkanAppConfig", () => {
 
 describe("deriveDefaultAppId", () => {
   test("sanitizes org/app names into a valid reverse-DNS bundle id", () => {
-    expect(deriveDefaultAppId("leading-flight-guidance", "myapp")).toBe("com.leadingflightguidance.myapp");
+    expect(deriveDefaultAppId("my-org", "myapp")).toBe("com.myorg.myapp");
     expect(deriveDefaultAppId("Acme Corp", "Store")).toBe("com.acmecorp.store");
     // Empty org and digit-leading segments stay valid package identifiers.
     expect(deriveDefaultAppId("", "app")).toBe("com.app.app");

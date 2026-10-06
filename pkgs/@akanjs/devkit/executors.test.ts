@@ -1,15 +1,33 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { lstat, mkdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AkanAppConfig } from "./akanConfig";
-import { AppExecutor, CommandExecutionError, Executor, PkgExecutor, WorkspaceExecutor } from "./executors";
+import {
+  AppExecutor,
+  CommandExecutionError,
+  Executor,
+  type LibExecutor,
+  PkgExecutor,
+  WorkspaceExecutor,
+} from "./executors";
+import { DevGeneratedIndexSync } from "./frontendBuild/devGeneratedIndexSync";
 import { AppInfo } from "./scanInfo";
-import { isolateEnv, tempDirs, writeJson, writeText } from "./testHelpers";
+import {
+  createTempLib,
+  formatWithBiome,
+  hasBiome,
+  isolateEnv,
+  tempDirs,
+  tempRoots,
+  writeJson,
+  writeText,
+} from "./testHelpers";
 import type { PackageJson } from "./types";
 
 isolateEnv();
 const makeTempRoot = tempDirs("akan-devkit-");
+const trackRoot = tempRoots();
 
 const PAGE_SOURCE = "export default function Page() {\n  return null;\n}\n";
 
@@ -309,11 +327,16 @@ describe("Workspace and app executor environment contracts", () => {
     expect(env.EXTRA).toBe("ok");
 
     const shellOperationMode = process.env.AKAN_PUBLIC_OPERATION_MODE;
+    const shellServerPort = process.env.AKAN_PUBLIC_SERVER_PORT;
     process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+    process.env.AKAN_PUBLIC_SERVER_PORT = "8282";
     const prepared = await app.prepareCommand("build");
     const bakedOperationMode = process.env.AKAN_PUBLIC_OPERATION_MODE;
+    const bakedServerPort = process.env.AKAN_PUBLIC_SERVER_PORT;
     if (shellOperationMode === undefined) delete process.env.AKAN_PUBLIC_OPERATION_MODE;
     else process.env.AKAN_PUBLIC_OPERATION_MODE = shellOperationMode;
+    if (shellServerPort !== undefined) process.env.AKAN_PUBLIC_SERVER_PORT = shellServerPort;
+    expect(bakedServerPort).toBeUndefined();
     expect(bakedOperationMode).toBeUndefined();
     expect(prepared.env.AKAN_COMMAND_TYPE).toBe("build");
     expect(prepared.env.AKAN_PUBLIC_BASE_PATHS).toBe("admin");
@@ -327,7 +350,7 @@ describe("Workspace and app executor environment contracts", () => {
     expect((await stat(path.join(root, "dist/apps/demo/public"))).isDirectory()).toBe(true);
   });
 
-  test("akan start clears the dev output and keeps native builds, update releases and the bin downloads", async () => {
+  test("akan start clears the dev output and keeps the bin downloads and a native folder from before dist/native", async () => {
     const root = await makeTempRoot();
     process.env.AKAN_PUBLIC_REPO_NAME = "repo";
     process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
@@ -1053,5 +1076,307 @@ describe("SysExecutor module listing", () => {
     expect(await app.getScalarDictionaryFiles()).toEqual([
       { filePath: "apps/scalardict/lib/__scalar/money/money.dictionary.ts", content: "export const money = {};\n" },
     ]);
+  });
+});
+
+interface ScannableLibOptions {
+  root?: Pick<PackageJson, "dependencies" | "devDependencies">;
+  manifest?: Partial<PackageJson>;
+  config?: string;
+  files?: Record<string, string>;
+}
+
+//* `LibInfo.libInfos` caches a scan by lib name for the whole file, so every test passes a name of its own.
+const createScannableLib = async (
+  libName: string,
+  { root = {}, manifest = {}, config = "export default {};\n", files = {} }: ScannableLibOptions = {},
+) => {
+  const temp = trackRoot(await createTempLib(libName));
+  const libDir = path.join(temp.root, "libs", libName);
+  await writeJson(path.join(temp.root, "package.json"), {
+    name: "repo",
+    version: "1.0.0",
+    description: "repo",
+    ...root,
+  });
+  await writeJson(path.join(libDir, "package.json"), {
+    type: "module",
+    name: `@${libName}`,
+    version: "0.0.1",
+    ...manifest,
+  });
+  await writeJson(path.join(libDir, "tsconfig.json"), { compilerOptions: { target: "ESNext", paths: {} } });
+  await writeText(path.join(libDir, "akan.config.ts"), config);
+  await mkdir(path.join(libDir, "lib", "__scalar"), { recursive: true });
+  for (const [file, content] of Object.entries(files)) await writeText(path.join(libDir, file), content);
+  return { ...temp, libDir };
+};
+
+describe("SysExecutor scan", () => {
+  test("gives a facet folder with nothing to export an empty barrel, so a barrel a deleted file left heals", async () => {
+    const { lib } = await createScannableLib("barrelheal", {
+      files: {
+        "common/index.ts": 'export * from "./commonLogic";\n',
+        "webkit/thing.helper.ts": "export const thing = 1;\n",
+      },
+    });
+
+    await lib.scan();
+
+    expect(await lib.readFile("common/index.ts")).toBe("export {};\n");
+    expect(await lib.readFile("webkit/index.ts")).toBe("export {};\n");
+    expect(await lib.exists("ui")).toBe(false);
+  });
+
+  test("imports into the generated lib/dict.ts and lib/srv.ts only the helpers their code calls", async () => {
+    const { lib: bare } = await createScannableLib("nomodulelib");
+    await bare.scan();
+    expect(await bare.readFile("lib/dict.ts")).toContain(
+      'import { makeDictionary, makeTrans, dictionary as base } from "akanjs/dictionary";',
+    );
+    const bareSrv = await bare.readFile("lib/srv.ts");
+    for (const unused of ["ServiceModel", '"./cnst"', '"./db"']) expect(bareSrv).not.toContain(unused);
+
+    const { lib: full } = await createScannableLib("allmodulelib", {
+      files: {
+        "lib/post/post.constant.ts": "export class Post {}\n",
+        "lib/post/post.service.ts": "export class PostService {}\n",
+        "lib/_mail/mail.service.ts": "export class MailService {}\n",
+        "lib/__scalar/money/money.constant.ts": "export class Money {}\n",
+      },
+    });
+    await full.scan();
+    expect(await full.readFile("lib/dict.ts")).toContain(
+      "import { makeDictionary, makeTrans, registerScalarTrans, registerServiceTrans, registerModelTrans, dictionary as base }",
+    );
+    const fullSrv = await full.readFile("lib/srv.ts");
+    expect(fullSrv).toContain('import { ServiceModel } from "akanjs/service";');
+    expect(fullSrv).toContain('import * as cnst from "./cnst";\nimport * as db from "./db";');
+  });
+
+  test.skipIf(!hasBiome)("writes barrels, module indexes and akan.lib.json the way Biome prints them", async () => {
+    const component = "export const C = () => null;\n";
+    const uiFiles = ["QRCode", "Qa", "SSOButton", "Select", "Icon10", "Icon2"].map((name) => [
+      `ui/${name}.tsx`,
+      component,
+    ]);
+    const srvkitFiles = ["aB", "aa", "a10", "a9"].map((name) => [`srvkit/${name}.ts`, "export const x = 1;\n"]);
+    const moduleFiles = ["Template", "Unit", "View"].map((role) => [`lib/post/Post.${role}.tsx`, component]);
+    const { root, lib, libDir } = await createScannableLib("biomestable", {
+      files: Object.fromEntries([
+        ...uiFiles,
+        ...srvkitFiles,
+        ...moduleFiles,
+        ["lib/post/post.constant.ts", "export class Post {}\n"],
+      ]),
+    });
+    expect(await formatWithBiome('export * from "./b";\nexport * from "./a";\n', "libs/x/srvkit/index.ts")).toBe(
+      'export * from "./a";\nexport * from "./b";\n',
+    );
+
+    await lib.scan();
+
+    expect(await lib.readFile("ui/index.ts")).toBe(
+      ["Icon2", "Icon10", "Qa", "QRCode", "Select", "SSOButton"].map((name) => `export * from "./${name}";\n`).join(""),
+    );
+    expect(await lib.readFile("srvkit/index.ts")).toBe(
+      ["a9", "a10", "aa", "aB"].map((name) => `export * from "./${name}";\n`).join(""),
+    );
+    for (const file of ["ui/index.ts", "srvkit/index.ts", "lib/post/index.ts", "akan.lib.json"]) {
+      const generated = await lib.readFile(file);
+      expect(await formatWithBiome(generated, `libs/biomestable/${file}`)).toBe(generated);
+    }
+    const devSync = new DevGeneratedIndexSync({ workspaceRoot: root });
+    const events = ["ui/QRCode.tsx", "srvkit/a9.ts", "lib/post"].map((file) => path.join(libDir, file));
+    expect(await devSync.syncForBatch(events)).toEqual({ changedFiles: [], errors: [] });
+  });
+
+  test("refuses a hand-written ui/index.tsx beside the generated barrel, naming the file and the fix", async () => {
+    const { lib } = await createScannableLib("shadowedbarrel", {
+      files: {
+        "ui/Chat.tsx": "export const Chat = () => null;\n",
+        "ui/index.tsx": 'export { Chat } from "./Chat";\n',
+        "ui/Page/index.tsx": 'export { Inner } from "./Inner";\n',
+        "ui/Page/index_.tsx": '"use client";\nexport { Inner } from "./Inner";\n',
+      },
+    });
+
+    const error = await lib.scan().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    const { message } = error as Error;
+    expect(message).toContain("libs/shadowedbarrel/ui/index.tsx: shadows the generated ui/index.ts");
+    expect(message).toContain("Delete it");
+    expect(message).not.toContain("ui/Page/");
+  });
+});
+
+describe("SysExecutor dependency sync", () => {
+  const root: Pick<PackageJson, "dependencies" | "devDependencies"> = {
+    dependencies: {
+      chalk: "^5.6.2",
+      esbuild: "^0.25.0",
+      lodash: "^4.17.21",
+      react: "19.3.0",
+      "react-dom": "19.3.0",
+      sharp: "^0.34.0",
+      zod: "3.25.76",
+    },
+    devDependencies: { dayjs: "^1.11.20", "happy-dom": "20.11.2", typescript: "^6.0.3" },
+  };
+  const readManifest = async (libDir: string) =>
+    (await Bun.file(path.join(libDir, "package.json")).json()) as PackageJson;
+  const silenced = (lib: LibExecutor) => ({
+    info: spyOn(lib.logger, "info").mockImplementation(() => undefined),
+    warn: spyOn(lib.logger, "warn").mockImplementation(() => undefined),
+  });
+
+  test("prunes what the root declares and nothing imports, and keeps and warns once about what it does not", async () => {
+    const { lib, libDir } = await createScannableLib("prunedeps", {
+      root,
+      manifest: {
+        dependencies: { lodash: "^4.0.0", "react-dom": "19.2.6", "left-pad": "^1.3.0", "is-odd": "^3.0.1" },
+        devDependencies: {},
+      },
+      files: { "srvkit/pad.ts": 'import padStart from "lodash/padStart";\nexport const pad = padStart;\n' },
+    });
+    const { info, warn } = silenced(lib);
+
+    await lib.scan();
+
+    expect((await readManifest(libDir)).dependencies).toEqual({
+      lodash: "^4.17.21",
+      "left-pad": "^1.3.0",
+      "is-odd": "^3.0.1",
+    });
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(info.mock.calls[0]?.[0]).toContain(": react-dom (");
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain("libs/prunedeps/package.json lists left-pad, is-odd");
+  });
+
+  test("keeps what externalLibs, trustedDependencies or akan.keepDependencies names", async () => {
+    const akan = { keepDependencies: ["chalk"] };
+    const { lib, libDir } = await createScannableLib("keptdeps", {
+      root,
+      config: 'export default { externalLibs: ["sharp"], trustedDependencies: ["esbuild"] };\n',
+      manifest: {
+        dependencies: { sharp: "^0.33.0", esbuild: "^0.24.0", chalk: "^5.0.0", "react-dom": "19.2.6" },
+        devDependencies: {},
+        akan,
+      },
+    });
+    silenced(lib);
+
+    await lib.scan();
+
+    const manifest = await readManifest(libDir);
+    expect(manifest.dependencies).toEqual({ sharp: "^0.34.0", esbuild: "^0.25.0", chalk: "^5.6.2" });
+    expect(manifest.akan).toEqual(akan);
+  });
+
+  test("gives every surviving entry the root version, leaving peer, optional and the akan source alone", async () => {
+    const untouched = {
+      peerDependencies: { react: "^19.0.0" },
+      optionalDependencies: { fsevents: "^2.3.3" },
+      akan: { source: { origin: "akanjs", sha: "3.0.0", hash: "0f0f", syncedAt: "2026-01-01T00:00:00.000Z" } },
+    };
+    const { lib, libDir } = await createScannableLib("realigneddeps", {
+      root,
+      manifest: {
+        dependencies: { react: "19.2.7", lodash: "^4.0.0" },
+        devDependencies: { dayjs: "^1.11.13" },
+        ...untouched,
+      },
+      files: {
+        "ui/Thing.tsx": 'import { useState } from "react";\nexport const Thing = () => useState(0);\n',
+        "srvkit/pick.ts": 'import pick from "lodash/pick";\nexport const pickOf = pick;\n',
+      },
+    });
+    silenced(lib);
+
+    await lib.scan();
+
+    const manifest = await readManifest(libDir);
+    expect(manifest.dependencies).toEqual({ react: "19.3.0", lodash: "^4.17.21" });
+    expect(manifest.devDependencies).toEqual({ dayjs: "^1.11.20" });
+    expect(manifest).toMatchObject(untouched);
+  });
+
+  test("keeps the existing order, appends new names sorted, and a second scan rewrites nothing", async () => {
+    const { lib, libDir } = await createScannableLib("ordereddeps", {
+      root,
+      manifest: { dependencies: { zod: "3.25.76", lodash: "^4.17.21" }, devDependencies: {} },
+      files: {
+        "srvkit/uses.ts": [
+          'import { z } from "zod";',
+          'import chunk from "lodash/chunk";',
+          'import { createElement } from "react";',
+          'import chalk from "chalk";',
+          "export const uses = [z, chunk, createElement, chalk];",
+          "",
+        ].join("\n"),
+      },
+    });
+    silenced(lib);
+
+    await lib.scan();
+    const manifestFile = path.join(libDir, "package.json");
+    const [first, { mtimeMs }] = await Promise.all([readFile(manifestFile, "utf8"), stat(manifestFile)]);
+    expect(Object.keys((JSON.parse(first) as PackageJson).dependencies ?? {})).toEqual([
+      "zod",
+      "lodash",
+      "chalk",
+      "react",
+    ]);
+
+    await lib.scan({ refresh: true });
+    expect(await readFile(manifestFile, "utf8")).toBe(first);
+    expect((await stat(manifestFile)).mtimeMs).toBe(mtimeMs);
+  });
+
+  test("moves a type-only import to devDependencies", async () => {
+    const { lib, libDir } = await createScannableLib("typeonlydeps", {
+      root,
+      manifest: { dependencies: { zod: "3.25.76" }, devDependencies: {} },
+      files: { "common/schema.ts": 'import type { ZodType } from "zod";\nexport type Schema = ZodType;\n' },
+    });
+    silenced(lib);
+
+    await lib.scan();
+
+    const manifest = await readManifest(libDir);
+    expect(manifest.dependencies).toEqual({});
+    expect(manifest.devDependencies).toEqual({ zod: "3.25.76" });
+  });
+
+  test("leaves a runtime import the root lists only in devDependencies in devDependencies", async () => {
+    const { lib, libDir } = await createScannableLib("devonlydeps", {
+      root,
+      manifest: { dependencies: {}, devDependencies: { "happy-dom": "20.0.0" } },
+      files: {
+        "srvkit/dom.ts": 'import { Window } from "happy-dom";\nexport const createWindow = () => new Window();\n',
+      },
+    });
+    silenced(lib);
+
+    await lib.scan();
+
+    const manifest = await readManifest(libDir);
+    expect(manifest.dependencies).toEqual({});
+    expect(manifest.devDependencies).toEqual({ "happy-dom": "20.11.2" });
+  });
+
+  test("has written the manifest by the time scan returns", async () => {
+    const { lib, libDir } = await createScannableLib("settleddeps", {
+      root,
+      manifest: { dependencies: { "react-dom": "19.2.6" }, devDependencies: {} },
+      files: { "srvkit/pick.ts": 'import pick from "lodash/pick";\nexport const pickOf = pick;\n' },
+    });
+    silenced(lib);
+
+    await lib.scan({ writeLib: false });
+
+    expect((await readManifest(libDir)).dependencies).toEqual({ lodash: "^4.17.21" });
   });
 });

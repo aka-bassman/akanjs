@@ -900,14 +900,17 @@ export class TaskService extends serve(db.task, () => ({})) {
               {l.trans({
                 en: (
                   <span>
-                    <strong>Removed documents never match.</strong> Every read adds <code>{'"removedAt" IS NULL'}</code>
-                    , so you never write that condition yourself.
+                    <strong>Removed documents never match.</strong> Every read and query-level write adds{" "}
+                    <code>{'"removedAt" IS NULL'}</code>, and a condition only a removed row can meet throws{" "}
+                    <code>can never match</code>. To read removed rows, pass <code>{"{ withRemoved: true }"}</code>.
                   </span>
                 ),
                 ko: (
                   <span>
-                    <strong>삭제한 document는 결과에 나오지 않습니다.</strong> 모든 조회에{" "}
-                    <code>{'"removedAt" IS NULL'}</code>이 붙으므로 이 조건은 직접 쓰지 않습니다.
+                    <strong>삭제한 document는 결과에 나오지 않습니다.</strong> 모든 조회와 쿼리 단위 쓰기에{" "}
+                    <code>{'"removedAt" IS NULL'}</code>이 붙으며, 삭제된 행만 만족하는 조건은{" "}
+                    <code>can never match</code> 오류를 냅니다. 삭제된 행을 읽으려면{" "}
+                    <code>{"{ withRemoved: true }"}</code>를 넘깁니다.
                   </span>
                 ),
               })}

@@ -7,8 +7,16 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { [
   const scalarModules = scanInfo.getScalarModules();
   const serviceModules = scanInfo.getServiceModules();
   const libs = scanInfo.getLibs();
+  const dictionaryImports = [
+    "makeDictionary",
+    "makeTrans",
+    ...(scalarModules.length ? ["registerScalarTrans"] : []),
+    ...(serviceModules.length ? ["registerServiceTrans"] : []),
+    ...(databaseModules.length ? ["registerModelTrans"] : []),
+    ...(libs.length ? [] : ["dictionary as base"]),
+  ];
   return `
-import { makeDictionary, makeTrans, registerScalarTrans, registerServiceTrans, registerModelTrans${libs.length === 0 ? `, dictionary as base` : ""} } from "akanjs/dictionary";
+import { ${dictionaryImports.join(", ")} } from "akanjs/dictionary";
 ${libs.length ? libs.map((lib) => `import { dictionary as ${lib} } from "@libs/${lib}/lib/dict";`).join("\n") : ""}
 
 ${databaseModules.map((module) => `import * as ${module} from "./${module}/${module}.dictionary";`).join("\n")}

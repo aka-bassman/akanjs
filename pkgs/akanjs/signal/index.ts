@@ -7,6 +7,7 @@ export * from "./base.signal";
 export { CrossSiteGuard, type CrossSiteOption } from "./CrossSiteGuard";
 export * from "./endpoint";
 export * from "./endpointInfo";
+export * from "./endpointRateLimit";
 export * from "./exception";
 export * from "./guard";
 export * from "./guards";

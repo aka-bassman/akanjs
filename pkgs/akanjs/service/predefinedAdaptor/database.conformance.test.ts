@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { Any, dayjs, Int } from "akanjs/base";
+import { Logger } from "akanjs/common";
 import { type ConstantModel, ConstantRegistry, via } from "akanjs/constant";
 import {
   by,
@@ -13,6 +14,7 @@ import {
 } from "akanjs/document";
 import { ConformanceEnv, type SqlDriver, type SqlDriverKind } from "../../test/conformance";
 import { SqlDocumentStore } from "./database.adaptor";
+import { descriptorHash } from "./sql/values";
 
 // Every case states the SQLite answer, the contract live sync's in-memory evaluator is pinned to. A known divergence is
 // `test.failingIf(<driver>)` with its `local/database-modes/` id; fixing it turns the case red, the cue to drop it.
@@ -111,6 +113,33 @@ const uniqueDatabase = DatabaseRegistry.buildModel(
   UniqueObject,
   UniqueInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   UniqueFilter,
+);
+
+class FrozenInput extends via((f) => ({ label: f(String), kind: f(String, { immutable: true }) })) {}
+class FrozenObject extends via(FrozenInput, () => ({})) {}
+class FrozenLight extends via(FrozenObject, ["label"] as const, () => ({})) {}
+class FrozenFull extends via(FrozenObject, FrozenLight, () => ({})) {}
+class FrozenInsight extends via(FrozenFull, (f) => ({ count: f(Int, { default: 0, accumulate: {} }) })) {}
+const frozenConstant = ConstantRegistry.buildModel(
+  "frozenConf",
+  FrozenInput,
+  FrozenObject,
+  FrozenFull,
+  FrozenLight,
+  FrozenInsight,
+  { FrozenInput, FrozenObject, FrozenFull, FrozenLight, FrozenInsight },
+);
+class FrozenFilter extends from(FrozenFull, () => ({ query: {}, sort: {} })) {}
+class FrozenDoc extends by(FrozenFull) {}
+class FrozenModel extends into(FrozenDoc, FrozenFilter, frozenConstant, () => ({})) {}
+const frozenDatabase = DatabaseRegistry.buildModel(
+  "frozenConf",
+  FrozenInput as unknown as DatabaseCls<InstanceType<typeof FrozenInput>>,
+  FrozenDoc,
+  FrozenModel,
+  FrozenObject,
+  FrozenInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
+  FrozenFilter,
 );
 
 const storeOf = async (
@@ -375,6 +404,74 @@ const describeDriver = (kind: SqlDriverKind) => {
       expect(await validIndexNamesOf(driver, "uniqueConf")).toEqual(["uniqueConf_code"]);
     });
 
+    test("a MongoDB text index builds nothing and warns, the next index keeps its name, and a long value is written", async () => {
+      const warnings: string[] = [];
+      const removeSink = Logger.addSink((entry) => void warnings.push(entry.plainMessage), { minLevel: "warn" });
+      try {
+        const store = await storeOf(
+          driver,
+          confConstant,
+          confDatabase,
+          new DocumentSchema().index({ note: "text" }).index({ status: 1 }),
+        );
+        expect(await validIndexNamesOf(driver, "dialectConf")).toEqual(["dialectConf_status_1"]);
+        const textWarnings = warnings.filter((message) => message.includes("MongoDB's text index"));
+        expect(textWarnings).toHaveLength(1);
+        expect(textWarnings[0]).toContain('Index {"note":"text"} on dialectConf is not built');
+        expect(textWarnings[0]).toContain('field(String, { text: "desc" })');
+        expect(textWarnings[0]).not.toContain("Dropped");
+        const long = Array.from(crypto.getRandomValues(new Uint8Array(6000)), (byte) => byte.toString(16)).join("");
+        await store.create({ title: "long", note: long });
+        expect(titlesOf(await store.find({ note: long }))).toEqual(["long"]);
+      } finally {
+        removeSink();
+      }
+    });
+
+    test("the B-tree an earlier boot built from a text index is dropped on proof, and no other index", async () => {
+      const legacy = await storeOf(driver, confConstant, confDatabase);
+      const connection = driver.database.getConnection();
+      const legacyIndex = (name: string, path: string) =>
+        driver.dialect.createIndex({
+          name,
+          table: "dialectConf",
+          unique: false,
+          columns: [{ path, expr: legacy.compiler.fieldExpr(path), isArray: false }],
+        });
+      // What a boot before this release left: the B-tree and the hash of the descriptor that built it.
+      await connection.execute(legacyIndex("dialectConf_note_0", "note"));
+      await driver.database.setMeta(
+        "index:dialectConf:dialectConf_note_0",
+        await descriptorHash({ fields: { note: "text" } }),
+      );
+      await connection.execute(legacyIndex("dialectConf_title_1", "title"));
+
+      const warnings: string[] = [];
+      const removeSink = Logger.addSink((entry) => void warnings.push(entry.plainMessage), { minLevel: "warn" });
+      const textIndexes = () => new DocumentSchema().index({ note: "text" }).index({ title: "text" });
+      try {
+        await storeOf(await sibling(), confConstant, confDatabase, textIndexes());
+        expect(await validIndexNamesOf(driver, "dialectConf")).toEqual(["dialectConf_title_1"]);
+        expect(await driver.database.getMeta("index:dialectConf:dialectConf_note_0")).toBe("");
+        expect(warnings.filter((message) => message.includes("Dropped dialectConf_note_0"))).toHaveLength(1);
+        expect(warnings.filter((message) => message.includes("Dropped dialectConf_title_1"))).toHaveLength(0);
+
+        warnings.length = 0;
+        await storeOf(await sibling(), confConstant, confDatabase, textIndexes());
+        expect(warnings.filter((message) => message.includes("MongoDB's text index"))).toHaveLength(2);
+        expect(warnings.filter((message) => message.includes("Dropped"))).toHaveLength(0);
+
+        await storeOf(await sibling(), confConstant, confDatabase, new DocumentSchema().index({ note: 1 }));
+        expect((await validIndexNamesOf(driver, "dialectConf")).sort()).toEqual([
+          "dialectConf_note_0",
+          "dialectConf_title_1",
+        ]);
+        expect(warnings.filter((message) => message.includes("changed its descriptor"))).toHaveLength(0);
+      } finally {
+        removeSink();
+      }
+    });
+
     test("[DDL-4] a rebuild the rows refuse leaves the old index in place", async () => {
       const store = await storeOf(driver, uniqueConstant, uniqueDatabase, codeIndex(false));
       await store.create({ label: "first", code: "A" });
@@ -538,6 +635,24 @@ const describeDriver = (kind: SqlDriverKind) => {
       expect([saved.title, saved.score]).toEqual(["Published", 3]);
     });
 
+    test("changing an immutable field is a 400 naming the field, and the row keeps its value", async () => {
+      const frozen = await storeOf(driver, frozenConstant, frozenDatabase);
+      const { id } = await frozen.create({ label: "first", kind: "channel" });
+      await expect(frozen.update(id, { kind: "dm" })).rejects.toMatchObject({
+        message: "base.error.immutableField",
+        statusCode: 400,
+        data: { field: "kind" },
+      });
+      const held = await frozen.pickById(id);
+      await expect(held.set({ kind: "dm", label: "renamed" }).save()).rejects.toMatchObject({
+        data: { field: "kind" },
+      });
+      const stored = await frozen.pickById(id);
+      expect([stored.kind, stored.label]).toEqual(["channel", "first"]);
+      await held.set({ kind: "channel" }).save();
+      expect((await frozen.pickById(id)).label).toBe("renamed");
+    });
+
     test("[D4] saving a document twice writes the second change only", async () => {
       const { id } = await store.create({ title: "Draft", score: 1 });
       const other = await store.pickById(id);
@@ -546,6 +661,173 @@ const describeDriver = (kind: SqlDriverKind) => {
       await saved.set({ rank: 3 }).save();
       const stored = await store.pickById(id);
       expect([stored.title, stored.score, stored.rank]).toEqual(["Published", 5, 3]);
+    });
+  });
+
+  describe(`sql removed rows (${kind})`, () => {
+    let driver: SqlDriver;
+    let store: SqlDocumentStore;
+    const removedAtOf = async (id: string) =>
+      (await store.findOne({ id }, { withRemoved: true }))?.removedAt?.valueOf() as number | undefined;
+
+    beforeAll(async () => {
+      driver = await ConformanceEnv.openSqlDriver(kind);
+      store = await storeOf(driver, confConstant, confDatabase);
+    });
+    afterAll(async () => {
+      await driver?.close();
+    });
+    beforeEach(async () => {
+      await driver.database.getConnection().execute(`DELETE FROM "dialectConf"`);
+    });
+
+    test("a read skips a removed row unless it names { withRemoved: true }", async () => {
+      await store.create({ title: "kept" });
+      const { id } = await store.create({ title: "gone" });
+      await store.remove(id);
+      expect(titlesOf(await store.find({}))).toEqual(["kept"]);
+      expect(titlesOf(await store.find({}, { withRemoved: true })).sort()).toEqual(["gone", "kept"]);
+      expect(titlesOf(await store.find(q.exists("removedAt"), { withRemoved: true }))).toEqual(["gone"]);
+      expect(await store.count({}, { withRemoved: true })).toBe(2);
+      expect(await store.exists({ id })).toBeNull();
+      expect(await store.exists({ id }, { withRemoved: true })).toBe(id);
+      const removed = await store.findOne({ id }, { withRemoved: true });
+      expect(removed?.title).toBe("gone");
+      expect(dayjs.isDayjs(removed?.removedAt)).toBe(true);
+    });
+
+    test("a removedAt window reads the rows removed inside it", async () => {
+      const early = await store.create({ title: "early" });
+      const late = await store.create({ title: "late" });
+      await store.updateOneByQuery({ id: early.id }, { removedAt: dayjs().subtract(10, "day") });
+      await store.updateOneByQuery({ id: late.id }, { removedAt: dayjs().subtract(1, "day") });
+      const cutoff = dayjs().subtract(5, "day");
+      expect(titlesOf(await store.find({ removedAt: q.gte(cutoff) }, { withRemoved: true }))).toEqual(["late"]);
+      expect(await store.count({ removedAt: q.lt(cutoff) }, { withRemoved: true })).toBe(1);
+    });
+
+    test("a query only a removed row can match is refused without the flag; an IS NULL form is not", async () => {
+      await store.create({ title: "live" });
+      const refused = [
+        q.exists("removedAt"),
+        q.not(q.empty("removedAt")),
+        { removedAt: q.gt(dayjs(0)) },
+        { removedAt: q.ne(null) },
+        { removedAt: { exists: true } },
+        q.any({ title: "live" }, q.exists("removedAt")),
+      ];
+      for (const query of refused)
+        await expect(store.find(query)).rejects.toThrow(
+          /^find on "dialectConf" can never match \(.+\); pass \{ withRemoved: true \}$/,
+        );
+      await expect(store.count(q.exists("removedAt"))).rejects.toThrow('count on "dialectConf" can never match');
+      await expect(store.exists({ removedAt: q.gte(dayjs(0)) })).rejects.toThrow("compares a value no live row holds");
+      const allowed = [
+        q.empty("removedAt"),
+        q.missing("removedAt"),
+        { removedAt: null },
+        { removedAt: q.eq(null) },
+        { removedAt: { empty: true } },
+        { removedAt: { missing: true } },
+        { removedAt: { exists: false } },
+        q.not(q.exists("removedAt")),
+      ];
+      for (const query of allowed) expect(titlesOf(await store.find(query))).toEqual(["live"]);
+    });
+
+    test("an update reaches a removed row only with the flag, and leaves its removedAt", async () => {
+      const { id } = await store.create({ title: "gone", score: 1 });
+      const other = await store.create({ title: "other", status: "x" });
+      const sibling = await store.create({ title: "sibling", status: "x" });
+      await store.remove(id);
+      await store.removeManyByQuery({ status: "x" });
+      const removedAt = await removedAtOf(id);
+      const removedQuery = q.all({ id }, q.exists("removedAt"));
+      await expect(store.updateOneByQuery(removedQuery, { score: 2 })).rejects.toThrow(
+        'updateOneByQuery on "dialectConf" can never match',
+      );
+      expect(await store.updateOneByQuery(removedQuery, { score: 2 }, { withRemoved: true })).toMatchObject({
+        matchedCount: 1,
+        modifiedCount: 1,
+      });
+      expect((await store.findOne({ id }, { withRemoved: true }))?.score).toBe(2);
+      expect(await removedAtOf(id)).toBe(removedAt as number);
+
+      await expect(store.updateManyByQuery(q.exists("removedAt"), { status: "y" })).rejects.toThrow(
+        'updateManyByQuery on "dialectConf" can never match',
+      );
+      const { modifiedCount } = await store.updateManyByQuery(
+        q.all({ status: "x" }, q.exists("removedAt")),
+        { status: "y" },
+        { withRemoved: true },
+      );
+      expect(modifiedCount).toBe(2);
+      expect(await store.count({ status: "y" }, { withRemoved: true })).toBe(2);
+      expect(await store.count({ status: "y" })).toBe(0);
+      expect(await removedAtOf(other.id)).toBeTruthy();
+      expect(await removedAtOf(sibling.id)).toBeTruthy();
+    });
+
+    test("removing an already-removed row changes nothing and keeps its removedAt", async () => {
+      const { id } = await store.create({ title: "gone" });
+      await store.remove(id);
+      const removedAt = await removedAtOf(id);
+      await Bun.sleep(5);
+      expect((await store.removeManyByQuery({ id })).modifiedCount).toBe(0);
+      expect((await store.removeOneByQuery({ id })).modifiedCount).toBe(0);
+      expect(await removedAtOf(id)).toBe(removedAt as number);
+      await expect(store.removeManyByQuery(q.exists("removedAt"))).rejects.toThrow(
+        'removeManyByQuery on "dialectConf" can never match (removedAt exists asks for removed rows); a remove reaches live rows only',
+      );
+    });
+
+    test("an upsert does not take the flag", async () => {
+      await expect(
+        store.updateOneByQuery({ title: "nobody" }, { score: 1 }, { upsert: true, withRemoved: true }),
+      ).rejects.toThrow("takes upsert or { withRemoved: true }, not both");
+      expect(await store.count({}, { withRemoved: true })).toBe(0);
+    });
+
+    test("a row revived with removedAt: null is read again, and found by q.search", async () => {
+      const { id } = await store.create({ title: "Quarterly revenue report" });
+      await store.remove(id);
+      expect(titlesOf(await store.find(q.search("revenue")))).toEqual([]);
+      await expect(store.find(q.search("revenue"), { withRemoved: true })).rejects.toThrow(
+        'q.search() cannot see removed rows on "dialectConf"',
+      );
+      expect(await store.updateOneByQuery({ id }, { removedAt: null }, { withRemoved: true })).toMatchObject({
+        modifiedCount: 1,
+      });
+      expect(titlesOf(await store.find({ id }))).toEqual(["Quarterly revenue report"]);
+      expect(titlesOf(await store.find(q.search("revenue")))).toEqual(["Quarterly revenue report"]);
+    });
+
+    test("a removed document read with the flag is read-only; a live one saves", async () => {
+      const live = await store.create({ title: "live" });
+      const { id } = await store.create({ title: "gone" });
+      await store.remove(id);
+      const removed = await store.findOne({ id }, { withRemoved: true });
+      await expect(removed.set({ note: "edited" }).save()).rejects.toThrow(
+        "read-only: a removed dialectConf is revived with updateById(id, { removedAt: null }, { withRemoved: true })",
+      );
+      expect((await store.findOne({ id }, { withRemoved: true }))?.note).toBeNull();
+      await (await store.findOne({ id: live.id }, { withRemoved: true })).set({ note: "saved" }).save();
+      expect((await store.pickById(live.id)).note).toBe("saved");
+
+      await store.updateOneByQuery({ id }, { removedAt: null }, { withRemoved: true });
+      await removed.refresh();
+      await removed.set({ note: "revived" }).save();
+      expect((await store.pickById(id)).note).toBe("revived");
+    });
+
+    test("a projection reads a removed row with the flag, and the document is read-only too", async () => {
+      const { id } = await store.create({ title: "gone", score: 3 });
+      await store.remove(id);
+      const [projected] = await store.find({ id }, { select: { title: true }, withRemoved: true });
+      expect(projected?.title).toBe("gone");
+      expect(dayjs.isDayjs(projected?.removedAt)).toBe(true);
+      await expect(projected.set({ title: "edited" }).save()).rejects.toThrow("read-only: a removed dialectConf");
+      expect(await store.find({ id }, { select: { title: true } })).toEqual([]);
     });
   });
 };

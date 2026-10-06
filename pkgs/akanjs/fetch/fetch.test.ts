@@ -677,6 +677,20 @@ describe("HttpClient", () => {
     expect(error).toMatchObject({ statusCode: 503, details: "No healthy federation child is ready" });
   });
 
+  test("restores a proxy's own 429 with the wait its Retry-After names, else a minute", async () => {
+    setMockFetch();
+    rawResponses.push(new Response("Too Many Requests", { status: 429, headers: { "retry-after": "30" } }));
+    rawResponses.push(new Response("Too Many Requests", { status: 429 }));
+    const client = new HttpClient("https://api.example", { ErrorCls: TestErr });
+
+    const named = (await client.get("/items").catch((error: unknown) => error)) as TestErr;
+    const unnamed = (await client.get("/items").catch((error: unknown) => error)) as TestErr;
+
+    expect(named.message).toBe("base.error.tooManyRequests");
+    expect(named).toMatchObject({ statusCode: 429, data: { status: 429, seconds: 30 } });
+    expect(unnamed).toMatchObject({ statusCode: 429, data: { status: 429, seconds: 60 } });
+  });
+
   test("caps the transport error detail so a page body never becomes the message", async () => {
     setMockFetch();
     rawResponses.push(new Response("x".repeat(5000), { status: 500, headers: { "content-type": "text/plain" } }));
@@ -1162,6 +1176,59 @@ describe("FetchClient HTTP generation", () => {
       url: "https://api.example/custom/1234567890abcdef12345678",
       init: { headers: { Authorization: "Bearer origin-jwt" } },
     });
+  });
+
+  test("forwards the page request's x-real-ip on a same-origin call made while rendering, never to another origin", async () => {
+    if (!requestStorage) return;
+    setMockFetch();
+    jsonResponses.push("same", "other");
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+    const page = new Request("https://example.test", { headers: { "x-real-ip": "203.0.113.5" } });
+
+    await requestStorage.run(page, async () => {
+      setAkanPublicEnv();
+      await client.handler.getThing("abcdefabcdefabcdefabcdef", [], null);
+      await client.handler.getThing("abcdefabcdefabcdefabcdef", [], null, { origin: "https://edge.example" });
+    });
+
+    const forwarded = (idx: number) => new Headers(fetchCalls[idx]?.init?.headers as HeadersInit).get("x-real-ip");
+    expect(forwarded(0)).toBe("203.0.113.5");
+    expect(forwarded(1)).toBeNull();
+  });
+
+  test("in a signal test each clone names its own client address, unless given one", async () => {
+    setMockFetch();
+    jsonResponses.push("root", "a", "b", "named");
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+    FetchClient.useTestClientIps();
+    try {
+      const [agentA, agentB] = [client.clone({ connect: false }), client.clone({ connect: false })] as unknown as {
+        getThing: (id: string, tags: string[], empty: null) => Promise<unknown>;
+      }[];
+      const named = client.clone({ connect: false, clientIp: "203.0.113.9" }) as unknown as typeof agentA;
+      await client.handler.getThing("1234567890abcdef12345678", [], null);
+      await agentA?.getThing("1234567890abcdef12345678", [], null);
+      await agentB?.getThing("1234567890abcdef12345678", [], null);
+      await named.getThing("1234567890abcdef12345678", [], null);
+    } finally {
+      FetchClient.useTestClientIps(false);
+    }
+
+    const sentIp = (idx: number) => new Headers(fetchCalls[idx]?.init?.headers as HeadersInit).get("x-real-ip");
+    expect([sentIp(0), sentIp(1), sentIp(2), sentIp(3)]).toEqual([null, "198.18.0.1", "198.18.0.2", "203.0.113.9"]);
+  });
+
+  test("a server clone toward another origin opens no socket unless asked, a same-origin one still does", () => {
+    setFakeWebSocket();
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+
+    client.clone({ origin: "https://edge.example" });
+    expect(FakeWebSocket.instances.map((ws) => ws.url)).toEqual([]);
+
+    client.clone({ origin: "https://edge.example", connect: true });
+    client.clone({ jwt: "same-origin" });
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(FakeWebSocket.instances[0]?.url.startsWith("wss://edge.example")).toBe(true);
   });
 
   test("clone with a different origin does not share the request-query cache with the original", async () => {

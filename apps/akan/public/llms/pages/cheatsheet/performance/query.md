@@ -124,7 +124,7 @@ Column
 
 - id, createdAt, updatedAt, removedAt: Four real columns, compared directly: `"updatedAt" >= ?`.
 
-**Removed documents never match.** Every read adds `"removedAt" IS NULL`, so you never write that condition yourself.
+**Removed documents never match.** Every read and query-level write adds `"removedAt" IS NULL`, and a condition only a removed row can meet throws `can never match`. To read removed rows, pass `{ withRemoved: true }`.
 
 **The SQL below is simplified SQLite / libsql.** Postgres compiles the same filter to `jsonb` operators such as `_doc #> '{status}'`.
 

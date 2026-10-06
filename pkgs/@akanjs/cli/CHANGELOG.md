@@ -1,5 +1,36 @@
 # @akanjs/cli
 
+## 3.0.2
+
+### Minor Changes
+
+- af66669: Native builds moved from `apps/<app>/.akan/native/<target>` to `dist/native/<app>/<target>` (`build/<platform>`, `dev/<platform>`, `web`, `bin`, `updates`). It sits outside `dist/apps/<app>`, which every `akan build` empties, so a signed release waiting for upload survives the next build. Upload what is waiting in an old `.akan/native/<target>/updates` and delete the folder: `akan start` keeps it and warns until then. A CI step that collects installers reads `dist/native/<app>/*/build/*/` now, and `pack-update`'s default output is `dist/native/<app>/<target>/updates/<platform>`.
+
+### Patch Changes
+
+- be8ed50: A facet folder with nothing to export syncs to `export {};`, so a barrel still exporting a deleted file heals on the next sync, and `akan create-library` no longer scaffolds placeholder `*Logic.ts` files.
+- be8ed50: The generated `lib/dict.ts` and `lib/srv.ts` import only what they use.
+- 2b0ee5d: Stop referencing `tsconfig.spec.json` from the generated app `tsconfig.json` template so freshly generated apps pass the workspace root-file scan and typecheck.
+- Updated dependencies [be8ed50]
+- Updated dependencies [af66669]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [af66669]
+- Updated dependencies [af66669]
+- Updated dependencies [bd55713]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [a789952]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+  - akanjs@3.1.0
+
 ## 3.0.1
 
 ### Patch Changes
@@ -461,13 +492,13 @@
   formatter, the rule set, and every grit plugin registration; a workspace `biome.json` is `extends` plus its own
   `files.includes`. Biome resolves the specifier through node*modules (it does not consult the package `exports`
   map), and `plugins` paths inside an extended config resolve from the entry config's directory, so the
-  `./node_modules/@akanjs/devkit/lint/*.grit` form the template already used is correct. Rule changes now reach a
-  workspace on `bun update` with no command to run. Two merge behaviours decided the split: `overrides` concatenate,
-  so the generated-file opt-out moved there from `files.includes`, which \_replaces* and would silently drop the base
-  list the moment a workspace added one exclusion of its own. Because Biome moves rules between groups across minors
-  (`noUnnecessaryConditions` is `nursery` at 2.4 and `suspicious` at 2.5, and the old position is a hard error), the
-  base config and the Biome version travel together: `biomeBase.ts` pins the version `createWorkspace` installs
-  instead of resolving `latest`.
+  `./node_modules/@akanjs/devkit/lint/*.grit`form the template already used is correct. Rule changes now reach a
+workspace on`bun update`with no command to run. Two merge behaviours decided the split:`overrides`concatenate,
+so the generated-file opt-out moved there from`files.includes`, which \_replaces* and would silently drop the base
+list the moment a workspace added one exclusion of its own. Because Biome moves rules between groups across minors
+(`noUnnecessaryConditions`is`nursery`at 2.4 and`suspicious`at 2.5, and the old position is a hard error), the
+base config and the Biome version travel together:`biomeBase.ts`pins the version`createWorkspace`installs
+instead of resolving`latest`.
 
   **The conventions body moved into the managed block.** It now ships as the `conventions` guideline and renders
   between the `akan:agent` markers, so `akan agent install` refreshes it. `AGENTS.md.template` carried a _second_,

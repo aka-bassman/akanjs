@@ -8,7 +8,7 @@ import path from "node:path";
 //? AKAN_DESKTOP_E2E_BUILD=0 reuses the last build.
 const enabled = process.env.AKAN_DESKTOP_E2E === "1";
 const workspaceRoot = path.resolve(import.meta.dir, "../../../..");
-const nativeDir = path.join(workspaceRoot, "apps/minimal/.akan/native/default/build");
+const nativeDir = path.join(workspaceRoot, "dist/native/minimal/default/build");
 const appId = "com.minimal.dev.app";
 
 class DesktopApp {

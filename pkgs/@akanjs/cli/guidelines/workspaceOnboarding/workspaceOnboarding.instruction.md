@@ -124,7 +124,7 @@ starts it itself. The full contract — targets, updates, what the carried serve
 ```bash
 akan start-desktop <%= appName %>                   # Run the desktop app on this computer
 akan start-ios <%= appName %>                       # Run it in a simulator or on an iPhone (start-android alike)
-akan build-desktop <%= appName %>                   # Build it for this computer into .akan/native/<target>/build
+akan build-desktop <%= appName %>                   # Build it for this computer into dist/native/<%= appName %>/<target>/build
 akan build-desktop <%= appName %> --installer true  # Windows: add a per-user setup program
 akan update-keygen <%= appName %>                   # Make the update signing key once; print its public key
 akan publish-update <%= appName %>                  # Build and sign a desktop release to upload to updates.url

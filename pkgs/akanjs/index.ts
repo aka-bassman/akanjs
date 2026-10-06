@@ -213,6 +213,28 @@ export interface AkanNativeDesktopConfig {
    * for a native addon signed by another team. Read when the app is signed with a team (a Developer ID).
    */
   entitlements?: Record<string, AkanNativeValue>;
+  /**
+   * macOS: the Finder window `build-desktop --installer` opens its dmg in — no toolbar or sidebar, the app's and the
+   * Applications link's icons on a background, the app's icon on the mounted disk. Without it the window is 660×400 pt
+   * on the framework's background, an arrow from the app at (180, 170) to Applications at (480, 170). A position is an
+   * icon's center in points from the window's top left; the default background lines up with the default positions.
+   */
+  dmg?: AkanNativeDmgConfig;
+}
+
+export interface AkanNativeDmgConfig {
+  /** A PNG (or TIFF) the size of the window in points, relative to the app folder; `false` for a plain window. */
+  background?: string | false;
+  /** The same picture at twice the pixels, for a Retina display. */
+  background2x?: string;
+  /** The area under the title bar, in points. Default the background's size, at 200, 120 on the screen. */
+  window?: { x?: number; y?: number; width?: number; height?: number };
+  /** Default 128. */
+  iconSize?: number;
+  /** Default 13. */
+  textSize?: number;
+  app?: { x: number; y: number };
+  applications?: { x: number; y: number };
 }
 
 /**

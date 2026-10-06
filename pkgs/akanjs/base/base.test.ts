@@ -7,6 +7,10 @@ type TestItem = {
   score: number;
 };
 
+type Equal<Left, Right> =
+  (<Type>() => Type extends Left ? 1 : 2) extends <Type>() => Type extends Right ? 1 : 2 ? true : false;
+type Expect<Type extends true> = Type;
+
 describe("enumOf", () => {
   test("creates a string enum with lookup helpers", () => {
     class Role extends enumOf<"Role", string>("Role", ["admin", "member", "guest"] as const) {}
@@ -41,6 +45,27 @@ describe("enumOf", () => {
     expect(() => Status.indexOf(4)).toThrow("Value 4 is not in enum");
     expect(() => Status.find((value) => value > 10)).toThrow("Value not found in enum");
     expect(() => Status.findIndex((value) => value > 10)).toThrow("Value not found in enum");
+  });
+
+  test("infers literal values with or without `as const`, and keeps a non-literal array wide", () => {
+    class Plain extends enumOf("plain", ["active", "inactive"]) {}
+    class Const extends enumOf("const", ["active", "inactive"] as const) {}
+    class Code extends enumOf("code", [100, 200]) {}
+    const dynamicValues: string[] = ["active", "inactive"];
+    class Dynamic extends enumOf("dynamic", dynamicValues) {}
+    type _Inferred = [
+      Expect<Equal<Plain["value"], "active" | "inactive">>,
+      Expect<Equal<Const["value"], "active" | "inactive">>,
+      Expect<Equal<Code["value"], 100 | 200>>,
+      Expect<Equal<Dynamic["value"], string>>,
+    ];
+    // @ts-expect-error a typo is not one of the values
+    const typo: Plain["value"] = "actve";
+
+    expect(Plain.values).toEqual(Const.values);
+    expect(Plain.has(typo)).toBe(false);
+    expect(Code.type).toBe(Int);
+    expect(Dynamic.has("active")).toBe(true);
   });
 });
 

@@ -1,5 +1,44 @@
 # @akanjs/devkit
 
+## 3.0.2
+
+### Minor Changes
+
+- be8ed50: New lint rules: `no-unguarded-endpoint` warns on an endpoint, named slice or root slice that declares no guards, and `no-double-brace-placeholder` refuses `{{name}}` in a dictionary error/translate entry. `no-throw-raw-error` also warns on a raw `Error` constructed without `throw`, and `no-inline-color` warns on color literals in SVG color attributes and `el.style` writes.
+- af66669: Native builds moved from `apps/<app>/.akan/native/<target>` to `dist/native/<app>/<target>` (`build/<platform>`, `dev/<platform>`, `web`, `bin`, `updates`). It sits outside `dist/apps/<app>`, which every `akan build` empties, so a signed release waiting for upload survives the next build. Upload what is waiting in an old `.akan/native/<target>/updates` and delete the folder: `akan start` keeps it and warns until then. A CI step that collects installers reads `dist/native/<app>/*/build/*/` now, and `pack-update`'s default output is `dist/native/<app>/<target>/updates/<platform>`.
+- af66669: The macOS dmg `build-desktop --installer true` makes opens on a drag-to-Applications window: no toolbar, sidebar or status bar, 128 pt icons of the app and the Applications link on a background with an arrow between them (1x and 2x in one multi-resolution TIFF), and the app's icon on the mounted disk (`.VolumeIcon.icns`). Its own files (`.background`, `.VolumeIcon.icns`, `.DS_Store`, `.fseventsd`) are hidden. The window is a `.DS_Store` written directly while a read-write image is mounted, never through Finder or AppleScript, so a headless CI builds the same image; the compressed image is made afterwards and is what gets signed, notarized and stapled. `native.desktop.dmg` (a target's too) replaces the background (`background`, `background2x`, or `false`) and moves the window and the icons (`window`, `iconSize`, `textSize`, `app`, `applications`, in points); the default background lines up with the default positions only.
+- be8ed50: `akan sync` prunes a root-declared dependency nothing imports and realigns every root-declared entry to the root's version; `package.json#akan.keepDependencies`, `externalLibs` and `trustedDependencies` are always kept. `akan install-library` keeps the root's versions and only adds what the root lacks.
+
+### Patch Changes
+
+- af66669: `akan build-desktop` builds for this computer's CPU without asking; `--arch arm64|x64` picks another one. Any CLI option declared both `enum` and `nullable` is now `null` when left out instead of prompting for one of its choices.
+- af66669: Upgrading may stop `akan sync` (and every command that runs it, `build-desktop` included) with a scan-convention error on a hand-written `index.tsx`, `index.jsx` or `index.mts` at the root of `ui/`, `webkit/`, `srvkit/`, `common/` or `plugin/`. Bun loads that file ahead of the generated `index.ts` while TypeScript checks `index.ts`, so a name only the generated barrel exports typechecks and is undefined at runtime. Delete the file: the generated barrel re-exports every file and folder of the facet. A namespace it built belongs in `<facet>/<Folder>/index.tsx`, which the check leaves alone.
+- be8ed50: Generated barrels, module indexes and `akan.*.json` are written exactly as Biome prints them, so `akan lint --no-fix` passes right after a sync.
+- af66669: A native build's `--env` reaches its CSR bundle. The CSR builds passed `env: "AKAN_PUBLIC_*"` to `Bun.build`, which inlines the `.env` Bun read when the process started and ranks it above `define`, so `build-desktop --env debug` shipped the root `.env`'s `AKAN_PUBLIC_ENV=local` and called `http://localhost:8282`, and `akan build` baked back the operation mode and ports it had just dropped. Every `AKAN_PUBLIC_*` now comes from `process.env` through `define` alone, and `akan build` drops `AKAN_PUBLIC_CLIENT_PORT` / `AKAN_PUBLIC_SERVER_PORT` from `process.env` as well, so a port in `.env` is no longer baked in.
+- af66669: A Linux desktop app's window is named after its app id (X11 `WM_CLASS`, Wayland `app_id`), so a dock or task bar finds its `<app id>.desktop` and shows that entry's name and icon instead of a generic one; the dock plugin's badge and progress name the same entry. The AppImage `build-desktop --installer true` makes carries `<app id>.desktop` with `StartupWMClass=<app id>` and `<app id>.png`, so the entry AppImageLauncher or appimaged installs under another file name still matches the window. The hidden entry that handles the app's deep links now shows the app's icon (installed as `~/.local/share/icons/hicolor/256x256/apps/<app id>.png`), and from an AppImage it starts the AppImage itself (`$APPIMAGE`) rather than the mount point it ran from, which is gone once the app quits, so a link opened after quitting the app no longer fails.
+- af66669: A `--env local` release build (`build-*`, `release-*`, `start-* --release true`, `publish-update`) calls the app's own dev server: its `env.runtime.json` names `PUBLIC_AKAN_SERVER_URL=http://localhost:<dev port>`, the port `akan start` gives the app (`AKAN_DEV_PORT`, else its place among the apps). Before, it always called 8282, which in a workspace with several apps is another app or nothing. A target that carries its server keeps the URL its server hands the page at launch, and an `AKAN_PUBLIC_SERVER_URL` the bundle was built with still wins.
+- be8ed50: `akan quality scan` no longer flags a non-exported interface or type declared beside a class.
+- 73a81da: Let non-local single database mode development servers continue when the Redis SSH tunnel is unavailable, warning with the SSH target and underlying connection errors and setting an explicitly unavailable Redis host instead of falling back to a local Redis instance. Working tunnels remain available to custom Redis adaptors, while multiple and cluster modes still require Redis and local development remains unchanged.
+- Updated dependencies [be8ed50]
+- Updated dependencies [af66669]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [af66669]
+- Updated dependencies [af66669]
+- Updated dependencies [bd55713]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+- Updated dependencies [a789952]
+- Updated dependencies [be8ed50]
+- Updated dependencies [be8ed50]
+  - akanjs@3.1.0
+
 ## 3.0.1
 
 ### Minor Changes
@@ -557,13 +596,13 @@
   formatter, the rule set, and every grit plugin registration; a workspace `biome.json` is `extends` plus its own
   `files.includes`. Biome resolves the specifier through node*modules (it does not consult the package `exports`
   map), and `plugins` paths inside an extended config resolve from the entry config's directory, so the
-  `./node_modules/@akanjs/devkit/lint/*.grit` form the template already used is correct. Rule changes now reach a
-  workspace on `bun update` with no command to run. Two merge behaviours decided the split: `overrides` concatenate,
-  so the generated-file opt-out moved there from `files.includes`, which \_replaces* and would silently drop the base
-  list the moment a workspace added one exclusion of its own. Because Biome moves rules between groups across minors
-  (`noUnnecessaryConditions` is `nursery` at 2.4 and `suspicious` at 2.5, and the old position is a hard error), the
-  base config and the Biome version travel together: `biomeBase.ts` pins the version `createWorkspace` installs
-  instead of resolving `latest`.
+  `./node_modules/@akanjs/devkit/lint/*.grit`form the template already used is correct. Rule changes now reach a
+workspace on`bun update`with no command to run. Two merge behaviours decided the split:`overrides`concatenate,
+so the generated-file opt-out moved there from`files.includes`, which \_replaces* and would silently drop the base
+list the moment a workspace added one exclusion of its own. Because Biome moves rules between groups across minors
+(`noUnnecessaryConditions`is`nursery`at 2.4 and`suspicious`at 2.5, and the old position is a hard error), the
+base config and the Biome version travel together:`biomeBase.ts`pins the version`createWorkspace`installs
+instead of resolving`latest`.
 
   **The conventions body moved into the managed block.** It now ships as the `conventions` guideline and renders
   between the `akan:agent` markers, so `akan agent install` refreshes it. `AGENTS.md.template` carried a _second_,

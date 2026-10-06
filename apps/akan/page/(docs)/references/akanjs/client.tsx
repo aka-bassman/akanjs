@@ -842,8 +842,8 @@ export default page().render(() => {
     {
       name: "setCookie(key, value, options?)",
       desc: l.trans({
-        en: "Writes a cookie in the browser (`path=/`, `SameSite=None`, `Secure`). Does nothing on the server.",
-        ko: "브라우저에 cookie를 씁니다(`path=/`, `SameSite=None`, `Secure`). 서버에서는 아무 일도 하지 않습니다.",
+        en: "Writes a cookie in the browser (`path=/`, `SameSite=Lax`, `Secure`; `options` overrides only the keys it names). Does nothing on the server.",
+        ko: "브라우저에 cookie를 씁니다(`path=/`, `SameSite=Lax`, `Secure`; `options`는 적은 항목만 바꿉니다). 서버에서는 아무 일도 하지 않습니다.",
       }),
     },
     {

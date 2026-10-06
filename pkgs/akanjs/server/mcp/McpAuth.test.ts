@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { SignalContext } from "../../signal/signalContext";
 import { McpAuth } from "./McpAuth";
 
 const auth = (option: Partial<ConstructorParameters<typeof McpAuth>[0]> = {}) =>
@@ -89,11 +90,19 @@ describe("McpAuth callerKey", () => {
     expect(opaque).toBe(McpAuth.callerKey(request("Bearer opaque-token")));
     expect(opaque).not.toBe(McpAuth.callerKey(request("Bearer other-token")));
     expect(McpAuth.callerKey(request())).toBe("ip:anonymous");
+  });
+
+  afterEach(() => SignalContext.setHttpPeerResolver(null));
+
+  test("believes a forwarded address only from a trusted proxy, so a caller cannot pick a fresh budget", () => {
     const proxied = new Request("https://app.example.com/mcp", {
       method: "POST",
       headers: { "x-real-ip": "203.0.113.9" },
     });
+    SignalContext.setHttpPeerResolver(() => ({ address: "10.0.0.2", port: 50_000 }));
     expect(McpAuth.callerKey(proxied)).toBe("ip:203.0.113.9");
+    SignalContext.setHttpPeerResolver(() => ({ address: "198.51.100.4", port: 50_000 }));
+    expect(McpAuth.callerKey(proxied)).toBe("ip:198.51.100.4");
   });
 });
 

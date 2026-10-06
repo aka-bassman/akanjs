@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
@@ -10,6 +10,7 @@ import {
   tempRoots,
   writeJson,
 } from "@akanjs/devkit/testHelpers";
+import type { PackageJson } from "@akanjs/devkit/types";
 import { LibraryRunner } from "./library.runner";
 import { LibraryScript } from "./library.script";
 
@@ -47,35 +48,77 @@ describe("LibraryScript", () => {
 });
 
 describe("LibraryRunner", () => {
-  test("merges library dependencies into the root package using newer versions", async () => {
-    const { root, workspace, lib } = track(await createTempLib("shared"));
+  const mergeFixture = async (libName: string, { changed }: { changed: boolean }) => {
+    const { root, workspace, lib } = track(await createTempLib(libName));
     await writeJson(`${root}/package.json`, {
       name: "repo",
       version: "1.0.0",
       description: "repo",
-      dependencies: { react: "18.0.0", lodash: "4.17.0" },
+      dependencies: { lodash: "4.17.0", "react-spring": "^9.7.5" },
       devDependencies: { typescript: "5.0.0" },
     });
-    await writeJson(`${root}/libs/shared/package.json`, {
-      name: "shared",
-      version: "1.0.0",
-      description: "shared",
-      dependencies: { react: "19.0.0" },
-      devDependencies: { typescript: "5.5.0", vite: "5.0.0" },
-    });
     workspace.spawn = mock(async () => "") as never;
+    workspace.hasChanges = mock(async () => changed) as never;
     workspace.commit = mock(async () => undefined) as never;
+    const warn = spyOn(lib.logger, "warn").mockImplementation(() => undefined);
+    const readRoot = async () => (await Bun.file(`${root}/package.json`).json()) as PackageJson;
+    const writeLibManifest = (deps: Pick<PackageJson, "dependencies" | "devDependencies">) =>
+      writeJson(`${root}/libs/${libName}/package.json`, {
+        name: libName,
+        version: "1.0.0",
+        description: libName,
+        ...deps,
+      });
+    return { root, workspace, lib, warn, readRoot, writeLibManifest };
+  };
+
+  test("adds what the root lacks into the matching map, and keeps the root's versions and maps", async () => {
+    const { workspace, lib, warn, readRoot, writeLibManifest } = await mergeFixture("merged", { changed: true });
+    await writeLibManifest({
+      dependencies: { "react-spring": "^10.0.4", typescript: "5.5.0", swiper: "^12.1.4" },
+      devDependencies: { lodash: "4.17.0", vite: "5.0.0" },
+    });
 
     await new LibraryRunner().mergeLibraryDependencies(lib);
 
-    const merged = (await Bun.file(`${root}/package.json`).json()) as {
-      dependencies: Record<string, string>;
-      devDependencies: Record<string, string>;
-    };
-    expect(merged.dependencies).toEqual({ lodash: "4.17.0", react: "19.0.0" });
-    expect(merged.devDependencies).toEqual({ typescript: "5.5.0", vite: "5.0.0" });
+    const merged = await readRoot();
+    expect(merged.dependencies).toEqual({ lodash: "4.17.0", "react-spring": "^9.7.5", swiper: "^12.1.4" });
+    expect(merged.devDependencies).toEqual({ typescript: "5.0.0", vite: "5.0.0" });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain("react-spring ^9.7.5 (lib: ^10.0.4), typescript 5.0.0 (lib: 5.5.0)");
     expect(workspace.spawn).toHaveBeenCalledWith("bun", ["install"]);
-    expect(workspace.commit).toHaveBeenCalledWith("Merge shared library dependencies");
+    expect(workspace.commit).toHaveBeenCalledWith("Merge merged library dependencies");
+  });
+
+  test("leaves a root that already has every package alone and commits nothing", async () => {
+    const { root, workspace, lib, warn, writeLibManifest } = await mergeFixture("unmerged", { changed: false });
+    await writeLibManifest({ dependencies: { lodash: "4.17.0" }, devDependencies: { typescript: "5.0.0" } });
+    const before = await Bun.file(`${root}/package.json`).text();
+
+    await new LibraryRunner().mergeLibraryDependencies(lib);
+
+    expect(await Bun.file(`${root}/package.json`).text()).toBe(before);
+    expect(warn).not.toHaveBeenCalled();
+    expect(workspace.spawn).not.toHaveBeenCalled();
+    expect(workspace.commit).not.toHaveBeenCalled();
+  });
+
+  test("a new library holds an empty barrel in each facet folder, the one sync writes, and no placeholder", async () => {
+    const { root, workspace } = track(await createTempLib("fresh"));
+    const libDir = `${root}/libs/fresh`;
+    const facetFiles = () =>
+      [...new Bun.Glob("{common,srvkit,ui,webkit}/**").scanSync({ cwd: libDir })]
+        .map((file) => file.replaceAll("\\", "/"))
+        .sort((a, b) => a.localeCompare(b));
+    const barrels = ["common/index.ts", "srvkit/index.ts", "ui/index.ts", "webkit/index.ts"];
+
+    const lib = await new LibraryRunner().createLibrary("fresh", workspace);
+    expect(facetFiles()).toEqual(barrels);
+    for (const barrel of barrels) expect(await Bun.file(`${libDir}/${barrel}`).text()).toBe("export {};\n");
+
+    await lib.scan();
+    expect(facetFiles()).toEqual(barrels);
+    for (const barrel of barrels) expect(await Bun.file(`${libDir}/${barrel}`).text()).toBe("export {};\n");
   });
 
   // `installLibrary` commits and hashes the copy via `git ls-files`, so the fixture is a real repo, `commit` mocked.

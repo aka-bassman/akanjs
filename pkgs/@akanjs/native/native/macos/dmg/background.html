@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- The default desktop.dmg background (lib/dmg.ts). background.png and background@2x.png are this page in headless
+     Chrome: --window-size=660,400 --force-device-scale-factor=1 (and 2) --screenshot=<file>. The arrow and the text
+     sit around the default icon positions, the app at (180, 170) and Applications at (480, 170). -->
+<html><head><meta charset="utf-8"><style>
+  html, body { margin: 0; width: 660px; height: 400px; overflow: hidden; }
+  body { background: linear-gradient(180deg, #fbfbfd 0%, #eceef2 100%); font-family: -apple-system, system-ui, sans-serif; }
+  svg { position: absolute; left: 0; top: 0; }
+  p { position: absolute; left: 0; right: 0; top: 304px; margin: 0; text-align: center; font-size: 15px; font-weight: 500; letter-spacing: 0.01em; color: #6b7080; }
+</style></head><body>
+<svg width="660" height="400" viewBox="0 0 660 400">
+  <g fill="none" stroke="#a9aeb9" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M272 170 H384" stroke-dasharray="0.1 14" />
+    <path d="M372 154 L390 170 L372 186" />
+  </g>
+</svg>
+<p>Drag the app to Applications to install</p>
+</body></html>

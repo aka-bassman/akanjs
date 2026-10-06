@@ -7,7 +7,13 @@ import ts from "typescript";
 import { AbstractDoc } from "./abstractDoc";
 import { FormSetterScanner } from "./formSetterScanner";
 import { fileWarning, formatSsrBalance, type SsrBalanceEntry, SsrScanner } from "./ssrScanner";
-import { isAllowedLibFacetRootFile, rootAllowedDirs, rootAllowedFiles, rootEntryHintOf } from "./workspaceLayout";
+import {
+  facetIndexShadowOf,
+  isAllowedLibFacetRootFile,
+  rootAllowedDirs,
+  rootAllowedFiles,
+  rootEntryHintOf,
+} from "./workspaceLayout";
 
 type QualitySeverity = "warning";
 type QualityScope = "global" | "file" | "convention" | "layout" | "ssr" | "agent";
@@ -140,6 +146,8 @@ const RULE_FIXES: Record<string, string> = {
     "Move the folder's contents into a conventional lib folder (common, env, lib, page, private, public, srvkit, ui, or webkit) and delete it.",
   "akan.layout.lib-facet-file":
     "Move the file into a domain module folder under lib/; keep the lib facet root limited to generated support facets.",
+  "akan.layout.facet-index-shadow":
+    "Delete the hand-written index file and run akan sync; move a namespace it builds into <facet>/<Folder>/index.tsx.",
   "akan.layout.module-ui-file":
     "Rename the file to an allowed module UI name, or move it to ui/ if it is not a module component.",
   "akan.ssr.unnecessary-use-client":
@@ -325,6 +333,8 @@ export class AkanQualityScanner {
     for (const declaration of getTopLevelDeclarations(sourceFile)) {
       if (declaration.kind === "class" && exportedClassNames.includes(declaration.name)) continue;
       if (declaration.kind === "interface" && allowedInterfaceNames.has(declaration.name)) continue;
+      //? A shape only this class reads (a vendor response it parses) is erased at build; a sibling file buys nothing.
+      if ((declaration.kind === "interface" || declaration.kind === "type") && !declaration.exported) continue;
       warnings.push(
         fileWarning(
           "akan.file.class-export-global-declaration",
@@ -431,6 +441,17 @@ export class AkanQualityScanner {
           ),
         );
     }
+
+    const facetShadow = rootEntry?.isDir ? facetIndexShadowOf(sourceFile.file.split("/").slice(2).join("/")) : null;
+    if (facetShadow)
+      warnings.push(
+        fileWarning(
+          "akan.layout.facet-index-shadow",
+          "layout",
+          sourceFile.file,
+          `${path.basename(sourceFile.file)} ${facetShadow}.`,
+        ),
+      );
 
     const libFacetFile = getLibFacetRootFile(sourceFile.file);
     if (libFacetFile && !isAllowedLibFacetRootFile(libFacetFile))

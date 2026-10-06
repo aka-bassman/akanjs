@@ -51,7 +51,7 @@ describe("Shared guards", () => {
     await expect(other.fetch.removeUser(owner.user.id)).rejects.toThrow();
     await expect(other.fetch.addBadgeCount(owner.user.id)).rejects.toThrow();
     await expect(other.fetch.getRestrictInfo(owner.user.id)).rejects.toThrow();
-    await expect(other.fetch.setNotiSettingOfUser(owner.user.id, "all")).rejects.toThrow();
+    await expect(other.fetch.setNotiSettingOfUser(owner.user.id, "block")).rejects.toThrow();
     // create is an admin path — signup goes through generatePrepareUser
     await expect(owner.fetch.createUser(userInput)).rejects.toThrow();
   });

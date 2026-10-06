@@ -1,4 +1,5 @@
 import { afterEach, beforeEach } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -120,6 +121,22 @@ export const writeText = async (filePath: string, content: string) => {
 
 export const writeJson = async (filePath: string, value: object) => {
   await writeText(filePath, `${JSON.stringify(value, null, 2)}\n`);
+};
+
+const repoRoot = path.resolve(import.meta.dir, "../../..");
+const biomeBin = path.join(repoRoot, "node_modules", ".bin", process.platform === "win32" ? "biome.exe" : "biome");
+export const hasBiome = existsSync(biomeBin);
+
+//? Through stdin under a repo-relative name, so the repo's own Biome config and overrides judge content kept elsewhere.
+export const formatWithBiome = async (content: string, repoPath: string) => {
+  const proc = Bun.spawn([biomeBin, "check", "--write", `--stdin-file-path=${repoPath}`], {
+    cwd: repoRoot,
+    stdin: new Blob([content]),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [output] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+  return output;
 };
 
 const tsconfigJson = { compilerOptions: { target: "ESNext", paths: {} } };

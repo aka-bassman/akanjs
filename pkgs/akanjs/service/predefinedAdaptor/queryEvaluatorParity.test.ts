@@ -129,10 +129,8 @@ const describeDriver = (kind: SqlDriverKind) => {
       for (const seed of seeds) await store.create({ ...seed });
       const created = await store.find({}, { skip: null, limit: null });
       // Picked by title: seeds created in one millisecond tie on `createdAt`, and Postgres orders ties arbitrarily.
-      const removed = await store.remove(created.find(({ title }) => title === "delta")?.id as string);
-      const remaining = await store.find({}, { skip: null, limit: null });
-      // A removed row is invisible to every read, so it has to be carried in by hand to be evaluated at all.
-      all = [...remaining, removed].map((doc) => ({
+      await store.remove(created.find(({ title }) => title === "delta")?.id as string);
+      all = (await store.find({}, { skip: null, limit: null, withRemoved: true })).map((doc) => ({
         id: doc.id as string,
         row: DocumentQueryEvaluator.rowViewOf(doc as unknown as Record<string, unknown>),
       }));
@@ -148,7 +146,7 @@ const describeDriver = (kind: SqlDriverKind) => {
     for (const { name, query } of cases) {
       test(name, async () => {
         const wrapped = q.all(q.empty("removedAt"), query);
-        const fromSql = (await store.find(wrapped, { skip: null, limit: null }))
+        const fromSql = (await store.find(wrapped, { skip: null, limit: null, withRemoved: true }))
           .map((doc) => doc.id)
           .sort((a, b) => a.localeCompare(b));
         const fromEvaluator = all

@@ -277,6 +277,13 @@ describe("enum arg choices", () => {
     ).toBe("anything");
   });
 
+  test("a nullable option left out is null, not a prompt for one of its choices", async () => {
+    const arch = { ...optionMeta(["arm64", "x64"]), name: "arch" };
+    expect(await getOptionValue({ ...arch, argsOption: { ...arch.argsOption, nullable: true } }, {}, context)).toBe(
+      null,
+    );
+  });
+
   test("an option with no enum is unaffected", async () => {
     expect(await getOptionValue(optionMeta(undefined), { format: "whatever" }, context)).toBe("whatever");
   });

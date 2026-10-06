@@ -13,6 +13,7 @@ import {
 import { type AkanRequestStore, createRequestStore, parseCookieHeader } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
 import type { PagePromptSource } from "../signal/mcp/pagePrompt";
+import { SignalContext } from "../signal/signalContext";
 import {
   type BuilderRpc,
   type MergedManifest,
@@ -505,6 +506,7 @@ export class WebRouter {
           const result = await this.#rsc.renderWithMeta(rscReq, {
             clientManifest: manifest.clientManifest,
             signal: req.signal,
+            clientIp: SignalContext.clientIpOf(req),
           });
           if (result.type === "redirect")
             return createRscRedirectResponse(result.location, result.method, result.status);
@@ -617,6 +619,7 @@ export class WebRouter {
           const rscResult = await this.#rsc.renderWithMeta(req, {
             clientManifest: manifest.clientManifest,
             signal: req.signal,
+            clientIp: SignalContext.clientIpOf(req),
           });
           if (rscResult.type === "redirect")
             return Response.redirect(new URL(rscResult.location, url.origin), rscResult.status);
@@ -1230,7 +1233,7 @@ export class WebRouter {
   }
 
   // nosniff: Bun.file().type falls back to octet-stream, and a sniffing browser may run a public/ file as script.
-  // Referrer-Policy: paths carry ids. X-Frame-Options (HTML only): stops clickjacking of SameSite=None-cookie pages.
+  // Referrer-Policy: paths carry ids. X-Frame-Options (HTML only): stops clickjacking of cookie-authenticated pages.
   static #applySecurityHeaders(headers: Headers, { html = false } = {}): Headers {
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Referrer-Policy", "strict-origin-when-cross-origin");

@@ -16,6 +16,7 @@ const jsonContentType = /^application\/(?:[\w.+-]+\+)?json\b/i;
 
 const transportErrorKeyMap = {
   408: "base.error.gatewayTimeout",
+  429: "base.error.tooManyRequests",
   502: "base.error.serverUnavailable",
   503: "base.error.serverUnavailable",
   504: "base.error.gatewayTimeout",
@@ -133,12 +134,12 @@ export class HttpClient {
       try {
         return (await res.json()) as unknown;
       } catch (error) {
-        throw this.#transportError(res.status, String(error));
+        throw this.#transportError(res, String(error));
       }
     }
     const raw = await res.text();
     const parsed = HttpClient.#parseJson(raw);
-    if (parsed === undefined) throw this.#transportError(res.status, raw);
+    if (parsed === undefined) throw this.#transportError(res, raw);
     return parsed;
   }
 
@@ -151,9 +152,18 @@ export class HttpClient {
     }
   }
 
-  #transportError(status: number, detail: string): RestoredError {
+  #transportError(res: Response, detail: string): RestoredError {
+    const { status } = res;
     const error = transportErrorKeyMap[status as keyof typeof transportErrorKeyMap] ?? unexpectedResponseKey;
-    return this.#restoreError({ error, data: { status }, details: detail.slice(0, transportDetailLimit) }, status);
+    const data = status === 429 ? { status, seconds: HttpClient.#retryAfterSeconds(res) } : { status };
+    return this.#restoreError({ error, data, details: detail.slice(0, transportDetailLimit) }, status);
+  }
+
+  // A proxy's own 429 may name no wait at all; a minute is what the message then promises.
+  static #retryAfterSeconds(res: Response): number {
+    const header = res.headers.get("retry-after")?.trim() ?? "";
+    const seconds = /^\d+$/.test(header) ? Number(header) : Math.ceil((Date.parse(header) - Date.now()) / 1000);
+    return Number.isFinite(seconds) && seconds > 0 ? seconds : 60;
   }
 
   #restoreError(body: unknown, fallbackStatusCode: number): RestoredError {

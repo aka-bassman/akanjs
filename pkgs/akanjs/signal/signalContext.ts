@@ -1,6 +1,7 @@
 import {
   Any,
   type BackendEnv,
+  Binary,
   type Cls,
   FIELD_META,
   INTERNAL_META,
@@ -21,8 +22,9 @@ import type { Internal, InternalCls, InternalInfo, MiddlewareCls } from ".";
 import { CrossSiteGuard } from "./CrossSiteGuard";
 import { EndpointCache } from "./endpointCache";
 import type { ArgInfo, EndpointInfo, EndpointType } from "./endpointInfo";
+import { EndpointRateLimit } from "./endpointRateLimit";
 import { Exception, isExceptionLike } from "./exception";
-import { type GuardCls, guardOf } from "./guard";
+import { type GuardCls, type GuardScope, guardOf } from "./guard";
 import { SignalFailure } from "./SignalFailure";
 import { getCurrentTrace, runTraced, SignalTrace, type TraceOrigin, traceSpan } from "./trace";
 
@@ -46,6 +48,21 @@ type MiddlewareHandler = (context: SignalContext, next: () => Promise<unknown>) 
 /** Request-scoped: the outermost `resolveReturn` starts one and every recursion threads it down. */
 type ResolveCache = Map<ConstantFieldTypeInput, Map<string, Promise<unknown>>>;
 
+interface SignalContextOption<Ctx, Env extends BackendEnv> {
+  endpointInfo: EndpointInfo;
+  adaptor: Adaptor;
+  registry: InjectRegistry;
+  env: Env;
+  live: LiveRegistry;
+  middleware: Map<string, MiddlewareCls>;
+  /** A caller-built context: MCP's arguments arrive as one named object, not in a URL. */
+  ctx?: Ctx;
+  /** Defaults to the transport. */
+  origin?: TraceOrigin;
+  /** Unset, the context joins the current trace or opens one that `exec()` closes. */
+  trace?: SignalTrace | null;
+}
+
 export class SignalContext<
   Ctx extends HttpExecutionContext | WebSocketExecutionContext = HttpExecutionContext | WebSocketExecutionContext,
   Env extends BackendEnv = BackendEnv,
@@ -57,40 +74,22 @@ export class SignalContext<
   adaptor: Adaptor;
   /** `mcp` for a call through the MCP endpoint. Held here, not on the trace: a null trace would let a guard fail open. */
   readonly origin: TraceOrigin;
-  args: unknown[] = [];
   internalArgs: unknown[] = [];
   trace: SignalTrace | null = null;
+  readonly #request: Bun.BunRequest | WebSocketRequest;
+  readonly #option: SignalContextOption<Ctx, Env>;
+  #rawArgs: unknown[] | null = null;
+  #args: unknown[] | null = null;
   #registry: InjectRegistry;
   #env: Env;
   #live: LiveRegistry;
   #middleware: Map<string, MiddlewareCls>;
   static #reported = new WeakSet<object>();
-  constructor(
-    key: string,
-    reqOrWsReq: Bun.BunRequest | WebSocketRequest,
-    {
-      endpointInfo,
-      adaptor,
-      registry,
-      env,
-      live,
-      middleware,
-      ctx,
-      origin,
-    }: {
-      endpointInfo: EndpointInfo;
-      adaptor: Adaptor;
-      registry: InjectRegistry;
-      env: Env;
-      live: LiveRegistry;
-      middleware: Map<string, MiddlewareCls>;
-      /** A caller-built context: MCP's arguments arrive as one named object, not in a URL. */
-      ctx?: Ctx;
-      /** Defaults to the transport. */
-      origin?: TraceOrigin;
-    },
-  ) {
+  constructor(key: string, reqOrWsReq: Bun.BunRequest | WebSocketRequest, option: SignalContextOption<Ctx, Env>) {
+    const { endpointInfo, adaptor, registry, env, live, middleware, ctx, origin, trace } = option;
     this.key = key;
+    this.#request = reqOrWsReq;
+    this.#option = option;
     this.transport = httpEndpointTypes.has(endpointInfo.type) ? "http" : "websocket";
     this.origin = origin ?? this.transport;
     this.endpointInfo = endpointInfo;
@@ -103,7 +102,10 @@ export class SignalContext<
     this.#live = live;
     this.#middleware = middleware;
     // A trace already open (`SignalContext.run`) is its opener's to close; one started here is closed by `exec()`.
-    this.trace = getCurrentTrace() ?? SignalTrace.create(key, endpointInfo.type, origin ?? this.transport);
+    this.trace =
+      trace !== undefined
+        ? trace
+        : (getCurrentTrace() ?? SignalTrace.create(key, endpointInfo.type, origin ?? this.transport));
     if (this.trace && this.transport === "http")
       this.trace.applyDebugHeader((reqOrWsReq as { headers?: Headers }).headers?.get?.("x-akan-debug"));
   }
@@ -120,6 +122,7 @@ export class SignalContext<
     if (!service) throw new Exception.Error(`Service "${refName}" not found in live registry`);
     return service as T;
   }
+  /** Reads the request but parses no argument: that waits for the account guards in `exec()`. */
   async init() {
     // Before the body is read. Only a mutation: a cross-origin caller cannot read a GET's response, and a websocket
     // frame rides a socket whose upgrade route already refused a cross-site Origin (ApiRouter).
@@ -127,22 +130,54 @@ export class SignalContext<
       const httpCtx = this.getHttpContext();
       CrossSiteGuard.assertOrigin(httpCtx.req, httpCtx.url, this.key);
     }
+    // Leaving a room is never refused: a client held there could not get out.
+    if (!this.#isLeavingRoom()) await EndpointRateLimit.admit(this, "ip");
     const start = this.trace ? performance.now() : 0;
-    this.args = await this.ctx.getArgs(this.endpointInfo);
-    this.trace?.recordSpan("argParse", performance.now() - start);
+    this.#rawArgs = await this.ctx.readArgs(this.endpointInfo);
+    this.trace?.recordSpan("argRead", performance.now() - start);
     return this;
   }
+  /** Parsed on first read, so a guard or middleware that reads one still gets it; a parser runs at most once per call. */
+  get args(): unknown[] {
+    this.#args ??= this.#parseArgs();
+    return this.#args;
+  }
+  set args(args: unknown[]) {
+    this.#args = args;
+  }
+  #parseArgs(): unknown[] {
+    const raw = this.#rawArgs;
+    if (!raw) return [];
+    const start = this.trace ? performance.now() : 0;
+    const args = this.endpointInfo.args.map((arg, idx) => this.ctx.parseArg(arg, raw[idx]));
+    this.trace?.recordSpan("argParse", performance.now() - start);
+    return args;
+  }
+  #isLeavingRoom() {
+    return this.transport === "websocket" && this.getWebSocketContext().eventType === "unsubscribe";
+  }
   // Sequential, not parallel: a call refused by two guards names the same one every time and stops at the first.
-  async #checkGuards() {
+  async #checkGuards(scope?: GuardScope) {
     for (const GuardCls of this.endpointInfo.signalOption.guards ?? []) {
+      if (scope && (GuardCls.scope === "account" ? "account" : "resource") !== scope) continue;
       if (!(await guardOf(GuardCls).canPass(this)))
         throw new Exception.Forbidden(`Access denied by guard: ${GuardCls.name}`);
     }
   }
-  /** Re-checks the guards of a subscribed room outside a request; only global middlewares (account resolution) run. */
+  /**
+   * Re-checks the guards of a subscribed room outside a request; only global middlewares (account resolution) run. On
+   * a fresh context, so a guard that memoizes per context cannot replay the verdict it gave at subscribe.
+   */
   async authorize(): Promise<boolean> {
+    const fresh = new SignalContext<Ctx, Env>(this.key, this.#request, {
+      ...this.#option,
+      ctx: undefined,
+      trace: null,
+    });
+    fresh.#rawArgs = this.#rawArgs;
+    fresh.#args = this.#args;
     try {
-      await this.#withMiddleware(async () => await this.#checkGuards(), { endpointMiddlewares: false })();
+      await fresh.#withMiddleware(async () => await fresh.#checkGuards(), { endpointMiddlewares: false })();
       return true;
     } catch {
       return false;
@@ -240,11 +275,16 @@ export class SignalContext<
     if (!this.endpointInfo.execFn) throw new Exception.Error("Exec function is not set");
     const coreExec = async () => {
       if (!this.endpointInfo.execFn) throw new Exception.Error("Exec function is not set");
+      await EndpointRateLimit.admit(this, "account");
       if (this.trace) {
-        await traceSpan("guards", () => this.#checkGuards());
+        await traceSpan("guards", () => this.#checkGuards("account"));
         const account = this.get<{ id?: unknown }>("account");
         if (typeof account?.id === "string") this.trace.setAttr("userId", account.id);
-      } else await this.#checkGuards();
+      } else await this.#checkGuards("account");
+      // Parsed only now: a caller the account guards refused never reaches an argument parser.
+      this.#args ??= this.#parseArgs();
+      if (this.trace) await traceSpan("resourceGuards", () => this.#checkGuards("resource"));
+      else await this.#checkGuards("resource");
       if (this.endpointInfo.internalArgs.length > 0) {
         this.internalArgs = await Promise.all(
           this.endpointInfo.internalArgs.map((arg) => {
@@ -272,11 +312,21 @@ export class SignalContext<
     };
     if (!this.trace) {
       const resolved = await SignalContext.resolveReturn(result, resolveOption);
-      return this.ctx.makeResponse(this.#settleUndefined(resolved), this.endpointInfo);
+      return this.ctx.makeResponse(this.#settle(resolved), this.endpointInfo);
     }
     const resolved = await traceSpan("resolveReturn", () => SignalContext.resolveReturn(result, resolveOption));
-    return await traceSpan("serialize", async () =>
-      this.ctx.makeResponse(this.#settleUndefined(resolved), this.endpointInfo),
+    return await traceSpan("serialize", async () => this.ctx.makeResponse(this.#settle(resolved), this.endpointInfo));
+  }
+  #settle(resolved: unknown) {
+    this.#refuseBytesThroughAny(resolved);
+    return this.#settleUndefined(resolved);
+  }
+  //? JSON has no bytes: `Response.json` turns an ArrayBuffer into `{}` and a typed array into an index map.
+  #refuseBytesThroughAny(resolved: unknown) {
+    if (this.endpointInfo.returns.returnRef !== Any) return;
+    if (!(resolved instanceof ArrayBuffer) && !ArrayBuffer.isView(resolved)) return;
+    throw new Error(
+      `${this.endpointInfo.type} ${this.key} returns bytes through Any, which JSON cannot carry: declare Binary as its return`,
     );
   }
   //? A handler that falls off its end returns `undefined`, which Bun's `Response.json` refuses with an error naming
@@ -334,11 +384,16 @@ export class SignalContext<
             path: endpointInfo.getPath(key),
             timestamp: new Date().toISOString(),
           }),
-          { status: error.statusCode, headers: { "Content-Type": "application/json" } },
+          { status: error.statusCode, headers: SignalContext.#exceptionHeaders(error) },
         );
       }
       return SignalFailure.response(error, { path: endpointInfo.getPath(key) });
     }
+  }
+  static #exceptionHeaders(error: { statusCode: number }): Record<string, string> {
+    const seconds = (error as { data?: { seconds?: unknown } }).data?.seconds;
+    if (error.statusCode !== 429 || typeof seconds !== "number") return { "Content-Type": "application/json" };
+    return { "Content-Type": "application/json", "Retry-After": String(Math.max(1, Math.ceil(seconds))) };
   }
   static async resolveReturn(
     value: unknown,
@@ -575,15 +630,23 @@ export class SignalContext<
    * `::ffff:`; `null`, never a placeholder, when neither is known.
    */
   getClientIp(): string | null {
-    if (this.transport === "http") {
-      const { req } = this.getHttpContext();
-      // A resolver answering `null` is an addressless unix socket (a local hop); no resolver is an unknown peer.
-      const peer = SignalContext.#httpPeer?.(req);
-      return TrustedProxy.clientAddress(req.headers, peer === undefined ? undefined : (peer?.address ?? null));
-    }
+    if (this.transport === "http") return SignalContext.clientIpOf(this.getHttpContext().req);
     const { ws } = this.getWebSocketContext<{ headers?: Headers }>();
     if (!ws.data.headers) return ws.remoteAddress ? normalizeIpAddress(ws.remoteAddress) : null;
     return TrustedProxy.clientAddress(ws.data.headers, ws.remoteAddress);
+  }
+  static #carriedIps = new WeakMap<Request, string | null>();
+  /** A request a proxy rebuilt has no socket behind it for `requestIP`, so it keeps the address its original resolved. */
+  static carryClientIp(target: Request, source: Request) {
+    if (target !== source) SignalContext.#carriedIps.set(target, SignalContext.clientIpOf(source));
+  }
+  /** `getClientIp` for a request no context wraps, as the MCP router and the page renderer hold one. */
+  static clientIpOf(req: Request): string | null {
+    const carried = SignalContext.#carriedIps.get(req);
+    if (carried !== undefined) return carried;
+    // A resolver answering `null` is an addressless unix socket (a local hop); no resolver is an unknown peer.
+    const peer = SignalContext.#httpPeer?.(req);
+    return TrustedProxy.clientAddress(req.headers, peer === undefined ? undefined : (peer?.address ?? null));
   }
   /** The caller's source port as the nearest proxy recorded it, else this socket's own. */
   getClientPort(): number | null {
@@ -670,6 +733,11 @@ export class HttpExecutionContext<Appended = unknown> {
     }
   }
   async getArgs(endpointInfo: EndpointInfo): Promise<unknown[]> {
+    const raw = await this.readArgs(endpointInfo);
+    return endpointInfo.args.map((arg, idx) => this.parseArg(arg, raw[idx]));
+  }
+  /** Each argument as the request carries it; `parseArg` turns one into its declared type. */
+  async readArgs(endpointInfo: EndpointInfo): Promise<unknown[]> {
     if (endpointInfo.args.length === 0) return [];
     this.params = this.req.params;
     const hasBodyArgs = endpointInfo.args.some((arg) => arg.type === "body");
@@ -696,29 +764,42 @@ export class HttpExecutionContext<Appended = unknown> {
       }
     }
 
-    const args = endpointInfo.args.map((arg) => {
+    return endpointInfo.args.map((arg) => {
       switch (arg.type) {
         case "param":
-          return deserializeArg(arg, this.params[arg.name]);
+          return this.params[arg.name];
         case "body":
-          if (arg.argRef === Upload) return this.body[arg.name];
-          return deserializeArg(arg, this.body[arg.name]);
-        case "search": {
-          const raw = arg.arrDepth ? this.url.searchParams.getAll(arg.name) : this.url.searchParams.get(arg.name);
-          const value = arg.argRef === Any ? HttpExecutionContext.#parseAny(arg.name, raw) : raw;
-          const result = deserializeArg(arg, value);
-          this.searchParams[arg.name] = result;
-          return result;
-        }
+          return this.body[arg.name];
+        case "search":
+          return arg.arrDepth ? this.url.searchParams.getAll(arg.name) : this.url.searchParams.get(arg.name);
         default:
           return undefined;
       }
     });
-    return args;
+  }
+  parseArg(arg: ArgInfo, raw: unknown): unknown {
+    switch (arg.type) {
+      case "param":
+        return deserializeArg(arg, raw);
+      case "body":
+        return arg.argRef === Upload ? raw : deserializeArg(arg, raw);
+      case "search": {
+        const value =
+          arg.argRef === Any ? HttpExecutionContext.#parseAny(arg.name, raw as string | string[] | null) : raw;
+        const result = deserializeArg(arg, value);
+        this.searchParams[arg.name] = result;
+        return result;
+      }
+      default:
+        return undefined;
+    }
   }
   makeResponse(result: unknown, endpointInfo: EndpointInfo) {
     if (result instanceof Response) return result;
     if (endpointInfo.returns.arrDepth === 0 && PrimitiveRegistry.has(endpointInfo.returns.returnRef as Cls)) {
+      // A JSON body carries Binary as base64, which the client's `Binary` parser turns back into bytes.
+      if (endpointInfo.returns.returnRef === Binary && result instanceof Uint8Array)
+        return this.res.json(Binary.serializeValue(result));
       return this.res.json(result);
     }
     const value = serialize(endpointInfo.returns.returnRef, endpointInfo.returns.arrDepth, result, "object", {
@@ -742,16 +823,16 @@ export class WebSocketExecutionContext<Appended = unknown> {
     this.eventType = wsReq.eventType;
   }
   async getArgs(endpointInfo: EndpointInfo): Promise<unknown[]> {
-    const args = endpointInfo.args.map((arg, idx) => {
-      switch (arg.type) {
-        case "msg":
-        case "room":
-          return deserializeArg(arg, this.data[idx]);
-        default:
-          return undefined;
-      }
-    });
-    return args;
+    const raw = await this.readArgs(endpointInfo);
+    return endpointInfo.args.map((arg, idx) => this.parseArg(arg, raw[idx]));
+  }
+  async readArgs(endpointInfo: EndpointInfo): Promise<unknown[]> {
+    return endpointInfo.args.map((arg, idx) =>
+      arg.type === "msg" || arg.type === "room" ? this.data[idx] : undefined,
+    );
+  }
+  parseArg(arg: ArgInfo, raw: unknown): unknown {
+    return arg.type === "msg" || arg.type === "room" ? deserializeArg(arg, raw) : undefined;
   }
   makeResponse(result: unknown, endpointInfo: EndpointInfo) {
     return serialize(endpointInfo.returns.returnRef, endpointInfo.returns.arrDepth, result, "object", {

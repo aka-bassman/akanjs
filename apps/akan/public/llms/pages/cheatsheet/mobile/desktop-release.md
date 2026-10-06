@@ -48,7 +48,7 @@ Authenticode signs every PE file of the app — the executable, its DLL, the ser
 
 Installers And CPU
 
-- macOS — <fileName>-<version>-<arch>.dmg — The app beside an Applications link. Signed, notarized and stapled like the app.
+- macOS — <fileName>-<version>-<arch>.dmg — The app beside an Applications link, opening on a drag-to-Applications window with the app's icon on the disk. `native.desktop.dmg` replaces the background (`background`, `background2x`) and moves the window and icons. Signed, notarized and stapled like the app.
 
 - Windows — <fileName>-<version>-<arch>-setup.exe — A per-user NSIS setup (`/S` installs silently). The setup and the uninstaller it writes are signed too.
 
@@ -145,9 +145,9 @@ jobs:
         with:
           name: myapp-${{ runner.os }}-${{ matrix.arch }}
           path: |
-            apps/myapp/.akan/native/*/build/*/*.dmg
-            apps/myapp/.akan/native/*/build/*/*-setup.exe
-            apps/myapp/.akan/native/*/build/*/*.AppImage
+            dist/native/myapp/*/build/*/*.dmg
+            dist/native/myapp/*/build/*/*-setup.exe
+            dist/native/myapp/*/build/*/*.AppImage
           if-no-files-found: error
 ```
 

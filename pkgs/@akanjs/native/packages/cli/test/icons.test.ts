@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
+import { validateDmg } from "../src/lib/dmg.ts";
 import { icns, macosIconImage, writeAndroidRes, writeIosAssets } from "../src/lib/icons.ts";
 import { contain, flatten, parseColor, resize, roundedMask } from "../src/lib/image.ts";
 import { decodePng, encodePng, type Image, PngError } from "../src/lib/png.ts";
@@ -260,6 +261,7 @@ function config(dir: string, extra: Partial<ResolvedConfig> = {}): ResolvedConfi
       recovery: "errorPage",
       window: { fullscreen: false, skipTaskbar: false },
       screenCapture: "picker",
+      dmg: validateDmg(undefined, "/app", []),
     },
     updates: null,
     icon: { image: icon },

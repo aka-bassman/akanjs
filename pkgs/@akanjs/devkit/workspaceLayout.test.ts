@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   appRootAllowedDirs,
   appRootAllowedFiles,
+  facetIndexShadowOf,
   isAllowedLibFacetRootFile,
   isScannedRootEntry,
   libRootAllowedDirs,
@@ -36,7 +37,7 @@ describe("app root layout allowlist", () => {
   test("names what a Capacitor app kept in its root as a leftover, not an unknown entry", () => {
     for (const name of ["android", "ios", "mobile", "capacitor.config.ts", "capacitor.config.json"]) {
       expect(appRootAllowedFiles.has(name) || appRootAllowedDirs.has(name)).toBe(false);
-      expect(rootEntryHintOf("app", name)).toContain(".akan/native/<target>");
+      expect(rootEntryHintOf("app", name)).toContain("dist/native/<app>/<target>");
     }
     expect(rootEntryHintOf("app", "base")).toBeNull();
     expect(rootEntryHintOf("lib", "ios")).toBeNull();
@@ -77,6 +78,28 @@ describe("lib root layout allowlist", () => {
     expect(isScannedRootEntry("lib", ".gitignore")).toBe(false);
     expect(isScannedRootEntry("lib", ".akan")).toBe(false);
     expect(isScannedRootEntry("lib", "ui")).toBe(true);
+  });
+});
+
+describe("hand-written facet index", () => {
+  test("flags every index Bun resolves ahead of the generated barrel, at the root of each barrel facet", () => {
+    for (const facet of ["ui", "webkit", "srvkit", "common", "plugin"])
+      for (const filename of ["index.tsx", "index.jsx", "index.mts"])
+        expect(facetIndexShadowOf(`${facet}/${filename}`)).toContain(`shadows the generated ${facet}/index.ts`);
+    expect(facetIndexShadowOf("ui/index.tsx")).toContain("Delete it");
+  });
+
+  test("leaves the generated barrel, a folder namespace, and folders without a barrel alone", () => {
+    for (const relativePath of [
+      "ui/index.ts",
+      "ui/index.js",
+      "ui/Chat/index.tsx",
+      "ui/Chat/index_.tsx",
+      "page/index.tsx",
+      "lib/index.tsx",
+      "index.tsx",
+    ])
+      expect(facetIndexShadowOf(relativePath)).toBeNull();
   });
 });
 

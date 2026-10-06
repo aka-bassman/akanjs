@@ -10,7 +10,9 @@ import {
   type DataInputOf,
   DataLoader,
   DocumentSchema,
+  type DocumentScopeOptions,
   type DocumentUpdateInput,
+  type DocumentUpdateOptions,
   documentQueryHelper,
   type FindQueryOption,
   getFilterMeta,
@@ -70,9 +72,9 @@ export class DatabaseResolver {
       find: query ?? {},
       sort: resolveSort(queryOption?.sort),
       skip: resolvePageSkip(queryOption?.skip),
-      // undefined: a server caller naming no page gets no ceiling (client paths were clamped by the slice endpoint).
-      // An explicit null means "page this, I have no number" and lands on the default page size.
-      limit: queryOption?.limit === undefined ? 0 : resolvePageLimit(queryOption.limit),
+      // undefined or 0: a server caller naming no page, or asking for every row, gets no ceiling (client paths were
+      // clamped by the slice endpoint). An explicit null means "page this, I have no number": the default page size.
+      limit: queryOption?.limit === undefined || queryOption.limit === 0 ? 0 : resolvePageLimit(queryOption.limit),
       select: queryOption?.select,
       sample: queryOption?.sample,
     });
@@ -200,9 +202,13 @@ export class DatabaseResolver {
         function Model(this: any, data: Record<string, unknown>) {
           return store.hydrate(data);
         }
+        // Off, the flag is left out entirely, so a call without it reaches the store exactly as before.
+        const scopeOf = (options?: DocumentScopeOptions) => (options?.withRemoved ? { withRemoved: true } : {});
+        const scopeArgs = (options?: DocumentScopeOptions): [] | [DocumentScopeOptions] =>
+          options?.withRemoved ? [{ withRemoved: true }] : [];
         const createFindManyChain = (
           query: QueryOf<any>,
-          options: { sort?: any; skip?: number; limit?: number; select?: any } = {},
+          options: { sort?: any; skip?: number; limit?: number; select?: any; withRemoved?: boolean } = {},
         ) => {
           const chain: any = {
             sort(sort: any) {
@@ -227,7 +233,10 @@ export class DatabaseResolver {
           };
           return chain;
         };
-        const createFindOneChain = (query: QueryOf<any>, options: { sort?: any; skip?: number; select?: any } = {}) => {
+        const createFindOneChain = (
+          query: QueryOf<any>,
+          options: { sort?: any; skip?: number; select?: any; withRemoved?: boolean } = {},
+        ) => {
           const chain: any = {
             sort(sort: any) {
               return createFindOneChain(query, { ...options, sort });
@@ -263,21 +272,27 @@ export class DatabaseResolver {
           pickAndWrite: async (id: string, rawData: any) => await (await pickById(id)).set(rawData).save(),
           pickOneAndWrite: async (query: QueryOf<any>, rawData: any) =>
             await (await timedQuery(() => store.pickOne(query))).set(rawData).save(),
-          exists: async (query: QueryOf<any>) => await timedQuery(() => store.exists(query)),
+          exists: async (query: QueryOf<any>, options?: DocumentScopeOptions) =>
+            await timedQuery(() => store.exists(query, ...scopeArgs(options))),
           sample: (query: QueryOf<any>, size = 1) => timedQuery(() => store.find(query, { sample: size, limit: size })),
           sampleOne: (query: QueryOf<any>) => timedQuery(() => store.findOne(query, { sample: true })),
-          find: (query: QueryOf<any>, projection?: any) => createFindManyChain(query, { select: projection }),
-          findOne: (query: QueryOf<any>, projection?: any) => createFindOneChain(query, { select: projection }),
-          findById: (id: string | undefined, projection?: any) =>
-            id ? timedQuery(() => store.findOne({ id }, { select: projection })) : Promise.resolve(null),
-          count: (query: QueryOf<any>) => timedQuery(() => store.count(query)),
-          updateOne: (query: QueryOf<any>, update: DocumentUpdateInput, options?: { upsert?: boolean }) =>
+          find: (query: QueryOf<any>, projection?: any, options?: DocumentScopeOptions) =>
+            createFindManyChain(query, { select: projection, ...scopeOf(options) }),
+          findOne: (query: QueryOf<any>, projection?: any, options?: DocumentScopeOptions) =>
+            createFindOneChain(query, { select: projection, ...scopeOf(options) }),
+          findById: (id: string | undefined, projection?: any, options?: DocumentScopeOptions) =>
+            id
+              ? timedQuery(() => store.findOne({ id }, { select: projection, ...scopeOf(options) }))
+              : Promise.resolve(null),
+          count: (query: QueryOf<any>, options?: DocumentScopeOptions) =>
+            timedQuery(() => store.count(query, ...scopeArgs(options))),
+          updateOne: (query: QueryOf<any>, update: DocumentUpdateInput, options?: DocumentUpdateOptions) =>
             timedQuery(() => store.updateOneByQuery(query, update, options)),
-          updateMany: (query: QueryOf<any>, update: DocumentUpdateInput) =>
-            timedQuery(() => store.updateManyByQuery(query, update)),
+          updateMany: (query: QueryOf<any>, update: DocumentUpdateInput, options?: DocumentScopeOptions) =>
+            timedQuery(() => store.updateManyByQuery(query, update, ...scopeArgs(options))),
           removeOne: (query: QueryOf<any>) => timedQuery(() => store.removeOneByQuery(query)),
           removeMany: (query: QueryOf<any>) => timedQuery(() => store.removeManyByQuery(query)),
-          updateById: (id: string, update: DocumentUpdateInput, options?: { upsert?: boolean }) =>
+          updateById: (id: string, update: DocumentUpdateInput, options?: DocumentUpdateOptions) =>
             timedQuery(() => store.updateOneByQuery({ id }, update, options)),
           removeById: (id: string) => timedQuery(() => store.removeOneByQuery({ id })),
           // Kept so existing call sites keep working; `@deprecated` on the `Mdl` type is what points them onward.

@@ -1,4 +1,6 @@
 storage: /verdaccio/storage
+# @akanjs/cli ships the app template's fonts, and a publish PUT carries its tarball base64-encoded past the 10mb default.
+max_body_size: 50mb
 
 web:
   title: Akan Local Registry

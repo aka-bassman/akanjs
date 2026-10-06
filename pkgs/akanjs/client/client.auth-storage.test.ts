@@ -16,6 +16,7 @@ const envState = {
 const preferenceStore = new Map<string, string>();
 const localStore = new Map<string, string>();
 const documentCookies = new Map<string, string>();
+const cookieWrites: string[] = [];
 const fetchJwtCalls: Array<string | null> = [];
 const fetchState = { jwt: null as string | null };
 const requestState = {
@@ -175,6 +176,7 @@ const installBrowserGlobals = (cookie = "") => {
         return [...documentCookies].map(([name, value]) => `${name}=${value}`).join("; ");
       },
       set cookie(entry: string) {
+        cookieWrites.push(entry);
         const [pair = "", ...attrs] = entry.split(";").map((part) => part.trim());
         const eq = pair.indexOf("=");
         if (eq === -1) return;
@@ -196,6 +198,7 @@ afterEach(() => {
   preferenceStore.clear();
   localStore.clear();
   documentCookies.clear();
+  cookieWrites.length = 0;
   fetchJwtCalls.length = 0;
   fetchState.jwt = null;
   requestState.request = undefined;
@@ -451,5 +454,35 @@ describe("cookies, headers, and auth", () => {
     expect(document.cookie).toBe("theme=dark");
     expect(getCookie("theme")).toBe("dark");
     expect(localStore.has("akan:cookies")).toBe(false);
+  });
+
+  test("a cookie is written Lax and Secure on the root path, the auth cookie included", async () => {
+    envState.side = "client";
+    envState.renderMode = "ssr";
+    const jwt = makeJwt({ appName: "test-app", environment: "debug", userId: "u1" });
+    installBrowserGlobals();
+    const { setAuth, setCookie } = await import("./cookie");
+
+    setCookie("theme", "dark");
+    setAuth({ jwt });
+
+    expect(cookieWrites[0]).toBe("theme=dark; path=/; SameSite=lax; Secure");
+    expect(cookieWrites).toContain(`${authTokenKey()}=${jwt}; path=/; SameSite=lax; Secure`);
+  });
+
+  test("partial options are merged over the defaults instead of replacing them", async () => {
+    envState.side = "client";
+    installBrowserGlobals();
+    const { setCookie } = await import("./cookie");
+
+    setCookie("theme", "dark", { path: "/docs" });
+    setCookie("theme", "dark", { secure: false });
+    setCookie("theme", "dark", { sameSite: "none" });
+
+    expect(cookieWrites).toEqual([
+      "theme=dark; path=/docs; SameSite=lax; Secure",
+      "theme=dark; path=/; SameSite=lax",
+      "theme=dark; path=/; SameSite=none; Secure",
+    ]);
   });
 });

@@ -1,7 +1,7 @@
-export const share = (url: string) => navigator.share({ url }); // @flag
-export const canShare = () => typeof navigator.canShare === "function"; // @flag
-export const worker = () => navigator.serviceWorker.register("/sw.js"); // @flag
-export const ask = () => Notification.requestPermission(); // @flag
-export const permission = () => Notification.permission; // @flag
-export const locate = () => navigator.geolocation.getCurrentPosition(() => undefined); // @flag
-export const buzz = () => navigator.vibrate(50); // @flag
+export const share = (url: string) => navigator.share({ url }); // @warn
+export const canShare = () => typeof navigator.canShare === "function"; // @warn
+export const worker = () => navigator.serviceWorker.register("/sw.js"); // @warn
+export const ask = () => Notification.requestPermission(); // @warn
+export const permission = () => Notification.permission; // @warn
+export const locate = () => navigator.geolocation.getCurrentPosition(() => undefined); // @warn
+export const buzz = () => navigator.vibrate(50); // @warn

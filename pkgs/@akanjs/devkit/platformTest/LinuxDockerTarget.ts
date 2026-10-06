@@ -73,7 +73,7 @@ export class LinuxDockerTarget extends PlatformTestTarget {
       [
         "docker",
         "exec",
-        ...Object.entries(PlatformTestTarget.gitIdentityEnv).flatMap(([key, value]) => ["-e", `${key}=${value}`]),
+        ...Object.entries(PlatformTestTarget.remoteEnv).flatMap(([key, value]) => ["-e", `${key}=${value}`]),
         container,
         "sh",
         "-c",

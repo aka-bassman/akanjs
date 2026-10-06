@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { PromiseOrObject } from "akanjs/base";
-import { clientAddressFromHeaders } from "akanjs/common";
+import { SignalContext } from "../../signal/signalContext";
 import type { HttpRoutes } from "../types";
 
 export interface McpAuthOption {
@@ -170,7 +170,8 @@ export class McpAuth {
   // Read unverified on purpose: this runs after `reject`, so the token already passed whatever verification exists.
   static callerKey(req: Request): string {
     const token = McpAuth.#bearer(req);
-    if (!token) return `ip:${clientAddressFromHeaders(req.headers) ?? "anonymous"}`;
+    // Security: a forwarded header counts only from a trusted proxy, or any caller could pick a fresh budget per call.
+    if (!token) return `ip:${SignalContext.clientIpOf(req) ?? "anonymous"}`;
     const claims = McpAuth.#claims(token);
     const id = [claims?.sid, claims?.jti, claims?.sub].find((value) => typeof value === "string" && value);
     return typeof id === "string" ? `token:${id}` : `token:${createHash("sha256").update(token).digest("base64url")}`;

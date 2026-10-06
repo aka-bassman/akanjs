@@ -219,6 +219,20 @@ describe("AkanQualityScanner layout rules", () => {
     ]);
   });
 
+  test("flags a hand-written facet index beside the generated barrel, but not a folder namespace", async () => {
+    const root = await makeWorkspace({
+      "libs/demo/ui/index.tsx": 'export { Chat } from "./Chat";\n',
+      "libs/demo/ui/Chat.tsx": "export const Chat = () => null;\n",
+      "libs/demo/ui/Page/index.tsx": 'export { Inner } from "./Inner";\n',
+    });
+
+    const warnings = rulesOf(await new AkanQualityScanner().scan(root), "akan.layout.facet-index-shadow");
+
+    expect(warnings.map((warning) => warning.file)).toEqual(["libs/demo/ui/index.tsx"]);
+    expect(warnings[0]?.message).toContain("index.tsx shadows the generated ui/index.ts");
+    expect(warnings[0]?.fix).toContain("akan sync");
+  });
+
   test("keeps a root signal test out of the lib facet rule", async () => {
     const root = await makeWorkspace({
       "libs/demo/lib/cnst.ts": "export const cnst = 1;\n",
@@ -230,6 +244,43 @@ describe("AkanQualityScanner layout rules", () => {
 
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.file).toBe("libs/demo/lib/helper.ts");
+  });
+});
+
+describe("AkanQualityScanner class export files", () => {
+  test("allow a type only the class reads, and flag an exported type and any helper beside the class", async () => {
+    const root = await makeWorkspace({
+      "libs/demo/srvkit/vendorApi.ts": [
+        "interface VendorUser {",
+        "  id: string;",
+        "}",
+        "type VendorPage = { items: VendorUser[] };",
+        "export interface VendorApiOptions {",
+        "  key: string;",
+        "}",
+        "export interface VendorReceipt {",
+        "  id: string;",
+        "}",
+        'export type VendorStatus = "ok" | "fail";',
+        "enum VendorRegion {",
+        "  Kr,",
+        "}",
+        "const pageSize = 100;",
+        "const toUser = (page: VendorPage) => page.items[0];",
+        "export class VendorApi {}",
+        "",
+      ].join("\n"),
+    });
+
+    const warnings = rulesOf(await new AkanQualityScanner().scan(root), "akan.file.class-export-global-declaration");
+
+    expect(warnings.map((warning) => /"(\w+)"/.exec(warning.message)?.[1])).toEqual([
+      "VendorReceipt",
+      "VendorStatus",
+      "VendorRegion",
+      "pageSize",
+      "toUser",
+    ]);
   });
 });
 

@@ -10,6 +10,7 @@ export * from "./logging.adaptor";
 export * from "./openaiDialect";
 export * from "./openaiLlm";
 export * from "./queue.adaptor";
+export * from "./rateLimit.adaptor";
 export * from "./role.adaptor";
 export * from "./schedule.adaptor";
 export * from "./searchIndex";
