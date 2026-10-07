@@ -367,7 +367,7 @@ export default page().render(() => {
       ],
     },
     {
-      title: l.trans({ en: "Application: Mobile", ko: "애플리케이션: 모바일" }),
+      title: l.trans({ en: "Application: Native", ko: "애플리케이션: 네이티브" }),
       href: "/references/cli/application",
       desc: l.trans({
         en: "Build, run and release the iOS, Android and desktop apps on the native runtime.",
@@ -919,13 +919,13 @@ export default page().render(() => {
               en: (
                 <span>
                   The <code>akan</code> CLI runs the whole workspace lifecycle: creating workspaces and apps, generating
-                  code, local development, mobile builds, local databases and optional cloud helpers.
+                  code, local development, native builds, local databases and optional cloud helpers.
                 </span>
               ),
               ko: (
                 <span>
                   <code>akan</code> CLI는 워크스페이스의 처음부터 끝까지를 맡습니다. 워크스페이스와 앱 생성, 코드 생성,
-                  로컬 개발, 모바일 빌드, 로컬 데이터베이스, 선택 기능인 클라우드 도구까지 다룹니다.
+                  로컬 개발, 네이티브 빌드, 로컬 데이터베이스, 선택 기능인 클라우드 도구까지 다룹니다.
                 </span>
               ),
             })}

@@ -21,7 +21,7 @@ Command
 
 CLI Commands
 
-The `akan` CLI runs the whole workspace lifecycle: creating workspaces and apps, generating code, local development, mobile builds, local databases and optional cloud helpers.
+The `akan` CLI runs the whole workspace lifecycle: creating workspaces and apps, generating code, local development, native builds, local databases and optional cloud helpers.
 
 This page is the index. Each group links to a detail page with argument tables, option tables, notes and terminal examples.
 
@@ -169,7 +169,7 @@ Internal and development-only commands are left out on purpose.
 
   - build <app>: Builds the app for production, frontend and backend together. Alias `b`.
 
-- Application: Mobile — Build, run and release the iOS, Android and desktop apps on the native runtime.
+- Application: Native — Build, run and release the iOS, Android and desktop apps on the native runtime.
 
   - build-ios <app>, build-android <app>, build-desktop <app>: Builds the iOS, Android or desktop app on the native runtime. Aliases `bi`, `ba` and `bd`.
 

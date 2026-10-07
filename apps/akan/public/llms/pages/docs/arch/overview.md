@@ -105,9 +105,9 @@ Runtime And Infra
 
 Choose local, cloud, edge, database, and deployment shape.
 
-Mobile App Architecture
+Native App Architecture
 
-Package the CSR client as an Android or iOS app.
+Package the CSR client as an iOS, Android or desktop app.
 
 CSS And Styling
 

@@ -1044,21 +1044,21 @@ export default page().render(() => {
       href: "/references/cli/application",
       title: l.trans({ en: "CLI Reference", ko: "CLI 레퍼런스" }),
       desc: l.trans({
-        en: "Every flag of the mobile commands.",
-        ko: "모바일 명령의 모든 플래그입니다.",
+        en: "Every flag of the native commands.",
+        ko: "네이티브 명령의 모든 플래그입니다.",
       }),
     },
   ];
 
   return (
     <Scroll>
-      <Scroll.Slide id="overview" title={l.trans({ en: "Mobile Setup Flow", ko: "모바일 설정 흐름" })}>
-        <Docs.Title>{l.trans({ en: "Mobile Setup Flow", ko: "모바일 설정 흐름" })}</Docs.Title>
+      <Scroll.Slide id="overview" title={l.trans({ en: "Native Setup Flow", ko: "네이티브 설정 흐름" })}>
+        <Docs.Title>{l.trans({ en: "Native Setup Flow", ko: "네이티브 설정 흐름" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "An Akan mobile app is your CSR web app running inside a native shell that akanjs's own runtime generates for iOS and Android, and for macOS, Windows and Linux too. The web app owns the pages and business logic. The shell owns the package ID, device permissions, plugins, native files, signing and store builds, all declared in akan.config.ts.",
-              ko: "Akan 모바일 앱은 akanjs의 자체 런타임이 iOS·Android용으로, 그리고 macOS·Windows·Linux용으로도 만들어 내는 네이티브 셸 안에서 CSR 웹 앱을 실행한 것입니다. 페이지와 비즈니스 로직은 웹 앱이 맡습니다. 패키지 ID, 기기 권한, 플러그인, 네이티브 파일, 서명, 스토어 빌드는 셸이 맡으며, 모두 akan.config.ts에 선언합니다.",
+              en: "An Akan native app is your CSR web app running inside a native shell that akanjs's own runtime generates for iOS and Android, and for macOS, Windows and Linux too. The web app owns the pages and business logic. The shell owns the package ID, device permissions, plugins, native files, signing and store builds, all declared in akan.config.ts.",
+              ko: "Akan 네이티브 앱은 akanjs의 자체 런타임이 iOS·Android용으로, 그리고 macOS·Windows·Linux용으로도 만들어 내는 네이티브 셸 안에서 CSR 웹 앱을 실행한 것입니다. 페이지와 비즈니스 로직은 웹 앱이 맡습니다. 패키지 ID, 기기 권한, 플러그인, 네이티브 파일, 서명, 스토어 빌드는 셸이 맡으며, 모두 akan.config.ts에 선언합니다.",
             })}
           </div>
           <Docs.SubSubTitle>{l.trans({ en: "Words used on this page", ko: "이 페이지에서 쓰는 말" })}</Docs.SubSubTitle>
@@ -1549,7 +1549,7 @@ export MYAPP_RELEASE_KEY_PASSWORD=<key password>`}
             ))}
           </ul>
 
-          <Docs.SubSubTitle>{l.trans({ en: "Mobile command flags", ko: "모바일 명령 플래그" })}</Docs.SubSubTitle>
+          <Docs.SubSubTitle>{l.trans({ en: "Native command flags", ko: "네이티브 명령 플래그" })}</Docs.SubSubTitle>
           <Docs.OptionTable items={commandFlags} />
         </Docs.Description>
       </Scroll.Slide>

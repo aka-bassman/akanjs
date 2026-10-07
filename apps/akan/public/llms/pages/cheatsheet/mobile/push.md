@@ -3,7 +3,7 @@
 - Source: /cheatsheet/mobile/push
 - Mirror: /llms/pages/cheatsheet/mobile/push.md
 - Section: cheatsheet
-- Category: Mobile
+- Category: Native
 - Priority: P2
 
 ## Headings

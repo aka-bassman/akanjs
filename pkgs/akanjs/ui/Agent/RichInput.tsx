@@ -136,7 +136,7 @@ export const RichInput = ({
         suppressContentEditableWarning
       />
       {draft ? null : (
-        <span className="pointer-events-none absolute inset-0 select-none px-3 py-1.5 text-foreground/40 text-sm">
+        <span className="pointer-events-none absolute inset-0 select-none px-3 py-1.5 pointer-coarse:text-base text-foreground/40 text-sm">
           {placeholder}
         </span>
       )}

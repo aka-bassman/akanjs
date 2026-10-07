@@ -313,29 +313,29 @@ How Traffic Moves
 
 Infrastructure does not change the business code inside your app. It decides how a request reaches the Akan runtime. The path is simple on your laptop and goes through a structured layer in a cloud cluster.
 
-## Mobile App Architecture
+## Native App Architecture
 
 Source: /docs/arch/mobile
 Mirror: /llms/pages/docs/arch/mobile.md
 Priority: P0
 
 Headings:
-- Mobile App Architecture
+- Native App Architecture
 - Native Targets
 - CSR Runtime
 - Native Bridge
 
-Mobile App Architecture
+Native App Architecture
 
-Akan ships the same product to the web and to the app stores, and you do not write a second app for mobile. The screens you already built for the web run inside a thin native app; only the parts that truly need the phone, such as packaging, signing and device features, are native.
+Akan ships the same product to the web, the app stores and the desktop, and you do not write a second app for any of them. The screens you already built for the web run inside a thin native app; only the parts that truly need the device, such as packaging, signing and device features, are native.
 
-Concretely, Akan mobile apps are CSR web clients running inside a native shell that akanjs's own runtime, @akanjs/native, generates. The product screen is still built with Akan page, UI, state, and service patterns; the runtime supplies the shell, app identity, store package, and device bridge from what akan.config.ts declares.
+Concretely, an Akan native app is a CSR web client running inside a native shell that akanjs's own runtime, @akanjs/native, generates. The product screen is still built with Akan page, UI, state, and service patterns; the runtime supplies the shell, app identity, store package, and device bridge from what akan.config.ts declares.
 
 The same target also builds a macOS, Windows or Linux app. A desktop app calls the shared backend like a phone does, or, with native.desktop.server on, carries the app's own server: it starts beside the window on a loopback port, keeps its data on that computer, and is the only backend the pages call, so the app works with no server elsewhere.
 
-Akan mobile architecture
+Akan native app architecture
 
-The Akan app builds a CSR client that runs inside the Akan native shell, which is packaged for Android and iOS and talks to the shared Akan backend.
+The Akan app builds a CSR client that runs inside the Akan native shell on a phone and on a laptop. The shell is packaged for iOS and Android and for macOS, Windows and Linux, and every package talks to the shared Akan backend.
 
 Words used on this page
 
@@ -353,11 +353,11 @@ Term
 
 Who owns what
 
-- One UI surface — Written once, shared with the web — Web and mobile share the same Akan page tree, client router, generated fetch calls, dictionaries, and UI components.
+- One UI surface — Written once, shared with the web — Web and native apps share the same Akan page tree, client router, generated fetch calls, dictionaries, and UI components.
 
 - Native shell boundary — What the native runtime generates — Native code owns packaging, signing, app capabilities, plugin linking, and store distribution.
 
-- Shared backend — The server you already run — Android, iOS, and web clients call the same Akan services and can share auth, permission, database rules, and app-level domains. A desktop app whose target carries the server calls the copy of that server it carries instead.
+- Shared backend — The server you already run — Web clients and native apps call the same Akan services and can share auth, permission, database rules, and app-level domains. A desktop app whose target carries the server calls the copy of that server it carries instead.
 
 Native Targets
 
@@ -1107,7 +1107,7 @@ With this, you spend less time wrestling with platform glue and more time design
 
 Akan.js smooths over the following background technologies so your application can grow as one extensible system.
 
-Web/Mobile
+Web/App
 
 Tooling
 
@@ -1983,7 +1983,7 @@ Backend environment the app connects to.
 
 Application CLI
 
-These commands carry an app from creation to release: create it, run it locally, check and build it, then ship it to mobile.
+These commands carry an app from creation to release: create it, run it locally, check and build it, then ship it as a native app.
 
 - Manage Apps
 
@@ -2019,7 +2019,7 @@ These commands carry an app from creation to release: create it, run it locally,
 
   - build: Build the app for production into `dist/apps/<app>`.
 
-- Mobile
+- Native
 
   - start-ios, start-android: Run the app on a simulator, an emulator or a connected device.
 
@@ -2473,7 +2473,7 @@ Command
 
 CLI Commands
 
-The `akan` CLI runs the whole workspace lifecycle: creating workspaces and apps, generating code, local development, mobile builds, local databases and optional cloud helpers.
+The `akan` CLI runs the whole workspace lifecycle: creating workspaces and apps, generating code, local development, native builds, local databases and optional cloud helpers.
 
 This page is the index. Each group links to a detail page with argument tables, option tables, notes and terminal examples.
 
@@ -5969,7 +5969,7 @@ Mirror: /llms/pages/cheatsheet/mobile/setup.md
 Priority: P2
 
 Headings:
-- Mobile Setup Flow
+- Native Setup Flow
 - Native Config
 - Native Plugins
 - Android Setup
@@ -5979,9 +5979,9 @@ Headings:
 
 Setup
 
-Mobile Setup Flow
+Native Setup Flow
 
-An Akan mobile app is your CSR web app running inside a native shell that akanjs's own runtime generates for iOS and Android, and for macOS, Windows and Linux too. The web app owns the pages and business logic. The shell owns the package ID, device permissions, plugins, native files, signing and store builds, all declared in akan.config.ts.
+An Akan native app is your CSR web app running inside a native shell that akanjs's own runtime generates for iOS and Android, and for macOS, Windows and Linux too. The web app owns the pages and business logic. The shell owns the package ID, device permissions, plugins, native files, signing and store builds, all declared in akan.config.ts.
 
 Words used on this page
 

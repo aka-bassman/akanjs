@@ -1,5 +1,5 @@
 "use client";
-import { cn, usePage } from "akanjs/client";
+import { cn, isMobileDevice, usePage } from "akanjs/client";
 import { AgentPrompts, type AgentVisualOption } from "akanjs/store";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -41,7 +41,7 @@ import { type QueuedMessage, useChatQueue } from "./useChatQueue";
 import { useChatReferences } from "./useChatReferences";
 import { useChatVoice } from "./useChatVoice";
 import { useDraftRecall } from "./useDraftRecall";
-import { useKeyboardInset } from "./useKeyboardInset";
+import { useKeyboardFrame } from "./useKeyboardFrame";
 import { type ReferenceSource, useReferenceMenu } from "./useReferenceMenu";
 import { useSlashMenu } from "./useSlashMenu";
 import type { VoiceEngine } from "./voice";
@@ -203,7 +203,7 @@ export const DefaultChat = ({
   const sticky = useRef(true);
   const returning = useRef(false);
   const read = useRef(session.messages.length);
-  const keyboardInset = useKeyboardInset();
+  const keyboardFrame = useKeyboardFrame();
   const [overlay, setOverlay] = useState<HTMLElement | null>(null);
   useEffect(() => {
     setOverlay(document.body);
@@ -235,7 +235,8 @@ export const DefaultChat = ({
       returning.current = false;
       return;
     }
-    focusComposer();
+    // A touch screen raises its keyboard on focus, covering the intro the panel just opened to and panning the page.
+    if (!isMobileDevice()) focusComposer();
   }, [open, session.pendingQuestion?.callId]);
   useEffect(
     () => () => {
@@ -432,8 +433,7 @@ export const DefaultChat = ({
         panelClassName,
       )}
       role="dialog"
-      // The keyboard covers a full-screen panel's composer, and only `visualViewport` reports by how much.
-      style={inline ? undefined : { paddingBottom: keyboardInset || undefined }}
+      style={inline ? undefined : keyboardFrame}
       {...files.dropProps}
     >
       {chrome ? (

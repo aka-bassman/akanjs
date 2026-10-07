@@ -67,7 +67,7 @@ export const AkanjsHeader = ({
   links,
   logoLabel,
   notice,
-  mobileDrawerLinks,
+  mobileDrawerLinks = links,
   collapseMobileSubMenuOnScroll = false,
 }: AkanjsHeaderProps) => {
   const { l } = usePage();
@@ -215,32 +215,30 @@ export const AkanjsHeader = ({
           </div>
         </div>
       </div>
-      {mobileDrawerLinks ? (
-        <div
-          className={cn(
-            "fixed inset-y-0 left-0 z-40 w-full transform transition-transform duration-50 ease-in-out lg:hidden",
-            isMobileMenuOpen ? "translate-x-0" : "-translate-x-full",
-          )}
-        >
-          <div className="h-full overflow-y-auto bg-background/95 shadow-2xl backdrop-blur-xl">
-            <div className="mt-[var(--akanjs-header-offset)] flex flex-col gap-1 p-5">
-              {mobileDrawerLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  target={link.target}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="block rounded-full px-4 py-2.5 font-bold text-base text-foreground/75 transition-colors hover:bg-foreground/6 hover:text-foreground"
-                  activeClassName={navActiveClassName}
-                >
-                  {l.trans(link.label)}
-                  {link.target === "_blank" ? <BsArrowUpRight className="-mt-0.5 ml-1 inline size-3" /> : null}
-                </Link>
-              ))}
-            </div>
+      <div
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 w-full transform transition-transform duration-50 ease-in-out lg:hidden",
+          isMobileMenuOpen ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
+        <div className="h-full overflow-y-auto bg-background/95 shadow-2xl backdrop-blur-xl">
+          <div className="mt-[var(--akanjs-header-offset)] flex flex-col gap-1 p-5">
+            {mobileDrawerLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                target={link.target}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block rounded-full px-4 py-2.5 font-bold text-base text-foreground/75 transition-colors hover:bg-foreground/6 hover:text-foreground"
+                activeClassName={navActiveClassName}
+              >
+                {l.trans(link.label)}
+                {link.target === "_blank" ? <BsArrowUpRight className="-mt-0.5 ml-1 inline size-3" /> : null}
+              </Link>
+            ))}
           </div>
         </div>
-      ) : null}
+      </div>
     </>
   );
 };

@@ -76,6 +76,19 @@ const stepsSkin = {
   ),
 };
 
+const matchingMedia = (...queries: string[]) => {
+  const original = window.matchMedia;
+  window.matchMedia = ((query: string) => ({
+    matches: queries.includes(query),
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  })) as unknown as typeof window.matchMedia;
+  return () => {
+    window.matchMedia = original;
+  };
+};
+
 const turns = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>('[data-skin="steps"]')];
 
 // happy-dom dispatch never reaches React's synthetic handlers, so the composer is driven through its (re-read) props.
@@ -670,6 +683,51 @@ describe("Agent.Chat", () => {
     const inline = mountChat(session, { defaultOpen: true, inline: true });
     expect(inline.host.querySelector("aside")?.className).not.toContain("fixed");
     inline.unmount();
+  });
+
+  test("a touch screen opens onto the intro without raising its keyboard, a desktop into the composer", () => {
+    const openFrom = () => {
+      const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+      const chat = mountChat(session, {});
+      act(() => chat.container.querySelector<HTMLButtonElement>('button[aria-label="base.agent"]')?.click());
+      const focused = document.activeElement?.tagName;
+      expect(chat.container.innerHTML).toContain("base.agentIntro");
+      chat.unmount();
+      return focused;
+    };
+    expect(openFrom()).toBe("TEXTAREA");
+    const restore = matchingMedia("(hover: none) and (pointer: coarse)");
+    try {
+      expect(openFrom()).not.toBe("TEXTAREA");
+    } finally {
+      restore();
+    }
+  });
+
+  test("a full-screen panel is pinned to what the keyboard leaves visible, so its header is never panned away", () => {
+    const original = window.visualViewport;
+    const viewport = Object.assign(new EventTarget(), { height: window.innerHeight, offsetTop: 0, scale: 1 });
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+    const restore = matchingMedia("(width < 40rem)");
+    const resize = (height: number, offsetTop: number) =>
+      act(() => {
+        Object.assign(viewport, { height, offsetTop });
+        viewport.dispatchEvent(new Event("resize"));
+      });
+    try {
+      const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+      const { container, unmount } = mountChat(session);
+      const panel = () => container.querySelector("aside")?.style;
+      expect(panel()?.top).toBe("");
+      resize(400, 300);
+      expect([panel()?.top, panel()?.height]).toEqual(["300px", "400px"]);
+      resize(window.innerHeight, 0);
+      expect([panel()?.top, panel()?.height]).toEqual(["", ""]);
+      unmount();
+    } finally {
+      restore();
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: original });
+    }
   });
 
   test("the / menu offers this chat's own commands", () => {

@@ -1,4 +1,4 @@
-# Mobile App Architecture
+# Native App Architecture
 
 - Source: /docs/arch/mobile
 - Mirror: /llms/pages/docs/arch/mobile.md
@@ -8,24 +8,24 @@
 
 ## Headings
 
-- Mobile App Architecture (#mobile-overview)
+- Native App Architecture (#native-overview)
 - Native Targets (#native-targets)
 - CSR Runtime (#csr-runtime)
 - Native Bridge (#native-bridge)
 
 ## Content
 
-Mobile App Architecture
+Native App Architecture
 
-Akan ships the same product to the web and to the app stores, and you do not write a second app for mobile. The screens you already built for the web run inside a thin native app; only the parts that truly need the phone, such as packaging, signing and device features, are native.
+Akan ships the same product to the web, the app stores and the desktop, and you do not write a second app for any of them. The screens you already built for the web run inside a thin native app; only the parts that truly need the device, such as packaging, signing and device features, are native.
 
-Concretely, Akan mobile apps are CSR web clients running inside a native shell that akanjs's own runtime, @akanjs/native, generates. The product screen is still built with Akan page, UI, state, and service patterns; the runtime supplies the shell, app identity, store package, and device bridge from what akan.config.ts declares.
+Concretely, an Akan native app is a CSR web client running inside a native shell that akanjs's own runtime, @akanjs/native, generates. The product screen is still built with Akan page, UI, state, and service patterns; the runtime supplies the shell, app identity, store package, and device bridge from what akan.config.ts declares.
 
 The same target also builds a macOS, Windows or Linux app. A desktop app calls the shared backend like a phone does, or, with native.desktop.server on, carries the app's own server: it starts beside the window on a loopback port, keeps its data on that computer, and is the only backend the pages call, so the app works with no server elsewhere.
 
-Akan mobile architecture
+Akan native app architecture
 
-The Akan app builds a CSR client that runs inside the Akan native shell, which is packaged for Android and iOS and talks to the shared Akan backend.
+The Akan app builds a CSR client that runs inside the Akan native shell on a phone and on a laptop. The shell is packaged for iOS and Android and for macOS, Windows and Linux, and every package talks to the shared Akan backend.
 
 Words used on this page
 
@@ -43,11 +43,11 @@ Term
 
 Who owns what
 
-- One UI surface — Written once, shared with the web — Web and mobile share the same Akan page tree, client router, generated fetch calls, dictionaries, and UI components.
+- One UI surface — Written once, shared with the web — Web and native apps share the same Akan page tree, client router, generated fetch calls, dictionaries, and UI components.
 
 - Native shell boundary — What the native runtime generates — Native code owns packaging, signing, app capabilities, plugin linking, and store distribution.
 
-- Shared backend — The server you already run — Android, iOS, and web clients call the same Akan services and can share auth, permission, database rules, and app-level domains. A desktop app whose target carries the server calls the copy of that server it carries instead.
+- Shared backend — The server you already run — Web clients and native apps call the same Akan services and can share auth, permission, database rules, and app-level domains. A desktop app whose target carries the server calls the copy of that server it carries instead.
 
 Native Targets
 
@@ -81,7 +81,7 @@ Inside the native shell, Akan uses the CSR router and mobile page frame. Page tr
 
 The frame settings a page can declare in .config():
 
-- transition ("none" | "fade" | "bottomUp" | "stack" | "scaleOut"): Controls CSR page motion so mobile navigation can feel closer to native apps.
+- transition ("none" | "fade" | "bottomUp" | "stack" | "scaleOut"): Controls CSR page motion so navigation inside the native shell can feel closer to a native app.
 
 - safeArea (boolean | "top" | "bottom" | { top, bottom }): Handles OS system areas such as notches, home indicators, and Android system bars.
 
@@ -111,7 +111,7 @@ What the bridge covers
 
 Setup, step by step
 
-The concrete setup steps live in the mobile cheatsheets:
+The concrete setup steps live in the native cheatsheets:
 
 Setup
 

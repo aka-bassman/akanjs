@@ -105,7 +105,7 @@ export default layout().render(({ children }) => {
           audience: "agent",
         },
         {
-          name: l.trans({ en: "Mobile App Architecture", ko: "모바일 앱 아키텍처" }),
+          name: l.trans({ en: "Native App Architecture", ko: "네이티브 앱 아키텍처" }),
           href: "/docs/arch/mobile",
           audience: "both",
         },

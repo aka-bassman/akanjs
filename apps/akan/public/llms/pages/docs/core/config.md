@@ -236,7 +236,7 @@ Firebase app registration and the stores must use the same appId.
 
 ios.files and android.files copy app-relative source files into the app, keyed by where they land, such as a notification sound at res/raw/chime.mp3. Android FCM push reads google-services.json from android.googleServices instead, and iOS needs no GoogleService-Info.plist because its push goes to APNs. Keep server service account JSON out of these file mappings. For platform setup steps, see
 
-Mobile Development
+Native Setup
 
 .
 

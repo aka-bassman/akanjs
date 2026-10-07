@@ -212,7 +212,7 @@ An app mounts every module its libraries declare. The modules option narrows tha
 
 Dependencies are followed for you, so you list entry points instead of the whole graph. A named module pulls in every service and signal it injects, and every model its cascade removes.
 
-disableModules and disableLibs are the same idea from the other end: mount everything except what you name and whatever reaches it. disableModules takes module names, disableLibs takes the name of a library and stands for every module that library registered, so it does not drift as the library gains modules. Reach for either when the process serves most of the app and a library it depends on is one it does not use. Both are accepted in all three places modules is, as AKAN_DISABLE_MODULES and AKAN_DISABLE_LIBS in the environment. Naming a module in both modules and an exclusion leaves it out, because modules says what a process is for and the exclusions say what it must not run.
+disableModules and disableLibs work from the other end: mount everything except what you name and whatever reaches it. disableLibs takes a library's name and stands for every module it registers. Both are accepted wherever modules is, and as AKAN_DISABLE_MODULES and AKAN_DISABLE_LIBS in the environment. A module named in both modules and an exclusion is left out.
 
 Use this when the entry point itself decides which modules the process serves. Every replica it spawns gets the same selection.
 

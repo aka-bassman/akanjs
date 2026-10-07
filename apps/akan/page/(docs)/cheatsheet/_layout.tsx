@@ -106,7 +106,7 @@ export default layout().render(({ children }) => {
       ],
     },
     {
-      name: l.trans({ en: "Mobile", ko: "모바일" }),
+      name: l.trans({ en: "Native", ko: "네이티브" }),
       subMenus: [
         { name: l.trans({ en: "Setup", ko: "설정" }), href: "/cheatsheet/mobile/setup", audience: "agent" },
         {

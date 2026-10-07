@@ -20,7 +20,7 @@ Backend environment the app connects to.
 
 Application CLI
 
-These commands carry an app from creation to release: create it, run it locally, check and build it, then ship it to mobile.
+These commands carry an app from creation to release: create it, run it locally, check and build it, then ship it as a native app.
 
 - Manage Apps
 
@@ -56,7 +56,7 @@ These commands carry an app from creation to release: create it, run it locally,
 
   - build: Build the app for production into `dist/apps/<app>`.
 
-- Mobile
+- Native
 
   - start-ios, start-android: Run the app on a simulator, an emulator or a connected device.
 
@@ -322,7 +322,7 @@ Run a native target as a desktop app on this computer: macOS, Windows or Linux, 
 
 - desktop.server: With `native: { desktop: { server: true } }` in `akan.config.ts`, or `desktop.server` in one target, the desktop app carries the app's server: it starts beside the window on a loopback port and the pages call nothing else. `build-desktop`, `start-desktop --release` and `publish-update` all read it. An installed app refuses an update that adds or drops the server, so turning it on or off for an app already out there takes a reinstall.
 
-- carried server: The server runs on the app's own Bun as an API-only server (`operationMode` edge, database mode `single`, SSR, CSR and MCP off) bound to 127.0.0.1, refusing any other Host header; any program on the computer can still call it, so guard its endpoints as a network server's. The app needs `single` in `database.modes`. Its data and a per-install JWT secret stay in the app data folder's `server/` (under `%LOCALAPPDATA%` on Windows; a `--debug` build keeps `server-debug/`). It carries `private/` (each lib's too, under `private/libs/<lib>`), the `--env` environment's `env.server.<env>.ts` and the server env defaults of the libs it uses (each lib's `env.server.testing.ts`), in plain text that anyone with the app can read, so keep deployment secrets, keys and license files out of them. It has no `public/`, and its working folder is its data folder: read a file it needs at runtime from the app folder, `AKAN_APP_DIR` or else the folder of `Bun.main`, never from `process.cwd()`. It runs none of the image's `docker` steps: an executable it spawns comes from `bin`, and a package that builds itself at install from `trustedDependencies`.
+- carried server: An API-only server on the app's own Bun, bound to 127.0.0.1. Any program on the computer can call it, so guard its endpoints as a network server's. The app needs `single` in `database.modes`, and the data stays in the app data folder's `server/`. It carries `private/` (each lib's too), the `--env`'s `env.server.<env>.ts` and the libs' server env defaults in plain text, so keep secrets and license files out of them. It has no `public/` and runs in its data folder: read runtime files from `AKAN_APP_DIR`, never `process.cwd()`. It runs none of the image's `docker` steps; a package that builds itself at install goes in `trustedDependencies`.
 
 - bin: An executable `bin` names in `akan.config.ts` is fetched for this computer and carried in every desktop app, whether or not it carries a server: it is first on the app's PATH, so the carried server's `spawn("ffmpeg")` runs it, and a native plugin finds it in `ctx.binDir`.
 
@@ -384,7 +384,7 @@ Build the desktop app on this computer's OS: a `.app` on macOS and an app folder
 
 - desktop.server: With `native: { desktop: { server: true } }` in `akan.config.ts`, or `desktop.server` in one target, the desktop app carries the app's server: it starts beside the window on a loopback port and the pages call nothing else. `build-desktop`, `start-desktop --release` and `publish-update` all read it. An installed app refuses an update that adds or drops the server, so turning it on or off for an app already out there takes a reinstall.
 
-- carried server: The server runs on the app's own Bun as an API-only server (`operationMode` edge, database mode `single`, SSR, CSR and MCP off) bound to 127.0.0.1, refusing any other Host header; any program on the computer can still call it, so guard its endpoints as a network server's. The app needs `single` in `database.modes`. Its data and a per-install JWT secret stay in the app data folder's `server/` (under `%LOCALAPPDATA%` on Windows; a `--debug` build keeps `server-debug/`). It carries `private/` (each lib's too, under `private/libs/<lib>`), the `--env` environment's `env.server.<env>.ts` and the server env defaults of the libs it uses (each lib's `env.server.testing.ts`), in plain text that anyone with the app can read, so keep deployment secrets, keys and license files out of them. It has no `public/`, and its working folder is its data folder: read a file it needs at runtime from the app folder, `AKAN_APP_DIR` or else the folder of `Bun.main`, never from `process.cwd()`. It runs none of the image's `docker` steps: an executable it spawns comes from `bin`, and a package that builds itself at install from `trustedDependencies`.
+- carried server: An API-only server on the app's own Bun, bound to 127.0.0.1. Any program on the computer can call it, so guard its endpoints as a network server's. The app needs `single` in `database.modes`, and the data stays in the app data folder's `server/`. It carries `private/` (each lib's too), the `--env`'s `env.server.<env>.ts` and the libs' server env defaults in plain text, so keep secrets and license files out of them. It has no `public/` and runs in its data folder: read runtime files from `AKAN_APP_DIR`, never `process.cwd()`. It runs none of the image's `docker` steps; a package that builds itself at install goes in `trustedDependencies`.
 
 - bin: An executable `bin` names in `akan.config.ts` is fetched for this computer and carried in every desktop app, whether or not it carries a server: it is first on the app's PATH, so the carried server's `spawn("ffmpeg")` runs it, and a native plugin finds it in `ctx.binDir`.
 

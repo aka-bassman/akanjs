@@ -967,7 +967,7 @@ export default config;`}
             href="/cheatsheet/mobile/setup"
             className="text-primary underline underline-offset-4 hover:no-underline"
           >
-            {l.trans({ en: "Mobile Development", ko: "모바일 개발" })}
+            {l.trans({ en: "Native Setup", ko: "네이티브 설정" })}
           </Link>
           <span>{l.trans({ en: ".", ko: " 문서를 참고하세요." })}</span>
         </Docs.Alert>

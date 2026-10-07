@@ -3,7 +3,7 @@
 - Source: /cheatsheet/mobile/desktop-release
 - Mirror: /llms/pages/cheatsheet/mobile/desktop-release.md
 - Section: cheatsheet
-- Category: Mobile
+- Category: Native
 - Priority: P2
 
 ## Headings
@@ -58,7 +58,7 @@ Installers And CPU
 
 Native Addons
 
-Before it copies the server, the build reads every `.node` file by package and stops, with the list, on what would fail at the first require on a user's computer: no binary for the target OS and CPU, a link or rpath to a library outside the system (a ROS install under /opt, Homebrew), or a `binding.gyp` its install never compiled — Bun runs no install script of an untrusted package, so add it to `trustedDependencies`. An addon compiled on the build machine only warns.
+A server package with a `.node` addon needs a binary for the target OS and CPU that links nothing outside the system, such as a ROS install under /opt or Homebrew. One that compiles itself at install goes in `trustedDependencies`, since Bun runs no install script of an untrusted package. The build lists any addon that would fail on a user's computer and stops.
 
 CI Recipe
 

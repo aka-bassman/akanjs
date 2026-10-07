@@ -230,10 +230,10 @@ export default page().render(() => {
               },
               {
                 href: "/docs/arch/mobile",
-                title: l.trans({ en: "Mobile App Architecture", ko: "모바일 앱 아키텍처" }),
+                title: l.trans({ en: "Native App Architecture", ko: "네이티브 앱 아키텍처" }),
                 desc: l.trans({
-                  en: "Package the CSR client as an Android or iOS app.",
-                  ko: "CSR 클라이언트를 Android·iOS 앱으로 패키징합니다.",
+                  en: "Package the CSR client as an iOS, Android or desktop app.",
+                  ko: "CSR 클라이언트를 iOS·Android·데스크톱 앱으로 패키징합니다.",
                 }),
               },
               {

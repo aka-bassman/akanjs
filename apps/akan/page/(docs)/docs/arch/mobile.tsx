@@ -49,8 +49,8 @@ export default page().render(() => {
       title: l.trans({ en: "One UI surface", ko: "하나의 UI 표면" }),
       caption: l.trans({ en: "Written once, shared with the web", ko: "한 번 쓰고 웹과 함께 씁니다" }),
       desc: l.trans({
-        en: "Web and mobile share the same Akan page tree, client router, generated fetch calls, dictionaries, and UI components.",
-        ko: "웹과 모바일은 같은 Akan page tree, client router, generated fetch 호출, dictionary, UI component를 공유합니다.",
+        en: "Web and native apps share the same Akan page tree, client router, generated fetch calls, dictionaries, and UI components.",
+        ko: "웹과 네이티브 앱은 같은 Akan page tree, client router, generated fetch 호출, dictionary, UI component를 공유합니다.",
       }),
     },
     {
@@ -65,8 +65,8 @@ export default page().render(() => {
       title: l.trans({ en: "Shared backend", ko: "공유 백엔드" }),
       caption: l.trans({ en: "The server you already run", ko: "이미 돌리고 있는 그 서버" }),
       desc: l.trans({
-        en: "Android, iOS, and web clients call the same Akan services and can share auth, permission, database rules, and app-level domains. A desktop app whose target carries the server calls the copy of that server it carries instead.",
-        ko: "Android, iOS, 웹 client는 같은 Akan service를 호출하고 auth, permission, database rule, app-level domain을 공유할 수 있습니다. 서버를 싣는 target의 데스크톱 앱은 대신 자기가 싣고 있는 서버를 호출합니다.",
+        en: "Web clients and native apps call the same Akan services and can share auth, permission, database rules, and app-level domains. A desktop app whose target carries the server calls the copy of that server it carries instead.",
+        ko: "웹 client와 네이티브 앱은 같은 Akan service를 호출하고 auth, permission, database rule, app-level domain을 공유할 수 있습니다. 서버를 싣는 target의 데스크톱 앱은 대신 자기가 싣고 있는 서버를 호출합니다.",
       }),
     },
   ];
@@ -76,8 +76,8 @@ export default page().render(() => {
       key: "transition",
       type: '"none" | "fade" | "bottomUp" | "stack" | "scaleOut"',
       desc: l.trans({
-        en: "Controls CSR page motion so mobile navigation can feel closer to native apps.",
-        ko: "CSR page motion을 제어해 모바일 내비게이션이 네이티브 앱에 가깝게 느껴지도록 합니다.",
+        en: "Controls CSR page motion so navigation inside the native shell can feel closer to a native app.",
+        ko: "CSR page motion을 제어해 네이티브 shell 안의 내비게이션이 네이티브 앱에 가깝게 느껴지도록 합니다.",
       }),
     },
     {
@@ -131,19 +131,19 @@ export default page().render(() => {
 
   return (
     <Scroll>
-      <Scroll.Slide id="mobile-overview" title={l.trans({ en: "Mobile App Architecture", ko: "모바일 앱 아키텍처" })}>
-        <Docs.Title>{l.trans({ en: "Mobile App Architecture", ko: "모바일 앱 아키텍처" })}</Docs.Title>
+      <Scroll.Slide id="native-overview" title={l.trans({ en: "Native App Architecture", ko: "네이티브 앱 아키텍처" })}>
+        <Docs.Title>{l.trans({ en: "Native App Architecture", ko: "네이티브 앱 아키텍처" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Akan ships the same product to the web and to the app stores, and you do not write a second app for mobile. The screens you already built for the web run inside a thin native app; only the parts that truly need the phone, such as packaging, signing and device features, are native.",
-              ko: "Akan은 같은 제품을 웹과 앱스토어에 함께 내보내며, 모바일용 앱을 따로 만들지 않습니다. 웹용으로 만든 화면이 얇은 네이티브 앱 안에서 그대로 돌아가고, 패키징과 서명, 기기 기능처럼 정말로 폰이 필요한 부분만 네이티브가 맡습니다.",
+              en: "Akan ships the same product to the web, the app stores and the desktop, and you do not write a second app for any of them. The screens you already built for the web run inside a thin native app; only the parts that truly need the device, such as packaging, signing and device features, are native.",
+              ko: "Akan은 같은 제품을 웹, 앱스토어, 데스크톱에 함께 내보내며, 어느 쪽에도 앱을 따로 만들지 않습니다. 웹용으로 만든 화면이 얇은 네이티브 앱 안에서 그대로 돌아가고, 패키징과 서명, 기기 기능처럼 정말로 기기가 필요한 부분만 네이티브가 맡습니다.",
             })}
           </div>
           <div>
             {l.trans({
-              en: "Concretely, Akan mobile apps are CSR web clients running inside a native shell that akanjs's own runtime, @akanjs/native, generates. The product screen is still built with Akan page, UI, state, and service patterns; the runtime supplies the shell, app identity, store package, and device bridge from what akan.config.ts declares.",
-              ko: "정확히 말하면 Akan 모바일 앱은 akanjs의 자체 런타임인 @akanjs/native가 만들어 내는 네이티브 shell 안에서 실행되는 CSR 웹 클라이언트입니다. 제품 화면은 여전히 Akan page, UI, state, service 패턴으로 만들고, 런타임이 akan.config.ts의 선언을 바탕으로 shell, 앱 식별 정보, 스토어 패키지, 디바이스 브리지를 제공합니다.",
+              en: "Concretely, an Akan native app is a CSR web client running inside a native shell that akanjs's own runtime, @akanjs/native, generates. The product screen is still built with Akan page, UI, state, and service patterns; the runtime supplies the shell, app identity, store package, and device bridge from what akan.config.ts declares.",
+              ko: "정확히 말하면 Akan 네이티브 앱은 akanjs의 자체 런타임인 @akanjs/native가 만들어 내는 네이티브 shell 안에서 실행되는 CSR 웹 클라이언트입니다. 제품 화면은 여전히 Akan page, UI, state, service 패턴으로 만들고, 런타임이 akan.config.ts의 선언을 바탕으로 shell, 앱 식별 정보, 스토어 패키지, 디바이스 브리지를 제공합니다.",
             })}
           </div>
           <div>
@@ -153,19 +153,23 @@ export default page().render(() => {
             })}
           </div>
           <Docs.Figure
-            title={l.trans({ en: "Akan mobile architecture", ko: "Akan 모바일 구조" })}
+            title={l.trans({ en: "Akan native app architecture", ko: "Akan 네이티브 앱 구조" })}
             image="mobile-architecture"
             prompt={`
-              Application source at the far left labelled "Akan App", with a long arrow to the centre. In the centre one
-              phone drawn large, about half the frame tall. Its screen holds a simple web page sketch — a top bar, one
-              big block and three short rows — labelled "CSR Client" beside the screen. The phone's outer body is traced
-              as the red accent and labelled "Akan Native Shell". Below the phone, a dashed arrow down to two small
-              closed parcel boxes side by side, labelled "Android" and "iOS". To the right, a two-headed arrow from the
-              phone to a server with a database cylinder beside it, labelled once "Shared Akan Backend".
+              Application source at the far left labelled "Akan App", with a long arrow to the centre. In the centre a
+              phone and a laptop drawn side by side, together about half the frame tall; a laptop is a wide screen
+              outline over a thin flat base. Both devices are enclosed by one rounded outline traced as the red accent
+              and labelled "Akan Native Shell" above it. Both screens hold the same simple web page sketch — a top bar,
+              one big block and three short rows — and one label "CSR Client" is written once, centred under the two
+              devices inside the red outline. Below the red outline, a dashed arrow from the phone down to two small
+              closed parcel boxes labelled "iOS" and "Android", and a dashed arrow from the laptop down to three small
+              closed parcel boxes labelled "macOS", "Windows" and "Linux", all five parcels in one row. To the right, a
+              two-headed arrow from the red outline to a server with a database cylinder beside it, labelled once
+              "Shared Akan Backend".
             `}
             alt={l.trans({
-              en: "The Akan app builds a CSR client that runs inside the Akan native shell, which is packaged for Android and iOS and talks to the shared Akan backend.",
-              ko: "Akan 앱은 CSR 클라이언트를 빌드하고, 그 클라이언트는 Akan 네이티브 shell 안에서 실행됩니다. shell은 Android와 iOS 패키지로 나가며 공유 Akan 백엔드와 통신합니다.",
+              en: "The Akan app builds a CSR client that runs inside the Akan native shell on a phone and on a laptop. The shell is packaged for iOS and Android and for macOS, Windows and Linux, and every package talks to the shared Akan backend.",
+              ko: "Akan 앱은 CSR 클라이언트를 빌드하고, 그 클라이언트는 폰과 노트북의 Akan 네이티브 shell 안에서 실행됩니다. shell은 iOS·Android와 macOS·Windows·Linux 패키지로 나가며, 모든 패키지가 공유 Akan 백엔드와 통신합니다.",
             })}
           />
           <Docs.SubSubTitle>{l.trans({ en: "Words used on this page", ko: "이 페이지에서 쓰는 말" })}</Docs.SubSubTitle>
@@ -401,8 +405,8 @@ export default page()
           <Docs.SubSubTitle>{l.trans({ en: "Setup, step by step", ko: "구체적인 설정 절차" })}</Docs.SubSubTitle>
           <div>
             {l.trans({
-              en: "The concrete setup steps live in the mobile cheatsheets:",
-              ko: "Cheatsheet의 모바일 문서에서 단계별로 따라 할 수 있습니다:",
+              en: "The concrete setup steps live in the native cheatsheets:",
+              ko: "Cheatsheet의 네이티브 문서에서 단계별로 따라 할 수 있습니다:",
             })}
           </div>
           <Docs.LinkGrid

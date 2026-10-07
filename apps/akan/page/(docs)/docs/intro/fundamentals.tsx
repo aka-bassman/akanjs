@@ -120,7 +120,7 @@ export default page().render(() => {
             <div className="mt-2 space-y-2">
               <div className="flex gap-2">
                 <div className="flex w-20 items-center whitespace-nowrap text-sm">
-                  {l.trans({ en: "Web/Mobile", ko: "웹/모바일" })}:
+                  {l.trans({ en: "Web/App", ko: "웹/앱" })}:
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Link href="https://react.dev/" target="_blank">

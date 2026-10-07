@@ -47,7 +47,7 @@ With this, you spend less time wrestling with platform glue and more time design
 
 Akan.js smooths over the following background technologies so your application can grow as one extensible system.
 
-Web/Mobile
+Web/App
 
 Tooling
 

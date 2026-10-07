@@ -73,7 +73,8 @@ export const DefaultComposer = ({
 }: ComposerProps) => {
   const { l } = usePage();
   const surface = useUiRecipe("input") ?? inputRecipe;
-  const field = surface({ kind: "area", size: "sm" }, "max-h-32 flex-1 resize-none py-1.5");
+  // iOS zooms the page into any field under 16px on focus and never zooms back out.
+  const field = surface({ kind: "area", size: "sm" }, "max-h-32 flex-1 resize-none py-1.5 pointer-coarse:text-base");
   const placeholder = session.pendingQuestion
     ? l("base.agentAnswer")
     : session.isRunning

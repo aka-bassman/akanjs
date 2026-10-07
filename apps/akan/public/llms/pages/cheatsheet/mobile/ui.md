@@ -3,7 +3,7 @@
 - Source: /cheatsheet/mobile/ui
 - Mirror: /llms/pages/cheatsheet/mobile/ui.md
 - Section: cheatsheet
-- Category: Mobile
+- Category: Native
 - Priority: P2
 
 ## Headings
@@ -148,13 +148,13 @@ One `.config()` object sets the whole page frame: animation, gesture, reserved s
 
 **Top-level routes stay still.** At depth 1 or less every platform defaults to `none`, no gesture and `cache: true`, so tabs switch instantly.
 
-**A page nobody sees runs no effects.** A cached page, and the page a transition-less switch left, keep their state and DOM but stop their effects until shown again. The page under a `stack` transition stays live for a swipe back, so bind a camera, a poll or a key handler with `usePageFocusEffect` from `akanjs/webkit`; `usePageActivity()` says whether the page is `current`, `prev`, `pending` or `hidden`. Only the current page offers its tools and state to the in-page agent.
+**A page nobody sees runs no effects.** A cached page, or one left without a transition, keeps its state and DOM but stops its effects until shown again. The page under a `stack` transition stays live for a swipe back, so bind a camera, a poll or a key handler with `usePageFocusEffect` from `akanjs/webkit`.
 
-**Every history entry is a page of its own.** A push to the route you are on mounts a new page over the old one, which waits under it with its state; a replace within one route updates the page in place. Below the page a swipe back reveals, three more entries stay mounted and hidden, and older ones are released — they mount again on back, with their scroll restored. A `cache` route stays one page for the whole session.
+**Every history entry is a page of its own.** A push to the route you are on mounts a new page over the old one, which waits under it with its state; a replace updates the page in place. A `cache` route stays one page for the whole session.
 
-**The stack outlives a reload.** After a reload — or a WebView whose content process died and reloaded — the current page and the one under it come back, the rest of the stack waits until you go back to it, and back walks it as before. While the app is in the background, the page under the current one pauses too.
+**The stack outlives a reload.** After a reload, or a WebView crash, back walks the same stack as before.
 
-**On Android, back is the page's only while it has somewhere to go.** At the index with nothing under it, the system takes back and shows its own back-to-home animation, and the app stays warm instead of quitting. On Android 14+ a back swipe moves the page with the finger before it commits. When the system runs low on memory, on either platform, the hidden pages are released and mount again when visited.
+**On Android, back is the page's only while it has somewhere to go.** At the index with nothing under it, the system takes back, and the app stays warm instead of quitting.
 
 The frame as CSS variables
 

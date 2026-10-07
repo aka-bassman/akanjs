@@ -279,7 +279,7 @@ export default page().render(() => {
       ],
     },
     {
-      label: l.trans({ en: "Mobile", ko: "모바일" }),
+      label: l.trans({ en: "Native", ko: "네이티브" }),
       items: [
         {
           name: ["start-ios", "start-android"],
@@ -1328,8 +1328,8 @@ akan pack-update myapp --platform ios --env main --against store/bundle.json`,
         <Docs.Title>{l.trans({ en: "Application CLI", ko: "애플리케이션 CLI" })}</Docs.Title>
         <Docs.Description>
           {l.trans({
-            en: "These commands carry an app from creation to release: create it, run it locally, check and build it, then ship it to mobile.",
-            ko: "앱을 만드는 순간부터 출시까지 쓰는 명령입니다. 앱을 만들고, 로컬에서 띄우고, 검사·빌드한 뒤 모바일로 내보냅니다.",
+            en: "These commands carry an app from creation to release: create it, run it locally, check and build it, then ship it as a native app.",
+            ko: "앱을 만드는 순간부터 출시까지 쓰는 명령입니다. 앱을 만들고, 로컬에서 띄우고, 검사·빌드한 뒤 네이티브 앱으로 내보냅니다.",
           })}
           {catalogue.map((group) => (
             <Fragment key={group.label}>
