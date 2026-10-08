@@ -710,7 +710,7 @@ describe("signal serialization and registry", () => {
         origin,
       );
     const lib = register(LibEndpoint, "shared");
-    const app = register(AppEndpoint, "sceny");
+    const app = register(AppEndpoint as unknown as typeof LibEndpoint, "sceny");
 
     expect(lib.serializedSignal.origin).toEqual(["shared"]);
     const merged = FetchClient.from(lib, app).serializedSignal.signalTestAux;

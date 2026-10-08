@@ -399,7 +399,7 @@ describe("ConstantRegistry", () => {
       ConstantRegistry.buildModel("constantOriginItem", Model, Model, Model, Model, Model, exports, origin);
 
     build(OriginLibModel, "shared", { OriginLibStatus });
-    build(OriginAppModel, "sceny", { OriginLibStatus });
+    build(OriginAppModel as unknown as typeof OriginLibModel, "sceny", { OriginLibStatus });
     ConstantRegistry.buildScalar("constantOriginGeo", OriginScalar, {}, "shared");
     ConstantRegistry.buildScalar(
       "constantOriginGeo",
