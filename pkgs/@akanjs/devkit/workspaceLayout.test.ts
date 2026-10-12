@@ -7,8 +7,10 @@ import {
   facetIndexShadowOf,
   isAllowedLibFacetRootFile,
   isScannedRootEntry,
+  libFacetRootFileHintOf,
   libRootAllowedDirs,
   libRootAllowedFiles,
+  qualifiedSignalTestOf,
   rootEntryHintOf,
 } from "./workspaceLayout";
 
@@ -104,16 +106,28 @@ describe("hand-written facet index", () => {
 });
 
 describe("lib facet root allowlist", () => {
-  test("admits the generated support facets and a root signal test", () => {
+  test("admits the generated support facets only", () => {
     expect(isAllowedLibFacetRootFile("cnst.ts")).toBe(true);
     expect(isAllowedLibFacetRootFile("option.ts")).toBe(true);
-    expect(isAllowedLibFacetRootFile("user.signal.test.ts")).toBe(true);
-    expect(isAllowedLibFacetRootFile("user.signal.spec.ts")).toBe(true);
+    expect(isAllowedLibFacetRootFile("helper.ts")).toBe(false);
+    expect(isAllowedLibFacetRootFile("user.signal.test.ts")).toBe(false);
   });
 
-  test("rejects a hand-written file beside the barrels", () => {
-    expect(isAllowedLibFacetRootFile("helper.ts")).toBe(false);
-    expect(isAllowedLibFacetRootFile("user.test.ts")).toBe(false);
+  test("sends a root test to the module folder it covers", () => {
+    expect(libFacetRootFileHintOf("user.signal.test.ts")).toContain("move it to lib/user/user.signal.test.ts");
+    expect(libFacetRootFileHintOf("chatMessage.security.signal.test.ts")).toContain(
+      "lib/chatMessage/chatMessage.signal.test.ts",
+    );
+    expect(libFacetRootFileHintOf("org.signal.spec.ts")).toContain("lib/org/org.signal.spec.ts");
+    expect(libFacetRootFileHintOf("helper.ts")).toBeNull();
+  });
+
+  test("keeps one signal test per module folder, the other layers' tests aside", () => {
+    expect(qualifiedSignalTestOf("org", "org.owner.signal.test.ts")).toContain("org.signal.test.ts");
+    expect(qualifiedSignalTestOf("chatMessage", "chatMessage.security.signal.test.ts")).not.toBeNull();
+    expect(qualifiedSignalTestOf("org", "org.signal.test.ts")).toBeNull();
+    expect(qualifiedSignalTestOf("_search", "search.signal.test.ts")).toBeNull();
+    expect(qualifiedSignalTestOf("org", "org.service.test.ts")).toBeNull();
   });
 });
 

@@ -78,11 +78,23 @@ export const libFacetRootAllowedFiles = new Set([
   "useServer.ts",
 ]);
 
-/** `<model>.signal.test.ts` — lib 파싯 루트에 놓이는 유일한 비생성 파일 (테스트가 배럴 전체를 부팅한다). */
-const libFacetRootTestPattern = /^[A-Za-z][A-Za-z0-9_-]*\.signal\.(test|spec)\.(ts|tsx)$/;
+export const isAllowedLibFacetRootFile = (filename: string) => libFacetRootAllowedFiles.has(filename);
 
-export const isAllowedLibFacetRootFile = (filename: string) =>
-  libFacetRootAllowedFiles.has(filename) || libFacetRootTestPattern.test(filename);
+/** What to do with a test at the lib root: it belongs in the module folder it covers. */
+export const libFacetRootFileHintOf = (filename: string) => {
+  const test = /^([A-Za-z][A-Za-z0-9_-]*?)(?:\.[A-Za-z0-9_-]+)*\.(test|spec)\.(ts|tsx)$/.exec(filename);
+  if (!test) return null;
+  const [, model] = test;
+  return `a test lives in the module folder it covers: move it to lib/${model}/${model}.signal.${test[2]}.ts (a further suite becomes a describe there), and an app-wide harness to srvkit/*.spec.ts or lib/_<app>/<app>.signal.spec.ts`;
+};
+
+/** `<model>.<qualifier>.signal.test.ts` in a module folder: one module keeps one signal test, `<model>.signal.test.ts`. */
+export const qualifiedSignalTestOf = (moduleName: string, fileName: string) => {
+  const signalTest = /^(.+)\.signal\.test\.(ts|tsx)$/.exec(fileName);
+  const model = moduleName.replace(/^_+/, "");
+  if (!signalTest || signalTest[1] === model) return null;
+  return `one signal test per module: ${model}.signal.test.ts, with this suite as a nested describe in it`;
+};
 
 export const barrelFacetDirs = ["ui", "webkit", "srvkit", "common", "plugin"] as const;
 

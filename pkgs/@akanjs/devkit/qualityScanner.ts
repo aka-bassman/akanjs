@@ -10,6 +10,8 @@ import { fileWarning, formatSsrBalance, type SsrBalanceEntry, SsrScanner } from 
 import {
   facetIndexShadowOf,
   isAllowedLibFacetRootFile,
+  libFacetRootFileHintOf,
+  qualifiedSignalTestOf,
   rootAllowedDirs,
   rootAllowedFiles,
   rootEntryHintOf,
@@ -460,9 +462,14 @@ export class AkanQualityScanner {
           "akan.layout.lib-facet-file",
           "layout",
           sourceFile.file,
-          `Unexpected lib facet root file "${libFacetFile}". Keep direct lib/ root files limited to generated support facets.`,
+          `Unexpected lib facet root file "${libFacetFile}": ${libFacetRootFileHintOf(libFacetFile) ?? "keep direct lib/ root files limited to generated support facets"}.`,
         ),
       );
+
+    const moduleFile = getModuleInfo(sourceFile.file);
+    const qualified = moduleFile ? qualifiedSignalTestOf(moduleFile.moduleName, moduleFile.fileName) : null;
+    if (qualified)
+      warnings.push(fileWarning("akan.layout.qualified-signal-test", "layout", sourceFile.file, `${qualified}.`));
 
     const moduleUiWarning = getModuleUiWarning(sourceFile.file);
     if (moduleUiWarning) warnings.push(moduleUiWarning);

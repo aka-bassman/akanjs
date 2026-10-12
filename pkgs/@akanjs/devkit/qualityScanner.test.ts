@@ -233,17 +233,27 @@ describe("AkanQualityScanner layout rules", () => {
     expect(warnings[0]?.fix).toContain("akan sync");
   });
 
-  test("keeps a root signal test out of the lib facet rule", async () => {
+  test("sends a root signal test to its module folder, and keeps one signal test per module", async () => {
     const root = await makeWorkspace({
       "libs/demo/lib/cnst.ts": "export const cnst = 1;\n",
       "libs/demo/lib/user.signal.test.ts": "export const test = 1;\n",
       "libs/demo/lib/helper.ts": "export const helper = 1;\n",
+      "libs/demo/lib/org/org.signal.test.ts": "export const test = 1;\n",
+      "libs/demo/lib/org/org.owner.signal.test.ts": "export const test = 1;\n",
+      "libs/demo/lib/org/org.service.test.ts": "export const test = 1;\n",
     });
+    const result = await new AkanQualityScanner().scan(root);
 
-    const warnings = rulesOf(await new AkanQualityScanner().scan(root), "akan.layout.lib-facet-file");
-
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]?.file).toBe("libs/demo/lib/helper.ts");
+    const facet = rulesOf(result, "akan.layout.lib-facet-file");
+    expect(facet.map((warning) => warning.file).sort()).toEqual([
+      "libs/demo/lib/helper.ts",
+      "libs/demo/lib/user.signal.test.ts",
+    ]);
+    expect(facet.find((warning) => warning.file?.endsWith("user.signal.test.ts"))?.message).toContain(
+      "lib/user/user.signal.test.ts",
+    );
+    const qualified = rulesOf(result, "akan.layout.qualified-signal-test");
+    expect(qualified.map((warning) => warning.file)).toEqual(["libs/demo/lib/org/org.owner.signal.test.ts"]);
   });
 });
 

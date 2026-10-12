@@ -9,6 +9,7 @@ import { BiDotsVertical, BiTrash } from "react-icons/bi";
 
 import { agentAttrs } from "../agentAttrs";
 import { buttonRecipe } from "../Button";
+import type { ModalPlacement, ModalPresentation } from "../Dialog/modalSurface";
 import { Dropdown } from "../Dropdown";
 import { Modal } from "../Modal";
 import Remove from "./Remove";
@@ -60,6 +61,10 @@ const SaveAction = ({ modelName, label, onAct, closeView }: ActionProps) => {
 
 interface ViewEditModalProps {
   modalClassName?: string;
+  /** Passed to the `Modal`: `auto` is a full-screen sheet below `md`. */
+  presentation?: ModalPresentation;
+  /** Passed to the `Modal`: `right` is a side sheet from `md` up. */
+  placement?: ModalPlacement;
   viewClassName?: string;
   slice: SliceMeta;
   renderTitle?: (model: any) => ReactNode | string;
@@ -72,6 +77,8 @@ interface ViewEditModalProps {
 }
 export default function ViewEditModal({
   modalClassName,
+  presentation,
+  placement,
   viewClassName,
   slice,
   renderTitle,
@@ -122,6 +129,8 @@ export default function ViewEditModal({
       open={isModalOpen}
       onCancel={closeView}
       className={modalClassName}
+      presentation={presentation}
+      placement={placement}
       title={
         <div className="flex w-full items-center justify-between">
           <Title />

@@ -14,6 +14,7 @@ import {
   barrelFacetDirs,
   facetIndexShadowOf,
   isAllowedLibFacetRootFile,
+  libFacetRootFileHintOf,
   rootAllowedDirs,
   rootAllowedFiles,
   rootEntryHintOf,
@@ -93,7 +94,7 @@ async function assertScanConvention(exec: AppExecutor | LibExecutor, libRoot: { 
 
   for (const filename of libRoot.files)
     if (!isAllowedLibFacetRootFile(filename))
-      addViolation(path.join("lib", filename), "unsupported lib facet root file");
+      addViolation(path.join("lib", filename), libFacetRootFileHintOf(filename) ?? "unsupported lib facet root file");
   for (const dirname of libRoot.dirs)
     if (dirname.startsWith("__") && !internalLibDirs.has(dirname))
       addViolation(path.join("lib", dirname), "unsupported internal lib folder");
