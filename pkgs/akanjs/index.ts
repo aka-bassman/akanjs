@@ -1,5 +1,11 @@
 import type { AkanNativeConfig } from "@akanjs/native/config";
-import type { AkanI18nConfig } from "akanjs/common";
+import type {
+  AkanI18nConfig,
+  PipelineActionName,
+  PipelineMilestone,
+  PipelineOtaPlatform,
+  PipelineTrigger,
+} from "akanjs/common";
 import type { AkanImageConfig } from "akanjs/server";
 
 export const archs = ["amd64", "arm64"] as const;
@@ -126,12 +132,18 @@ export interface AkanNativeDeepLinks {
  */
 export interface AkanNativeUpdatesConfig {
   /**
-   * A static base URL, https in a release build: `<url>/<os>-<arch>/<channel>.json` (desktop) or `<url>/<platform>/…`
-   * (a phone's web bundle).
+   * A static base URL, https in a release build, with no query: `<url>/<os>-<arch>/<channel>.json` (desktop) or
+   * `<url>/<platform>/<channel>/<nativeApi>.json` (a phone's web bundle, one envelope per binary generation).
    */
   url: string;
-  /** The update key's public half, the raw 32-byte Ed25519 key in base64 (`akan update-keygen` prints it). */
-  publicKey: string;
+  /**
+   * The keys a phone binary trusts, raw 32-byte Ed25519 public keys in base64 (`akan update-keygen` prints one), 1 to
+   * 3: the online signing key first, offline spares after it, since a key may revoke only keys listed before it. A
+   * desktop app trusts the first.
+   */
+  publicKeys?: string[];
+  /** The one-key form of `publicKeys`. */
+  publicKey?: string;
   /**
    * The manifest the app follows, e.g. a "pilot" target's "pilot". Default: the backend env the app is built for
    * (`main`, `develop`, `debug`, `local`).
@@ -269,6 +281,11 @@ export interface AkanNativeSettings {
   plugins?: string[];
   deepLinks?: AkanNativeDeepLinks;
   updates?: Partial<AkanNativeUpdatesConfig>;
+  /**
+   * The web inspector (Safari's, `chrome://inspect`) in a release build too, as a debug build always has it: for an
+   * internal test target only, since anyone holding the device can then read and drive the page.
+   */
+  devtools?: boolean;
   ios?: AkanNativeIosConfig;
   android?: AkanNativeAndroidConfig;
   desktop?: AkanNativeDesktopConfig;
@@ -431,12 +448,180 @@ export interface LibConfigContext {
   readonly type: "lib";
 }
 
+export type PipelineDuration = number | `${number}s` | `${number}m` | `${number}h`;
+
+/** In the `PipelinePattern` dialect of `akanjs/common`; a leading `!` excludes. */
+export type PipelineGlob = string | readonly string[];
+
+/** Every key given must hold. `branch` and `trigger` are decided by the planner, `changed` by the executor. */
+export interface PipelineWhen {
+  branch?: PipelineGlob;
+  trigger?: PipelineTrigger | readonly PipelineTrigger[];
+  /** Paths changed since the branch's newest successful build; an unknown baseline counts as changed. */
+  changed?: PipelineGlob;
+}
+
+export interface PipelineStepInput {
+  sh: string;
+  id?: string;
+  name?: string;
+  /** Relative to the workspace root, never above it. */
+  cwd?: string;
+  env?: Record<string, string>;
+  secrets?: readonly string[];
+  timeout?: PipelineDuration;
+  /** Total attempts. */
+  retry?: number | { attempts: number; delay?: PipelineDuration };
+  allowFailure?: boolean;
+  skipExitCodes?: readonly number[];
+}
+
+export type PipelineStepLike = string | PipelineStepInput;
+
+/** `timeout` and `allowFailure` cover the whole stage, every parallel branch and per-app copy included. */
+export interface PipelineStageBase {
+  id?: string;
+  description?: string;
+  milestone?: PipelineMilestone;
+  when?: PipelineWhen;
+  timeout?: PipelineDuration;
+  allowFailure?: boolean;
+}
+
+export interface PipelineShellStageInput extends PipelineStageBase {
+  name: string;
+  /** Exactly one of `sh` and `steps`. */
+  sh?: string;
+  steps?: readonly PipelineStepLike[];
+  env?: Record<string, string>;
+  secrets?: readonly string[];
+  /** For each step that names no `retry` of its own. */
+  retry?: PipelineStepInput["retry"];
+  use?: never;
+  parallel?: never;
+  matrix?: never;
+}
+
+/** No action parameters yet: rollout wait and prepull stay the executor's settings. */
+export interface PipelineActionStageInput extends PipelineStageBase {
+  use: Exclude<PipelineActionName, "ota">;
+  name?: string;
+  retry?: number;
+  targets?: never;
+  platforms?: never;
+  sh?: never;
+  steps?: never;
+  parallel?: never;
+  matrix?: never;
+}
+
+/**
+ * An over-the-air update of the app's native web bundle, packed per target and platform for the executor to sign and
+ * publish. Every target named must declare `native.updates`.
+ */
+export interface PipelineOtaStageInput extends PipelineStageBase {
+  use: "ota";
+  name?: string;
+  retry?: number;
+  /** Default: every native target that declares `native.updates`. */
+  targets?: readonly string[];
+  /** Default: both. */
+  platforms?: readonly PipelineOtaPlatform[];
+  sh?: never;
+  steps?: never;
+  parallel?: never;
+  matrix?: never;
+}
+
+export type AppPipelineStageInput = PipelineActionStageInput | PipelineOtaStageInput | PipelineShellStageInput;
+
+export interface AppPipelineInput {
+  schemaVersion?: 1;
+  /** This app's stages in order, the actions it takes included. */
+  stages: readonly AppPipelineStageInput[];
+  env?: Record<string, string>;
+  /** Apps whose turn comes before this one's where apps run one at a time (deploy). Apps not in the run are ignored. */
+  after?: readonly string[];
+}
+
+export interface PipelineContext {
+  readonly branch: string;
+  readonly env: string;
+  /** Apps this run builds. */
+  readonly apps: readonly string[];
+  /** Every app in this checkout: a subspace sees its slice only. */
+  readonly workspaceApps: readonly string[];
+  readonly trigger: PipelineTrigger;
+  readonly buildNum: number;
+  readonly commit: string | null;
+}
+
+export interface AppPipelineContext extends PipelineContext {
+  readonly app: string;
+}
+
+/** Read by `akan pipeline` alone: the app config loader drops it, so it never reaches `akan.app.json`. */
+export type AppPipelineConfig = AppPipelineInput | ((ctx: AppPipelineContext) => AppPipelineInput);
+
+/** What an app without a `pipeline` runs. */
+export const defaultAppPipeline = {
+  stages: [{ use: "build" }, { use: "docker" }, { use: "deploy" }],
+} as const satisfies AppPipelineInput;
+
+/** One copy per app of the run, each with AKAN_CI_APP; `when.app` narrows the apps. */
+export interface PipelineMatrixStageInput extends Omit<PipelineShellStageInput, "matrix" | "when"> {
+  matrix: "apps";
+  maxParallel?: number;
+  when?: PipelineWhen & { app?: PipelineGlob };
+}
+
+export interface PipelineParallelStageInput extends PipelineStageBase {
+  name: string;
+  parallel: readonly PipelineShellStageInput[];
+  maxParallel?: number;
+  /** Cancel the other branches when one fails. */
+  failFast?: boolean;
+  env?: Record<string, string>;
+  secrets?: readonly string[];
+  use?: never;
+  sh?: never;
+  steps?: never;
+  matrix?: never;
+}
+
+export type WorkspacePipelineStageInput =
+  | PipelineShellStageInput
+  | PipelineMatrixStageInput
+  | PipelineParallelStageInput;
+
+export interface PipelinePostInput {
+  success?: readonly PipelineStepLike[];
+  failure?: readonly PipelineStepLike[];
+  canceled?: readonly PipelineStepLike[];
+  always?: readonly PipelineStepLike[];
+}
+
+export interface WorkspacePipelineInput {
+  schemaVersion?: 1;
+  /** For every step of the run, app stages included. */
+  env?: Record<string, string>;
+  timeout?: PipelineDuration;
+  /** Before any app stage. */
+  before?: readonly WorkspacePipelineStageInput[];
+  /** After every app's last stage. */
+  after?: readonly WorkspacePipelineStageInput[];
+  post?: PipelinePostInput;
+}
+
+export type WorkspacePipelineConfig = WorkspacePipelineInput | ((ctx: PipelineContext) => WorkspacePipelineInput);
+
 export type AppConfigInput = Omit<DeepPartial<AppConfigResult>, "docker" | "web" | "bin" | "native"> & {
   docker?: DockerOption;
   web?: AkanWebOption;
   bin?: AkanBinConfig;
   native?: AkanNativeAppConfig;
   plugins?: AkanPlugin[];
+  pipeline?: AppPipelineConfig;
 };
 export type LibConfigInput = Omit<DeepPartial<LibConfigResult>, "bin"> & {
   bin?: AkanBinConfig;
@@ -448,17 +633,30 @@ export interface SubspaceDeclaration {
   repo: string;
   /** Apps this subspace serves. Libraries are never listed — they are derived from each app's closure. */
   apps: string[];
-  /** The subspace's own `AKAN_WORKSPACE_ID`, not this workspace's; only `akan subspace upload-env` reads it. */
+  /** The subspace's own `AKAN_WORKSPACE_ID`, not this workspace's: `akan subspace upload-env` and `--subspace` read it. */
   workspaceId?: string;
 }
 
-/** `akan.subspace.ts`: the repos this workspace mirrors to, on whichever branch the workspace is on. */
+/** The repos this workspace mirrors to, on whichever branch the workspace is on. */
 export interface SubspaceConfigInput {
   /** A feature branch is refused: pushing it would copy this workspace's branch namespace into every customer repo. */
   pushableBranches?: string[];
   /** Workspace-root names or `dir/` prefixes kept out of every subspace, on top of the ones that always are. */
   exclude?: string[];
   subspaces: SubspaceDeclaration[];
+}
+
+/** The workspace root's `akan.config.ts`. It never reaches a subspace, and app or lib settings are refused in it. */
+/** The cloud a workspace's CLI talks to when a command names no `--host`: a self-hosted akasys, say. */
+export interface WorkspaceCloudConfig {
+  /** The cloud's origin, e.g. `https://cloud.example.com`. Default: Akan Cloud. */
+  host?: string;
+}
+
+export interface WorkspaceConfig {
+  subspace?: SubspaceConfigInput;
+  pipeline?: WorkspacePipelineConfig;
+  cloud?: WorkspaceCloudConfig;
 }
 
 export type AppConfig = AppConfigInput | ((app: AppConfigContext) => AppConfigInput);

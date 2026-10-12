@@ -1,7 +1,9 @@
+import { GlobalConfig } from "@akanjs/devkit/cloud";
 import { script, type Workspace } from "@akanjs/devkit/commandDecorators";
 import {
   formatSubspaceDiff,
   formatSubspaceEnvUpload,
+  formatSubspacePlan,
   formatSubspacePullResult,
   formatSubspacePushResults,
   formatSubspaceStatuses,
@@ -35,6 +37,13 @@ export class SubspaceScript extends script("subspace", [SubspaceRunner]) {
     if (results.some((result) => result.outcome === "refused")) process.exitCode = 1;
   }
 
+  async plan(workspace: Workspace, name: string, format: "text" | "json" = "text") {
+    const spinner = workspace.spinning(`Planning ${name}...`);
+    const plan = await this.subspaceRunner.plan(workspace, name);
+    spinner.succeed(`${plan.apps.length} app(s), ${plan.libs.length} librar(ies), ${plan.files} file(s)`);
+    Logger.rawLog(format === "json" ? JSON.stringify(plan, null, 2) : formatSubspacePlan(plan));
+  }
+
   async diff(workspace: Workspace, name: string, filter: string | null, format: "text" | "json" = "text") {
     const spinner = workspace.spinning(`Diffing ${name}...`);
     const result = await this.subspaceRunner.diff(workspace, name, filter);
@@ -47,9 +56,12 @@ export class SubspaceScript extends script("subspace", [SubspaceRunner]) {
   async uploadEnv(
     workspace: Workspace,
     name: string,
-    { host, force, format }: { host: string; force?: boolean; format?: "text" | "json" },
+    { host, force, format }: { host: string | null; force?: boolean; format?: "text" | "json" },
   ) {
-    const result = await this.subspaceRunner.uploadEnv(workspace, name, { host, force });
+    const result = await this.subspaceRunner.uploadEnv(workspace, name, {
+      host: await GlobalConfig.hostFor(workspace, host),
+      force,
+    });
     Logger.rawLog(format === "json" ? JSON.stringify(result, null, 2) : formatSubspaceEnvUpload(result));
   }
 

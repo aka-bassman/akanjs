@@ -280,9 +280,9 @@ export class AkanAppConfig implements AppConfigResult {
         if (basePath && !this.basePaths.has(basePath))
           throw new Error(`Native target '${name}' uses unknown basePath '${basePath}' in ${configPath}`);
         const { updates } = merged;
-        if (updates && (!updates.url || !updates.publicKey))
+        if (updates && (!updates.url || !(updates.publicKey || updates.publicKeys?.length)))
           throw new Error(
-            `${where}.updates in ${configPath} has no url or publicKey${named ? "; give them in native.updates or the target's own" : ""}.`,
+            `${where}.updates in ${configPath} has no url or publicKeys${named ? "; give them in native.updates or the target's own" : ""}.`,
           );
         AkanAppConfig.#assertFiles(own ?? {}, where, configPath);
         const {
@@ -385,6 +385,7 @@ export class AkanAppConfig implements AppConfigResult {
       "plugins",
       "deepLinks",
       "updates",
+      "devtools",
       "ios",
       "android",
       "desktop",
@@ -586,7 +587,19 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
       app.workspace.getPackageJson(),
     ]);
     const resolved = typeof configImp === "function" ? configImp(app) : configImp;
-    const { plugins, ...config } = (resolved ?? {}) as AppConfigDeclaration & { plugins?: AkanPlugin[] };
+    //* `pipeline` is read by `akan pipeline` alone, from the module itself: off the instance, it never reaches akan.app.json.
+    const {
+      plugins,
+      pipeline: _pipeline,
+      ...config
+    } = (resolved ?? {}) as AppConfigDeclaration & {
+      plugins?: AkanPlugin[];
+      pipeline?: unknown;
+    };
+    if ("subspace" in config)
+      throw new Error(
+        `apps/${app.name}/akan.config.ts declares \`subspace\`, a workspace setting: it belongs in the workspace root akan.config.ts.`,
+      );
     const libContributions = await AkanAppConfig.#collectLibContributions(app, libs, bustImportCache);
     return new AkanAppConfig(app, libs, rootPackageJson, config, baseDevEnv, plugins ?? [], libContributions);
   }
@@ -664,6 +677,9 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
       .map((lib) => `${lib}@${this.#resolveProductionDependencyVersion(lib)}`);
   }
   get akanVersion() {
+    return AkanAppConfig.akanVersion;
+  }
+  static get akanVersion() {
     return getAkanPackageJson().version;
   }
   getProductionPackageJson(data: Partial<PackageJson> = {}): PackageJson {
@@ -752,6 +768,14 @@ export class AkanLibConfig implements LibConfigResult {
     const configImp = await AkanAppConfig.importConfigModule(lib.cwdPath, { bustImportCache });
     const resolved = typeof configImp === "function" ? configImp(lib) : configImp;
     const { plugins, ...config } = (resolved ?? {}) as LibConfigDeclaration & { plugins?: AkanPlugin[] };
+    if ("pipeline" in config)
+      throw new Error(
+        `libs/${lib.name}/akan.config.ts declares \`pipeline\`, which a lib does not take: pipelines belong to apps and the workspace root, and a lib's build-time work goes in an akan build plugin.`,
+      );
+    if ("subspace" in config)
+      throw new Error(
+        `libs/${lib.name}/akan.config.ts declares \`subspace\`, a workspace setting: it belongs in the workspace root akan.config.ts.`,
+      );
     return new AkanLibConfig(lib, config, plugins ?? []);
   }
 }

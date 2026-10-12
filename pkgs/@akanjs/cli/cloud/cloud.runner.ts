@@ -1,17 +1,24 @@
+import { rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import {
+  type AppBinaryDistribution,
   CloudApi,
   GlobalConfig,
   getDefaultHostConfig,
+  type PipelineSecretListing,
   type RemoteEnvServerConfig,
+  UpdatePackUpload,
   type WindowsTestTargetConfig,
 } from "@akanjs/devkit/cloud";
-import { runner, type Workspace } from "@akanjs/devkit/commandDecorators";
+import { type App, runner, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
+import { NativeApp, type NativeUpdatePack, resolveMobileTargets } from "@akanjs/devkit/mobile";
 import { PlatformTestRun } from "@akanjs/devkit/platformTest/PlatformTestRun";
 import type { RemoteTestPlatform } from "@akanjs/devkit/platformTest/PlatformTestTarget";
-import { confirm, input, select } from "@inquirer/prompts";
-import { Logger, sleep } from "akanjs/common";
+import { SubspaceConfig } from "@akanjs/devkit/subspaceConfig";
+import { confirm, input, password, select } from "@inquirer/prompts";
+import { Logger, PipelineNames, sleep } from "akanjs/common";
 import chalk from "chalk";
 import * as QRcode from "qrcode";
 import { getLatestPackageVersion, getNpmRegistryUrl } from "../npmRegistry";
@@ -403,7 +410,9 @@ export class CloudRunner extends runner("cloud") {
 
   async downloadEnv(cloudApi: CloudApi, workspace: Workspace, workspaceId: string) {
     await workspace.mkdir("local");
-    const localPath = (await cloudApi.downloadEnv(workspaceId)) as string;
+    const localPath = (await cloudApi.downloadEnv(workspaceId).catch((error: unknown) => {
+      throw CloudRunner.#refusal(error, "downloading its env archive takes the project owner's own `akan login`");
+    })) as string;
     // Relative, so GNU tar never reads a Windows drive letter (`C:\…`) as a remote `host:file` spec.
     const relativePath = path.relative(workspace.workspaceRoot, localPath).split(path.sep).join("/");
     await workspace.spawn("tar", ["-xf", relativePath], { cwd: workspace.workspaceRoot });
@@ -411,7 +420,9 @@ export class CloudRunner extends runner("cloud") {
   }
   async uploadEnv(cloudApi: CloudApi, workspaceId: string, filePath: string) {
     const file = new File([Bun.file(filePath)], path.basename(filePath));
-    await cloudApi.uploadEnv(workspaceId, file);
+    await cloudApi.uploadEnv(workspaceId, file).catch((error: unknown) => {
+      throw CloudRunner.#refusal(error, "an env archive is uploaded by a project member signed in with `akan login`");
+    });
   }
   async downloadEnvByScp(workspace: Workspace) {
     const envArchivePath = "local/env.tar";
@@ -507,6 +518,228 @@ export class CloudRunner extends runner("cloud") {
       }),
     );
     return secretPaths.flat();
+  }
+
+  /** A secret's project: the workspace's own, or a subspace's, each its own project with its own secrets. */
+  async secretProject(workspace: Workspace, subspace: string | null) {
+    if (!subspace) {
+      const workspaceId = workspace.getWorkspaceId({ allowEmpty: true });
+      if (!workspaceId)
+        throw new Error("AKAN_WORKSPACE_ID is not set in the workspace .env, so there is no project to address.");
+      return workspaceId;
+    }
+    const config = await SubspaceConfig.from(workspace);
+    if (!config) throw new Error("The workspace root akan.config.ts declares no `subspace`.");
+    const [declaration] = config.select([subspace]);
+    if (!declaration?.workspaceId)
+      throw new Error(`Subspace "${subspace}" declares no workspaceId in ${SubspaceConfig.source}.`);
+    return declaration.workspaceId;
+  }
+
+  //* Never an argument: a value on the command line lands in shell history and in any `ps` listing.
+  async readSecretValue(name: string, file: string | null) {
+    const raw = file
+      ? await Bun.file(file).text()
+      : process.stdin.isTTY
+        ? await password({ message: `Value of ${name} (hidden; it can never be read back)`, mask: "*" })
+        : await Bun.stdin.text();
+    const value = raw.replace(/\r?\n$/, "");
+    if (!value) throw new Error(`The value of ${name} is empty.`);
+    const bytes = new TextEncoder().encode(value).length;
+    if (bytes > CloudRunner.#secretBytes)
+      throw new Error(`The value of ${name} is ${bytes} bytes, over ${CloudRunner.#secretBytes}.`);
+    return value;
+  }
+
+  async uploadSecret(
+    cloudApi: CloudApi,
+    devProjectId: string,
+    { name, branch, value }: { name: string; branch: string | null; value: string },
+  ) {
+    CloudRunner.#assertSecretName(name);
+    CloudRunner.#assertSecretBranch(branch);
+    const saved = await cloudApi
+      .uploadSecret(devProjectId, { scope: branch ?? "*", name, value })
+      .catch((error: unknown) => {
+        throw CloudRunner.#refusal(error, "a secret is written by a project member signed in with `akan login`", {
+          unavailable: CloudRunner.#secretsUnavailable,
+        });
+      });
+    Logger.rawLog(
+      `Saved ${saved.name} for ${saved.scope === "*" ? "every branch" : `branch ${saved.scope}`}. Builds that start from now on use it.`,
+    );
+  }
+
+  async listSecrets(cloudApi: CloudApi, devProjectId: string, branch: string | null) {
+    CloudRunner.#assertSecretBranch(branch);
+    const listed = await cloudApi.listSecrets(devProjectId).catch((error: unknown) => {
+      throw CloudRunner.#refusal(error, "the secrets are listed for a project member", {
+        unavailable: CloudRunner.#secretsUnavailable,
+      });
+    });
+    const secrets = listed.filter((secret) => !branch || secret.scope === "*" || secret.scope === branch);
+    Logger.rawLog(CloudRunner.formatSecrets(secrets));
+  }
+
+  async removeSecret(
+    cloudApi: CloudApi,
+    devProjectId: string,
+    { name, branch }: { name: string; branch: string | null },
+  ) {
+    CloudRunner.#assertSecretName(name);
+    CloudRunner.#assertSecretBranch(branch);
+    const removed = await cloudApi
+      .removeSecret(devProjectId, { scope: branch ?? "*", name })
+      .catch((error: unknown) => {
+        throw CloudRunner.#refusal(error, "a secret is removed by a project member signed in with `akan login`", {
+          unavailable: CloudRunner.#secretsUnavailable,
+        });
+      });
+    Logger.rawLog(
+      removed
+        ? `Removed ${name} for ${branch ? `branch ${branch}` : "every branch"}.`
+        : `No ${name} for ${branch ? `branch ${branch}` : "every branch"} to remove.`,
+    );
+  }
+
+  /** The pack folder as the tgz akasys takes: `files/`, the manifest template, bundle.json and pack.json. */
+  static async #tarPack(pack: NativeUpdatePack) {
+    const archive = path.join(os.tmpdir(), `akan-pack-${pack.app}-${pack.target}-${pack.platform}-${process.pid}.tgz`);
+    const tar = Bun.spawn(["tar", "-czf", archive, "-C", pack.out, "."], { stdout: "ignore", stderr: "pipe" });
+    if ((await tar.exited) !== 0)
+      throw new Error(`tar of ${pack.out} failed: ${(await new Response(tar.stderr).text()).trim()}`);
+    return archive;
+  }
+
+  async pushUpdate(
+    cloudApi: CloudApi,
+    devProjectId: string,
+    pack: NativeUpdatePack,
+    { channel, notes }: { channel: string | null; notes: string | null },
+  ) {
+    const archive = await CloudRunner.#tarPack(pack);
+    const target = channel ?? pack.channel;
+    try {
+      const release = await new UpdatePackUpload(cloudApi, devProjectId)
+        .send(archive, { appName: pack.app, target: pack.target, platform: pack.platform, channel: target, notes })
+        .catch((error: unknown) => {
+          throw CloudRunner.#refusal(error, "a pack is uploaded by a project member signed in with `akan login`");
+        });
+      const label = `${pack.app} ${pack.target} ${pack.platform} on channel ${target}: release ${release.id}`;
+      if (release.status === "rejected") {
+        process.exitCode = 2;
+        Logger.error(
+          `The project rejected ${label}:\n${(release.problems ?? []).map((problem) => `  - ${problem}`).join("\n")}`,
+        );
+      } else if (release.status === "published")
+        Logger.rawLog(`Published ${label} (${pack.files} files, native API ${pack.nativeApi}).`);
+      else
+        Logger.rawLog(
+          `Staged ${label} (${pack.files} files, native API ${pack.nativeApi}). Publish it from the project's release screen.`,
+        );
+      return release;
+    } finally {
+      await rm(archive, { force: true });
+    }
+  }
+
+  //? The store build first, then a pack of the same commit: a server that registers the binary checks the pack runs in it.
+  async registerBinary(
+    cloudApi: CloudApi,
+    devProjectId: string,
+    app: App,
+    pack: NativeUpdatePack,
+    { distribution, env }: { distribution: AppBinaryDistribution; env: string },
+  ) {
+    const [mobileTarget] = await resolveMobileTargets(app, pack.target);
+    if (!mobileTarget) throw new Error(`Native target '${pack.target}' was not found.`);
+    const bundlePath = path.join(new NativeApp(app, mobileTarget).outDir(pack.platform), "bundle.json");
+    const bundleFile = Bun.file(bundlePath);
+    if (!(await bundleFile.exists()))
+      throw new Error(
+        `No store build at ${bundlePath}: run \`akan release-${pack.platform} ${app.name} --target ${pack.target} --env ${env}\` first.`,
+      );
+    const bundle = (await bundleFile.json()) as { nativeApi?: { hash?: string }; updates?: { channel?: string } };
+    if (!bundle.updates)
+      throw new Error(`The store build at ${bundlePath} takes no updates: give the target native.updates.`);
+    if (bundle.nativeApi?.hash !== pack.nativeApi)
+      throw new Error(
+        `The store build at ${bundlePath} provides native API ${bundle.nativeApi?.hash}, and this commit's pack needs ${pack.nativeApi}: build the store binary from this commit.`,
+      );
+    const archive = await CloudRunner.#tarPack(pack);
+    try {
+      const binary = await cloudApi
+        .registerAppBinary(devProjectId, {
+          appName: pack.app,
+          target: pack.target,
+          distribution,
+          bundle: bundleFile,
+          pack: Bun.file(archive),
+          ...(bundle.updates.channel ? { channel: bundle.updates.channel } : {}),
+        })
+        .catch((error: unknown) => {
+          throw CloudRunner.#refusal(error, "a binary is registered by a project member signed in with `akan login`");
+        });
+      Logger.rawLog(
+        `Registered ${pack.app} ${pack.target} ${pack.platform} (${distribution}): binary ${binary.id}, native API ${pack.nativeApi}.`,
+      );
+      return binary;
+    } finally {
+      await rm(archive, { force: true });
+    }
+  }
+
+  static formatSecrets(secrets: PipelineSecretListing[]) {
+    if (!secrets.length) return "No pipeline secrets.";
+    const rows = [...secrets]
+      .sort((a, b) => a.name.localeCompare(b.name) || a.scope.localeCompare(b.scope))
+      .map((secret) => [
+        secret.name,
+        secret.scope === "*" ? "every branch" : secret.scope,
+        secret.updatedAt,
+        secret.updatedBy,
+      ]);
+    const header = ["NAME", "SCOPE", "UPDATED", "BY"];
+    const widths = header.map((title, column) =>
+      Math.max(title.length, ...rows.map((row) => row[column]?.length ?? 0)),
+    );
+    return [header, ...rows]
+      .map((row) =>
+        row
+          .map((cell, column) => cell.padEnd(widths[column] ?? 0))
+          .join("  ")
+          .trimEnd(),
+      )
+      .join("\n");
+  }
+
+  static readonly #secretBytes = 64 * 1024;
+  //? The branches akasys deploys (its BranchType): a secret scoped to any other is refused by the server.
+  static readonly #secretBranches = ["debug", "develop", "main"];
+  static readonly #secretsUnavailable = "The server is not configured for pipeline secrets yet.";
+
+  static #assertSecretName(name: string) {
+    const problem = PipelineNames.secretNameError(name);
+    if (problem) throw new Error(problem);
+  }
+
+  static #assertSecretBranch(branch: string | null) {
+    if (branch !== null && !CloudRunner.#secretBranches.includes(branch))
+      throw new Error(`--branch ${branch} is not a deployed branch: ${CloudRunner.#secretBranches.join(", ")}.`);
+  }
+
+  // The project's guards answer by status: 401 no sign-in it accepts, 403 not allowed, 400 a refused request.
+  static #refusal(error: unknown, who: string, { unavailable }: { unavailable?: string } = {}) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status = CloudApi.statusOf(error);
+    if (status === 401) return new Error("The server did not accept your sign-in: run `akan login`, then try again.");
+    if (status === 403) return new Error(`The project refused: ${who}.`);
+    if (status === 400) {
+      const key = /"error"\s*:\s*"([^"]+)"/.exec(message)?.[1];
+      return new Error(`The project refused the request${key ? `: ${key}` : ""}.`);
+    }
+    if (status === 503 && unavailable) return new Error(unavailable);
+    return error;
   }
 
   async #syncSecretGitignore(workspace: Workspace, appNames: string[]) {

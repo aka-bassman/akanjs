@@ -488,3 +488,232 @@ describe("CloudRunner", () => {
     );
   });
 });
+
+describe("pipeline secrets", () => {
+  const fakeApi = () => {
+    const recorder = createCallRecorder();
+    const api = {
+      uploadSecret: async (devProjectId: string, secret: { scope: string; name: string; value: string }) => {
+        recorder.record("uploadSecret", devProjectId, secret);
+        return { name: secret.name, scope: secret.scope, updatedAt: "2026-10-10T00:00:00.000Z" };
+      },
+      listSecrets: async () => [
+        { name: "NPM_TOKEN", scope: "*", updatedAt: "2026-10-09", updatedBy: "kim" },
+        { name: "DISCORD_WEBHOOK", scope: "main", updatedAt: "2026-10-10", updatedBy: "lee" },
+        { name: "DISCORD_WEBHOOK", scope: "develop", updatedAt: "2026-10-10", updatedBy: "lee" },
+      ],
+      removeSecret: async (devProjectId: string, secret: { scope: string; name: string }) => {
+        recorder.record("removeSecret", devProjectId, secret);
+        return true;
+      },
+    };
+    return { api: api as unknown as CloudApi, recorder };
+  };
+
+  test("no command takes the value as an argument or option", () => {
+    for (const key of ["uploadSecret", "listSecrets", "removeSecret"]) {
+      const [args, options] = getArgMetas(CloudCommand, key);
+      const names = [...args, ...options].map((meta) => ("name" in meta ? meta.name : ""));
+      expect(names).not.toContain("value");
+    }
+  });
+
+  test("uploads to the branch scope or every branch, and refuses a reserved or malformed name first", async () => {
+    const { api, recorder } = fakeApi();
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    await new CloudRunner().uploadSecret(api, "project-1", { name: "NPM_TOKEN", branch: null, value: "t" });
+    await new CloudRunner().uploadSecret(api, "project-1", { name: "NPM_TOKEN", branch: "main", value: "t" });
+    await expect(
+      new CloudRunner().uploadSecret(api, "project-1", { name: "AKAN_CI_BRANCH", branch: null, value: "t" }),
+    ).rejects.toThrow("reserved for the executor");
+    await expect(new CloudRunner().removeSecret(api, "project-1", { name: "lower", branch: null })).rejects.toThrow(
+      "not a secret name",
+    );
+    log.mockRestore();
+    expect(recorder.calls).toEqual([
+      { name: "uploadSecret", args: ["project-1", { scope: "*", name: "NPM_TOKEN", value: "t" }] },
+      { name: "uploadSecret", args: ["project-1", { scope: "main", name: "NPM_TOKEN", value: "t" }] },
+    ]);
+  });
+
+  test("lists names and scopes only, a branch narrowing to its own and the every-branch ones", () => {
+    const rows = CloudRunner.formatSecrets([
+      { name: "NPM_TOKEN", scope: "*", updatedAt: "2026-10-09", updatedBy: "kim" },
+      { name: "DISCORD_WEBHOOK", scope: "main", updatedAt: "2026-10-10", updatedBy: "lee" },
+    ]).split("\n");
+    expect(rows).toEqual([
+      "NAME             SCOPE         UPDATED     BY",
+      "DISCORD_WEBHOOK  main          2026-10-10  lee",
+      "NPM_TOKEN        every branch  2026-10-09  kim",
+    ]);
+    expect(CloudRunner.formatSecrets([])).toBe("No pipeline secrets.");
+  });
+
+  test("a file value loses one trailing newline, and an empty or oversized value is refused", async () => {
+    const root = await makeTempRoot();
+    const file = path.join(root, "token.txt");
+    await writeText(file, "line one\nline two\n");
+    expect(await new CloudRunner().readSecretValue("TOKEN", file)).toBe("line one\nline two");
+    await writeText(file, "\n");
+    await expect(new CloudRunner().readSecretValue("TOKEN", file)).rejects.toThrow("is empty");
+    await writeText(file, "x".repeat(64 * 1024 + 1));
+    await expect(new CloudRunner().readSecretValue("TOKEN", file)).rejects.toThrow("over 65536");
+  });
+
+  test("a subspace's secrets go to the project its workspaceId names", async () => {
+    const root = await makeTempRoot();
+    await writeText(
+      path.join(root, "akan.config.ts"),
+      'export default { subspace: { subspaces: [{ name: "acme", repo: "a.git", apps: ["web"], workspaceId: "acme-project" }, { name: "bare", repo: "b.git", apps: ["api"] }] } };\n',
+    );
+    const { WorkspaceExecutor } = await import("@akanjs/devkit/executors");
+    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+    expect(await new CloudRunner().secretProject(workspace as never, "acme")).toBe("acme-project");
+    await expect(new CloudRunner().secretProject(workspace as never, "bare")).rejects.toThrow(
+      "declares no workspaceId",
+    );
+  });
+
+  test("each refusal status reads as what to do about it", async () => {
+    const failing = (message: string) =>
+      ({
+        uploadSecret: async () => {
+          throw new Error(message);
+        },
+      }) as unknown as CloudApi;
+    const upload = (api: CloudApi) =>
+      new CloudRunner().uploadSecret(api, "project-1", { name: "NPM_TOKEN", branch: null, value: "t" });
+    await expect(upload(failing("401 Unauthorized from /uploadSecret/project-1: no token"))).rejects.toThrow(
+      "run `akan login`",
+    );
+    await expect(
+      upload(
+        failing(
+          '400 Bad Request from /uploadSecret/project-1: {"error":"pipelineSecret.error.tooMany","statusCode":400}',
+        ),
+      ),
+    ).rejects.toThrow("The project refused the request: pipelineSecret.error.tooMany.");
+    await expect(upload(failing("503 Service Unavailable from /uploadSecret/project-1: {}"))).rejects.toThrow(
+      "The server is not configured for pipeline secrets yet.",
+    );
+    await expect(upload(failing("socket hang up"))).rejects.toThrow("socket hang up");
+  });
+
+  test("a secret's branch is one the server deploys", async () => {
+    const { api } = fakeApi();
+    await expect(
+      new CloudRunner().uploadSecret(api, "project-1", { name: "NPM_TOKEN", branch: "feature-x", value: "t" }),
+    ).rejects.toThrow("--branch feature-x is not a deployed branch: debug, develop, main.");
+    await expect(new CloudRunner().listSecrets(api, "project-1", "release")).rejects.toThrow("not a deployed branch");
+  });
+
+  test("a 403 from the project's guard says who may make the call", async () => {
+    const api = {
+      uploadSecret: async () => {
+        throw new Error("403 Forbidden from /uploadSecret/project-1: denied");
+      },
+    } as unknown as CloudApi;
+    await expect(
+      new CloudRunner().uploadSecret(api, "project-1", { name: "NPM_TOKEN", branch: null, value: "t" }),
+    ).rejects.toThrow("The project refused: a secret is written by a project member signed in with `akan login`.");
+  });
+});
+
+describe("OTA uploads", () => {
+  test("push-update sends the pack folder as one tgz with the target's channel, and leaves no archive behind", async () => {
+    const os = await import("node:os");
+    const { mkdtempSync, writeFileSync, mkdirSync } = await import("node:fs");
+    const out = mkdtempSync(path.join(os.tmpdir(), "akan-pack-test-"));
+    mkdirSync(path.join(out, "files"));
+    writeFileSync(path.join(out, "files", "a".repeat(64)), "<html></html>");
+    for (const name of ["manifest.template.json", "bundle.json", "pack.json"])
+      writeFileSync(path.join(out, name), "{}");
+    const pack = {
+      schema: 1 as const,
+      app: "lu",
+      target: "default",
+      platform: "android" as const,
+      env: "main" as const,
+      channel: "main",
+      appId: "com.lu",
+      appVersion: "1.0.0",
+      nativeApi: "0123456789abcdef",
+      webHash: "f".repeat(64),
+      files: 1,
+      size: 13,
+      out,
+    };
+    const stored: Uint8Array[] = [];
+    const storage = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: async (request) => {
+        stored.push(new Uint8Array(await request.arrayBuffer()));
+        return new Response(null);
+      },
+    });
+    const announced: Record<string, unknown>[] = [];
+    const apiAnswering = (release: Record<string, unknown>) =>
+      ({
+        requestUpdateUpload: async (devProjectId: string, upload: Record<string, unknown>) => {
+          announced.push({ devProjectId, ...upload });
+          return {
+            uploadId: "upload-1",
+            uploadUrl: `http://127.0.0.1:${storage.port}/upload-1`,
+            expiresAt: new Date(Date.now() + 900_000).toISOString(),
+            contentType: "application/gzip",
+          };
+        },
+        commitUpdateUpload: async () => release,
+      }) as unknown as CloudApi;
+
+    try {
+      const published = { id: "release-1", status: "published", problems: [] };
+      const release = await new CloudRunner().pushUpdate(apiAnswering(published), "project-1", pack, {
+        channel: null,
+        notes: "fix",
+      });
+
+      expect(release).toEqual(published);
+      expect(announced[0]).toMatchObject({
+        devProjectId: "project-1",
+        appName: "lu",
+        target: "default",
+        platform: "android",
+        channel: "main",
+        notes: "fix",
+      });
+      const copy = path.join(out, "..", `${path.basename(out)}-sent.tgz`);
+      await Bun.write(copy, stored[0] ?? new Uint8Array());
+      const entries = Bun.spawnSync(["tar", "-tzf", copy]).stdout.toString().split("\n").filter(Boolean);
+      expect(entries).toEqual(
+        expect.arrayContaining([
+          "./bundle.json",
+          "./manifest.template.json",
+          "./pack.json",
+          `./files/${"a".repeat(64)}`,
+        ]),
+      );
+      expect(announced[0]?.size).toBe(stored[0]?.byteLength);
+      expect(existsSync(path.join(os.tmpdir(), `akan-pack-lu-default-android-${process.pid}.tgz`))).toBe(false);
+
+      const exitCode = process.exitCode;
+      const rejected = { id: "release-2", status: "rejected", problems: ["deepLinks differ from the app's"] };
+      await new CloudRunner().pushUpdate(apiAnswering(rejected), "project-1", pack, { channel: "pilot", notes: null });
+      expect(process.exitCode).toBe(2);
+      process.exitCode = exitCode;
+      expect(announced[1]).toMatchObject({ channel: "pilot", notes: null });
+
+      const refused = {
+        requestUpdateUpload: async () => {
+          throw new Error("401 Unauthorized from /requestUpdateUpload/project-1: {}");
+        },
+      } as unknown as CloudApi;
+      await expect(
+        new CloudRunner().pushUpdate(refused, "project-1", pack, { channel: "pilot", notes: null }),
+      ).rejects.toThrow("run `akan login`");
+    } finally {
+      storage.stop(true);
+    }
+  });
+});
