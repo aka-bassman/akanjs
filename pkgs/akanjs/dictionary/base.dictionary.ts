@@ -57,6 +57,10 @@ export const baseDictionary = serviceDictionary(["en", "ko"])
       "The same request is still being handled. Please try again in a moment.",
       "같은 요청을 아직 처리하고 있습니다. 잠시 후 다시 시도해주세요.",
     ],
+    endpointClosed: [
+      "{endpoint} is closed: the slice's guards name none that allows it.",
+      "{endpoint}이(가) 닫혀 있습니다. 슬라이스 guards에 이 동작을 허용하는 guard를 지정해야 합니다.",
+    ],
   })
   .translate({
     somethingWrong: ["Something's wrong!", "문제가 생겼어요!"],
