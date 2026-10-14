@@ -3,62 +3,79 @@ import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
-export default page().render(() => {
-  const { l } = usePage();
-  return (
-    <Scroll>
-      <Scroll.Slide id="use-setting-module" title={l.trans({ en: "Use Setting Module", ko: "설정 모듈 사용하기" })}>
-        <Docs.Title>{l.trans({ en: "Use Setting Module", ko: "설정 모듈 사용하기" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `Now the ice cream shop can receive and process orders, and with many customers coming in, it's easy to run out of stock. Let's find out how to handle this situation.`,
-              ko: `이제 요거트 가게는 많은 주문을 받고 처리할 수 있게 되었고, 손님들이 많이 와서 쉽게 품절되는 상황이 발생했습니다. 이제 재고를 관리하고 주문을 처리하는 방법을 알아봅시다.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `You need to add a service that checks the remaining ice cream and toppings every morning, sets the inventory status in the system, and automatically disables orders when the inventory is depleted.`,
-              ko: `당신은 매일 오전 가게에 남은 요거트와 토핑의 재고를 확인하고, 재고현황을 시스템에 설정한 후, 재고가 소진되면 자동으로 주문을 불가하게 하는 서비스를 추가해야 합니다.`,
-            })}
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
+export default page()
+  .config({ transition: "fade" })
+  .head(({ lang }) => {
+    const title = lang === "ko" ? "튜토리얼: 스칼라 사용하기 | Akan.js" : "Tutorials: Using Scalar | Akan.js";
+    const description =
+      lang === "ko"
+        ? "Setting 스칼라와 이를 공유하는 Inventory 모델로 재고를 관리합니다."
+        : "Manage stock with a Setting scalar and an Inventory model that shares it.";
+    return (
+      <>
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+      </>
+    );
+  })
+  .render(() => {
+    const { l } = usePage();
+    return (
+      <Scroll>
+        <Scroll.Slide id="use-setting-module" title={l.trans({ en: "Use Setting Module", ko: "설정 모듈 사용하기" })}>
+          <Docs.Title>{l.trans({ en: "Use Setting Module", ko: "설정 모듈 사용하기" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `Now the ice cream shop can receive and process orders, and with many customers coming in, it's easy to run out of stock. Let's find out how to handle this situation.`,
+                ko: `이제 요거트 가게는 많은 주문을 받고 처리할 수 있게 되었고, 손님들이 많이 와서 쉽게 품절되는 상황이 발생했습니다. 이제 재고를 관리하고 주문을 처리하는 방법을 알아봅시다.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `You need to add a service that checks the remaining ice cream and toppings every morning, sets the inventory status in the system, and automatically disables orders when the inventory is depleted.`,
+                ko: `당신은 매일 오전 가게에 남은 요거트와 토핑의 재고를 확인하고, 재고현황을 시스템에 설정한 후, 재고가 소진되면 자동으로 주문을 불가하게 하는 서비스를 추가해야 합니다.`,
+              })}
+            </div>
+          </Docs.Description>
+        </Scroll.Slide>
+        <Divider />
 
-      <Scroll.Slide id="create-scalar" title={l.trans({ en: "Create Scalar", ko: "스칼라 생성하기" })}>
-        <Docs.Title>{l.trans({ en: "Create Scalar", ko: "스칼라 생성하기" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `First, let's create a Scalar to represent individual stock items. Think of a Scalar as a reusable data building block - like Lego pieces that can be combined into larger structures. Unlike a full Model that has its own database collection, a Scalar is embedded within other models. In our case, the Stock scalar will be used inside the Inventory model.`,
-              ko: `먼저, 개별 재고 아이템을 표현하는 Scalar를 만들어봅시다. Scalar를 레고 조각처럼 재사용 가능한 데이터 빌딩 블록으로 생각해보세요 - 더 큰 구조물로 조합할 수 있습니다. 자체 데이터베이스 컬렉션을 가진 Model과 달리, Scalar는 다른 모델 안에 내장됩니다. 우리의 경우, Stock 스칼라는 Inventory 모델 안에서 사용될 것입니다.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `Use the CLI to generate the scalar structure:`,
-              ko: `CLI를 사용하여 스칼라 구조를 생성합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            language="bash"
-            title="Terminal"
-            code={`
+        <Scroll.Slide id="create-scalar" title={l.trans({ en: "Create Scalar", ko: "스칼라 생성하기" })}>
+          <Docs.Title>{l.trans({ en: "Create Scalar", ko: "스칼라 생성하기" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `First, let's create a Scalar to represent individual stock items. Think of a Scalar as a reusable data building block - like Lego pieces that can be combined into larger structures. Unlike a full Model that has its own database collection, a Scalar is embedded within other models. In our case, the Stock scalar will be used inside the Inventory model.`,
+                ko: `먼저, 개별 재고 아이템을 표현하는 Scalar를 만들어봅시다. Scalar를 레고 조각처럼 재사용 가능한 데이터 빌딩 블록으로 생각해보세요 - 더 큰 구조물로 조합할 수 있습니다. 자체 데이터베이스 컬렉션을 가진 Model과 달리, Scalar는 다른 모델 안에 내장됩니다. 우리의 경우, Stock 스칼라는 Inventory 모델 안에서 사용될 것입니다.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `Use the CLI to generate the scalar structure:`,
+                ko: `CLI를 사용하여 스칼라 구조를 생성합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              language="bash"
+              title="Terminal"
+              code={`
 akan create-scalar stock
 # then select koyo application`}
-          />
-          <div>
-            {l.trans({
-              en: `Now define the Stock scalar with the item type and quantity tracking:`,
-              ko: `이제 아이템 유형과 수량 추적을 포함한 Stock 스칼라를 정의합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/__scalar/stock/stock.constant.ts"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Now define the Stock scalar with the item type and quantity tracking:`,
+                ko: `이제 아이템 유형과 수량 추적을 포함한 Stock 스칼라를 정의합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/__scalar/stock/stock.constant.ts"
+              code={`
 import { enumOf, Int } from "akanjs/base";
 import { via } from "akanjs/constant";
 
@@ -72,39 +89,39 @@ export class Stock extends via((field) => ({
   currentQty: field(Int, { default: 0, min: 0 }),
 })) {}
 `}
-          />
-          <div>
-            {l.trans({
-              en: `Let's understand the Stock scalar structure:`,
-              ko: `Stock 스칼라 구조를 이해해봅시다:`,
-            })}
-          </div>
-          <ul className="my-4 list-disc space-y-2 pl-5">
-            <li>
-              <strong>StockType</strong>:{" "}
+            />
+            <div>
               {l.trans({
-                en: "An enum combining yogurt ice cream with all available toppings. This allows tracking inventory for all product types in one system.",
-                ko: "요거트 아이스크림과 모든 토핑을 결합한 열거형입니다. 이를 통해 모든 제품 유형의 재고를 하나의 시스템에서 추적할 수 있습니다.",
+                en: `Let's understand the Stock scalar structure:`,
+                ko: `Stock 스칼라 구조를 이해해봅시다:`,
               })}
-            </li>
-            <li>
-              <strong>totalQty / currentQty</strong>:{" "}
+            </div>
+            <ul className="my-4 list-disc space-y-2 pl-5">
+              <li>
+                <strong>StockType</strong>:{" "}
+                {l.trans({
+                  en: "An enum combining yogurt ice cream with all available toppings. This allows tracking inventory for all product types in one system.",
+                  ko: "요거트 아이스크림과 모든 토핑을 결합한 열거형입니다. 이를 통해 모든 제품 유형의 재고를 하나의 시스템에서 추적할 수 있습니다.",
+                })}
+              </li>
+              <li>
+                <strong>totalQty / currentQty</strong>:{" "}
+                {l.trans({
+                  en: "Track both the starting amount and current remaining quantity. This helps calculate usage and identify when restocking is needed.",
+                  ko: "시작 수량과 현재 남은 수량을 모두 추적합니다. 이를 통해 사용량을 계산하고 재입고가 필요한 시점을 파악할 수 있습니다.",
+                })}
+              </li>
+            </ul>
+            <div>
               {l.trans({
-                en: "Track both the starting amount and current remaining quantity. This helps calculate usage and identify when restocking is needed.",
-                ko: "시작 수량과 현재 남은 수량을 모두 추적합니다. 이를 통해 사용량을 계산하고 재입고가 필요한 시점을 파악할 수 있습니다.",
+                en: `Add dictionary entries for the scalar. Notice how we reuse the topping translations from the icecreamOrder dictionary:`,
+                ko: `스칼라에 대한 dictionary 항목을 추가합니다. icecreamOrder dictionary에서 토핑 번역을 재사용하는 방법에 주목하세요:`,
               })}
-            </li>
-          </ul>
-          <div>
-            {l.trans({
-              en: `Add dictionary entries for the scalar. Notice how we reuse the topping translations from the icecreamOrder dictionary:`,
-              ko: `스칼라에 대한 dictionary 항목을 추가합니다. icecreamOrder dictionary에서 토핑 번역을 재사용하는 방법에 주목하세요:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/__scalar/stock/stock.dictionary.ts"
-            code={`
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/__scalar/stock/stock.dictionary.ts"
+              code={`
 import { scalarDictionary } from "akanjs/dictionary";
 
 import type { Topping } from "../../icecreamOrder/icecreamOrder.constant";
@@ -130,44 +147,44 @@ export const dictionary = scalarDictionary(["en", "ko"])
     ]),
     ...icecreamOrder.getEnum<Topping>("topping"),
   }));`}
-          />
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
+            />
+          </Docs.Description>
+        </Scroll.Slide>
+        <Divider />
 
-      <Scroll.Slide id="create-inventory" title={l.trans({ en: "Create Inventory", ko: "인벤토리 생성하기" })}>
-        <Docs.Title>{l.trans({ en: "Create Inventory", ko: "인벤토리 생성하기" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `Now let's create an Inventory module to manage daily stock records. Think of this like the daily inventory sheet that a shop manager fills out each morning - it contains all the stock items and their quantities for that specific day.`,
-              ko: `이제 일일 재고 기록을 관리하는 Inventory 모듈을 만들어봅시다. 이것은 가게 매니저가 매일 아침 작성하는 일일 재고 시트처럼 생각해보세요 - 특정 날짜의 모든 재고 아이템과 수량을 포함합니다.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `Create the inventory module using the CLI:`,
-              ko: `CLI를 사용하여 inventory 모듈을 생성합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            language="bash"
-            title="Terminal"
-            code={`
+        <Scroll.Slide id="create-inventory" title={l.trans({ en: "Create Inventory", ko: "인벤토리 생성하기" })}>
+          <Docs.Title>{l.trans({ en: "Create Inventory", ko: "인벤토리 생성하기" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `Now let's create an Inventory module to manage daily stock records. Think of this like the daily inventory sheet that a shop manager fills out each morning - it contains all the stock items and their quantities for that specific day.`,
+                ko: `이제 일일 재고 기록을 관리하는 Inventory 모듈을 만들어봅시다. 이것은 가게 매니저가 매일 아침 작성하는 일일 재고 시트처럼 생각해보세요 - 특정 날짜의 모든 재고 아이템과 수량을 포함합니다.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `Create the inventory module using the CLI:`,
+                ko: `CLI를 사용하여 inventory 모듈을 생성합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              language="bash"
+              title="Terminal"
+              code={`
 akan create-module inventory
 # then select koyo application`}
-          />
-          <div>
-            {l.trans({
-              en: `Define the Inventory model with embedded Stock scalars:`,
-              ko: `내장된 Stock 스칼라들을 포함한 Inventory 모델을 정의합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/inventory.constant.ts"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Define the Inventory model with embedded Stock scalars:`,
+                ko: `내장된 Stock 스칼라들을 포함한 Inventory 모델을 정의합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/inventory.constant.ts"
+              code={`
 import { dayjs } from "akanjs/base"; // [!code ++]
 import { via } from "akanjs/constant";
 import { Stock } from "../__scalar/stock/stock.constant"; // [!code ++]
@@ -187,47 +204,47 @@ export class Inventory extends via(InventoryObject, LightInventory, (resolve) =>
 
 export class InventoryInsight extends via(Inventory, (field) => ({})) {}
 `}
-          />
-          <div>
-            {l.trans({
-              en: `Key features of the Inventory model:`,
-              ko: `Inventory 모델의 주요 특징:`,
-            })}
-          </div>
-          <div className="my-4 space-y-3">
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2">
-                <strong className="text-primary">{"stocks: field([Stock])"}</strong>
+            />
+            <div>
+              {l.trans({
+                en: `Key features of the Inventory model:`,
+                ko: `Inventory 모델의 주요 특징:`,
+              })}
+            </div>
+            <div className="my-4 space-y-3">
+              <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+                <div className="mb-2">
+                  <strong className="text-primary">{"stocks: field([Stock])"}</strong>
+                </div>
+                <div className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: `An array of Stock scalars. This is where our reusable Scalar shines - we embed multiple Stock objects directly in the Inventory document.`,
+                    ko: `Stock 스칼라들의 배열입니다. 여기서 재사용 가능한 Scalar가 빛을 발합니다 - 여러 Stock 객체를 Inventory 문서에 직접 내장합니다.`,
+                  })}
+                </div>
               </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: `An array of Stock scalars. This is where our reusable Scalar shines - we embed multiple Stock objects directly in the Inventory document.`,
-                  ko: `Stock 스칼라들의 배열입니다. 여기서 재사용 가능한 Scalar가 빛을 발합니다 - 여러 Stock 객체를 Inventory 문서에 직접 내장합니다.`,
-                })}
+              <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+                <div className="mb-2">
+                  <strong className="text-primary">at</strong>
+                </div>
+                <div className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: `A date field that defaults to midnight of the current day. This allows creating one inventory record per day and easily finding today's inventory. It is listed in LightInventory too, so a list card can show it.`,
+                    ko: `현재 날짜의 자정으로 기본 설정되는 날짜 필드입니다. 이를 통해 하루에 하나의 재고 기록을 만들고 오늘의 재고를 쉽게 찾을 수 있습니다. LightInventory에도 넣어 목록 카드에서 보여줄 수 있게 합니다.`,
+                  })}
+                </div>
               </div>
             </div>
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2">
-                <strong className="text-primary">at</strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: `A date field that defaults to midnight of the current day. This allows creating one inventory record per day and easily finding today's inventory. It is listed in LightInventory too, so a list card can show it.`,
-                  ko: `현재 날짜의 자정으로 기본 설정되는 날짜 필드입니다. 이를 통해 하루에 하나의 재고 기록을 만들고 오늘의 재고를 쉽게 찾을 수 있습니다. LightInventory에도 넣어 목록 카드에서 보여줄 수 있게 합니다.`,
-                })}
-              </div>
+            <div>
+              {l.trans({
+                en: `Add dictionary entries with helpful error messages for inventory operations:`,
+                ko: `재고 작업에 대한 유용한 오류 메시지와 함께 dictionary 항목을 추가합니다:`,
+              })}
             </div>
-          </div>
-          <div>
-            {l.trans({
-              en: `Add dictionary entries with helpful error messages for inventory operations:`,
-              ko: `재고 작업에 대한 유용한 오류 메시지와 함께 dictionary 항목을 추가합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/inventory.dictionary.ts"
-            code={`
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/inventory.dictionary.ts"
+              code={`
 import { modelDictionary } from "akanjs/dictionary"; // [!code collapse:5]
 
 import type { Inventory, InventoryInsight } from "./inventory.constant";
@@ -262,17 +279,17 @@ export const dictionary = modelDictionary(["en", "ko"])
   .translate({
     outOfStock: ["Out of stock", "재고가 부족합니다"],
   });`}
-          />
-          <div>
-            {l.trans({
-              en: `The generated Unit and Template still read the name field the module started with. Inventory records come from refill, not from a form, so leave the Template empty and show the date on the Unit card:`,
-              ko: `생성된 Unit과 Template은 아직 모듈이 처음 갖고 있던 name 필드를 읽습니다. 재고 기록은 폼이 아니라 refill로 만들어지므로, Template은 비워 두고 Unit 카드에는 날짜를 보여줍시다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/Inventory.Unit.tsx"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `The generated Unit and Template still read the name field the module started with. Inventory records come from refill, not from a form, so leave the Template empty and show the date on the Unit card:`,
+                ko: `생성된 Unit과 Template은 아직 모듈이 처음 갖고 있던 name 필드를 읽습니다. 재고 기록은 폼이 아니라 refill로 만들어지므로, Template은 비워 두고 Unit 카드에는 날짜를 보여줍시다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/Inventory.Unit.tsx"
+              code={`
 import { type cnst, usePage } from "@apps/koyo/client"; // [!code collapse:4]
 import type { ModelProps } from "akanjs/client";
 import { Link } from "akanjs/ui";
@@ -287,11 +304,11 @@ export const Card = ({ inventory, href }: ModelProps<"inventory", cnst.LightInve
     </Link>
   );
 };`}
-          />
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/Inventory.Template.tsx"
-            code={`
+            />
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/Inventory.Template.tsx"
+              code={`
 "use client";
 import { Layout } from "akanjs/ui";
 
@@ -302,29 +319,29 @@ interface GeneralProps {
 export const General = ({ className }: GeneralProps) => {
   return <Layout.Template className={className} />;
 };`}
-          />
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
-      <Scroll.Slide id="business-logic" title={l.trans({ en: "Business Logic", ko: "비즈니스 로직" })}>
-        <Docs.Title>{l.trans({ en: "Business Logic", ko: "비즈니스 로직" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `Now let's implement the core business logic for inventory management. Just like a real ice cream shop needs rules for using stock and refilling supplies, we need to encode these operations in our document and service layers.`,
-              ko: `이제 재고 관리를 위한 핵심 비즈니스 로직을 구현해봅시다. 실제 아이스크림 가게에서 재고 사용과 보충에 대한 규칙이 필요하듯이, 이러한 작업을 document와 service 레이어에 인코딩해야 합니다.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `First, define the document methods for stock operations and daily inventory generation:`,
-              ko: `먼저, 재고 작업과 일일 재고 생성을 위한 document 메서드를 정의합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/inventory.document.ts"
-            code={`
+            />
+          </Docs.Description>
+        </Scroll.Slide>
+        <Divider />
+        <Scroll.Slide id="business-logic" title={l.trans({ en: "Business Logic", ko: "비즈니스 로직" })}>
+          <Docs.Title>{l.trans({ en: "Business Logic", ko: "비즈니스 로직" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `Now let's implement the core business logic for inventory management. Just like a real ice cream shop needs rules for using stock and refilling supplies, we need to encode these operations in our document and service layers.`,
+                ko: `이제 재고 관리를 위한 핵심 비즈니스 로직을 구현해봅시다. 실제 아이스크림 가게에서 재고 사용과 보충에 대한 규칙이 필요하듯이, 이러한 작업을 document와 service 레이어에 인코딩해야 합니다.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `First, define the document methods for stock operations and daily inventory generation:`,
+                ko: `먼저, 재고 작업과 일일 재고 생성을 위한 document 메서드를 정의합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/inventory.document.ts"
+              code={`
 import { dayjs } from "akanjs/base"; // [!code ++]
 import { by, from, into } from "akanjs/document"; // [!code collapse:3]
 
@@ -376,58 +393,58 @@ export class InventoryModel extends into(Inventory, InventoryFilter, cnst.invent
     return await new this.Inventory({ at: today }).refill().save();
   }
 }`}
-          />
-          <div>
-            {l.trans({
-              en: `Let's understand the key document methods:`,
-              ko: `주요 document 메서드들을 이해해봅시다:`,
-            })}
-          </div>
-          <div className="my-4 space-y-3">
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2">
-                <strong className="text-primary">useStock / useStocks</strong>
+            />
+            <div>
+              {l.trans({
+                en: `Let's understand the key document methods:`,
+                ko: `주요 document 메서드들을 이해해봅시다:`,
+              })}
+            </div>
+            <div className="my-4 space-y-3">
+              <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+                <div className="mb-2">
+                  <strong className="text-primary">useStock / useStocks</strong>
+                </div>
+                <div className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: `Decrements stock quantity when orders are placed. Validates that stock exists and has sufficient quantity, throwing Err errors with dictionary messages if not.`,
+                    ko: `주문 시 재고 수량을 감소시킵니다. 재고가 존재하고 충분한 수량이 있는지 검증하며, 그렇지 않으면 dictionary 메시지와 함께 Err 오류를 발생시킵니다.`,
+                  })}
+                </div>
               </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: `Decrements stock quantity when orders are placed. Validates that stock exists and has sufficient quantity, throwing Err errors with dictionary messages if not.`,
-                  ko: `주문 시 재고 수량을 감소시킵니다. 재고가 존재하고 충분한 수량이 있는지 검증하며, 그렇지 않으면 dictionary 메시지와 함께 Err 오류를 발생시킵니다.`,
-                })}
+              <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+                <div className="mb-2">
+                  <strong className="text-primary">refill</strong>
+                </div>
+                <div className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: `Restocks all items to their default quantities. Smart enough to only add what's needed - if you have 3 of 10 toppings left, it adds 7 more.`,
+                    ko: `모든 아이템을 기본 수량으로 재입고합니다. 필요한 만큼만 추가할 정도로 똑똑합니다 - 토핑 10개 중 3개가 남아있으면 7개를 더 추가합니다.`,
+                  })}
+                </div>
+              </div>
+              <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+                <div className="mb-2">
+                  <strong className="text-primary">generateTodaysInventory</strong>
+                </div>
+                <div className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: `Automatically creates a new inventory record for today if one doesn't exist. Returns existing inventory if already created - ensuring one record per day.`,
+                    ko: `오늘의 재고 기록이 없으면 자동으로 새로 생성합니다. 이미 생성되어 있으면 기존 재고를 반환합니다 - 하루에 하나의 기록만 보장합니다.`,
+                  })}
+                </div>
               </div>
             </div>
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2">
-                <strong className="text-primary">refill</strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: `Restocks all items to their default quantities. Smart enough to only add what's needed - if you have 3 of 10 toppings left, it adds 7 more.`,
-                  ko: `모든 아이템을 기본 수량으로 재입고합니다. 필요한 만큼만 추가할 정도로 똑똑합니다 - 토핑 10개 중 3개가 남아있으면 7개를 더 추가합니다.`,
-                })}
-              </div>
+            <div>
+              {l.trans({
+                en: `Now create the service layer to expose these operations:`,
+                ko: `이제 이러한 작업을 노출하는 서비스 레이어를 만듭니다:`,
+              })}
             </div>
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2">
-                <strong className="text-primary">generateTodaysInventory</strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: `Automatically creates a new inventory record for today if one doesn't exist. Returns existing inventory if already created - ensuring one record per day.`,
-                  ko: `오늘의 재고 기록이 없으면 자동으로 새로 생성합니다. 이미 생성되어 있으면 기존 재고를 반환합니다 - 하루에 하나의 기록만 보장합니다.`,
-                })}
-              </div>
-            </div>
-          </div>
-          <div>
-            {l.trans({
-              en: `Now create the service layer to expose these operations:`,
-              ko: `이제 이러한 작업을 노출하는 서비스 레이어를 만듭니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/inventory.service.ts"
-            code={`
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/inventory.service.ts"
+              code={`
 import { serve } from "akanjs/service"; // [!code collapse:5]
 
 import type * as cnst from "../cnst";
@@ -446,30 +463,30 @@ export class InventoryService extends serve(db.inventory, ({ use, service }) => 
     return await inventory.useStocks(usages).save();
   }
 }`}
-          />
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
+            />
+          </Docs.Description>
+        </Scroll.Slide>
+        <Divider />
 
-      <Scroll.Slide id="connect-service" title={l.trans({ en: "Connect Service", ko: "서비스 연결하기" })}>
-        <Docs.Title>{l.trans({ en: "Connect Service", ko: "서비스 연결하기" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `Now let's connect the inventory system to our existing ice cream order flow. When a customer places an order, the system should automatically deduct the used ingredients from inventory. This is like how a real POS system updates stock counts in real-time as sales are made.`,
-              ko: `이제 재고 시스템을 기존 아이스크림 주문 흐름에 연결합니다. 고객이 주문을 하면 시스템이 자동으로 사용된 재료를 재고에서 차감해야 합니다. 이는 실제 POS 시스템이 판매가 이루어질 때 실시간으로 재고 수량을 업데이트하는 것과 같습니다.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `Inject the InventoryService into IcecreamOrderService and use the _preCreate hook to deduct stock:`,
-              ko: `InventoryService를 IcecreamOrderService에 주입하고 _preCreate 훅을 사용하여 재고를 차감합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/icecreamOrder/icecreamOrder.service.ts"
-            code={`
+        <Scroll.Slide id="connect-service" title={l.trans({ en: "Connect Service", ko: "서비스 연결하기" })}>
+          <Docs.Title>{l.trans({ en: "Connect Service", ko: "서비스 연결하기" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `Now let's connect the inventory system to our existing ice cream order flow. When a customer places an order, the system should automatically deduct the used ingredients from inventory. This is like how a real POS system updates stock counts in real-time as sales are made.`,
+                ko: `이제 재고 시스템을 기존 아이스크림 주문 흐름에 연결합니다. 고객이 주문을 하면 시스템이 자동으로 사용된 재료를 재고에서 차감해야 합니다. 이는 실제 POS 시스템이 판매가 이루어질 때 실시간으로 재고 수량을 업데이트하는 것과 같습니다.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `Inject the InventoryService into IcecreamOrderService and use the _preCreate hook to deduct stock:`,
+                ko: `InventoryService를 IcecreamOrderService에 주입하고 _preCreate 훅을 사용하여 재고를 차감합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/icecreamOrder/icecreamOrder.service.ts"
+              code={`
 import { AlarmApi } from "@apps/koyo/srvkit"; // [!code collapse:5]
 import { dayjs } from "akanjs/base";
 import { serve } from "akanjs/service";
@@ -512,59 +529,59 @@ export class IcecreamOrderService extends serve(db.icecreamOrder, ({ plug, servi
     }
   }
 }`}
-          />
-          <div>
-            {l.trans({
-              en: `Key aspects of this integration:`,
-              ko: `이 통합의 핵심 측면:`,
-            })}
-          </div>
-          <ul className="my-4 list-disc space-y-2 pl-5">
-            <li>
-              <strong>{"service<srv.InventoryService>()"}</strong>:{" "}
+            />
+            <div>
               {l.trans({
-                en: "Dependency injection allows IcecreamOrderService to access InventoryService methods",
-                ko: "의존성 주입을 통해 IcecreamOrderService가 InventoryService 메서드에 접근할 수 있습니다",
+                en: `Key aspects of this integration:`,
+                ko: `이 통합의 핵심 측면:`,
               })}
-            </li>
-            <li>
-              <strong>_preCreate</strong>:{" "}
-              {l.trans({
-                en: "A lifecycle hook that runs before creating a new order. Used for validation and side effects like inventory deduction.",
-                ko: "새 주문을 생성하기 전에 실행되는 라이프사이클 훅입니다. 검증과 재고 차감 같은 부수 효과에 사용됩니다.",
-              })}
-            </li>
-            <li>
-              <strong>{l.trans({ en: "Usage Calculation", ko: "사용량 계산" })}</strong>:{" "}
-              {l.trans({
-                en: "The order size determines yogurt usage, and each topping uses 1 unit from inventory.",
-                ko: "주문 사이즈가 요거트 사용량을 결정하고, 각 토핑은 재고에서 1단위를 사용합니다.",
-              })}
-            </li>
-          </ul>
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
+            </div>
+            <ul className="my-4 list-disc space-y-2 pl-5">
+              <li>
+                <strong>{"service<srv.InventoryService>()"}</strong>:{" "}
+                {l.trans({
+                  en: "Dependency injection allows IcecreamOrderService to access InventoryService methods",
+                  ko: "의존성 주입을 통해 IcecreamOrderService가 InventoryService 메서드에 접근할 수 있습니다",
+                })}
+              </li>
+              <li>
+                <strong>_preCreate</strong>:{" "}
+                {l.trans({
+                  en: "A lifecycle hook that runs before creating a new order. Used for validation and side effects like inventory deduction.",
+                  ko: "새 주문을 생성하기 전에 실행되는 라이프사이클 훅입니다. 검증과 재고 차감 같은 부수 효과에 사용됩니다.",
+                })}
+              </li>
+              <li>
+                <strong>{l.trans({ en: "Usage Calculation", ko: "사용량 계산" })}</strong>:{" "}
+                {l.trans({
+                  en: "The order size determines yogurt usage, and each topping uses 1 unit from inventory.",
+                  ko: "주문 사이즈가 요거트 사용량을 결정하고, 각 토핑은 재고에서 1단위를 사용합니다.",
+                })}
+              </li>
+            </ul>
+          </Docs.Description>
+        </Scroll.Slide>
+        <Divider />
 
-      <Scroll.Slide id="connect-signal" title={l.trans({ en: "Connect Signal", ko: "신호 연결하기" })}>
-        <Docs.Title>{l.trans({ en: "Connect Signal", ko: "신호 연결하기" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `To allow the frontend to interact with inventory, we need API endpoints. Staff should be able to view today's inventory and refill stock when running low. Let's create the signal endpoints and frontend store.`,
-              ko: `프론트엔드가 재고와 상호작용할 수 있도록 API 엔드포인트가 필요합니다. 직원은 오늘의 재고를 보고 재고가 부족할 때 보충할 수 있어야 합니다. 시그널 엔드포인트와 프론트엔드 스토어를 만들어봅시다.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `Create the inventory endpoints:`,
-              ko: `inventory 엔드포인트를 생성합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/inventory.signal.ts"
-            code={`
+        <Scroll.Slide id="connect-signal" title={l.trans({ en: "Connect Signal", ko: "신호 연결하기" })}>
+          <Docs.Title>{l.trans({ en: "Connect Signal", ko: "신호 연결하기" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `To allow the frontend to interact with inventory, we need API endpoints. Staff should be able to view today's inventory and refill stock when running low. Let's create the signal endpoints and frontend store.`,
+                ko: `프론트엔드가 재고와 상호작용할 수 있도록 API 엔드포인트가 필요합니다. 직원은 오늘의 재고를 보고 재고가 부족할 때 보충할 수 있어야 합니다. 시그널 엔드포인트와 프론트엔드 스토어를 만들어봅시다.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `Create the inventory endpoints:`,
+                ko: `inventory 엔드포인트를 생성합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/inventory.signal.ts"
+              code={`
 import { endpoint, internal, None, Public, slice } from "akanjs/signal"; // [!code collapse:18]
 
 import * as cnst from "../cnst";
@@ -590,23 +607,23 @@ export class InventoryEndpoint extends endpoint(srv.inventory, ({ query, mutatio
     return await this.inventoryService.refillTodaysInventory();
   }),
 })) {}`}
-          />
-          <div>
-            {l.trans({
-              en: `refillTodaysInventory changes data, so it is a mutation, not a query. Both endpoints name their guards; with no sign-in yet, they are Public like the order actions.`,
-              ko: `refillTodaysInventory는 데이터를 바꾸므로 query가 아니라 mutation입니다. 두 엔드포인트 모두 guards를 지정하며, 아직 로그인이 없으므로 주문 동작처럼 Public입니다.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `Add dictionary entries for the endpoints:`,
-              ko: `엔드포인트에 대한 dictionary 항목을 추가합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/inventory.dictionary.ts"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `refillTodaysInventory changes data, so it is a mutation, not a query. Both endpoints name their guards; with no sign-in yet, they are Public like the order actions.`,
+                ko: `refillTodaysInventory는 데이터를 바꾸므로 query가 아니라 mutation입니다. 두 엔드포인트 모두 guards를 지정하며, 아직 로그인이 없으므로 주문 동작처럼 Public입니다.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `Add dictionary entries for the endpoints:`,
+                ko: `엔드포인트에 대한 dictionary 항목을 추가합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/inventory.dictionary.ts"
+              code={`
 import { modelDictionary } from "akanjs/dictionary"; // [!code collapse:5]
 
 import type { Inventory, InventoryInsight } from "./inventory.constant";
@@ -650,17 +667,17 @@ export const dictionary = modelDictionary(["en", "ko"])
   .translate({
     outOfStock: ["Out of stock", "재고가 부족합니다"],
   });`}
-          />
-          <div>
-            {l.trans({
-              en: `Now create the frontend store to manage inventory state:`,
-              ko: `이제 재고 상태를 관리하는 프론트엔드 스토어를 만듭니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/inventory.store.ts"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Now create the frontend store to manage inventory state:`,
+                ko: `이제 재고 상태를 관리하는 프론트엔드 스토어를 만듭니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/inventory.store.ts"
+              code={`
 import { store } from "akanjs/store"; // [!code collapse:5]
 
 import type * as cnst from "../cnst";
@@ -678,30 +695,30 @@ export class InventoryStore extends store(sig.inventory, () => ({
     this.set({ todaysInventory });
   }
 }`}
-          />
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
+            />
+          </Docs.Description>
+        </Scroll.Slide>
+        <Divider />
 
-      <Scroll.Slide id="interact-on-ui" title={l.trans({ en: "Interact on UI", ko: "UI와 상호작용하기" })}>
-        <Docs.Title>{l.trans({ en: "Interact on UI", ko: "UI와 상호작용하기" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `Now let's bring everything together in the UI. The customer-facing order form needs to check inventory and disable options that are out of stock. Staff also need a dashboard to monitor inventory levels and refill when needed.`,
-              ko: `이제 모든 것을 UI에서 하나로 모아봅시다. 고객용 주문 양식은 재고를 확인하고 품절된 옵션을 비활성화해야 합니다. 직원도 재고 수준을 모니터링하고 필요할 때 보충할 수 있는 대시보드가 필요합니다.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `First, update the order template to check inventory before displaying options:`,
-              ko: `먼저, 옵션을 표시하기 전에 재고를 확인하도록 주문 템플릿을 업데이트합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Template.tsx"
-            code={`
+        <Scroll.Slide id="interact-on-ui" title={l.trans({ en: "Interact on UI", ko: "UI와 상호작용하기" })}>
+          <Docs.Title>{l.trans({ en: "Interact on UI", ko: "UI와 상호작용하기" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `Now let's bring everything together in the UI. The customer-facing order form needs to check inventory and disable options that are out of stock. Staff also need a dashboard to monitor inventory levels and refill when needed.`,
+                ko: `이제 모든 것을 UI에서 하나로 모아봅시다. 고객용 주문 양식은 재고를 확인하고 품절된 옵션을 비활성화해야 합니다. 직원도 재고 수준을 모니터링하고 필요할 때 보충할 수 있는 대시보드가 필요합니다.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `First, update the order template to check inventory before displaying options:`,
+                ko: `먼저, 옵션을 표시하기 전에 재고를 확인하도록 주문 템플릿을 업데이트합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Template.tsx"
+              code={`
 "use client"; // [!code collapse:3]
 import { cnst, st, usePage } from "@apps/koyo/client";
 import { cn } from "akanjs/client";
@@ -786,58 +803,58 @@ export const General = ({ className, showServeType = true }: GeneralProps) => {
     </Layout.Template>
   );
 };`}
-          />
-          <div>
-            {l.trans({
-              en: `Key features of the inventory-aware template:`,
-              ko: `재고 인식 템플릿의 주요 기능:`,
-            })}
-          </div>
-          <div className="my-4 space-y-3">
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2">
-                <strong className="text-primary">{"st.use.todaysInventory()"}</strong>
+            />
+            <div>
+              {l.trans({
+                en: `Key features of the inventory-aware template:`,
+                ko: `재고 인식 템플릿의 주요 기능:`,
+              })}
+            </div>
+            <div className="my-4 space-y-3">
+              <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+                <div className="mb-2">
+                  <strong className="text-primary">{"st.use.todaysInventory()"}</strong>
+                </div>
+                <div className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: `The form only reads the store, and shows a spinner until the value is there. The Inventory zones you mount below are what call loadTodaysInventory - a mount-time fetch inside a Template is what akan quality ssr reports as client-mount-load.`,
+                    ko: `폼은 스토어를 읽기만 하고, 값이 들어올 때까지 스피너를 보여줍니다. loadTodaysInventory를 호출하는 쪽은 아래에서 마운트할 Inventory Zone들입니다 - Template 안의 마운트 시점 페칭은 akan quality ssr이 client-mount-load로 보고하는 패턴입니다.`,
+                  })}
+                </div>
               </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: `The form only reads the store, and shows a spinner until the value is there. The Inventory zones you mount below are what call loadTodaysInventory - a mount-time fetch inside a Template is what akan quality ssr reports as client-mount-load.`,
-                  ko: `폼은 스토어를 읽기만 하고, 값이 들어올 때까지 스피너를 보여줍니다. loadTodaysInventory를 호출하는 쪽은 아래에서 마운트할 Inventory Zone들입니다 - Template 안의 마운트 시점 페칭은 akan quality ssr이 client-mount-load로 보고하는 패턴입니다.`,
-                })}
+              <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+                <div className="mb-2">
+                  <strong className="text-primary">{l.trans({ en: "Out of Stock Check", ko: "품절 확인" })}</strong>
+                </div>
+                <div className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: `If yogurt ice cream is completely out of stock, shows a friendly message instead of the form. No point ordering if we can't make it!`,
+                    ko: `요거트 아이스크림이 완전히 품절이면 양식 대신 친절한 메시지를 보여줍니다. 만들 수 없다면 주문을 받을 필요가 없습니다!`,
+                  })}
+                </div>
+              </div>
+              <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+                <div className="mb-2">
+                  <strong className="text-primary">{"disabled: !isInStock"}</strong>
+                </div>
+                <div className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: `Each size and topping option checks if sufficient stock exists. Disabled options are grayed out but still visible, so customers know what's normally available.`,
+                    ko: `각 사이즈와 토핑 옵션이 충분한 재고가 있는지 확인합니다. 비활성화된 옵션은 회색으로 표시되지만 여전히 보이므로, 고객이 평소에 무엇이 가능한지 알 수 있습니다.`,
+                  })}
+                </div>
               </div>
             </div>
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2">
-                <strong className="text-primary">{l.trans({ en: "Out of Stock Check", ko: "품절 확인" })}</strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: `If yogurt ice cream is completely out of stock, shows a friendly message instead of the form. No point ordering if we can't make it!`,
-                  ko: `요거트 아이스크림이 완전히 품절이면 양식 대신 친절한 메시지를 보여줍니다. 만들 수 없다면 주문을 받을 필요가 없습니다!`,
-                })}
-              </div>
+            <div>
+              {l.trans({
+                en: `Add the isInStock helper method to the Inventory constant:`,
+                ko: `Inventory 상수에 isInStock 헬퍼 메서드를 추가합니다:`,
+              })}
             </div>
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2">
-                <strong className="text-primary">{"disabled: !isInStock"}</strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: `Each size and topping option checks if sufficient stock exists. Disabled options are grayed out but still visible, so customers know what's normally available.`,
-                  ko: `각 사이즈와 토핑 옵션이 충분한 재고가 있는지 확인합니다. 비활성화된 옵션은 회색으로 표시되지만 여전히 보이므로, 고객이 평소에 무엇이 가능한지 알 수 있습니다.`,
-                })}
-              </div>
-            </div>
-          </div>
-          <div>
-            {l.trans({
-              en: `Add the isInStock helper method to the Inventory constant:`,
-              ko: `Inventory 상수에 isInStock 헬퍼 메서드를 추가합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/inventory.constant.ts"
-            code={`
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/inventory.constant.ts"
+              code={`
 import { dayjs } from "akanjs/base"; // [!code collapse:2]
 import { via } from "akanjs/constant";
 import { Stock, type StockType } from "../__scalar/stock/stock.constant"; // [!code highlight]
@@ -861,17 +878,17 @@ export class Inventory extends via(InventoryObject, LightInventory, (resolve) =>
 }
 // [!code collapse:2]
 export class InventoryInsight extends via(Inventory, (field) => ({})) {}`}
-          />
-          <div>
-            {l.trans({
-              en: `Now let's create utility components for staff to refill inventory:`,
-              ko: `이제 직원이 재고를 보충할 수 있는 유틸리티 컴포넌트를 만들어봅시다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/Inventory.Util.tsx"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Now let's create utility components for staff to refill inventory:`,
+                ko: `이제 직원이 재고를 보충할 수 있는 유틸리티 컴포넌트를 만들어봅시다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/Inventory.Util.tsx"
+              code={`
 "use client";
 import { st, usePage } from "@apps/koyo/client";
 import { buttonRecipe } from "akanjs/ui";
@@ -893,17 +910,17 @@ export const Refill = ({ className }: RefillProps) => {
     </button>
   );
 };`}
-          />
-          <div>
-            {l.trans({
-              en: `Create a visual dashboard showing stock levels with color-coded status indicators:`,
-              ko: `색상으로 구분된 상태 표시기와 함께 재고 수준을 보여주는 시각적 대시보드를 만듭니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/Inventory.View.tsx"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Create a visual dashboard showing stock levels with color-coded status indicators:`,
+                ko: `색상으로 구분된 상태 표시기와 함께 재고 수준을 보여주는 시각적 대시보드를 만듭니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/Inventory.View.tsx"
+              code={`
 import { type cnst, usePage } from "@apps/koyo/client";
 import { dayjs } from "akanjs/base";
 import { cn } from "akanjs/client";
@@ -984,17 +1001,17 @@ export const General = ({ className, inventory }: GeneralProps) => {
     </div>
   );
 };`}
-          />
-          <div>
-            {l.trans({
-              en: `Add helper methods to the Stock scalar for status calculation:`,
-              ko: `상태 계산을 위한 헬퍼 메서드를 Stock 스칼라에 추가합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/__scalar/stock/stock.constant.ts"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Add helper methods to the Stock scalar for status calculation:`,
+                ko: `상태 계산을 위한 헬퍼 메서드를 Stock 스칼라에 추가합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/__scalar/stock/stock.constant.ts"
+              code={`
 import { enumOf, Int } from "akanjs/base"; // [!code collapse:7]
 import { via } from "akanjs/constant";
 
@@ -1018,17 +1035,17 @@ export class Stock extends via((field) => ({
     return "normal";
   }
 }`}
-          />
-          <div>
-            {l.trans({
-              en: `Create a Zone component for real-time inventory monitoring:`,
-              ko: `실시간 재고 모니터링을 위한 Zone 컴포넌트를 만듭니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/lib/inventory/Inventory.Zone.tsx"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Create a Zone component for real-time inventory monitoring:`,
+                ko: `실시간 재고 모니터링을 위한 Zone 컴포넌트를 만듭니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/lib/inventory/Inventory.Zone.tsx"
+              code={`
 "use client";
 import { type cnst, Inventory, st } from "@apps/koyo/client"; // [!code highlight]
 import type { ClientInit, ClientView } from "akanjs/fetch";
@@ -1075,17 +1092,17 @@ export const Sync = () => { // [!code ++:6]
   }, 1000);
   return null;
 };`}
-          />
-          <div>
-            {l.trans({
-              en: `Today draws the dashboard; Sync only keeps today's inventory loaded. The kiosk's order page renders the same Template, so mount Sync there, or its form waits on a spinner forever:`,
-              ko: `Today는 대시보드를 그리고, Sync는 오늘의 재고를 불러오기만 합니다. 키오스크 주문 페이지도 같은 Template을 쓰므로 그곳에 Sync를 마운트하세요. 그렇지 않으면 폼이 스피너에서 멈춥니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/page/icecreamOrder/new.tsx"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Today draws the dashboard; Sync only keeps today's inventory loaded. The kiosk's order page renders the same Template, so mount Sync there, or its form waits on a spinner forever:`,
+                ko: `Today는 대시보드를 그리고, Sync는 오늘의 재고를 불러오기만 합니다. 키오스크 주문 페이지도 같은 Template을 쓰므로 그곳에 Sync를 마운트하세요. 그렇지 않으면 폼이 스피너에서 멈춥니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/page/icecreamOrder/new.tsx"
+              code={`
 import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/client"; // [!code highlight]
 import { page } from "akanjs/client";
 import { Load } from "akanjs/ui";
@@ -1124,17 +1141,17 @@ export default page()
       </div>
     );
   });`}
-          />
-          <div>
-            {l.trans({
-              en: `Finally, put it all together in the main page with both inventory dashboard and order management:`,
-              ko: `마지막으로, 재고 대시보드와 주문 관리를 모두 포함한 메인 페이지에서 모든 것을 하나로 모읍니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/page/_index.tsx"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Finally, put it all together in the main page with both inventory dashboard and order management:`,
+                ko: `마지막으로, 재고 대시보드와 주문 관리를 모두 포함한 메인 페이지에서 모든 것을 하나로 모읍니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              className="w-full"
+              title="apps/koyo/page/_index.tsx"
+              code={`
 import { type cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/client"; // [!code highlight]
 import { page } from "akanjs/client";
 import { buttonRecipe, Model } from "akanjs/ui";
@@ -1169,18 +1186,18 @@ export default page().render(() => {
     </div>
   );
 });`}
-          />
-          <div>
-            {l.trans({
-              en: `In the next tutorial, we'll explore Insight, which aggregates and analyzes data across your models. This will allow you to create analytics dashboards and gain business intelligence from your ice cream shop data.`,
-              ko: `다음 튜토리얼에서는 모델 전체에서 데이터를 집계하고 분석하는 Insight를 살펴볼 것입니다. 이를 통해 분석 대시보드를 만들고 아이스크림 가게 데이터에서 비즈니스 인사이트를 얻을 수 있게 됩니다.`,
-            })}
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
+            />
+            <div>
+              {l.trans({
+                en: `In the next tutorial, we'll explore Insight, which aggregates and analyzes data across your models. This will allow you to create analytics dashboards and gain business intelligence from your ice cream shop data.`,
+                ko: `다음 튜토리얼에서는 모델 전체에서 데이터를 집계하고 분석하는 Insight를 살펴볼 것입니다. 이를 통해 분석 대시보드를 만들고 아이스크림 가게 데이터에서 비즈니스 인사이트를 얻을 수 있게 됩니다.`,
+              })}
+            </div>
+          </Docs.Description>
+        </Scroll.Slide>
+        <Divider />
 
-      <DocsToc />
-    </Scroll>
-  );
-});
+        <DocsToc />
+      </Scroll>
+    );
+  });

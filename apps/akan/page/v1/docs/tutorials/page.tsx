@@ -3,35 +3,56 @@ import { Code, Docs } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
-export default page().render(() => {
-  const { l } = usePage();
-  return (
-    <Scroll>
-      <Scroll.Slide id="kiosk-for-customers" title={l.trans({ en: "Kiosk for Customers", ko: "고객을 위한 키오스크" })}>
-        <Docs.Title>{l.trans({ en: "Kiosk for Customers", ko: "고객을 위한 키오스크" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `The number of customers at the store has increased, and the staff is having trouble processing orders. Let's create a kiosk for customers to order ice cream. A kiosk is a simple interface that allows customers to order ice cream.`,
-              ko: `가게의 손님이 너무 많아져 직원이 주문을 처리하기 어려워졌습니다. 이제 손님들이 주문을 할 수 있도록 키오스크를 만들어야 합니다. 직원을 위한 기능은 복잡해도 괜찮지만, 손님을 위한 주문 기능은 단순하고 사용자 친화적인 화면을 제공해야 합니다.`,
-            })}
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <div className="my-4 h-px w-full bg-border" />
+export default page()
+  .config({ transition: "fade" })
+  .head(({ lang }) => {
+    const title =
+      lang === "ko" ? "튜토리얼: 페이지를 통한 UX | Akan.js v1 문서" : "Tutorials: UX with Pages | Akan.js v1 Docs";
+    const description =
+      lang === "ko"
+        ? "v1: page와 template으로 손님용 키오스크를 만듭니다."
+        : "v1: build a customer kiosk with pages and templates.";
+    return (
+      <>
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+      </>
+    );
+  })
+  .render(() => {
+    const { l } = usePage();
+    return (
+      <Scroll>
+        <Scroll.Slide
+          id="kiosk-for-customers"
+          title={l.trans({ en: "Kiosk for Customers", ko: "고객을 위한 키오스크" })}
+        >
+          <Docs.Title>{l.trans({ en: "Kiosk for Customers", ko: "고객을 위한 키오스크" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `The number of customers at the store has increased, and the staff is having trouble processing orders. Let's create a kiosk for customers to order ice cream. A kiosk is a simple interface that allows customers to order ice cream.`,
+                ko: `가게의 손님이 너무 많아져 직원이 주문을 처리하기 어려워졌습니다. 이제 손님들이 주문을 할 수 있도록 키오스크를 만들어야 합니다. 직원을 위한 기능은 복잡해도 괜찮지만, 손님을 위한 주문 기능은 단순하고 사용자 친화적인 화면을 제공해야 합니다.`,
+              })}
+            </div>
+          </Docs.Description>
+        </Scroll.Slide>
+        <div className="my-4 h-px w-full bg-border" />
 
-      <Scroll.Slide id="add-schema" title={l.trans({ en: "Add Schema", ko: "스키마 추가" })}>
-        <Docs.Title>{l.trans({ en: "Add Schema", ko: "스키마 추가" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `There is some missing information in the current schema to allow customers to order directly from the kiosk. We need to add serve type and contact information. Let's expand the schema to add these features.`,
-              ko: `고객이 키오스크에서 직접 주문하기 위해서는 현재 스키마에서는 부족한 정보가 있습니다. 서빙방식, 연락처 정보를 추가해야 합니다. 스키마를 추가해서 기능을 확장해봅시다.`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/lib/icecreamOrder/icecreamOrder.constant.ts"
-            code={`
+        <Scroll.Slide id="add-schema" title={l.trans({ en: "Add Schema", ko: "스키마 추가" })}>
+          <Docs.Title>{l.trans({ en: "Add Schema", ko: "스키마 추가" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `There is some missing information in the current schema to allow customers to order directly from the kiosk. We need to add serve type and contact information. Let's expand the schema to add these features.`,
+                ko: `고객이 키오스크에서 직접 주문하기 위해서는 현재 스키마에서는 부족한 정보가 있습니다. 서빙방식, 연락처 정보를 추가해야 합니다. 스키마를 추가해서 기능을 확장해봅시다.`,
+              })}
+            </div>
+            <Code.Snippet
+              title="apps/koyo/lib/icecreamOrder/icecreamOrder.constant.ts"
+              code={`
 import { isPhoneNumber } from "@akanjs/common"; // [!code ++]
 import { enumOf, Int } from "@akanjs/base"; // [!code collapse:3]
 import { via } from "@akanjs/constant";
@@ -78,54 +99,54 @@ export class LightIcecreamOrder extends via(
 export class IcecreamOrder extends via(IcecreamOrderObject, LightIcecreamOrder, (resolve) => ({})) {}
 
 export class IcecreamOrderInsight extends via(IcecreamOrder, (field) => ({})) {}`}
-          />
-          <div>
-            {l.trans({
-              en: `Let's understand the new schema additions:`,
-              ko: `새로운 스키마 추가 사항을 이해해봅시다:`,
-            })}
-          </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-blue-600">🍽️</span>
-              <div>
-                <strong>ServeType</strong>:{" "}
-                {l.trans({
-                  en: "An enum defining how the customer wants their order - for here, take out, or delivery",
-                  ko: "고객이 주문을 어떻게 받길 원하는지 정의하는 열거형 - 매장 식사, 포장, 또는 배달",
-                })}
+            />
+            <div>
+              {l.trans({
+                en: `Let's understand the new schema additions:`,
+                ko: `새로운 스키마 추가 사항을 이해해봅시다:`,
+              })}
+            </div>
+            <div className="my-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <span className="text-blue-600">🍽️</span>
+                <div>
+                  <strong>ServeType</strong>:{" "}
+                  {l.trans({
+                    en: "An enum defining how the customer wants their order - for here, take out, or delivery",
+                    ko: "고객이 주문을 어떻게 받길 원하는지 정의하는 열거형 - 매장 식사, 포장, 또는 배달",
+                  })}
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-green-600">📱</span>
+                <div>
+                  <strong>phone</strong>:{" "}
+                  {l.trans({
+                    en: "Customer's phone number with validation using isPhoneNumber for pickup notifications",
+                    ko: "픽업 알림을 위해 isPhoneNumber로 유효성 검사되는 고객 전화번호",
+                  })}
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-purple-600">📋</span>
+                <div>
+                  <strong>LightIcecreamOrder</strong>:{" "}
+                  {l.trans({
+                    en: "Updated to include serveType for display in order lists and dashboards",
+                    ko: "주문 목록과 대시보드에서 표시하기 위해 serveType을 포함하도록 업데이트됨",
+                  })}
+                </div>
               </div>
             </div>
-            <div className="flex items-start gap-2">
-              <span className="text-green-600">📱</span>
-              <div>
-                <strong>phone</strong>:{" "}
-                {l.trans({
-                  en: "Customer's phone number with validation using isPhoneNumber for pickup notifications",
-                  ko: "픽업 알림을 위해 isPhoneNumber로 유효성 검사되는 고객 전화번호",
-                })}
-              </div>
+            <div>
+              {l.trans({
+                en: `Next, we need to add dictionary entries for the new fields and enum values:`,
+                ko: `다음으로, 새 필드와 열거형 값에 대한 dictionary 항목을 추가해야 합니다:`,
+              })}
             </div>
-            <div className="flex items-start gap-2">
-              <span className="text-purple-600">📋</span>
-              <div>
-                <strong>LightIcecreamOrder</strong>:{" "}
-                {l.trans({
-                  en: "Updated to include serveType for display in order lists and dashboards",
-                  ko: "주문 목록과 대시보드에서 표시하기 위해 serveType을 포함하도록 업데이트됨",
-                })}
-              </div>
-            </div>
-          </div>
-          <div>
-            {l.trans({
-              en: `Next, we need to add dictionary entries for the new fields and enum values:`,
-              ko: `다음으로, 새 필드와 열거형 값에 대한 dictionary 항목을 추가해야 합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/lib/icecreamOrder/icecreamOrder.dictionary.ts"
-            code={`
+            <Code.Snippet
+              title="apps/koyo/lib/icecreamOrder/icecreamOrder.dictionary.ts"
+              code={`
 import { modelDictionary } from "@akanjs/dictionary"; // [!code collapse:4]
 
 import type { IcecreamOrder, IcecreamOrderInsight, IcecreamOrderStatus, Topping } from "./icecreamOrder.constant";
@@ -210,16 +231,16 @@ export const dictionary = modelDictionary(["en", "ko"])
     pickup: ["Pickup", "픽업"],
     waiting: ["Waiting", "대기"],
   });`}
-          />
-          <div>
-            {l.trans({
-              en: `Next, let's add serveType and phone selection to the order form template.`,
-              ko: `다음으로, 직원이 주문을 생성하는 템플릿에서 서빙 타입과 전화번호를 선택할 수 있도록 해봅시다.`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Template.tsx"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Next, let's add serveType and phone selection to the order form template.`,
+                ko: `다음으로, 직원이 주문을 생성하는 템플릿에서 서빙 타입과 전화번호를 선택할 수 있도록 해봅시다.`,
+              })}
+            </div>
+            <Code.Snippet
+              title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Template.tsx"
+              code={`
 "use client"; // [!code collapse:4]
 import { Field, Layout } from "@akanjs/ui";
 import { cnst, st, usePage } from "@koyo/client";
@@ -264,16 +285,16 @@ export const General = ({ className, showServeType = true }: GeneralProps) => { 
     </Layout.Template>
   );
 };`}
-          />
-          <div>
-            {l.trans({
-              en: `Finally, let's display serveType on the order card to clearly show whether the customer's order is for here or take out, etc.`,
-              ko: `마지막으로, 주문 카드에 serveType을 표시해서 고객의 주문이 매장 식사인지 포장 주문인지 등을 명확하게 표시해봅시다.`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Unit.tsx"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Finally, let's display serveType on the order card to clearly show whether the customer's order is for here or take out, etc.`,
+                ko: `마지막으로, 주문 카드에 serveType을 표시해서 고객의 주문이 매장 식사인지 포장 주문인지 등을 명확하게 표시해봅시다.`,
+              })}
+            </div>
+            <Code.Snippet
+              title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Unit.tsx"
+              code={`
 import { clsx, ModelProps } from "@akanjs/client"; // [!code collapse:7]
 import { Model } from "@akanjs/ui";
 import { cnst, IcecreamOrder, usePage } from "@koyo/client";
@@ -337,29 +358,29 @@ export const Card = ({ icecreamOrder, showControls = true }: CardProps) => {
     </div>
   );
 };`}
-          />
-        </Docs.Description>
-      </Scroll.Slide>
-      <div className="my-4 h-px w-full bg-border" />
+            />
+          </Docs.Description>
+        </Scroll.Slide>
+        <div className="my-4 h-px w-full bg-border" />
 
-      <Scroll.Slide id="kiosk-landing-page" title={l.trans({ en: "Kiosk Landing Page", ko: "키오스크 랜딩 페이지" })}>
-        <Docs.Title>{l.trans({ en: "Kiosk Landing Page", ko: "키오스크 랜딩 페이지" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `The first thing customers see when they approach the kiosk is the landing page. Think of it like the welcome screen at a fast-food restaurant kiosk - it should be inviting, easy to understand, and guide customers to their first choice: "For Here" or "Take Out".`,
-              ko: `고객이 키오스크에 다가갈 때 가장 먼저 보는 것이 랜딩 페이지입니다. 패스트푸드 레스토랑 키오스크의 환영 화면처럼 생각해보세요 - 친근하고 이해하기 쉬우며 고객을 첫 번째 선택인 "매장 식사" 또는 "포장 주문"으로 안내해야 합니다.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `Let's create the landing page for the kiosk ordering flow:`,
-              ko: `키오스크 주문 흐름을 위한 랜딩 페이지를 만들어봅시다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/app/[lang]/icecreamOrder/page.tsx"
-            code={`
+        <Scroll.Slide id="kiosk-landing-page" title={l.trans({ en: "Kiosk Landing Page", ko: "키오스크 랜딩 페이지" })}>
+          <Docs.Title>{l.trans({ en: "Kiosk Landing Page", ko: "키오스크 랜딩 페이지" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `The first thing customers see when they approach the kiosk is the landing page. Think of it like the welcome screen at a fast-food restaurant kiosk - it should be inviting, easy to understand, and guide customers to their first choice: "For Here" or "Take Out".`,
+                ko: `고객이 키오스크에 다가갈 때 가장 먼저 보는 것이 랜딩 페이지입니다. 패스트푸드 레스토랑 키오스크의 환영 화면처럼 생각해보세요 - 친근하고 이해하기 쉬우며 고객을 첫 번째 선택인 "매장 식사" 또는 "포장 주문"으로 안내해야 합니다.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `Let's create the landing page for the kiosk ordering flow:`,
+                ko: `키오스크 주문 흐름을 위한 랜딩 페이지를 만들어봅시다:`,
+              })}
+            </div>
+            <Code.Snippet
+              title="apps/koyo/app/[lang]/icecreamOrder/page.tsx"
+              code={`
 import { Link, Load } from "@akanjs/ui";
 import { usePage } from "@koyo/client";
 
@@ -426,60 +447,60 @@ export default function Page() {
   );
 }
   `}
-          />
-          <div>
-            {l.trans({
-              en: `Let's break down the key features of this landing page:`,
-              ko: `이 랜딩 페이지의 주요 기능을 살펴봅시다:`,
-            })}
-          </div>
-          <div className="my-4 space-y-3">
-            <div className="rounded-lg bg-blue-50 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-blue-600">🌍</span>
-                <strong className="text-blue-800">Link.Lang</strong>
+            />
+            <div>
+              {l.trans({
+                en: `Let's break down the key features of this landing page:`,
+                ko: `이 랜딩 페이지의 주요 기능을 살펴봅시다:`,
+              })}
+            </div>
+            <div className="my-4 space-y-3">
+              <div className="rounded-lg bg-blue-50 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-blue-600">🌍</span>
+                  <strong className="text-blue-800">Link.Lang</strong>
+                </div>
+                <div className="text-blue-700 text-sm">
+                  {l.trans({
+                    en: `Language switcher buttons allow customers to choose their preferred language. This is essential for kiosks in tourist areas or multicultural neighborhoods.`,
+                    ko: `언어 전환 버튼을 통해 고객이 원하는 언어를 선택할 수 있습니다. 이는 관광지나 다문화 지역의 키오스크에 필수적입니다.`,
+                  })}
+                </div>
               </div>
-              <div className="text-blue-700 text-sm">
-                {l.trans({
-                  en: `Language switcher buttons allow customers to choose their preferred language. This is essential for kiosks in tourist areas or multicultural neighborhoods.`,
-                  ko: `언어 전환 버튼을 통해 고객이 원하는 언어를 선택할 수 있습니다. 이는 관광지나 다문화 지역의 키오스크에 필수적입니다.`,
-                })}
+              <div className="rounded-lg bg-green-50 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-green-600">🔗</span>
+                  <strong className="text-green-800">{"Link with Query Params"}</strong>
+                </div>
+                <div className="text-green-700 text-sm">
+                  {l.trans({
+                    en: `The "For Here" and "Take Out" buttons pass serveType as a query parameter to the next page. This pre-fills the order form with the customer's choice.`,
+                    ko: `"매장 식사"와 "포장 주문" 버튼은 serveType을 쿼리 파라미터로 다음 페이지에 전달합니다. 이를 통해 주문 양식에 고객의 선택이 미리 채워집니다.`,
+                  })}
+                </div>
+              </div>
+              <div className="rounded-lg bg-purple-50 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-purple-600">✨</span>
+                  <strong className="text-purple-800">{l.trans({ en: "Visual Design", ko: "비주얼 디자인" })}</strong>
+                </div>
+                <div className="text-purple-700 text-sm">
+                  {l.trans({
+                    en: `Large buttons with emojis make the interface touch-friendly. Gradient backgrounds and hover effects give the kiosk a distinct look.`,
+                    ko: `이모지가 있는 큰 버튼은 인터페이스를 터치하기 쉽게 만듭니다. 그라데이션 배경과 호버 효과로 키오스크에 개성 있는 룩을 줍니다.`,
+                  })}
+                </div>
               </div>
             </div>
-            <div className="rounded-lg bg-green-50 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-green-600">🔗</span>
-                <strong className="text-green-800">{"Link with Query Params"}</strong>
-              </div>
-              <div className="text-green-700 text-sm">
-                {l.trans({
-                  en: `The "For Here" and "Take Out" buttons pass serveType as a query parameter to the next page. This pre-fills the order form with the customer's choice.`,
-                  ko: `"매장 식사"와 "포장 주문" 버튼은 serveType을 쿼리 파라미터로 다음 페이지에 전달합니다. 이를 통해 주문 양식에 고객의 선택이 미리 채워집니다.`,
-                })}
-              </div>
+            <div>
+              {l.trans({
+                en: `After customers complete their order, they need a confirmation page. Let's create a success page that reassures them:`,
+                ko: `고객이 주문을 완료하면 확인 페이지가 필요합니다. 고객을 안심시키는 성공 페이지를 만들어봅시다:`,
+              })}
             </div>
-            <div className="rounded-lg bg-purple-50 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-purple-600">✨</span>
-                <strong className="text-purple-800">{l.trans({ en: "Visual Design", ko: "비주얼 디자인" })}</strong>
-              </div>
-              <div className="text-purple-700 text-sm">
-                {l.trans({
-                  en: `Large buttons with emojis make the interface touch-friendly. Gradient backgrounds and hover effects give the kiosk a distinct look.`,
-                  ko: `이모지가 있는 큰 버튼은 인터페이스를 터치하기 쉽게 만듭니다. 그라데이션 배경과 호버 효과로 키오스크에 개성 있는 룩을 줍니다.`,
-                })}
-              </div>
-            </div>
-          </div>
-          <div>
-            {l.trans({
-              en: `After customers complete their order, they need a confirmation page. Let's create a success page that reassures them:`,
-              ko: `고객이 주문을 완료하면 확인 페이지가 필요합니다. 고객을 안심시키는 성공 페이지를 만들어봅시다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/app/[lang]/icecreamOrder/success/page.tsx"
-            code={`
+            <Code.Snippet
+              title="apps/koyo/app/[lang]/icecreamOrder/success/page.tsx"
+              code={`
 import { Link, Load } from "@akanjs/ui";
 import { usePage } from "@koyo/client";
 
@@ -537,64 +558,64 @@ export default function Page() {
     />
   );
 }`}
-          />
-          <div>
-            {l.trans({
-              en: `The success page provides important feedback to customers:`,
-              ko: `성공 페이지는 고객에게 중요한 피드백을 제공합니다:`,
-            })}
-          </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-green-600">✓</span>
-              <div>
-                {l.trans({
-                  en: "A large checkmark icon gives instant visual confirmation that the order was successful",
-                  ko: "큰 체크 아이콘이 주문이 성공했음을 즉시 시각적으로 확인시켜줍니다",
-                })}
+            />
+            <div>
+              {l.trans({
+                en: `The success page provides important feedback to customers:`,
+                ko: `성공 페이지는 고객에게 중요한 피드백을 제공합니다:`,
+              })}
+            </div>
+            <div className="my-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <span className="text-green-600">✓</span>
+                <div>
+                  {l.trans({
+                    en: "A large checkmark icon gives instant visual confirmation that the order was successful",
+                    ko: "큰 체크 아이콘이 주문이 성공했음을 즉시 시각적으로 확인시켜줍니다",
+                  })}
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-blue-600">📢</span>
+                <div>
+                  {l.trans({
+                    en: "Clear instructions tell customers to wait for their order number to be called",
+                    ko: "명확한 안내가 고객에게 주문 번호가 호출될 때까지 기다리라고 알려줍니다",
+                  })}
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-purple-600">🏠</span>
+                <div>
+                  {l.trans({
+                    en: "A 'Place New Order' button allows the next customer to start fresh",
+                    ko: "'새 주문하기' 버튼을 통해 다음 고객이 새로 시작할 수 있습니다",
+                  })}
+                </div>
               </div>
             </div>
-            <div className="flex items-start gap-2">
-              <span className="text-blue-600">📢</span>
-              <div>
-                {l.trans({
-                  en: "Clear instructions tell customers to wait for their order number to be called",
-                  ko: "명확한 안내가 고객에게 주문 번호가 호출될 때까지 기다리라고 알려줍니다",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-purple-600">🏠</span>
-              <div>
-                {l.trans({
-                  en: "A 'Place New Order' button allows the next customer to start fresh",
-                  ko: "'새 주문하기' 버튼을 통해 다음 고객이 새로 시작할 수 있습니다",
-                })}
-              </div>
-            </div>
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <div className="my-4 h-px w-full bg-border" />
+          </Docs.Description>
+        </Scroll.Slide>
+        <div className="my-4 h-px w-full bg-border" />
 
-      <Scroll.Slide id="order-form-page" title={l.trans({ en: "Order Form Page", ko: "주문 양식 페이지" })}>
-        <Docs.Title>{l.trans({ en: "Order Form Page", ko: "주문 양식 페이지" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `The heart of the kiosk is the order form page. This is where customers actually customize their ice cream - choosing size, toppings, and entering their phone number for pickup notifications. Think of this page like the main ordering screen at a bubble tea shop where you select your drink size and add-ons.`,
-              ko: `키오스크의 핵심은 주문 양식 페이지입니다. 이곳에서 고객이 실제로 아이스크림을 커스터마이즈합니다 - 사이즈를 선택하고, 토핑을 추가하고, 픽업 알림을 위한 전화번호를 입력합니다. 버블티 가게에서 음료 사이즈와 추가 옵션을 선택하는 메인 주문 화면처럼 생각해보세요.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `The page needs to handle query parameters from the landing page and provide an intuitive form experience:`,
-              ko: `이 페이지는 랜딩 페이지에서 전달된 쿼리 파라미터를 처리하고 직관적인 폼 경험을 제공해야 합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/app/[lang]/icecreamOrder/new/page.tsx"
-            code={`
+        <Scroll.Slide id="order-form-page" title={l.trans({ en: "Order Form Page", ko: "주문 양식 페이지" })}>
+          <Docs.Title>{l.trans({ en: "Order Form Page", ko: "주문 양식 페이지" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `The heart of the kiosk is the order form page. This is where customers actually customize their ice cream - choosing size, toppings, and entering their phone number for pickup notifications. Think of this page like the main ordering screen at a bubble tea shop where you select your drink size and add-ons.`,
+                ko: `키오스크의 핵심은 주문 양식 페이지입니다. 이곳에서 고객이 실제로 아이스크림을 커스터마이즈합니다 - 사이즈를 선택하고, 토핑을 추가하고, 픽업 알림을 위한 전화번호를 입력합니다. 버블티 가게에서 음료 사이즈와 추가 옵션을 선택하는 메인 주문 화면처럼 생각해보세요.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `The page needs to handle query parameters from the landing page and provide an intuitive form experience:`,
+                ko: `이 페이지는 랜딩 페이지에서 전달된 쿼리 파라미터를 처리하고 직관적인 폼 경험을 제공해야 합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              title="apps/koyo/app/[lang]/icecreamOrder/new/page.tsx"
+              code={`
 import { Load } from "@akanjs/ui";
 import { cnst, IcecreamOrder, usePage } from "@koyo/client";
 
@@ -643,60 +664,60 @@ export default function Page({ searchParams }: PageProps) {
     />
   );
 }`}
-          />
-          <div>
-            {l.trans({
-              en: `Let's understand the key components of this order form page:`,
-              ko: `이 주문 양식 페이지의 주요 구성 요소를 이해해봅시다:`,
-            })}
-          </div>
-          <div className="my-4 space-y-3">
-            <div className="rounded-lg bg-blue-50 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-blue-600">🔍</span>
-                <strong className="text-blue-800">searchParams</strong>
+            />
+            <div>
+              {l.trans({
+                en: `Let's understand the key components of this order form page:`,
+                ko: `이 주문 양식 페이지의 주요 구성 요소를 이해해봅시다:`,
+              })}
+            </div>
+            <div className="my-4 space-y-3">
+              <div className="rounded-lg bg-blue-50 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-blue-600">🔍</span>
+                  <strong className="text-blue-800">searchParams</strong>
+                </div>
+                <div className="text-blue-700 text-sm">
+                  {l.trans({
+                    en: `Next.js provides searchParams as a Promise that contains URL query parameters. We extract the serveType to pre-fill the order form with the customer's choice from the landing page.`,
+                    ko: `Next.js는 URL 쿼리 파라미터를 포함하는 Promise로 searchParams를 제공합니다. serveType을 추출하여 랜딩 페이지에서 고객이 선택한 내용으로 주문 양식을 미리 채웁니다.`,
+                  })}
+                </div>
               </div>
-              <div className="text-blue-700 text-sm">
-                {l.trans({
-                  en: `Next.js provides searchParams as a Promise that contains URL query parameters. We extract the serveType to pre-fill the order form with the customer's choice from the landing page.`,
-                  ko: `Next.js는 URL 쿼리 파라미터를 포함하는 Promise로 searchParams를 제공합니다. serveType을 추출하여 랜딩 페이지에서 고객이 선택한 내용으로 주문 양식을 미리 채웁니다.`,
-                })}
+              <div className="rounded-lg bg-green-50 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-green-600">📝</span>
+                  <strong className="text-green-800">Load.Edit</strong>
+                </div>
+                <div className="text-green-700 text-sm">
+                  {l.trans({
+                    en: `The Load.Edit component handles form state management, validation, and submission. It connects to the slice for data persistence and automatically navigates to the success page on submit.`,
+                    ko: `Load.Edit 컴포넌트는 폼 상태 관리, 유효성 검사, 제출을 처리합니다. 데이터 저장을 위해 슬라이스에 연결되고 제출 시 자동으로 성공 페이지로 이동합니다.`,
+                  })}
+                </div>
+              </div>
+              <div className="rounded-lg bg-purple-50 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-purple-600">↩️</span>
+                  <strong className="text-purple-800">{'onCancel="back"'}</strong>
+                </div>
+                <div className="text-purple-700 text-sm">
+                  {l.trans({
+                    en: `Setting onCancel to "back" enables the cancel button to navigate back to the previous page. This provides an easy way for customers to change their mind.`,
+                    ko: `onCancel을 "back"으로 설정하면 취소 버튼이 이전 페이지로 돌아갑니다. 이를 통해 고객이 쉽게 마음을 바꿀 수 있습니다.`,
+                  })}
+                </div>
               </div>
             </div>
-            <div className="rounded-lg bg-green-50 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-green-600">📝</span>
-                <strong className="text-green-800">Load.Edit</strong>
-              </div>
-              <div className="text-green-700 text-sm">
-                {l.trans({
-                  en: `The Load.Edit component handles form state management, validation, and submission. It connects to the slice for data persistence and automatically navigates to the success page on submit.`,
-                  ko: `Load.Edit 컴포넌트는 폼 상태 관리, 유효성 검사, 제출을 처리합니다. 데이터 저장을 위해 슬라이스에 연결되고 제출 시 자동으로 성공 페이지로 이동합니다.`,
-                })}
-              </div>
+            <div>
+              {l.trans({
+                en: `Now let's style the Template component for the kiosk experience. Each section is wrapped in a card with icons:`,
+                ko: `이제 키오스크 경험을 위해 Template 컴포넌트를 스타일링해봅시다. 각 섹션은 아이콘이 있는 카드로 감싸져 있습니다:`,
+              })}
             </div>
-            <div className="rounded-lg bg-purple-50 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-purple-600">↩️</span>
-                <strong className="text-purple-800">{'onCancel="back"'}</strong>
-              </div>
-              <div className="text-purple-700 text-sm">
-                {l.trans({
-                  en: `Setting onCancel to "back" enables the cancel button to navigate back to the previous page. This provides an easy way for customers to change their mind.`,
-                  ko: `onCancel을 "back"으로 설정하면 취소 버튼이 이전 페이지로 돌아갑니다. 이를 통해 고객이 쉽게 마음을 바꿀 수 있습니다.`,
-                })}
-              </div>
-            </div>
-          </div>
-          <div>
-            {l.trans({
-              en: `Now let's style the Template component for the kiosk experience. Each section is wrapped in a card with icons:`,
-              ko: `이제 키오스크 경험을 위해 Template 컴포넌트를 스타일링해봅시다. 각 섹션은 아이콘이 있는 카드로 감싸져 있습니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Template.tsx"
-            code={`
+            <Code.Snippet
+              title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Template.tsx"
+              code={`
 "use client";
 import { clsx } from "@akanjs/client"; // [!code ++]
 import { Field, Layout } from "@akanjs/ui"; // [!code collapse:8]
@@ -769,57 +790,57 @@ export const General = ({ className, showServeType = true }: GeneralProps) => {
     </Layout.Template>
   );
 };`}
-          />
-          <div>
-            {l.trans({
-              en: `The Template component uses these Field components for kiosk-friendly input:`,
-              ko: `Template 컴포넌트는 키오스크 친화적인 입력을 위해 다음 Field 컴포넌트들을 사용합니다:`,
-            })}
-          </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-blue-600">📏</span>
-              <div>
-                <strong>Field.ToggleSelect</strong>:{" "}
-                {l.trans({
-                  en: "Large, touch-friendly buttons for selecting a single option (size)",
-                  ko: "단일 옵션(사이즈) 선택을 위한 크고 터치하기 쉬운 버튼",
-                })}
+            />
+            <div>
+              {l.trans({
+                en: `The Template component uses these Field components for kiosk-friendly input:`,
+                ko: `Template 컴포넌트는 키오스크 친화적인 입력을 위해 다음 Field 컴포넌트들을 사용합니다:`,
+              })}
+            </div>
+            <div className="my-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <span className="text-blue-600">📏</span>
+                <div>
+                  <strong>Field.ToggleSelect</strong>:{" "}
+                  {l.trans({
+                    en: "Large, touch-friendly buttons for selecting a single option (size)",
+                    ko: "단일 옵션(사이즈) 선택을 위한 크고 터치하기 쉬운 버튼",
+                  })}
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-pink-600">🍓</span>
+                <div>
+                  <strong>Field.MultiToggleSelect</strong>:{" "}
+                  {l.trans({
+                    en: "Allows selecting multiple options (toppings) with visual feedback",
+                    ko: "시각적 피드백과 함께 여러 옵션(토핑)을 선택할 수 있습니다",
+                  })}
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-green-600">📱</span>
+                <div>
+                  <strong>Field.Phone</strong>:{" "}
+                  {l.trans({
+                    en: "Phone number input with formatting and validation built-in",
+                    ko: "형식 지정과 유효성 검사가 내장된 전화번호 입력",
+                  })}
+                </div>
               </div>
             </div>
-            <div className="flex items-start gap-2">
-              <span className="text-pink-600">🍓</span>
-              <div>
-                <strong>Field.MultiToggleSelect</strong>:{" "}
-                {l.trans({
-                  en: "Allows selecting multiple options (toppings) with visual feedback",
-                  ko: "시각적 피드백과 함께 여러 옵션(토핑)을 선택할 수 있습니다",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-green-600">📱</span>
-              <div>
-                <strong>Field.Phone</strong>:{" "}
-                {l.trans({
-                  en: "Phone number input with formatting and validation built-in",
-                  ko: "형식 지정과 유효성 검사가 내장된 전화번호 입력",
-                })}
-              </div>
-            </div>
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <div className="my-4 h-px w-full bg-border" />
+          </Docs.Description>
+        </Scroll.Slide>
+        <div className="my-4 h-px w-full bg-border" />
 
-      <div>
-        {l.trans({
-          en: `In the next tutorial, we'll explore how to use Scalar for computed values and aggregations. This will allow you to display dynamic information like order totals, wait times, and statistics in real-time.`,
-          ko: `다음 튜토리얼에서는 계산된 값과 집계를 위한 Scalar 사용법을 살펴볼 것입니다. 이를 통해 주문 합계, 대기 시간, 통계와 같은 동적 정보를 실시간으로 표시할 수 있게 됩니다.`,
-        })}
-      </div>
+        <div>
+          {l.trans({
+            en: `In the next tutorial, we'll explore how to use Scalar for computed values and aggregations. This will allow you to display dynamic information like order totals, wait times, and statistics in real-time.`,
+            ko: `다음 튜토리얼에서는 계산된 값과 집계를 위한 Scalar 사용법을 살펴볼 것입니다. 이를 통해 주문 합계, 대기 시간, 통계와 같은 동적 정보를 실시간으로 표시할 수 있게 됩니다.`,
+          })}
+        </div>
 
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 xl:flex" />
-    </Scroll>
-  );
-});
+        <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 xl:flex" />
+      </Scroll>
+    );
+  });

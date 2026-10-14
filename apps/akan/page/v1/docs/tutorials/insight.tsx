@@ -3,41 +3,57 @@ import { Code, Docs } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
-export default page().render(() => {
-  const { l } = usePage();
-  return (
-    <Scroll>
-      <Scroll.Slide id="stats-of-query" title={l.trans({ en: "Stats of Query", ko: "쿼리 통계" })}>
-        <Docs.Title>{l.trans({ en: "Stats of Query", ko: "쿼리 통계" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `When multiple orders come in at once, you can make ice cream at once. You need to extract the insight of the current orders' ice cream amount, topping information, etc.`,
-              ko: `여러 주문이 동시에 들어오면, 한꺼번에 아이스크림을 만들면 손님들이 기다리는 시간을 줄일 수 있습니다. 이를 위해서는 현재 주문들의 아이스크림 양, 토핑정보 등에 대한 인사이트를 추출해야 합니다.`,
-            })}
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <div className="my-4 h-px w-full bg-border" />
+export default page()
+  .config({ transition: "fade" })
+  .head(({ lang }) => {
+    const title =
+      lang === "ko" ? "튜토리얼: 인사이트 사용하기 | Akan.js v1 문서" : "Tutorials: Using Insight | Akan.js v1 Docs";
+    const description =
+      lang === "ko" ? "v1: 인사이트 카운터로 주문을 요약합니다." : "v1: summarize orders with insight counters.";
+    return (
+      <>
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+      </>
+    );
+  })
+  .render(() => {
+    const { l } = usePage();
+    return (
+      <Scroll>
+        <Scroll.Slide id="stats-of-query" title={l.trans({ en: "Stats of Query", ko: "쿼리 통계" })}>
+          <Docs.Title>{l.trans({ en: "Stats of Query", ko: "쿼리 통계" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `When multiple orders come in at once, you can make ice cream at once. You need to extract the insight of the current orders' ice cream amount, topping information, etc.`,
+                ko: `여러 주문이 동시에 들어오면, 한꺼번에 아이스크림을 만들면 손님들이 기다리는 시간을 줄일 수 있습니다. 이를 위해서는 현재 주문들의 아이스크림 양, 토핑정보 등에 대한 인사이트를 추출해야 합니다.`,
+              })}
+            </div>
+          </Docs.Description>
+        </Scroll.Slide>
+        <div className="my-4 h-px w-full bg-border" />
 
-      <Scroll.Slide id="create-query-maker" title={l.trans({ en: "Create Query Maker", ko: "쿼리 메이커 생성하기" })}>
-        <Docs.Title>{l.trans({ en: "Create Query Maker", ko: "쿼리 메이커 생성하기" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `Before extracting insights, we need to define what data we want to query. A Query Maker allows users to filter data dynamically - like a barista checking orders by status to see which drinks to make next. Let's enhance our Slice to support flexible queries with search parameters.`,
-              ko: `인사이트를 추출하기 전에, 어떤 데이터를 쿼리할지 정의해야 합니다. 쿼리 메이커를 사용하면 사용자가 동적으로 데이터를 필터링할 수 있습니다 - 마치 바리스타가 다음에 어떤 음료를 만들지 확인하기 위해 주문을 상태별로 확인하는 것처럼요. 검색 파라미터를 지원하도록 Slice를 개선해봅시다.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `First, let's update the Slice to accept status filters. The .search() method defines query parameters that users can set from the frontend:`,
-              ko: `먼저, 상태 필터를 받을 수 있도록 Slice를 업데이트합니다. .search() 메서드는 사용자가 프론트엔드에서 설정할 수 있는 쿼리 파라미터를 정의합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts"
-            code={`
+        <Scroll.Slide id="create-query-maker" title={l.trans({ en: "Create Query Maker", ko: "쿼리 메이커 생성하기" })}>
+          <Docs.Title>{l.trans({ en: "Create Query Maker", ko: "쿼리 메이커 생성하기" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `Before extracting insights, we need to define what data we want to query. A Query Maker allows users to filter data dynamically - like a barista checking orders by status to see which drinks to make next. Let's enhance our Slice to support flexible queries with search parameters.`,
+                ko: `인사이트를 추출하기 전에, 어떤 데이터를 쿼리할지 정의해야 합니다. 쿼리 메이커를 사용하면 사용자가 동적으로 데이터를 필터링할 수 있습니다 - 마치 바리스타가 다음에 어떤 음료를 만들지 확인하기 위해 주문을 상태별로 확인하는 것처럼요. 검색 파라미터를 지원하도록 Slice를 개선해봅시다.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `First, let's update the Slice to accept status filters. The .search() method defines query parameters that users can set from the frontend:`,
+                ko: `먼저, 상태 필터를 받을 수 있도록 Slice를 업데이트합니다. .search() 메서드는 사용자가 프론트엔드에서 설정할 수 있는 쿼리 파라미터를 정의합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              title="apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts"
+              code={`
 import { ID } from "@akanjs/base"; // [!code collapse:13]
 import { Public } from "@akanjs/nest";
 import { endpoint, internal, slice } from "@akanjs/signal";
@@ -94,48 +110,48 @@ export class IcecreamOrderEndpoint extends endpoint(srv.icecreamOrder, ({ query,
       return this.icecreamOrderService.cancelIcecreamOrder(icecreamOrderId);
     }),
 })) {}`}
-          />
-          <div>
-            {l.trans({
-              en: `Let's understand the key components of this Slice definition:`,
-              ko: `이 Slice 정의의 핵심 구성 요소를 이해해봅시다:`,
-            })}
-          </div>
-          <div className="my-4 space-y-3">
-            <div className="rounded-lg bg-blue-50 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-blue-600">🔍</span>
-                <strong className="text-blue-800">{".search()"}</strong>
+            />
+            <div>
+              {l.trans({
+                en: `Let's understand the key components of this Slice definition:`,
+                ko: `이 Slice 정의의 핵심 구성 요소를 이해해봅시다:`,
+              })}
+            </div>
+            <div className="my-4 space-y-3">
+              <div className="rounded-lg bg-blue-50 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-blue-600">🔍</span>
+                  <strong className="text-blue-800">{".search()"}</strong>
+                </div>
+                <div className="text-blue-700 text-sm">
+                  {l.trans({
+                    en: `Defines a searchable parameter that can be set from the frontend. Here, "statuses" accepts an array of IcecreamOrderStatus values to filter orders.`,
+                    ko: `프론트엔드에서 설정할 수 있는 검색 가능한 파라미터를 정의합니다. 여기서 "statuses"는 주문을 필터링하기 위한 IcecreamOrderStatus 값 배열을 받습니다.`,
+                  })}
+                </div>
               </div>
-              <div className="text-blue-700 text-sm">
-                {l.trans({
-                  en: `Defines a searchable parameter that can be set from the frontend. Here, "statuses" accepts an array of IcecreamOrderStatus values to filter orders.`,
-                  ko: `프론트엔드에서 설정할 수 있는 검색 가능한 파라미터를 정의합니다. 여기서 "statuses"는 주문을 필터링하기 위한 IcecreamOrderStatus 값 배열을 받습니다.`,
-                })}
+              <div className="rounded-lg bg-green-50 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-green-600">⚡</span>
+                  <strong className="text-green-800">inWaiting / inPickup</strong>
+                </div>
+                <div className="text-green-700 text-sm">
+                  {l.trans({
+                    en: `Pre-defined slices with fixed status filters. inWaiting shows active and processing orders, while inPickup shows orders ready for customer pickup.`,
+                    ko: `고정된 상태 필터가 있는 미리 정의된 슬라이스입니다. inWaiting은 활성화 및 처리 중인 주문을, inPickup은 고객 픽업 준비가 된 주문을 보여줍니다.`,
+                  })}
+                </div>
               </div>
             </div>
-            <div className="rounded-lg bg-green-50 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-green-600">⚡</span>
-                <strong className="text-green-800">inWaiting / inPickup</strong>
-              </div>
-              <div className="text-green-700 text-sm">
-                {l.trans({
-                  en: `Pre-defined slices with fixed status filters. inWaiting shows active and processing orders, while inPickup shows orders ready for customer pickup.`,
-                  ko: `고정된 상태 필터가 있는 미리 정의된 슬라이스입니다. inWaiting은 활성화 및 처리 중인 주문을, inPickup은 고객 픽업 준비가 된 주문을 보여줍니다.`,
-                })}
-              </div>
+            <div>
+              {l.trans({
+                en: `Add dictionary entries for the slice and its search parameter to enable localization:`,
+                ko: `로컬라이제이션을 위해 슬라이스와 검색 파라미터에 대한 dictionary 항목을 추가합니다:`,
+              })}
             </div>
-          </div>
-          <div>
-            {l.trans({
-              en: `Add dictionary entries for the slice and its search parameter to enable localization:`,
-              ko: `로컬라이제이션을 위해 슬라이스와 검색 파라미터에 대한 dictionary 항목을 추가합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/lib/icecreamOrder/icecreamOrder.dictionary.ts"
-            code={`
+            <Code.Snippet
+              title="apps/koyo/lib/icecreamOrder/icecreamOrder.dictionary.ts"
+              code={`
 import { modelDictionary } from "@akanjs/dictionary"; // [!code collapse:11]
 
 import type {
@@ -229,16 +245,16 @@ export const dictionary = modelDictionary(["en", "ko"])
     waiting: ["Waiting", "대기"],
   });
 `}
-          />
-          <div>
-            {l.trans({
-              en: `Now let's create a UI component that allows users to select which statuses to filter by. This Query Maker component uses the auto-generated store hooks:`,
-              ko: `이제 사용자가 필터링할 상태를 선택할 수 있는 UI 컴포넌트를 만들어봅시다. 이 쿼리 메이커 컴포넌트는 자동 생성된 스토어 훅을 사용합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Util.tsx"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Now let's create a UI component that allows users to select which statuses to filter by. This Query Maker component uses the auto-generated store hooks:`,
+                ko: `이제 사용자가 필터링할 상태를 선택할 수 있는 UI 컴포넌트를 만들어봅시다. 이 쿼리 메이커 컴포넌트는 자동 생성된 스토어 훅을 사용합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Util.tsx"
+              code={`
 "use client"; // [!code collapse:3]
 import { buttonRecipe } from "@akanjs/ui";
 import { st, usePage } from "@koyo/client";
@@ -342,44 +358,44 @@ export const PublicQueryMaker = ({ className }: PublicQueryMakerProps) => {
     />
   );
 };`}
-          />
-          <div>
-            {l.trans({
-              en: `Key features of the Query Maker component:`,
-              ko: `쿼리 메이커 컴포넌트의 주요 기능:`,
-            })}
-          </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-blue-600">🎣</span>
-              <div>
-                <strong>st.use.queryArgsOfIcecreamOrderInPublic()</strong>:{" "}
-                {l.trans({
-                  en: "Auto-generated hook that reads the current query arguments from the store. Returns the statuses array.",
-                  ko: "스토어에서 현재 쿼리 인자를 읽는 자동 생성된 훅입니다. statuses 배열을 반환합니다.",
-                })}
+            />
+            <div>
+              {l.trans({
+                en: `Key features of the Query Maker component:`,
+                ko: `쿼리 메이커 컴포넌트의 주요 기능:`,
+              })}
+            </div>
+            <div className="my-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <span className="text-blue-600">🎣</span>
+                <div>
+                  <strong>st.use.queryArgsOfIcecreamOrderInPublic()</strong>:{" "}
+                  {l.trans({
+                    en: "Auto-generated hook that reads the current query arguments from the store. Returns the statuses array.",
+                    ko: "스토어에서 현재 쿼리 인자를 읽는 자동 생성된 훅입니다. statuses 배열을 반환합니다.",
+                  })}
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-green-600">📝</span>
+                <div>
+                  <strong>st.do.setQueryArgsOfIcecreamOrderInPublic()</strong>:{" "}
+                  {l.trans({
+                    en: "Updates the query arguments in the store, which automatically triggers a re-fetch of the filtered data.",
+                    ko: "스토어의 쿼리 인자를 업데이트하며, 이는 자동으로 필터링된 데이터의 재조회를 트리거합니다.",
+                  })}
+                </div>
               </div>
             </div>
-            <div className="flex items-start gap-2">
-              <span className="text-green-600">📝</span>
-              <div>
-                <strong>st.do.setQueryArgsOfIcecreamOrderInPublic()</strong>:{" "}
-                {l.trans({
-                  en: "Updates the query arguments in the store, which automatically triggers a re-fetch of the filtered data.",
-                  ko: "스토어의 쿼리 인자를 업데이트하며, 이는 자동으로 필터링된 데이터의 재조회를 트리거합니다.",
-                })}
-              </div>
+            <div>
+              {l.trans({
+                en: `Finally, add the Query Maker to your page so users can filter orders dynamically:`,
+                ko: `마지막으로, 사용자가 동적으로 주문을 필터링할 수 있도록 페이지에 쿼리 메이커를 추가합니다:`,
+              })}
             </div>
-          </div>
-          <div>
-            {l.trans({
-              en: `Finally, add the Query Maker to your page so users can filter orders dynamically:`,
-              ko: `마지막으로, 사용자가 동적으로 주문을 필터링할 수 있도록 페이지에 쿼리 메이커를 추가합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/app/[lang]/page.tsx"
-            code={`
+            <Code.Snippet
+              title="apps/koyo/app/[lang]/page.tsx"
+              code={`
 import { Load, Model } from "@akanjs/ui"; // [!code collapse:3]
 import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@koyo/client";
 
@@ -424,32 +440,32 @@ export default function Page() {
     />
   );
 }`}
-          />
-        </Docs.Description>
-      </Scroll.Slide>
-      <div className="my-4 h-px w-full bg-border" />
+            />
+          </Docs.Description>
+        </Scroll.Slide>
+        <div className="my-4 h-px w-full bg-border" />
 
-      <Scroll.Slide
-        id="accelerate-with-insight"
-        title={l.trans({ en: "Accelerate with Insight", ko: "인사이트로 가속하기" })}
-      >
-        <Docs.Title>{l.trans({ en: "Accelerate with Insight", ko: "인사이트로 가속하기" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: `Now that we can filter our queries, let's aggregate the data. Insight aggregates data across documents using MongoDB aggregation pipelines. Think of it like a kitchen display system that shows the chef exactly how many of each ingredient they need to prepare - total yogurt amount, number of each topping, etc.`,
-              ko: `이제 쿼리를 필터링할 수 있으니, 데이터를 집계해봅시다. Insight는 MongoDB 집계 파이프라인을 사용하여 문서 전체에서 데이터를 집계합니다. 주방 디스플레이 시스템이 셰프에게 준비해야 할 각 재료의 정확한 양을 보여주는 것처럼 생각해보세요 - 총 요거트 양, 각 토핑의 개수 등.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `First, define the Insight class in your constant file. Each field uses the accumulate option to specify how values should be aggregated:`,
-              ko: `먼저, constant 파일에 Insight 클래스를 정의합니다. 각 필드는 값이 어떻게 집계되어야 하는지 지정하기 위해 accumulate 옵션을 사용합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/lib/icecreamOrder/icecreamOrder.constant.ts"
-            code={`
+        <Scroll.Slide
+          id="accelerate-with-insight"
+          title={l.trans({ en: "Accelerate with Insight", ko: "인사이트로 가속하기" })}
+        >
+          <Docs.Title>{l.trans({ en: "Accelerate with Insight", ko: "인사이트로 가속하기" })}</Docs.Title>
+          <Docs.Description>
+            <div>
+              {l.trans({
+                en: `Now that we can filter our queries, let's aggregate the data. Insight aggregates data across documents using MongoDB aggregation pipelines. Think of it like a kitchen display system that shows the chef exactly how many of each ingredient they need to prepare - total yogurt amount, number of each topping, etc.`,
+                ko: `이제 쿼리를 필터링할 수 있으니, 데이터를 집계해봅시다. Insight는 MongoDB 집계 파이프라인을 사용하여 문서 전체에서 데이터를 집계합니다. 주방 디스플레이 시스템이 셰프에게 준비해야 할 각 재료의 정확한 양을 보여주는 것처럼 생각해보세요 - 총 요거트 양, 각 토핑의 개수 등.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `First, define the Insight class in your constant file. Each field uses the accumulate option to specify how values should be aggregated:`,
+                ko: `먼저, constant 파일에 Insight 클래스를 정의합니다. 각 필드는 값이 어떻게 집계되어야 하는지 지정하기 위해 accumulate 옵션을 사용합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              title="apps/koyo/lib/icecreamOrder/icecreamOrder.constant.ts"
+              code={`
 import { enumOf, Int } from "@akanjs/base"; // [!code collapse:45]
 import { isPhoneNumber } from "@akanjs/common";
 import { via } from "@akanjs/constant";
@@ -519,48 +535,50 @@ export class IcecreamOrderInsight extends via(IcecreamOrder, (field) => ({
   bananaQty: field(Int, { default: 0, accumulate: { $sum: { $cond: [{ $in: ["banana", "$toppings"] }, 1, 0] } } }),
   figQty: field(Int, { default: 0, accumulate: { $sum: { $cond: [{ $in: ["fig", "$toppings"] }, 1, 0] } } }),
 })) {}`}
-          />
-          <div>
-            {l.trans({
-              en: `Let's break down the aggregation patterns used:`,
-              ko: `사용된 집계 패턴을 살펴봅시다:`,
-            })}
-          </div>
-          <div className="my-4 space-y-3">
-            <div className="rounded-lg bg-blue-50 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-blue-600">🍦</span>
-                <strong className="text-blue-800">{'{ $sum: "$size" }'}</strong>
+            />
+            <div>
+              {l.trans({
+                en: `Let's break down the aggregation patterns used:`,
+                ko: `사용된 집계 패턴을 살펴봅시다:`,
+              })}
+            </div>
+            <div className="my-4 space-y-3">
+              <div className="rounded-lg bg-blue-50 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-blue-600">🍦</span>
+                  <strong className="text-blue-800">{'{ $sum: "$size" }'}</strong>
+                </div>
+                <div className="text-blue-700 text-sm">
+                  {l.trans({
+                    en: `Sums up the size field from all matching orders. If 3 orders have sizes 50, 100, and 200, yogurtIcecreamQty will be 350.`,
+                    ko: `일치하는 모든 주문의 size 필드를 합산합니다. 3개 주문의 사이즈가 50, 100, 200이면, yogurtIcecreamQty는 350이 됩니다.`,
+                  })}
+                </div>
               </div>
-              <div className="text-blue-700 text-sm">
-                {l.trans({
-                  en: `Sums up the size field from all matching orders. If 3 orders have sizes 50, 100, and 200, yogurtIcecreamQty will be 350.`,
-                  ko: `일치하는 모든 주문의 size 필드를 합산합니다. 3개 주문의 사이즈가 50, 100, 200이면, yogurtIcecreamQty는 350이 됩니다.`,
-                })}
+              <div className="rounded-lg bg-green-50 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-green-600">🍓</span>
+                  <strong className="text-green-800">
+                    {'{ $cond: [{ $in: ["strawberry", "$toppings"] }, 1, 0] }'}
+                  </strong>
+                </div>
+                <div className="text-green-700 text-sm">
+                  {l.trans({
+                    en: `A conditional expression: if "strawberry" is in the toppings array, count 1; otherwise 0. The $sum aggregates these to get the total count.`,
+                    ko: `조건식입니다: "strawberry"가 toppings 배열에 있으면 1을 세고, 없으면 0입니다. $sum이 이를 집계하여 총 개수를 구합니다.`,
+                  })}
+                </div>
               </div>
             </div>
-            <div className="rounded-lg bg-green-50 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-green-600">🍓</span>
-                <strong className="text-green-800">{'{ $cond: [{ $in: ["strawberry", "$toppings"] }, 1, 0] }'}</strong>
-              </div>
-              <div className="text-green-700 text-sm">
-                {l.trans({
-                  en: `A conditional expression: if "strawberry" is in the toppings array, count 1; otherwise 0. The $sum aggregates these to get the total count.`,
-                  ko: `조건식입니다: "strawberry"가 toppings 배열에 있으면 1을 세고, 없으면 0입니다. $sum이 이를 집계하여 총 개수를 구합니다.`,
-                })}
-              </div>
+            <div>
+              {l.trans({
+                en: `Add dictionary entries for the insight fields to enable proper labeling in the UI:`,
+                ko: `UI에서 적절한 레이블링을 위해 insight 필드에 대한 dictionary 항목을 추가합니다:`,
+              })}
             </div>
-          </div>
-          <div>
-            {l.trans({
-              en: `Add dictionary entries for the insight fields to enable proper labeling in the UI:`,
-              ko: `UI에서 적절한 레이블링을 위해 insight 필드에 대한 dictionary 항목을 추가합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/lib/icecreamOrder/icecreamOrder.dictionary.ts"
-            code={`
+            <Code.Snippet
+              title="apps/koyo/lib/icecreamOrder/icecreamOrder.dictionary.ts"
+              code={`
 import { modelDictionary } from "@akanjs/dictionary"; // [!code collapse:11]
 
 import type {
@@ -667,16 +685,16 @@ export const dictionary = modelDictionary(["en", "ko"])
     waiting: ["Waiting", "대기"],
   });
 `}
-          />
-          <div>
-            {l.trans({
-              en: `Now let's create a View component to display the aggregated insights in a dashboard layout:`,
-              ko: `이제 집계된 인사이트를 대시보드 레이아웃으로 표시하는 View 컴포넌트를 만들어봅시다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/lib/icecreamOrder/IcecreamOrder.View.tsx"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `Now let's create a View component to display the aggregated insights in a dashboard layout:`,
+                ko: `이제 집계된 인사이트를 대시보드 레이아웃으로 표시하는 View 컴포넌트를 만들어봅시다:`,
+              })}
+            </div>
+            <Code.Snippet
+              title="apps/koyo/lib/icecreamOrder/IcecreamOrder.View.tsx"
+              code={`
 import { clsx } from "@akanjs/client"; // [!code collapse:65]
 import { cnst, usePage } from "@koyo/client";
 import { IcecreamOrder } from "@koyo/client";
@@ -795,22 +813,22 @@ export const Insight = ({ className, icecreamOrderInsight }: InsightProps) => {
     </div>
   );
 };`}
-          />
-          <div>
-            {l.trans({
-              en: `The View component displays each insight metric in a responsive grid. The chef can quickly see how much yogurt to prepare and which toppings are most popular.`,
-              ko: `View 컴포넌트는 각 인사이트 메트릭을 반응형 그리드에 표시합니다. 셰프는 얼마나 많은 요거트를 준비해야 하는지, 어떤 토핑이 가장 인기 있는지 빠르게 확인할 수 있습니다.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `Now create a Zone component that connects the View to the store. Zone components handle data fetching and state management:`,
-              ko: `이제 View를 스토어에 연결하는 Zone 컴포넌트를 만듭니다. Zone 컴포넌트는 데이터 페칭과 상태 관리를 처리합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Zone.tsx"
-            code={`
+            />
+            <div>
+              {l.trans({
+                en: `The View component displays each insight metric in a responsive grid. The chef can quickly see how much yogurt to prepare and which toppings are most popular.`,
+                ko: `View 컴포넌트는 각 인사이트 메트릭을 반응형 그리드에 표시합니다. 셰프는 얼마나 많은 요거트를 준비해야 하는지, 어떤 토핑이 가장 인기 있는지 빠르게 확인할 수 있습니다.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `Now create a Zone component that connects the View to the store. Zone components handle data fetching and state management:`,
+                ko: `이제 View를 스토어에 연결하는 Zone 컴포넌트를 만듭니다. Zone 컴포넌트는 데이터 페칭과 상태 관리를 처리합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Zone.tsx"
+              code={`
 "use client"; // [!code collapse:54]
 import { DefaultOf } from "@akanjs/constant";
 import { useInterval } from "@akanjs/next";
@@ -873,34 +891,34 @@ export const Insight = ({ className, sliceName = "icecreamOrder" }: InsightProps
   const icecreamOrderInsight = st.slice[sliceName as "icecreamOrder"].use.icecreamOrderInsight();
   return <IcecreamOrder.View.Insight className={className} icecreamOrderInsight={icecreamOrderInsight} />;
 };`}
-          />
-          <div>
-            {l.trans({
-              en: `Key feature of the Zone component:`,
-              ko: `Zone 컴포넌트의 주요 기능:`,
-            })}
-          </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-purple-600">🔗</span>
-              <div>
-                <strong>st.slice[sliceName].use.icecreamOrderInsight()</strong>:{" "}
-                {l.trans({
-                  en: "Auto-generated hook that retrieves the aggregated insight data for the specified slice. The framework handles all the aggregation pipeline execution.",
-                  ko: "지정된 슬라이스에 대한 집계된 인사이트 데이터를 가져오는 자동 생성된 훅입니다. 프레임워크가 모든 집계 파이프라인 실행을 처리합니다.",
-                })}
+            />
+            <div>
+              {l.trans({
+                en: `Key feature of the Zone component:`,
+                ko: `Zone 컴포넌트의 주요 기능:`,
+              })}
+            </div>
+            <div className="my-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <span className="text-purple-600">🔗</span>
+                <div>
+                  <strong>st.slice[sliceName].use.icecreamOrderInsight()</strong>:{" "}
+                  {l.trans({
+                    en: "Auto-generated hook that retrieves the aggregated insight data for the specified slice. The framework handles all the aggregation pipeline execution.",
+                    ko: "지정된 슬라이스에 대한 집계된 인사이트 데이터를 가져오는 자동 생성된 훅입니다. 프레임워크가 모든 집계 파이프라인 실행을 처리합니다.",
+                  })}
+                </div>
               </div>
             </div>
-          </div>
-          <div>
-            {l.trans({
-              en: `Finally, add the Insight Zone to your page to display real-time aggregated statistics:`,
-              ko: `마지막으로, 실시간 집계 통계를 표시하기 위해 페이지에 Insight Zone을 추가합니다:`,
-            })}
-          </div>
-          <Code.Snippet
-            title="apps/koyo/app/[lang]/page.tsx"
-            code={`
+            <div>
+              {l.trans({
+                en: `Finally, add the Insight Zone to your page to display real-time aggregated statistics:`,
+                ko: `마지막으로, 실시간 집계 통계를 표시하기 위해 페이지에 Insight Zone을 추가합니다:`,
+              })}
+            </div>
+            <Code.Snippet
+              title="apps/koyo/app/[lang]/page.tsx"
+              code={`
 import { Load, Model } from "@akanjs/ui"; // [!code collapse:21]
 import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@koyo/client";
 
@@ -946,24 +964,24 @@ export default function Page() {
     />
   );
 }`}
-          />
-          <div>
-            {l.trans({
-              en: `When users filter orders by status, the insight dashboard automatically updates to show aggregated statistics for only those filtered orders.`,
-              ko: `사용자가 상태별로 주문을 필터링하면, 인사이트 대시보드가 자동으로 업데이트되어 필터링된 주문에 대한 집계 통계만 보여줍니다.`,
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: `In the next tutorial, we'll explore how to relate data between different models. This will allow you to create relationships like associating orders with customers, linking products to categories, and building complex data graphs.`,
-              ko: `다음 튜토리얼에서는 서로 다른 모델 간의 데이터 연결 방법을 살펴볼 것입니다. 이를 통해 주문과 고객 연결, 제품과 카테고리 연결, 복잡한 데이터 그래프 구축 같은 관계를 만들 수 있게 됩니다.`,
-            })}
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <div className="my-4 h-px w-full bg-border" />
+            />
+            <div>
+              {l.trans({
+                en: `When users filter orders by status, the insight dashboard automatically updates to show aggregated statistics for only those filtered orders.`,
+                ko: `사용자가 상태별로 주문을 필터링하면, 인사이트 대시보드가 자동으로 업데이트되어 필터링된 주문에 대한 집계 통계만 보여줍니다.`,
+              })}
+            </div>
+            <div>
+              {l.trans({
+                en: `In the next tutorial, we'll explore how to relate data between different models. This will allow you to create relationships like associating orders with customers, linking products to categories, and building complex data graphs.`,
+                ko: `다음 튜토리얼에서는 서로 다른 모델 간의 데이터 연결 방법을 살펴볼 것입니다. 이를 통해 주문과 고객 연결, 제품과 카테고리 연결, 복잡한 데이터 그래프 구축 같은 관계를 만들 수 있게 됩니다.`,
+              })}
+            </div>
+          </Docs.Description>
+        </Scroll.Slide>
+        <div className="my-4 h-px w-full bg-border" />
 
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 xl:flex" />
-    </Scroll>
-  );
-});
+        <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 xl:flex" />
+      </Scroll>
+    );
+  });

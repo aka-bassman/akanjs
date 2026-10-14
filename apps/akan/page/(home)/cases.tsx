@@ -217,6 +217,22 @@ const projects = [
 
 export default page()
   .search("category", String)
+  .config({ transition: "fade" })
+  .head(({ lang }) => {
+    const title = lang === "ko" ? "적용사례 | Akan.js" : "Cases | Akan.js";
+    const description =
+      lang === "ko"
+        ? "Akan.js로 서비스하는 팀들과, 코드베이스 하나로 만들어 낸 것들."
+        : "Teams shipping on Akan.js, and what one codebase let them build.";
+    return (
+      <>
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+      </>
+    );
+  })
   .render(({ category }) => {
     const { l } = usePage();
     const activeKey = categoryKeys.find((key) => key === category);

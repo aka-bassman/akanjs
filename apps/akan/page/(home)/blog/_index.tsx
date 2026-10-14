@@ -97,62 +97,81 @@ const posts: BlogPost[] = [
   },
 ];
 
-export default page().render(() => {
-  const { l } = usePage();
-  const [...listPosts] = posts;
+export default page()
+  .config({ transition: "fade" })
+  .head(({ lang }) => {
+    const title = lang === "ko" ? "블로그 | Akan.js" : "Blog | Akan.js";
+    const description =
+      lang === "ko"
+        ? "릴리스 노트와 벤치마크, Akan.js를 만들며 남긴 글."
+        : "Release notes, benchmarks and notes from building Akan.js.";
+    return (
+      <>
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+      </>
+    );
+  })
+  .render(() => {
+    const { l } = usePage();
+    const [...listPosts] = posts;
 
-  return (
-    <main className="min-h-screen text-foreground">
-      <section className="relative mx-auto max-w-5xl px-6 pt-16 pb-6 lg:px-8">
-        <StudioStar className="pointer-events-none absolute top-8 right-8 hidden size-36 md:block" priority />
-        <JellyKicker>{l.trans({ en: "Blog", ko: "블로그" })}</JellyKicker>
-        <h1 className="mt-5 font-black text-4xl leading-none md:text-6xl">
-          {l.trans({ en: "Akan.js Blog", ko: "Akan.js Blog" })}
-        </h1>
-        <p className="mt-6 max-w-2xl text-foreground/60 text-lg leading-8">
-          {l.trans({
-            en: "Field notes on full-stack conventions, Bun-first runtime design, performance, and the small decisions that keep product work focused.",
-            ko: "풀스택 컨벤션, Bun-first 런타임 설계, 성능, 그리고 제품 개발을 집중하게 만드는 작은 결정들에 관한 기록입니다.",
-          })}
-        </p>
-      </section>
+    return (
+      <main className="min-h-screen text-foreground">
+        <section className="relative mx-auto max-w-5xl px-6 pt-16 pb-6 lg:px-8">
+          <StudioStar className="pointer-events-none absolute top-8 right-8 hidden size-36 md:block" priority />
+          <JellyKicker>{l.trans({ en: "Blog", ko: "블로그" })}</JellyKicker>
+          <h1 className="mt-5 font-black text-4xl leading-none md:text-6xl">
+            {l.trans({ en: "Akan.js Blog", ko: "Akan.js Blog" })}
+          </h1>
+          <p className="mt-6 max-w-2xl text-foreground/60 text-lg leading-8">
+            {l.trans({
+              en: "Field notes on full-stack conventions, Bun-first runtime design, performance, and the small decisions that keep product work focused.",
+              ko: "풀스택 컨벤션, Bun-first 런타임 설계, 성능, 그리고 제품 개발을 집중하게 만드는 작은 결정들에 관한 기록입니다.",
+            })}
+          </p>
+        </section>
 
-      <section className="mx-auto flex max-w-5xl flex-col gap-5 px-6 pt-6 pb-16 lg:px-8">
-        {listPosts.map((post) => (
-          <Link
-            key={post.href}
-            href={post.href}
-            className={panelRecipe(
-              { tone: "jelly", radius: "4xl", padding: "none" },
-              "group squish hover:tint-primary relative block p-5 transition-shadow md:p-6",
-            )}
-          >
-            <article className="grid gap-6 md:grid-cols-[1fr_220px] md:items-center">
-              <div>
-                <span className={badgeRecipe({ size: "sm" }, "border-transparent bg-foreground/6 text-foreground/60")}>
-                  {l.trans(post.eyebrow)}
-                </span>
-                <h2 className="mt-3 font-black text-2xl leading-tight group-hover:text-primary md:text-[1.75rem]">
-                  {l.trans(post.title)}
-                </h2>
-                <p className="mt-3 text-foreground/60 text-sm leading-7">{l.trans(post.desc)}</p>
-                <p className="mt-4 font-semibold text-foreground/40 text-xs">
-                  {l.trans(post.meta)} · {l.trans(post.date)}
-                </p>
-              </div>
-              <div className="relative hidden h-36 md:block">
-                <div className="size-full overflow-hidden rounded-3xl bg-background/70">
-                  <img
-                    src={post.image}
-                    alt={l.trans(post.title)}
-                    className={cn("size-full transition duration-500 group-hover:scale-105", post.imageClassName)}
-                  />
+        <section className="mx-auto flex max-w-5xl flex-col gap-5 px-6 pt-6 pb-16 lg:px-8">
+          {listPosts.map((post) => (
+            <Link
+              key={post.href}
+              href={post.href}
+              className={panelRecipe(
+                { tone: "jelly", radius: "4xl", padding: "none" },
+                "group squish hover:tint-primary relative block p-5 transition-shadow md:p-6",
+              )}
+            >
+              <article className="grid gap-6 md:grid-cols-[1fr_220px] md:items-center">
+                <div>
+                  <span
+                    className={badgeRecipe({ size: "sm" }, "border-transparent bg-foreground/6 text-foreground/60")}
+                  >
+                    {l.trans(post.eyebrow)}
+                  </span>
+                  <h2 className="mt-3 font-black text-2xl leading-tight group-hover:text-primary md:text-[1.75rem]">
+                    {l.trans(post.title)}
+                  </h2>
+                  <p className="mt-3 text-foreground/60 text-sm leading-7">{l.trans(post.desc)}</p>
+                  <p className="mt-4 font-semibold text-foreground/40 text-xs">
+                    {l.trans(post.meta)} · {l.trans(post.date)}
+                  </p>
                 </div>
-              </div>
-            </article>
-          </Link>
-        ))}
-      </section>
-    </main>
-  );
-});
+                <div className="relative hidden h-36 md:block">
+                  <div className="size-full overflow-hidden rounded-3xl bg-background/70">
+                    <img
+                      src={post.image}
+                      alt={l.trans(post.title)}
+                      className={cn("size-full transition duration-500 group-hover:scale-105", post.imageClassName)}
+                    />
+                  </div>
+                </div>
+              </article>
+            </Link>
+          ))}
+        </section>
+      </main>
+    );
+  });

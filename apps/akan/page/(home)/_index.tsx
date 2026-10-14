@@ -6,12 +6,27 @@ import { BsArrowRight, BsArrowUpRight } from "react-icons/bs";
 import { FaAndroid, FaApple, FaGlobe, FaLinux, FaWindows } from "react-icons/fa";
 
 export default page()
-  .head(
-    <>
-      <link rel="canonical" href="https://akanjs.com" />
-      <meta property="og:url" content="https://akanjs.com" />
-    </>,
-  )
+  .config({ transition: "none" })
+  .head(({ lang }) => {
+    const title =
+      lang === "ko"
+        ? "Akan.js — 에이전틱 TypeScript 프레임워크"
+        : "Akan.js — The TypeScript framework, agents included";
+    const description =
+      lang === "ko"
+        ? "선언한 한 줄이 DB와 API, 화면, 에이전트 도구까지 이어집니다. 한 줄 쓰고 웹·iOS·Android·macOS·Windows·Linux에 배포합니다."
+        : "One declared line reaches the database, the API, the screens and the agent tools. Write a line and deploy to web, iOS, Android, macOS, Windows and Linux.";
+    return (
+      <>
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <link rel="canonical" href="https://akanjs.com" />
+        <meta property="og:url" content="https://akanjs.com" />
+      </>
+    );
+  })
   .loading(() => <JellyLoader className="min-h-[100svh]" />)
   .render(() => {
     const { l } = usePage();

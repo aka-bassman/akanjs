@@ -204,206 +204,226 @@ const proposedEpics = [
   },
 ] as const;
 
-export default page().render(() => {
-  const { l } = usePage();
-  const waypoints = [
-    ...stages.map((stage) => ({
-      key: stage.key,
-      label: typeof stage.label === "string" ? stage.label : l.trans(stage.label),
-      caption: l.trans(stage.caption),
-      state: "flown" as const,
-    })),
-    {
-      key: "v3",
-      label: l.trans({ en: "v3", ko: "v3" }),
-      caption: l.trans({ en: "Agentic Framework", ko: "에이전틱 프레임워크" }),
-      state: "current" as const,
-    },
-    ...committedEpics.map((epic) => ({
-      key: epic.code,
-      label: epic.code,
-      caption: l.trans(epic.short),
-      state: "committed" as const,
-    })),
-    ...proposedEpics.map((epic) => ({
-      key: epic.code,
-      label: epic.code,
-      caption: l.trans(epic.short),
-      state: "proposed" as const,
-    })),
-  ];
-  const legend = [
-    { label: l.trans({ en: "Flown", ko: "지나온 단계" }), dotClassName: "bg-foreground/40" },
-    {
-      label: l.trans({ en: "You are here", ko: "현재 위치" }),
-      dotClassName: "jelly tint-primary ring-2 ring-primary/25",
-    },
-    { label: l.trans({ en: "Committed", ko: "확정" }), dotClassName: "border-2 border-primary bg-card" },
-    { label: l.trans({ en: "Proposed", ko: "제안" }), dotClassName: "border-2 border-foreground/25 bg-card" },
-  ];
-  const epicGroups = [
-    {
-      key: "committed",
-      title: l.trans({ en: "Committed stages", ko: "확정된 단계" }),
-      desc: l.trans({
-        en: "Decided. These are the next stages.",
-        ko: "결정된 방향입니다. 다음 단계들입니다.",
-      }),
-      epics: committedEpics,
-      nodeClassName: "jelly tint-primary",
-      status: l.trans({ en: "Committed", ko: "확정" }),
-    },
-    {
-      key: "proposed",
-      title: l.trans({ en: "Proposed stages", ko: "제안된 단계" }),
-      desc: l.trans({
-        en: "Candidates under review. The order is a proposal, not a schedule.",
-        ko: "검토 중인 후보입니다. 순서는 제안일 뿐 일정이 아닙니다.",
-      }),
-      epics: proposedEpics,
-      nodeClassName: "border-2 border-foreground/25 bg-card",
-      status: l.trans({ en: "Proposed", ko: "제안" }),
-    },
-  ];
+export default page()
+  .config({ transition: "fade" })
+  .head(({ lang }) => {
+    const title = lang === "ko" ? "로드맵 | Akan.js" : "Roadmap | Akan.js";
+    const description =
+      lang === "ko"
+        ? "Akan.js가 향하는 방향 — 진행 중인 작업과 다음 계획."
+        : "Where Akan.js is going: the work in flight and what comes next.";
+    return (
+      <>
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+      </>
+    );
+  })
+  .render(() => {
+    const { l } = usePage();
+    const waypoints = [
+      ...stages.map((stage) => ({
+        key: stage.key,
+        label: typeof stage.label === "string" ? stage.label : l.trans(stage.label),
+        caption: l.trans(stage.caption),
+        state: "flown" as const,
+      })),
+      {
+        key: "v3",
+        label: l.trans({ en: "v3", ko: "v3" }),
+        caption: l.trans({ en: "Agentic Framework", ko: "에이전틱 프레임워크" }),
+        state: "current" as const,
+      },
+      ...committedEpics.map((epic) => ({
+        key: epic.code,
+        label: epic.code,
+        caption: l.trans(epic.short),
+        state: "committed" as const,
+      })),
+      ...proposedEpics.map((epic) => ({
+        key: epic.code,
+        label: epic.code,
+        caption: l.trans(epic.short),
+        state: "proposed" as const,
+      })),
+    ];
+    const legend = [
+      { label: l.trans({ en: "Flown", ko: "지나온 단계" }), dotClassName: "bg-foreground/40" },
+      {
+        label: l.trans({ en: "You are here", ko: "현재 위치" }),
+        dotClassName: "jelly tint-primary ring-2 ring-primary/25",
+      },
+      { label: l.trans({ en: "Committed", ko: "확정" }), dotClassName: "border-2 border-primary bg-card" },
+      { label: l.trans({ en: "Proposed", ko: "제안" }), dotClassName: "border-2 border-foreground/25 bg-card" },
+    ];
+    const epicGroups = [
+      {
+        key: "committed",
+        title: l.trans({ en: "Committed stages", ko: "확정된 단계" }),
+        desc: l.trans({
+          en: "Decided. These are the next stages.",
+          ko: "결정된 방향입니다. 다음 단계들입니다.",
+        }),
+        epics: committedEpics,
+        nodeClassName: "jelly tint-primary",
+        status: l.trans({ en: "Committed", ko: "확정" }),
+      },
+      {
+        key: "proposed",
+        title: l.trans({ en: "Proposed stages", ko: "제안된 단계" }),
+        desc: l.trans({
+          en: "Candidates under review. The order is a proposal, not a schedule.",
+          ko: "검토 중인 후보입니다. 순서는 제안일 뿐 일정이 아닙니다.",
+        }),
+        epics: proposedEpics,
+        nodeClassName: "border-2 border-foreground/25 bg-card",
+        status: l.trans({ en: "Proposed", ko: "제안" }),
+      },
+    ];
 
-  return (
-    <main className="min-h-screen text-foreground">
-      <section className="mx-auto max-w-5xl px-6 pt-40 pb-6 lg:px-8 lg:pt-32">
-        <JellyKicker friend="rocket">{l.trans({ en: "Roadmap", ko: "로드맵" })}</JellyKicker>
-        <h1 className="mt-5 font-black text-4xl leading-none md:text-6xl">
-          {l.trans({ en: "The Akan.js roadmap", ko: "Akan.js의 로드맵" })}
-        </h1>
-        <p className="mt-6 max-w-3xl text-foreground/60 text-lg leading-8">
-          {l.trans({
-            en: "Six milestones behind us — the first interface, multi-build output, a Bun-first stack, mobile and desktop packaging, the agentic surface, and the v3 agentic framework. Next comes an agent network across sessions, people and apps, Akan Cloud, context-side rendering as the step after SSR and CSR, and then Autopilot.",
-            ko: "첫 인터페이스부터 다중 빌드, Bun 우선 스택, 모바일·데스크톱 패키징, 에이전틱 표현, v3 에이전틱 프레임워크까지 여섯 단계를 지나왔습니다. 다음은 세션과 사람, 앱을 넘나드는 에이전트 네트워크, Akan Cloud, SSR·CSR 다음의 렌더링인 컨텍스트사이드 렌더링, 그리고 오토파일럿입니다.",
-          })}
-        </p>
-        <dl className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
-          {telemetry.map((item) => (
-            <div key={item.label.en} className={panelRecipe({ tone: "jelly", radius: "3xl", padding: "md" }, "px-5")}>
-              <dt className="font-bold text-foreground/45 text-xs">{l.trans(item.label)}</dt>
-              <dd className="mt-1 font-black text-base tracking-tight">{l.trans(item.value)}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      <section className="mx-auto max-w-5xl px-6 py-8 lg:px-8">
-        <div className={panelRecipe({ tone: "jelly", radius: "4xl", padding: "md" }, "md:p-8")}>
-          <RoadmapTrajectory waypoints={waypoints} />
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 font-semibold text-foreground/60 text-xs">
-            {legend.map((item) => (
-              <span key={item.label} className="flex items-center gap-2">
-                <span className={cn("inline-block size-3 rounded-full", item.dotClassName)} />
-                {item.label}
-              </span>
-            ))}
-          </div>
-        </div>
-        <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-          <div className="jelly-callout tint-primary rounded-3xl px-5 py-4">
-            <dt className="font-bold text-primary text-xs uppercase tracking-[0.16em]">
-              {l.trans({ en: "Next stage", ko: "다음 단계" })}
-            </dt>
-            <dd className="mt-1 font-black text-base tracking-tight">
-              {committedEpics[0].code} · {l.trans(committedEpics[0].title)}
-            </dd>
-          </div>
-          <div className="jelly-glass rounded-3xl px-5 py-4">
-            <dt className="font-bold text-foreground/45 text-xs uppercase tracking-[0.16em]">
-              {l.trans({ en: "Then", ko: "이어서" })}
-            </dt>
-            <dd className="mt-1 font-semibold text-foreground/75">
-              {committedEpics
-                .slice(1)
-                .map((epic) => `${epic.code} · ${l.trans(epic.title)}`)
-                .join(" / ")}
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <section className="mx-auto max-w-5xl px-6 pt-8 pb-12 lg:px-8">
-        <h2 className="font-black text-3xl">{l.trans({ en: "Stages so far", ko: "지나온 단계" })}</h2>
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {stages.map((stage) => (
-            <div key={stage.key} className={panelRecipe({ tone: "jelly", radius: "3xl", padding: "lg" }, "group pt-6")}>
-              <p className="font-bold text-foreground/40 text-xs uppercase tracking-[0.16em]">
-                {typeof stage.label === "string" ? stage.label : l.trans(stage.label)} · {l.trans(stage.caption)}
-              </p>
-              <h3 className="mt-2 font-black text-lg tracking-tight">{l.trans(stage.title)}</h3>
-              <p className="mt-3 text-foreground/60 text-sm leading-7">{l.trans(stage.desc)}</p>
-            </div>
-          ))}
-        </div>
-        <p className="mt-6 text-sm">
-          <Link href="/blog/v3release" className="font-bold text-primary hover:underline">
-            {l.trans({ en: "Read what changed in v3", ko: "v3에서 바뀐 것 읽기" })}
-          </Link>
-        </p>
-      </section>
-
-      {epicGroups.map((group) => (
-        <section key={group.key} className="mx-auto max-w-5xl px-6 pb-12 lg:px-8">
-          <h2 className="font-black text-3xl">{group.title}</h2>
-          <p className="mt-2 text-foreground/60 text-sm leading-7">{group.desc}</p>
-          <ol className="relative mt-6 space-y-4 md:ml-3 md:border-foreground/12 md:border-l-2 md:border-dashed md:pl-10">
-            {group.epics.map((epic) => (
-              <li key={epic.code} className="relative">
-                <span
-                  className={cn(
-                    "absolute top-8 -left-[3.05rem] hidden size-4 rounded-full md:block",
-                    group.nodeClassName,
-                  )}
-                />
-                <div className={panelRecipe({ tone: "jelly", radius: "3xl", padding: "lg" }, "md:p-7")}>
-                  <p className="font-bold text-foreground/40 text-xs uppercase tracking-[0.16em]">
-                    {epic.code} · {group.status} · {epic.flow}
-                  </p>
-                  <h3 className="mt-2 font-black text-xl tracking-tight">{l.trans(epic.title)}</h3>
-                  <p className="mt-3 text-foreground/60 text-sm leading-7">{l.trans(epic.summary)}</p>
-                  <ul className="mt-4 list-disc space-y-2 pl-5 text-foreground/60 text-sm leading-6 marker:text-primary">
-                    {epic.deliverables.map((item) => (
-                      <li key={item.en}>{l.trans(item)}</li>
-                    ))}
-                  </ul>
-                  <p className="mt-5 rounded-2xl bg-foreground/4 px-4 py-3 text-foreground/55 text-sm leading-6">
-                    {l.trans(epic.why)}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </section>
-      ))}
-
-      <section className="mx-auto max-w-5xl px-6 pt-4 pb-16 lg:px-8">
-        <div className={panelRecipe({ tone: "jelly", radius: "4xl", padding: "lg" }, "tint-moon relative md:p-10")}>
-          <StudioStar className="pointer-events-none absolute -top-14 right-8 hidden size-32 md:block" />
-          <h2 className="font-black text-3xl md:text-4xl">
-            {l.trans({ en: "One person, a whole product.", ko: "한 사람이, 제품 전체를." })}
-          </h2>
-          <p className="mt-4 max-w-3xl text-foreground/60 leading-8">
+    return (
+      <main className="min-h-screen text-foreground">
+        <section className="mx-auto max-w-5xl px-6 pt-40 pb-6 lg:px-8 lg:pt-32">
+          <JellyKicker friend="rocket">{l.trans({ en: "Roadmap", ko: "로드맵" })}</JellyKicker>
+          <h1 className="mt-5 font-black text-4xl leading-none md:text-6xl">
+            {l.trans({ en: "The Akan.js roadmap", ko: "Akan.js의 로드맵" })}
+          </h1>
+          <p className="mt-6 max-w-3xl text-foreground/60 text-lg leading-8">
             {l.trans({
-              en: "Every stage removes something a small team would otherwise build or run. The end state is a product — web, desktop, mobile, server, data and the agents working inside it — that one developer can own.",
-              ko: "각 단계는 작은 팀이 직접 만들거나 운영해야 했을 것을 하나씩 덜어냅니다. 도착점은 웹, 데스크톱, 모바일, 서버, 데이터, 그리고 그 안에서 일하는 에이전트까지, 개발자 한 명이 책임질 수 있는 제품입니다.",
+              en: "Six milestones behind us — the first interface, multi-build output, a Bun-first stack, mobile and desktop packaging, the agentic surface, and the v3 agentic framework. Next comes an agent network across sessions, people and apps, Akan Cloud, context-side rendering as the step after SSR and CSR, and then Autopilot.",
+              ko: "첫 인터페이스부터 다중 빌드, Bun 우선 스택, 모바일·데스크톱 패키징, 에이전틱 표현, v3 에이전틱 프레임워크까지 여섯 단계를 지나왔습니다. 다음은 세션과 사람, 앱을 넘나드는 에이전트 네트워크, Akan Cloud, SSR·CSR 다음의 렌더링인 컨텍스트사이드 렌더링, 그리고 오토파일럿입니다.",
             })}
           </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              href="https://github.com/akan-team/akanjs/discussions"
-              target="_blank"
-              className={jellyButtonRecipe()}
-            >
-              {l.trans({ en: "Join Akan.js", ko: "Akan.js 참여하기" })}
-            </Link>
-            <Link href="/docs/intro/quickstart" className={jellyButtonRecipe({ tone: "ink" })}>
-              {l.trans({ en: "Use v3", ko: "v3 사용하기" })}
-            </Link>
+          <dl className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+            {telemetry.map((item) => (
+              <div key={item.label.en} className={panelRecipe({ tone: "jelly", radius: "3xl", padding: "md" }, "px-5")}>
+                <dt className="font-bold text-foreground/45 text-xs">{l.trans(item.label)}</dt>
+                <dd className="mt-1 font-black text-base tracking-tight">{l.trans(item.value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <section className="mx-auto max-w-5xl px-6 py-8 lg:px-8">
+          <div className={panelRecipe({ tone: "jelly", radius: "4xl", padding: "md" }, "md:p-8")}>
+            <RoadmapTrajectory waypoints={waypoints} />
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 font-semibold text-foreground/60 text-xs">
+              {legend.map((item) => (
+                <span key={item.label} className="flex items-center gap-2">
+                  <span className={cn("inline-block size-3 rounded-full", item.dotClassName)} />
+                  {item.label}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
-    </main>
-  );
-});
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <div className="jelly-callout tint-primary rounded-3xl px-5 py-4">
+              <dt className="font-bold text-primary text-xs uppercase tracking-[0.16em]">
+                {l.trans({ en: "Next stage", ko: "다음 단계" })}
+              </dt>
+              <dd className="mt-1 font-black text-base tracking-tight">
+                {committedEpics[0].code} · {l.trans(committedEpics[0].title)}
+              </dd>
+            </div>
+            <div className="jelly-glass rounded-3xl px-5 py-4">
+              <dt className="font-bold text-foreground/45 text-xs uppercase tracking-[0.16em]">
+                {l.trans({ en: "Then", ko: "이어서" })}
+              </dt>
+              <dd className="mt-1 font-semibold text-foreground/75">
+                {committedEpics
+                  .slice(1)
+                  .map((epic) => `${epic.code} · ${l.trans(epic.title)}`)
+                  .join(" / ")}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="mx-auto max-w-5xl px-6 pt-8 pb-12 lg:px-8">
+          <h2 className="font-black text-3xl">{l.trans({ en: "Stages so far", ko: "지나온 단계" })}</h2>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {stages.map((stage) => (
+              <div
+                key={stage.key}
+                className={panelRecipe({ tone: "jelly", radius: "3xl", padding: "lg" }, "group pt-6")}
+              >
+                <p className="font-bold text-foreground/40 text-xs uppercase tracking-[0.16em]">
+                  {typeof stage.label === "string" ? stage.label : l.trans(stage.label)} · {l.trans(stage.caption)}
+                </p>
+                <h3 className="mt-2 font-black text-lg tracking-tight">{l.trans(stage.title)}</h3>
+                <p className="mt-3 text-foreground/60 text-sm leading-7">{l.trans(stage.desc)}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-6 text-sm">
+            <Link href="/blog/v3release" className="font-bold text-primary hover:underline">
+              {l.trans({ en: "Read what changed in v3", ko: "v3에서 바뀐 것 읽기" })}
+            </Link>
+          </p>
+        </section>
+
+        {epicGroups.map((group) => (
+          <section key={group.key} className="mx-auto max-w-5xl px-6 pb-12 lg:px-8">
+            <h2 className="font-black text-3xl">{group.title}</h2>
+            <p className="mt-2 text-foreground/60 text-sm leading-7">{group.desc}</p>
+            <ol className="relative mt-6 space-y-4 md:ml-3 md:border-foreground/12 md:border-l-2 md:border-dashed md:pl-10">
+              {group.epics.map((epic) => (
+                <li key={epic.code} className="relative">
+                  <span
+                    className={cn(
+                      "absolute top-8 -left-[3.05rem] hidden size-4 rounded-full md:block",
+                      group.nodeClassName,
+                    )}
+                  />
+                  <div className={panelRecipe({ tone: "jelly", radius: "3xl", padding: "lg" }, "md:p-7")}>
+                    <p className="font-bold text-foreground/40 text-xs uppercase tracking-[0.16em]">
+                      {epic.code} · {group.status} · {epic.flow}
+                    </p>
+                    <h3 className="mt-2 font-black text-xl tracking-tight">{l.trans(epic.title)}</h3>
+                    <p className="mt-3 text-foreground/60 text-sm leading-7">{l.trans(epic.summary)}</p>
+                    <ul className="mt-4 list-disc space-y-2 pl-5 text-foreground/60 text-sm leading-6 marker:text-primary">
+                      {epic.deliverables.map((item) => (
+                        <li key={item.en}>{l.trans(item)}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-5 rounded-2xl bg-foreground/4 px-4 py-3 text-foreground/55 text-sm leading-6">
+                      {l.trans(epic.why)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        ))}
+
+        <section className="mx-auto max-w-5xl px-6 pt-4 pb-16 lg:px-8">
+          <div className={panelRecipe({ tone: "jelly", radius: "4xl", padding: "lg" }, "tint-moon relative md:p-10")}>
+            <StudioStar className="pointer-events-none absolute -top-14 right-8 hidden size-32 md:block" />
+            <h2 className="font-black text-3xl md:text-4xl">
+              {l.trans({ en: "One person, a whole product.", ko: "한 사람이, 제품 전체를." })}
+            </h2>
+            <p className="mt-4 max-w-3xl text-foreground/60 leading-8">
+              {l.trans({
+                en: "Every stage removes something a small team would otherwise build or run. The end state is a product — web, desktop, mobile, server, data and the agents working inside it — that one developer can own.",
+                ko: "각 단계는 작은 팀이 직접 만들거나 운영해야 했을 것을 하나씩 덜어냅니다. 도착점은 웹, 데스크톱, 모바일, 서버, 데이터, 그리고 그 안에서 일하는 에이전트까지, 개발자 한 명이 책임질 수 있는 제품입니다.",
+              })}
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="https://github.com/akan-team/akanjs/discussions"
+                target="_blank"
+                className={jellyButtonRecipe()}
+              >
+                {l.trans({ en: "Join Akan.js", ko: "Akan.js 참여하기" })}
+              </Link>
+              <Link href="/docs/intro/quickstart" className={jellyButtonRecipe({ tone: "ink" })}>
+                {l.trans({ en: "Use v3", ko: "v3 사용하기" })}
+              </Link>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  });
