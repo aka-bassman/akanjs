@@ -61,8 +61,9 @@ export class CsrArtifactBuilder {
       ).flat(),
     );
 
+    const options = CsrArtifactBuilder.bundleOptions(this.#app, this.#command, akanConfig.optimizeImports);
     const result = await Bun.build({
-      ...CsrArtifactBuilder.bundleOptions(this.#app, this.#command, akanConfig.optimizeImports),
+      ...options,
       entrypoints: htmlBasePaths.map((basePath) => this.#generatedPath(CsrArtifactBuilder.htmlFilename(basePath))),
       files: generatedFiles,
       root: this.#generatedDir,
@@ -75,6 +76,7 @@ export class CsrArtifactBuilder {
     }
 
     await this.#inlineCsrArtifacts(cssAssets);
+    if (this.#command === "build") await CsrArtifactBuilder.writePublicEnv(this.#app, options.define);
     this.#app.verbose(`[csr-build] output -> ${this.#outputDir}`);
     return { outputDir: this.#outputDir };
   }
@@ -90,6 +92,21 @@ export class CsrArtifactBuilder {
       // A raw `.css` in the route graph is Tailwind source; the base artifact's compiled sheet is the only stylesheet.
       plugins: [PagesBundleBuilder.createCssStubPlugin()],
     };
+  }
+
+  /** Where a build records the `AKAN_PUBLIC_*` it inlined, which nothing in the minified bundle names. */
+  static publicEnvPath(app: App) {
+    return path.join(app.dist.cwdPath, ".akan", "artifact", "csr-public-env.json");
+  }
+
+  static async writePublicEnv(app: App, define: Record<string, string>) {
+    const prefix = "process.env.";
+    const publicEnv = Object.fromEntries(
+      Object.entries(define)
+        .filter(([key]) => key.startsWith(`${prefix}AKAN_PUBLIC_`))
+        .map(([key, value]) => [key.slice(prefix.length), JSON.parse(value) as unknown]),
+    );
+    await Bun.write(CsrArtifactBuilder.publicEnvPath(app), `${JSON.stringify(publicEnv, null, 2)}\n`);
   }
 
   /** The routes one basePath's HTML boots: its own plus every route outside any basePath, matching `bootCsr`. */

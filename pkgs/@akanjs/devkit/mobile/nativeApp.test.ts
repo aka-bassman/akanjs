@@ -3,9 +3,11 @@ import path from "node:path";
 import type { AkanPlugin } from "akanjs";
 import type { AkanNativeTarget } from "../akanConfig";
 import type { App } from "../commandDecorators";
+import { CsrArtifactBuilder } from "../frontendBuild/csrArtifactBuilder";
 import { tempDirs, writeText } from "../testHelpers";
 import { NativeApp } from "./nativeApp";
 import { NativeConfig } from "./nativeConfig";
+import { NativePublicEnv } from "./nativePublicEnv";
 
 const makeTempRoot = tempDirs("akan-native-app-");
 
@@ -144,6 +146,80 @@ describe("NativeApp", () => {
         "The server this app carries was not searched for the secret values of apps/portal/env/env.server.develop.ts",
       );
       expect(built).toEqual([]);
+    });
+  });
+
+  describe("the public env a build inlined, recorded in its bundle.json", () => {
+    const publicEnv = { AKAN_PUBLIC_ENV: "main", AKAN_PUBLIC_SERVE_DOMAIN: "akamir.com" };
+    const building = async (inlined: Record<string, string>, updates: object | undefined) => {
+      const root = await makeTempRoot();
+      const warned: string[] = [];
+      const app = {
+        ...fakeApp(),
+        workspace: { workspaceRoot: root },
+        dist: { cwdPath: path.join(root, "dist/apps/portal") },
+        logger: { info: () => undefined, warn: (message: string) => warned.push(message) },
+      } as unknown as App;
+      await CsrArtifactBuilder.writePublicEnv(
+        app,
+        Object.fromEntries(
+          Object.entries({ ...inlined, AKAN_PUBLIC_APP_NAME: "portal", AKAN_PUBLIC_RENDER_ENV: "csr" }).map(
+            ([key, value]) => [`process.env.${key}`, JSON.stringify(value)],
+          ),
+        ),
+      );
+      const nativeApp = new NativeApp(app, target(updates ? { updates } : {}), "main");
+      const built: string[] = [];
+      const writeBundle = async (dir: string) =>
+        await writeText(path.join(dir, "bundle.json"), JSON.stringify({ schema: 1, web: { hash: "w", files: 1 } }));
+      nativeApp.assembleWeb = async () => undefined as never;
+      nativeApp.prepare = async () =>
+        ({
+          config: { updates: { channel: "production" } },
+          api: {
+            packUpdate: async ({ out }: { out: string }) => {
+              built.push("pack");
+              await writeBundle(out);
+              return { out, manifest: { app: "com.portal.app", version: "1.0.0", nativeApi: "n", files: [] } };
+            },
+            release: async ({ outDir }: { outDir: string }) => {
+              built.push("release");
+              await writeBundle(outDir);
+              return {};
+            },
+          },
+        }) as never;
+      return { root, nativeApp, built, warned };
+    };
+    const updates = { url: "https://releases.example.com/portal", publicKey: `${"a".repeat(43)}=` };
+
+    test("a pack and a release record what the CSR build inlined, and the pack's record carries its hash", async () => {
+      const { root, nativeApp } = await building(publicEnv, updates);
+      const { pack } = await nativeApp.packUpdate("android", { out: path.join(root, "out") });
+      const bundle = await Bun.file(path.join(root, "out/bundle.json")).json();
+      expect(bundle.web).toEqual({
+        hash: "w",
+        files: 1,
+        publicEnv,
+        publicEnvHash: NativePublicEnv.hash(publicEnv),
+      });
+      expect(pack.publicEnvHash).toBe(NativePublicEnv.hash(publicEnv));
+      await nativeApp.releaseIos();
+      const release = await Bun.file(path.join(nativeApp.outDir("ios"), "bundle.json")).json();
+      expect(release.web.publicEnvHash).toBe(NativePublicEnv.hash(publicEnv));
+    });
+
+    test("an env an update cannot carry stops a target with updates before it builds, and only warns without", async () => {
+      const refused = { ...publicEnv, AKAN_PUBLIC_MAP_TOKEN: "pk.x" };
+      const withUpdates = await building(refused, updates);
+      await expect(withUpdates.nativeApp.releaseIos()).rejects.toThrow("AKAN_PUBLIC_MAP_TOKEN names a token");
+      expect(withUpdates.built).toEqual([]);
+      const without = await building(refused, undefined);
+      await without.nativeApp.releaseIos();
+      expect(without.built).toEqual(["release"]);
+      expect(without.warned.join("\n")).toContain("bundle.json records none");
+      const release = await Bun.file(path.join(without.nativeApp.outDir("ios"), "bundle.json")).json();
+      expect(release.web.publicEnv).toBeUndefined();
     });
   });
 

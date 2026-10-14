@@ -92,6 +92,15 @@ export default page().render(() => {
       ko: "`--env local`로 만든 릴리스를 허용합니다.",
     }),
   };
+  const publicEnvOption: ReferenceRow = {
+    name: "--public-env",
+    type: "String",
+    enumOrFlag: "-u",
+    desc: l.trans({
+      en: "Inline exactly these `AKAN_PUBLIC_*` values: a JSON map, or a store build's `bundle.json` (`web.publicEnv`).",
+      ko: "정확히 이 `AKAN_PUBLIC_*` 값만 넣습니다. JSON 맵이나 스토어 빌드의 `bundle.json`(`web.publicEnv`)입니다.",
+    }),
+  };
   const signOption: ReferenceRow = {
     name: "--sign",
     type: "Boolean",
@@ -1203,7 +1212,7 @@ akan build-desktop myapp --installer true --env main --sign true --notarize true
     {
       name: "release-ios",
       signature:
-        "akan release-ios <app> [--target <target>] [--env <env>] [--team <team>] [--ad-hoc <boolean>] [--write <boolean>] [--allow-local-release <boolean>]",
+        "akan release-ios <app> [--target <target>] [--env <env>] [--team <team>] [--ad-hoc <boolean>] [--write <boolean>] [--allow-local-release <boolean>] [--public-env <file>]",
       desc: l.trans({
         en: "Build and sign the iOS app for an App Store release: an iPhone app and its `.ipa`. It defaults to the `main` backend and refuses `--env local` unless `--allow-local-release` is passed.",
         ko: "App Store 출시용으로 iOS 앱을 빌드하고 서명합니다. iPhone 앱과 그 `.ipa`를 만듭니다. 기본 백엔드는 `main`이고, `--allow-local-release` 없이 `--env local`을 주면 거부합니다.",
@@ -1223,6 +1232,7 @@ akan build-desktop myapp --installer true --env main --sign true --notarize true
         },
         writeOption,
         allowLocalReleaseOption,
+        publicEnvOption,
       ],
       notes: [
         {
@@ -1235,12 +1245,13 @@ akan build-desktop myapp --installer true --env main --sign true --notarize true
         outputNote("ios"),
       ],
       examples: `akan release-ios myapp --target all --env main
-akan release-ios myapp --target default --ad-hoc true`,
+akan release-ios myapp --target default --ad-hoc true
+akan release-ios myapp --env main --public-env store.env.json`,
     },
     {
       name: "release-android",
       signature:
-        "akan release-android <app> [--assemble-type <type>] [--target <target>] [--env <env>] [--write <boolean>] [--allow-local-release <boolean>]",
+        "akan release-android <app> [--assemble-type <type>] [--target <target>] [--env <env>] [--write <boolean>] [--allow-local-release <boolean>] [--public-env <file>]",
       desc: l.trans({
         en: "Build and sign the Android app for a Play Store release, as an AAB or an APK. Like `release-ios`, it defaults to `main` and refuses `--env local` without `--allow-local-release`.",
         ko: "Play Store 출시용으로 Android 앱을 AAB나 APK로 빌드하고 서명합니다. `release-ios`처럼 기본은 `main`이고, `--allow-local-release` 없이 `--env local`은 거부합니다.",
@@ -1260,6 +1271,7 @@ akan release-ios myapp --target default --ad-hoc true`,
         releaseEnvOption,
         writeOption,
         allowLocalReleaseOption,
+        publicEnvOption,
       ],
       notes: [androidSigningNote, outputNote("android")],
       examples: `akan release-android myapp --target all --env main
@@ -1432,7 +1444,7 @@ AKAN_NATIVE_UPDATE_KEY=./spare.update.key akan publish-update myapp --platform i
     {
       name: "pack-update",
       signature:
-        "akan pack-update <app> --platform <platform> [--target <target>] [--env <env>] [--out <dir>] [--against <bundle.json>] [--write <boolean>] [--allow-local-release <boolean>]",
+        "akan pack-update <app> --platform <platform> [--target <target>] [--env <env>] [--out <dir>] [--against <bundle.json>] [--write <boolean>] [--allow-local-release <boolean>] [--public-env <file>]",
       desc: l.trans({
         en: "Pack an Android or iOS web bundle update unsigned, for a signer that keeps the key off this machine: `files/<sha256>`, `bundle.json`, `manifest.template.json` with `channel`, `sequence` and `bundle` left for the signer, and `pack.json`, the record a pipeline reads. The signer uploads `files/` first, then the signed envelope at `<platform>/<channel>/<nativeApi>.json`. Exits 2 when `--against` says the bundle needs a new store build; any other failure, its web build included, exits 1 and leaves no `pack.json` behind. `publish-update` does the same with a key on this machine.",
         ko: "Android·iOS 웹 번들 업데이트를 서명 없이 묶습니다. 키를 이 컴퓨터 밖에 두는 서명자를 위한 것입니다. `files/<sha256>`, `bundle.json`, 서명자가 `channel`·`sequence`·`bundle`을 채울 `manifest.template.json`, 파이프라인이 읽는 기록 `pack.json`을 씁니다. 서명자는 `files/`를 먼저 올리고 서명한 봉투를 `<platform>/<channel>/<nativeApi>.json`에 올립니다. `--against`가 새 스토어 빌드가 필요하다고 하면 종료 코드 2로 끝나고, 웹 빌드를 포함한 그 밖의 실패는 1로 끝나며 `pack.json`을 남기지 않습니다. 이 컴퓨터의 키로 하는 것이 `publish-update`입니다.",
@@ -1464,6 +1476,14 @@ AKAN_NATIVE_UPDATE_KEY=./spare.update.key akan publish-update myapp --platform i
         },
         writeOption,
         allowLocalReleaseOption,
+        {
+          ...publicEnvOption,
+          defaultValue: "--against",
+          desc: l.trans({
+            en: "Inline exactly these `AKAN_PUBLIC_*` values: a JSON map or a `bundle.json`. Left out, the `--against` build's.",
+            ko: "정확히 이 `AKAN_PUBLIC_*` 값만 넣습니다. JSON 맵이나 `bundle.json`이며, 생략하면 `--against` 빌드의 값입니다.",
+          }),
+        },
       ],
       examples: `akan pack-update myapp --platform android --env main
 akan pack-update myapp --platform ios --env main --against store/bundle.json`,
@@ -1471,7 +1491,7 @@ akan pack-update myapp --platform ios --env main --against store/bundle.json`,
     {
       name: "push-update",
       signature:
-        "akan push-update <app> [--platform <platform>] [--target <target>] [--env <env>] [--channel <channel>] [--notes <text>] [--subspace <name>] [--host <url>] [--write <boolean>] [--allow-local-release <boolean>] [--pack <dir>]",
+        "akan push-update <app> [--platform <platform>] [--target <target>] [--env <env>] [--channel <channel>] [--notes <text>] [--subspace <name>] [--host <url>] [--write <boolean>] [--allow-local-release <boolean>] [--pack <dir>] [--public-env <file>]",
       desc: l.trans({
         en: "Pack an update as `pack-update` does, or take the folder it wrote with `--pack`, and upload it to the Akan Cloud project, which keeps the key, signs and publishes it. The channel defaults to the target's `updates.channel`. It exits 2 when the pack needs a new store build or the project rejects it, and prints why; any other failure exits 1.",
         ko: "`pack-update`처럼 업데이트를 묶거나 `--pack`으로 그 명령이 만든 폴더를 받아 Akan Cloud 프로젝트에 올립니다. 키 보관과 서명, 게시는 그 프로젝트가 합니다. 채널 기본값은 타깃의 `updates.channel`입니다. 팩에 새 스토어 빌드가 필요하거나 프로젝트가 팩을 거부하면 이유를 출력하고 2로 끝나며, 그 밖의 실패는 1로 끝납니다.",
@@ -1537,6 +1557,7 @@ akan pack-update myapp --platform ios --env main --against store/bundle.json`,
             ko: "`pack-update`가 이미 만든 폴더이며, 다시 묶지 않고 그대로 올립니다. 이 앱의 팩이어야 하고, `--platform`, `--target`, `--env`를 적었다면 팩과 같아야 합니다. `--against` 검사에서 거부된 팩이면 올리지 않고 2로 끝납니다.",
           }),
         },
+        publicEnvOption,
       ],
       notes: [
         {
@@ -1553,7 +1574,7 @@ akan pack-update myapp --platform ios --env main --against store/bundle.json && 
     {
       name: "register-binary",
       signature:
-        "akan register-binary <app> --platform <platform> --distribution <distribution> [--target <target>] [--env <env>] [--subspace <name>] [--host <url>] [--write <boolean>] [--allow-local-release <boolean>]",
+        "akan register-binary <app> --platform <platform> --distribution <distribution> [--target <target>] [--env <env>] [--subspace <name>] [--host <url>] [--write <boolean>] [--allow-local-release <boolean>] [--public-env <file>]",
       desc: l.trans({
         en: "After `release-ios` or `release-android`, register that store build with the Akan Cloud project, with a pack of the same commit as its embedded bundle. Refused when the store build is not this commit's `--env` build — its web bundle, native API or update channel differs from the pack's, as when a later native build of the target overwrote `build/<platform>/bundle.json`. That refusal exits 2; any other failure exits 1.",
         ko: "`release-ios`나 `release-android` 뒤에 그 스토어 빌드를 Akan Cloud 프로젝트에 등록하고, 같은 커밋의 팩을 내장 번들로 함께 올립니다. 스토어 빌드가 이 커밋의 `--env` 빌드가 아니면 거부합니다. 웹 번들, 네이티브 API, 업데이트 채널 중 하나라도 팩과 다른 경우이며, 이후에 그 타깃을 다시 네이티브 빌드해 `build/<platform>/bundle.json`을 덮어쓴 경우가 그렇습니다. 이 거부는 2로, 그 밖의 실패는 1로 끝납니다.",
@@ -1583,6 +1604,14 @@ akan pack-update myapp --platform ios --env main --against store/bundle.json && 
         cloudHostOption,
         writeOption,
         allowLocalReleaseOption,
+        {
+          ...publicEnvOption,
+          defaultValue: "the store build's",
+          desc: l.trans({
+            en: "Inline exactly these `AKAN_PUBLIC_*` values: a JSON map or a `bundle.json`. Left out, the store build's.",
+            ko: "정확히 이 `AKAN_PUBLIC_*` 값만 넣습니다. JSON 맵이나 `bundle.json`이며, 생략하면 스토어 빌드의 값입니다.",
+          }),
+        },
       ],
       notes: [
         {

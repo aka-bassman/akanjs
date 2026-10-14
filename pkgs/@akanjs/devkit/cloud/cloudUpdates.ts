@@ -5,6 +5,7 @@ import type { App } from "../commandDecorators";
 import { ExitCodeError } from "../commandDecorators/exitCodeError";
 import { type MobilePlatform, resolveMobileTargets } from "../mobile/mobileTarget";
 import { NativeApp } from "../mobile/nativeApp";
+import { NativePublicEnv } from "../mobile/nativePublicEnv";
 import { type NativeUpdatePack, UpdatePackFolder } from "../mobile/updatePackFolder";
 import { type AppBinaryDistribution, CloudApi } from "./cloudApi";
 import { UpdatePackUpload } from "./updatePackUpload";
@@ -16,6 +17,13 @@ export class CloudUpdates {
     readonly cloudApi: CloudApi,
     readonly devProjectId: string,
   ) {}
+
+  /** The bundle.json the target's last `akan release-<platform>` wrote. */
+  static async storeBundlePath(app: App, target: string | undefined, platform: MobilePlatform) {
+    const [mobileTarget] = await resolveMobileTargets(app, target);
+    if (!mobileTarget) throw new Error(`Native target '${target}' was not found.`);
+    return path.join(new NativeApp(app, mobileTarget).outDir(platform), UpdatePackFolder.bundleFile);
+  }
 
   /** A pack `akan pack-update` wrote, refused unless it is this app's and agrees with every flag given beside it. */
   static async readPack(
@@ -76,25 +84,22 @@ export class CloudUpdates {
     { distribution, env }: { distribution: AppBinaryDistribution; env: NativeEnv },
   ) {
     const { cloudApi, devProjectId } = this;
-    const [mobileTarget] = await resolveMobileTargets(app, pack.target);
-    if (!mobileTarget) throw new Error(`Native target '${pack.target}' was not found.`);
-    const bundlePath = path.join(new NativeApp(app, mobileTarget).outDir(pack.platform), UpdatePackFolder.bundleFile);
+    const bundlePath = await CloudUpdates.storeBundlePath(app, pack.target, pack.platform);
     const bundleFile = Bun.file(bundlePath);
     const rebuild = `akan release-${pack.platform} ${app.name} --target ${pack.target} --env ${env}`;
     if (!(await bundleFile.exists())) throw new Error(`No store build at ${bundlePath}: run \`${rebuild}\` first.`);
     const bundle = await UpdatePackFolder.readBundle(bundlePath);
     if (!bundle.updates)
       throw new Error(`The store build at ${bundlePath} takes no updates: give the target native.updates.`);
+    const packBundle = path.join(pack.out, UpdatePackFolder.bundleFile);
+    const envProblem = await NativePublicEnv.problemAgainst(bundlePath, packBundle);
+    if (envProblem) throw new ExitCodeError(`The pack in ${pack.out} cannot run in the store build: ${envProblem}.`, 2);
     //? Every native build of the target rewrites this file, so a debug or another env's build replaces the release's.
     if (bundle.web.hash !== pack.webHash)
       throw new Error(
         `The store build at ${bundlePath} is not this commit's --env ${env} build: its web bundle differs from the pack's. Run \`${rebuild}\`, then register that build.`,
       );
-    const compat = await NativeApp.compareBundles(
-      app.cwdPath,
-      bundlePath,
-      path.join(pack.out, UpdatePackFolder.bundleFile),
-    );
+    const compat = await NativeApp.compareBundles(app.cwdPath, bundlePath, packBundle);
     const verdict = UpdatePackFolder.storeBuildVerdict(
       { out: pack.out, compat: { against: bundlePath, ...compat } },
       `Run \`${rebuild}\`, then register that build.`,

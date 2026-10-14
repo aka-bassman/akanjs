@@ -1,8 +1,14 @@
 import type { NativeEnv } from "@akanjs/devkit/akanConfig";
-import { type AppBinaryDistribution, CloudApi, GlobalConfig, PipelineSecrets } from "@akanjs/devkit/cloud";
+import {
+  type AppBinaryDistribution,
+  CloudApi,
+  CloudUpdates,
+  GlobalConfig,
+  PipelineSecrets,
+} from "@akanjs/devkit/cloud";
 import { type App, script, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { PkgExecutor } from "@akanjs/devkit/executors";
-import { type MobilePlatform, UpdatePackFolder } from "@akanjs/devkit/mobile";
+import { type MobilePlatform, NativePublicEnv, UpdatePackFolder } from "@akanjs/devkit/mobile";
 import type { RemoteTestPlatform } from "@akanjs/devkit/platformTest/PlatformTestTarget";
 import { Logger } from "akanjs/common";
 import { ApplicationScript } from "../application/application.script";
@@ -106,6 +112,7 @@ export class CloudScript extends script("cloud", [CloudRunner, ApplicationScript
       write,
       allowLocalRelease,
       pack: packDir,
+      publicEnv,
     }: {
       platform: MobilePlatform | null;
       target: string | null;
@@ -117,10 +124,13 @@ export class CloudScript extends script("cloud", [CloudRunner, ApplicationScript
       write: boolean;
       allowLocalRelease: boolean;
       pack: string | null;
+      publicEnv?: string | null;
     },
   ) {
+    if (packDir && publicEnv)
+      throw new Error("--public-env picks what a pack is built with, and --pack uploads one already built: give one.");
     const devProjectId = await this.cloudRunner.projectOf(workspace, subspace, app.name);
-    const pack = await this.#packToPush(app, { platform, target, env, write, allowLocalRelease, packDir });
+    const pack = await this.#packToPush(app, { platform, target, env, write, allowLocalRelease, packDir, publicEnv });
     const verdict = UpdatePackFolder.storeBuildVerdict(pack);
     if (verdict) throw verdict;
     return await this.cloudRunner.pushUpdate(await this.#cloudApi(workspace, given), devProjectId, pack, {
@@ -137,6 +147,7 @@ export class CloudScript extends script("cloud", [CloudRunner, ApplicationScript
       write,
       allowLocalRelease,
       packDir,
+      publicEnv,
     }: {
       platform: MobilePlatform | null;
       target: string | null;
@@ -144,6 +155,7 @@ export class CloudScript extends script("cloud", [CloudRunner, ApplicationScript
       write: boolean;
       allowLocalRelease: boolean;
       packDir: string | null;
+      publicEnv?: string | null;
     },
   ) {
     if (packDir) return await this.cloudRunner.readPack(app, packDir, { platform, target, env, allowLocalRelease });
@@ -156,6 +168,7 @@ export class CloudScript extends script("cloud", [CloudRunner, ApplicationScript
       env: env ?? "main",
       write,
       allowLocalRelease,
+      publicEnv: publicEnv ?? undefined,
     });
   }
   async registerBinary(
@@ -170,6 +183,7 @@ export class CloudScript extends script("cloud", [CloudRunner, ApplicationScript
       host: given,
       write,
       allowLocalRelease,
+      publicEnv,
     }: {
       platform: MobilePlatform;
       distribution: AppBinaryDistribution;
@@ -179,10 +193,20 @@ export class CloudScript extends script("cloud", [CloudRunner, ApplicationScript
       host?: string | null;
       write: boolean;
       allowLocalRelease: boolean;
+      publicEnv?: string | null;
     },
   ) {
     const devProjectId = await this.cloudRunner.projectOf(workspace, subspace, app.name);
-    const pack = await this.applicationScript.packUpdate(app, platform, { target, env, write, allowLocalRelease });
+    //* The pack is the binary's embedded bundle, so it inlines what the store build recorded unless told otherwise.
+    const storeBundle = await CloudUpdates.storeBundlePath(app, target, platform);
+    const recorded = !publicEnv && (await NativePublicEnv.recordedIn(storeBundle));
+    const pack = await this.applicationScript.packUpdate(app, platform, {
+      target,
+      env,
+      write,
+      allowLocalRelease,
+      publicEnv: publicEnv ?? (recorded ? storeBundle : undefined),
+    });
     return await this.cloudRunner.registerBinary(await this.#cloudApi(workspace, given), devProjectId, app, pack, {
       distribution,
       env,

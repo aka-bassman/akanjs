@@ -404,7 +404,7 @@ Build the desktop app on this computer's OS: a `.app` on macOS and an app folder
 
 - output: Written under `dist/native/<app>/<target>/build/<macos|windows|linux>`; the command prints each file's path.
 
-`akan release-ios <app> [--target <target>] [--env <env>] [--team <team>] [--ad-hoc <boolean>] [--write <boolean>] [--allow-local-release <boolean>]`
+`akan release-ios <app> [--target <target>] [--env <env>] [--team <team>] [--ad-hoc <boolean>] [--write <boolean>] [--allow-local-release <boolean>] [--public-env <file>]`
 
 Build and sign the iOS app for an App Store release: an iPhone app and its `.ipa`. It defaults to the `main` backend and refuses `--env local` unless `--allow-local-release` is passed.
 
@@ -420,11 +420,13 @@ Build and sign the iOS app for an App Store release: an iPhone app and its `.ipa
 
 - --allow-local-release (Boolean, default false, -l): Allow a release built with `--env local`.
 
+- --public-env (String, -u): Inline exactly these `AKAN_PUBLIC_*` values: a JSON map, or a store build's `bundle.json` (`web.publicEnv`).
+
 - signing: The certificate and profile are found among the ones Xcode keeps on this Mac: the profile must cover the app id and every capability the app asks for. The command prints the one it used.
 
 - output: Written under `dist/native/<app>/<target>/build/ios`; the command prints each file's path.
 
-`akan release-android <app> [--assemble-type <type>] [--target <target>] [--env <env>] [--write <boolean>] [--allow-local-release <boolean>]`
+`akan release-android <app> [--assemble-type <type>] [--target <target>] [--env <env>] [--write <boolean>] [--allow-local-release <boolean>] [--public-env <file>]`
 
 Build and sign the Android app for a Play Store release, as an AAB or an APK. Like `release-ios`, it defaults to `main` and refuses `--env local` without `--allow-local-release`.
 
@@ -437,6 +439,8 @@ Build and sign the Android app for a Play Store release, as an AAB or an APK. Li
 - --write (Boolean, default true): Run `akan sync` first so generated files are current.
 
 - --allow-local-release (Boolean, default false, -l): Allow a release built with `--env local`.
+
+- --public-env (String, -u): Inline exactly these `AKAN_PUBLIC_*` values: a JSON map, or a store build's `bundle.json` (`web.publicEnv`).
 
 - signing: Signed with the upload key the environment names: `MYAPP_RELEASE_STORE_FILE`, `MYAPP_RELEASE_STORE_PASSWORD` and `MYAPP_RELEASE_KEY_ALIAS`, plus `MYAPP_RELEASE_KEY_PASSWORD` when the key has its own. A missing one stops the command before it builds.
 
@@ -496,7 +500,7 @@ Build a release and sign it for installed apps: the whole app for a desktop (thi
 
 - native API: The CLI needs the native build API 0.12.0 or later in the app's akanjs: install matching versions of akanjs and @akanjs/cli.
 
-`akan pack-update <app> --platform <platform> [--target <target>] [--env <env>] [--out <dir>] [--against <bundle.json>] [--write <boolean>] [--allow-local-release <boolean>]`
+`akan pack-update <app> --platform <platform> [--target <target>] [--env <env>] [--out <dir>] [--against <bundle.json>] [--write <boolean>] [--allow-local-release <boolean>] [--public-env <file>]`
 
 Pack an Android or iOS web bundle update unsigned, for a signer that keeps the key off this machine: `files/<sha256>`, `bundle.json`, `manifest.template.json` with `channel`, `sequence` and `bundle` left for the signer, and `pack.json`, the record a pipeline reads. The signer uploads `files/` first, then the signed envelope at `<platform>/<channel>/<nativeApi>.json`. Exits 2 when `--against` says the bundle needs a new store build; any other failure, its web build included, exits 1 and leaves no `pack.json` behind. `publish-update` does the same with a key on this machine.
 
@@ -514,7 +518,9 @@ Pack an Android or iOS web bundle update unsigned, for a signer that keeps the k
 
 - --allow-local-release (Boolean, default false, -l): Allow a release built with `--env local`.
 
-`akan push-update <app> [--platform <platform>] [--target <target>] [--env <env>] [--channel <channel>] [--notes <text>] [--subspace <name>] [--host <url>] [--write <boolean>] [--allow-local-release <boolean>] [--pack <dir>]`
+- --public-env (String, default --against, -u): Inline exactly these `AKAN_PUBLIC_*` values: a JSON map or a `bundle.json`. Left out, the `--against` build's.
+
+`akan push-update <app> [--platform <platform>] [--target <target>] [--env <env>] [--channel <channel>] [--notes <text>] [--subspace <name>] [--host <url>] [--write <boolean>] [--allow-local-release <boolean>] [--pack <dir>] [--public-env <file>]`
 
 Pack an update as `pack-update` does, or take the folder it wrote with `--pack`, and upload it to the Akan Cloud project, which keeps the key, signs and publishes it. The channel defaults to the target's `updates.channel`. It exits 2 when the pack needs a new store build or the project rejects it, and prints why; any other failure exits 1.
 
@@ -538,9 +544,11 @@ Pack an update as `pack-update` does, or take the folder it wrote with `--pack`,
 
 - --pack (String, -d): A folder `pack-update` already wrote, uploaded as it is instead of packing again. It must be this app's, and `--platform`, `--target` and `--env`, when given, must match it. A pack its `--against` check refused exits 2 without uploading.
 
+- --public-env (String, -u): Inline exactly these `AKAN_PUBLIC_*` values: a JSON map, or a store build's `bundle.json` (`web.publicEnv`).
+
 - --subspace: The subspace must declare the app in the root `akan.config.ts`, or the command stops before it packs.
 
-`akan register-binary <app> --platform <platform> --distribution <distribution> [--target <target>] [--env <env>] [--subspace <name>] [--host <url>] [--write <boolean>] [--allow-local-release <boolean>]`
+`akan register-binary <app> --platform <platform> --distribution <distribution> [--target <target>] [--env <env>] [--subspace <name>] [--host <url>] [--write <boolean>] [--allow-local-release <boolean>] [--public-env <file>]`
 
 After `release-ios` or `release-android`, register that store build with the Akan Cloud project, with a pack of the same commit as its embedded bundle. Refused when the store build is not this commit's `--env` build — its web bundle, native API or update channel differs from the pack's, as when a later native build of the target overwrote `build/<platform>/bundle.json`. That refusal exits 2; any other failure exits 1.
 
@@ -559,6 +567,8 @@ After `release-ios` or `release-android`, register that store build with the Aka
 - --write (Boolean, default true): Run `akan sync` first so generated files are current.
 
 - --allow-local-release (Boolean, default false, -l): Allow a release built with `--env local`.
+
+- --public-env (String, default the store build's, -u): Inline exactly these `AKAN_PUBLIC_*` values: a JSON map or a `bundle.json`. Left out, the store build's.
 
 - --subspace: The subspace must declare the app in the root `akan.config.ts`, or the command stops before it packs.
 
@@ -768,6 +778,7 @@ akan build-desktop myapp --installer true --env main --sign true --notarize true
 ```bash
 akan release-ios myapp --target all --env main
 akan release-ios myapp --target default --ad-hoc true
+akan release-ios myapp --env main --public-env store.env.json
 ```
 
 ### release-android

@@ -1,7 +1,7 @@
 import type { DatabaseMode } from "@akanjs/devkit/akanConfig";
 import { App, Apps, command, Exec, Sys, SysOrOnlyApp, Workspace } from "@akanjs/devkit/commandDecorators";
 import { ApplicationScript } from "./application.script";
-import { allowLocalOption, nativeTargetOption, releaseEnvOption, writeOption } from "./commandOptions";
+import { allowLocalOption, nativeTargetOption, publicEnvOption, releaseEnvOption, writeOption } from "./commandOptions";
 
 const deviceOption = {
   desc: "simulator, emulator or device to run on: its id or name (e.g. 'iPhone 17' or 'Pixel_10')",
@@ -251,7 +251,8 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .option("adHoc", Boolean, { desc: "sign with an ad-hoc profile instead of app-store", default: false })
     .option("write", Boolean, writeOption)
     .option("allowLocalRelease", Boolean, allowLocalOption("release"))
-    .exec(async function (app, target, env, team, adHoc, write, allowLocalRelease) {
+    .option("publicEnv", String, publicEnvOption("the release"))
+    .exec(async function (app, target, env, team, adHoc, write, allowLocalRelease, publicEnv) {
       await this.applicationScript.releaseIos(app, {
         target,
         env,
@@ -259,6 +260,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
         adHoc,
         write,
         allowLocalRelease,
+        publicEnv: publicEnv ?? undefined,
       });
     }),
   releaseAndroid: target({ desc: "Build and sign the Android app for the Play Store (aab, or apk)" })
@@ -268,12 +270,14 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .option("env", String, releaseEnvOption)
     .option("write", Boolean, writeOption)
     .option("allowLocalRelease", Boolean, allowLocalOption("release"))
-    .exec(async function (app, assembleType, target, env, write, allowLocalRelease) {
+    .option("publicEnv", String, publicEnvOption("the release"))
+    .exec(async function (app, assembleType, target, env, write, allowLocalRelease, publicEnv) {
       await this.applicationScript.releaseAndroid(app, assembleType as "aab" | "apk", {
         target,
         env,
         write,
         allowLocalRelease,
+        publicEnv: publicEnv ?? undefined,
       });
     }),
   packUpdate: target({
@@ -293,7 +297,8 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     })
     .option("write", Boolean, writeOption)
     .option("allowLocalRelease", Boolean, allowLocalOption("packing"))
-    .exec(async function (app, platform, target, env, out, against, write, allowLocalRelease) {
+    .option("publicEnv", String, publicEnvOption("the update (default: what --against recorded)"))
+    .exec(async function (app, platform, target, env, out, against, write, allowLocalRelease, publicEnv) {
       await this.applicationScript.packUpdate(app, platform as "ios" | "android", {
         target,
         env,
@@ -301,6 +306,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
         against: against ?? undefined,
         write,
         allowLocalRelease,
+        publicEnv: publicEnv ?? undefined,
       });
     }),
   updateKeygen: target({ desc: "Make (once) the key an app's update releases are signed with; print its public key" })

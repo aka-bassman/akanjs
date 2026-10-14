@@ -12,6 +12,8 @@ import {
   type MobilePlatform,
   NativeApp,
   type NativePlatform,
+  NativePublicEnv,
+  type PublicEnv,
   type ResolvedMobileTarget,
   resolveAppId,
   resolveMobileTargets,
@@ -49,7 +51,11 @@ export interface MobileTargetOptions {
   target?: string;
   env?: NativeEnv;
 }
-export interface MobileUpdatePackOptions extends MobileTargetOptions {
+/** `--public-env`: a JSON map of AKAN_PUBLIC_* values, or a store build's bundle.json, the web build inlines exactly. */
+export interface MobilePublicEnvOptions {
+  publicEnv?: string;
+}
+export interface MobileUpdatePackOptions extends MobileTargetOptions, MobilePublicEnvOptions {
   out?: string;
   /** The bundle.json of the store build the update is for; a bundle it cannot run fails the pack. */
   against?: string;
@@ -87,7 +93,7 @@ export interface MobileStartOptions extends MobileTargetOptions {
   /** Stops a dev session along with what the caller started for it, instead of this command's own Ctrl+C exit. */
   interrupt?: InterruptTeardown;
 }
-export interface IosReleaseOptions extends MobileTargetOptions {
+export interface IosReleaseOptions extends MobileTargetOptions, MobilePublicEnvOptions {
   teamId?: string;
   adHoc?: boolean;
 }
@@ -456,17 +462,21 @@ try {
     return canonical(reported) === canonical(own);
   }
 
-  async releaseIos(app: App, { target, env = "main", teamId, adHoc = false }: IosReleaseOptions = {}) {
+  async releaseIos(app: App, { target, env = "main", teamId, adHoc = false, publicEnv }: IosReleaseOptions = {}) {
     const targets = await resolveMobileTargets(app, target);
-    await this.#buildMobileCsr(app, env);
+    await this.#buildMobileCsr(app, env, undefined, publicEnv ? await NativePublicEnv.load(publicEnv) : null);
     for (const mobileTarget of targets)
       this.#reportBuild(app, mobileTarget, await new NativeApp(app, mobileTarget, env).releaseIos({ teamId, adHoc }));
   }
 
-  async releaseAndroid(app: App, format: "apk" | "aab", { target, env = "main" }: MobileTargetOptions = {}) {
+  async releaseAndroid(
+    app: App,
+    format: "apk" | "aab",
+    { target, env = "main", publicEnv }: MobileTargetOptions & MobilePublicEnvOptions = {},
+  ) {
     const targets = await resolveMobileTargets(app, target);
     NativeApp.androidSigning();
-    await this.#buildMobileCsr(app, env);
+    await this.#buildMobileCsr(app, env, undefined, publicEnv ? await NativePublicEnv.load(publicEnv) : null);
     for (const mobileTarget of targets)
       this.#reportBuild(
         app,
@@ -478,7 +488,7 @@ try {
   async packUpdate(
     app: App,
     platform: MobilePlatform,
-    { target, env = "main", out, against }: MobileUpdatePackOptions,
+    { target, env = "main", out, against, publicEnv }: MobileUpdatePackOptions,
   ) {
     const targets = await resolveMobileTargets(app, target);
     const [mobileTarget] = targets;
@@ -487,16 +497,25 @@ try {
     const nativeApp = new NativeApp(app, mobileTarget, env);
     //? Before the web build: a pack failing anywhere leaves push-update --pack no record of the previous one to ship.
     await UpdatePackFolder.clear(path.resolve(out ?? path.join(nativeApp.updatesDir, platform)));
-    await this.#buildMobileCsr(app, env);
+    //* The store build's own record when it has one: an update that inlines other values talks to another backend.
+    const pinned = publicEnv
+      ? await NativePublicEnv.load(publicEnv)
+      : against
+        ? await NativePublicEnv.recordedIn(against)
+        : null;
+    await this.#buildMobileCsr(app, env, undefined, pinned);
     const { pack } = await nativeApp.packUpdate(platform, { out });
     app.logger.info(
       `packed ${mobileTarget.name} ${platform} for channel '${pack.channel}' to ${pack.out}: ${pack.files} files, ${(pack.size / 1024).toFixed(0)} KiB, native API ${pack.nativeApi}`,
     );
     if (against) {
       const bundle = path.join(pack.out, UpdatePackFolder.bundleFile);
+      const compat = await NativeApp.compareBundles(app.cwdPath, against, bundle);
+      const envProblem = await NativePublicEnv.problemAgainst(against, bundle);
       await UpdatePackFolder.writeCompat(pack, {
         against,
-        ...(await NativeApp.compareBundles(app.cwdPath, against, bundle)),
+        compatible: compat.compatible && !envProblem,
+        problems: [...compat.problems, ...(envProblem ? [envProblem] : [])],
       });
     }
     await UpdatePackFolder.write(pack);
@@ -658,7 +677,10 @@ try {
     const { modules, env: serverEnv, restart, watchdog } = server;
     return await stage?.prepare(env, { modules, env: serverEnv, restart, watchdog });
   }
-  async #buildMobileCsr(app: App, env: NativeEnv, envProfile?: string) {
+  async #buildMobileCsr(app: App, env: NativeEnv, envProfile?: string, publicEnv: PublicEnv | null = null) {
+    if (publicEnv?.AKAN_PUBLIC_ENV !== undefined && publicEnv.AKAN_PUBLIC_ENV !== env)
+      throw new Error(`--env ${env} differs from the public env's AKAN_PUBLIC_ENV ${publicEnv.AKAN_PUBLIC_ENV}.`);
+    if (publicEnv) NativePublicEnv.pin(publicEnv);
     const prevEnv = {
       AKAN_PUBLIC_ENV: process.env.AKAN_PUBLIC_ENV,
       AKAN_PUBLIC_OPERATION_MODE: process.env.AKAN_PUBLIC_OPERATION_MODE,
@@ -677,6 +699,11 @@ try {
         else process.env[key] = value;
       }
     }
+    if (!publicEnv) return;
+    //? The build adds and drops keys of its own (AKAN_PUBLIC_ENV, the ports, the operation mode), so check what it inlined.
+    const differs = NativePublicEnv.diff(publicEnv, (await NativePublicEnv.built(app)) ?? {});
+    if (differs.length)
+      throw new Error(`The web build inlined other values than --public-env gave for ${differs.join(", ")}.`);
   }
   async #runMobileTargets(targets: ResolvedMobileTarget[], task: (target: ResolvedMobileTarget) => Promise<void>) {
     const results: { target: string; error?: unknown }[] = [];

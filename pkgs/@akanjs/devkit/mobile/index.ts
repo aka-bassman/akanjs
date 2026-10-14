@@ -5,6 +5,7 @@ export * from "./nativeApi";
 export * from "./nativeApp";
 export * from "./nativeConfig";
 export * from "./nativePluginFolders";
+export * from "./nativePublicEnv";
 export * from "./nativeWebDir";
 export * from "./placeholderAppId";
 export * from "./updatePackFolder";

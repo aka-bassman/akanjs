@@ -17,6 +17,7 @@ import { NativeApi, type NativeBuildApiModule } from "./nativeApi";
 import { NativeAppLine, type NativeAppLineRead } from "./nativeAppLine";
 import { NativeConfig } from "./nativeConfig";
 import { NativePluginFolders } from "./nativePluginFolders";
+import { NativePublicEnv, type PublicEnv } from "./nativePublicEnv";
 import { NativeWebDir } from "./nativeWebDir";
 import { ServerBundleSecrets } from "./serverBundleSecrets";
 import { type NativeUpdatePack, UpdatePackFolder } from "./updatePackFolder";
@@ -207,16 +208,23 @@ export class NativeApp {
     NativeApp.#assertServerPlatform(platform, server);
     NativeApp.assertInstaller(platform, installer);
     await this.assembleWeb(platform);
+    const publicEnv = await this.#publicEnv();
     const { api, config } = await this.prepare(platform, server, arch);
     const distribution = await this.#distribution(api, platform, profile, { sign, notarize }, server);
-    return await api.build({
-      ...this.#task(platform, config, { env: await this.#runtimeEnv(server) }),
-      profile,
-      ...(arch ? { arch } : {}),
-      ...(platform === "windows" ? { windows: { ...(installer ? { installer } : {}), ...distribution.windows } } : {}),
-      ...(platform === "macos" ? { macos: { ...distribution.macos, ...(installer ? { dmg: true } : {}) } } : {}),
-      ...(platform === "linux" && installer ? { linux: { appImage: true } } : {}),
-    });
+    return await this.#recorded(
+      this.outDir(platform),
+      publicEnv,
+      api.build({
+        ...this.#task(platform, config, { env: await this.#runtimeEnv(server) }),
+        profile,
+        ...(arch ? { arch } : {}),
+        ...(platform === "windows"
+          ? { windows: { ...(installer ? { installer } : {}), ...distribution.windows } }
+          : {}),
+        ...(platform === "macos" ? { macos: { ...distribution.macos, ...(installer ? { dmg: true } : {}) } } : {}),
+        ...(platform === "linux" && installer ? { linux: { appImage: true } } : {}),
+      }),
+    );
   }
 
   async run(
@@ -285,12 +293,17 @@ export class NativeApp {
 
   async releaseIos({ teamId, adHoc = false }: { teamId?: string; adHoc?: boolean } = {}) {
     await this.assembleWeb("ios");
+    const publicEnv = await this.#publicEnv();
     const { api, config } = await this.prepare("ios");
-    return await api.release({
-      ...this.#task("ios", config, { env: await this.#runtimeEnv() }),
-      platform: "ios",
-      signing: { ...(teamId ? { teamId } : {}), ...(adHoc ? { distribution: "ad-hoc" as const } : {}) },
-    });
+    return await this.#recorded(
+      this.outDir("ios"),
+      publicEnv,
+      api.release({
+        ...this.#task("ios", config, { env: await this.#runtimeEnv() }),
+        platform: "ios",
+        signing: { ...(teamId ? { teamId } : {}), ...(adHoc ? { distribution: "ad-hoc" as const } : {}) },
+      }),
+    );
   }
 
   /** Where publishUpdate writes: upload this folder as the target's updates.url. */
@@ -426,18 +439,24 @@ export class NativeApp {
   async releaseAndroid({ formats = ["aab"] }: { formats?: ("aab" | "apk")[] } = {}) {
     const signing = NativeApp.androidSigning();
     await this.assembleWeb("android");
+    const publicEnv = await this.#publicEnv();
     const { api, config } = await this.prepare("android");
-    return await api.release({
-      ...this.#task("android", config, { env: await this.#runtimeEnv() }),
-      platform: "android",
-      signing,
-      formats,
-    });
+    return await this.#recorded(
+      this.outDir("android"),
+      publicEnv,
+      api.release({
+        ...this.#task("android", config, { env: await this.#runtimeEnv() }),
+        platform: "android",
+        signing,
+        formats,
+      }),
+    );
   }
 
   /** An unsigned OTA update of this target's web bundle for `platform`, and the record `pack.json` keeps of it. */
   async packUpdate(platform: MobilePlatform, { out }: { out?: string } = {}) {
     await this.assembleWeb(platform);
+    const publicEnv = await this.#publicEnv();
     const { api, config } = await this.prepare(platform);
     if (!config.updates)
       throw new Error(
@@ -445,7 +464,11 @@ export class NativeApp {
       );
     const dir = path.resolve(out ?? path.join(this.updatesDir, platform));
     await UpdatePackFolder.clear(dir);
-    const packed = await api.packUpdate({ ...this.#task(platform, config), platform, out: dir });
+    const packed = await this.#recorded(
+      dir,
+      publicEnv,
+      api.packUpdate({ ...this.#task(platform, config), platform, out: dir }),
+    );
     const channel = config.updates.channel ?? "production";
     const bundle = await UpdatePackFolder.readBundle(path.join(packed.out, UpdatePackFolder.bundleFile));
     const pack: NativeUpdatePack = {
@@ -459,11 +482,35 @@ export class NativeApp {
       appVersion: packed.manifest.version,
       nativeApi: packed.manifest.nativeApi ?? "",
       webHash: bundle.web.hash,
+      ...(bundle.web.publicEnvHash ? { publicEnvHash: bundle.web.publicEnvHash } : {}),
       files: packed.manifest.files.length,
       size: packed.manifest.files.reduce((sum, file) => sum + file.size, 0),
       out: packed.out,
     };
     return { ...packed, channel, pack };
+  }
+
+  //* Checked before anything is built or signed: a target with updates would ship a binary Akan Cloud cannot update.
+  async #publicEnv() {
+    const publicEnv = await NativePublicEnv.built(this.app);
+    if (!publicEnv) return null;
+    const problems = NativePublicEnv.problems(publicEnv);
+    if (!problems.length) return publicEnv;
+    const message = `The web build inlines public env an update cannot carry:\n- ${problems.join("\n- ")}`;
+    if (this.target.config.updates) throw new Error(message);
+    this.app.logger.warn(`${message}\nbundle.json records none, so no update can be checked against this build.`);
+    return null;
+  }
+
+  //? After the build: the native CLI writes bundle.json, and a phone build with updates rewrites it once more.
+  async #recorded<T>(dir: string, publicEnv: PublicEnv | null, build: Promise<T>) {
+    const result = await build;
+    const file = path.join(dir, UpdatePackFolder.bundleFile);
+    if (!publicEnv || !(await Bun.file(file).exists())) return result;
+    const bundle = await UpdatePackFolder.readBundle(file);
+    const web = { ...bundle.web, publicEnv, publicEnvHash: NativePublicEnv.hash(publicEnv) };
+    await Bun.write(file, `${JSON.stringify({ ...bundle, web }, null, 2)}\n`);
+    return result;
   }
 
   static async compareBundles(appDir: string, shipped: string, bundle: string) {

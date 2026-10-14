@@ -26,6 +26,8 @@ export interface NativeUpdatePack {
   nativeApi: string;
   /** bundle.json `web.hash`: the web files as served, the part of a bundle id that names its content. */
   webHash: string;
+  /** bundle.json `web.publicEnvHash`: the AKAN_PUBLIC_* the page inlined, which the store build must share. */
+  publicEnvHash?: string;
   files: number;
   size: number;
   /** The folder it was read from or packed to; pack.json leaves it out. */

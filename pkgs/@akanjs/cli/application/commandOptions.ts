@@ -24,6 +24,13 @@ export const releaseEnvOption = { enum: nativeEnvs, desc: "backend environment",
 export const allowLocalOption = (what: string) =>
   ({ flag: "l", desc: `allow ${what} with --env local`, default: false }) as const;
 
+export const publicEnvOption = (what: string) =>
+  ({
+    flag: "u",
+    desc: `the AKAN_PUBLIC_* ${what} inlines, exactly: a JSON map of them, or a store build's bundle.json that recorded them`,
+    nullable: true,
+  }) as const;
+
 export const hostOption = {
   desc: "host of the cloud to target (default: cloud.host of the root akan.config.ts, else Akan Cloud)",
   nullable: true,

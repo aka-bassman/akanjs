@@ -5,6 +5,7 @@ import {
   hostOption,
   nativeEnvs,
   oneNativeTargetOption,
+  publicEnvOption,
   releaseEnvOption,
   subspaceOption,
   writeOption,
@@ -124,6 +125,7 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
       desc: "a folder `akan pack-update` wrote, uploaded instead of packing; --platform, --target and --env must match it",
       nullable: true,
     })
+    .option("publicEnv", String, publicEnvOption("the update"))
     .with(Workspace)
     .exec(
       async function (
@@ -138,6 +140,7 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
         write,
         allowLocalRelease,
         pack,
+        publicEnv,
         workspace,
       ) {
         await this.cloudScript.pushUpdate(workspace, app, {
@@ -151,6 +154,7 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
           write,
           allowLocalRelease,
           pack,
+          publicEnv,
         });
       },
     ),
@@ -169,9 +173,22 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
     .option("host", String, hostOption)
     .option("write", Boolean, writeOption)
     .option("allowLocalRelease", Boolean, allowLocalOption("packing"))
+    .option("publicEnv", String, publicEnvOption("the pack (default: what the store build recorded)"))
     .with(Workspace)
     .exec(
-      async function (app, platform, distribution, target, env, subspace, host, write, allowLocalRelease, workspace) {
+      async function (
+        app,
+        platform,
+        distribution,
+        target,
+        env,
+        subspace,
+        host,
+        write,
+        allowLocalRelease,
+        publicEnv,
+        workspace,
+      ) {
         await this.cloudScript.registerBinary(workspace, app, {
           platform,
           distribution,
@@ -181,6 +198,7 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
           host,
           write,
           allowLocalRelease,
+          publicEnv,
         });
       },
     ),

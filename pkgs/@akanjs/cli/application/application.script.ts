@@ -24,6 +24,7 @@ import {
   type IosReleaseOptions,
   type LogsOptions,
   type MobileBuildOptions,
+  type MobilePublicEnvOptions,
   type MobilePublishOptions,
   type MobileStartOptions,
   type MobileTargetOptions,
@@ -402,7 +403,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       write = true,
       allowLocalRelease = false,
       ...options
-    }: MobileTargetOptions & MobileWriteOptions & MobileReleaseGate = {},
+    }: MobileTargetOptions & MobilePublicEnvOptions & MobileWriteOptions & MobileReleaseGate = {},
   ) {
     await app.scanSync({ write });
     ApplicationScript.#assertReleaseEnv("releaseAndroid", options.env ?? "main", allowLocalRelease);

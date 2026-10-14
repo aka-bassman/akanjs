@@ -46,7 +46,14 @@ export interface BundleInfo {
   runtimeVersion: string;
   nativeApi: { hash: string; inputs: NativeApi };
   /** sha256 of the web files (index.html as served and public/), for update integrity later. */
-  web: { hash: string; files: number };
+  web: {
+    hash: string;
+    files: number;
+    /** The AKAN_PUBLIC_* the page inlined, keys sorted; akan records it after the build, and an update must repeat it. */
+    publicEnv?: Record<string, string>;
+    /** sha256 of JSON.stringify(publicEnv), hex. */
+    publicEnvHash?: string;
+  };
   /** A phone build with updates: what its binary reads (updates.json), the floor of every release's sequence included. */
   updates?: {
     protocol: 2;
