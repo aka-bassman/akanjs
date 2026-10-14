@@ -1,6 +1,6 @@
 {
   "name": "akanjs",
-  "version": "3.0.2",
+  "version": "3.1.0-rc.2",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -129,6 +129,11 @@
       "import": "./server/memoryLimit.ts",
       "types": "./server/memoryLimit.ts",
       "default": "./server/memoryLimit.ts"
+    },
+    "./server/ed25519Key": {
+      "import": "./server/ed25519Key.ts",
+      "types": "./server/ed25519Key.ts",
+      "default": "./server/ed25519Key.ts"
     },
     "./server/lifecycle/portInUse": {
       "import": "./server/lifecycle/portInUse.ts",
