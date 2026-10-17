@@ -108,14 +108,16 @@ export abstract class PlatformTestTarget {
     const logPath = this.#logPath(context, "install");
     const install = await this.exec("bun install --frozen-lockfile", logPath, PlatformTestTarget.installIdleMs);
     if (install.exitCode === 0) return;
-    const failedScripts = [...install.output.matchAll(/(?:pre|post)?install script from "([^"]+)" exited/g)].map(
-      (match) => match[1] ?? "",
-    );
+    const failedPackages = [
+      ...install.output.matchAll(
+        /(?:pre|post)?install script from "([^"]+)" exited|failed to link binaries for package: (@?[^@\s]+)@/g,
+      ),
+    ].map((match) => match[1] ?? match[2] ?? "");
     const tolerable =
-      failedScripts.length > 0 && failedScripts.every((pkg) => this.tolerateScriptFailures.includes(pkg));
+      failedPackages.length > 0 && failedPackages.every((pkg) => this.tolerateScriptFailures.includes(pkg));
     if (!tolerable) throw new Error(`bun install failed — see ${logPath}`);
     //* A failed lifecycle script makes bun skip linking the root `.bin`; a second pass without scripts links it.
-    envWarnings.push(`install script failed for ${failedScripts.join(", ")} — tolerated on ${this.platform}`);
+    envWarnings.push(`install failed for ${failedPackages.join(", ")} — tolerated on ${this.platform}`);
     const relink = await this.exec(
       "bun install --frozen-lockfile --ignore-scripts",
       this.#logPath(context, "install-relink"),

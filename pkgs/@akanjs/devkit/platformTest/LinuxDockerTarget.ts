@@ -19,9 +19,10 @@ export class LinuxDockerTarget extends PlatformTestTarget {
   }
 
   //* No compiler in the image: with one, ssh2 builds its native addon and Bun panics loading it (oven-sh/bun#18546).
+  //* apt goes over https: a captive portal answers plain http with its splash page, which apt reports as unsigned.
   static readonly dockerfile = [
     `FROM oven/bun:${Bun.version}-slim`,
-    "RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates procps lsof && rm -rf /var/lib/apt/lists/*",
+    "RUN sed -i 's|http://|https://|g' /etc/apt/sources.list.d/debian.sources && apt-get update && apt-get install -y --no-install-recommends git ca-certificates procps lsof && rm -rf /var/lib/apt/lists/*",
   ].join("\n");
 
   get image() {

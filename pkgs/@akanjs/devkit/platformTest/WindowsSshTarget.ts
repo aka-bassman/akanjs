@@ -9,7 +9,8 @@ export class WindowsSshTarget extends PlatformTestTarget {
   static readonly utmctlPath = "/Applications/UTM.app/Contents/MacOS/utmctl";
   static readonly defaultWorkRoot = "C:\\akan-test";
   //* arm64 has neither a sharp@0.32 prebuilt nor a Chrome for puppeteer's postinstall; x64 users get both.
-  static readonly defaultTolerateScriptFailures = ["sharp", "puppeteer"];
+  //* Nor a msgpackr-extract prebuilt: bun deletes it when node-gyp fails, racing the link of msgpackr's bins.
+  static readonly defaultTolerateScriptFailures = ["sharp", "puppeteer", "msgpackr"];
   static readonly #runDirPattern = "^\\d{8}-\\d{6}$";
   static readonly #keptRuns = 2;
 

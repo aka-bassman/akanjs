@@ -36,7 +36,8 @@ export class ConfigLock {
 
   static async #take(lockPath: string) {
     const handle = await open(lockPath, "wx", 0o600).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "EEXIST") return null;
+      // Windows answers EPERM, not EEXIST, while a released lock file is still pending delete behind an open handle.
+      if (error.code === "EEXIST" || (process.platform === "win32" && error.code === "EPERM")) return null;
       throw error;
     });
     if (!handle) return false;
