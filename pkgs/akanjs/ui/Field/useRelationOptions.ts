@@ -6,6 +6,7 @@ import type { SliceMeta } from "akanjs/fetch";
 import { st } from "akanjs/store";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { LightRefCache } from "./lightRefCache";
+import { useRelationWindow } from "./useRelationWindow";
 
 export interface RelationOptionsSource<Light extends { id: string }> {
   slice: SliceMeta;
@@ -14,6 +15,8 @@ export interface RelationOptionsSource<Light extends { id: string }> {
   /** Rows the control was handed outright, which a `Light`-valued field's own value already is. */
   pinned?: (Light | null)[];
   initArgs?: any[];
+  limit?: number;
+  sort?: string;
   sortOption?: (a: Light, b: Light) => number;
   renderOption?: (model: Light) => ReactNode;
 }
@@ -36,21 +39,30 @@ export const useRelationOptions = <Light extends { id: string }>({
   ids,
   pinned,
   initArgs,
+  limit,
+  sort,
   sortOption,
   renderOption,
 }: RelationOptionsSource<Light>) => {
-  const { refName, sliceName } = slice;
+  const { refName, sliceName, argLength } = slice;
   const [modelName, ModelName] = [lowerlize(refName), capitalize(refName)];
   const names = {
     modelList: sliceName.replace(modelName, `${modelName}List`),
     modelListLoading: sliceName.replace(modelName, `${modelName}ListLoading`),
     refreshModel: sliceName.replace(modelName, `refresh${ModelName}`),
+    queryArgsOfModel: sliceName.replace(modelName, `queryArgsOf${ModelName}`),
+    limitOfModel: sliceName.replace(modelName, `limitOf${ModelName}`),
+    sortOfModel: sliceName.replace(modelName, `sortOf${ModelName}`),
   };
   const storeUse = st.use as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
   const storeGet = st.get as unknown as <V>() => { [key: string]: V };
-  const sliceList = storeUse[names.modelList]() as DataList<Light>;
-  const listLoading = storeUse[names.modelListLoading]() as boolean;
+  const storeList = storeUse[names.modelList]() as DataList<Light>;
+  const storeListLoading = storeUse[names.modelListLoading]() as boolean;
+  const ownWindow = useRelationWindow<Light>(names.modelList, argLength);
+  const isWindowed = limit !== undefined || sort !== undefined;
+  const sliceList = isWindowed ? ownWindow.list : storeList;
+  const listLoading = isWindowed ? ownWindow.loading : storeListLoading;
   const [resolvedCount, setResolvedCount] = useState(0);
 
   const held = (pinned ?? []).filter((row): row is Light => !!row);
@@ -80,6 +92,19 @@ export const useRelationOptions = <Light extends { id: string }>({
     return labelOf(cnst?.full, model) ?? model.id;
   };
   const options = useMemo(() => models.map((model) => ({ label: optionLabel(model), value: model.id })), [models]);
+  // `refreshModel`'s reading of the same props, so `initArgs`, `limit` and `sort` mean one thing on either path.
+  const windowQuery = () => {
+    const state = storeGet<unknown>();
+    const args = initArgs ?? [];
+    return {
+      queryArgs: [
+        ...args.slice(0, argLength),
+        ...(state[names.queryArgsOfModel] as unknown[]).slice(args.length, argLength),
+      ],
+      limit: limit ?? (state[names.limitOfModel] as number),
+      sort: sort ?? (state[names.sortOfModel] as string),
+    };
+  };
 
   return {
     models,
@@ -87,11 +112,14 @@ export const useRelationOptions = <Light extends { id: string }>({
     optionLabel,
     listLoading,
     // `invalidate: false`: the slice list is one store key, so a refetch would replace the listing on screen.
-    load: () => storeDo[names.refreshModel]({ invalidate: false, queryArgs: initArgs }),
+    load: () =>
+      isWindowed
+        ? ownWindow.load(windowQuery())
+        : storeDo[names.refreshModel]({ invalidate: false, queryArgs: initArgs }),
     // Live rather than the rendered list, because the agent's list tool loads and reads within one call.
     read: () =>
       merge(
-        storeGet<DataList<Light>>()[names.modelList],
+        isWindowed ? ownWindow.read() : storeGet<DataList<Light>>()[names.modelList],
         [...held, ...ids.map((id) => LightRefCache.get<Light>(refName, id))],
         sortOption,
       ),

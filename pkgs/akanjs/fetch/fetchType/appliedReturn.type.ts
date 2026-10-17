@@ -1,10 +1,12 @@
 import type { DataList, GetStateObject, PromiseOrObject } from "akanjs/base";
 import type { ExtractSort, FilterInstance } from "akanjs/document";
 
-export type SliceMeta = {
+export type SliceMeta<Sort = unknown> = {
   refName: string;
   sliceName: string;
   argLength: number;
+  /** Type-only, never set: the slice filter's sort keys, which a `sort` passed beside this meta narrows to. */
+  _Sort?: Sort;
 };
 
 /** What the root slice takes: one of the model's declared filter queries, and the args that filter asks for. */

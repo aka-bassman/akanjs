@@ -24,7 +24,7 @@ const renderRow = <Light extends { id: string }>(
   return model ? render(model) : <Unresolved id={id} />;
 };
 
-interface RelationProps<Light> {
+interface RelationProps<Light, Sort> {
   label?: string;
   desc?: string;
   labelClassName?: string;
@@ -32,18 +32,21 @@ interface RelationProps<Light> {
   disabled?: boolean;
   nullable?: boolean;
   initArgs?: any[];
-  slice: SliceMeta;
+  slice: SliceMeta<Sort>;
+  /** Either one gives the field its own option window, leaving the slice's list on the page as it is. */
+  limit?: number;
+  sort?: NoInfer<Sort> & string;
   onSearch?: (text: string) => void;
   sortOption?: (a: Light, b: Light) => number;
 }
-export interface ParentProps<Light> extends RelationProps<Light> {
+export interface ParentProps<Light, Sort = unknown> extends RelationProps<Light, Sort> {
   selectClassName?: string;
   value: Light | null;
   onChange: (value: Light | null) => void;
   renderOption: (model: Light) => ReactNode;
   renderSelected?: (value: Light) => ReactNode;
 }
-export const Parent = <Light extends { id: string }>({
+export const Parent = <Light extends { id: string }, Sort = unknown>({
   label,
   desc,
   labelClassName,
@@ -52,6 +55,8 @@ export const Parent = <Light extends { id: string }>({
   nullable,
   disabled,
   initArgs,
+  limit,
+  sort,
   slice,
   value,
   onChange,
@@ -59,12 +64,14 @@ export const Parent = <Light extends { id: string }>({
   sortOption,
   renderOption,
   renderSelected = renderOption,
-}: ParentProps<Light>) => {
+}: ParentProps<Light, Sort>) => {
   const { models, options, optionLabel, listLoading, load, read } = useRelationOptions<Light>({
     slice,
     ids: value ? [value.id] : [],
     pinned: [value],
     initArgs,
+    limit,
+    sort,
     sortOption,
     renderOption,
   });
@@ -92,14 +99,14 @@ export const Parent = <Light extends { id: string }>({
   );
 };
 
-export interface ParentIdProps<Light> extends RelationProps<Light> {
+export interface ParentIdProps<Light, Sort = unknown> extends RelationProps<Light, Sort> {
   selectClassName?: string;
   value: string | null;
   onChange: (id: string | null, model: Light | null) => void;
   renderOption?: (model: Light) => ReactNode;
   renderSelected?: (value: Light) => ReactNode;
 }
-export const ParentId = <Light extends { id: string }>({
+export const ParentId = <Light extends { id: string }, Sort = unknown>({
   label,
   desc,
   className,
@@ -108,6 +115,8 @@ export const ParentId = <Light extends { id: string }>({
   nullable,
   disabled,
   initArgs,
+  limit,
+  sort,
   slice,
   value,
   onChange,
@@ -115,11 +124,13 @@ export const ParentId = <Light extends { id: string }>({
   sortOption,
   renderOption,
   renderSelected = renderOption,
-}: ParentIdProps<Light>) => {
+}: ParentIdProps<Light, Sort>) => {
   const { models, options, optionLabel, listLoading, load } = useRelationOptions<Light>({
     slice,
     ids: value ? [value] : [],
     initArgs,
+    limit,
+    sort,
     sortOption,
     renderOption,
   });
@@ -149,14 +160,14 @@ export const ParentId = <Light extends { id: string }>({
   );
 };
 
-export interface ChildrenProps<Light> extends RelationProps<Light> {
+export interface ChildrenProps<Light, Sort = unknown> extends RelationProps<Light, Sort> {
   selectClassName?: string;
   value: Light[] | null;
   onChange: (value: Light[]) => void;
   renderOption: (model: Light) => ReactNode;
   renderSelected?: (value: Light) => ReactNode;
 }
-export const Children = <Light extends { id: string }>({
+export const Children = <Light extends { id: string }, Sort = unknown>({
   label,
   desc,
   labelClassName,
@@ -165,6 +176,8 @@ export const Children = <Light extends { id: string }>({
   nullable,
   disabled,
   initArgs,
+  limit,
+  sort,
   slice,
   value,
   onChange,
@@ -172,12 +185,14 @@ export const Children = <Light extends { id: string }>({
   sortOption,
   renderOption,
   renderSelected = renderOption,
-}: ChildrenProps<Light>) => {
+}: ChildrenProps<Light, Sort>) => {
   const { models, options, optionLabel, listLoading, load, read } = useRelationOptions<Light>({
     slice,
     ids: (value ?? []).map((model) => model.id),
     pinned: value ?? [],
     initArgs,
+    limit,
+    sort,
     sortOption,
     renderOption,
   });
@@ -206,12 +221,12 @@ export const Children = <Light extends { id: string }>({
   );
 };
 
-export interface ChildrenIdProps<Light> extends RelationProps<Light> {
+export interface ChildrenIdProps<Light, Sort = unknown> extends RelationProps<Light, Sort> {
   value: string[] | null;
   onChange: (value: string[]) => void;
   renderOption: (model: Light) => ReactNode;
 }
-export const ChildrenId = <Light extends { id: string }>({
+export const ChildrenId = <Light extends { id: string }, Sort = unknown>({
   label,
   desc,
   labelClassName,
@@ -219,17 +234,21 @@ export const ChildrenId = <Light extends { id: string }>({
   nullable,
   disabled,
   initArgs,
+  limit,
+  sort,
   slice,
   value,
   onChange,
   onSearch,
   sortOption,
   renderOption,
-}: ChildrenIdProps<Light>) => {
+}: ChildrenIdProps<Light, Sort>) => {
   const { models, options, listLoading, load } = useRelationOptions<Light>({
     slice,
     ids: value ?? [],
     initArgs,
+    limit,
+    sort,
     sortOption,
     renderOption,
   });

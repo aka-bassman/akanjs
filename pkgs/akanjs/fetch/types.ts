@@ -1,5 +1,5 @@
 import { type Environment, getEnv, type SLICE_META } from "akanjs/base";
-import type { DatabaseSignal } from "akanjs/signal";
+import type { DatabaseSignal, SlceDbSort } from "akanjs/signal";
 import type { SliceMeta } from "./fetchType/appliedReturn.type";
 
 export type Account<AddData = unknown> = {
@@ -17,7 +17,9 @@ type GetSliceMetaObjFromSignal<Signal> = Signal extends {
   ? SliceMetaObj
   : Signal extends DatabaseSignal
     ? {
-        [K in `${Signal["slice"]["baseName"]}${Capitalize<keyof Signal["slice"][typeof SLICE_META] & string>}`]: SliceMeta;
+        [K in `${Signal["slice"]["baseName"]}${Capitalize<keyof Signal["slice"][typeof SLICE_META] & string>}`]: SliceMeta<
+          SlceDbSort<Signal["slice"]>
+        >;
       }
     : Record<never, never>;
 export type GetSliceMetaObjFromDatabaseSignals<

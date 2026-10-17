@@ -391,6 +391,28 @@ export default page()
           l.trans({
             en: (
               <>
+                <strong>Relation options.</strong> <code>Parent</code>, <code>ParentId</code>, <code>Children</code> and{" "}
+                <code>ChildrenId</code> load their options from <code>slice</code> on open, and <code>initArgs</code>{" "}
+                holds only that slice's filter args. A <code>limit</code> or a <code>sort</code> (a key of the slice
+                filter's <code>sort</code>) gives the field its own window: it loads that page itself and leaves the
+                slice's list, <code>{"limitOf<Model>"}</code> and <code>{"sortOf<Model>"}</code> as the page holds them;
+                the one left out comes from the store. <code>sortOption</code> only reorders the rows already loaded.
+              </>
+            ),
+            ko: (
+              <>
+                <strong>관계 필드의 선택지.</strong> <code>Parent</code>, <code>ParentId</code>, <code>Children</code>,{" "}
+                <code>ChildrenId</code>는 열릴 때 <code>slice</code>에서 선택지를 불러오고, <code>initArgs</code>에는 그
+                슬라이스의 필터 인자만 둡니다. <code>limit</code>이나 <code>sort</code>(슬라이스 필터 <code>sort</code>
+                의 키)를 주면 필드가 그 페이지를 따로 불러오고, 슬라이스 목록과 <code>{"limitOf<Model>"}</code>,{" "}
+                <code>{"sortOf<Model>"}</code>은 페이지가 쥔 그대로 둡니다. 생략한 쪽은 스토어 값을 씁니다.{" "}
+                <code>sortOption</code>은 이미 불러온 행의 순서만 바꿉니다.
+              </>
+            ),
+          }),
+          l.trans({
+            en: (
+              <>
                 <strong>Setter by reference.</strong> <code>{"onChange={st.do.setNameOnUser}"}</code> publishes the
                 field as an agent tool. An inline arrow runs the same and publishes nothing.
               </>

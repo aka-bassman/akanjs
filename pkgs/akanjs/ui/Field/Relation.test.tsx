@@ -1,7 +1,7 @@
 import "../../test/registerDom";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { DataList } from "akanjs/base";
-import { act } from "react";
+import { act, useState } from "react";
 import { mountAsync, setTestEnv } from "../testHelpers.fixture";
 
 interface Row {
@@ -13,11 +13,15 @@ const slice = { refName: "relFieldItem", sliceName: "relFieldItemInOwner", argLe
 const refreshes: unknown[] = [];
 const lightCalls: string[] = [];
 const lightRows = new Map<string, Row>();
+const listCalls: unknown[][] = [];
 let listed: Row[] = [];
+let windowed: Row[] = [];
 
 let Field: typeof import("./Relation");
 let LightRefCache: typeof import("./lightRefCache").LightRefCache;
 let seed: (rows: Row[]) => void;
+let storeState: () => Record<string, unknown>;
+let setStore: (state: Record<string, unknown>) => void;
 
 beforeAll(async () => {
   setTestEnv("relationtest");
@@ -31,6 +35,10 @@ beforeAll(async () => {
         const row = lightRows.get(id);
         return row ? Promise.resolve(row) : Promise.reject(new Error("relFieldItem.error.notFound"));
       },
+      relFieldItemListInOwner: (...args: unknown[]) => {
+        listCalls.push(args);
+        return Promise.resolve(windowed);
+      },
     },
   } as never);
 
@@ -38,9 +46,16 @@ beforeAll(async () => {
   seed = (rows) => {
     act(() => StoreRegistry.instance.set({ relFieldItemListInOwner: new DataList<Row>(rows) }));
   };
+  storeState = () => StoreRegistry.instance.get();
+  setStore = (state) => {
+    act(() => StoreRegistry.instance.set(state));
+  };
   class RelFieldStore extends store("relField" as const, () => ({
     relFieldItemListInOwner: new DataList<Row>([]),
     relFieldItemListLoadingInOwner: false,
+    queryArgsOfRelFieldItemInOwner: [] as unknown[],
+    limitOfRelFieldItemInOwner: 20,
+    sortOfRelFieldItemInOwner: "latest",
   })) {
     refreshRelFieldItemInOwner(form: unknown) {
       refreshes.push(form);
@@ -58,10 +73,13 @@ beforeEach(async () => {
   // Drains a read the previous test left in flight: `reset` forgets the answers, not the promises carrying them.
   await new Promise((resolve) => setTimeout(resolve, 0));
   seed([]);
+  setStore({ queryArgsOfRelFieldItemInOwner: [], limitOfRelFieldItemInOwner: 20, sortOfRelFieldItemInOwner: "latest" });
   refreshes.length = 0;
   lightCalls.length = 0;
+  listCalls.length = 0;
   lightRows.clear();
   listed = [];
+  windowed = [];
   LightRefCache.reset();
 });
 
@@ -205,6 +223,95 @@ describe("Field.ChildrenId", () => {
     expect(triggerOf(container).textContent).toContain("Acme");
     expect(triggerOf(container).textContent).toContain("Globex");
     expect(lightCalls).toEqual(["item-1", "item-2"]);
+    unmount();
+  });
+});
+
+describe("an own option window", () => {
+  test("loads its window by limit and sort and leaves the store's list as the page holds it", async () => {
+    seed([{ id: "page-1", name: "On the page" }]);
+    windowed = [
+      { id: "item-1", name: "Acme" },
+      { id: "item-2", name: "Globex" },
+    ];
+    const { container, unmount } = await mountAsync(
+      <Field.ParentId<Row>
+        slice={slice}
+        initArgs={["owner-1"]}
+        limit={500}
+        sort="latestLoginAt"
+        value={null}
+        onChange={() => undefined}
+        renderOption={(model) => model.name}
+      />,
+    );
+    await click(triggerOf(container));
+    await settle();
+    expect(listCalls).toEqual([["owner-1", 0, 500, "latestLoginAt"]]);
+    expect(refreshes).toEqual([]);
+    expect(rowsOf()).toEqual(["Acme", "Globex"]);
+    const state = storeState();
+    expect((state.relFieldItemListInOwner as DataList<Row>).map((row) => row.id)).toEqual(["page-1"]);
+    expect(state.limitOfRelFieldItemInOwner).toBe(20);
+    expect(state.sortOfRelFieldItemInOwner).toBe("latest");
+    unmount();
+  });
+
+  test("takes the store's sort and trailing query args for what it omits", async () => {
+    setStore({ queryArgsOfRelFieldItemInOwner: ["owner-9"], sortOfRelFieldItemInOwner: "oldest" });
+    const { container, unmount } = await mountAsync(
+      <Field.ParentId<Row> slice={slice} limit={500} value={null} onChange={() => undefined} />,
+    );
+    await click(triggerOf(container));
+    await settle();
+    expect(listCalls).toEqual([["owner-9", 0, 500, "oldest"]]);
+    unmount();
+  });
+
+  test("asks again only when the window changes", async () => {
+    let setLimit: (limit: number) => void = () => undefined;
+    const Harness = () => {
+      const [limit, set] = useState(500);
+      setLimit = set;
+      return <Field.ParentId<Row> slice={slice} limit={limit} value={null} onChange={() => undefined} />;
+    };
+    const { container, unmount } = await mountAsync(<Harness />);
+    await click(triggerOf(container));
+    await settle();
+    await click(triggerOf(container));
+    await click(triggerOf(container));
+    await settle();
+    expect(listCalls).toEqual([[undefined, 0, 500, "latest"]]);
+
+    act(() => setLimit(100));
+    await click(triggerOf(container));
+    await click(triggerOf(container));
+    await settle();
+    expect(listCalls).toEqual([
+      [undefined, 0, 500, "latest"],
+      [undefined, 0, 100, "latest"],
+    ]);
+    unmount();
+  });
+
+  test("keeps a held id the window does not carry", async () => {
+    windowed = [{ id: "item-1", name: "Acme" }];
+    lightRows.set("item-9", { id: "item-9", name: "Initech" });
+    const { container, unmount } = await mountAsync(
+      <Field.ParentId<Row>
+        slice={slice}
+        limit={1}
+        value="item-9"
+        onChange={() => undefined}
+        renderOption={(model) => model.name}
+      />,
+    );
+    await settle();
+    await click(triggerOf(container));
+    await settle();
+    expect(triggerOf(container).textContent).toContain("Initech");
+    expect(rowsOf()).toEqual(["Acme", "Initech"]);
+    expect(lightCalls).toEqual(["item-9"]);
     unmount();
   });
 });
