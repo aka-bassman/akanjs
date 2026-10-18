@@ -537,8 +537,8 @@ this.set((state) => { state.ticketForm.title = ""; });`,
       {
         name: "upload<Field>On<Model>(fileList, idx?)",
         desc: l.trans({
-          en: "`File` field: uploads, then polls until the file leaves `uploading`. A result whose form was set whole meanwhile, or whose single field was re-picked, is dropped.",
-          ko: "`File` 필드: 업로드한 뒤 파일이 `uploading` 상태를 벗어날 때까지 확인합니다. 그 사이 폼 전체가 바뀌었거나 단일 필드를 다시 골랐다면 결과는 버립니다.",
+          en: "`File` field: uploads, then polls until the file leaves `uploading`.",
+          ko: "`File` 필드: 업로드한 뒤 파일이 `uploading` 상태를 벗어날 때까지 확인합니다.",
         }),
       },
       {
@@ -1301,6 +1301,12 @@ export class UserStore extends store(
               })}
             </div>
             <Docs.IntroTable type={l.trans({ en: "Method", ko: "메서드" })} items={formSetters} />
+            <div>
+              {l.trans({
+                en: "A result of `upload<Field>On<Model>` whose form was set whole meanwhile, or whose single field was re-picked, is dropped. `<model>FormUploading` marks the field while its upload is pending; a whole-form `set({ <model>Form })` or a generated single-file setter clears that mark at once, even with the request still running.",
+                ko: "그 사이 폼 전체가 바뀌었거나 단일 필드를 다시 골랐다면 `upload<Field>On<Model>`의 결과는 버립니다. `<model>FormUploading`은 업로드가 대기 중인 동안 필드를 표시하고, 폼 전체를 `set({ <model>Form })`으로 바꾸거나 단일 파일 필드의 생성된 setter를 호출하면 요청이 진행 중이어도 그 표시를 곧바로 지웁니다.",
+              })}
+            </div>
             <div>
               {l.trans({
                 en: (
