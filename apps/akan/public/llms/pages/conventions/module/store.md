@@ -188,6 +188,8 @@ Field
 
 - <model>FormLoading: string | boolean: `true` until a form opens, the id while `edit<Model>` loads, then `false`.
 
+- <model>FormUploading: { [fileField]?: string[] }: Uploads in flight per `File` field of the form; `{}` when idle. Keep submit disabled while it is not empty.
+
 - <model>Submit: Submit: `{ disabled, loading, times }` for the submit button.
 
 - <model>ViewAt: Date: When `<model>` was last loaded or saved.
@@ -250,7 +252,7 @@ Every field of the model also gets setters that write into `<model>Form`. The ar
 
 - addOrSub<Field>On<Model>(value): Array field: adds the value if absent, removes it if present.
 
-- upload<Field>On<Model>(fileList, idx?): `File` field: uploads, then polls until the file leaves `uploading`.
+- upload<Field>On<Model>(fileList, idx?): `File` field: uploads, then polls until the file leaves `uploading`. A result whose form was set whole meanwhile, or whose single field was re-picked, is dropped.
 
 - writeOn<Model>(path, value): Writes a nested path, such as `"payments.3.name"`.
 
@@ -258,7 +260,7 @@ To react when a field changes, declare `_postSet<Field>` on the store. It runs a
 
 **Pass setters by reference.** `onChange={st.do.setTitleOnTicket}` lets the control publish the field to agents and tests; an inline arrow does not.
 
-**`_postSet<Field>` fires for every writer** — the person's control, an agent's tool, or `fill<Model>Form` — so the rule holds on every screen.
+**`_postSet<Field>` fires for every writer** — the person's control, an agent's tool, `fill<Model>Form`, or a landed `upload<Field>On<Model>` — so the rule holds on every screen.
 
 Generated Slice API
 
