@@ -95,8 +95,16 @@ export class CascadeRunner {
       await service.__removeMany({ id: documentQueryHelper.oneOf(ids) });
       return;
     }
+    // Two owners can hold one deduped File: a target an earlier, separate cascade removed has no live row to remove.
+    // Chunked: `oneOf` binds one parameter per id, and Postgres refuses a statement past 65,534 of them.
+    const live = new Set<string>();
+    for (let start = 0; start < ids.length; start += drainSize) {
+      const chunk = ids.slice(start, start + drainSize);
+      for (const id of await service.__listIds({ id: documentQueryHelper.oneOf(chunk) })) live.add(id);
+    }
     // Through the target's service, never its model: only that path runs the `_postRemove` side effects.
     for (const id of ids) {
+      if (!live.has(id)) continue;
       // Mark on removal, not up front: a repeat finds no live row, and a nested drain stops at a page of marked rows.
       if (seen.has(`${edge.refName}:${id}`)) continue;
       seen.add(`${edge.refName}:${id}`);
