@@ -39,6 +39,8 @@ export interface ComposerProps {
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   /** Draws each `@` pointer as its name; set only when the chat has `reference` sources. */
   mentions?: boolean;
+  /** A `/` or `@` menu is up and `onKeyDown` picks from it: an override that takes Enter for a newline passes it on. */
+  isMenuOpen?: boolean;
   /** Filled by whichever input is drawn. An override that draws its own textarea leaves it null and `inputRef` answers. */
   handleRef?: RefObject<ComposerHandle | null>;
 }

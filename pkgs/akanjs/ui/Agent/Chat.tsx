@@ -537,6 +537,7 @@ export const DefaultChat = ({
         draft={draft}
         handleRef={handleRef}
         inputRef={inputRef}
+        isMenuOpen={!!list.at()}
         mentions={mentions ?? !!reference?.length}
         {...(speech.canListen ? { mic: { listening: speech.listening, onToggle: speech.toggle } } : {})}
         onDraft={write}

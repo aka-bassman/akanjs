@@ -3,6 +3,8 @@ import { cn } from "akanjs/client";
 import { createOverridable } from "../UiOverride";
 
 export interface MenuRow {
+  /** Unique among the rows; `name` repeats when two records share a title. */
+  id: string;
   name: string;
   description?: string;
   /** The argument names a row takes. */
@@ -36,8 +38,10 @@ export const DefaultAgentMenu = ({ className, rows, selected, prefix = "/", onPi
             "flex items-baseline gap-2 px-4 py-1.5 text-left hover:bg-muted",
             idx === selected && "bg-muted",
           )}
-          key={row.name}
+          key={row.id}
           onClick={() => onPick(row)}
+          // Keeps focus in the composer: on a phone a blur drops the keyboard and the panel shrinks under the tap.
+          onMouseDown={(event) => event.preventDefault()}
           role="option"
           type="button"
         >

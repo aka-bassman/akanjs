@@ -19,6 +19,7 @@ export const useSlashMenu = ({ draft, l, onCommand }: SlashMenuSetup) => {
     ? ChatCommands.list(l)
         .filter((command) => `/${command.name}`.startsWith(query))
         .map((command) => ({
+          id: command.name,
           name: command.name,
           description: command.description,
           pick: () => onCommand(command),
