@@ -38,28 +38,32 @@ export class Reference {
    *
    * The text is the source of truth for which references a message carries — deleting the token is how somebody
    * takes one back — so the token has to say everything the pointer does. The value is looked up beside it by key.
+   * A label's `\`, `[` and `]` are backslash-escaped, as in a markdown link: titles like "[Ops] Minutes" are common.
    */
   static token(reference: MessageReference): string {
-    return `@[${reference.label}](mention:${Reference.keyOf(reference)})`;
+    return `@[${reference.label.replace(/[\\[\]]/g, "\\$&")}](mention:${Reference.keyOf(reference)})`;
   }
 
   /**
-   * Greedy on the label alone: a label may hold anything but `]` or an `@[`, where a token starts over, and every
-   * other part is a name, an id or a dotted path, none of which holds a bracket.
+   * Greedy on the label alone: a label may hold an escaped `\\`, `\[` or `\]`, a backslash escaping nothing (a token
+   * written before labels were escaped), and anything else but `]` or an `@[`, where a token starts over. No two
+   * alternatives match at the same place, so a long run cannot backtrack. Every other part is a name, an id or a
+   * dotted path, none of which holds a bracket.
    */
-  static readonly pattern = /@\[((?:(?!@\[)[^\]])*)\]\(mention:([^/)[\]]+)\/([^#)[\]]+)(?:#([^)[\]]*))?\)/g;
+  static readonly pattern =
+    /@\[((?:\\[\\[\]]|\\(?![\\[\]])|(?!@\[)[^\]\\])*)\]\(mention:([^/)[\]]+)\/([^#)[\]]+)(?:#([^)[\]]*))?\)/g;
+
+  /** The pointer one match of `pattern` names, its label unescaped. */
+  static pointerOf([, label, refName, refId, path]: RegExpMatchArray): MessageReference {
+    return { refName, refId, label: label.replace(/\\([\\[\]])/g, "$1"), ...(path ? { path } : {}) };
+  }
 
   /**
    * The pointers a draft names, in the order it names them. Pointers only — the value lives in `staged` and is
    * joined on by key, so reading the text can never resurrect a value somebody deleted the token for.
    */
   static parse(text: string): MessageReference[] {
-    return [...text.matchAll(Reference.pattern)].map(([, label, refName, refId, path]) => ({
-      refName,
-      refId,
-      label,
-      ...(path ? { path } : {}),
-    }));
+    return [...text.matchAll(Reference.pattern)].map((match) => Reference.pointerOf(match));
   }
 
   /**

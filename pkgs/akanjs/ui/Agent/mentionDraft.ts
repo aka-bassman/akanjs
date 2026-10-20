@@ -33,10 +33,9 @@ export class MentionDraft {
     // A copy, not the shared pattern: `exec` leaves `lastIndex` behind on whatever regex it walks.
     const pattern = new RegExp(Reference.pattern.source, "g");
     for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
-      const [token, label, refName, refId, path] = match;
       if (match.index > at) nodes.push(...MentionDraft.#plain(text.slice(at, match.index)));
-      nodes.push($createMentionNode({ refName, refId, label, ...(path ? { path } : {}) }));
-      at = match.index + token.length;
+      nodes.push($createMentionNode(Reference.pointerOf(match)));
+      at = match.index + match[0].length;
     }
     if (at < text.length) nodes.push(...MentionDraft.#plain(text.slice(at)));
     return nodes;

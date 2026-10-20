@@ -48,6 +48,13 @@ describe("MentionDraft", () => {
     expect(labels(editor)).toEqual(["Karina", "Cut 3 body"]);
   });
 
+  test("a title holding brackets is still one pointer, drawn as the title itself", () => {
+    const ops = "@[\\[Ops\\] Minutes](mention:pageNote/p1)";
+    const editor = written(`see ${ops} now`);
+    expect(labels(editor)).toEqual(["[Ops] Minutes"]);
+    expect(read(editor)).toBe(`see ${ops} now`);
+  });
+
   test("the caret round-trips through a draft-string offset", () => {
     const editor = written(`compare ${karina} and this`);
     for (const at of [0, 3, 8, 8 + karina.length, `compare ${karina} and this`.length]) {
