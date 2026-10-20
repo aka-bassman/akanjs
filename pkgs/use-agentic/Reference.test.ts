@@ -69,6 +69,20 @@ describe("Reference tokens", () => {
     expect(Reference.keyOf(parsed)).toBe(Reference.keyOf(one));
   });
 
+  test("a label holding brackets or a backslash is escaped in the token and reads back as written", () => {
+    expect(Reference.token({ ...at(), label: "[Ops] Minutes" })).toBe("@[\\[Ops\\] Minutes](mention:videoCut/6a1f)");
+    for (const label of ["[Ops] Minutes", "C:\\notes\\", "a]b[c", "@[nested]"])
+      expect(Reference.parse(`see ${Reference.token({ ...at(), label })} now`)).toEqual([{ ...at(), label }]);
+    expect(Reference.without(`see ${Reference.token({ ...at(), label: "[Ops] Minutes" })} now`, "videoCut/6a1f")).toBe(
+      "see now",
+    );
+  });
+
+  test("a token written before labels were escaped still reads, a lone backslash included", () => {
+    expect(Reference.parse("@[C:\\temp](mention:videoCut/6a1f)")).toEqual([{ ...at(), label: "C:\\temp" }]);
+    expect(Reference.parse(`@[${"\\".repeat(100_001)}`)).toEqual([]);
+  });
+
   test("text naming nothing parses to nothing, including a bare markdown link", () => {
     expect(Reference.parse("see [the docs](https://example.com) and @nobody")).toEqual([]);
   });

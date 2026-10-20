@@ -1,10 +1,12 @@
 import { stat } from "node:fs/promises";
 
-// The leading `[` alternation keeps arbitrary variants (`[&_td]:px-3`) whole. Brackets hold no whitespace: a labelled
-// tuple type scanned as a class compiles to a rule lightningcss cannot parse, and it then drops every variant rule.
-// Parentheses pass only as Tailwind v4's variable shorthand, `(--x)` or `(length:--x)`, so `cn("flex")` still yields
-// `flex` on its own.
-const CANDIDATE_RE = /-?(?:[\w@]|\[[^\]\s]+\])[\w:/.-]*(?:(?:\[[^\]\s]+\]|\((?:[a-z-]+:)?--[^)\s]+\))[\w:/.-]*)*/g;
+// The leading `[` alternation keeps arbitrary variants (`[&_td]:px-3`) whole, and a bracket may hold one nested
+// bracket (`[&_[data-slot=x]]:p-2`, `has-[[aria-expanded=true]]:x`), or the candidate is cut at the inner `]` and the
+// rule silently never compiles. Brackets hold no whitespace: a labelled tuple type scanned as a class compiles to a
+// rule lightningcss cannot parse, and it then drops every variant rule. Parentheses pass only as Tailwind v4's
+// variable shorthand, `(--x)` or `(length:--x)`, so `cn("flex")` still yields `flex` on its own.
+const CANDIDATE_RE =
+  /-?(?:[\w@]|\[(?:[^[\]\s]|\[[^[\]\s]+\])+\])[\w:/.-]*(?:(?:\[(?:[^[\]\s]|\[[^[\]\s]+\])+\]|\((?:[a-z-]+:)?--[^)\s]+\))[\w:/.-]*)*/g;
 
 interface CachedFile {
   mtimeMs: number;
@@ -20,7 +22,7 @@ interface CacheFile {
 /** Tailwind candidates per source file, on disk: the batch worker that compiles CSS exits before the next save. */
 export class CssCandidateCache {
   // Bump when the token regex or the entry shape changes, so stale extractions are not reused.
-  static readonly #version = 4;
+  static readonly #version = 5;
   readonly #path: string;
   readonly #entries = new Map<string, CachedFile>();
   #dirty = false;
