@@ -4,10 +4,12 @@ import { act, type ReactNode } from "react";
 import type { AgentRunner, AgentSession, ChatMessage, MessageAttachment, ToolCallRequest } from "use-agentic";
 import { l, mount as mountNode, setTestEnv } from "../testHelpers.fixture";
 import type { ChatProps } from "./Chat";
+import type { ComposerProps } from "./Composer";
 
 let lib: typeof import("use-agentic");
 let DefaultChat: typeof import("./Chat").DefaultChat;
 let Chat: typeof import("./Chat").default;
+let DefaultComposer: typeof import("./Composer").DefaultComposer;
 let Guide: typeof import("./Guide").Guide;
 let UiOverrideProvider: typeof import("../UiOverride").UiOverrideProvider;
 let overlayZ: typeof import("../overlayLayer").overlayZ;
@@ -22,6 +24,7 @@ beforeAll(async () => {
   new FetchClient("http://chattest", {}, { task: { endpoint: {} } } as never);
   lib = await import("use-agentic");
   ({ DefaultChat, default: Chat } = await import("./Chat"));
+  ({ DefaultComposer } = await import("./Composer"));
   ({ Guide } = await import("./Guide"));
   ({ UiOverrideProvider } = await import("../UiOverride"));
   ({ overlayZ } = await import("../overlayLayer"));
@@ -1108,6 +1111,47 @@ describe("Agent.Chat", () => {
     unmount();
   });
 
+  test("pressing a menu row leaves focus in the composer, so a phone keeps its keyboard up", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mountChat(session);
+    composer(container).type("/");
+    const row = container.querySelector('[role="option"]');
+    const key = Object.keys(row ?? {}).find((name) => name.startsWith("__reactProps$")) ?? "";
+    let prevented = false;
+    act(() =>
+      (row as unknown as Record<string, { onMouseDown: (event: unknown) => void }>)[key].onMouseDown({
+        preventDefault: () => {
+          prevented = true;
+        },
+      }),
+    );
+    expect(prevented).toBe(true);
+    unmount();
+  });
+
+  test("a composer override is told while a menu is up, so it can leave Enter to pick a row", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const seen: (boolean | undefined)[] = [];
+    const Recording = (props: ComposerProps) => {
+      seen.push(props.isMenuOpen);
+      return <DefaultComposer {...props} />;
+    };
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <UiOverrideProvider value={{ AgentComposer: Recording }}>
+          <DefaultChat defaultOpen />
+        </UiOverrideProvider>
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    expect(seen.at(-1)).toBe(false);
+    input.type("/");
+    expect(seen.at(-1)).toBe(true);
+    input.press("Escape");
+    expect(seen.at(-1)).toBe(false);
+    unmount();
+  });
+
   test("the same file is not staged twice, and a message holds no more than the ceiling", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
     const { container, unmount } = mountChat(session);
@@ -1588,6 +1632,42 @@ describe("Agent chat @ menu", () => {
       expect(session.staged).toEqual([]);
       expect(container.innerHTML).toContain("base.agentReferenceFailed");
     } finally {
+      unmount();
+    }
+  });
+
+  test("two records with the same title are two rows, and the arrow picks the second", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
+    const titled = (refName: string, label: string, refIds: string[]) => ({
+      refName,
+      label,
+      type: String,
+      search: async () => refIds.map((refId) => ({ refId, label: "Minutes" })),
+      resolve: async (refId: string) => refId,
+    });
+    const errors: unknown[][] = [];
+    const consoleError = console.error;
+    console.error = (...args: unknown[]) => errors.push(args);
+    const { container, unmount } = mountChat(session, {
+      defaultOpen: true,
+      mentions: false,
+      reference: [titled("pageNote", "Pages", ["p1", "p2"]), titled("ticket", "Tickets", ["t1"])],
+    });
+    try {
+      const input = composer(container);
+      await typeAndSettle(input, "see @Min");
+      expect(container.querySelectorAll('[role="option"]').length).toBe(3);
+      await act(async () => {
+        input.press("ArrowDown");
+      });
+      await act(async () => {
+        input.press("Enter");
+        await untilFlushed(() => session.staged.length > 0);
+      });
+      expect(input.value()).toBe("see @[Minutes](mention:pageNote/p2) ");
+      expect(errors.filter((args) => String(args[0]).includes("same key"))).toEqual([]);
+    } finally {
+      console.error = consoleError;
       unmount();
     }
   });

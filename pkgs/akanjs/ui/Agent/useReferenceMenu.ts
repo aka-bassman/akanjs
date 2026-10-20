@@ -69,6 +69,7 @@ export const useReferenceMenu = ({ draft, sources, session, l, onWrite }: Refere
         setRows(
           found.flatMap((candidates, at) =>
             candidates.map((candidate) => ({
+              id: `${current[at].refName}/${candidate.refId}`,
               name: candidate.label,
               description: candidate.description ?? current[at].label,
               pick: () => write(candidate, current[at]),
