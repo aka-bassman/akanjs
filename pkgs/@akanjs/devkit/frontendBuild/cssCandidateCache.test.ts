@@ -23,6 +23,22 @@ describe("CssCandidateCache token extraction", () => {
     expect(candidates).not.toContain("_td");
   });
 
+  test("keeps a bracket nested one level inside another whole, rather than cutting it at the inner `]`", async () => {
+    const candidates = await scan(
+      `const c = "hidden [[data-theme=light]_&]:block has-[[aria-expanded=true]]:opacity-100 [&_[data-x]]:p-2 [&:has([data-state=open])]:p-1";`,
+    );
+    expect(candidates).toEqual(
+      expect.arrayContaining([
+        "[[data-theme=light]_&]:block",
+        "has-[[aria-expanded=true]]:opacity-100",
+        "[&_[data-x]]:p-2",
+        "[&:has([data-state=open])]:p-1",
+      ]),
+    );
+    expect(candidates).not.toContain("[[data-theme=light]_");
+    expect(candidates).not.toContain("[&_[data-x]");
+  });
+
   test("keeps Tailwind v4's variable shorthand whole, and leaves a call's argument its own candidate", async () => {
     const candidates = await scan(
       `const c = "max-md:top-(--keyboard-top) min-h-(--x) bg-(color:--brand)/50"; cn("flex"); fn(value);`,
