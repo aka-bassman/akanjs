@@ -70,6 +70,11 @@ export interface LlmTurnRequest {
   tools: AgentWireTool[];
   context: AgentWireContext[];
   instructions?: string;
+  /**
+   * This turn's model in place of `LlmOption.model`. `accepts`, `maxTokens` and `contextWindow` stay the option's, so a
+   * model that differs in them needs an adaptor of its own. Set by server code only: `runAgentTurn` takes no model.
+   */
+  model?: string;
 }
 
 export interface LlmTurnAnswer {

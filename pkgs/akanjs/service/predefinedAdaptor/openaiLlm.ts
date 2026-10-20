@@ -31,7 +31,7 @@ export class OpenaiLlm
   }
 
   async chat(request: LlmTurnRequest, onDelta?: (delta: string) => void): Promise<LlmTurnAnswer | null> {
-    const model = this.llmOption.model;
+    const model = request.model || this.llmOption.model;
     if (!this.llmOption.apiKey || !model) {
       this.logger.warn(
         "OpenaiLlm needs both apiKey and model — set them with option.setLlm(). Agent turns are unavailable.",
