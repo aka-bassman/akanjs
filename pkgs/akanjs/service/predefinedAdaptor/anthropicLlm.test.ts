@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import type { LlmTurnRequest } from "akanjs/service";
+import { afterEach, describe, expect, test } from "bun:test";
+import type { LlmOption, LlmTurnRequest } from "akanjs/service";
 import { AnthropicLlm } from "./anthropicLlm";
 
 const request: LlmTurnRequest = {
@@ -354,5 +354,44 @@ describe("AnthropicLlm.consumeStream", () => {
       () => undefined,
     );
     expect(answer).toEqual({ toolCalls: [{ id: "c2", name: "refreshTask", args: {} }], stop: "toolUse" });
+  });
+});
+
+describe("AnthropicLlm turn model", () => {
+  const originalFetch = globalThis.fetch;
+  const sent: string[] = [];
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    sent.length = 0;
+  });
+
+  const llmOf = (llmOption: LlmOption) => {
+    globalThis.fetch = (async (_url: string, init: { body: string }) => {
+      const body = JSON.parse(init.body) as { model: string; stream?: boolean };
+      sent.push(body.model);
+      if (!body.stream) return Response.json({ content: [{ type: "text", text: "hi" }], stop_reason: "end_turn" });
+      return new Response(
+        [
+          'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}\n\n',
+          'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n',
+        ].join(""),
+      );
+    }) as unknown as typeof fetch;
+    return Object.assign(new AnthropicLlm(), { llmOption });
+  };
+  const turn: LlmTurnRequest = { context: [], tools: [], messages: [{ role: "user", text: "hi" }] };
+
+  test("a turn's own model is sent and reported, streamed or not", async () => {
+    const llm = llmOf({ apiKey: "k", model: "model-a" });
+    expect((await llm.chat({ ...turn, model: "model-b" }))?.model).toBe("model-b");
+    expect((await llm.chat({ ...turn, model: "model-b" }, () => undefined))?.model).toBe("model-b");
+    expect(sent).toEqual(["model-b", "model-b"]);
+  });
+
+  test("a turn naming none, or an empty one, runs on the option's model", async () => {
+    const llm = llmOf({ apiKey: "k", model: "model-a" });
+    expect((await llm.chat(turn))?.model).toBe("model-a");
+    expect((await llm.chat({ ...turn, model: "" }))?.model).toBe("model-a");
+    expect(sent).toEqual(["model-a", "model-a"]);
   });
 });

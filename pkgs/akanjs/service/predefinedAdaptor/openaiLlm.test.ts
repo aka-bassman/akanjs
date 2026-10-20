@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { LlmOption, LlmTurnRequest } from "akanjs/service";
 import { OpenaiDialect } from "./openaiDialect";
 import { OpenaiLlm } from "./openaiLlm";
@@ -126,5 +126,43 @@ describe("OpenaiLlm vision claim", () => {
     expect(acceptsOf({ apiKey: "k", model: "m", host: "https://gw", accepts: { image: true } })).toEqual({
       image: true,
     });
+  });
+});
+
+describe("OpenaiLlm turn model", () => {
+  const originalFetch = globalThis.fetch;
+  const sent: string[] = [];
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    sent.length = 0;
+  });
+
+  const llmOf = (llmOption: LlmOption) => {
+    globalThis.fetch = (async (_url: string, init: { body: string }) => {
+      const body = JSON.parse(init.body) as { model: string; stream?: boolean };
+      sent.push(body.model);
+      if (!body.stream) return Response.json({ choices: [{ message: { content: "hi" }, finish_reason: "stop" }] });
+      return new Response('data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+    }) as unknown as typeof fetch;
+    return Object.assign(new OpenaiLlm(), { llmOption });
+  };
+  const turn: LlmTurnRequest = { context: [], tools: [], messages: [{ role: "user", text: "hi" }] };
+
+  test("a turn's own model is sent and reported, streamed or not", async () => {
+    const llm = llmOf({ apiKey: "k", model: "model-a" });
+    expect((await llm.chat({ ...turn, model: "model-b" }))?.model).toBe("model-b");
+    expect((await llm.chat({ ...turn, model: "model-b" }, () => undefined))?.model).toBe("model-b");
+    expect(sent).toEqual(["model-b", "model-b"]);
+  });
+
+  test("a turn naming none, or an empty one, runs on the option's model", async () => {
+    const llm = llmOf({ apiKey: "k", model: "model-a" });
+    expect((await llm.chat(turn))?.model).toBe("model-a");
+    expect((await llm.chat({ ...turn, model: "" }))?.model).toBe("model-a");
+    expect(sent).toEqual(["model-a", "model-a"]);
+  });
+
+  test("a turn's model answers even where the option names none", async () => {
+    expect((await llmOf({ apiKey: "k" }).chat({ ...turn, model: "model-b" }))?.model).toBe("model-b");
   });
 });
