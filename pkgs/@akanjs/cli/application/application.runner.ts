@@ -5,7 +5,7 @@ import type { DatabaseMode, NativeEnv } from "@akanjs/devkit/akanConfig";
 import type { BuildProgressReporter, BuildResult, TypecheckOptions } from "@akanjs/devkit/applicationBuildRunner";
 import { resolveSignalTestPreloadPath } from "@akanjs/devkit/applicationTestPreload";
 import { type App, assertPromptable, type Exec, runner, type Workspace } from "@akanjs/devkit/commandDecorators";
-import { AppExecutor, LibExecutor } from "@akanjs/devkit/executors";
+import { AppExecutor, CommandExecutionError, LibExecutor } from "@akanjs/devkit/executors";
 import type { DevStdioMode } from "@akanjs/devkit/incrementalBuilder";
 import {
   DesktopServerStage,
@@ -20,6 +20,7 @@ import {
   UpdatePackFolder,
   UpdateUploader,
 } from "@akanjs/devkit/mobile";
+import { AppInfo } from "@akanjs/devkit/scanInfo";
 import { SlicePlanner } from "@akanjs/devkit/slicePlanner";
 import type { ServerPolicy } from "@akanjs/native/api";
 import { Logger, type LogRecord, toError } from "akanjs/common";
@@ -146,8 +147,13 @@ export class ApplicationRunner extends runner("application") {
     }
     const scriptPath = `script/${scriptName}.ts`;
     if (!(await app.exists(scriptPath))) throw new Error(`Script file not found: apps/${app.name}/${scriptPath}`);
-    await app.spawn("bun", [scriptPath], {
-      env: app.getCommandEnv({ AKAN_COMMAND_TYPE: "script", ...(await app.getDatabaseModeEnv()) }),
+    await this.#spawnFromRoot(app, "script", [`${app.cwdPath}/${scriptPath}`]);
+  }
+  //* From the workspace root, as `akan start` runs the server: the local SQLite path is resolved from the cwd.
+  async #spawnFromRoot(app: App, commandType: "script" | "console", args: string[]) {
+    await app.spawn("bun", args, {
+      cwd: app.workspace.workspaceRoot,
+      env: app.getCommandEnv({ AKAN_COMMAND_TYPE: commandType, ...(await app.getDatabaseModeEnv()) }),
       stdio: "inherit",
     });
   }
@@ -242,10 +248,7 @@ try {
   await server.stop();
 }
 `;
-    await app.spawn("bun", ["-e", code], {
-      env: app.getCommandEnv({ AKAN_COMMAND_TYPE: "console", ...(await app.getDatabaseModeEnv()) }),
-      stdio: "inherit",
-    });
+    await this.#spawnFromRoot(app, "console", ["-e", code]);
   }
   // Booted as a script (no listener, cron or init job), so nothing writes beside the import.
   async transferDatabase(app: App, direction: "export" | "import", dir: string) {
@@ -264,10 +267,52 @@ try {
   await server.stop();
 }
 `;
-    await app.spawn("bun", ["-e", code], {
-      env: app.getCommandEnv({ AKAN_COMMAND_TYPE: "script", ...(await app.getDatabaseModeEnv()) }),
-      stdio: "inherit",
+    await this.#spawnFromRoot(app, "script", ["-e", code]);
+  }
+  async migrate(app: App, argv: string[]) {
+    const serverPath = `${app.cwdPath}/server.ts`;
+    if (!(await app.exists("server.ts"))) throw new Error(`Server file not found: apps/${app.name}/server.ts`);
+    const code = `
+const argv = ${JSON.stringify(argv)};
+let loaded;
+try {
+  loaded = await import(${JSON.stringify(serverPath)});
+} catch (error) {
+  console.error(error);
+  const { MigrationCommand } = await import("akanjs/server");
+  process.exitCode = await MigrationCommand.print(MigrationCommand.failure(null, error), MigrationCommand.jsonOf(argv));
+}
+if (loaded) process.exitCode = await loaded.migrations.command(loaded.server, argv, ${JSON.stringify(`akan migrate ${app.name}`)});
+`;
+    try {
+      await this.#spawnFromRoot(app, "script", ["-e", code]);
+    } catch (error) {
+      //? The child printed its result last, which a `--json` caller parses; its code is the answer, not a crash.
+      if (!(error instanceof CommandExecutionError) || error.code === null) throw error;
+      process.exitCode = error.code;
+    }
+  }
+  //* UTC, so two people creating migrations in different time zones still order them as they were made.
+  async createMigration(app: App, migrationName: string, now = new Date()) {
+    const words = migrationName.split(/[^A-Za-z0-9]+/).filter(Boolean);
+    const name = words
+      .map((word, idx) => (idx ? word.charAt(0).toUpperCase() : word.charAt(0).toLowerCase()) + word.slice(1))
+      .join("");
+    if (!/^[A-Za-z][A-Za-z0-9]*$/.test(name))
+      throw new Error(
+        `"${migrationName}" is no migration name; name what it does in camelCase, e.g. bizLicenseOwnership`,
+      );
+    const migrationId = `${now.toISOString().replace(/\D/g, "").slice(0, 12)}_${name}`;
+    const filePath = `${AppInfo.migrationDir}/${migrationId}.ts`;
+    if (await app.exists(filePath)) throw new Error(`apps/${app.name}/${filePath} already exists`);
+    const title = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+    await app.applyTemplate({
+      basePath: AppInfo.migrationDir,
+      template: "migration",
+      dict: { migrationId, title: title.charAt(0).toUpperCase() + title.slice(1) },
+      overwrite: false,
     });
+    return migrationId;
   }
   async typecheck(app: App, options: TypecheckOptions = {}) {
     await new (await loadBuildRunner())(app).typecheck(options);

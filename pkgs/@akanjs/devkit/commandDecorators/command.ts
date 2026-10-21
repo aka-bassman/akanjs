@@ -25,10 +25,14 @@ import { camelToKebabCase } from "./camelToKebabCase";
 import { CommandContainer } from "./dependencyBuilder";
 import { ExitCodeError } from "./exitCodeError";
 import { formatCommandHelp, formatHelp } from "./helpFormatter";
-import { type CommandCls, getTargetCommandNames, getTargetMetas } from "./targetMeta";
+import { type CommandCls, getTargetCommandNames, getTargetMetas, type TargetFailure } from "./targetMeta";
 
 const loggedCliErrorObjects = new WeakSet<object>();
 const loggedCliErrorMessages = new Set<string>();
+
+export const markCliErrorPrinted = (error: unknown) => {
+  if (typeof error === "object" && error !== null) loggedCliErrorObjects.add(error);
+};
 
 const formatCliError = (error: unknown): string => {
   if (error instanceof Error) return error.message || error.name;
@@ -65,10 +69,11 @@ const handleOption = (programCommand: Command, argMeta: ArgMeta) => {
   } = argMeta.argsOption;
   const kebabName = camelToKebabCase(argMeta.name);
   const choices = enumChoices && typeof enumChoices !== "function" ? normalizeEnumChoices(enumChoices) : null;
-  programCommand.option(
-    `-${flag}, --${kebabName}${type === "boolean" ? " [boolean]" : ` <${kebabName}>`}`,
-    `${desc}${ask ? ` (${ask})` : ""}${example ? ` (example: ${example})` : ""}${choices ? ` (choices: ${choices.map((choice) => choice.name).join(", ")})` : ""}`,
-  );
+  const flags = `-${flag}, --${kebabName}${type === "boolean" ? " [boolean]" : ` <${kebabName}>`}`;
+  const description = `${desc}${ask ? ` (${ask})` : ""}${example ? ` (example: ${example})` : ""}${choices ? ` (choices: ${choices.map((choice) => choice.name).join(", ")})` : ""}`;
+  if (argMeta.argsOption.multiple)
+    programCommand.option(flags, description, (value: string, previous: string[] = []) => [...previous, value]);
+  else programCommand.option(flags, description);
   if (type === "boolean" && argMeta.argsOption.default === true)
     programCommand.option(`--no-${kebabName}`, `turn off --${kebabName}`);
   return programCommand;
@@ -86,6 +91,19 @@ const convertArgValue = (value: string | boolean, type: "string" | "number" | "b
   if (type === "string") return value as string;
   else if (type === "number") return Number(value);
   else return value === true || value === "true";
+};
+
+const givenOptionsOf = (argMetas: (ArgMeta | InternalArgMeta)[], opt: Record<string, unknown>) => {
+  const given: TargetFailure["given"] = {};
+  for (const argMeta of argMetas) {
+    if (argMeta.type !== "Option" || opt[argMeta.name] === undefined) continue;
+    const type = argMeta.argsOption.type ?? "string";
+    const value = opt[argMeta.name] as string | boolean | string[];
+    given[argMeta.name] = Array.isArray(value)
+      ? value.map((each) => convertArgValue(each, type))
+      : convertArgValue(value, type);
+  }
+  return given;
 };
 
 const normalizeEnumChoices = (enumChoices: EnumChoices) =>
@@ -135,8 +153,13 @@ const inputMessageOf = ({ name, argsOption: { desc, example, ask } }: ArgMeta) =
 export const getOptionValue = async (argMeta: ArgMeta, opt: Record<string, unknown>, context: CommandContext) => {
   const {
     name,
-    argsOption: { enum: enumChoices, default: defaultValue, type, desc, nullable, ask },
+    argsOption: { enum: enumChoices, default: defaultValue, type, desc, nullable, ask, multiple },
   } = argMeta;
+  if (multiple) {
+    const values = (opt[argMeta.name] as string[] | undefined) ?? [];
+    for (const value of values) assertEnumChoice(argMeta, value);
+    return values.map((value) => convertArgValue(value, type ?? "string"));
+  }
   if (opt[argMeta.name] !== undefined) {
     assertEnumChoice(argMeta, opt[argMeta.name]);
     return convertArgValue(opt[argMeta.name] as string, type ?? "string");
@@ -324,6 +347,7 @@ export const getInternalArgumentValue = async (
 
 export const runCommands = async (...commands: CommandCls[]) => {
   let failureExitCode = 1;
+  let reportFailure = async (_error: unknown) => {};
   process.on("unhandledRejection", (error) => {
     printCliError(error);
     process.exit(ExitCodeError.codeOf(error) ?? failureExitCode);
@@ -372,10 +396,20 @@ It may cause unexpected behavior. Run \`akan update\` to update latest akanjs.`,
           hidden: targetMeta.targetOption.devOnly,
         });
         const targetFailureExitCode = targetMeta.targetOption.failureExitCode;
-        //? commander exits 1 on a flag or argument it refuses, before any action runs.
-        if (targetFailureExitCode !== undefined)
-          programCommand.exitOverride((error) => process.exit(error.exitCode === 0 ? 0 : targetFailureExitCode));
+        const usageExitCode = targetMeta.targetOption.usageExitCode ?? targetFailureExitCode;
+        const { onFailure } = targetMeta.targetOption;
         const [allArgMetas] = getArgMetas(command, targetMeta.key);
+        //? commander exits 1 on a flag or argument it refuses, before any action runs, having printed why.
+        //? Thrown, not exited: the failure path below awaits onFailure, and an exit drops what a pipe still buffers.
+        if (usageExitCode !== undefined || onFailure)
+          programCommand.exitOverride((error) => {
+            if (error.exitCode === 0) process.exit(0);
+            const refused = new ExitCodeError(error.message.replace(/^error: /, ""), usageExitCode ?? error.exitCode);
+            markCliErrorPrinted(refused);
+            const given = givenOptionsOf(allArgMetas, programCommand.opts());
+            reportFailure = async (failure) => await onFailure?.(failure, { usage: true, given });
+            throw refused;
+          });
         for (const argMeta of allArgMetas) {
           if (argMeta.type === "Option") programCommand = handleOption(programCommand, argMeta);
           else if (argMeta.type === "Argument") programCommand = handleArgument(programCommand, argMeta);
@@ -408,6 +442,8 @@ It may cause unexpected behavior. Run \`akan update\` to update latest akanjs.`,
           if (!targetMeta.targetOption.stdio) Logger.rawLog();
           const cmdArgs = args.slice(0, args.length - 2);
           const opt = args[args.length - 2] as Record<string, unknown>;
+          reportFailure = async (failure) =>
+            await onFailure?.(failure, { usage: false, given: givenOptionsOf(allArgMetas, opt) });
           const commandArgs = [] as unknown[];
           if (targetMeta.targetOption.runsOnWorkspaceRoot) await assertCurrentDirectoryIsWorkspaceRoot();
           const workspace = WorkspaceExecutor.fromRoot();
@@ -452,8 +488,9 @@ It may cause unexpected behavior. Run \`akan update\` to update latest akanjs.`,
     }
   }
   // Handled here, not by the handler above: a rejection reaching the entry's top-level await prints Bun's own trace.
-  await program.parseAsync(process.argv).catch((error: unknown) => {
+  await program.parseAsync(process.argv).catch(async (error: unknown) => {
     printCliError(error);
+    await reportFailure(error).catch(printCliError);
     process.exit(ExitCodeError.codeOf(error) ?? failureExitCode);
   });
 };

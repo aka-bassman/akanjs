@@ -1,10 +1,16 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { createPrivateKey, createPublicKey, generateKeyPairSync } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AkanAppConfig, DatabaseMode } from "@akanjs/devkit/akanConfig";
-import { CommandContainer, getArgMetas, getTargetMetas } from "@akanjs/devkit/commandDecorators";
+import {
+  type ArgMeta,
+  CommandContainer,
+  getArgMetas,
+  getArgumentValue,
+  getTargetMetas,
+} from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, LibExecutor, PkgExecutor } from "@akanjs/devkit/executors";
 import { NativeApp } from "@akanjs/devkit/mobile";
 import {
@@ -123,6 +129,37 @@ describe("ApplicationCommand", () => {
     expect(optionNames("startIos")).toEqual(expect.arrayContaining(["device", "team"]));
     expect(optionNames("startAndroid")).toContain("device");
     expect(optionNames("releaseIos")).toEqual(expect.arrayContaining(["team", "adHoc"]));
+  });
+
+  test("migrate leaves a bad action to the app, which refuses it as ops migrate does", async () => {
+    const action = getArgMetas(ApplicationCommand, "migrate")[0].find(
+      (meta): meta is ArgMeta => meta.type === "Argument" && meta.name === "action",
+    );
+    if (!action) throw new Error("migrate takes an action");
+    expect(await getArgumentValue(action, "frobnicate")).toBe("frobnicate");
+    expect(await getArgumentValue(action, undefined)).toBe("list");
+  });
+
+  test("migrate ends a --json caller's output in the app's result shape when it fails before the app ran", async () => {
+    const onFailure = getTargetMetas(ApplicationCommand).find((meta) => meta.key === "migrate")?.targetOption.onFailure;
+    if (!onFailure) throw new Error("migrate reports its failures");
+    const lines: string[] = [];
+    const write = spyOn(process.stdout, "write").mockImplementation(((chunk: string, callback?: () => void) => {
+      lines.push(chunk);
+      callback?.();
+      return true;
+    }) as typeof process.stdout.write);
+    try {
+      await onFailure(new Error("unknown option '--frob'"), { usage: true, given: { json: true } });
+      await onFailure(new Error("Unknown app 'shop'"), { usage: false, given: { json: true } });
+      await onFailure(new Error("unknown option '--frob'"), { usage: true, given: { json: false } });
+    } finally {
+      write.mockRestore();
+    }
+    expect(lines.map((line) => JSON.parse(line))).toEqual([
+      { ok: false, action: null, code: "usage", error: "unknown option '--frob'", runId: null },
+      { ok: false, action: null, code: "failed", error: "Unknown app 'shop'", runId: null },
+    ]);
   });
 
   test("typecheck picks an app or a library as sync does, and never offers a package", () => {
@@ -1083,7 +1120,8 @@ describe("ApplicationRunner", () => {
     await expect(runner.runScript(app, "missing")).rejects.toThrow("Script file not found");
 
     await runner.runScript(app, "hello.ts");
-    expect(spawn).toHaveBeenCalledWith("bun", ["script/hello.ts"], {
+    expect(spawn).toHaveBeenCalledWith("bun", [`${app.cwdPath}/script/hello.ts`], {
+      cwd: app.workspace.workspaceRoot,
       env: {
         AKAN_COMMAND_TYPE: "script",
         AKAN_DATABASE_MODE: "cluster",
@@ -1092,6 +1130,25 @@ describe("ApplicationRunner", () => {
       },
       stdio: "inherit",
     });
+  });
+
+  test("boots the app from the workspace root, where `akan start` keeps its local database", async () => {
+    const { app } = track(await createTempApp("demo"));
+    await writeText(`${app.cwdPath}/server.ts`, "export const server = {};\n");
+    await writeText(`${app.cwdPath}/script/hello.ts`, "export default 1;\n");
+    const runner = new ApplicationRunner();
+    const spawn = mock(async () => "");
+    app.spawn = spawn as never;
+    app.getCommandEnv = (env: Record<string, string>) => env;
+    app.getDatabaseModeEnv = async () => ({ AKAN_DATABASE_MODE: "single", AKAN_DATABASE_MODES: "single" });
+
+    await runner.runScript(app, "hello");
+    await runner.runConsole(app);
+    await runner.transferDatabase(app, "export", "local/transfer");
+    await runner.migrate(app, ["list"]);
+
+    const calls = spawn.mock.calls as unknown as [string, string[], { cwd: string }][];
+    expect(calls.map(([, , options]) => options.cwd)).toEqual(Array(4).fill(app.workspace.workspaceRoot));
   });
 
   test("runs bun test through the resolved executor", runsPackageTests);

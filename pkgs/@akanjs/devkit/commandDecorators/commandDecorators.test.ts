@@ -503,7 +503,7 @@ describe("a Sys that defaults to the only app", () => {
 
 describe("the exit code of a command that failed", () => {
   const track = tempRoots();
-  const run = async (failure: string) => {
+  const run = async (failure: string, { option = "", args = [] as string[] } = {}) => {
     const { root } = track(await makeCliTempWorkspace());
     await writeText(path.join(root, "package.json"), '{ "name": "repo", "version": "1.0.0" }\n');
     await writeText(path.join(root, "tsconfig.json"), "{}\n");
@@ -511,11 +511,11 @@ describe("the exit code of a command that failed", () => {
     await writeText(
       entry,
       [
-        `import { command, ExitCodeError, runCommands, runner, script } from ${JSON.stringify(path.join(import.meta.dir, "index.ts"))};`,
+        `import { command, ExitCodeError, markCliErrorPrinted, runCommands, runner, script } from ${JSON.stringify(path.join(import.meta.dir, "index.ts"))};`,
         'class VerdictRunner extends runner("verdict") {}',
         'class VerdictScript extends script("verdict", [VerdictRunner]) {}',
         'class VerdictCommand extends command("verdict", [VerdictScript], ({ public: target }) => ({',
-        '  verdict: target({ desc: "fails" }).exec(async function () {',
+        `  verdict: target({ desc: "fails"${option} }).exec(async function () {`,
         `    throw ${failure};`,
         "  }),",
         "})) {}",
@@ -523,9 +523,13 @@ describe("the exit code of a command that failed", () => {
         "",
       ].join("\n"),
     );
-    const proc = Bun.spawn(["bun", entry, "verdict"], { cwd: root, stdout: "pipe", stderr: "pipe" });
-    const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-    return { stdout, code };
+    const proc = Bun.spawn(["bun", entry, "verdict", ...args], { cwd: root, stdout: "pipe", stderr: "pipe" });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { stdout, stderr, code };
   };
 
   test("is the one an ExitCodeError carries, and 1 for any other error", async () => {
@@ -533,5 +537,125 @@ describe("the exit code of a command that failed", () => {
     expect(verdict.stdout).toContain("needs a new store build");
     expect(verdict.code).toBe(2);
     expect((await run('new Error("broke")')).code).toBe(1);
+  }, 30_000);
+
+  test("is usageExitCode for a flag commander refuses before the command runs, failureExitCode after", async () => {
+    const option = ", failureExitCode: 4, usageExitCode: 2";
+    expect((await run('new Error("broke")', { option, args: ["--nope"] })).code).toBe(2);
+    expect((await run('new Error("broke")', { option })).code).toBe(4);
+  }, 30_000);
+
+  test("runs onFailure last, told whether commander refused the line and what was given", async () => {
+    const report = [
+      ", stdio: true, usageExitCode: 2, onFailure: async (error, failure) => {",
+      '  const line = JSON.stringify({ message: error.message, ...failure }) + "\\n";',
+      "  await new Promise((resolve) => process.stdout.write(line, resolve));",
+      "}",
+    ].join("\n");
+    const option = `${report} }).option("json", Boolean, { default: false }).option("count", Number, { nullable: true`;
+    const lastOf = (stdout: string) => JSON.parse(stdout.trim().split("\n").at(-1) ?? "null");
+
+    const refused = await run('new Error("broke")', { option, args: ["--count", "3", "--nope", "--json"] });
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toContain("unknown option '--nope'");
+    expect(lastOf(refused.stdout)).toEqual({
+      message: "unknown option '--nope'",
+      usage: true,
+      given: { count: 3, json: true },
+    });
+
+    const thrown = await run('new Error("broke")', { option, args: ["--json"] });
+    expect(thrown.code).toBe(1);
+    expect(thrown.stdout).toContain("broke\n");
+    expect(lastOf(thrown.stdout)).toEqual({ message: "broke", usage: false, given: { json: true } });
+
+    const help = await run('new Error("broke")', { option, args: ["--help"] });
+    expect(help.code).toBe(0);
+    expect(help.stdout).not.toContain('"usage"');
+  }, 60_000);
+
+  test("prints nothing more for an error the command marked as printed", async () => {
+    const marked = await run(
+      '(() => { const error = new Error("printed already"); markCliErrorPrinted(error); return error; })()',
+    );
+    expect(marked.code).toBe(1);
+    expect(`${marked.stdout}${marked.stderr}`).not.toContain("printed already");
+  }, 30_000);
+});
+
+describe("a repeatable option", () => {
+  const track = tempRoots();
+  const meta: ArgMeta = {
+    name: "param",
+    argsOption: { type: "string", multiple: true },
+    key: "run",
+    idx: 0,
+    type: "Option",
+  };
+  afterEach(() => {
+    CommandContainer.clear();
+  });
+
+  test("reads every value given, in order, each against the choices, and an empty list when left out", async () => {
+    expect(await getOptionValue(meta, { param: ["a=1", "b=2"] }, { values: {} })).toEqual(["a=1", "b=2"]);
+    expect(await getOptionValue(meta, {}, { values: {} })).toEqual([]);
+    const choices = { ...meta, argsOption: { ...meta.argsOption, enum: ["a", "b"] } };
+    await expect(getOptionValue(choices, { param: ["a", "c"] }, { values: {} })).rejects.toThrow(
+      "option '--param' argument 'c' is invalid",
+    );
+  });
+
+  test("types the exec parameter as a list, and a positional argument cannot repeat", () => {
+    const expectType = <Expected>(_value: Expected) => undefined;
+    class RepeatRunner extends runner("repeat") {}
+    class RepeatScript extends script("repeat", [RepeatRunner]) {}
+    class RepeatCommand extends command("repeat", [RepeatScript], ({ public: target }) => ({
+      run: target({ desc: "run" })
+        .option("param", String, { multiple: true })
+        .option("mode", String, { enum: ["a", "b"], multiple: true })
+        .exec(async (param, mode) => {
+          expectType<string[]>(param);
+          expectType<("a" | "b")[]>(mode);
+        }),
+    })) {}
+    expect(getTargetMetas(RepeatCommand)[0]?.key).toBe("run");
+    expect(() =>
+      command("repeatArg", [RepeatScript], ({ public: target }) => ({
+        run: target({ desc: "run" })
+          .arg("names", String, { multiple: true })
+          .exec(async () => undefined),
+      })),
+    ).toThrow("argument 'names' cannot be multiple");
+  });
+
+  test("collects each time the flag is given, long or short", async () => {
+    const { root } = track(await makeCliTempWorkspace());
+    await writeText(path.join(root, "package.json"), '{ "name": "repo", "version": "1.0.0" }\n');
+    await writeText(path.join(root, "tsconfig.json"), "{}\n");
+    const entry = path.join(root, "cli.ts");
+    await writeText(
+      entry,
+      [
+        `import { command, runCommands, runner, script } from ${JSON.stringify(path.join(import.meta.dir, "index.ts"))};`,
+        'class CollectRunner extends runner("collect") {}',
+        'class CollectScript extends script("collect", [CollectRunner]) {}',
+        'class CollectCommand extends command("collect", [CollectScript], ({ public: target }) => ({',
+        '  collect: target({ desc: "collects", stdio: true })',
+        '    .option("param", String, { multiple: true })',
+        "    .exec(async function (param) {",
+        "      process.stdout.write(JSON.stringify(param));",
+        "    }),",
+        "})) {}",
+        "await runCommands(CollectCommand);",
+        "",
+      ].join("\n"),
+    );
+    const collect = async (...args: string[]) => {
+      const proc = Bun.spawn(["bun", entry, "collect", ...args], { cwd: root, stdout: "pipe", stderr: "pipe" });
+      const [stdout] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+      return JSON.parse(stdout) as unknown;
+    };
+    expect(await collect("--param", "a=1", "-p", "b=x=y")).toEqual(["a=1", "b=x=y"]);
+    expect(await collect()).toEqual([]);
   }, 30_000);
 });

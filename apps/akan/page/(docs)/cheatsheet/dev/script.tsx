@@ -36,8 +36,19 @@ export default page()
           ko: "검토하고 다시 돌릴 수 있는 `script/` 속 파일",
         }),
         use: l.trans({
-          en: "Seed data, migrations, checks, small maintenance fixes",
-          ko: "시드 데이터, 마이그레이션, 점검, 작은 유지보수 수정",
+          en: "Seed data, checks, small maintenance fixes",
+          ko: "시드 데이터, 점검, 작은 유지보수 수정",
+        }),
+      },
+      {
+        tool: "`akan migrate`",
+        form: l.trans({
+          en: "A migration in `script/migration/`, recorded and reversible",
+          ko: "기록이 남고 되돌릴 수 있는 `script/migration/` 속 마이그레이션",
+        }),
+        use: l.trans({
+          en: "Reshaping stored data after a code change, in every environment",
+          ko: "코드 변경 뒤 저장된 데이터를 모든 환경에서 새 모양으로 고치는 일",
         }),
       },
       {
@@ -51,6 +62,14 @@ export default page()
     ];
 
     const relatedLinks = [
+      {
+        href: "/cheatsheet/dev/migration",
+        title: l.trans({ en: "Data Migrations", ko: "데이터 마이그레이션" }),
+        desc: l.trans({
+          en: "Reshape stored data with a plan, a record and a rollback.",
+          ko: "계획, 기록, 되돌리기를 갖춰 저장된 데이터를 고칩니다.",
+        }),
+      },
       {
         href: "/cheatsheet/dev/console",
         title: l.trans({ en: "Server Console", ko: "서버 콘솔" }),
@@ -264,14 +283,14 @@ export default page()
                 {l.trans({
                   en: (
                     <span>
-                      <strong>No subfolders.</strong> A name containing <code>/</code> or <code>..</code> is refused, so
-                      keep every script at the top of <code>script/</code>.
+                      <strong>No subfolders.</strong> Keep every script at the top of <code>script/</code>.{" "}
+                      <code>script/migration/</code> holds migrations, which <code>akan migrate</code> runs.
                     </span>
                   ),
                   ko: (
                     <span>
-                      <strong>하위 폴더는 안 됩니다.</strong> <code>/</code>나 <code>..</code>이 들어간 이름은
-                      거부되므로, 스크립트는 모두 <code>script/</code> 바로 아래에 둡니다.
+                      <strong>하위 폴더는 안 됩니다.</strong> 스크립트는 모두 <code>script/</code> 바로 아래에 둡니다.{" "}
+                      <code>script/migration/</code>은 <code>akan migrate</code>가 실행하는 마이그레이션 자리입니다.
                     </span>
                   ),
                 })}
@@ -280,14 +299,16 @@ export default page()
                 {l.trans({
                   en: (
                     <span>
-                      <strong>It runs from the app folder.</strong> The working directory is <code>apps/koyo/</code>, so
-                      relative paths start there.
+                      <strong>It runs from the workspace root</strong>, like <code>akan start</code>, so it opens the
+                      same local database. Relative paths start at the root; reach a file beside the script through{" "}
+                      <code>import.meta.dir</code>.
                     </span>
                   ),
                   ko: (
                     <span>
-                      <strong>앱 폴더에서 실행됩니다.</strong> 작업 디렉터리가 <code>apps/koyo/</code>이므로 상대 경로는
-                      거기서 시작합니다.
+                      <strong>워크스페이스 루트에서 실행됩니다.</strong> <code>akan start</code>와 같은 곳이라 같은 로컬
+                      DB를 엽니다. 상대 경로는 루트에서 시작하므로, 스크립트 옆의 파일은 <code>import.meta.dir</code>로
+                      찾습니다.
                     </span>
                   ),
                 })}
