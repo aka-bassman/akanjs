@@ -36,8 +36,21 @@ export interface McpHostContext {
   styles?: { variables?: Record<string, string | undefined> };
 }
 
+/** The route values an app's load ran with on the server, which its view runs it with again. */
+export interface McpAppRoute {
+  params: Record<string, string>;
+  searchParams: Record<string, string | string[]>;
+}
+
 export type McpAppStart =
-  | { ok: true; href: string; snapshot: McpAppSnapshotRecord[]; account: Record<string, unknown> | null }
+  | {
+      ok: true;
+      href: string;
+      route: McpAppRoute;
+      snapshot: McpAppSnapshotRecord[];
+      account: Record<string, unknown> | null;
+      readOnly: boolean;
+    }
   | { ok: false; message: string };
 
 // MCP Apps (SEP-1865): JSON-RPC over postMessage to the host that rendered this view; the host relays to the server.
@@ -98,17 +111,24 @@ export class McpAppBridge {
     this.#capabilities = initialized.hostCapabilities ?? {};
     this.notify("ui/notifications/initialized", {});
     const result = await this.#toolResult;
-    const page = (result.structuredContent ?? {}) as { href?: unknown };
+    const start = (result.structuredContent ?? {}) as { href?: unknown; params?: unknown; searchParams?: unknown };
     const text = result.content?.find((block) => block.type === "text")?.text;
-    if (result.isError || typeof page.href !== "string")
+    if (result.isError || typeof start.href !== "string" || !McpAppBridge.#isRecord(start.params))
       return this.#gaveUp(text ?? "This screen is not available here.");
     const snapshot = result._meta?.[MCP_APP_META.snapshot];
     const account = result._meta?.[MCP_APP_META.account];
     return {
       ok: true,
-      href: page.href,
+      href: start.href,
+      route: {
+        params: start.params as Record<string, string>,
+        searchParams: McpAppBridge.#isRecord(start.searchParams)
+          ? (start.searchParams as Record<string, string | string[]>)
+          : {},
+      },
       snapshot: Array.isArray(snapshot) ? (snapshot as McpAppSnapshotRecord[]) : [],
       account: account && typeof account === "object" ? (account as Record<string, unknown>) : null,
+      readOnly: result._meta?.[MCP_APP_META.readOnly] === true,
     };
   }
 
@@ -172,8 +192,8 @@ export class McpAppBridge {
     this.notify("notifications/tools/list_changed", {});
   }
 
-  fetchBridge(snapshot: McpAppSnapshotRecord[]): FetchBridge {
-    return new McpAppFetchBridge(this, snapshot);
+  fetchBridge(snapshot: McpAppSnapshotRecord[], { readOnly = false }: { readOnly?: boolean } = {}): FetchBridge {
+    return new McpAppFetchBridge(this, snapshot, { readOnly });
   }
 
   //? A host waits on every request it sent, so one held for a screen that will never start is answered with why.
@@ -245,6 +265,10 @@ export class McpAppBridge {
       this.#toolCalls.delete(id);
     }
     if (!controller.signal.aborted) window.parent.postMessage({ jsonrpc: "2.0", id, ...reply }, "*");
+  }
+
+  static #isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object" && !Array.isArray(value);
   }
 
   //? The key an HTTP call that runs out of time restores to, so the app's own `Err` toasts it in the user's language.

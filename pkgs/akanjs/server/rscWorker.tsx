@@ -34,7 +34,7 @@ import { renderToReadableStream } from "react-server-dom-webpack/server.node";
 import { RouteHead } from "../client/route/RouteHead";
 import { ViewportMeta } from "../client/viewportMeta";
 import { toManifestJson, webManifestHref } from "../client/webManifest";
-import type { PagePromptRunInput } from "../signal/mcp/pagePrompt";
+import type { PagePromptRunInput, PagePromptVisibleInput } from "../signal/mcp/pagePrompt";
 import { getCurrentTrace, runTraced, SignalTrace } from "../signal/trace";
 import type { ClientManifest } from "./artifact";
 import {
@@ -138,6 +138,11 @@ interface PagePromptRunMsg {
   requestId: string;
   input: PagePromptRunInput;
 }
+interface PagePromptsVisibleMsg {
+  type: "page-prompts.visible";
+  requestId: string;
+  input: PagePromptVisibleInput;
+}
 interface WebManifestMsg {
   type: "web-manifest";
   requestId: string;
@@ -153,6 +158,7 @@ type InMsg =
   | LogLevelMsg
   | PagePromptsMsg
   | PagePromptRunMsg
+  | PagePromptsVisibleMsg
   | WebManifestMsg;
 type RenderControl =
   | { type: "redirect"; location: string; method: "replace" | "push"; status: RedirectStatus }
@@ -326,6 +332,9 @@ export class RscRenderer {
         return;
       case "page-prompt.run":
         void this.#answer(msg.requestId, "page-prompt.result", () => this.#pagePrompts.run(msg.input));
+        return;
+      case "page-prompts.visible":
+        void this.#answer(msg.requestId, "page-prompts.visible.result", () => this.#pagePrompts.visible(msg.input));
         return;
       case "web-manifest":
         void this.#answer(msg.requestId, "web-manifest.result", () => this.#webManifest(msg.basePath));
@@ -516,10 +525,15 @@ export class RscRenderer {
                 partialDecision,
               })
             : { status: "full" as const, reason: partialDecision.reason, commonPrefixLength: 0 };
+        //? Security: a head-safe patch reads the page's head before its suffix renders, so the route's guards run
+        //? first (a refusal there keeps only the layouts above it), and the suffix does not run them again.
+        let admitted = false;
         const safePatchDecision = match
-          ? await this.#resolveHeadSafePatchDecision(match.pathRoute, patchDecision, () =>
-              this.#resolveRouteHeadSnapshot(urlObj, match, searchParams),
-            )
+          ? await this.#resolveHeadSafePatchDecision(match.pathRoute, patchDecision, async () => {
+              await RouteElementComposer.admit({ pathRoute: match.pathRoute, params: match.params, searchParams });
+              admitted = true;
+              return await this.#resolveRouteHeadSnapshot(urlObj, match, searchParams);
+            })
           : patchDecision;
         const patchCacheEntry = resolveRscWorkerPatchCacheEntry({
           cacheEntry,
@@ -612,6 +626,7 @@ export class RscRenderer {
             safePatchDecision.patch.patchStartIndex,
             searchParams,
             notFound,
+            { guarded: admitted },
           );
           if (suffixElement === null) {
             effectivePatchDecision = {
@@ -619,9 +634,10 @@ export class RscRenderer {
               reason: "suffix-compose-fallback",
               commonPrefixLength: safePatchDecision.commonPrefixLength,
             };
-            element = await this.#renderMatched(urlObj, match, searchParams, notFound);
+            element = await this.#renderMatched(urlObj, match, searchParams, notFound, { guarded: true });
           } else element = suffixElement;
-        } else if (match) element = await this.#renderMatched(urlObj, match, searchParams, notFound);
+        } else if (match)
+          element = await this.#renderMatched(urlObj, match, searchParams, notFound, { guarded: admitted });
         else element = await this.#renderNotFound(urlObj);
         const traceCacheKey =
           effectivePatchDecision.status === "patch" ? (patchCacheEntry?.key ?? cacheEntry?.key) : cacheEntry?.key;
@@ -765,7 +781,7 @@ export class RscRenderer {
           this.#trySendFallbackRender({
             requestId,
             kind,
-            route: fallbackMatch.pathRoute,
+            route: RouteElementComposer.fallbackRouteOf(fallbackMatch.pathRoute, error),
             params: fallbackMatch.params,
             searchParams: parseSearchParams(fallbackUrl.search),
             pathname: fallbackUrl.pathname,
@@ -1324,6 +1340,7 @@ export class RscRenderer {
     match: { pathRoute: PathRoute; params: Record<string, string> },
     searchParams: Record<string, string | string[]>,
     notFound: RouteNotFoundInPlace,
+    { guarded = false }: { guarded?: boolean } = {},
   ): Promise<ReactNode> {
     this.#logger.verbose(
       `composing route element pathname=${url.pathname} search=${url.search || "(none)"} params=${JSON.stringify(match.params)}`,
@@ -1333,7 +1350,7 @@ export class RscRenderer {
       basePath: this.#getBasePath(url),
     });
     setRequestFrameState(pathRoute.pageState);
-    await RouteElementComposer.checkArgs({ pathRoute, params: match.params, searchParams });
+    if (!guarded) await RouteElementComposer.admit({ pathRoute, params: match.params, searchParams });
     //? The provider names the theme only as it renders, which can be after the HTML shell and its data-theme are out.
     const rootLayouts = pathRoute.renderRootLayouts;
     const rootTheme = await RscRenderer.#firstRootValue(rootLayouts, (render) => render.getLayoutTheme?.());
@@ -1381,6 +1398,7 @@ export class RscRenderer {
     patchStartIndex: number,
     searchParams: Record<string, string | string[]>,
     notFound: RouteNotFoundInPlace,
+    { guarded = false }: { guarded?: boolean } = {},
   ): Promise<ReactNode | null> {
     this.#logger.verbose(
       `composing route suffix pathname=${url.pathname} start=${patchStartIndex} params=${JSON.stringify(match.params)}`,
@@ -1390,7 +1408,7 @@ export class RscRenderer {
       basePath: this.#getBasePath(url),
     });
     setRequestFrameState(pathRoute.pageState);
-    await RouteElementComposer.checkArgs({ pathRoute, params: match.params, searchParams });
+    if (!guarded) await RouteElementComposer.admit({ pathRoute, params: match.params, searchParams });
     await RouteElementComposer.resolveSuffixLoadings(pathRoute, patchStartIndex);
     return RouteElementComposer.composeSuffix({
       pathRoute,
@@ -1405,12 +1423,17 @@ export class RscRenderer {
   async #renderNotFound(url: URL): Promise<ReactNode> {
     const matchedFallback = RouteTreeBuilder.matchFallback(url.pathname, this.#fallbackRoutes);
     if (matchedFallback) {
+      const searchParams = parseSearchParams(url.search);
+      const route = await RouteElementComposer.admittedFallbackOf(matchedFallback.fallbackRoute, {
+        params: matchedFallback.params,
+        searchParams,
+      });
       try {
         const fallback = await this.#renderFallbackDocument({
           kind: "not-found",
-          route: matchedFallback.fallbackRoute,
+          route,
           params: matchedFallback.params,
-          searchParams: parseSearchParams(url.search),
+          searchParams,
           pathname: url.pathname,
           url,
         });

@@ -9,9 +9,10 @@ import {
 import { parseAkanI18nEnv } from "akanjs/common";
 import { deserialize } from "akanjs/constant";
 import type { ReactNode } from "react";
-import type { Head, LayoutModule, PageConfig, PageModule } from "../csrTypes";
+import type { Head, LayoutModule, PageConfig, PageModule, RouteGuardProps } from "../csrTypes";
 import { AkanNotFoundError } from "../router";
-import { RouteArgError, type RouteArgInfo, type RouteArgInput, type RouteBaseArgs } from "./routeArgs";
+import { Translator } from "../translator";
+import { RouteArgError, type RouteArgInfo, type RouteArgInput, RouteArgPending, type RouteBaseArgs } from "./routeArgs";
 
 export type RouteArgsShape = Record<string, unknown>;
 export type RouteKind = "page" | "layout" | "rootLayout";
@@ -45,6 +46,7 @@ export abstract class RouteDefinition<
   // Held as `never`-argument functions: a `PageDefinition<{ projectId }>` must still be a `RouteDefinition` to
   // the loaders, and a stage typed over `Args` would make the wider declaration unassignable to the plain one.
   #head?: HeadStage<never>;
+  #guard?: (args: never) => void | Promise<void>;
   #loading?: (args: never) => PromiseOrObject<ReactNode>;
   #render?: (args: never) => PromiseOrObject<ReactNode>;
   #renderRoute?: {
@@ -59,6 +61,13 @@ export abstract class RouteDefinition<
   }
   head(head: HeadStage<RouteBaseArgs & Args>) {
     this.#head = head as HeadStage<never>;
+    return this;
+  }
+  /** Runs before any layout body; refuses with `router.redirect()` or `router.notFound()`. */
+  guard(guard: (args: RouteBaseArgs & Args) => void | Promise<void>) {
+    if (this.#guard)
+      throw new Error(`[route-convention] ${this.kind}() declares .guard() twice; run every check from one guard`);
+    this.#guard = guard as (args: never) => void | Promise<void>;
     return this;
   }
   loading(render: (args: RouteBaseArgs & Args & Extra) => PromiseOrObject<ReactNode>) {
@@ -128,10 +137,12 @@ export abstract class RouteDefinition<
     if (!render)
       throw new Error(`[route-convention] a ${this.kind}() chain ends with .render(), and this one has none`);
     const head = this.#head;
+    const guard = this.#guard;
     const loading = this.#loading;
     const module: PageModule & LayoutModule = {
       default: this.#renderRouteOf(render) as never,
       ...(this.#config ? { pageConfig: this.#config } : {}),
+      ...(guard ? { guard: this.#guardRouteOf(guard) } : {}),
       ...(head === undefined
         ? {}
         : typeof head === "function"
@@ -151,12 +162,32 @@ export abstract class RouteDefinition<
     return module;
   }
 
+  /** What `.render()` receives beyond the declared args; a page adds its apps' elements. */
+  protected renderArgsOf(args: RouteBaseArgs & Args & Extra): PromiseOrObject<RouteBaseArgs & Args & Extra> {
+    return args;
+  }
+
+  //? Marked with the args it reads, as the render is, so CSR asks the guards again only when one of those moves.
+  #guardRouteOf(guard: (args: never) => void | Promise<void>) {
+    const route = async (props: RouteGuardProps) => await guard(this.#guardArgsOf(props) as never);
+    Object.defineProperty(route, routeArgsMarker, { value: this.args.map(({ kind, name }) => ({ kind, name })) });
+    return route;
+  }
+
   //? Kept while the render stage and the arguments are the same: a dev server swapping route modules unfolds every
   //? route again, and a new function per call would make each mounted layer render again, not just the edited one.
   #renderRouteOf(render: (args: never) => PromiseOrObject<ReactNode>) {
     const kept = this.#renderRoute;
     if (kept?.render === render && kept.argCount === this.args.length) return kept.route;
-    const route = async (props: RouteRenderProps) => await render(this.#argsOf(props) as never);
+    //? `Translator.renderAt` holds a CSR screen's path only for the render's synchronous part, so a route with no apps
+    //? renders before any await, and one with apps renders at the path it was called at.
+    const route = async (props: RouteRenderProps) => {
+      const args = this.renderArgsOf(this.#argsOf(props));
+      if (!(args instanceof Promise)) return await render(args as never);
+      const path = Translator.getRenderPath();
+      const resolved = await args;
+      return await Translator.renderAt(path, () => render(resolved as never));
+    };
     Object.defineProperty(route, routeArgsMarker, { value: this.args.map(({ kind, name }) => ({ kind, name })) });
     this.#renderRoute = { render, argCount: this.args.length, route };
     return route;
@@ -191,6 +222,18 @@ export abstract class RouteDefinition<
     const resolved = this.resolveArgs({ params: props.params, searchParams: props.searchParams ?? {} });
     const args = { lang, ...resolved };
     return (this.kind === "page" ? args : { ...args, children: props.children }) as RouteBaseArgs & Args & Extra;
+  }
+
+  #guardArgsOf({ params, searchParams, listing }: RouteGuardProps): RouteBaseArgs & Args {
+    const { lang = parseAkanI18nEnv().defaultLocale } = params;
+    if (!listing) return { lang, ...this.resolveArgs({ params, searchParams }) } as RouteBaseArgs & Args;
+    const declared = new Set(this.args.map((arg) => arg.name));
+    return new Proxy({ lang } as RouteBaseArgs & Args, {
+      get: (target, key, receiver) => {
+        if (typeof key === "string" && declared.has(key)) throw new RouteArgPending(key);
+        return Reflect.get(target, key, receiver);
+      },
+    });
   }
 
   /** One value where a list was declared is a one-item list (`?tags=a`); under `strict` a list is comma-separated. */

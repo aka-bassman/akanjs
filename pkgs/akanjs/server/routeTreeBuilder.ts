@@ -24,6 +24,7 @@ import { createElement } from "react";
 import { defaultPageState, validatePageConfig } from "../client/frameConfig";
 import { RouteHead } from "../client/route/RouteHead";
 import {
+  assertGuardOnChain,
   type ResolvedRouteModule,
   type RouteModuleSource,
   resolveRouteModule,
@@ -224,6 +225,7 @@ export class RouteTreeBuilder {
     if (kind === "overrides") return { module: mod as RouteModule };
     const parsed = parseRouteModuleKey(key);
     const resolved = resolveRouteModule(mod, key, { kind, pattern: parsed.pattern });
+    if (!parsed.isInternalRootLayout) assertGuardOnChain(key, resolved);
     if (!resolved.definition && !parsed.isInternalRootLayout && !RouteTreeBuilder.#legacyWarned.has(key)) {
       RouteTreeBuilder.#legacyWarned.add(key);
       RouteTreeBuilder.logger.warn(
@@ -294,6 +296,9 @@ export class RouteTreeBuilder {
       },
       checkArgs: async ({ params, searchParams }: PageProps) => {
         (await loadModule()).definition?.resolveArgs({ params, searchParams });
+      },
+      guard: async (props) => {
+        await (await loadModule()).module.guard?.(props);
       },
     };
     if (kind === "page") {

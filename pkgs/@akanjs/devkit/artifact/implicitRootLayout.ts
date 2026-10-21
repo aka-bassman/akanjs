@@ -164,12 +164,12 @@ async function writeGeneratedRootLayoutFile(opts: {
   //? resolveRouteModule reads a rootLayout() chain and the legacy named exports alike.
   const inheritedLabel = inheritedSourceAbsPath ? path.relative(opts.appCwdPath, inheritedSourceAbsPath) : "";
   const inheritedImport = inheritedSourceSpecifier
-    ? `import * as inheritedModule from ${JSON.stringify(inheritedSourceSpecifier)};\nconst inheritedLayout = resolveRouteModule(inheritedModule as never, ${JSON.stringify(inheritedLabel)}).module as LayoutModule;\n`
+    ? `import * as inheritedModule from ${JSON.stringify(inheritedSourceSpecifier)};\nconst inheritedLayout = assertGuardOnChain(${JSON.stringify(inheritedLabel)}, resolveRouteModule(inheritedModule as never, ${JSON.stringify(inheritedLabel)})).module as LayoutModule;\n`
     : "const inheritedLayout: LayoutModule = {};\n";
   const prefix = opts.boundary.segments.find((segment) => !/^\(.+\)$/.test(segment)) ?? null;
   const userLabel = opts.boundary.sourceAbsPath ? path.relative(opts.appCwdPath, opts.boundary.sourceAbsPath) : "";
   const userImport = sourceSpecifier
-    ? `import * as userModule from ${JSON.stringify(sourceSpecifier)};\nconst userLayout = resolveRouteModule(userModule as never, ${JSON.stringify(userLabel)}).module as LayoutModule;\nconst UserLayout = userLayout.default as (props: LayoutProps) => ReactNode | Promise<ReactNode>;\n`
+    ? `import * as userModule from ${JSON.stringify(sourceSpecifier)};\nconst userLayout = assertGuardOnChain(${JSON.stringify(userLabel)}, resolveRouteModule(userModule as never, ${JSON.stringify(userLabel)})).module as LayoutModule;\nconst UserLayout = userLayout.default as (props: LayoutProps) => ReactNode | Promise<ReactNode>;\n`
     : "const UserLayout = ({ children }: LayoutProps) => children;\nconst userLayout: LayoutModule = {};\n";
   const isAsyncUserLayout = opts.boundary.sourceAbsPath
     ? await AsyncDefaultExportDetector.detect(opts.boundary.sourceAbsPath)
@@ -191,6 +191,10 @@ async function writeGeneratedRootLayoutFile(opts: {
   const layoutReturn = isAsyncUserLayout ? "layout" : userLayoutElement;
   //? Under an ancestor root boundary the route tree merges that root's head itself; merging it here would repeat it.
   const headLayouts = opts.includeSystemProvider ? "[inheritedLayout, userLayout]" : "[userLayout]";
+  //? Likewise for the guard: an ancestor root boundary runs its own from its own layer.
+  const guardExport = opts.includeSystemProvider
+    ? "export const guard = RouteGuards.compose(inheritedLayout.guard, userLayout.guard);"
+    : "export const guard = userLayout.guard;";
   const layoutExports = `export async function generateHead(props: PageProps) {
   const heads = await Promise.all(
     ${headLayouts}.map((layout) => (layout.generateHead ? layout.generateHead(props) : layout.head)),
@@ -202,14 +206,16 @@ export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;
 export const Error = userLayout.Error ?? inheritedLayout.Error;
 export const pageConfig = userLayout.pageConfig ?? inheritedLayout.pageConfig;
 export const Loading = userLayout.Loading;
+${guardExport}
 
 ${layoutSignature}({ children, params, searchParams }: LayoutProps) {
 ${layoutBinding}  return `;
   const source = opts.includeSystemProvider
     ? `import type { LayoutModule, LayoutProps, PageProps } from "akanjs/client";
-import { loadFonts, resolveRouteModule, RouteHead } from "akanjs/client";
+import { assertGuardOnChain, loadFonts, RouteGuards, resolveRouteModule, RouteHead } from "akanjs/client";
 import type { ReactNode } from "react";
 import { System } from "akanjs/ui";
+import type { McpAppRootProps } from "akanjs/webkit";
 import { env } from "@apps/${opts.appName}/env/env.client";
 import { allDictionary } from ${JSON.stringify(dictMacroSpecifier)};
 ${clientImport}${inheritedImport}${userImport}
@@ -242,9 +248,25 @@ ${layoutExports}(
     </System.Provider>
   );
 }
+
+export function McpAppRoot({ children, params, path }: McpAppRootProps) {
+  return (
+    <System.App
+      params={params}
+      path={path}
+      env={env}
+      theme={theme}
+      viewport={viewport}
+      fonts={loadFonts(userFonts)}
+      className={defaultFontClassName}
+    >
+      {children}
+    </System.App>
+  );
+}
 `
     : `import type { LayoutModule, LayoutProps, PageProps } from "akanjs/client";
-import { resolveRouteModule, RouteHead } from "akanjs/client";
+import { assertGuardOnChain, resolveRouteModule, RouteHead } from "akanjs/client";
 import type { ReactNode } from "react";
 ${inheritedImport}${userImport}
 ${layoutExports}${layoutReturn};

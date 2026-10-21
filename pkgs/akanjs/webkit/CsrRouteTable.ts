@@ -1,8 +1,8 @@
 import {
+  assertGuardOnChain,
   type Device,
   getExplicitPageConfigKeys,
   insetBreakpoints,
-  isMcpView,
   type LayoutModule,
   type PageConfig,
   type PathRoute,
@@ -134,11 +134,13 @@ export class CsrRouteTable {
         }
         const entry = typeof value === "function" ? { loader: value } : value;
         const loaded = await entry.loader();
-        const pageContent =
+        const resolved =
           parsed.kind === "overrides"
-            ? (loaded as RouteModule)
-            : resolveRouteModule(loaded, key, { kind: parsed.kind, pattern: parsed.pattern }).module;
+            ? { module: loaded as RouteModule }
+            : resolveRouteModule(loaded, key, { kind: parsed.kind, pattern: parsed.pattern });
+        const pageContent = resolved.module;
         CsrRouteTable.#validateRouteModuleExports(key, pageContent);
+        if (!parsed.isInternalRootLayout) assertGuardOnChain(key, resolved);
         validatePageConfig(key, (pageContent as RouteModuleWithConfig).pageConfig);
         asyncDefaultMap[key] = entry.isAsyncDefault;
         // `_overrides.tsx` has no default export but must still be kept so its slot bindings can be mounted.
@@ -189,6 +191,7 @@ export class CsrRouteTable {
         kind: parsed.kind === "layout" ? "layout" : "page",
         paramNames: CsrRouteTable.#paramNamesOf(parsed.pattern),
         Loading: page.Loading as never,
+        guard: page.guard,
         NotFound: layoutPage?.NotFound,
         Error: layoutPage?.Error,
         resolveNotFound: layoutPage ? () => layoutPage.NotFound : undefined,
@@ -218,8 +221,7 @@ export class CsrRouteTable {
     ): PathRoute[] => {
       const layer = RouteLayering.of(route, parent);
       const { path, pathSegments } = layer;
-      const currentLayoutConfig =
-        route.renderLayout && route.layoutPageConfig ? CsrRouteTable.#layoutConfigOf(route.layoutPageConfig) : null;
+      const currentLayoutConfig = route.renderLayout && route.layoutPageConfig ? route.layoutPageConfig : null;
       const pageConfigChain = [...parentPageConfigChain, ...(currentLayoutConfig ? [currentLayoutConfig] : [])];
       const pageRenderConfigChain =
         route.pageIncludesOwnLayout === false && route.renderLayout ? parentPageConfigChain : pageConfigChain;
@@ -290,14 +292,6 @@ export class CsrRouteTable {
 
   static #keysOf(context: CsrRouteContext) {
     return Object.keys(context).sort();
-  }
-
-  //? An MCP view hides a layout's own markup, so the room it reserves for its chrome would be an empty band; the
-  //? insets follow what the page itself puts on screen instead.
-  static #layoutConfigOf(config: PageConfig): PageConfig {
-    if (!isMcpView()) return config;
-    const { topInset: _top, bottomInset: _bottom, ...rest } = config;
-    return rest;
   }
 
   static #paramNamesOf(pattern: string) {

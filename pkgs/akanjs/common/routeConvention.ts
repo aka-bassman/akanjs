@@ -16,6 +16,7 @@ export const PAGE_ROUTE_EXPORTS: ReadonlySet<string> = new Set([
   "head",
   "generateHead",
   "Loading",
+  "guard",
 ]);
 export const LAYOUT_ROUTE_EXPORTS: ReadonlySet<string> = new Set([...PAGE_ROUTE_EXPORTS, "NotFound", "Error"]);
 export const ROOT_LAYOUT_ROUTE_EXPORTS: ReadonlySet<string> = new Set([
@@ -27,6 +28,7 @@ export const ROOT_LAYOUT_ROUTE_EXPORTS: ReadonlySet<string> = new Set([
   "wsConnect",
   "layoutStyle",
   "viewport",
+  "McpAppRoot",
 ]);
 /** Root-layout exports that are plain config rather than components, so a PascalCase check cannot allow them. */
 export const RESERVED_ROUTE_CONFIG_EXPORTS: ReadonlySet<string> = new Set(

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
 import { isValidElement } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
+import { layout, page } from "../client/route/routeBuilders";
 import { type AkanModalComponent, createOverridable, override, UiOverrideProvider } from "../ui/UiOverride";
 import { RouteElementComposer } from "./routeElementComposer";
 import { RouteTreeBuilder } from "./routeTreeBuilder";
@@ -334,6 +335,107 @@ describe("RouteTreeBuilder implicit locale", () => {
     expect(withMetadata && RouteElementComposer.resolveHead(pageInput(withMetadata))).rejects.toThrow(
       '[route-convention] unsupported export "metadata"',
     );
+  });
+
+  test("draws a guard refusal's fallback from the layouts above the refusal alone, with no head", async () => {
+    const drawn: string[] = [];
+    const routes = new RouteTreeBuilder({
+      "./__root_layout.tsx": async () => ({
+        default: ({ children }: { children: ReactNode }) => <main>root:{children}</main>,
+        NotFound: ({ pathname }: { pathname: string }) => <p>root missing {pathname}</p>,
+      }),
+      "./org/[orgId]/_layout.tsx": async () => ({
+        default: layout()
+          .param("orgId", String)
+          .guard(({ orgId }) => {
+            if (orgId !== "mine") throw Object.assign(new Error("Access denied"), { statusCode: 403 });
+          })
+          .head(({ orgId }) => <title>{`org ${orgId}`}</title>)
+          .notFound(() => <p>org missing</p>)
+          .render(({ orgId, children }) => {
+            drawn.push(orgId);
+            return (
+              <section>
+                org {orgId} sidebar:{children}
+              </section>
+            );
+          }),
+      }),
+      "./org/[orgId]/home.tsx": async () => ({
+        default: page()
+          .param("orgId", String)
+          .render(() => <p>home</p>),
+      }),
+    }).build();
+    const matched = RouteTreeBuilder.match("/en/org/other/home", routes);
+    if (!matched) throw new Error("route did not match");
+    const refusal = await RouteElementComposer.admit({
+      pathRoute: matched.pathRoute,
+      params: matched.params,
+      searchParams: {},
+    }).catch((error: unknown) => error);
+    const route = RouteElementComposer.fallbackRouteOf(matched.pathRoute, refusal);
+    expect("resolveHead" in route).toBe(false);
+    const html = await renderToText(
+      await RouteElementComposer.composeFallback({
+        kind: "not-found",
+        route,
+        params: matched.params,
+        searchParams: {},
+        pathname: "/en/org/other/home",
+      }),
+    );
+    expect(html).toContain("root missing");
+    expect(html).not.toContain("sidebar");
+    expect(html).not.toContain("org missing");
+    expect(drawn).toEqual([]);
+    expect(RouteElementComposer.fallbackRouteOf(matched.pathRoute, new Error("not a guard's"))).toBe(matched.pathRoute);
+  });
+
+  test("lets an unmatched path show a guarded layout's not-found only to a visitor its guard lets in", async () => {
+    const session = { member: false, signedIn: true };
+    const builder = new RouteTreeBuilder({
+      "./__root_layout.tsx": async () => ({
+        default: ({ children }: { children: ReactNode }) => <main>root:{children}</main>,
+        NotFound: () => <p>root missing</p>,
+      }),
+      "./org/[orgId]/_layout.tsx": async () => ({
+        default: layout()
+          .param("orgId", String)
+          .guard(() => {
+            if (!session.signedIn) throw Object.assign(new Error("to /signin"), { digest: "AKAN_REDIRECT" });
+            if (!session.member) throw "not a member";
+          })
+          .notFound(() => <p>org missing</p>)
+          .render(({ children }) => <section>org sidebar:{children}</section>),
+      }),
+      "./org/[orgId]/home.tsx": async () => ({ default: page().render(() => <p>home</p>) }),
+    });
+    builder.build();
+    const unmatched = RouteTreeBuilder.matchFallback("/en/org/o1/no/such", builder.getFallbackRoutes());
+    if (!unmatched) throw new Error("no fallback matched");
+    const fallbackOf = () =>
+      RouteElementComposer.admittedFallbackOf(unmatched.fallbackRoute, { params: unmatched.params, searchParams: {} });
+    const drawn = async (route: Awaited<ReturnType<typeof fallbackOf>>) =>
+      await renderToText(
+        await RouteElementComposer.composeFallback({
+          kind: "not-found",
+          route,
+          params: unmatched.params,
+          searchParams: {},
+          pathname: "/en/org/o1/no/such",
+        }),
+      );
+
+    const refused = await drawn(await fallbackOf());
+    expect(refused).toContain("root missing");
+    expect(refused).not.toContain("org");
+
+    session.member = true;
+    expect(await drawn(await fallbackOf())).toContain("org missing");
+
+    session.signedIn = false;
+    expect(fallbackOf()).rejects.toMatchObject({ digest: "AKAN_REDIRECT" });
   });
 
   test("composes nearest layout NotFound and Error fallbacks", async () => {

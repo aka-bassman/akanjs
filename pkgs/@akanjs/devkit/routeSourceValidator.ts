@@ -15,6 +15,8 @@ export interface RouteSourceChain {
   params: string[];
   /** The `.prompt()` name, when the page publishes itself as an MCP prompt. */
   prompt?: string;
+  /** The `.app()` names, each one MCP App the build gives a view of its own. */
+  apps: string[];
 }
 
 interface ChainStage {
@@ -80,6 +82,10 @@ export class RouteSourceValidator {
       throw new Error(`[route-convention] head and generateHead cannot both be exported in ${filePath}`);
     }
     const chain = RouteSourceValidator.#readChain(sourceFile, filePath);
+    if (!chain && exported.has("guard"))
+      throw new Error(
+        `[route-convention] ${filePath} exports guard beside a legacy default; declare it with .guard() on its chain`,
+      );
     if (!chain) return { devOnly: RouteSourceValidator.#readDevOnly(sourceFile, filePath) };
     const named = [...exported].filter((name) => name !== "default");
     if (named.length)
@@ -93,34 +99,75 @@ export class RouteSourceValidator {
     if (options.pattern) RouteSourceValidator.#assertChainParams(chain, options.pattern, filePath);
     return {
       devOnly: chain.devOnly,
-      chain: { kind: chain.kind, params: chain.params, ...(chain.prompt ? { prompt: chain.prompt } : {}) },
+      chain: {
+        kind: chain.kind,
+        params: chain.params,
+        ...(chain.prompt ? { prompt: chain.prompt } : {}),
+        apps: chain.apps,
+      },
     };
   }
 
   // Null for the legacy shape. Read off the source because the build enumerates routes without importing them.
   static #readChain(sourceFile: ts.SourceFile, filePath: string) {
     for (const statement of sourceFile.statements) {
+      const local = RouteSourceValidator.#defaultLocalOf(statement);
+      if (local && RouteSourceValidator.#bindsChain(sourceFile, local))
+        throw new Error(
+          `[route-convention] ${filePath} exports its chain through "${local}"; write \`export default page()…\` — the build reads the chain without evaluating the module`,
+        );
       if (!ts.isExportAssignment(statement) || statement.isExportEquals) continue;
-      let node = RouteSourceValidator.#unwrapExpression(statement.expression);
-      const stages: ChainStage[] = [];
-      while (node && ts.isCallExpression(node)) {
-        const callee = node.expression;
-        if (ts.isPropertyAccessExpression(callee)) {
-          stages.unshift({ name: callee.name.text, args: node.arguments });
-          node = callee.expression;
-          continue;
-        }
-        if (ts.isIdentifier(callee) && chainRoots.has(callee.text))
-          return RouteSourceValidator.#chainOf(callee.text as RouteSourceChain["kind"], stages, filePath);
-        return null;
+      const walked = RouteSourceValidator.#walkChain(RouteSourceValidator.#unwrapExpression(statement.expression));
+      return walked ? RouteSourceValidator.#chainOf(walked.kind, walked.stages, filePath) : null;
+    }
+    return null;
+  }
+
+  static #defaultLocalOf(statement: ts.Statement): string | undefined {
+    if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
+      const node = RouteSourceValidator.#unwrapExpression(statement.expression);
+      return node && ts.isIdentifier(node) ? node.text : undefined;
+    }
+    if (!ts.isExportDeclaration(statement) || statement.moduleSpecifier || statement.isTypeOnly) return undefined;
+    const clause = statement.exportClause;
+    if (!clause || !ts.isNamedExports(clause)) return undefined;
+    const element = clause.elements.find((element) => !element.isTypeOnly && element.name.text === "default");
+    return element?.propertyName && ts.isIdentifier(element.propertyName) ? element.propertyName.text : undefined;
+  }
+
+  static #walkChain(start: ts.Expression | undefined) {
+    let node = start;
+    const stages: ChainStage[] = [];
+    while (node && ts.isCallExpression(node)) {
+      const callee = node.expression;
+      if (ts.isPropertyAccessExpression(callee)) {
+        stages.unshift({ name: callee.name.text, args: node.arguments });
+        node = callee.expression;
+        continue;
       }
+      if (ts.isIdentifier(callee) && chainRoots.has(callee.text))
+        return { kind: callee.text as RouteSourceChain["kind"], stages };
       return null;
     }
     return null;
   }
 
+  static #bindsChain(sourceFile: ts.SourceFile, name: string) {
+    return sourceFile.statements.some(
+      (statement) =>
+        ts.isVariableStatement(statement) &&
+        statement.declarationList.declarations.some(
+          (declaration) =>
+            ts.isIdentifier(declaration.name) &&
+            declaration.name.text === name &&
+            !!RouteSourceValidator.#walkChain(RouteSourceValidator.#unwrapExpression(declaration.initializer)),
+        ),
+    );
+  }
+
   static #chainOf(kind: RouteSourceChain["kind"], stages: ChainStage[], filePath: string) {
     const params: string[] = [];
+    const apps: string[] = [];
     let prompt: string | undefined;
     let devOnly = false;
     const literal = (stage: ChainStage) => {
@@ -134,10 +181,11 @@ export class RouteSourceValidator {
     for (const stage of stages) {
       if (stage.name === "param") params.push(literal(stage));
       else if (stage.name === "prompt") prompt = literal(stage);
+      else if (stage.name === "app") apps.push(literal(stage));
       else if (stage.name === "config")
         devOnly = RouteSourceValidator.#devOnlyOf(RouteSourceValidator.#unwrapExpression(stage.args[0]), filePath);
     }
-    return { kind, params, prompt, devOnly };
+    return { kind, params, prompt, apps, devOnly };
   }
 
   /** The same rule the loader applies: a page names every `[x]` it sits under, a layout may name a subset. */

@@ -18,6 +18,7 @@ export interface McpPagesProps {
   logger: Logger;
   promptBudget?: number;
   language?: string;
+  readOnly?: boolean;
 }
 
 interface McpPageCall {
@@ -33,10 +34,14 @@ export type McpPageRun =
 
 export class McpPages {
   static readonly listWaitMs = 1_000;
+  static readonly verdictTtlMs = 5_000;
+  static readonly #keptVerdicts = 256;
 
   readonly #props: McpPagesProps;
   #listed: PagePromptEntry[] | null = null;
   #listFailed = false;
+  #guardsFailed = false;
+  readonly #verdicts = new Map<string, { at: number; names: Promise<string[] | null> }>();
 
   constructor(props: McpPagesProps) {
     this.#props = props;
@@ -56,24 +61,34 @@ export class McpPages {
         logger.debug(`MCP page prompts: ${entries.length}${entries.length ? ` (${names})` : ""}`);
         const apps = this.#props.apps;
         if (!apps || !entries.length) return;
-        for (const { name } of entries.filter((entry) => this.#isEndpointName(entry.name)))
+        for (const { kind, name } of entries.filter((entry) => this.#isEndpointName(entry.name)))
           logger.warn(
-            `MCP did not publish page "${name}" as a tool: an endpoint already takes that name, so it stays a prompt only. Rename the prompt.`,
+            kind === "app"
+              ? `MCP did not publish app "${name}": an endpoint already takes that name. Rename the app.`
+              : `MCP did not publish page "${name}" as a tool: an endpoint already takes that name, so it stays a prompt only. Rename the prompt.`,
           );
-        const ui = apps.rendersUi ? "rendered from the CSR shell by an MCP Apps host" : "with no view to render";
-        logger.debug(`MCP page tools: ${ui}`);
+        const appCount = entries.filter((entry) => entry.kind === "app").length;
+        const ui = apps.rendersUi ? "each drawn by its own view in an MCP Apps host" : "with no view to draw them";
+        if (appCount) logger.debug(`MCP apps: ${appCount}, ${ui}`);
       })
       .catch((error: unknown) => {
         logger.warn(`MCP page prompts could not be listed: ${error instanceof Error ? error.message : error}`);
       });
   }
 
-  async prompts(): Promise<McpPrompt[]> {
-    return (await this.#list()).map(McpPages.#promptOf);
+  async prompts(req: Request): Promise<McpPrompt[]> {
+    const listed = await this.#list();
+    const prompts = listed.filter((entry) => entry.kind === "prompt");
+    return (await this.#visibleTo(req, prompts, listed)).map(McpPages.#promptOf);
   }
 
   async entry(name: string) {
     return (await this.#list()).find((candidate) => candidate.name === name);
+  }
+
+  async prompt(name: string) {
+    const entry = await this.entry(name);
+    return entry?.kind === "prompt" ? entry : undefined;
   }
 
   // A refused screen is a tool error, which the model reads, as an endpoint's refusal is; a prompt's is a JSON-RPC one.
@@ -90,7 +105,7 @@ export class McpPages {
     if (!page.run || !apps) return { result: { content: page.messages.map((message) => message.content) } };
     const origin = this.#props.publicOrigin(call.req);
     const forView = call.ui ? { account: McpApps.accountOf(call.req) } : null;
-    return { result: apps.resultOf(page.run, page.messages, origin, forView) };
+    return { result: apps.resultOf(entry, page.run, page.messages, origin, forView) };
   }
 
   async run(
@@ -148,21 +163,25 @@ export class McpPages {
   // would tell which names the endpoints hold.
   async toolOf(name: unknown) {
     if (!this.#props.apps || typeof name !== "string" || this.#isEndpointName(name)) return undefined;
-    return await this.entry(name).catch(() => undefined);
+    const entry = await this.entry(name).catch(() => undefined);
+    return entry && this.#publishesTool(entry) ? entry : undefined;
   }
 
-  async tools(ui: boolean, document: McpDocument) {
+  async tools(ui: boolean, document: McpDocument, req: Request) {
     const apps = this.#props.apps;
     if (!apps) return [];
-    const pages = (await this.#pageTools()).map((entry) => apps.toolOf(entry));
+    const listed = await this.#listedPages();
+    const pages = (await this.#visibleTo(req, this.#pageToolsOf(listed), listed)).map((entry) => apps.toolOf(entry));
     return ui ? [...document.appTools, ...pages] : pages;
   }
 
-  // Listed only to a client that renders them: any other would offer a multi-megabyte HTML document as an attachment.
-  async resources(ui: boolean) {
+  // Listed only to a client that renders them: any other would offer a megabyte HTML document as an attachment. The same
+  // apps `tools/list` shows this caller, so a hidden app's name and description stay hidden here too.
+  async resources(ui: boolean, req: Request) {
     const apps = this.#props.apps;
     if (!apps?.rendersUi || !ui) return [];
-    return apps.resourcesOf(await this.#listedPages());
+    const listed = await this.#listedPages();
+    return apps.resourcesOf(await this.#visibleTo(req, this.#pageToolsOf(listed), listed));
   }
 
   // Not a credential: visibility is a host's UX, never authorization, so a client claiming the extension falsely gains
@@ -219,12 +238,63 @@ export class McpPages {
   // A listing never waits out the RSC worker, which queues the call while it (re)starts: the pages it listed last stand
   // in. A stopped worker leaves them out.
   async #listedPages(): Promise<PagePromptEntry[]> {
+    return (await McpPages.#withinListWait(this.#pagesOrNone())) ?? this.#listed ?? [];
+  }
+
+  // Route guards decide which screens a caller is shown, never what data it reaches: a call runs them again and the
+  // signal guards hold the data. So a verdict the worker cannot give in time lists the pages unfiltered, as the
+  // listing itself falls back to the pages listed last.
+  async #visibleTo(req: Request, entries: PagePromptEntry[], listed: PagePromptEntry[]): Promise<PagePromptEntry[]> {
+    if (!this.#props.source || !entries.length) return entries;
+    //? Asked over every listed page, so the prompts, tools and resources a host lists in a row share one verdict.
+    const names = await McpPages.#withinListWait(this.#verdictOf(req, listed));
+    if (!names) return entries;
+    const admitted = new Set(names);
+    return entries.filter((entry) => admitted.has(entry.name));
+  }
+
+  //? A client listing in a loop would run every guard chain, queries and all, on each listing; a verdict stands a few
+  //? seconds per credential, and a call runs the guards again whatever the listing said.
+  #verdictOf(req: Request, entries: PagePromptEntry[]): Promise<string[] | null> {
+    const headers = McpPages.#forwardedHeaders(req);
+    const names = entries.map((entry) => entry.name);
+    const key = JSON.stringify([headers, names]);
+    const now = Date.now();
+    const kept = this.#verdicts.get(key);
+    if (kept && now - kept.at < McpPages.verdictTtlMs) return kept.names;
+    const source = this.#props.source;
+    const verdict = (
+      source ? source.visible({ names, headers, language: this.#props.language }) : Promise.resolve(names)
+    )
+      .then((visible) => {
+        this.#guardsFailed = false;
+        return visible;
+      })
+      .catch((error: unknown) => {
+        if (this.#verdicts.get(key)?.names === verdict) this.#verdicts.delete(key);
+        if (!this.#guardsFailed)
+          this.#props.logger.warn(
+            `MCP could not run the route guards of its page prompts, so they are listed unfiltered: ${error instanceof Error ? error.message : error}`,
+          );
+        this.#guardsFailed = true;
+        return null;
+      });
+    this.#verdicts.delete(key);
+    this.#verdicts.set(key, { at: now, names: verdict });
+    for (const [oldest, { at }] of this.#verdicts) {
+      if (this.#verdicts.size <= McpPages.#keptVerdicts && now - at < McpPages.verdictTtlMs) break;
+      this.#verdicts.delete(oldest);
+    }
+    return verdict;
+  }
+
+  static async #withinListWait<T>(work: Promise<T>): Promise<T | null> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const stalled = new Promise<null>((resolve) => {
       timer = setTimeout(() => resolve(null), McpPages.listWaitMs);
     });
     try {
-      return (await Promise.race([this.#pagesOrNone(), stalled])) ?? this.#listed ?? [];
+      return await Promise.race([work, stalled]);
     } finally {
       clearTimeout(timer);
     }
@@ -250,8 +320,14 @@ export class McpPages {
     return !!this.#props.document().findTool(name) || this.#props.dispatcher.isEndpoint(name);
   }
 
-  async #pageTools() {
+  #pageToolsOf(listed: PagePromptEntry[]) {
     if (!this.#props.apps) return [];
-    return (await this.#listedPages()).filter((entry) => !this.#isEndpointName(entry.name));
+    return listed.filter((entry) => !this.#isEndpointName(entry.name) && this.#publishesTool(entry));
+  }
+
+  // A read-only deployment keeps the apps, whose load may only query, and drops a prompt's text tool, whose run renders
+  // the whole page and may write; the prompt itself stays, as a person runs it.
+  #publishesTool(entry: PagePromptEntry) {
+    return entry.kind === "app" || !this.#props.readOnly;
   }
 }

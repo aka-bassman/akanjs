@@ -40,3 +40,11 @@ export const resolveRouteModule = (
   if (pattern) definition.assertPattern(pattern, key);
   return { module: definition.toRouteModule(), definition };
 };
+
+/** The export sets allow `guard` for an unfolded chain and the generated root layout; the legacy shape never gained it. */
+export const assertGuardOnChain = (label: string, resolved: ResolvedRouteModule): ResolvedRouteModule => {
+  if (resolved.definition || !("guard" in resolved.module)) return resolved;
+  throw new Error(
+    `[route-convention] ${label} exports guard beside a legacy default; declare it with .guard() on its chain`,
+  );
+};

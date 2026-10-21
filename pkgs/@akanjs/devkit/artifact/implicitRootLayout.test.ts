@@ -36,7 +36,9 @@ describe("resolveSsrPageEntries", () => {
     const generatedSource = await Bun.file(groupedRoot?.moduleAbsPath ?? "").text();
     // Both user modules go through the route resolver, so a `rootLayout()` chain and the legacy exports read alike.
     expect(generatedSource).toContain('import * as inheritedModule from "../../../page/_layout.tsx";');
-    expect(generatedSource).toContain("const inheritedLayout = resolveRouteModule(inheritedModule as never");
+    expect(generatedSource).toContain(
+      'const inheritedLayout = assertGuardOnChain("page/_layout.tsx", resolveRouteModule(inheritedModule as never',
+    );
     expect(generatedSource).not.toContain("<System.Provider");
     expect(generatedSource).toContain("export async function generateHead(props: PageProps)");
     // The ancestor root is a level of the route tree, which merges its head; this boundary returns only its own.
@@ -48,6 +50,9 @@ describe("resolveSsrPageEntries", () => {
     expect(generatedSource).toContain("export const pageConfig = userLayout.pageConfig ?? inheritedLayout.pageConfig;");
     // The ancestor root is its own level of the stack, so inheriting its loading would nest it inside itself.
     expect(generatedSource).toContain("export const Loading = userLayout.Loading;");
+    // Its guard runs from that level too, ahead of this one, and an MCP view takes its providers from there.
+    expect(generatedSource).toContain("export const guard = userLayout.guard;");
+    expect(generatedSource).not.toContain("McpAppRoot");
     expect(generatedSource).toContain(
       "<UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>",
     );
@@ -77,6 +82,11 @@ describe("resolveSsrPageEntries", () => {
     expect(generatedSource).toContain("export const viewport = userLayout.viewport ?? inheritedLayout.viewport;");
     expect(generatedSource).toContain("viewport={viewport}");
     expect(generatedSource).toContain("[inheritedLayout, userLayout].map((layout)");
+    expect(generatedSource).toContain(
+      "export const guard = RouteGuards.compose(inheritedLayout.guard, userLayout.guard);",
+    );
+    expect(generatedSource).toContain("export function McpAppRoot({ children, params, path }: McpAppRootProps) {");
+    expect(generatedSource).toContain("<System.App");
     expect(generatedSource).toContain('import { allDictionary } from "../dict/useDict.ts";');
     expect(generatedSource).toContain(
       'allDictionary={process.env.AKAN_PUBLIC_RENDER_ENV === "ssr" ? allDictionary : undefined}',

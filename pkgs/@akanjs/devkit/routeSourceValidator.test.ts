@@ -43,7 +43,7 @@ describe("RouteSourceValidator route chains", () => {
   const chain = (source: string, kind: "page" | "layout", pattern: string) =>
     RouteSourceValidator.validateRouteSourceExports(source, `page/${kind}.tsx`, kind, { pattern });
 
-  test("reads params, prompt and devOnly off a page() chain without evaluating it", () => {
+  test("reads params, prompt, apps and devOnly off a page() chain without evaluating it", () => {
     const source = [
       'import { page } from "akanjs/client";',
       "export default page()",
@@ -51,11 +51,13 @@ describe("RouteSourceValidator route chains", () => {
       '  .search("status", String)',
       "  .config({ transition: 'stack', devOnly: true })",
       '  .prompt("briefProject", "Brief one project.")',
-      "  .render(async ({ projectId }) => null);",
+      '  .app("showProject", "Show one project.", ({ projectId }) => null)',
+      '  .app("showBoard", "Show its board.", ({ projectId }) => null)',
+      "  .render(async ({ projectId, showProject }) => showProject);",
     ].join("\n");
     expect(chain(source, "page", "/:lang/project/:projectId")).toEqual({
       devOnly: true,
-      chain: { kind: "page", params: ["projectId"], prompt: "briefProject" },
+      chain: { kind: "page", params: ["projectId"], prompt: "briefProject", apps: ["showProject", "showBoard"] },
     });
   });
 
@@ -88,16 +90,29 @@ describe("RouteSourceValidator route chains", () => {
     expect(() => chain("export default page().param(name, ID).render(() => null);", "page", "/:lang/:x")).toThrow(
       ".param() takes a string literal first",
     );
+    expect(() => chain('export default page().app(name, "x", () => null).render(() => null);', "page", "/")).toThrow(
+      ".app() takes a string literal first",
+    );
     expect(() => chain("export default page().config({ devOnly: flag }).render(() => null);", "page", "/")).toThrow(
       "devOnly must be a literal true or false",
     );
+    const indirect = [
+      'const memo = page().app("showMemo", "x", () => null).render(() => null);',
+      "export default memo;",
+    ];
+    expect(() => chain(indirect.join("\n"), "page", "/")).toThrow('exports its chain through "memo"');
+    const renamed = [indirect[0], "export { memo as default };"];
+    expect(() => chain(renamed.join("\n"), "page", "/")).toThrow('exports its chain through "memo"');
   });
 
-  test("still reads the legacy shape as before", () => {
+  test("still reads the legacy shape as before, which never takes a guard", () => {
     const source = [
       "export default function Page() { return null; }",
       "export const pageConfig = { devOnly: false };",
     ].join("\n");
     expect(chain(source, "page", "/")).toEqual({ devOnly: false });
+    expect(() => chain(`${source}\nexport const guard = async () => undefined;`, "page", "/")).toThrow(
+      "exports guard beside a legacy default",
+    );
   });
 });

@@ -4,7 +4,7 @@ import { RscWorker } from "./rscWorkerHost";
 import type { BaseBuildArtifact } from "./types";
 
 interface Rendered {
-  status: number | "not-found";
+  status: number | "not-found" | "redirect";
   body: string;
   lateNotFound: boolean;
 }
@@ -35,7 +35,7 @@ const withNotFoundWorker = async (
     await run(async (url, headers = {}) => {
       const result = await rsc.renderWithMeta(new Request(url, { headers }));
       if (result.type === "not-found") return { status: "not-found", body: "", lateNotFound: false };
-      if (result.type !== "stream") throw new Error(`expected a stream, got ${result.type}`);
+      if (result.type === "redirect") return { status: "redirect", body: result.location, lateNotFound: false };
       const body = await new Response(result.stream).text();
       return { status: result.status ?? 200, body, lateNotFound: (await result.lateControl)?.type === "not-found" };
     });
@@ -73,6 +73,34 @@ describe("RscWorker not-found raised by a route", () => {
         expect(rendered.body).toContain("root missing");
         expect(rendered.body).not.toMatch(notFoundErrorRow);
         expect(rendered.status === 404 || rendered.lateNotFound).toBe(true);
+      }
+    });
+  }, 20_000);
+});
+
+describe("RscWorker route guards", () => {
+  test("answer a refusal before any byte, a leaked 403 as the layout's NotFound, and let the admitted render", async () => {
+    await withNotFoundWorker(async (render) => {
+      const admitted = await render("http://localhost/en/guarded/mine", { "x-signed-in": "yes" });
+      expect(admitted.status).toBe(200);
+      expect(admitted.body).toContain("item mine");
+
+      const leaked = await render("http://localhost/en/guarded/other", { "x-signed-in": "yes" });
+      expect(leaked.status).toBe(404);
+      expect(leaked.body).toContain("root missing /en/guarded/other");
+      expect(leaked.body).not.toContain("guarded:");
+    });
+  }, 20_000);
+});
+
+describe("RscWorker not-found under a guarded layout", () => {
+  test("is the guard's answer for a visitor it refuses, a bad path value and an unmatched path alike", async () => {
+    await withNotFoundWorker(async (render) => {
+      for (const url of ["http://localhost/en/vault/not-an-id", "http://localhost/en/vault/no/such"]) {
+        expect(await render(url)).toMatchObject({ status: "redirect", body: "/en/signin" });
+        const admitted = await render(url, { "x-signed-in": "yes" });
+        expect(admitted.status).toBe(404);
+        expect(admitted.body).toContain("vault missing");
       }
     });
   }, 20_000);
@@ -127,7 +155,7 @@ describe("RscWorker render request scope", () => {
 });
 
 describe("RscWorker redirect raised by a route", () => {
-  test("is a real redirect when the body awaited no I/O first, a layout's included, and a late one after it", async () => {
+  test("is a real redirect when the body awaited no I/O first, a layout's or a guard's included, and a late one after it", async () => {
     const vars: Record<string, string> = {
       AKAN_RSC_WORKER_PATH: path.join(import.meta.dir, "rscWorker.tsx"),
       AKAN_PUBLIC_APP_NAME: "notfound",
@@ -151,6 +179,7 @@ describe("RscWorker redirect raised by a route", () => {
         ["rdresolved", "/en/target"],
         ["gate/inner", "/en/signin"],
         ["pending/moved", "/en/target"],
+        ["guarded/mine", "/en/signin"],
       ] as const) {
         const result = await rsc.renderWithMeta(new Request(`http://localhost/en/${route}`));
         expect(result).toMatchObject({ type: "redirect", location, status: 307 });

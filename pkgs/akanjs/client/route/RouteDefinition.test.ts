@@ -3,9 +3,10 @@ import { enumOf, ID, Int } from "akanjs/base";
 import { parseAkanI18nEnv } from "akanjs/common";
 import type { LayoutModule, PageModule, PageProps } from "../csrTypes";
 import { AkanNotFoundError } from "../router";
+import { Translator } from "../translator";
 import { RouteDefinition } from "./RouteDefinition";
-import { isRouteDefinition, resolveRouteModule } from "./resolveRouteModule";
-import { RouteArgError } from "./routeArgs";
+import { assertGuardOnChain, isRouteDefinition, resolveRouteModule } from "./resolveRouteModule";
+import { RouteArgError, RouteArgPending } from "./routeArgs";
 import { layout, page, rootLayout } from "./routeBuilders";
 
 class Period extends enumOf("routeTestPeriod", ["day", "month"] as const) {}
@@ -62,6 +63,7 @@ describe("page() chain", () => {
     expect(await mod.default?.(props({ lang: "ko" }))).toBe("page:ko");
     expect(await mod.generateHead?.(props({ lang: "ko" }))).toBe("head:ko");
     expect(mod.Loading?.({ params: {} })).toBe(`loading:${parseAkanI18nEnv().defaultLocale}`);
+    // @ts-expect-error every route receives lang
     expect(() => page().param("lang", String)).toThrow('receives "lang" on every route');
     expect(() => layout().search("lang", String)).toThrow('receives "lang" on every route');
   });
@@ -182,6 +184,23 @@ describe("page() chain", () => {
     expect(resolved.definition).toBeUndefined();
     expect(isRouteDefinition(legacy.default)).toBe(false);
   });
+
+  test("refuses a guard beside a legacy default, and keeps a chain's", () => {
+    const guard = async () => undefined;
+    const chain = resolveRouteModule(
+      {
+        default: page()
+          .guard(guard)
+          .render(() => null),
+      } as never,
+      "./a.tsx",
+    );
+    expect(assertGuardOnChain("./a.tsx", chain)).toBe(chain);
+    const legacy = resolveRouteModule({ default: () => null, guard } as never, "./a.tsx");
+    expect(() => assertGuardOnChain("./a.tsx", legacy)).toThrow("exports guard beside a legacy default");
+    const unguarded = resolveRouteModule({ default: () => null } as never, "./a.tsx");
+    expect(assertGuardOnChain("./a.tsx", unguarded)).toBe(unguarded);
+  });
 });
 
 describe("layout() and rootLayout() chains", () => {
@@ -218,6 +237,118 @@ describe("layout() and rootLayout() chains", () => {
       resolveRouteModule({ default: rootLayout().render(() => null) } as never, "./_layout.tsx", { kind: "layout" })
         .definition?.kind,
     ).toBe("rootLayout");
+  });
+});
+
+describe(".guard() stage", () => {
+  test("is declared once per route, so every check runs from one guard", () => {
+    expect(() =>
+      page()
+        .guard(() => undefined)
+        .guard(() => undefined),
+    ).toThrow("page() declares .guard() twice");
+    expect(() =>
+      layout()
+        .guard(() => undefined)
+        .guard(() => undefined),
+    ).toThrow("layout() declares .guard() twice");
+    expect(
+      page()
+        .render(() => null)
+        .toRouteModule().guard,
+    ).toBeUndefined();
+  });
+
+  test("hands the guard the route's typed arguments and lang, and a layout's no children", async () => {
+    const seen: unknown[] = [];
+    const pageModule = page()
+      .param("projectId", ID)
+      .search("page", Int)
+      .guard((args) => {
+        seen.push(args);
+      })
+      .render(() => null)
+      .toRouteModule();
+    await pageModule.guard?.({ params: { lang: "ko", projectId: pid }, searchParams: { page: "2" } });
+    const rootModule = rootLayout()
+      .guard(async (args) => {
+        seen.push(args);
+      })
+      .render(({ children }) => children)
+      .toRouteModule();
+    await rootModule.guard?.({ params: { lang: "en" }, searchParams: {} });
+    expect(seen).toEqual([{ lang: "ko", projectId: pid, page: 2 }, { lang: "en" }]);
+  });
+
+  test("answers not-found for a path value the type refuses, before the guard runs", async () => {
+    let ran = false;
+    const mod = page()
+      .param("projectId", ID)
+      .guard(() => {
+        ran = true;
+      })
+      .render(() => null)
+      .toRouteModule();
+    await expect(mod.guard?.({ params: { projectId: "nope" }, searchParams: {} })).rejects.toBeInstanceOf(
+      AkanNotFoundError,
+    );
+    expect(ran).toBe(false);
+  });
+
+  test("while MCP lists the screen, refuses the read of a declared argument and keeps lang", async () => {
+    const reads: string[] = [];
+    const listing = { params: { lang: "ko" }, searchParams: {}, listing: true };
+    const byArgument = page()
+      .param("projectId", ID)
+      .guard(({ projectId }) => {
+        reads.push(projectId);
+      })
+      .render(() => null)
+      .toRouteModule();
+    const pending = await byArgument.guard?.(listing).catch((error: unknown) => error);
+    expect(pending).toBeInstanceOf(RouteArgPending);
+    expect((pending as RouteArgPending).digest).toBe("AKAN_ROUTE_ARG_PENDING");
+    const byLang = page()
+      .param("projectId", ID)
+      .guard(({ lang }) => {
+        reads.push(lang);
+      })
+      .render(() => null)
+      .toRouteModule();
+    await byLang.guard?.(listing);
+    expect(reads).toEqual(["ko"]);
+  });
+});
+
+describe("the render path a chain's render reads", () => {
+  //? A CSR screen sets its path only around the route's synchronous part, which `usePage()` in the render reads.
+  const renderAt = (route: unknown, routeProps: object) =>
+    Translator.renderAt("/en/pushed", () => (route as (props: object) => Promise<unknown>)(routeProps));
+
+  test("is the screen's own for a page and a layout, and for a page whose apps load first", async () => {
+    const seen: Record<string, string | undefined> = {};
+    const plain = page().render(() => {
+      seen.page = Translator.getRenderPath();
+      return null;
+    });
+    const wrapping = layout().render(({ children }) => {
+      seen.layout = Translator.getRenderPath();
+      return children;
+    });
+    const withApp = page()
+      .app("showPushed", "Show the pushed screen.", async () => {
+        await Promise.resolve();
+        return "app";
+      })
+      .render(({ showPushed }) => {
+        seen.withApp = Translator.getRenderPath();
+        return showPushed;
+      });
+    await renderAt(plain.toRouteModule().default, props({ lang: "en" }));
+    await renderAt(wrapping.toRouteModule().default, { ...props({ lang: "en" }), children: null });
+    expect(await renderAt(withApp.toRouteModule().default, props({ lang: "en" }))).toBe("app");
+    expect(seen).toEqual({ page: "/en/pushed", layout: "/en/pushed", withApp: "/en/pushed" });
+    expect(Translator.getRenderPath()).toBeUndefined();
   });
 });
 

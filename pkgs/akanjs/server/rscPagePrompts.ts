@@ -1,7 +1,14 @@
-import type { PageDefinition, PathRoute } from "akanjs/client";
+import type { PageDefinition, PathRoute, RoutePromptMeta } from "akanjs/client";
 import { Logger, parseSearchParams } from "akanjs/common";
-import { getRequestStore } from "akanjs/fetch";
-import type { PagePromptEntry, PagePromptRecord, PagePromptRun, PagePromptRunInput } from "../signal/mcp/pagePrompt";
+import { AppScope, getRequestStore } from "akanjs/fetch";
+import { RouteGuards } from "../client/route/RouteGuards";
+import type {
+  PagePromptEntry,
+  PagePromptRecord,
+  PagePromptRun,
+  PagePromptRunInput,
+  PagePromptVisibleInput,
+} from "../signal/mcp/pagePrompt";
 
 interface RscPagePromptsProps {
   routes: () => PathRoute[];
@@ -47,8 +54,9 @@ export class RscPagePrompts {
         .filter((arg) => arg.kind === "search" && input.arguments[arg.name] !== undefined)
         .map((arg) => [arg.name, RscPagePrompts.#searchValue(arg.list, input.arguments[arg.name] as string)]),
     );
+    let resolved: Record<string, unknown>;
     try {
-      definition.resolveArgs({ params, searchParams }, { strict: true });
+      resolved = definition.resolveArgs({ params, searchParams }, { strict: true });
     } catch (error) {
       return { ok: false, reason: "argument", message: error instanceof Error ? error.message : String(error) };
     }
@@ -60,29 +68,73 @@ export class RscPagePrompts {
         params: { ...params, lang },
         searchParams: parseSearchParams(new URL(url).search),
       };
+      const renders = RscPagePrompts.#rendersOf(route);
+      //? A guard's own reads decide who may see the screen and are no part of it, so the records start after them.
+      let guardReads = 0;
       try {
-        for (const render of [...route.renderRootLayouts, ...route.renderLayouts, route.renderPage])
-          await render.render({ ...props, children: null } as never);
+        await RscPagePrompts.#scoped(entry, () => RouteGuards.run(renders, props));
+        guardReads = getRequestStore()?.queryLog.length ?? 0;
+        //? An app runs its load alone: no layout body and no `.render()`, so the snapshot holds only what it draws.
+        if (entry.kind === "app") await (definition as PageDefinition).loadApp(entry.name, { lang, ...resolved });
+        else for (const render of renders) await render.render({ ...props, children: null } as never);
       } catch (error) {
         return RscPagePrompts.#refusal(error);
       }
-      const records = await Promise.all((getRequestStore()?.queryLog ?? []).map(RscPagePrompts.#settle));
-      return { ok: true, url, records };
+      const records = await Promise.all(
+        (getRequestStore()?.queryLog ?? []).slice(guardReads).map(RscPagePrompts.#settle),
+      );
+      return { ok: true, url, records, route: props };
     });
   }
 
+  /** The names whose route guards let this caller see the screen, read with no arguments as a listing has none. */
+  async visible({ names, headers, language }: PagePromptVisibleInput): Promise<string[]> {
+    const lang = language ?? this.#props.defaultLocale();
+    const routes = this.#props.routes();
+    const entries = (await this.list()).filter((entry) => names.includes(entry.name));
+    const verdicts = await Promise.all(
+      entries.map(async (entry) => {
+        const route = routes.find((candidate) => candidate.path === entry.pattern);
+        if (!route) return false;
+        const request = new Request(RscPagePrompts.#urlOf(entry.pattern, { lang }, {}), { headers });
+        return await this.#props.run(request, route.path, () =>
+          RscPagePrompts.#scoped(entry, () =>
+            RouteGuards.admits(RscPagePrompts.#rendersOf(route), { params: { lang }, searchParams: {} }),
+          ),
+        );
+      }),
+    );
+    return entries.filter((_, idx) => verdicts[idx]).map((entry) => entry.name);
+  }
+
+  //? An app's tool is read-only, so its guards run under the load's query-only rule too; a prompt's run may write.
+  static #scoped<T>(entry: PagePromptEntry, run: () => Promise<T>): Promise<T> {
+    return entry.kind === "app" ? AppScope.run(entry.name, run) : run();
+  }
+
+  static #rendersOf(route: PathRoute) {
+    return [...route.renderRootLayouts, ...route.renderLayouts, route.renderPage];
+  }
+
+  //? One namespace for prompts and apps: each `.prompt()` is also a text tool, and MCP keys a tool by its name alone.
   async #collect(routes: PathRoute[]): Promise<PagePromptEntry[]> {
     const entries: PagePromptEntry[] = [];
-    const owners = new Map<string, string>();
-    for (const route of routes) {
-      const definition = await route.renderPage.getRouteDefinition?.();
-      const meta = definition?.kind === "page" ? (definition as PageDefinition).promptMeta : undefined;
-      if (!meta) continue;
+    const owners = new Map<string, { kind: PagePromptEntry["kind"]; path: string }>();
+    const claim = (kind: PagePromptEntry["kind"], meta: RoutePromptMeta, path: string) => {
       const owner = owners.get(meta.name);
       if (owner)
-        throw new Error(`[route-convention] prompt "${meta.name}" is declared by both ${owner} and ${route.path}`);
-      owners.set(meta.name, route.path);
-      entries.push({ ...meta, pattern: route.path });
+        throw new Error(
+          `[route-convention] ${kind} "${meta.name}" is declared by both ${owner.path}${owner.kind === kind ? "" : ` (as its ${owner.kind})`} and ${path}`,
+        );
+      owners.set(meta.name, { kind, path });
+      entries.push({ kind, ...meta, pattern: path });
+    };
+    for (const route of routes) {
+      const definition = await route.renderPage.getRouteDefinition?.();
+      if (definition?.kind !== "page") continue;
+      const page = definition as PageDefinition;
+      if (page.promptMeta) claim("prompt", page.promptMeta, route.path);
+      for (const meta of page.appMetas) claim("app", meta, route.path);
     }
     // Alphabetical, like the tool catalogue: a client's slash menu and a prompt cache both key on order.
     return entries.sort((a, b) => a.name.localeCompare(b.name));

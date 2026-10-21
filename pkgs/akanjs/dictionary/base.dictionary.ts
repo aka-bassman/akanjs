@@ -65,6 +65,14 @@ export const baseDictionary = serviceDictionary(["en", "ko"])
       "{endpoint} is closed: the slice's guards name none that allows it.",
       "{endpoint}이(가) 닫혀 있습니다. 슬라이스 guards에 이 동작을 허용하는 guard를 지정해야 합니다.",
     ],
+    mutationInApp: [
+      "The {app} app called {endpoint} while it loads, and an app may load with queries only.",
+      "{app} 앱이 불러오는 중에 {endpoint}을(를) 호출했습니다. 앱은 쿼리로만 불러올 수 있습니다.",
+    ],
+    readOnlyDeployment: [
+      "This server is read-only, so {endpoint} cannot run here.",
+      "읽기 전용 서버라 {endpoint}을(를) 실행할 수 없습니다.",
+    ],
   })
   .translate({
     somethingWrong: ["Something's wrong!", "문제가 생겼어요!"],
