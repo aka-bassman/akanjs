@@ -152,7 +152,7 @@ One `.config()` object sets the whole page frame: animation, gesture, reserved s
 
 **A page nobody sees runs no effects.** A cached page, or one left without a transition, keeps its state and DOM but stops its effects until shown again. The page under a `stack` transition stays live for a swipe back, so bind a camera, a poll or a key handler with `usePageFocusEffect` from `akanjs/webkit`.
 
-**Every history entry is a page of its own.** A push to the route you are on mounts a new page over the old one, which waits under it with its state; a replace updates the page in place. A `cache` route stays one page for the whole session.
+**Every history entry is a page of its own.** A push to the route you are on mounts a new page over the old one, which waits under it with its state; a replace updates the page in place. A `cache` route stays one page for the whole session. When the account changes (`setAuth`, `resetAuth`), the pages kept for the previous one are drawn again before they are shown, and the page on screen stays as it is until you leave it.
 
 **A move made mid-transition is not lost.** Until a page that slides in shows, a newer move takes its place: a guard that refuses it redirects before it ever appears, and back cancels it. A move made while it slides runs once it has settled.
 
