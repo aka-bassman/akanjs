@@ -78,7 +78,7 @@ export const Shell = ({ children, menuMap }: ShellProps) => {
       <PageTurnTool next={nextPage} prev={prevPage} />
       <input type="checkbox" id="mobile-menu-toggle" className="peer hidden" />
 
-      <div className="fixed inset-y-0 left-0 z-40 w-full -translate-x-full transform transition-transform duration-50 ease-in-out peer-checked:translate-x-0 lg:hidden">
+      <div className="fixed inset-y-0 left-0 z-40 hidden w-full max-lg:peer-checked:block">
         <div className="mt-[var(--akanjs-header-bar)] h-full overflow-y-auto bg-background/95 pb-24 shadow-2xl backdrop-blur-xl">
           <div className="px-3 pt-[calc(var(--akanjs-header-inset)+1rem)]">
             <Search className="mb-3" onNavigate={closeMenu} />

@@ -20,7 +20,13 @@ interface CosmosProps {
 }
 export const Cosmos = ({ className }: CosmosProps) => {
   return (
-    <div aria-hidden="true" className={cn("cosmos pointer-events-none fixed inset-0 -z-10 overflow-hidden", className)}>
+    <div
+      aria-hidden="true"
+      className={cn(
+        "cosmos pointer-events-none fixed pointer-coarse:absolute inset-0 -z-10 overflow-hidden",
+        className,
+      )}
+    >
       <svg
         className="cosmos-far absolute inset-x-0 top-0 h-[112vh] w-full opacity-60"
         preserveAspectRatio="xMidYMid slice"

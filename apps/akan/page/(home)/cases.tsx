@@ -104,6 +104,16 @@ const projects = [
     href: "https://gcs-main-showcase-mn0pvz.try.akanjs.com",
   },
   {
+    name: "ROADSTAR",
+    categories: ["game", "web"],
+    desc: {
+      en: "A rocket roadster stunt game in the browser. Launch to 60 mph in 0.81 seconds, ride a coaster loop upside down and hop a lineup of five cars on thrusters, then put your nickname on each stunt's daily, weekly and all-time leaderboards.",
+      ko: "브라우저에서 즐기는 로켓 로드스터 스턴트 게임입니다. 0.81초 만에 0-60mph에 닿는 런치, 롤러코스터를 거꾸로 타는 루프, 추진기로 차량 다섯 대를 뛰어넘는 점프에 도전하고, 닉네임만으로 스턴트별 일간·주간·전체 랭킹에 기록을 남깁니다.",
+    },
+    tags: ["Browser game", "Nickname leaderboards", "i18n"],
+    href: "https://roadster.akanjs.com",
+  },
+  {
     name: "Sceny",
     categories: ["agent", "web"],
     desc: {
@@ -122,6 +132,16 @@ const projects = [
     },
     tags: ["AI report", "Consultant console", "Email"],
     href: "https://syrs-main-showcase-mn0pvz.try.akanjs.com",
+  },
+  {
+    name: "akancad",
+    categories: ["agent", "web"],
+    desc: {
+      en: "A browser CAD for 2D drawings, 3D parts and assemblies, in shared projects that keep their versions. Draw with AutoCAD-style command lines, or ask the design assistant for a 120×80 mounting plate with four M6 holes and it builds one in the open document. MCP clients reach the same projects after an OAuth sign-in.",
+      ko: "브라우저에서 2D 도면, 3D 파트, 조립품을 설계하는 CAD입니다. 프로젝트에 멤버를 초대해 함께 쓰고 버전이 남습니다. AutoCAD식 명령어로 그리거나 설계 도우미에게 M6 구멍 4개짜리 120×80 고정판을 요청하면 열린 문서에 바로 만들어 주고, MCP 클라이언트도 OAuth 로그인 뒤 같은 프로젝트를 다룹니다.",
+    },
+    tags: ["AutoCAD commands", "Design assistant", "MCP"],
+    href: "https://cad.akanjs.com",
   },
   {
     name: "LU",

@@ -3,34 +3,28 @@ import { Code, DocsToc, JellyKicker } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 import { badgeRecipe, Link } from "akanjs/ui";
-import { BsArrowRight } from "react-icons/bs";
+import { BsArrowRight, BsChevronDown } from "react-icons/bs";
 
 const requirements = [
   {
     name: "Bun",
-    before: "1.4.0+",
-    after: "1.4.4+",
-    note: {
-      en: "Every package's engines.bun reads >=1.4.4, and akan-native's doctor fails on an older Bun.",
-      ko: "모든 패키지의 engines.bun이 >=1.4.4이고, akan-native의 doctor는 그보다 오래된 Bun에서 실패합니다.",
-    },
+    version: "1.4.4+",
+    note: { en: "Akan stops on an older Bun.", ko: "그보다 오래된 Bun에서는 akan이 멈춥니다." },
   },
   {
     name: "React",
-    before: "19.3.0",
-    after: "19.3.1",
+    version: "19.3.1",
     note: {
-      en: "Pin react and react-dom to 19.3.1 to match the akanjs peer range.",
-      ko: "akanjs의 peer 범위에 맞게 react와 react-dom을 19.3.1로 고정합니다.",
+      en: "Pin react, react-dom and react-server-dom-webpack to this version.",
+      ko: "react, react-dom, react-server-dom-webpack을 이 버전으로 고정합니다.",
     },
   },
   {
     name: "akanjs · @akanjs/cli",
-    before: "3.0.2",
-    after: "3.1.0",
+    version: "3.1.0",
     note: {
-      en: "Install matching versions: the 3.1.0 CLI refuses a native build API older than 0.12.0, and akanjs 3.0 carries 0.10.0.",
-      ko: "같은 버전으로 설치합니다. 3.1.0 CLI는 0.12.0보다 오래된 native build API를 거절하는데, akanjs 3.0에는 0.10.0이 들어 있습니다.",
+      en: "Install both at the same version; the new CLI will not build native apps against an older akanjs.",
+      ko: "둘을 같은 버전으로 설치합니다. 새 CLI는 이전 akanjs로는 네이티브 앱을 빌드하지 않습니다.",
     },
   },
 ] as const;
@@ -41,590 +35,611 @@ akan sync <app-or-lib>
 akan lint <app-or-lib>
 akan typecheck <app-or-lib>`;
 
-const areas = [
+const securityItems = [
   {
-    id: "routing",
-    title: { en: "Routing and rendering", ko: "라우팅과 렌더링" },
+    en: "Visitors' sessions never mix. Under heavy traffic, part of a page streamed to one visitor could read another visitor's login cookie; each render now sees only its own request.",
+    ko: "방문자끼리 세션이 섞이지 않습니다. 트래픽이 몰릴 때 한 방문자에게 스트리밍되던 화면 일부가 다른 방문자의 로그인 쿠키를 읽을 수 있었는데, 이제 각 렌더는 자기 요청만 봅니다.",
+  },
+  {
+    en: "Your users' login stays home. A server-side call to another company's API no longer forwards the visitor's login token, cookie or address; only calls to your own server carry them.",
+    ko: "사용자의 로그인 정보가 밖으로 새지 않습니다. 서버가 외부 API를 호출할 때 더는 방문자의 로그인 토큰, 쿠키, 주소를 보내지 않고, 내 서버로 가는 호출만 이를 싣습니다.",
+  },
+  {
+    en: "No more redirect tricks. A crafted link such as ?redirect=evil.com can no longer use the app's navigation to send a visitor to another site.",
+    ko: "리다이렉트 낚시를 막습니다. ?redirect=evil.com 같은 조작된 링크가 앱의 화면 이동을 이용해 방문자를 다른 사이트로 보낼 수 없습니다.",
+  },
+  {
+    en: "Requests can't grant themselves extra rights. Fields a form was never meant to send, such as a role or a deleted flag, are dropped before they reach your code.",
+    ko: "요청이 스스로 권한을 올릴 수 없습니다. 역할이나 삭제 표시처럼 폼이 보내면 안 되는 필드는 코드에 닿기 전에 버려집니다.",
+  },
+  {
+    en: "Switching accounts leaves nothing behind. Pages kept for the previous account are dropped at sign-in, and a redirect raised while a page renders is never cached by a CDN.",
+    ko: "계정을 바꾸면 이전 화면이 남지 않습니다. 로그인하는 순간 이전 계정을 위해 보관한 화면을 버리고, 페이지를 그리다 발생한 리다이렉트는 CDN에 캐시되지 않습니다.",
+  },
+  {
+    en: "Login headers are read one strict way everywhere: the API, the AI endpoint, device tokens, the ops channel and the log stream all accept only 'Bearer' followed by a single token.",
+    ko: "로그인 헤더를 어디서나 같은 엄격한 방식으로 읽습니다. API, AI 엔드포인트, 기기 토큰, ops 채널, 로그 스트림 모두 'Bearer'와 토큰 하나만 받습니다.",
+  },
+  {
+    en: "Fewer secrets in your logs: more kinds are masked, such as webhook URLs, database connection strings and signing keys.",
+    ko: "로그에 남는 시크릿이 줄었습니다. 웹훅 주소, 데이터베이스 연결 문자열, 서명 키 등 더 많은 종류를 가립니다.",
+  },
+  {
+    en: "Updates nobody can tamper with. A CDN in between can no longer alter a signed app update, and a signed desktop app refuses an update signed by anyone else.",
+    ko: "누구도 손댈 수 없는 업데이트. 중간의 CDN이 서명된 앱 업데이트를 바꿀 수 없고, 서명된 데스크톱 앱은 다른 사람이 서명한 업데이트를 거절합니다.",
+  },
+  {
+    en: "A server running on an edge device starts with its AI endpoint turned off.",
+    ko: "edge 기기에서 도는 서버는 AI 엔드포인트를 끈 채로 시작합니다.",
+  },
+  {
+    en: "The in-page agent acts only on what is on screen: if the screen changes while it is acting, its call is refused instead of running against the wrong thing.",
+    ko: "인페이지 에이전트는 화면에 보이는 대로만 움직입니다. 동작하는 사이 화면이 바뀌면 엉뚱한 대상에 실행되지 않도록 그 호출을 거절합니다.",
+  },
+  {
+    en: "A security scan hardened text matching against input crafted to stall the server, keeps unsafe link types out of what the agent reads, and escapes values written into native app settings.",
+    ko: "보안 점검으로, 서버를 멈추게 하려고 조작한 입력에도 텍스트 검사가 버티게 했고, 에이전트가 읽는 화면에서 위험한 종류의 링크를 빼며, 네이티브 앱 설정에 쓰는 값을 이스케이프합니다.",
+  },
+] as const;
+
+const featureAreas = [
+  {
+    id: "pages",
+    title: { en: "Pages and navigation", ko: "화면과 이동" },
     href: "/docs/core/routing",
-    added: [
+    items: [
       {
-        en: "rootLayout(), layout() and page() take .guard(fn), which decides who may open a route before any of it renders. On the server a guard's redirect is a real 307 and its refusal a 404, a client navigation waits for the guards, and over MCP they decide which screens a caller is listed. signedIn() in libs/shared/webkit is the sign-in check.",
-        ko: "rootLayout(), layout(), page()가 .guard(fn) 단계를 받습니다. 라우트의 어떤 부분도 그리기 전에 누가 열 수 있는지 정합니다. 서버에서는 가드의 redirect가 실제 307, 거절이 404가 되고, 클라이언트 이동은 가드를 기다리며, MCP에서는 가드가 호출자에게 보일 화면을 정합니다. 로그인 검사는 libs/shared/webkit의 signedIn()입니다.",
+        en: "Access control before render: a guard on a layout or page decides who may open it before anything is drawn. A guest goes straight to sign-in, and a record they may not see answers as if it did not exist.",
+        ko: "그리기 전에 하는 접근 제어. 레이아웃이나 페이지의 가드가 무엇이든 그리기 전에 누가 열 수 있는지 정합니다. 손님은 곧바로 로그인 화면으로 가고, 볼 권한이 없는 레코드는 처음부터 없는 것처럼 응답합니다.",
       },
       {
-        en: "rootLayout().viewport({ fitCover, interactiveWidget, themeColor }) writes the viewport and theme-color meta on the server and in the CSR shell, and a per-theme themeColor follows a theme switch at once, the iOS status bar included. Route heads merge root first: a deeper .head() replaces the title, a meta with the same name or property, and a canonical, manifest or icon link, and keeps the rest.",
-        ko: "rootLayout().viewport({ fitCover, interactiveWidget, themeColor })가 서버와 CSR 셸 모두에서 viewport와 theme-color 메타를 쓰고, 테마별 themeColor는 테마를 바꾸는 즉시 iOS 상태 표시줄까지 따라 바뀝니다. 라우트 head는 루트부터 합쳐집니다. 더 깊은 .head()가 title, 같은 name이나 property의 meta, canonical·manifest·icon 링크를 교체하고 나머지는 유지합니다.",
+        en: "Give each theme its own colour, and the browser bar and the iOS status bar follow it the moment the theme switches.",
+        ko: "테마마다 색을 지정하면 브라우저 상단 막대와 iOS 상태 표시줄이 테마를 바꾸는 즉시 그 색을 따릅니다.",
       },
       {
-        en: "router.push and router.replace take { shallow: true }: on an SSR page, a change of the query alone writes the URL and the store without asking the server for the page.",
-        ko: "router.push와 router.replace가 { shallow: true }를 받습니다. SSR 페이지에서 쿼리만 바뀌면 서버에 페이지를 다시 요청하지 않고 URL과 스토어만 바꿉니다.",
+        en: "A change of only the URL's query, such as a filter, can update the screen without reloading the page from the server.",
+        ko: "필터처럼 URL의 쿼리만 바뀌면 서버에서 페이지를 다시 불러오지 않고 화면만 바꿀 수 있습니다.",
       },
       {
-        en: "Frame chrome renders on the server. Layout.Navbar, TopInset, TopLeftAction, BottomInset and BottomTab are in the SSR HTML, and that DOM moves into its slot on mount, so text typed before hydration, the focus and the caret survive.",
-        ko: "프레임 크롬이 서버에서 렌더링됩니다. Layout.Navbar, TopInset, TopLeftAction, BottomInset, BottomTab이 SSR HTML에 들어가고, 마운트되면 그 DOM이 그대로 슬롯으로 옮겨지므로 하이드레이션 전에 입력한 텍스트와 포커스, 커서가 유지됩니다.",
+        en: "A back button always has somewhere to go: give it a fallback page for the first screen after a reload.",
+        ko: "뒤로 가기 버튼에 언제나 갈 곳이 있습니다. 새로고침 직후 첫 화면을 위한 대체 페이지를 지정할 수 있습니다.",
       },
       {
-        en: "Link.Back takes fallback and Layout.Navbar takes backFallback: the page router.backOrFallback() opens where going back would do nothing, such as the first screen after a reload. Link's active match strips the basePath and takes activeMatch.",
-        ko: "Link.Back이 fallback을, Layout.Navbar가 backFallback을 받습니다. 새로고침 직후의 첫 화면처럼 뒤로 갈 곳이 없을 때 router.backOrFallback()이 여는 페이지입니다. Link의 활성 판정은 basePath를 떼고 비교하며 activeMatch를 받습니다.",
+        en: "Headers, tab bars and other frame parts arrive in the first HTML, so text typed before the page finishes loading keeps its place.",
+        ko: "헤더, 탭 바 같은 프레임 요소가 첫 HTML에 함께 오므로, 페이지가 다 뜨기 전에 입력한 글자가 그대로 남습니다.",
       },
       {
-        en: "Helpers the framework kept in several copies are public: parseSearchParams in akanjs/common; isMcpView, router.postPathChange, breakpointQuery and TailwindBreakpoint in akanjs/client; and Href.isExternal, hasWebScheme and toExternalUrl, which classify a link the way the browser does.",
-        ko: "프레임워크 곳곳에 복사돼 있던 헬퍼를 공개했습니다. akanjs/common의 parseSearchParams, akanjs/client의 isMcpView, router.postPathChange, breakpointQuery, TailwindBreakpoint, 그리고 브라우저와 같은 방식으로 링크를 판별하는 Href.isExternal, hasWebScheme, toExternalUrl입니다.",
-      },
-    ],
-    fixed: [
-      {
-        en: "A not-found or redirect raised before the first byte is a real 404 or 3xx, also while a layout is still rendering something async, and a path value its .param() type refuses answers 404 instead of a blank 200.",
-        ko: "첫 바이트 전에 발생한 not-found와 redirect는 레이아웃이 아직 비동기로 렌더링 중이어도 실제 404와 3xx로 응답하고, .param() 타입이 거부한 경로 값은 빈 200 대신 404로 응답합니다.",
-      },
-      {
-        en: "A .head() that throws renders the page without a head instead of failing the request; a redirect or not-found raised in a head still routes.",
-        ko: "예외를 던지는 .head()는 요청을 실패시키지 않고 head 없이 렌더링됩니다. head에서 발생한 redirect와 not-found는 그대로 동작합니다.",
-      },
-      {
-        en: "A .loading() on a layout at a root boundary, such as (group)/_layout.tsx, reaches the route's Suspense boundaries instead of being dropped.",
-        ko: "(group)/_layout.tsx처럼 루트 경계에 있는 레이아웃의 .loading()이 버려지지 않고 라우트의 Suspense 경계에 닿습니다.",
-      },
-      {
-        en: "Back and forward in an SSR app land where the page was left, in Safari too, and hold that offset while images and streamed sections size themselves.",
-        ko: "SSR 앱에서 뒤로·앞으로 이동하면 Safari에서도 떠났던 위치로 돌아가고, 이미지와 스트리밍 섹션이 크기를 잡는 동안 그 위치를 유지합니다.",
-      },
-      {
-        en: "A CSR app, such as a native app's bundle, draws a not-found under the layouts its path sits under, lets a redirect take the place of a page that slides in, gives a pushed screen its own usePage().path, and no longer runs its frame router on the first render's stack.",
-        ko: "네이티브 앱 번들 같은 CSR 앱이 경로가 속한 레이아웃 아래에 not-found를 그리고, 슬라이드로 들어오는 페이지 자리를 redirect가 대신하며, push된 화면이 자기 usePage().path를 읽고, 프레임 라우터가 더는 첫 렌더 때의 스택으로 동작하지 않습니다.",
-      },
-      {
-        en: "Link treats any-case schemes, protocol-relative URLs and app schemes as external and opens them unchanged.",
-        ko: "Link가 대소문자와 상관없이 스킴, 프로토콜 상대 URL, 앱 스킴을 외부 링크로 보고 그대로 엽니다.",
-      },
-      {
-        en: "A basePath is stripped only on a segment boundary, so under office, /officers stays /officers. An SSR document links its manifest at /manifest.webmanifest in the head, where Chromium reads it.",
-        ko: "basePath는 세그먼트 경계에서만 떼므로 basePath가 office일 때 /officers는 그대로입니다. SSR 문서는 manifest를 Chromium이 읽는 head 안에 /manifest.webmanifest로 연결합니다.",
+        en: "Titles and meta tags from nested layouts merge predictably: the deepest one wins, and the rest are kept.",
+        ko: "중첩된 레이아웃의 제목과 메타 태그가 예측대로 합쳐집니다. 가장 안쪽 것이 이기고 나머지는 유지됩니다.",
       },
     ],
   },
   {
-    id: "mcp",
-    title: { en: "MCP and agents", ko: "MCP와 에이전트" },
+    id: "ai",
+    title: { en: "AI agents and MCP", ko: "AI 에이전트와 MCP" },
     href: "/cheatsheet/interface/mcp",
-    added: [
+    items: [
       {
-        en: "page().app(name, description, load) publishes one component of a page as an MCP App: a read-only tool, a ui:// resource and a single-file view that a host such as claude.ai draws in the chat. A call runs the route's guards and the load alone, and on the web the same element reaches .render() under that name.",
-        ko: "page().app(name, description, load)는 페이지의 컴포넌트 하나를 MCP App으로 공개합니다. 읽기 전용 도구, ui:// 리소스, 그리고 claude.ai 같은 호스트가 채팅 안에 그리는 단일 파일 뷰가 됩니다. 호출은 라우트의 가드와 load만 실행하고, 웹에서는 같은 엘리먼트가 그 이름으로 .render()에 전달됩니다.",
+        en: "MCP Apps: show a page's component inside AI chats such as claude.ai. It is the same component your site shows, runs with the user's own permissions and can only read.",
+        ko: "MCP Apps. 페이지의 컴포넌트를 claude.ai 같은 AI 채팅 안에 띄웁니다. 사이트에 보이는 바로 그 컴포넌트이고, 사용자 본인의 권한으로 동작하며 조회만 할 수 있습니다.",
       },
       {
-        en: "akan build writes one view per .app() to mcp-apps/<name>.html, bundling only what its load reaches, and akan start rebuilds the views on save. In a read-only deployment the views still work and refuse a write before it reaches the host.",
-        ko: "akan build가 .app()마다 load가 닿는 모듈만 담은 뷰를 mcp-apps/<name>.html로 만들고, akan start는 저장할 때마다 뷰를 다시 만듭니다. 읽기 전용 배포에서도 뷰는 동작하며, 쓰기는 호스트에 닿기 전에 거절합니다.",
+        en: "Each of those views is built small, carrying only what it needs, and rebuilds as you save during development.",
+        ko: "이런 뷰는 필요한 것만 담아 작게 빌드되고, 개발 중에는 저장할 때마다 다시 만들어집니다.",
       },
       {
-        en: "An endpoint returning ImageResult (akanjs/base) hands an MCP client's model a picture as an image block with an optional caption; HTTP callers get the JSON object as before.",
-        ko: "ImageResult(akanjs/base)를 돌려주는 엔드포인트는 MCP 클라이언트의 모델에 이미지를 이미지 블록과 선택적 캡션으로 전달합니다. HTTP 호출자는 이전처럼 JSON 객체를 받습니다.",
+        en: "Endpoints can return images that an AI model receives as pictures, such as a chart or a product photo.",
+        ko: "엔드포인트가 차트나 상품 사진 같은 이미지를 돌려주면 AI 모델이 그림으로 받습니다.",
       },
       {
-        en: "The in-page agent looks at a picture on screen with the new viewImage built-in, and a tool of your own attaches files to its result with ToolReturn.attach from akanjs/store.",
-        ko: "인페이지 에이전트가 새 기본 도구 viewImage로 화면의 이미지를 직접 봅니다. 직접 만든 도구도 akanjs/store의 ToolReturn.attach로 결과에 파일을 붙입니다.",
+        en: "The in-page agent can look at images on the screen, and your own tools can attach files to what they return.",
+        ko: "인페이지 에이전트가 화면의 이미지를 직접 보고, 직접 만든 도구가 결과에 파일을 붙일 수 있습니다.",
       },
       {
-        en: "An agent's tool call runs only as the action the screen declared when the call arrived; a call whose declaration changed meanwhile is refused instead of run. st.tool(name, { label }) names an action for a person, and Agent.useScreenActions() lists the screen's argument-free actions for a command palette.",
-        ko: "에이전트의 도구 호출은 호출이 도착한 시점에 화면이 선언한 동작으로만 실행되고, 그사이 선언이 바뀌었으면 실행하지 않고 거절합니다. st.tool(name, { label })은 사람에게 보여 줄 동작 이름을 붙이고, Agent.useScreenActions()는 커맨드 팔레트용으로 인자 없는 화면 동작을 나열합니다.",
+        en: "Give each screen action a human-friendly name, and list the screen's one-click actions for a command palette.",
+        ko: "화면 동작마다 사람이 읽기 좋은 이름을 붙이고, 화면의 원클릭 동작을 커맨드 팔레트용으로 나열할 수 있습니다.",
       },
       {
-        en: "LlmTurnRequest takes model, so a service can run one turn on another model, such as the one a conversation picked, without a second adaptor.",
-        ko: "LlmTurnRequest가 model을 받으므로, 대화에서 고른 모델처럼 다른 모델로 한 턴을 돌릴 때 어댑터를 하나 더 만들 필요가 없습니다.",
-      },
-    ],
-    fixed: [
-      {
-        en: "The agent chat's @ and / menus key their rows by id, a tap on a row keeps the phone keyboard up, and an @ mention whose title holds a bracket is sent as a chip.",
-        ko: "에이전트 채팅의 @·/ 메뉴가 행을 id로 구분하고, 행을 탭해도 휴대폰 키보드가 내려가지 않으며, 제목에 대괄호가 든 @ 멘션도 칩으로 전송됩니다.",
+        en: "Run a single AI turn on a different model, such as the one the user picked, without extra setup.",
+        ko: "사용자가 고른 모델처럼 다른 모델로 AI 한 턴을 돌릴 때 따로 설정할 것이 없습니다.",
       },
     ],
   },
   {
     id: "server",
-    title: { en: "Endpoints and the server", ko: "엔드포인트와 서버" },
+    title: { en: "Server and API", ko: "서버와 API" },
     href: "/cheatsheet/interface/endpoint",
-    added: [
+    items: [
       {
-        en: "A model or scalar argument is checked against the published request schema on HTTP, websocket and MCP before the handler runs. A wrong type, a value outside its enum or a missing required field answers 400 with data.name naming the path (data.items.2.price), and a key the input does not declare is dropped.",
-        ko: "모델·스칼라 인자를 핸들러 실행 전에 HTTP, 웹소켓, MCP 모두에서 공개된 요청 스키마로 검사합니다. 타입이 틀리거나 enum 밖의 값이거나 필수 필드가 빠지면 data.name에 경로(data.items.2.price)를 담아 400으로 응답하고, 입력에 선언되지 않은 키는 버립니다.",
+        en: "Every request is checked against your models before your code runs, over HTTP, WebSocket and MCP alike. An error names the exact field, and fields the input does not declare are dropped.",
+        ko: "HTTP, 웹소켓, MCP 어디로 오든 모든 요청을 코드 실행 전에 모델 정의와 대조합니다. 에러는 문제의 필드를 정확히 짚고, 입력에 선언되지 않은 필드는 버립니다.",
       },
       {
-        en: "An endpoint declares the errors it throws on purpose, as in errors: { 409: [key] }. OpenAPI documents each status, the MCP tool description names each key, and Err.is(error, key) narrows a caught error, one restored from another server included.",
-        ko: "엔드포인트가 의도해서 던지는 에러를 errors: { 409: [key] }처럼 선언합니다. OpenAPI가 상태 코드별로 문서화하고, MCP 도구 설명에 키가 실리며, Err.is(error, key)는 다른 서버에서 복원된 에러까지 포함해 잡은 에러를 좁힙니다.",
+        en: "List the errors an endpoint returns on purpose. They appear in your API docs and in AI tool descriptions, and a caller can check for one by name.",
+        ko: "엔드포인트가 의도해서 내는 에러를 선언합니다. API 문서와 AI 도구 설명에 실리고, 호출하는 쪽은 이름으로 그 에러인지 확인할 수 있습니다.",
       },
       {
-        en: "fetch.clone({ retry }) and a call's { retry, idempotencyKey } retry an unreachable server, a 502, 503 or 504, and a 429 after its Retry-After, within the call's one deadline. A mutation retries under one Idempotency-Key, which the server runs once per key, caller and arguments.",
-        ko: "fetch.clone({ retry })와 호출별 { retry, idempotencyKey }가 서버에 닿지 않을 때, 502·503·504일 때, 그리고 429의 Retry-After 뒤에 호출의 한 데드라인 안에서 재시도합니다. mutation은 하나의 Idempotency-Key로 재시도하고, 서버는 키·호출자·인자마다 한 번만 실행합니다.",
+        en: "Calls to other servers retry by themselves through brief outages and busy responses, within the deadline you set. Send a payment or an order with a duplicate-protection key and it runs exactly once.",
+        ko: "다른 서버로 가는 호출이 잠깐의 장애나 과부하 응답에도 정한 제한 시간 안에서 스스로 재시도합니다. 결제나 주문에 중복 방지 키를 붙이면 정확히 한 번만 실행됩니다.",
       },
       {
-        en: "The websocket client reconnects on a jittered backoff instead of every 3 seconds, at once when the device goes online or the tab becomes visible, and takes ws: { reconnect, headers, tls, onStateChange, onRevoked, onError }. It numbers each room's frames, drops a repeat and calls onResync at a hole, and a solo server on the built-in pub/sub replays what a resubscribe missed.",
-        ko: "웹소켓 클라이언트가 3초 간격 대신 지터를 넣은 백오프로 재연결하되, 기기가 온라인이 되거나 탭이 보이면 바로 재연결하고, ws: { reconnect, headers, tls, onStateChange, onRevoked, onError }를 받습니다. 방마다 프레임에 번호를 매겨 중복은 버리고 빈 구간에서 onResync를 부르며, 기본 pub/sub을 쓰는 단일 서버는 재구독이 놓친 프레임을 다시 보내 줍니다.",
+        en: "Live connections reconnect gently, and right away when the device comes back online or the tab becomes visible. Missed updates are detected and filled in.",
+        ko: "실시간 연결이 부드럽게 재연결하고, 기기가 다시 온라인이 되거나 탭이 보이면 바로 재연결합니다. 놓친 업데이트는 찾아서 채워 넣습니다.",
       },
       {
-        en: "EndpointCacheControl.invalidate(endpoint, args?) drops an endpoint's { cache } answers before their TTL, on every instance at once.",
-        ko: "EndpointCacheControl.invalidate(endpoint, args?)가 엔드포인트의 { cache } 응답을 TTL 전에 모든 인스턴스에서 한 번에 지웁니다.",
+        en: "Clear an endpoint's cached answers on every server the moment the data behind them changes.",
+        ko: "데이터가 바뀌는 순간 모든 서버에서 엔드포인트의 캐시된 응답을 비울 수 있습니다.",
       },
       {
-        en: "A process job's backoff takes maxDelay and its internal an onFailed dead-letter hook, AkanServer.start({ schedules: false }) runs none of the internals, as a test or a script wants, and Binary.toBase64 and Binary.fromBase64 (akanjs/base) are public.",
-        ko: "process 작업의 backoff가 maxDelay를, internal이 onFailed 데드레터 훅을 받고, AkanServer.start({ schedules: false })는 테스트나 스크립트를 위해 internal을 하나도 실행하지 않습니다. Binary.toBase64와 Binary.fromBase64(akanjs/base)도 공개됐습니다.",
-      },
-    ],
-    fixed: [
-      {
-        en: "Answers that used to be a 500: a malformed argument is 400 base.error.invalidArgument, a missing one 400 base.error.requiredArgument, a missing document 404 base.error.documentNotFound, and a required relation to a removed document 404 base.error.relationNotFound; a relation list leaves the removed one out.",
-        ko: "500이던 응답을 바로잡았습니다. 형식이 틀린 인자는 400 base.error.invalidArgument, 빠진 인자는 400 base.error.requiredArgument, 없는 문서는 404 base.error.documentNotFound, 삭제된 문서를 가리키는 필수 relation은 404 base.error.relationNotFound이고, relation 목록에서는 삭제된 문서가 빠집니다.",
-      },
-      {
-        en: "A { cache } hit answers exactly as the call that filled it, with its Maps, bytes and dates, and hands resolveField the declared model.",
-        ko: "{ cache } 적중이 캐시를 채운 호출과 똑같이 Map, 바이트, 날짜까지 응답하고, resolveField에는 선언된 모델을 넘깁니다.",
-      },
-      {
-        en: "A subscribe that loses a race with its socket's close or with its own unsubscribe joins no room, so no live room keeps a subscriber that will never leave.",
-        ko: "소켓 종료나 자기 unsubscribe와 경합한 subscribe는 방에 들어가지 않으므로, 영영 나가지 않는 구독자가 실시간 방에 남지 않습니다.",
-      },
-      {
-        en: "The fetch client sends multipart arguments as JSON, shows a proxy's own JSON 408, 429 or 5xx as the translated transport error, reads a 429's Retry-After: 0 as now instead of a minute, and keeps its parent's timeout in a clone.",
-        ko: "fetch 클라이언트가 multipart 인자를 JSON으로 보내고, 프록시 자체의 JSON 408·429·5xx를 번역된 전송 오류로 보여 주며, 429의 Retry-After: 0을 1분이 아니라 즉시로 읽고, clone이 부모의 타임아웃을 유지합니다.",
-      },
-      {
-        en: "A server-side WsClient and the tunnel agent terminate a silent socket instead of closing it, so they reconnect within one heartbeat on Bun 1.4.4.",
-        ko: "서버 쪽 WsClient와 터널 에이전트가 응답 없는 소켓을 close 대신 terminate하므로, Bun 1.4.4에서도 하트비트 한 번 안에 재연결합니다.",
-      },
-      {
-        en: "memory() declared with a model or scalar class reads back as an instance of that class, an endpoint returning Any is typed unknown on the client, and a class extending a one-argument adapt(name) typechecks in plug(TheClass) without a cast.",
-        ko: "모델이나 스칼라 클래스로 선언한 memory()가 그 클래스의 인스턴스로 읽히고, Any를 돌려주는 엔드포인트는 클라이언트에서 unknown 타입이 되며, 인자 하나짜리 adapt(name)을 상속한 클래스는 캐스팅 없이 plug(TheClass)에서 타입 검사를 통과합니다.",
-      },
-      {
-        en: "A module whose model relates to a disabled module is left out instead of answering 500, an untyped queue backoff waits its delay on bullmq, the gateway restarts a replica whose socket Bun 1.4.3 reports by errno, and memory ceilings read the process's own cgroup.",
-        ko: "비활성 모듈과 relation이 있는 모듈은 500을 내는 대신 함께 빠지고, type 없는 큐 backoff가 bullmq에서도 지연을 기다리며, 게이트웨이는 Bun 1.4.3이 errno로 알리는 소켓 오류에도 레플리카를 재시작하고, 메모리 한도는 프로세스 자신의 cgroup에서 읽습니다.",
+        en: "Background jobs can cap how long they wait between retries and run a hook when they finally fail, and a server can start without scheduled jobs for tests and scripts.",
+        ko: "백그라운드 작업이 재시도 사이의 최대 대기 시간을 정하고, 끝내 실패하면 훅을 실행할 수 있습니다. 테스트나 스크립트용으로 예약 작업 없이 서버를 띄울 수도 있습니다.",
       },
     ],
   },
   {
     id: "data",
-    title: { en: "Data and migrations", ko: "데이터와 마이그레이션" },
+    title: { en: "Data", ko: "데이터" },
     href: "/cheatsheet/dev/migration",
-    added: [
+    items: [
       {
-        en: "Data migrations: akan create-migration writes a migration(title) with plan, apply and verify stages, and akan migrate <app> runs it, with apply --expect <planHash> refusing data that changed since the plan was reviewed. A built image runs the same through bun main.js ops migrate, and every run is recorded in the app's own database under a lease, so rollback restores what an apply changed.",
-        ko: "데이터 마이그레이션이 생겼습니다. akan create-migration이 plan, apply, verify 단계를 가진 migration(title)을 만들고 akan migrate <app>이 실행하며, apply --expect <planHash>는 계획을 검토한 뒤 데이터가 바뀌었으면 거절합니다. 빌드된 이미지에서는 bun main.js ops migrate로 똑같이 돌고, 모든 실행은 lease 아래 앱 자신의 데이터베이스에 기록되어 rollback이 apply의 변경을 되돌립니다.",
+        en: "Data migrations that preview, apply, verify and roll back. A migration refuses to run if the data changed after you reviewed it, only one runs at a time, and it works the same in development and in deployed containers.",
+        ko: "미리 보기, 적용, 확인, 되돌리기를 갖춘 데이터 마이그레이션. 검토한 뒤 데이터가 바뀌었으면 실행을 거절하고, 한 번에 하나만 돌며, 개발 환경과 배포된 컨테이너에서 똑같이 동작합니다.",
       },
       {
-        en: "POST /_akan/ops/migrate runs a migration over the ops channel, so a control plane reaches a host it has no shell on.",
-        ko: "POST /_akan/ops/migrate가 ops 채널로 마이그레이션을 실행하므로, 셸이 없는 호스트에도 컨트롤 플레인이 닿습니다.",
+        en: "Akan Cloud can start a migration on a server it has no shell access to.",
+        ko: "Akan Cloud가 셸로 접속할 수 없는 서버에서도 마이그레이션을 시작할 수 있습니다.",
       },
       {
-        en: "purge<Filter>() and purgeMany(query) delete rows for good, removed ones included, 1,000 per statement, for data past its retention such as logs. An empty query, such as {} or a filter whose conditions all fell through, is refused, as is one with q.search().",
-        ko: "purge<Filter>()와 purgeMany(query)가 삭제된 행까지 포함해 행을 영구 삭제합니다. 로그처럼 보존 기간이 지난 데이터용이며, 한 문장에 1,000행씩 지웁니다. {}나 조건이 모두 빠진 필터 같은 빈 쿼리는 거절하고, q.search()가 든 쿼리도 거절합니다.",
+        en: "Delete data past its retention, such as old logs, for good and in safe batches. A delete with no conditions is refused.",
+        ko: "오래된 로그처럼 보존 기간이 지난 데이터를 안전한 묶음 단위로 영구 삭제합니다. 조건 없는 삭제는 거절합니다.",
       },
       {
-        en: "Model.upsertById(data, { preserveTimestamps }) writes a record under its own id with no hook, and an insight field sums with accumulate: { $sum }.",
-        ko: "Model.upsertById(data, { preserveTimestamps })가 훅 없이 자기 id로 레코드를 쓰고, insight 필드는 accumulate: { $sum }으로 합계를 냅니다.",
-      },
-      {
-        en: "StorageAdaptor.resolveLocalPath(path, access?) gives a stored file's disk path, or null for a key it refuses, so an app no longer casts the storage role to reach its internals.",
-        ko: "StorageAdaptor.resolveLocalPath(path, access?)가 저장된 파일의 디스크 경로를 주고, 거부하는 키에는 null을 돌려줍니다. 앱이 스토리지 역할을 캐스팅해 내부에 손댈 필요가 없습니다.",
-      },
-    ],
-    fixed: [
-      {
-        en: "A conditional updateOne or removeOne is a compare-and-set on Postgres too: of two concurrent calls that both read the row as matching, only one applies, so a balance guarded by balance >= amount can no longer go negative.",
-        ko: "조건부 updateOne과 removeOne이 Postgres에서도 compare-and-set이 됩니다. 같은 행을 조건에 맞는다고 읽은 동시 호출 둘 중 하나만 적용되므로, balance >= amount로 지키던 잔액이 더는 음수가 되지 않습니다.",
-      },
-      {
-        en: "An index declared without a name is named by its table and fields, never its position, so adding or reordering declarations no longer renames and rebuilds the others. An index akan built that nothing declares any more is dropped, concurrently on Postgres; one made by hand is left alone, even under a name akan would give.",
-        ko: "name 없이 선언한 인덱스는 위치가 아니라 테이블과 필드로 이름이 붙으므로, 선언을 추가하거나 순서를 바꿔도 다른 인덱스의 이름이 바뀌어 다시 빌드되지 않습니다. akan이 만들었지만 더는 아무도 선언하지 않는 인덱스는 삭제되며(Postgres에서는 동시성 있게), 직접 만든 인덱스는 akan이 붙일 이름을 쓰고 있어도 건드리지 않습니다.",
-      },
-      {
-        en: "In the single database mode, a job whose process died on its last attempt fails and reaches onFailed, instead of running again past its attempts.",
-        ko: "single 데이터베이스 모드에서 마지막 시도 중에 프로세스가 죽은 job은 attempts를 넘겨 다시 실행되지 않고 실패로 처리되어 onFailed에 도달합니다.",
-      },
-      {
-        en: "schema.index(fields, { where }) builds a real partial index on SQLite and Postgres; with unique, where: { removedAt: null } lets a soft-removed row give its key back.",
-        ko: "schema.index(fields, { where })가 SQLite와 Postgres에서 실제 부분 인덱스를 만듭니다. unique와 함께 where: { removedAt: null }을 주면 소프트 삭제된 행이 키를 돌려줍니다.",
-      },
-      {
-        en: "A cascade removes each document once and skips a target another owner's cascade already removed, instead of failing halfway and leaving files behind.",
-        ko: "cascade가 문서마다 한 번만 삭제하고, 다른 소유자의 cascade가 이미 지운 대상은 건너뜁니다. 중간에 실패해 파일이 남는 일이 없습니다.",
-      },
-      {
-        en: "A model with its own kind field can be queried by it, on SQLite only a statement SQLite reports as a write waits for another request's transaction, and updateManyByQuery and removeManyByQuery report true counts on models with search fields.",
-        ko: "자기 kind 필드를 가진 모델도 그 필드로 조회할 수 있고, SQLite에서는 SQLite가 쓰기라고 판단한 문장만 다른 요청의 트랜잭션을 기다리며, 검색 필드가 있는 모델에서 updateManyByQuery와 removeManyByQuery가 실제 개수를 알려 줍니다.",
-      },
-      {
-        en: "A live slice's .live({ payload: 'id' }) reaches its rooms.",
-        ko: "라이브 슬라이스의 .live({ payload: 'id' })가 방에 제대로 전달됩니다.",
+        en: "Import records under their original ids and timestamps, and let summary fields add values up.",
+        ko: "레코드를 원래의 id와 시각 그대로 가져올 수 있고, 요약(insight) 필드가 값을 합산할 수 있습니다.",
       },
     ],
   },
   {
     id: "ui",
-    title: { en: "UI, forms and stores", ko: "UI, 폼, 스토어" },
+    title: { en: "UI and forms", ko: "UI와 폼" },
     href: "/references/ui/forms",
-    added: [
+    items: [
       {
-        en: "Modal, Dialog.Modal, Model.New and the model modals take presentation ('dialog', 'sheet' or 'auto', a full-screen sheet below md that a drag down dismisses) and placement ('center' or 'right').",
-        ko: "Modal, Dialog.Modal, Model.New와 모델 모달이 presentation('dialog', 'sheet', 그리고 md 미만에서 아래로 끌어 닫는 전체 화면 시트가 되는 'auto')과 placement('center', 'right')를 받습니다.",
+        en: "A modal can open as a full-screen sheet on phones that you swipe down to close, or slide in from the right as a side panel.",
+        ko: "모달이 휴대폰에서 아래로 쓸어내려 닫는 전체 화면 시트로 열리거나, 오른쪽에서 밀려 나오는 사이드 패널로 열릴 수 있습니다.",
       },
       {
-        en: "Generated upload<Field>On<Model> actions belong to the form that started them. <model>FormUploading holds the uploads in flight and keeps submit disabled, and formUploadOf(setter) lets any control upload through the form.",
-        ko: "생성된 upload<Field>On<Model> 액션이 업로드를 시작한 폼에 묶입니다. <model>FormUploading이 진행 중인 업로드를 담아 제출을 막고, formUploadOf(setter)로 어떤 컨트롤이든 폼을 통해 업로드할 수 있습니다.",
+        en: "Uploads belong to the form that started them, and the submit button waits until every upload is done.",
+        ko: "업로드가 그것을 시작한 폼에 묶이고, 모든 업로드가 끝날 때까지 제출 버튼이 기다립니다.",
       },
       {
-        en: "Load.Units refetches rows it seeded from a replayed navigation, and the generated invalidate<Model>() marks every slice of a model stale without a request.",
-        ko: "Load.Units가 재생된 내비게이션에서 받은 행을 다시 불러오고, 생성된 invalidate<Model>()은 요청 없이 모델의 모든 슬라이스를 stale로 표시합니다.",
+        en: "Mark every list of a model stale in one call, so each refreshes the next time it is shown.",
+        ko: "한 번의 호출로 모델의 모든 목록을 오래된 것으로 표시해, 다음에 보일 때 새로 불러오게 합니다.",
       },
       {
-        en: "Signal.Doc and Constant.Doc render from a server page, Signal.Doc.Explorer lists every mounted signal, and groupBy='lib' groups models and signals by the library that registered them.",
-        ko: "Signal.Doc과 Constant.Doc이 서버 페이지에서 렌더링되고, Signal.Doc.Explorer가 마운트된 모든 시그널을 나열하며, groupBy='lib'은 모델과 시그널을 등록한 라이브러리별로 묶습니다.",
+        en: "Layouts can follow the on-screen keyboard and the safe areas, with different spacing per screen size, and the bottom tab bar tells screen readers which tab is current.",
+        ko: "레이아웃이 화면 키보드와 안전 영역을 따르고 화면 크기마다 여백을 달리할 수 있으며, 하단 탭 바는 스크린 리더에 현재 탭을 알려 줍니다.",
       },
       {
-        en: "topInset and bottomInset take breakpoints, the frame publishes --akan-content-height and --akan-keyboard-inset, and useVisualViewportFrame reports the web keyboard. Layout.BottomTab renders a named nav, matches tabs by segment, and marks the current one aria-current.",
-        ko: "topInset과 bottomInset이 브레이크포인트를 받고, 프레임이 --akan-content-height와 --akan-keyboard-inset을 공개하며, useVisualViewportFrame이 웹 키보드를 알려 줍니다. Layout.BottomTab은 이름 붙은 nav를 렌더링하고 세그먼트 단위로 탭을 맞추며 현재 탭에 aria-current를 붙입니다.",
+        en: "Tooltips flip to the side with room, bottom sheets lock the page behind them, and the agent's launcher button can move or hide on small screens.",
+        ko: "툴팁이 공간이 있는 쪽으로 뒤집히고, 바텀 시트는 뒤의 페이지를 잠그며, 에이전트 런처 버튼은 위치를 바꾸거나 작은 화면에서 숨길 수 있습니다.",
       },
       {
-        en: "Tooltip draws on the overlay layer and flips to the side with room, and BottomSheet locks the page, pads for the safe area and opens above the frame. The agent launcher takes launcherPlacement and hideLauncherBelow.",
-        ko: "Tooltip이 오버레이 레이어에 그려지고 공간이 있는 쪽으로 뒤집히며, BottomSheet는 페이지를 잠그고 안전 영역만큼 여백을 두고 프레임 위에서 열립니다. 에이전트 런처는 launcherPlacement와 hideLauncherBelow를 받습니다.",
-      },
-    ],
-    fixed: [
-      {
-        en: "A modal stacks above every overlay on the page, a dropdown, select or nested modal opened inside one lands above its panel, toasts sit above modals, and the agent launcher sits under menus and modals.",
-        ko: "모달이 페이지의 모든 오버레이 위에 쌓이고, 모달 안에서 연 드롭다운·셀렉트·중첩 모달은 패널 위에 뜨며, 토스트는 모달보다 위에, 에이전트 런처는 메뉴와 모달 아래에 놓입니다.",
-      },
-      {
-        en: "Raw buttons inside akanjs/ui components declare type='button', so a password toggle, a list's add button or a copy button no longer submits an enclosing form.",
-        ko: "akanjs/ui 컴포넌트 안의 raw 버튼이 type='button'을 선언하므로, 비밀번호 표시 토글, 목록의 추가 버튼, 복사 버튼이 더는 바깥 폼을 제출하지 않습니다.",
-      },
-      {
-        en: "An open Load.Edit or Model.EditModal keeps what was typed when its page refreshes with the same seed, and Tab.Panel follows a change of its loading prop while hidden.",
-        ko: "열린 Load.Edit와 Model.EditModal은 같은 시드로 페이지가 새로고침돼도 입력한 내용을 유지하고, Tab.Panel은 숨겨진 동안에도 loading prop 변경을 따릅니다.",
-      },
-      {
-        en: "useDebounce keeps one timer per component, so a searchable Select searches once after typing stops, and a call still waiting at unmount runs then.",
-        ko: "useDebounce가 컴포넌트마다 타이머 하나만 두므로 검색 가능한 Select가 입력이 멈춘 뒤 한 번만 검색하고, 언마운트 때 대기 중인 호출은 그때 실행합니다.",
-      },
-      {
-        en: "A limit-0 live list keeps every row, Load.Units with loading={null} draws no reload overlay, and rows rendered with renderItem stay mounted across a live event.",
-        ko: "limit 0인 라이브 목록이 모든 행을 유지하고, loading={null}인 Load.Units는 다시 불러올 때 오버레이를 그리지 않으며, renderItem으로 그린 행은 라이브 이벤트에도 마운트를 유지합니다.",
-      },
-      {
-        en: "Model.LoadInit renders nothing. A list shown again from a CSR stack reloads its own query instead of keeping the rows of the page pushed over it, a live slice's room stays open until the last list showing it unmounts, and a slice loaded with { insight: false } skips the count on refetches until its next init.",
-        ko: "Model.LoadInit은 아무것도 그리지 않습니다. CSR 스택에서 다시 보이는 목록은 위에 쌓였던 페이지의 행을 두지 않고 자기 쿼리를 다시 불러오며, 라이브 슬라이스의 방은 그 슬라이스를 보여 주는 마지막 목록이 언마운트될 때까지 열려 있고, { insight: false }로 불러온 슬라이스는 다음 init 전까지 다시 불러와도 count를 세지 않습니다.",
-      },
-      {
-        en: "Select lists an enumOf class under its dictionary names, Model.ViewEditModal shows only the verbs the slice's guards open, Model.New opens under its own modal, and a store action for a verb the slice leaves closed fails with base.error.endpointClosed.",
-        ko: "Select가 enumOf 클래스를 딕셔너리 이름으로 나열하고, Model.ViewEditModal은 슬라이스 가드가 연 동작만 보여 주며, Model.New는 자기 모달 아래에서 열리고, 슬라이스가 닫아 둔 동작의 스토어 액션은 base.error.endpointClosed로 실패합니다.",
-      },
-      {
-        en: "An installed web app no longer rubber-bands its whole document, and an input smaller than 16px draws at 16px on a touch screen, where iOS would zoom into it.",
-        ko: "홈 화면에 설치한 웹 앱은 문서 전체가 튕기지 않고, 16px보다 작은 입력은 iOS가 확대하지 않도록 터치 화면에서 16px로 그립니다.",
-      },
-      {
-        en: "Link.Back is always a button a keyboard reaches, and Image and CsrImage no longer write placeholder and blurDataURL onto the img.",
-        ko: "Link.Back은 언제나 키보드로 닿는 버튼이고, Image와 CsrImage는 더 이상 img에 placeholder와 blurDataURL을 쓰지 않습니다.",
+        en: "Generated API reference pages render on the server and can be grouped by library.",
+        ko: "자동 생성되는 API 레퍼런스 페이지가 서버에서 렌더링되고, 라이브러리별로 묶을 수 있습니다.",
       },
     ],
   },
   {
     id: "native",
-    title: { en: "Native apps, desktop and OTA", ko: "네이티브 앱, 데스크톱, OTA" },
+    title: { en: "Native apps", ko: "네이티브 앱" },
     href: "/cheatsheet/mobile/setup",
-    added: [
+    items: [
       {
-        en: "Phone web bundle updates move to protocol v2: one signed envelope per native API, a key ring of one to three keys in updates.publicKeys, and key revocation that a device keeps for good. native.updates.revokedKeys keeps a revocation in every later release, and a new binary trusts none of the revoked keys.",
-        ko: "폰 웹 번들 업데이트가 프로토콜 v2로 바뀝니다. native API마다 서명된 envelope 하나, updates.publicKeys의 키 1~3개짜리 키 링, 그리고 기기가 영구히 기억하는 키 폐기입니다. native.updates.revokedKeys가 이후 모든 릴리즈에 폐기를 실어 보내고, 새 바이너리는 폐기된 키를 하나도 신뢰하지 않습니다.",
+        en: "Phone app updates are signed so no CDN can tamper with them, with up to three signing keys to rotate between and revocations every device remembers for good.",
+        ko: "폰 앱 업데이트를 CDN이 손댈 수 없도록 서명하고, 서명 키를 최대 세 개까지 두고 교체할 수 있으며, 키 폐기는 모든 기기가 영구히 기억합니다.",
       },
       {
-        en: "updates.report: { url } has a phone post what became of each release (downloaded, applied, confirmed, rolled back or failed), under a random install id and nothing about the user.",
-        ko: "updates.report: { url }을 주면 폰이 릴리즈마다 다운로드, 적용, 확인, 롤백, 실패 중 어떻게 됐는지 보냅니다. 무작위 설치 id만 쓰고 사용자에 관한 정보는 보내지 않습니다.",
+        en: "See how each release landed on devices (downloaded, applied, rolled back or failed) through a random install id and nothing about the user.",
+        ko: "릴리즈가 기기마다 다운로드, 적용, 롤백, 실패 중 어떻게 됐는지 볼 수 있습니다. 무작위 설치 id만 쓰고 사용자에 관한 정보는 모으지 않습니다.",
       },
       {
-        en: "akan push-update packs a phone update and uploads it to an Akan Cloud project, which signs and publishes it, and akan register-binary registers a store build; both upload straight to storage. akan pack-update records each pack in pack.json, and the same commit packs to the same bytes.",
-        ko: "akan push-update가 폰 업데이트를 묶어 Akan Cloud 프로젝트에 올리면 프로젝트가 서명해 배포하고, akan register-binary는 스토어 빌드를 등록합니다. 둘 다 스토리지로 바로 업로드합니다. akan pack-update는 묶음마다 pack.json을 남기고, 같은 커밋은 같은 바이트로 묶입니다.",
+        en: "Publish a phone update straight to Akan Cloud, which signs and ships it, and register store builds the same way. The same commit always packs to the same bytes, settings included.",
+        ko: "폰 업데이트를 Akan Cloud에 바로 올리면 서명해서 배포하고, 스토어 빌드도 같은 방식으로 등록합니다. 같은 커밋은 설정까지 포함해 언제나 같은 결과물로 묶입니다.",
       },
       {
-        en: "Every native build and pack records the AKAN_PUBLIC_* values its web bundle inlined, and --public-env <file> builds with exactly those values.",
-        ko: "모든 네이티브 빌드와 업데이트 묶음이 웹 번들에 인라인한 AKAN_PUBLIC_* 값을 기록하고, --public-env <file>은 정확히 그 값으로 빌드합니다.",
+        en: "Kiosk mode for desktop apps: pages cannot open print or file dialogs, downloads, share sheets or other programs.",
+        ko: "데스크톱 앱용 키오스크 모드. 페이지가 인쇄·파일 대화상자, 다운로드, 공유 시트, 다른 프로그램을 열 수 없습니다.",
       },
       {
-        en: "A desktop app built with desktop.recovery: 'reload', the setting of a screen nobody attends, keeps its pages in: no print or file dialog, share sheet, download, or link handed to another program.",
-        ko: "아무도 지켜보지 않는 화면용 설정인 desktop.recovery: 'reload'로 빌드한 데스크톱 앱은 페이지가 창 밖으로 나가지 못하게 합니다. 인쇄·파일 대화상자, 공유 시트, 다운로드, 다른 프로그램으로 넘기는 링크가 모두 막힙니다.",
+        en: "A desktop app's built-in server restarts itself, is watched by a health check, and can be built without your secrets. Devices can prove who they are with signed device tokens, and a module can run only on edge devices.",
+        ko: "데스크톱 앱에 내장된 서버가 스스로 재시작하고, 헬스 체크가 지켜보며, 시크릿 없이 빌드할 수 있습니다. 기기는 서명된 기기 토큰으로 자신을 증명하고, 모듈을 edge 기기에서만 켤 수도 있습니다.",
       },
       {
-        en: "The external-view plugin shows a third-party page first-party over a desktop window, with its own browser profile, an origin lock, evaluate, a trusted sendKey and capture. The window plugin adds placeOnDisplay, frameless windows, setMinSize and pointer hiding.",
-        ko: "external-view 플러그인이 서드파티 페이지를 데스크톱 창 위에 자기 화면처럼 띄웁니다. 전용 브라우저 프로필, 출처 잠금, evaluate, 신뢰된 sendKey, capture를 갖습니다. window 플러그인에는 placeOnDisplay, 프레임 없는 창, setMinSize, 포인터 숨기기가 추가됐습니다.",
+        en: "Show a third-party web page inside your desktop app as if it were your own, with its own browser profile, and place windows on a chosen display, frameless if you like.",
+        ko: "서드파티 웹 페이지를 전용 브라우저 프로필로 데스크톱 앱 안에 내 화면처럼 띄우고, 창을 원하는 디스플레이에 프레임 없이 배치할 수 있습니다.",
       },
       {
-        en: "A desktop app's carried server takes { env, restart, watchdog, profile, modules }: restart 'forever', a health-route watchdog, and an edge profile whose env file keeps secrets off the installed computers. serve(ref, { operationMode: ['edge'] }) mounts a module only in the modes it lists, and MachineToken signs Ed25519 device tokens that a server verifies into account.machine.",
-        ko: "데스크톱 앱이 싣는 서버가 { env, restart, watchdog, profile, modules }를 받습니다. restart 'forever', 헬스 라우트 watchdog, 그리고 설치된 컴퓨터에 시크릿을 두지 않는 edge 프로필 env 파일입니다. serve(ref, { operationMode: ['edge'] })는 나열한 모드에서만 모듈을 마운트하고, MachineToken은 서버가 account.machine으로 검증하는 Ed25519 기기 토큰을 서명합니다.",
+        en: "Windows paint their background before the page loads, so there is no white flash. Windows apps name your company as publisher, installers can bundle WebView2, installed apps can switch update channels, and internal builds can open developer tools.",
+        ko: "창이 페이지보다 먼저 배경색을 칠해 흰 화면 깜빡임이 없습니다. Windows 앱의 게시자로 회사 이름이 나오고, 설치 프로그램에 WebView2를 넣을 수 있으며, 설치된 앱은 업데이트 채널을 바꿀 수 있고, 내부용 빌드에서는 개발자 도구를 열 수 있습니다.",
       },
       {
-        en: "native.backgroundColor paints a window before its page does, desktop.publisher names a Windows app's publisher, desktop.webview2: 'standalone' embeds WebView2 in the setup, updates.setChannel({ channel }) moves an installed desktop app to another channel, and native.devtools opens the inspector of an internal release build.",
-        ko: "native.backgroundColor가 페이지보다 먼저 창을 칠하고, desktop.publisher가 Windows 앱의 게시자를 정하며, desktop.webview2: 'standalone'은 설치 프로그램에 WebView2를 넣고, updates.setChannel({ channel })은 설치된 데스크톱 앱을 다른 채널로 옮기며, native.devtools는 내부용 릴리즈 빌드의 인스펙터를 엽니다.",
-      },
-      {
-        en: "akan publish-update --arch arm64|x64 publishes a desktop release for another CPU into that CPU's feed, and --upload s3://<bucket>/<prefix> uploads the release with its manifests last.",
-        ko: "akan publish-update --arch arm64|x64가 다른 CPU용 데스크톱 릴리즈를 그 CPU의 피드에 게시하고, --upload s3://<bucket>/<prefix>는 릴리즈를 업로드하되 매니페스트를 마지막에 올립니다.",
-      },
-    ],
-    fixed: [
-      {
-        en: "A signed desktop app refuses an update that the same team or subject did not sign, and records it as failed instead of offering it again.",
-        ko: "서명된 데스크톱 앱은 같은 팀이나 주체가 서명하지 않은 업데이트를 거절하고, 다시 제안하지 않도록 실패로 기록합니다.",
-      },
-      {
-        en: "On a phone, a release on trial whose page hangs rolls back while the app runs, and iOS and Android no longer roll back a trial after a background launch or an activity recreate. An iOS app built with the iOS 26 SDK launches on iOS 18.5 again.",
-        ko: "폰에서 시험 중인 릴리즈의 페이지가 멈추면 앱이 실행 중일 때 롤백하고, iOS와 Android가 백그라운드 실행이나 액티비티 재생성 뒤에 시험 중인 릴리즈를 롤백하지 않습니다. iOS 26 SDK로 빌드한 iOS 앱이 iOS 18.5에서 다시 실행됩니다.",
-      },
-      {
-        en: "Windows setups and uninstalls survive a watchdog restarting the app, a silent setup shows no window over a kiosk, the single-instance check holds across SSH and desktop sessions, and the executable names the app as its company instead of Bun.",
-        ko: "Windows 설치와 제거가 watchdog의 앱 재시작에도 실패하지 않고, 조용한 설치는 키오스크 위에 창을 띄우지 않으며, 단일 인스턴스 검사가 SSH와 데스크톱 세션 사이에서도 유지되고, 실행 파일의 회사 이름이 Bun이 아니라 앱이 됩니다.",
-      },
-      {
-        en: "A window size or position past one million pixels is refused instead of placing the window off every display, and native plugin sources accept Bun 1.4.4's extglob patterns.",
-        ko: "백만 픽셀이 넘는 창 크기나 위치는 창을 모든 디스플레이 밖에 두는 대신 거절되고, 네이티브 플러그인 소스가 Bun 1.4.4의 extglob 패턴을 받습니다.",
+        en: "Publish desktop releases for both arm64 and x64, and upload them straight to S3.",
+        ko: "데스크톱 릴리즈를 arm64와 x64 모두로 게시하고 S3에 바로 올릴 수 있습니다.",
       },
     ],
   },
   {
     id: "cli",
-    title: { en: "CLI, build and workspace", ko: "CLI, 빌드, 워크스페이스" },
-    href: "/references/cli/pipeline",
-    added: [
+    title: { en: "CLI and deployment", ko: "CLI와 배포" },
+    href: "/cheatsheet/dev/pipeline",
+    items: [
       {
-        en: "pipeline in an app's akan.config.ts lists its stages: build, docker, deploy and ota, plus shell stages with when, env, secrets, timeout and retry. A workspace-root akan.config.ts (WorkspaceConfig) holds the stages around every app, and akan pipeline dry-run, validate or plan prints the plan Akan Cloud runs.",
-        ko: "앱 akan.config.ts의 pipeline이 build, docker, deploy, ota 단계와 when, env, secrets, timeout, retry를 갖는 셸 단계를 나열합니다. 워크스페이스 루트의 akan.config.ts(WorkspaceConfig)는 모든 앱을 둘러싼 단계를 담고, akan pipeline dry-run·validate·plan이 Akan Cloud가 실행할 계획을 출력합니다.",
+        en: "Declare your build pipeline in akan.config.ts, from build and test to Docker and deploy, with shell steps of your own, and preview locally what Akan Cloud will run.",
+        ko: "빌드와 테스트부터 Docker, 배포까지 빌드 파이프라인을 akan.config.ts에 선언하고 직접 만든 셸 단계를 넣으며, Akan Cloud가 실행할 내용을 로컬에서 미리 봅니다.",
       },
       {
-        en: "akan upload-secret, list-secrets and remove-secret manage write-only pipeline secrets per project and branch, and the root config's cloud.host names a self-hosted Akan Cloud for every command.",
-        ko: "akan upload-secret, list-secrets, remove-secret이 프로젝트·브랜치별 쓰기 전용 파이프라인 시크릿을 관리하고, 루트 설정의 cloud.host가 모든 명령에 자체 호스팅 Akan Cloud를 지정합니다.",
+        en: "Pipeline secrets are write-only, kept per project and branch, and never accepted as a command-line argument.",
+        ko: "파이프라인 시크릿은 쓰기 전용이고 프로젝트·브랜치별로 보관되며, 명령줄 인자로는 받지 않습니다.",
       },
       {
-        en: "akan typecheck takes a library and checks the target's tests and specs too, and a new lint rule, no-conditional-st-hook, reports an st hook a render can skip.",
-        ko: "akan typecheck이 라이브러리도 받고 대상의 테스트와 스펙까지 검사하며, 새 린트 규칙 no-conditional-st-hook이 렌더에서 건너뛸 수 있는 st 훅을 잡습니다.",
+        en: "akan typecheck covers libraries and your tests, and a new lint rule catches hooks a render can skip, a classic cause of production-only crashes.",
+        ko: "akan typecheck이 라이브러리와 테스트까지 검사하고, 새 린트 규칙이 프로덕션에서만 터지는 대표적 원인인, 렌더 중 건너뛸 수 있는 훅을 잡습니다.",
       },
       {
-        en: "akan subspace plan prints what a push would ship from the checkout alone, and AKAN_BUILD_METAFILE=1 akan build writes the bundler's metafile for each backend entry.",
-        ko: "akan subspace plan이 체크아웃만으로 push가 내보낼 내용을 출력하고, AKAN_BUILD_METAFILE=1 akan build는 백엔드 엔트리마다 번들러 metafile을 씁니다.",
+        en: "akan code, the built-in coding agent, compacts its conversation at a point you choose and can search the web when the workspace has a DeepSeek key.",
+        ko: "내장 코딩 에이전트 akan code가 원하는 시점에 대화를 압축하고, 워크스페이스에 DeepSeek 키가 있으면 웹을 검색합니다.",
       },
       {
-        en: "akan code compacts at a share of the context window you choose (/autocompact, --compact-at) and searches and reads the web through DeepSeek when the workspace has a DeepSeek key.",
-        ko: "akan code가 직접 고른 컨텍스트 창 비율에서 압축하고(/autocompact, --compact-at), 워크스페이스에 DeepSeek 키가 있으면 DeepSeek으로 웹을 검색하고 읽습니다.",
-      },
-      {
-        en: "akan agent install writes an AGENTS.md about 60% smaller, with routing in a new pageRule guideline, and the guidelines cover .guard() and .app().",
-        ko: "akan agent install이 약 60% 작아진 AGENTS.md를 쓰고, 라우팅은 새 pageRule 가이드라인으로 옮겼으며, 가이드라인이 .guard()와 .app()을 다룹니다.",
-      },
-    ],
-    fixed: [
-      {
-        en: "No command reads a prompt's answer from a piped or closed stdin: a missing argument fails at once and names what to pass.",
-        ko: "어떤 명령도 파이프로 들어오거나 닫힌 stdin을 프롬프트의 답으로 읽지 않습니다. 빠진 인자는 바로 실패하며 무엇을 넘겨야 하는지 알려 줍니다.",
-      },
-      {
-        en: "Builds are reproducible: generated barrels list modules in name order, and akan build bakes the AKAN_PUBLIC_REPO_NAME and AKAN_PUBLIC_SERVE_DOMAIN its image carries into its bundles, as it did AKAN_PUBLIC_ENV, whatever the shell exported.",
-        ko: "빌드가 재현됩니다. 생성된 barrel이 모듈을 이름순으로 나열하고, akan build는 셸이 무엇을 export했든 이미지가 가진 AKAN_PUBLIC_REPO_NAME과 AKAN_PUBLIC_SERVE_DOMAIN을 AKAN_PUBLIC_ENV처럼 번들에 넣습니다.",
-      },
-      {
-        en: "akan script, console, db-export and db-import run from the workspace root and open the same SQLite database as akan start.",
-        ko: "akan script, console, db-export, db-import가 워크스페이스 루트에서 실행되어 akan start와 같은 SQLite 데이터베이스를 엽니다.",
-      },
-      {
-        en: "Tailwind classes with nested brackets, such as has-[[aria-expanded=true]]:opacity-100, compile, and a CSR shell that draws @lexical/code-prism under lazy() no longer fails with Prism is not defined.",
-        ko: "has-[[aria-expanded=true]]:opacity-100처럼 대괄호가 중첩된 Tailwind 클래스가 컴파일되고, lazy() 아래에서 @lexical/code-prism을 그리는 CSR 셸이 Prism is not defined로 실패하지 않습니다.",
-      },
-      {
-        en: "The default image is oven/bun:1.4.4-slim instead of a floating tag, a failed typecheck or build prints its diagnostics once, and a child server's errors show in the akan start terminal.",
-        ko: "기본 이미지가 떠다니는 태그 대신 oven/bun:1.4.4-slim이 되고, 실패한 typecheck과 build는 진단을 한 번만 출력하며, 자식 서버의 에러가 akan start 터미널에 보입니다.",
-      },
-      {
-        en: "Scaffolds write files that pass biome check and hand fetch.* results to sections unawaited, the CLI runs in a workspace with no root .env, and generated files name paths with / on Windows.",
-        ko: "스캐폴드가 biome check를 통과하는 파일을 쓰고 fetch.* 결과를 await하지 않은 채 섹션에 넘기며, CLI가 루트 .env 없는 워크스페이스에서도 동작하고, 생성 파일이 Windows에서도 경로를 /로 씁니다.",
-      },
-      {
-        en: "akan install-library copies a library from the installed akanjs version's tag in one shallow clone, the version-mismatch warning goes to stderr so JSON output stays parseable, and a gateway with no log file, as in the image, prints its children's stderr.",
-        ko: "akan install-library가 설치된 akanjs 버전의 태그에서 얕은 clone 한 번으로 라이브러리를 복사하고, 버전 불일치 경고가 stderr로 나가 JSON 출력이 깨지지 않으며, 이미지처럼 로그 파일이 없는 gateway는 자식 프로세스의 stderr를 출력합니다.",
+        en: "The AGENTS.md the CLI writes is about 60% smaller, so coding agents spend less of their context on rules.",
+        ko: "CLI가 쓰는 AGENTS.md가 약 60% 작아져, 코딩 에이전트가 규칙에 쓰는 컨텍스트가 줄었습니다.",
       },
     ],
   },
 ] as const;
 
-const securityFixes = [
+const performanceStats = [
+  { value: "2.5×", label: { en: "faster list responses", ko: "더 빨라진 목록 응답" }, detail: "16 µs → 6.5 µs" },
+  { value: "1.5×", label: { en: "faster simple API calls", ko: "더 빨라진 단순 API 호출" }, detail: "3.0 µs → 2.0 µs" },
   {
-    en: "A server render reads only its own request. A boundary React resumed after the shell, such as a client component streamed in behind a Suspense fallback, could read another visitor's cookies, session token and basePath under concurrent traffic.",
-    ko: "서버 렌더가 자기 요청만 읽습니다. 셸 이후 React가 재개한 경계, 예를 들어 Suspense fallback 뒤에서 스트리밍된 클라이언트 컴포넌트가 동시 트래픽에서 다른 방문자의 쿠키, 세션 토큰, basePath를 읽을 수 있었습니다.",
+    value: "+15%",
+    label: { en: "more pages served per second", ko: "초당 처리하는 페이지 증가" },
+    detail: "26.7k → 30.8k req/s",
   },
   {
-    en: "A server-side call to another origin no longer carries the visitor's Authorization header, auth cookie or address; only a call to this server forwards them.",
-    ko: "다른 출처로 가는 서버 쪽 호출이 더는 방문자의 Authorization 헤더, 인증 쿠키, 주소를 싣지 않습니다. 이 서버로 가는 호출만 전달합니다.",
-  },
-  {
-    en: "router.push, router.replace and router.redirect refuse an absolute URL on another origin unless the call passes { external: true }, so a ?redirect= value handed to them unchecked can no longer send a visitor to another site.",
-    ko: "router.push, router.replace, router.redirect가 { external: true } 없이는 다른 출처의 절대 URL을 거부하므로, 검사 없이 넘긴 ?redirect= 값이 더는 방문자를 다른 사이트로 보내지 못합니다.",
-  },
-  {
-    en: "A request body can no longer set a field outside its input class, such as removedAt or a role, for a service that forwards it.",
-    ko: "요청 본문이 입력 클래스 밖의 필드, 예를 들어 removedAt이나 역할을 설정해 그대로 넘기는 서비스에 전달할 수 없습니다.",
-  },
-  {
-    en: "Every reader of Authorization (the account layer, /mcp, machine tokens, the ops channel and the log stream) uses one grammar: Bearer, then one token and nothing after it.",
-    ko: "Authorization을 읽는 모든 곳(계정 계층, /mcp, 머신 토큰, ops 채널, 로그 스트림)이 하나의 문법을 씁니다. Bearer 다음에 토큰 하나, 그 뒤에는 아무것도 없어야 합니다.",
-  },
-  {
-    en: "The logger masks more secret names, among them webhook, DSN, access, session and signing keys and connection strings.",
-    ko: "로거가 webhook, DSN, access·session·signing 키, 연결 문자열 등 더 많은 시크릿 이름을 가립니다.",
-  },
-  {
-    en: "The RSC navigation cache and a CSR app's kept pages are dropped when the account changes, and a redirect raised while rendering a document carries Cache-Control: no-store.",
-    ko: "계정이 바뀌면 RSC 내비게이션 캐시와 CSR 앱이 보관한 페이지를 버리고, 문서를 렌더링하다 발생한 redirect에는 Cache-Control: no-store가 붙습니다.",
-  },
-  {
-    en: "An edge server starts with /mcp off, and update downloads ask for */*, so a CDN that injects scripts into HTML cannot alter signed bytes.",
-    ko: "edge 서버는 /mcp를 끈 채 시작하고, 업데이트 다운로드는 */*를 요청하므로 HTML에 스크립트를 끼워 넣는 CDN이 서명된 바이트를 바꿀 수 없습니다.",
-  },
-  {
-    en: "A CodeQL pass made the framework's regexes linear, keeps data: and vbscript: links out of the agent's screen text, and escapes what native config and the dev shim inline.",
-    ko: "CodeQL 점검으로 프레임워크의 정규식을 선형 시간으로 바꾸고, 에이전트의 화면 텍스트에서 data:와 vbscript: 링크를 빼며, 네이티브 설정과 dev shim이 인라인하는 값을 이스케이프합니다.",
-  },
-] as const;
-
-const performanceRows = [
-  {
-    metric: { en: "Bare query, per call", ko: "단순 query, 호출당" },
-    before: "3.0 µs",
-    after: "2.0 µs",
-  },
-  {
-    metric: { en: "20-row list of a six-field scalar, per call", ko: "필드 6개 스칼라 20행 목록, 호출당" },
-    before: "16.0 µs",
-    after: "6.5 µs",
-  },
-  {
-    metric: { en: "Cached SSR page, requests per second", ko: "캐시된 SSR 페이지, 초당 요청 수" },
-    before: "26.7k",
-    after: "30.8k",
-  },
-  {
-    metric: { en: "Cached SSR page, p99", ko: "캐시된 SSR 페이지, p99" },
-    before: "3.7 ms",
-    after: "3.2 ms",
+    value: "−14%",
+    label: { en: "shorter slowest responses", ko: "가장 느린 응답 시간 단축" },
+    detail: "p99 3.7 ms → 3.2 ms",
   },
 ] as const;
 
 const performanceNotes = [
   {
-    en: "An endpoint's middleware chain is composed once and reused, and a call skips the cache, idempotency and rate-limit steps it does not use.",
-    ko: "엔드포인트의 미들웨어 체인을 한 번 조립해 재사용하고, 호출은 쓰지 않는 캐시·멱등성·rate limit 단계를 건너뜁니다.",
+    en: "Each endpoint is prepared once and reused, and a call skips caching, duplicate protection and rate limiting when it does not use them.",
+    ko: "엔드포인트를 한 번 준비해 재사용하고, 호출은 쓰지 않는 캐시·중복 방지·요청 제한 단계를 건너뜁니다.",
   },
   {
-    en: "A response resolves from a field plan built once per model class, in one synchronous pass when nothing below it is a relation, and a call's traceId is spelled only when something reads it.",
-    ko: "응답은 모델 클래스마다 한 번 만든 필드 계획으로 resolve되고, 아래에 relation이 없으면 동기 패스 한 번에 끝나며, 호출의 traceId는 무언가 읽을 때만 만듭니다.",
+    en: "Responses follow a plan made once per model, in a single pass when no related data is involved.",
+    ko: "응답은 모델마다 한 번 만든 계획을 따르고, 관련 데이터가 없으면 한 번에 끝납니다.",
   },
   {
-    en: "A websocket verifies a session's JWT signature once per connection, up to its expiry, instead of on every frame; revocation is still checked on every frame.",
-    ko: "웹소켓이 세션 JWT 서명을 프레임마다가 아니라 만료 전까지 연결당 한 번 검증합니다. 폐기 여부는 여전히 프레임마다 확인합니다.",
+    en: "A signed-in live connection checks its login once per connection instead of on every message; a sign-out still takes effect at once.",
+    ko: "로그인한 실시간 연결은 메시지마다가 아니라 연결당 한 번 로그인을 확인하고, 로그아웃은 여전히 즉시 반영됩니다.",
   },
   {
-    en: "/openapi.json is built once per process, and a server logs at debug how long each boot stage took.",
-    ko: "/openapi.json은 프로세스당 한 번 만들고, 서버는 부팅 단계별 소요 시간을 debug 로그로 남깁니다.",
+    en: "The API description is built once per process, and startup logs how long each step took.",
+    ko: "API 명세는 프로세스당 한 번만 만들고, 서버는 시작할 때 단계별 소요 시간을 기록합니다.",
+  },
+] as const;
+
+const fixAreas = [
+  {
+    id: "pages",
+    title: { en: "Pages and navigation", ko: "화면과 이동" },
+    items: [
+      {
+        en: "Missing pages and redirects return real 404 and 3xx status codes, even while a layout is still loading, so search engines and link previews read them right. An invalid value in the URL answers 404 instead of a blank page.",
+        ko: "없는 페이지와 리다이렉트가 레이아웃이 아직 로딩 중이어도 실제 404와 3xx로 응답하므로, 검색 엔진과 링크 미리보기가 제대로 읽습니다. URL의 잘못된 값은 빈 페이지 대신 404로 응답합니다.",
+      },
+      {
+        en: "A page whose head fails still renders instead of failing the whole request, and loading indicators on group layouts show up.",
+        ko: "head에서 오류가 난 페이지도 요청 전체를 실패시키지 않고 렌더링되며, 그룹 레이아웃의 로딩 표시가 제대로 나타납니다.",
+      },
+      {
+        en: "Back and forward return to where you left off, in Safari too, while images and streamed sections settle.",
+        ko: "뒤로·앞으로 이동하면 Safari에서도 떠났던 위치로 돌아가고, 이미지와 스트리밍 섹션이 자리를 잡는 동안에도 그 위치를 지킵니다.",
+      },
+      {
+        en: "In native app screens, not-found pages, redirects and stacked screens behave correctly.",
+        ko: "네이티브 앱 화면에서 없는 페이지, 리다이렉트, 쌓인 화면이 올바르게 동작합니다.",
+      },
+      {
+        en: "External links with unusual casing or no scheme (//host) open outside the app, unchanged.",
+        ko: "대소문자가 섞였거나 스킴이 없는(//host) 외부 링크도 앱 밖에서 그대로 열립니다.",
+      },
+      {
+        en: "A base path matches only whole segments, so /officers is no longer mistaken for /office, and Chrome finds the install manifest.",
+        ko: "base path가 세그먼트 단위로만 맞으므로 /officers가 더는 /office로 오인되지 않고, Chrome이 설치용 manifest를 찾습니다.",
+      },
+    ],
+  },
+  {
+    id: "server",
+    title: { en: "Server and API", ko: "서버와 API" },
+    items: [
+      {
+        en: "Bad or missing arguments answer 400 and missing records 404, instead of 500, and links to deleted records drop out of lists.",
+        ko: "잘못되거나 빠진 인자는 400, 없는 레코드는 404로 500 대신 응답하고, 삭제된 레코드로의 연결은 목록에서 빠집니다.",
+      },
+      {
+        en: "A cached answer is identical to a fresh one, dates and binary data included.",
+        ko: "캐시된 응답이 날짜와 바이너리 데이터까지 새 응답과 똑같습니다.",
+      },
+      {
+        en: "Live rooms no longer keep subscribers that already left, and server-to-server live connections recover within one heartbeat.",
+        ko: "실시간 방에 이미 떠난 구독자가 남지 않고, 서버 사이의 실시간 연결은 하트비트 한 번 안에 회복합니다.",
+      },
+      {
+        en: "Errors from a proxy in between show as readable messages, a 'retry after 0 seconds' means now, and a cloned client keeps its timeout.",
+        ko: "중간 프록시의 에러가 읽을 수 있는 메시지로 보이고, '0초 뒤 재시도'는 즉시로 읽으며, 복제한 클라이언트가 타임아웃을 유지합니다.",
+      },
+      {
+        en: "Turning a module off also turns off the modules that depend on it instead of erroring, memory limits inside containers are read correctly, and a crashed replica is restarted reliably.",
+        ko: "모듈을 끄면 그에 기대는 모듈도 에러 없이 함께 꺼지고, 컨테이너 안의 메모리 한도를 올바르게 읽으며, 죽은 레플리카를 확실히 다시 띄웁니다.",
+      },
+      {
+        en: "Type fixes: in-memory values keep their class, and an endpoint that returns anything is typed unknown on the client.",
+        ko: "타입 수정. 메모리에 둔 값이 자기 클래스를 유지하고, 무엇이든 돌려주는 엔드포인트는 클라이언트에서 unknown 타입이 됩니다.",
+      },
+    ],
+  },
+  {
+    id: "data",
+    title: { en: "Data", ko: "데이터" },
+    items: [
+      {
+        en: "Conditional updates are atomic on Postgres: two simultaneous withdrawals can no longer both pass the same balance check.",
+        ko: "Postgres에서 조건부 업데이트가 원자적으로 동작합니다. 동시에 들어온 두 출금이 같은 잔액 검사를 함께 통과할 수 없습니다.",
+      },
+      {
+        en: "Index names stay stable, so adding one no longer rebuilds the rest. Indexes Akan created and no longer needs are removed; ones you made by hand are left alone.",
+        ko: "인덱스 이름이 바뀌지 않으므로 하나를 추가해도 나머지를 다시 만들지 않습니다. akan이 만들었지만 더는 필요 없는 인덱스는 지우고, 직접 만든 인덱스는 건드리지 않습니다.",
+      },
+      {
+        en: "Partial indexes are real on SQLite and Postgres, so a deleted record can give its unique value back, such as an email address.",
+        ko: "SQLite와 Postgres에서 부분 인덱스가 실제로 만들어지므로, 삭제된 레코드가 이메일 주소 같은 고유 값을 돌려줄 수 있습니다.",
+      },
+      {
+        en: "A queued job that crashed on its last attempt is marked failed instead of running again.",
+        ko: "마지막 시도에서 죽은 작업은 다시 실행되지 않고 실패로 처리됩니다.",
+      },
+      {
+        en: "Cascading deletes finish cleanly even when two owners share a target, with no files left behind.",
+        ko: "두 소유자가 같은 대상을 가리켜도 연쇄 삭제가 깔끔하게 끝나고 파일이 남지 않습니다.",
+      },
+      {
+        en: "Filtering by a model's own kind field works, counts on searchable models are accurate, SQLite waits only for real writes, and live lists that send only ids update.",
+        ko: "모델 자신의 kind 필드로 필터링할 수 있고, 검색 필드가 있는 모델의 개수가 정확하며, SQLite는 실제 쓰기만 기다리고, id만 보내는 실시간 목록도 갱신됩니다.",
+      },
+    ],
+  },
+  {
+    id: "ui",
+    title: { en: "UI and forms", ko: "UI와 폼" },
+    items: [
+      {
+        en: "Modals stack above everything else, dropdowns inside them open on top, toasts sit above modals, and the agent's launcher sits under menus.",
+        ko: "모달이 모든 것 위에 쌓이고, 모달 안의 드롭다운은 그 위에 열리며, 토스트는 모달보다 위, 에이전트 런처는 메뉴 아래에 놓입니다.",
+      },
+      {
+        en: "Buttons inside built-in components, such as a password toggle or a copy button, no longer submit the surrounding form.",
+        ko: "비밀번호 보기나 복사 버튼처럼 기본 컴포넌트 안의 버튼이 더는 바깥 폼을 제출하지 않습니다.",
+      },
+      {
+        en: "An open edit form keeps what you typed when the page refreshes, and a searchable select searches once after you stop typing.",
+        ko: "열린 편집 폼은 페이지가 새로고침돼도 입력한 내용을 지키고, 검색 가능한 셀렉트는 입력을 멈춘 뒤 한 번만 검색합니다.",
+      },
+      {
+        en: "Live lists keep all their rows and stay put through updates, and a list shown again after going back in a native app reloads its own data.",
+        ko: "실시간 목록이 모든 행을 유지하고 업데이트에도 흔들리지 않으며, 네이티브 앱에서 뒤로 가서 다시 보이는 목록은 자기 데이터를 새로 불러옵니다.",
+      },
+      {
+        en: "Selects show options by their translated names, and edit modals show only the actions you are allowed to take.",
+        ko: "셀렉트가 옵션을 번역된 이름으로 보여 주고, 편집 모달은 허용된 동작만 보여 줍니다.",
+      },
+      {
+        en: "Installed web apps stop bouncing, small inputs no longer make iOS zoom in, and the back link is a real button a keyboard can reach.",
+        ko: "홈 화면에 설치한 웹 앱이 출렁이지 않고, 작은 입력 칸이 iOS 확대를 일으키지 않으며, 뒤로 가기 링크는 키보드로 닿는 진짜 버튼입니다.",
+      },
+      {
+        en: "In the agent chat on phones, picking from the @ and / menus keeps the keyboard up, and mentions with brackets in their title work.",
+        ko: "휴대폰의 에이전트 채팅에서 @와 / 메뉴를 골라도 키보드가 내려가지 않고, 제목에 대괄호가 든 멘션도 동작합니다.",
+      },
+    ],
+  },
+  {
+    id: "native",
+    title: { en: "Native apps", ko: "네이티브 앱" },
+    items: [
+      {
+        en: "A signed desktop app refuses updates signed by someone else, and stops offering them.",
+        ko: "서명된 데스크톱 앱이 다른 사람이 서명한 업데이트를 거절하고, 다시 제안하지 않습니다.",
+      },
+      {
+        en: "A phone release that freezes rolls back while the app runs, background launches no longer cause false rollbacks, and apps built with the iOS 26 SDK run on iOS 18.5 again.",
+        ko: "폰에서 멈춘 릴리즈는 앱이 실행 중일 때 롤백하고, 백그라운드 실행이 엉뚱한 롤백을 일으키지 않으며, iOS 26 SDK로 빌드한 앱이 iOS 18.5에서 다시 실행됩니다.",
+      },
+      {
+        en: "Windows installs and uninstalls survive automatic restarts, a silent install shows no window over a kiosk, only one instance runs across sessions, and the app's own name appears on its executable.",
+        ko: "Windows 설치와 제거가 자동 재시작에도 실패하지 않고, 조용한 설치는 키오스크 위에 창을 띄우지 않으며, 세션이 달라도 하나만 실행되고, 실행 파일에 앱 이름이 표시됩니다.",
+      },
+      {
+        en: "A window can no longer be placed off every display.",
+        ko: "창이 모든 디스플레이 밖에 놓이는 일이 없어졌습니다.",
+      },
+    ],
+  },
+  {
+    id: "cli",
+    title: { en: "CLI and build", ko: "CLI와 빌드" },
+    items: [
+      {
+        en: "No command waits for keyboard input in CI: a missing argument fails right away and says what to pass.",
+        ko: "어떤 명령도 CI에서 키보드 입력을 기다리지 않습니다. 빠진 인자는 바로 실패하며 무엇을 넘길지 알려 줍니다.",
+      },
+      {
+        en: "Builds are reproducible, and the default Docker image is pinned to Bun 1.4.4 instead of a moving tag.",
+        ko: "빌드가 재현 가능해졌고, 기본 Docker 이미지가 움직이는 태그 대신 Bun 1.4.4로 고정됩니다.",
+      },
+      {
+        en: "Script, console and database import and export commands run from the workspace root against the same database as akan start.",
+        ko: "스크립트, 콘솔, 데이터베이스 가져오기·내보내기 명령이 워크스페이스 루트에서 akan start와 같은 데이터베이스로 동작합니다.",
+      },
+      {
+        en: "Tailwind classes with nested brackets compile, and code highlighting inside a lazily loaded editor works in app bundles.",
+        ko: "대괄호가 중첩된 Tailwind 클래스가 컴파일되고, 지연 로딩한 에디터의 코드 하이라이팅이 앱 번들에서도 동작합니다.",
+      },
+      {
+        en: "Failed builds print their errors once, and a child server's errors show in the akan start terminal.",
+        ko: "실패한 빌드는 에러를 한 번만 출력하고, 자식 서버의 에러가 akan start 터미널에 보입니다.",
+      },
+      {
+        en: "Generated files pass lint, the CLI runs without a root .env, generated paths use / on Windows, installing a library is faster, and warnings no longer break JSON output.",
+        ko: "생성된 파일이 린트를 통과하고, CLI가 루트 .env 없이도 동작하며, Windows에서도 생성 경로에 /를 쓰고, 라이브러리 설치가 빨라졌으며, 경고가 JSON 출력을 깨지 않습니다.",
+      },
+    ],
   },
 ] as const;
 
 const upgradeGroups = [
   {
-    title: { en: "Server and the wire", ko: "서버와 통신" },
+    title: { en: "Every app", ko: "모든 앱" },
+    desc: { en: "Check these whatever your app does.", ko: "앱이 무엇을 하든 확인하세요." },
     notes: [
       {
-        en: "A body the published schema refuses (a numeric string for an Int, an { id } object for a relation, a missing required field) now answers 400, and a service no longer sees a key its input does not declare: declare the field on the input.",
-        ko: "공개된 스키마가 거부하는 본문(Int 자리의 숫자 문자열, relation 자리의 { id } 객체, 빠진 필수 필드)은 이제 400으로 응답하고, 서비스는 입력에 선언되지 않은 키를 받지 못합니다. 필요한 필드는 입력에 선언합니다.",
+        en: "Requests are checked strictly now. A client that sends a number as text, an { id } object where an id belongs, or leaves out a required field gets 400. If your service read a field its input does not declare, declare it.",
+        ko: "요청을 이제 엄격하게 검사합니다. 숫자를 문자열로 보내거나, id 자리에 { id } 객체를 보내거나, 필수 필드를 빠뜨린 클라이언트는 400을 받습니다. 서비스가 입력에 선언되지 않은 필드를 읽고 있었다면 선언하세요.",
         href: "/cheatsheet/interface/endpoint",
       },
       {
-        en: "A malformed argument now answers 400 base.error.invalidArgument and a missing one 400 base.error.requiredArgument, where both were a 500: update a test or client that expected 500.",
-        ko: "형식이 틀린 인자는 이제 400 base.error.invalidArgument로, 빠진 인자는 400 base.error.requiredArgument로 응답합니다. 둘 다 500이었으므로 500을 기대하던 테스트나 클라이언트를 고칩니다.",
+        en: "Bad or missing arguments answer 400 instead of 500: update tests or clients that expected 500.",
+        ko: "잘못되거나 빠진 인자는 500 대신 400으로 응답합니다. 500을 기대하던 테스트나 클라이언트를 고치세요.",
         href: "/cheatsheet/observability/error",
       },
       {
-        en: "A server-side clone toward another origin sends no visitor session: give it the token it should send with fetch.clone({ origin, jwt }). A clone of such a clone opens no websocket unless connect: true, and client and server deploy together, since multipart arguments now travel as JSON.",
-        ko: "다른 출처를 향한 서버 쪽 clone은 방문자 세션을 보내지 않습니다. 보낼 토큰은 fetch.clone({ origin, jwt })로 넘깁니다. 그런 clone의 clone은 connect: true 없이 웹소켓을 열지 않고, multipart 인자가 이제 JSON으로 오가므로 클라이언트와 서버를 함께 배포합니다.",
-        href: "/cheatsheet/interface/endpoint",
+        en: "akan typecheck checks your tests too (--tests false restores the old scope), and lint flags hooks a render can skip.",
+        ko: "akan typecheck이 테스트까지 검사하고(예전 범위는 --tests false), 린트는 렌더 중 건너뛸 수 있는 훅을 잡습니다.",
+        href: "/conventions/workspace/lint",
       },
       {
-        en: "An Authorization header with anything but Bearer and one token reads as no credential, an AKAN_LOG_STREAM_TOKEN holding whitespace leaves /_akan/app/logs off, and pushRequestFallback is gone from akanjs/fetch: a read outside every request sees none, so run such code inside requestStorage.run(request, ...).",
-        ko: "Bearer와 토큰 하나가 아닌 Authorization 헤더는 자격 증명이 없는 것으로 읽히고, 공백이 든 AKAN_LOG_STREAM_TOKEN은 /_akan/app/logs를 끈 채로 두며, akanjs/fetch에서 pushRequestFallback이 빠졌습니다. 어떤 요청 바깥에서 읽으면 요청이 없으므로 그런 코드는 requestStorage.run(request, ...) 안에서 실행합니다.",
-        href: "/docs/core/runtime",
-      },
-      {
-        en: "A memory() value of a model class is an instance, so copy it with new cnst.X().set(value), never a spread, and SignalContext.loadNested takes { arrDepth } only.",
-        ko: "모델 클래스로 선언한 memory() 값은 인스턴스이므로 스프레드가 아니라 new cnst.X().set(value)로 복사하고, SignalContext.loadNested는 { arrDepth }만 받습니다.",
-        href: "/cheatsheet/performance/caching",
-      },
-      {
-        en: "A module that relates to a module you disable is left out as well, a { cache } TTL is capped at one day and answers cached before the upgrade are missed, and LibsqlDatabase is removed: use SqliteDatabase for a local file or the cluster mode for a shared server.",
-        ko: "비활성으로 둔 모듈과 relation이 있는 모듈도 함께 빠지고, { cache } TTL은 최대 하루이며 업그레이드 전에 캐시된 응답은 적중하지 않고, LibsqlDatabase가 제거됐습니다. 로컬 파일은 SqliteDatabase를, 공유 서버는 cluster 모드를 씁니다.",
+        en: "Quote any .env value that contains #: an unquoted value now ends at the #, the way Bun reads it.",
+        ko: "#이 들어간 .env 값은 따옴표로 감싸세요. 따옴표 없는 값은 이제 Bun처럼 # 앞에서 끝납니다.",
         href: "/docs/core/config",
       },
       {
-        en: "An index that declared a where is rebuilt once on the next boot as a real partial index. A where no index can hold (q.search(), or a member test on an array field) stops the boot, and so do two different indexes given the same name.",
-        ko: "where를 선언했던 인덱스는 다음 부팅 때 실제 부분 인덱스로 한 번 다시 빌드됩니다. 인덱스가 담을 수 없는 where(q.search(), 배열 필드의 원소 검사)와 같은 name을 받은 서로 다른 두 인덱스는 부팅을 멈춥니다.",
-        href: "/cheatsheet/general/schema",
+        en: "A CI step that answered a prompt through stdin now fails fast: pass the argument on the command line.",
+        ko: "stdin으로 프롬프트에 답하던 CI 단계는 이제 바로 실패합니다. 인자를 명령줄로 넘기세요.",
+        href: "/references/cli/workspace",
+      },
+    ],
+  },
+  {
+    title: { en: "If your server calls other servers", ko: "다른 서버를 호출한다면" },
+    notes: [
+      {
+        en: "A server-side call to another origin no longer sends the visitor's login. Pass the token it should send with fetch.clone({ origin, jwt }), and deploy client and server together.",
+        ko: "다른 출처로 가는 서버 쪽 호출은 더는 방문자의 로그인 정보를 보내지 않습니다. 보낼 토큰은 fetch.clone({ origin, jwt })로 직접 넘기고, 클라이언트와 서버를 함께 배포하세요.",
+        href: "/cheatsheet/interface/endpoint",
       },
       {
-        en: "In the single database mode, a queued job whose process dies on its last attempt is failed and handed to onFailed instead of running again: a job left at the default attempts: 1 needs attempts: 2 to keep that retry.",
-        ko: "single 데이터베이스 모드에서 마지막 시도 중에 프로세스가 죽은 job은 다시 실행되지 않고 실패로 처리되어 onFailed로 넘어갑니다. 기본값 attempts: 1로 둔 job이 그 재시도를 유지하려면 attempts: 2를 줍니다.",
-        href: "/cheatsheet/performance/queue",
+        en: "A login header other than 'Bearer <token>' counts as no login.",
+        ko: "'Bearer <토큰>' 형태가 아닌 로그인 헤더는 로그인하지 않은 것으로 봅니다.",
+        href: "/docs/core/runtime",
+      },
+    ],
+  },
+  {
+    title: { en: "Pages and UI", ko: "페이지와 UI" },
+    notes: [
+      {
+        en: "router.push, replace and redirect to another site need { external: true }. A Link to another site is unchanged.",
+        ko: "다른 사이트로 가는 router.push, replace, redirect에는 { external: true }가 필요합니다. 다른 사이트로 가는 Link는 그대로입니다.",
+        href: "/references/akanjs/client",
       },
       {
-        en: "An edge server serves /mcp only with AKAN_MCP=true or option.setMcp(true), and a log search on a newly masked key sees [redacted].",
-        ko: "edge 서버는 AKAN_MCP=true나 option.setMcp(true)일 때만 /mcp를 제공하고, 새로 가려진 키의 값을 찾던 로그 검색에는 [redacted]가 보입니다.",
+        en: "A page no longer inherits its layout's canonical link or og:url: declare them in each page's own head.",
+        ko: "페이지가 레이아웃의 canonical 링크와 og:url을 더는 물려받지 않습니다. 페이지마다 자기 head에 선언하세요.",
+        href: "/docs/core/routing",
+      },
+      {
+        en: "Modals now sit above other overlays. An element that used a z-index between 10 and 120 to sit above a modal now sits under it, and a custom agent launcher must apply its new style prop.",
+        ko: "모달이 이제 다른 오버레이보다 위에 놓입니다. 10~120 사이 z-index로 모달 위에 있던 요소는 이제 모달 아래에 놓이고, 직접 만든 에이전트 런처는 새 style prop을 적용해야 합니다.",
+        href: "/references/ui/customize",
+      },
+      {
+        en: "A Link's active state matches whole path segments, and / is active only on the home page.",
+        ko: "Link의 활성 상태는 경로 세그먼트 단위로 맞고, /는 홈 화면에서만 활성입니다.",
+        href: "/references/ui/overlays",
+      },
+      {
+        en: "Constant.Doc given an empty list now shows nothing; leave the prop out to show every model.",
+        ko: "Constant.Doc에 빈 목록을 주면 이제 아무것도 보이지 않습니다. 모든 모델을 보이려면 prop을 빼세요.",
+        href: "/cheatsheet/dev/docs",
+      },
+    ],
+  },
+  {
+    title: { en: "MCP and agents", ko: "MCP와 에이전트" },
+    notes: [
+      {
+        en: "Pages with .prompt() also appear as tools. In an app that serves its CSR bundle, AI clients that support MCP Apps can call the read endpoints a screen needs, under their guards, and an app with an .app() page uses the older MCP protocol revisions unless you set option.setMcp({ modern: true }). option.setMcp({ apps: false }) turns all of this off.",
+        ko: ".prompt() 페이지가 도구 목록에도 나옵니다. CSR 번들을 제공하는 앱에서는 MCP Apps를 지원하는 AI 클라이언트가 화면에 필요한 조회 엔드포인트를 가드 아래에서 호출할 수 있고, .app() 페이지가 있는 앱은 option.setMcp({ modern: true })를 주지 않는 한 이전 MCP 프로토콜 리비전을 씁니다. option.setMcp({ apps: false })를 주면 모두 꺼집니다.",
+        href: "/cheatsheet/interface/mcp",
+      },
+      {
+        en: "The agent's image viewer is now one of its default tools; list the built-ins you want to leave it out.",
+        ko: "에이전트의 이미지 보기 도구가 기본 도구에 들어갑니다. 빼려면 원하는 기본 도구를 나열하세요.",
+        href: "/references/ui/agent",
+      },
+      {
+        en: "A server running on an edge device serves /mcp only with AKAN_MCP=true or option.setMcp(true).",
+        ko: "edge 기기에서 도는 서버는 AKAN_MCP=true나 option.setMcp(true)일 때만 /mcp를 제공합니다.",
         href: "/cheatsheet/general/edge",
       },
     ],
   },
   {
-    title: { en: "Pages, UI and MCP", ko: "페이지, UI, MCP" },
+    title: { en: "Data and server", ko: "데이터와 서버" },
     notes: [
       {
-        en: "Every .prompt() page is now also listed in tools/list, as a tool with readOnlyHint: false, except on a read-only deployment. An app that serves its CSR bundle lets a client that declares MCP Apps support call its mcp: false endpoints and light<Model> reads under their guards, which 3.0.2 refused over MCP, and while it has an .app() page it speaks only the legacy MCP revisions unless option.setMcp({ modern: true }) or AKAN_MCP_MODERN=true. option.setMcp({ apps: false }) or AKAN_MCP_APPS=false undoes all three.",
-        ko: "모든 .prompt() 페이지가 이제 tools/list에도 readOnlyHint: false인 도구로 나열됩니다. 읽기 전용 배포에서는 빠집니다. CSR 번들을 제공하는 앱에서는 MCP Apps 지원을 선언한 클라이언트가 mcp: false 엔드포인트와 light<Model> 조회를 가드 아래에서 호출할 수 있습니다. 3.0.2는 MCP에서 이를 거절했습니다. 그런 앱에 .app() 페이지가 있으면 option.setMcp({ modern: true })나 AKAN_MCP_MODERN=true가 아닌 한 레거시 MCP 리비전만 사용합니다. option.setMcp({ apps: false })나 AKAN_MCP_APPS=false를 주면 세 가지 모두 되돌립니다.",
-        href: "/cheatsheet/interface/mcp",
+        en: "Cache lifetimes are capped at one day, and answers cached before the upgrade are fetched fresh once.",
+        ko: "캐시 수명은 최대 하루이고, 업그레이드 전에 캐시된 응답은 한 번 새로 불러옵니다.",
+        href: "/cheatsheet/performance/caching",
       },
       {
-        en: "An agent's call whose declaration changed on screen after it arrived is refused, and viewImage joins the default built-ins: list the built-ins you want to leave it out.",
-        ko: "도착한 뒤 화면에서 선언이 바뀐 에이전트 호출은 거절되고, viewImage가 기본 도구에 들어갑니다. 빼려면 원하는 기본 도구를 나열합니다.",
-        href: "/references/ui/agent",
+        en: "LibsqlDatabase is removed: use SqliteDatabase for a local file, or cluster mode for a shared server.",
+        ko: "LibsqlDatabase가 제거됐습니다. 로컬 파일은 SqliteDatabase를, 공유 서버는 cluster 모드를 쓰세요.",
+        href: "/docs/core/config",
       },
       {
-        en: "A page no longer inherits a canonical link or og:url from a layout, so declare them in the page's own .head(); a page can drop manifest, icon and theme tags it restated from its root.",
-        ko: "페이지가 레이아웃의 canonical 링크와 og:url을 더는 물려받지 않으므로 페이지 자신의 .head()에 선언합니다. 루트를 되풀이하던 manifest, icon, theme 태그는 지워도 됩니다.",
-        href: "/docs/core/routing",
+        en: "Indexes that declared a where are rebuilt once, as real partial indexes, on the next boot. A where no index can hold, or two different indexes with the same name, stops the boot.",
+        ko: "where를 선언한 인덱스는 다음 부팅 때 실제 부분 인덱스로 한 번 다시 만들어집니다. 인덱스가 담을 수 없는 where나, 이름이 같은 서로 다른 두 인덱스는 부팅을 멈춥니다.",
+        href: "/cheatsheet/general/schema",
       },
       {
-        en: "A router.push, replace or redirect to an absolute URL on another origin needs { external: true }. Without it, push and replace stay on the page and reject router.navigation(), and redirect goes to the index path; a Link to another site is unchanged.",
-        ko: "다른 출처의 절대 URL로 가는 router.push, replace, redirect에는 { external: true }가 필요합니다. 없으면 push와 replace는 페이지에 머물고 router.navigation()이 reject되며, redirect는 index 경로로 갑니다. 다른 사이트로 가는 Link는 그대로입니다.",
-        href: "/references/akanjs/client",
+        en: "In single database mode, a job whose process dies on its last attempt now fails instead of running again: use attempts: 2 to keep that retry.",
+        ko: "single 데이터베이스 모드에서 마지막 시도 중에 프로세스가 죽은 작업은 다시 실행되지 않고 실패합니다. 그 재시도가 필요하면 attempts: 2를 주세요.",
+        href: "/cheatsheet/performance/queue",
       },
       {
-        en: "Link's prefix match is by path segment and / matches only itself, ServerPortal is gone, and Link.Back renders an inline-block button with type='button' instead of a div.",
-        ko: "Link의 접두사 판정은 경로 세그먼트 단위이고 /는 자기 자신만 맞습니다. ServerPortal이 제거됐고, Link.Back은 div 대신 type='button'인 inline-block 버튼을 렌더링합니다.",
-        href: "/references/ui/overlays",
+        en: "A memory() value of a model class is now an instance: copy it with new cnst.X().set(value), never a spread.",
+        ko: "모델 클래스로 선언한 memory() 값은 이제 인스턴스입니다. 스프레드가 아니라 new cnst.X().set(value)로 복사하세요.",
+        href: "/cheatsheet/performance/caching",
       },
       {
-        en: "Modals move from z-index 10 to 120, toasts from 100 to 140 and the agent launcher from 150 to 80: an element that relied on a z-index between 10 and 120 to sit above a modal now stays under it. An AgentLauncher override must apply its new style prop, and Tooltip's bubble is not in the DOM until it opens.",
-        ko: "모달의 z-index가 10에서 120으로, 토스트가 100에서 140으로, 에이전트 런처가 150에서 80으로 바뀝니다. 10~120 사이 z-index로 모달 위에 있던 요소는 이제 모달 아래에 남습니다. AgentLauncher override는 새 style prop을 루트에 적용해야 하며, Tooltip 말풍선은 열릴 때까지 DOM에 없습니다.",
-        href: "/references/ui/customize",
-      },
-      {
-        en: "A page reached through the navigation cache issues one list request per Load.Units whose store held other query arguments; pass loading={null} to hide the reload overlay.",
-        ko: "내비게이션 캐시로 도착한 페이지는 스토어가 다른 쿼리 인자를 갖고 있던 Load.Units마다 목록 요청을 한 번 보냅니다. 다시 불러올 때의 오버레이는 loading={null}로 숨깁니다.",
-        href: "/cheatsheet/performance/realtime",
-      },
-      {
-        en: "Constant.Doc's empty list now means none: leave the prop out to show every model.",
-        ko: "Constant.Doc에 빈 목록을 주면 이제 아무것도 보이지 않습니다. 모든 모델을 보이려면 prop을 뺍니다.",
-        href: "/cheatsheet/dev/docs",
+        en: "Turning a module off also leaves out the modules that relate to it, and log searches for a newly masked key see [redacted].",
+        ko: "모듈을 끄면 그와 연결된 모듈도 함께 빠지고, 새로 가려진 키를 찾던 로그 검색에는 [redacted]가 보입니다.",
+        href: "/cheatsheet/observability/logging",
       },
     ],
   },
@@ -632,77 +647,70 @@ const upgradeGroups = [
     title: { en: "Native apps", ko: "네이티브 앱" },
     notes: [
       {
-        en: "Signing is opt-in: add --sign true to akan build-desktop and akan publish-update, and --notarize true for macOS. A signed installed app refuses an unsigned or differently signed release, so build each release the way the installed app was signed.",
-        ko: "서명은 이제 직접 켭니다. akan build-desktop과 akan publish-update에 --sign true를, macOS는 --notarize true까지 줍니다. 서명된 설치 앱은 서명이 없거나 다른 릴리즈를 거절하므로, 릴리즈는 설치된 앱과 같은 방식으로 서명합니다.",
+        en: "Desktop signing is opt-in: add --sign true to akan build-desktop and akan publish-update, plus --notarize true on macOS. Sign each release the same way as the installed app, which refuses anything else.",
+        ko: "데스크톱 서명은 이제 직접 켭니다. akan build-desktop과 akan publish-update에 --sign true를, macOS는 --notarize true까지 주세요. 설치된 앱은 다르게 서명된 릴리즈를 거절하므로 같은 방식으로 서명합니다.",
         href: "/cheatsheet/mobile/desktop-release",
       },
       {
-        en: "No phone binary that shipped with updates reads the v2 layout: rebuild the binary before publishing, and point a signer at the new path.",
-        ko: "updates를 넣어 배포했던 폰 바이너리는 v2 구조를 읽지 못합니다. 배포 전에 바이너리를 다시 빌드하고, 서명 도구가 새 경로를 보도록 합니다.",
+        en: "Phone apps that receive updates need one new store binary before you publish an update in the new format, and a signing tool of your own must read the new layout.",
+        ko: "업데이트를 받는 폰 앱은 새 형식의 업데이트를 배포하기 전에 스토어 바이너리를 한 번 다시 빌드해야 하고, 직접 쓰는 서명 도구가 있다면 새 구조를 읽게 바꿔야 합니다.",
         href: "/cheatsheet/mobile/setup",
       },
       {
-        en: "akan pack-update --against now exits 2, not 1, when a pack needs a new store build, and 1 means any other failure: a CI step that read 1 as a new store build checks for 2.",
-        ko: "akan pack-update --against는 새 스토어 빌드가 필요할 때 이제 1이 아니라 2로 종료하고, 1은 그 밖의 실패를 뜻합니다. 1을 새 스토어 빌드로 읽던 CI 단계는 2를 확인합니다.",
-        href: "/references/cli/application",
-      },
-      {
-        en: "Pages of an app built with desktop.recovery: 'reload' get no print dialog, file input, download or system-browser link; open those through the opener or file-picker plugin.",
-        ko: "desktop.recovery: 'reload'로 빌드한 앱의 페이지는 인쇄 대화상자, 파일 입력, 다운로드, 시스템 브라우저 링크를 쓸 수 없습니다. 필요하면 opener나 file-picker 플러그인으로 엽니다.",
+        en: "In kiosk mode, pages cannot print, pick files, download or open the system browser: open those through the opener or file-picker plugin.",
+        ko: "키오스크 모드에서는 페이지가 인쇄, 파일 선택, 다운로드, 시스템 브라우저 열기를 할 수 없습니다. 필요하면 opener나 file-picker 플러그인으로 여세요.",
         href: "/cheatsheet/mobile/setup",
       },
       {
-        en: "A release build or publish-update of a desktop app that carries its server is refused while that server's bundle holds a secret value of the workspace's server env files: build that server with native.desktop.server.profile.",
-        ko: "서버를 싣는 데스크톱 앱은 그 서버 번들에 워크스페이스 서버 env 파일의 시크릿 값이 들어 있으면 릴리즈 빌드와 publish-update가 거절됩니다. 그 서버는 native.desktop.server.profile로 빌드합니다.",
+        en: "A desktop app that carries its server is refused a release build while that server holds a secret from your server env files: build it with native.desktop.server.profile.",
+        ko: "서버를 싣는 데스크톱 앱은 그 서버에 서버 env 파일의 시크릿이 들어 있으면 릴리즈 빌드가 거절됩니다. native.desktop.server.profile로 빌드하세요.",
         href: "/cheatsheet/general/edge",
+      },
+      {
+        en: "akan pack-update --against exits 2 when a new store build is needed, and 1 for any other failure.",
+        ko: "akan pack-update --against는 새 스토어 빌드가 필요하면 2로, 그 밖의 실패는 1로 끝납니다.",
+        href: "/references/cli/application",
       },
     ],
   },
   {
-    title: { en: "CLI and workspace", ko: "CLI와 워크스페이스" },
+    title: { en: "Workspace and tooling", ko: "워크스페이스와 도구" },
     notes: [
       {
-        en: "A CI step that answered a prompt through stdin fails fast now: pass the argument on the command line.",
-        ko: "stdin으로 프롬프트에 답하던 CI 단계는 이제 바로 실패합니다. 인자를 명령줄로 넘깁니다.",
-        href: "/references/cli/workspace",
-      },
-      {
-        en: "akan typecheck checks tests and specs by default (--tests false for the old scope), akan sync refuses a test at the lib/ root or one not named after the file it covers, lint fails on a hook a render can skip (useHookAtTopLevel for React's own, no-conditional-st-hook for st hooks), and the theme contrast check reads every theme block.",
-        ko: "akan typecheck은 기본으로 테스트와 스펙까지 검사하고(예전 범위는 --tests false), akan sync는 lib/ 루트의 테스트와 다루는 파일 이름을 따르지 않은 테스트를 거절하며, 린트는 렌더가 건너뛸 수 있는 훅에서 실패하고(React 훅은 useHookAtTopLevel, st 훅은 no-conditional-st-hook), 테마 대비 검사는 모든 테마 블록을 읽습니다.",
-        href: "/conventions/workspace/lint",
-      },
-      {
-        en: "akan.subspace.ts is no longer read: move it under subspace in the workspace-root akan.config.ts, then delete it, since subspace push and pull refuse while it exists.",
-        ko: "akan.subspace.ts는 더는 읽지 않습니다. 내용을 워크스페이스 루트 akan.config.ts의 subspace로 옮긴 뒤 파일을 지웁니다. 파일이 남아 있으면 subspace push와 pull이 거절합니다.",
-        href: "/references/cli/workspace",
-      },
-      {
-        en: "A subspace no longer receives the workspace's Jenkinsfile: the copy a 3.0.2 push left becomes its own, so change it there. Quote a .env value that holds a #, since the build now ends an unquoted value there, as Bun does.",
-        ko: "subspace는 더는 워크스페이스의 Jenkinsfile을 받지 않습니다. 3.0.2의 push가 남긴 사본이 subspace 자신의 파일이 되므로 그곳에서 고칩니다. 빌드도 이제 Bun처럼 따옴표 없는 값을 #에서 끝내므로, #이 들어간 .env 값은 따옴표로 감쌉니다.",
-        href: "/docs/core/config",
-      },
-      {
-        en: "akan script, console, db-export and db-import resolve relative paths from the workspace root, so build a script's paths from import.meta.dir.",
-        ko: "akan script, console, db-export, db-import는 상대 경로를 워크스페이스 루트에서 풀므로 스크립트의 경로는 import.meta.dir로 만듭니다.",
-        href: "/cheatsheet/dev/script",
-      },
-      {
-        en: "A workspace with the shared or util library adds the type packages they compile against: bun add -d @types/react @types/react-dom, plus @types/nodemailer with util. Pin react-server-dom-webpack to 19.3.1, as react and react-dom are; akan now stops on a Bun older than 1.4.4.",
-        ko: "shared나 util 라이브러리를 쓰는 워크스페이스는 컴파일에 필요한 타입 패키지를 추가합니다. bun add -d @types/react @types/react-dom을 실행하고, util을 쓰면 @types/nodemailer도 넣습니다. react-server-dom-webpack은 react, react-dom처럼 19.3.1로 고정합니다. akan은 이제 1.4.4보다 오래된 Bun에서 멈춥니다.",
+        en: "A workspace with the shared or util library adds their type packages: bun add -d @types/react @types/react-dom, plus @types/nodemailer with util.",
+        ko: "shared나 util 라이브러리를 쓰는 워크스페이스는 타입 패키지를 추가하세요. bun add -d @types/react @types/react-dom, util을 쓰면 @types/nodemailer도 넣습니다.",
         href: "/references/cli/library",
       },
       {
-        en: "Run akan login again if a saved host was spelled with a trailing slash, uppercase or :443, and set docker.image to run another Bun than 1.4.4 in the image.",
-        ko: "저장된 호스트를 끝 슬래시, 대문자, :443을 붙여 썼다면 akan login을 다시 하고, 이미지에서 1.4.4가 아닌 Bun을 쓰려면 docker.image를 지정합니다.",
+        en: "akan.subspace.ts is no longer read: move it under subspace in the workspace-root akan.config.ts and delete it. A subspace no longer receives the workspace's Jenkinsfile.",
+        ko: "akan.subspace.ts는 더는 읽지 않습니다. 워크스페이스 루트 akan.config.ts의 subspace로 옮기고 파일을 지우세요. subspace는 더는 워크스페이스의 Jenkinsfile을 받지 않습니다.",
+        href: "/references/cli/workspace",
+      },
+      {
+        en: "Script, console and database import and export commands resolve relative paths from the workspace root: build a script's paths from import.meta.dir.",
+        ko: "스크립트, 콘솔, 데이터베이스 가져오기·내보내기 명령은 상대 경로를 워크스페이스 루트에서 풉니다. 스크립트의 경로는 import.meta.dir로 만드세요.",
+        href: "/cheatsheet/dev/script",
+      },
+      {
+        en: "Run akan login again if your saved host ended in a slash, used capitals or :443, and set docker.image to run a Bun other than 1.4.4 in your image.",
+        ko: "저장된 호스트에 끝 슬래시, 대문자, :443이 붙어 있었다면 akan login을 다시 하고, 이미지에서 1.4.4가 아닌 Bun을 쓰려면 docker.image를 지정하세요.",
         href: "/cheatsheet/dev/docker",
       },
       {
-        en: "The optional peers move up a major: happy-dom and @happy-dom/global-registrator to 21, which loads no CSS file or iframe by default, and firebase to 13.",
-        ko: "선택적 peer가 메이저 버전을 올립니다. happy-dom과 @happy-dom/global-registrator는 21이 되어 기본으로 CSS 파일과 iframe을 불러오지 않고, firebase는 13이 됩니다.",
+        en: "Optional peers move up: happy-dom 21, which loads no CSS files or iframes by default, and firebase 13.",
+        ko: "선택적 peer가 올라갑니다. happy-dom은 기본으로 CSS 파일과 iframe을 불러오지 않는 21로, firebase는 13으로 바뀝니다.",
         href: "/cheatsheet/dev/test",
       },
     ],
   },
+] as const;
+
+const navItems = [
+  { id: "requirements", title: { en: "Requirements", ko: "요구 사항" } },
+  { id: "security", title: { en: "Security", ko: "보안" } },
+  { id: "features", title: { en: "New features", ko: "새 기능" } },
+  { id: "performance", title: { en: "Performance", ko: "성능" } },
+  { id: "fixes", title: { en: "Fixes", ko: "버그 수정" } },
 ] as const;
 
 export default page()
@@ -712,8 +720,8 @@ export default page()
       lang === "ko" ? "Akan.js 3.1.0 릴리즈 노트 | Akan.js 블로그" : "Akan.js 3.1.0 release notes | Akan.js Blog";
     const description =
       lang === "ko"
-        ? "3.0.2에서 3.1.0까지 바뀐 모든 것을 영역별로 정리하고, 업그레이드할 때 손볼 곳을 모았습니다."
-        : "Everything that changed from 3.0.2 to 3.1.0, by area, with the steps an upgrade needs.";
+        ? "3.1.0에서 바뀐 모든 것을 보안, 새 기능, 성능, 버그 수정으로 쉽게 정리하고, 업그레이드 체크리스트를 모았습니다."
+        : "Everything in 3.1.0 in plain terms, by security, new features, performance and fixes, with a short upgrade checklist.";
     return (
       <>
         <title>{title}</title>
@@ -741,8 +749,8 @@ export default page()
             </h1>
             <p className="mt-6 text-foreground/70 text-lg leading-8">
               {l.trans({
-                en: "Everything that changed between 3.0.2 and 3.1.0, by area, followed by what an upgrade needs from you. Each package's CHANGELOG.md carries every entry in full.",
-                ko: "3.0.2와 3.1.0 사이에 바뀐 모든 것을 영역별로 정리하고, 이어서 업그레이드할 때 손볼 곳을 모았습니다. 패키지마다 CHANGELOG.md에 모든 항목이 전문으로 실립니다.",
+                en: "Everything that changed in 3.1.0, in plain terms: what got safer, what is new, what got faster and what got fixed, followed by a short checklist for upgrading. Each package's CHANGELOG.md keeps the full technical entries.",
+                ko: "3.1.0에서 바뀐 모든 것을 쉽게 정리했습니다. 무엇이 더 안전해졌고, 무엇이 새로 생겼고, 무엇이 빨라졌고, 무엇을 고쳤는지 본 뒤 짧은 업그레이드 체크리스트로 마무리합니다. 기술적인 전체 항목은 패키지마다 CHANGELOG.md에 있습니다.",
               })}
             </p>
             <Link
@@ -752,41 +760,23 @@ export default page()
               {l.trans({ en: "Read the 3.1 announcement", ko: "3.1 발표 글 읽기" })} <BsArrowRight />
             </Link>
             <nav className="mt-8 flex flex-wrap gap-2">
-              {areas.map((area) => (
+              {navItems.map((item) => (
                 <a
-                  key={area.id}
-                  href={`#notes-${area.id}`}
+                  key={item.id}
+                  href={`#notes-${item.id}`}
                   className={badgeRecipe(
                     undefined,
                     "border-foreground/10 bg-foreground/5 text-foreground/70 hover:text-primary",
                   )}
                 >
-                  {l.trans(area.title)}
+                  {l.trans(item.title)}
                 </a>
               ))}
-              <a
-                href="#notes-security"
-                className={badgeRecipe(
-                  undefined,
-                  "border-foreground/10 bg-foreground/5 text-foreground/70 hover:text-primary",
-                )}
-              >
-                {l.trans({ en: "Security", ko: "보안" })}
-              </a>
-              <a
-                href="#notes-performance"
-                className={badgeRecipe(
-                  undefined,
-                  "border-foreground/10 bg-foreground/5 text-foreground/70 hover:text-primary",
-                )}
-              >
-                {l.trans({ en: "Performance", ko: "성능" })}
-              </a>
               <a
                 href="#notes-upgrade"
                 className={badgeRecipe(undefined, "border-primary/20 bg-primary/10 text-primary hover:bg-primary/15")}
               >
-                {l.trans({ en: "Upgrading from 3.0", ko: "3.0에서 올라올 때" })}
+                {l.trans({ en: "Upgrade checklist", ko: "업그레이드 체크리스트" })}
               </a>
             </nav>
           </header>
@@ -794,142 +784,139 @@ export default page()
           <Scroll className="mt-14">
             <Scroll.Slide id="notes-requirements" title={l.trans({ en: "Requirements", ko: "요구 사항" })}>
               <h2 className="font-black text-2xl md:text-3xl">{l.trans({ en: "Requirements", ko: "요구 사항" })}</h2>
-              <div className="jelly-glass mt-6 overflow-x-auto rounded-3xl px-5 py-2">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-border border-b">
-                      <th className="py-3 pr-4 font-semibold text-foreground/45">
-                        {l.trans({ en: "Package", ko: "패키지" })}
-                      </th>
-                      <th className="px-4 py-3 text-right font-semibold text-foreground/45">3.0</th>
-                      <th className="px-4 py-3 text-right font-semibold text-foreground/45">3.1</th>
-                      <th className="py-3 pl-4 font-semibold text-foreground/45">
-                        {l.trans({ en: "Note", ko: "참고" })}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {requirements.map((row) => (
-                      <tr key={row.name} className="border-muted border-b last:border-none">
-                        <td className="py-3 pr-4 font-medium text-foreground/80">{row.name}</td>
-                        <td className="px-4 py-3 text-right font-mono text-foreground/55">{row.before}</td>
-                        <td className="px-4 py-3 text-right font-mono text-primary">{row.after}</td>
-                        <td className="py-3 pl-4 text-foreground/65">{l.trans(row.note)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                {requirements.map((row) => (
+                  <div key={row.name} className="jelly-glass rounded-3xl p-5">
+                    <p className="font-semibold text-foreground/60 text-sm">{row.name}</p>
+                    <p className="mt-1 font-black font-mono text-2xl text-primary">{row.version}</p>
+                    <p className="mt-2 text-foreground/65 text-sm leading-6">{l.trans(row.note)}</p>
+                  </div>
+                ))}
               </div>
               <p className="mt-6 text-foreground/75 leading-7">
                 {l.trans({
-                  en: "Upgrade Bun, move the workspace and the global CLI to 3.1.0, then run akan sync once on every app and library, so its generated lib/cnst.ts and lib/sig.ts are rewritten:",
-                  ko: "Bun을 올리고, 워크스페이스와 전역 CLI를 3.1.0으로 옮긴 다음, 생성 파일 lib/cnst.ts와 lib/sig.ts가 다시 쓰이도록 모든 앱과 라이브러리에서 akan sync를 한 번 실행합니다:",
+                  en: "Upgrade Bun, update the workspace and the global CLI, then run these once on every app and library:",
+                  ko: "Bun을 올리고 워크스페이스와 전역 CLI를 업데이트한 다음, 모든 앱과 라이브러리에서 한 번씩 실행하세요:",
                 })}
               </p>
               <Code.Snippet className="mt-5 w-full" title="Terminal" code={upgradeSteps} showLineNumbers={false} />
             </Scroll.Slide>
 
-            {areas.map((area) => (
-              <Scroll.Slide key={area.id} id={`notes-${area.id}`} title={l.trans(area.title)} className="mt-16">
-                <h2 className="font-black text-2xl md:text-3xl">{l.trans(area.title)}</h2>
-                <h3 className="mt-6 font-bold text-primary text-sm uppercase tracking-[0.2em]">
-                  {l.trans({ en: "New", ko: "새 기능" })}
-                </h3>
-                <ul className="mt-3 list-disc space-y-3 pl-5 text-foreground/75 leading-7">
-                  {area.added.map((item) => (
-                    <li key={item.en}>{l.trans(item)}</li>
-                  ))}
-                </ul>
-                <h3 className="mt-8 font-bold text-foreground/50 text-sm uppercase tracking-[0.2em]">
-                  {l.trans({ en: "Fixed", ko: "수정" })}
-                </h3>
-                <ul className="mt-3 list-disc space-y-3 pl-5 text-foreground/75 leading-7">
-                  {area.fixed.map((item) => (
-                    <li key={item.en}>{l.trans(item)}</li>
-                  ))}
-                </ul>
-                <Link
-                  href={area.href}
-                  className="mt-5 inline-flex items-center gap-1 font-semibold text-primary text-sm hover:underline"
-                >
-                  {l.trans({ en: "Read the docs", ko: "문서 보기" })} <BsArrowRight />
-                </Link>
-              </Scroll.Slide>
-            ))}
-
             <Scroll.Slide id="notes-security" title={l.trans({ en: "Security", ko: "보안" })} className="mt-16">
               <h2 className="font-black text-2xl md:text-3xl">{l.trans({ en: "Security", ko: "보안" })}</h2>
               <p className="jelly-callout tint-primary mt-6 rounded-3xl p-6 text-foreground/75 leading-7">
                 {l.trans({
-                  en: "Several of these close a leak between visitors or across servers. Every 3.0 app should take 3.1.0.",
-                  ko: "이 가운데 여럿은 방문자 사이나 서버 사이의 유출을 막습니다. 3.0 앱은 모두 3.1.0으로 올리기를 권합니다.",
+                  en: "None of these needs a code change, and several close a gap between visitors or between servers. Every 3.0 app should take 3.1.0.",
+                  ko: "어느 것도 코드를 바꿀 필요가 없고, 여럿은 방문자 사이나 서버 사이의 틈을 막습니다. 3.0 앱은 모두 3.1.0으로 올리기를 권합니다.",
                 })}
               </p>
               <ul className="mt-6 list-disc space-y-3 pl-5 text-foreground/75 leading-7">
-                {securityFixes.map((item) => (
+                {securityItems.map((item) => (
                   <li key={item.en}>{l.trans(item)}</li>
                 ))}
               </ul>
             </Scroll.Slide>
 
+            <Scroll.Slide id="notes-features" title={l.trans({ en: "New features", ko: "새 기능" })} className="mt-16">
+              <h2 className="font-black text-2xl md:text-3xl">{l.trans({ en: "New features", ko: "새 기능" })}</h2>
+              {featureAreas.map((area) => (
+                <section key={area.id} id={`notes-features-${area.id}`} className="mt-8">
+                  <h3 className="font-bold text-primary text-sm uppercase tracking-[0.2em]">{l.trans(area.title)}</h3>
+                  <ul className="mt-3 list-disc space-y-3 pl-5 text-foreground/75 leading-7">
+                    {area.items.map((item) => (
+                      <li key={item.en}>{l.trans(item)}</li>
+                    ))}
+                  </ul>
+                  <Link
+                    href={area.href}
+                    className="mt-3 inline-flex items-center gap-1 font-semibold text-primary text-sm hover:underline"
+                  >
+                    {l.trans({ en: "Read the docs", ko: "문서 보기" })} <BsArrowRight />
+                  </Link>
+                </section>
+              ))}
+            </Scroll.Slide>
+
             <Scroll.Slide id="notes-performance" title={l.trans({ en: "Performance", ko: "성능" })} className="mt-16">
               <h2 className="font-black text-2xl md:text-3xl">{l.trans({ en: "Performance", ko: "성능" })}</h2>
-              <div className="jelly-glass mt-6 overflow-x-auto rounded-3xl px-5 py-2">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-border border-b">
-                      <th className="py-3 pr-4 font-semibold text-foreground/45">
-                        {l.trans({ en: "Measure", ko: "측정 항목" })}
-                      </th>
-                      <th className="px-4 py-3 text-right font-semibold text-foreground/45">
-                        {l.trans({ en: "Before", ko: "이전" })}
-                      </th>
-                      <th className="py-3 pl-4 text-right font-semibold text-foreground/45">
-                        {l.trans({ en: "After", ko: "이후" })}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {performanceRows.map((row) => (
-                      <tr key={row.metric.en} className="border-muted border-b last:border-none">
-                        <td className="py-3 pr-4 text-foreground/80">{l.trans(row.metric)}</td>
-                        <td className="px-4 py-3 text-right font-mono text-foreground/55">{row.before}</td>
-                        <td className="py-3 pl-4 text-right font-mono text-primary">{row.after}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                {performanceStats.map((stat) => (
+                  <div key={stat.label.en} className="jelly-glass rounded-3xl p-5">
+                    <p className="font-black text-4xl text-primary">{stat.value}</p>
+                    <p className="mt-2 font-semibold text-foreground/80 text-sm leading-6">{l.trans(stat.label)}</p>
+                    <p className="mt-1 font-mono text-foreground/45 text-xs">{stat.detail}</p>
+                  </div>
+                ))}
               </div>
               <p className="mt-4 text-foreground/45 text-xs leading-5">
                 {l.trans({
-                  en: "Each row was measured on one machine just before and just after the changes that made it, not between the 3.0.2 and 3.1.0 releases: the per-call numbers in process, the SSR numbers on a cached page of apps/minimal.",
-                  ko: "각 행은 3.0.2와 3.1.0 릴리즈 사이가 아니라 해당 변경 직전과 직후를 한 머신에서 측정한 값입니다. 호출당 수치는 프로세스 안에서, SSR 수치는 apps/minimal의 캐시된 페이지로 측정했습니다.",
+                  en: "Each figure was measured on one machine just before and just after the change behind it: API calls in process, pages on a cached page of the sample app.",
+                  ko: "각 수치는 해당 변경 직전과 직후를 한 머신에서 측정한 값입니다. API 호출은 프로세스 안에서, 페이지는 샘플 앱의 캐시된 페이지로 측정했습니다.",
                 })}
               </p>
-              <ul className="mt-6 list-disc space-y-3 pl-5 text-foreground/75 leading-7">
+              <h3 className="mt-8 font-bold text-primary text-sm uppercase tracking-[0.2em]">
+                {l.trans({ en: "Where it comes from", ko: "어디서 빨라졌나" })}
+              </h3>
+              <ul className="mt-3 list-disc space-y-3 pl-5 text-foreground/75 leading-7">
                 {performanceNotes.map((item) => (
                   <li key={item.en}>{l.trans(item)}</li>
                 ))}
               </ul>
             </Scroll.Slide>
 
+            <Scroll.Slide id="notes-fixes" title={l.trans({ en: "Fixes", ko: "버그 수정" })} className="mt-16">
+              <h2 className="font-black text-2xl md:text-3xl">{l.trans({ en: "Fixes", ko: "버그 수정" })}</h2>
+              <p className="mt-3 text-foreground/65 leading-7">
+                {l.trans({
+                  en: "Grouped by area. Open one to see what was fixed.",
+                  ko: "영역별로 묶었습니다. 펼쳐서 무엇을 고쳤는지 보세요.",
+                })}
+              </p>
+              <div className="mt-6 grid gap-3">
+                {fixAreas.map((area) => (
+                  <details key={area.id} className="group jelly-glass rounded-3xl px-5 py-4">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-bold">
+                      <span>
+                        {l.trans(area.title)}
+                        <span className="ml-2 font-mono font-normal text-foreground/40 text-sm">
+                          {area.items.length}
+                        </span>
+                      </span>
+                      <BsChevronDown className="shrink-0 text-foreground/40 transition-transform group-open:rotate-180" />
+                    </summary>
+                    <ul className="mt-4 list-disc space-y-3 pl-5 text-foreground/75 text-sm leading-6">
+                      {area.items.map((item) => (
+                        <li key={item.en}>{l.trans(item)}</li>
+                      ))}
+                    </ul>
+                  </details>
+                ))}
+              </div>
+            </Scroll.Slide>
+
             <Scroll.Slide
               id="notes-upgrade"
-              title={l.trans({ en: "Upgrading from 3.0", ko: "3.0에서 올라올 때" })}
+              title={l.trans({ en: "Upgrade checklist", ko: "업그레이드 체크리스트" })}
               className="mt-16"
             >
               <h2 className="font-black text-2xl md:text-3xl">
-                {l.trans({ en: "Upgrading from 3.0", ko: "3.0에서 올라올 때" })}
+                {l.trans({ en: "Upgrade checklist", ko: "업그레이드 체크리스트" })}
               </h2>
               <p className="mt-3 text-foreground/65 leading-7">
                 {l.trans({
-                  en: "These are the changes that can need a hand. akan lint and akan typecheck point at most of them.",
-                  ko: "손이 갈 수 있는 변경입니다. 대부분은 akan lint와 akan typecheck가 위치를 짚어 줍니다.",
+                  en: "Most apps need only the first group. Skim the rest for the features you use; akan lint and akan typecheck point at most of it.",
+                  ko: "대부분의 앱은 첫 묶음만 확인하면 됩니다. 나머지는 쓰는 기능만 훑어보세요. 대부분은 akan lint와 akan typecheck가 위치를 짚어 줍니다.",
                 })}
               </p>
-              {upgradeGroups.map((group) => (
-                <div key={group.title.en} className="mt-8">
+              {upgradeGroups.map((group, groupIdx) => (
+                <div
+                  key={group.title.en}
+                  className={
+                    groupIdx === 0 ? "jelly-callout tint-primary mt-8 rounded-3xl p-5 md:p-6" : "mt-8 px-1 md:px-2"
+                  }
+                >
                   <h3 className="font-bold text-xl">{l.trans(group.title)}</h3>
+                  {"desc" in group ? <p className="mt-1 text-foreground/60 text-sm">{l.trans(group.desc)}</p> : null}
                   <ol className="mt-4 grid gap-3">
                     {group.notes.map((note, idx) => (
                       <li key={note.en} className="jelly-glass flex gap-4 rounded-3xl p-4">
@@ -940,9 +927,9 @@ export default page()
                           <p className="text-foreground/80">{l.trans(note)}</p>
                           <Link
                             href={note.href}
-                            className="mt-1 inline-block font-semibold text-primary hover:underline"
+                            className="mt-1 inline-flex items-center gap-1 font-semibold text-primary hover:underline"
                           >
-                            {note.href}
+                            {l.trans({ en: "Details", ko: "자세히" })} <BsArrowRight />
                           </Link>
                         </div>
                       </li>
@@ -950,6 +937,12 @@ export default page()
                   </ol>
                 </div>
               ))}
+              <p className="mt-6 text-foreground/45 text-xs leading-5">
+                {l.trans({
+                  en: "Rarely used internals that were removed or renamed are left out here; akan typecheck points at them.",
+                  ko: "드물게 쓰이는 내부 API의 제거·이름 변경은 여기서 뺐습니다. akan typecheck이 위치를 짚어 줍니다.",
+                })}
+              </p>
             </Scroll.Slide>
             <DocsToc />
           </Scroll>

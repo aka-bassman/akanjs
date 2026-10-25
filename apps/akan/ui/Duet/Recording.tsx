@@ -1,5 +1,6 @@
 import { usePage } from "@apps/akan/client";
 import { cn } from "akanjs/client";
+import { InViewVideo } from "../InViewVideo";
 import { CueSync } from "./CueSync";
 
 interface RecordingCue {
@@ -16,7 +17,7 @@ interface RecordingProps {
 }
 export const Recording = ({ className, src, isRealtime = true, cues }: RecordingProps) => {
   const { l } = usePage();
-  const video = <video className="aspect-video w-full object-cover" src={src} autoPlay muted loop playsInline />;
+  const video = <InViewVideo className="aspect-video w-full object-cover" src={src} />;
   return (
     <figure
       className={cn(

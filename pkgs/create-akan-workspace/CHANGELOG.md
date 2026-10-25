@@ -1,5 +1,36 @@
 # create-akan-workspace
 
+## 3.1.0
+
+### Patch Changes
+
+- 2082ccd: Akan.js now requires Bun 1.4.4: every package's `engines.bun` reads `>=1.4.4`. akan-native's doctor fails on an older Bun and warns on any other, with `bun upgrade --version 1.4.4` as the fix. Before 1.4.4, bun:sqlite counted the rows a full-text index's triggers wrote, so `updateManyByQuery` and `removeManyByQuery` on a model with search fields reported far more `matchedCount` and `modifiedCount` than the documents they changed.
+
+  Upgrade note: 3.0.2 accepted Bun 1.4.0; run `bun upgrade --version 1.4.4` first.
+
+- bd6f9e6: Dependency refresh for the published packages:
+
+  - **React 19.3.1** (`react`, `react-dom`, `react-server-dom-webpack`), together with the 19.0.9 / 19.1.10 / 19.2.9 backports of the same day.
+  - **Majors**: `chalk` 6, `commander` 15, `fontaine` 1, `firebase` 13 (optional peer), `happy-dom` / `@happy-dom/global-registrator` 21 (optional peers; CSS and iframe loading are now off by default).
+  - **Minors and patches**: `lexical` and every `@lexical/*` 0.52, `typebox` 1.3.37, `@biomejs/biome` 2.5.14, `@inquirer/prompts`, `@tailwindcss/node` / `tailwindcss` 4.3.3, `dayjs`, `immer`, `ignore`, `ora`, `string-width`, `subset-font`, `tailwind-merge`, `tailwind-variants`, `protobufjs`, `react-icons`, `@react-spring/web`, `@playwright/test`, `@types/bun`, and `bullmq` / `ioredis` to their latest 5.x.
+
+  Held back on purpose: `typescript` 7 (no compiler API, which devkit's scanners and transforms need), `ink` 7/8 (drop bracketed-paste markers and mouse reports from `useInput`, which `akan code`'s paste and wheel scrolling read), `ioredis` 6 (RESP3 by default) and `bullmq` 6 (backend rewrite), which need the conformance suite against real Redis, and `@biomejs/biome` 2.5.15 (reports `Object.keys(…).sort()` and other string sorts under `useArraySortCompare`).
+
+  Upgrade note: a workspace pins `react` / `react-dom` to `19.3.1` to match the `akanjs` peer range.
+
+- fe1e27d: A new workspace with the `shared` or `util` library no longer fails `akan typecheck` and `akan build` with TS7016, "Could not find a declaration file", for `react-dom` and `nodemailer`: `akan create-workspace` writes `@types/react` and `@types/react-dom` into its devDependencies, and `akan install-library` adds `@types/react-dom` with `shared` and `@types/nodemailer` with `util`. Upgrade note: a workspace created earlier adds them with `bun add -d @types/react @types/react-dom`, plus `@types/nodemailer` if it installed `util`.
+
+  `akan install-library` now copies a library from the akanjs version the workspace has installed: one shallow clone of its `v<version>` tag, reused for every library in the run. Before, each library took a full clone of the repository's default branch, whose code can need a newer akanjs than the workspace's, and `akan create-workspace` with both libraries downloaded it twice. A version with no tag, such as a prerelease, still installs from the default branch, with a warning naming the version.
+
+  `akan` and `bunx create-akan-workspace` now stop on a Bun older than 1.4.4, the minimum their `engines.bun` declares, with one line asking for `bun upgrade`. Before, nothing checked the running Bun, so an older one went ahead and hit the bugs 1.4.4 fixed.
+
+  The `akanjs` peer on `react-server-dom-webpack` is now exactly `19.3.1`, the same pin as `react` and `react-dom`, and `akan create-workspace` writes it that way. Its caret range let a new workspace resolve the first `react-server-dom-webpack` released after 19.3.1, built for a different React than the one it renders with. Upgrade note: pin `react-server-dom-webpack` to `19.3.1` in an existing workspace as well.
+
+- 6b5646e: - The akan CLI runs in a workspace with no root `.env`: the workspace root is the folder with `package.json`, `tsconfig.json` and an `apps/`, `libs/` or `pkgs/` folder. Unset, `AKAN_PUBLIC_REPO_NAME` falls back to the origin remote's name and `AKAN_PUBLIC_SERVE_DOMAIN` to `localhost`; `akan build` and the redis/postgres tunnels refuse either fallback for any environment but `local`.
+  - The theme contrast check reads every theme block. It used to read every other block, and none after an `@source` line, so on the framework stylesheet it checked only the light theme. `akan lint` may now report contrast failures in a `:root` or dark theme that were always there.
+  - `declaredCustomProperties` skips a whole `@theme` block, nested `@keyframes` included, and ignores tokens inside comments. Theme CSS and the generated `useClient.ts` are parsed in linear time.
+  - `akan agent install` writes an `AGENTS.md` about 60% smaller: the conventions guideline keeps the rules and points at the on-demand guidelines for the detail, and a new `pageRule` guideline covers routing.
+
 ## 3.0.2
 
 ## 3.0.1

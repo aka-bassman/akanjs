@@ -530,7 +530,8 @@ html:has([data-akanjs-notice]) {
 }
 
 /* 밤하늘 배경(ui/Jelly/Cosmos). 옅은 별밭과 종이 결만 깔고, 별밭은 스크롤에 조금 늦게 떠올라 깊이를 낸다.
-   모션 축소 설정에서는 멈춘 그림으로 남는다. */
+   모션 축소 설정에서는 멈춘 그림으로 남는다. 터치 기기에서는 고정하지 않고 페이지에 붙여 그린다 — iOS WebKit 은
+   fixed 음수 z 배경 위의 페이지를 레이어로 한 벌 더 합성해, 4GB 아이폰의 GPU 프로세스가 메모리 상한에 거듭 죽는다. */
 @keyframes cosmos-drift {
   to {
     translate: 0 var(--drift);
@@ -542,12 +543,24 @@ html:has([data-akanjs-notice]) {
   background-image:
     radial-gradient(120% 60% at 50% -14%, var(--sky-top), transparent 64%),
     radial-gradient(110% 55% at 50% 114%, var(--sky-bottom), transparent 68%);
+  @media (pointer: coarse) {
+    background-image:
+      radial-gradient(120% 60% at 50% -14%, var(--sky-top), transparent 64%),
+      radial-gradient(110% 55% at 50% 114%, var(--sky-bottom), transparent 68%),
+      radial-gradient(110% 55% at 50% 114%, var(--sky-bottom), transparent 68%);
+    background-size: 100% 100svh;
+    background-repeat: no-repeat;
+    background-position:
+      top,
+      top,
+      0 max(100svh, 100%);
+  }
 }
 
 @utility cosmos-far {
   --drift: -6vh;
   @supports (animation-timeline: scroll()) {
-    @media (prefers-reduced-motion: no-preference) {
+    @media (prefers-reduced-motion: no-preference) and (pointer: fine) {
       animation: cosmos-drift linear both;
       animation-timeline: scroll(root block);
     }
@@ -564,7 +577,7 @@ html:has([data-akanjs-notice]) {
 @utility cosmos-twinkle {
   transform-box: fill-box;
   transform-origin: center;
-  @media (prefers-reduced-motion: no-preference) {
+  @media (prefers-reduced-motion: no-preference) and (pointer: fine) {
     animation: jelly-twinkle var(--twinkle-duration, 3.6s) ease-in-out var(--twinkle-delay, 0s) infinite;
   }
 }

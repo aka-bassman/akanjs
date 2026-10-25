@@ -23,12 +23,12 @@ const posts: BlogPost[] = [
       ko: "Akan.js 3.1: 프로덕션을 위해 더 단단하게",
     },
     desc: {
-      en: "Routes guarded before they render, a page's component drawn inside the chat, migrations you review before they run, a strict wire with retries, signed updates for unattended devices, and the pipeline next to the code.",
-      ko: "그리기 전에 지키는 라우트, 채팅 안에 그려지는 페이지 컴포넌트, 실행 전에 검토하는 마이그레이션, 재시도까지 갖춘 엄격한 요청, 무인 기기를 위한 서명된 업데이트, 그리고 코드 옆의 파이프라인.",
+      en: "Safer and up to 2.5× faster just by upgrading, plus access control before a page appears, your app's screens inside the AI chat, migrations you can undo, and devices that update themselves.",
+      ko: "업그레이드만으로 더 안전하고 최대 2.5배 빨라집니다. 화면이 뜨기 전에 막는 접근 제어, AI 채팅 안에 뜨는 내 앱 화면, 되돌릴 수 있는 마이그레이션, 스스로 업데이트하는 무인 기기까지.",
     },
     meta: { en: "Product", ko: "제품" },
     date: { en: "Oct 25, 2026", ko: "2026년 10월 25일" },
-    image: "/akanjsImage/diagrams/signal-doors.png",
+    image: "/akanjsImage/diagrams/v31-route-guard.png",
     imageClassName: "object-cover mix-blend-multiply dark:mix-blend-screen dark:hue-rotate-180 dark:invert",
   },
   {
@@ -39,8 +39,8 @@ const posts: BlogPost[] = [
       ko: "Akan.js 3.1.0 릴리즈 노트",
     },
     desc: {
-      en: "Everything that changed from 3.0.2 to 3.1.0, by area, with the security fixes, the performance numbers and every step an upgrade can need.",
-      ko: "3.0.2에서 3.1.0까지 바뀐 모든 것을 영역별로 정리하고, 보안 수정, 성능 수치, 업그레이드할 때 필요한 단계를 모았습니다.",
+      en: "Everything in 3.1.0 in plain terms, by security, new features, performance and fixes, with a short upgrade checklist.",
+      ko: "3.1.0에서 바뀐 모든 것을 보안, 새 기능, 성능, 버그 수정으로 쉽게 정리하고, 업그레이드 체크리스트를 모았습니다.",
     },
     meta: { en: "Changelog", ko: "변경 기록" },
     date: { en: "Oct 25, 2026", ko: "2026년 10월 25일" },

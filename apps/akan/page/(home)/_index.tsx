@@ -1,5 +1,15 @@
 import { usePage } from "@apps/akan/client";
-import { Duet, Friend, JellyKicker, JellyLoader, jellyButtonRecipe, panelRecipe, SkyBuild, Start } from "@apps/akan/ui";
+import {
+  Duet,
+  Friend,
+  InViewVideo,
+  JellyKicker,
+  JellyLoader,
+  jellyButtonRecipe,
+  panelRecipe,
+  SkyBuild,
+  Start,
+} from "@apps/akan/ui";
 import { page } from "akanjs/client";
 import { Image, Link } from "akanjs/ui";
 import { BsArrowRight, BsArrowUpRight } from "react-icons/bs";
@@ -464,12 +474,8 @@ export default page()
             </div>
           </div>
           <div className="reveal-rise overflow-hidden rounded-4xl shadow-2xl shadow-black/10">
-            <video
-              autoPlay
+            <InViewVideo
               className="aspect-3/2 w-full object-cover motion-reduce:hidden"
-              loop
-              muted
-              playsInline
               poster="/jelly/cosmos-poster.webp"
               src="/jelly/cosmos-loop.mp4"
             />

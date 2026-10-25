@@ -1,5 +1,387 @@
 # @akanjs/devkit
 
+## 3.1.0
+
+### Minor Changes
+
+- ce817b6: A module's `serve(ref, { operationMode: ["edge"] }, …)` mounts only in the operation modes it lists, and `modules: ["@edge"]` / `AKAN_MODULES=@edge` names every module that lists edge; a selection now also mounts the targets of its modules' relation fields. `native.desktop.server` takes `{ profile, modules }`: `profile: "edge"` bundles `env/env.server.<env>.edge.ts` in place of the environment's own file, which no longer reaches the computers the app is installed on, and the build refuses a profile file whose secret-named keys hold a value; `akan build <app> --profile edge` does the same for an image. Machine tokens: `MachineToken.issue({ kind, id, version })` signs an Ed25519 JWT with `AKAN_MACHINE_PRIVATE_KEY` (`akan machine-keygen <file>` writes one), a server with that key or `AKAN_MACHINE_PUBLIC_KEY` sets `account.machine` from a verified token on HTTP and websocket calls and strips any other, and `.with(Machine)` reads it.
+- ce817b6: `akan build-desktop` and `akan publish-update` sign only with `--sign` and notarize only with `--notarize` (as does `akan-native build` / `update publish`): `AKAN_NATIVE_MACOS_*` and `AKAN_NATIVE_WINDOWS_*` name the identity and no longer decide to use it, and a build that finds them set without the flag says it is unsigned. A release build or `publish-update` of an app that carries its server, signed or not, first searches that server for every secret value of the workspace's server env files and refuses it with the file and key paths, and an env file it cannot evaluate stops the release; one line then names the identity and the service a signed app goes to. The SSR route bundle now takes the server env plugin too, so a build carries only its own environment's app env there and a profile build swaps the libs' env defaults in it as it does in the backend. `akan publish-update --arch arm64|x64` publishes a desktop release for another CPU into that CPU's feed folder.
+
+  Upgrade note: signing and notarizing are opt-in. A CI that only sets `AKAN_NATIVE_MACOS_*` or `AKAN_NATIVE_WINDOWS_*` now builds and publishes unsigned macOS and Windows apps, after a line saying those variables went unused and a warning that the app is not signed, and an installed signed app refuses such an update. Add `--sign true` to `akan build-desktop` and `akan publish-update`, and `--notarize true` for macOS, to sign and notarize as before.
+
+- ce817b6: The `external-view` native plugin (`akanjs/client/native/external-view`) shows a third-party page first-party over a desktop window: a browser profile of its own, navigation held to the origins it was opened for, an init script for the top document, `evaluate`, a trusted `sendKey`, `capture` of its content, `setMuted`, `clearData`, autoplay with sound by default, and `load` / `loadFailed` / `gone` (it reloads, and is rebuilt when its browser process ends, counting `restarts`) / `consoleMessage` (warn and up by default, with source and line, rate-capped) events — every method on Windows, most on macOS 14+. The `window` plugin adds `placeOnDisplay({ display | index, bounds, unit: "logical" | "physical", fullscreen })`, `setDecorations`, `setCursorVisible`, `setMinSize` and `create({ frameless })`, and `native.desktop.window.frameless` opens the main window without a frame. `AkanServer.start({ schedules: false })` runs no internal.
+- 17aa243: `akan build` writes one single-file view per `.app()` to `mcp-apps/<name>.html`, beside `csr/`. The server reads it for that app's `ui://<app>/apps/<name>` resource. `akan start` writes the views to `.akan/artifact/mcp-apps/` when a host first reads one, and again after a save, without rebuilding the CSR bundle.
+
+  - **What a view bundles.** The view bundles the app's page with its `.render()`, `.head()`, `.loading()` and `.guard()` replaced by functions that draw nothing. It therefore carries only the modules the page's `.app()` loads reach.
+  - **Its root layout.** The view sits under the root layout that renders `System.Provider`. That layout's `McpAppRoot` gives it the theme, fonts and providers, and the `_overrides.tsx` over the page re-skin it as they do the page: one on the root layout's folder, or on a folder above it that holds no layout of its own, wraps that layout as it does on the web, so it also reaches the toasts and approvals the layout draws. A synced lib page, linked under `page/(libs)`, is trimmed like any other.
+  - **Size.** A host loads one file, so a view inlines every module its loads reach, a `lazy(() => import(…))` included. The view build marks each `const X = lazy(…)` pure, so one that nothing renders — a barrel's, the page's own that only its `.render()` drew, or one an `_overrides.tsx` manifest's import brings in — is dropped with the module it imports. A `lazy()` called anywhere else stays.
+  - **Names.** An `.app()` name must be a string literal that matches `^[A-Za-z0-9_-]{1,64}$`, on a chain written as the `export default` expression itself; a chain bound to a name and exported as `export default x` or `export { x as default }` fails the build. Two pages that declare one name fail the build, and so do two names that differ only in case, whose files would collide on a case-insensitive disk.
+  - **Rebuilds.** Views are built aside and moved into place one file at a time, so a host that reads a view while `akan start` rebuilds them gets the previous view or the new one. A file the bundler emits beside a view reaches no host, so it is dropped with a warning.
+  - A desktop server stage carries `mcp-apps/`. The font pruner keeps a font that only a view references.
+
+- ce817b6: `akan sync` now refuses a test at the `lib/` root and a module test that is not named after the one module file it covers. A module keeps one suite per role (`chatMessage.signal.test.ts`, `ChatMessage.Zone.test.tsx`), so `chatMessage.trim.signal.test.ts` is refused just like `chatMessage.trim.signal.ts`. `akan quality scan` reports a test at the `lib/` root under `akan.layout.lib-facet-file`. Upgrade note: move a `lib/<model>.signal.test.ts` into `lib/<model>/`, fold every `<model>.<topic>.signal.test.ts` into `<model>.signal.test.ts` as a `describe` block, and move a suite that drives several modules into `srvkit/`, like `libs/shared/srvkit/guards.signal.test.ts`.
+- ce817b6: A module's `*.signal.test.ts` / `*.service.test.ts` may import the runtime's `node:*` and `bun:*` modules (`no-import-external-library-in-test.grit`); third-party packages stay refused there.
+- ce817b6: Phone web bundle updates move to protocol v2.
+
+  - **Path:** a binary reads only its own native API's manifest, `<url>/<platform>/<channel>/<nativeApi>.json`, so two store generations on one channel each take their own fixes.
+  - **Envelope:** that file is one envelope holding the manifest's bytes, the signer's `keyId` and the signature, so a CDN can never pair a new manifest with an old signature.
+  - **Keys:** `native.updates.publicKeys` lists 1 to 3 trusted keys, the online signing key first. `publicKey` stays as the one-key form.
+  - **Revocation:** a manifest can carry `revokeKeys`, plus `resetSequence` to recover from a polluted sequence. A key may revoke only keys listed before it, and a revocation is kept for good on the device.
+  - **Publishing:** `akan-native update publish` carries the channel's revocations forward into each new envelope and refuses to sign with a key they revoke, so a routine publish never undoes a revocation.
+  - **Store build:** `bundle.json` records the binary's update URL, key ids and `embeddedSequence`.
+  - **Server-side helpers:** `openEnvelope`, `keyIdOf` and `updateDecision` are exported for a server that signs or registers releases.
+
+  Desktop app updates keep protocol v1 and trust the first key.
+
+  Upgrade note: no phone binary that shipped with `updates` reads the new layout. Rebuild the binary before publishing, and point a signer at the new path. `akan pack-update` writes a schema 2 template.
+
+- ce817b6: CLI fixes for the OTA and Akan Cloud commands:
+
+  - **One exit-code rule for the OTA commands.** `akan pack-update --against`, `akan push-update` and `akan register-binary` exit 2 when the pack needs a new store build. `push-update` also exits 2 when the project rejects the release. Any other failure exits 1. Each command's `--help` lists these codes.
+  - **Akan Cloud refusals are read from the status and the whole response body**, so a server `Err` key is found wherever it sits in the body. When the server asks a pack commit or binary registration to retry, the CLI waits at least its `Retry-After`, and stops at once if that wait would pass the deadline. A storage PUT that gets a 429 or 503 also waits its `Retry-After`, up to a minute.
+  - **Runner prompts fail fast when stdin is not a terminal.** This covers picking a script for `akan script`, installing a database mode's packages, choosing the scp env server, entering a Windows test target, going on past a platform test that did not pass, and confirming a `deploy-akan` publish. Each one used to read the piped input as its answer. Each now fails with what to pass or set instead.
+  - **A malformed pipeline secret name is never echoed back** by `akan upload-secret` or `akan remove-secret`. Such a "name" is often a value pasted in the wrong place, and the refusal lands in terminal scrollback and CI logs.
+  - **`deploy-akan`** writes each versioned `package.json` with its trailing newline, and so does the CLI dist.
+  - **A template's static file** (an image or a font) is kept when the caller passes `overwrite: false`, which text files already did. Before, it was copied over the user's file.
+
+  devkit adds `ExitCodeError` (a command exits with its code) and `assertPromptable(problem, { choices, remedy })` to `@akanjs/devkit/commandDecorators`. `@akanjs/devkit/cloud` gains `CloudHttpError` (status, whole body, headers), `PipelineSecrets` and `CloudUpdates`, and `@akanjs/devkit/mobile` gains `UpdatePackFolder`, the one reader and writer of a pack folder. Cloud `HttpClient` failures are `CloudHttpError`s, with the same message as before.
+
+  Upgrade note: a CI step that answered one of the runner prompts above through stdin now fails. Pass the argument or set the value the error names.
+
+- ce817b6: A phone web bundle release can start revoking an update signing key, and the config keeps the revocation.
+
+  - **Start one:** `akan publish-update --platform ios|android --revoke <keyId,...>` (`akan-native update publish ios|android --revoke <keyId>`, repeatable) revokes keys of `updates.publicKeys`; `--reset-sequence` adds `resetSequence` to that release. `akan update-keygen` prints each key's keyId.
+  - **Keep it:** `native.updates.revokedKeys` lists the keyIds every phone release revokes, so a release published from a fresh checkout still revokes them. A release carries `revokedKeys`, the channel's published revocations and `--revoke` together, and warns about a revocation the list does not hold.
+  - **New binaries:** a phone build trusts none of the keys `revokedKeys` lists, though `updates.publicKeys` still holds them, so a fresh install never takes a release a revoked key signs. A config whose `revokedKeys` covers every key is refused. A desktop release signed with a revoked first key warns that installed desktop apps keep trusting it until a binary with another first key replaces them.
+  - **Refused before the build:** a keyId the key ring does not hold, more than 16 revoked keys, `--reset-sequence` without a revocation, either flag on a desktop release, and a signing key the release revokes or that is listed before a key it revokes. The error names where the revocation came from and the key to sign with (`AKAN_NATIVE_UPDATE_KEY` picks its file).
+  - **API:** `publishUpdate` and `checkPublishUpdate` take `revoke` and `resetSequence`, and `checkPublishUpdate` validates the `updates` settings too; `updateKeygen` returns `keyId`. The native build API is 0.12.0.
+
+  Upgrade note: the akan CLI needs native build API 0.12.0, so install matching versions of akanjs and @akanjs/cli; an older one is refused.
+
+- ce817b6: Fixes for over-the-air updates on a phone, plus the upload commands they were missing.
+
+  - **Hung releases:** a release on trial whose page hangs in a script now rolls back while the app runs.
+    - The ready timer starts with the page, not when it finishes loading.
+    - A page that does not answer gets a fresh renderer: a new web view window on iOS, an ended renderer process on Android.
+  - **Downloads:** update downloads ask for `*/*`, so a CDN that injects scripts into HTML responses can't change the signed bytes.
+  - **Inlined dictionary:** the dictionary a build inlines into the client bundle is key-sorted, so the same commit gives the same bytes.
+  - **`native.devtools: true`:** opens the web inspector of a release build, for an internal test target only.
+  - **`akan push-update <app> --platform`:** packs an update and uploads it to the Akan Cloud project, which signs and publishes it.
+    - The pack goes straight to the project's storage, so a proxy's request time limit can't cut off a large one. Only the files the pack's manifest lists go up, though a pack folder keeps every earlier pack's files.
+    - `--pack <dir>` uploads a folder `akan pack-update` already wrote instead of packing again, so one pack built in CI can be checked, then uploaded as it is.
+    - It exits 2 when the pack needs a new store build or the project rejects it, and stops without retrying when the project says the upload was already used.
+  - **`akan register-binary <app> --platform --distribution`:** registers the store build `release-*` made, with a pack of the same commit, which goes up and stops the same way. It refuses when the two provide different native APIs.
+
+- ce817b6: `updates.report: { url }` has a phone post what became of each web bundle release, so whoever publishes sees rollback rates.
+
+  - **Events:** downloaded, applied, confirmed, rolled back (timeout, relaunch, hang, failed check at start) and failed (download, file hash, disk, signature, manifest).
+  - **When:** at the next launch or return to the foreground, 20 to a request. Events wait until the server takes them, at most 100.
+  - **Identity:** a random install id that lasts as long as the install, not a device identifier, and nothing about the user.
+  - **Store builds:** `bundle.json` names the address, so a server registering the binary can check it is its own.
+
+- ce817b6: `akan pack-update` records each pack in `<out>/pack.json`: app, target, platform, env, channel, app id and version, native API, web hash, file count and size. With `--against`, the record also carries the compatibility result. A pack that needs a new store build now exits 2 instead of 1, after writing `pack.json` and `compat.json`; any other failure exits 1 and leaves no `pack.json`. The same commit, env and target pack to the same bytes.
+
+  That last guarantee needed an akanjs fix. A library's generated `getSerializedSignal` macro read every signal any other client in the build process had applied, so whether a lib's chunk carried the app's whole registry depended on Bun's transpiler cache. The macro and `FetchClient.from()` now read `ownSerializedSignal`, the signals a client was built with. Merged signals no longer keep keys set to `undefined`. Run `akan sync` to regenerate `lib/sig.ts`.
+
+  Upgrade note: a CI step that took exit 1 from `akan pack-update --against` to mean "needs a new store build" checks for 2 now, since 1 is any other failure. Run `akan sync` once on every app and library, so its generated `lib/sig.ts` reads `ownSerializedSignal`.
+
+- ce817b6: An app's pipeline can ship its native web bundle over the air: `{ use: "ota", targets?, platforms? }` runs after `deploy` in its own `ota` phase, followed by an `after-ota` slot. It is opt-in, so an app without it runs build → docker → deploy as before. By default it packs every native target that declares `native.updates` for both iOS and Android, and a named target without `updates` is a plan error. The plan's step carries `with: { app, targets, platforms }`, and `akanjs/common` exports `pipelineOtaPlatforms` and the `PipelinePlanOtaStep` type. An executor parsing plans with an older `akanjs/common` refuses a plan that holds `ota`.
+- 8ba25ec: Data migrations: a change that reshapes stored documents ships a script in `apps/<app>/script/migration/`, which every environment runs the same way.
+
+  - **`akan create-migration <name> <app>`** writes `script/migration/<yyyyMMddHHmm>_<name>.ts`, a default-exported `migration(title)` from `akanjs/server` with empty `.plan()`, `.apply()` and `.verify()` stages, which also takes `.param()`, `.rollback()` and `.config()`. A migration writes only through `table(refName)`, which records every value it changes.
+  - **`akan migrate <app> [list|plan|apply|verify|rollback] [id]`** runs them locally, and `bun main.js ops migrate` takes the same arguments in a built image. `plan` prints a `planHash`, and `apply --expect <planHash>` refuses when the data changed since that plan was reviewed. `--json` prints the result as the last line, even when the command line itself is refused; the exit code is 0 on success, 2 when the command, a parameter or the id is wrong, 3 when verify finds problems (an apply's changes stay committed), and 1 otherwise.
+  - **Runs are recorded in the app's own database** (`_akan_migration_run`, `_akan_migration_change`) under a lease, so one runs at a time; `db-export` and `db-import` carry them along, and no insight query can read them. `rollback` restores what an apply changed, deletes the rows it inserted or copied, skips a row edited since, and still works once the script is deleted, then with the default undo. `.config({ transaction: false })` commits as it goes, and a failed run is left `partial` to resume.
+  - The generated `server.ts` exports a `migrations` manifest of that folder, and the `Err` lint rule leaves `script/migration/**` alone, since an operator reads its messages.
+
+- ce817b6: Apps declare their build pipeline in `akan.config.ts`. `pipeline: { stages, env, after }` in an app's config lists its stages in order — the built-in `{ use: "build" | "docker" | "deploy" }` actions plus shell stages (`{ name, sh | steps }` with `when`, `env`, `secrets`, `timeout`, `retry`, `allowFailure`) — and an app without one runs build → docker → deploy as before. A new workspace-root `akan.config.ts`, typed `WorkspaceConfig`, holds the stages around every app: `pipeline: { before, after, post, env, timeout }`, with `parallel` and `matrix: "apps"` stages. `akan pipeline dry-run | validate | plan` turns both into the plan Akan Cloud runs, locally and without running anything; it exits 0 with a plan, 1 with an envelope of errors and 2 for anything else. `akanjs/common` exports the plan schema and its strict parser (`PipelinePlanSchema`).
+
+  `akan upload-secret <NAME>`, `akan list-secrets` and `akan remove-secret <NAME>` manage write-only pipeline secrets per project, optionally per branch (`--branch debug|develop|main`). A value comes from `--file`, piped stdin or a hidden prompt, never from an argument. A step lists the names it reads in `secrets`. Anyone who can push to the repository can make a step print a secret, as with GitHub Actions secrets.
+
+  Upgrade note: `akan.subspace.ts` is no longer read. Move its content under `subspace` in the workspace-root `akan.config.ts` (`const config: WorkspaceConfig = { subspace: { … } }`). The root config never travels to a subspace.
+
+  Upgrade note: delete `akan.subspace.ts` after moving its content. `akan subspace push` and `akan subspace pull` refuse while it is still at the workspace root, and a push removes any copy of it from the subspace.
+
+- ce817b6: `@akanjs/devkit/subspace` keeps the push and pull flow; its report text moved to `SubspaceReport` (`@akanjs/devkit/subspaceReport`) and its work on a subspace's clone to `SubspaceClone` (`@akanjs/devkit/subspaceClone`).
+
+  Upgrade note: code that imported these from `@akanjs/devkit/subspace` reads them from the new modules:
+
+  - `formatSubspaceStatuses`, `formatSubspacePushResults`, `formatSubspacePullResult`, `formatSubspaceEnvUpload` and `formatSubspaceDiff` are `SubspaceReport.statuses`, `.pushResults`, `.pullResult`, `.envUpload` and `.diff`.
+  - `Subspace.anchorFile`, `memberDirs`, `subspaceOwnedDirs`, `secretsMarkers` and `holdDir` are static fields of `SubspaceClone`.
+  - `Subspace.workspaceOnlyEntries` is gone; `Subspace.retiredConfigFile` names the file a subspace never receives.
+
+- ce817b6: `akan subspace plan <name>` prints what `akan subspace push` would ship, worked out from the checkout alone — no fetch, no remote, no clone: the apps and the libraries their closure pulls in, the file count, which workspace-root entries are pushed, excluded or left to the subspace's own copy, the root dependencies pruned from its manifest, and anything that would make a push refuse: a dirty working tree, a leftover root `akan.subspace.ts`, a branch outside `pushableBranches`, or a `bun.lock` resolving from a loopback registry, read from `HEAD` (`git show HEAD:bun.lock`) as a push reads it. It exits 1 when any of them is there. `--format json` prints the same as data. `akan subspace push` and `pull` also refuse while a root `akan.subspace.ts` exists.
+- ce817b6: `akan typecheck` takes a library too (`akan typecheck <lib>`: its `server.ts`, `client.ts`, `index.ts` and pages), and checks the target's own `*.test.ts` / `*.spec.ts` as well, which nothing imports and Bun runs unchecked; `--tests false` leaves them out, and a build's typecheck phase still does. Each mode keeps its own tsconfig and incremental cache under `.akan/typecheck`. Upgrade note: `akan typecheck` now checks tests and specs by default, so type errors they already had can fail a CI run that passed before; fix them, or pass `--tests false` for the old scope.
+- ce817b6: A desktop app's carried server takes `desktop.server: { env, restart, watchdog }`: variables over the image's (secret-named ones and the stage's own refused at build), `restart: "forever"` or a count of crashes before giving up, and a health-route watchdog that restarts a hung server. `desktop.webview2: "standalone"` embeds the whole WebView2 Runtime in the Windows setup. `updates.setChannel({ channel })` moves an installed desktop app to another manifest, and `akan publish-update --upload s3://<bucket>/<prefix>` uploads the release, its manifests last. Fixes: `Model.New` opens under its own `modal`; two `Model.New`s of one model on different slices open only the pressed one's form; the top inset slots clip at a 0 inset and follow iOS's keyboard pan; `Layout.BottomTab` matches tabs by segment with per-tab `exact` and `match`, keeps the badge under `renderTab` and marks the current tab `aria-current="page"`; a multipart mutation's other body args arrive typed as in a JSON body.
+- ce817b6: The workspace-root `akan.config.ts` takes `cloud: { host }`, the cloud the CLI uses when a command names no `--host`. This lets a workspace on a self-hosted Akan Cloud skip passing `--host` every time. It applies to login, env, secret, subspace and tunnel commands. The host must be https, or http on this computer.
+
+### Patch Changes
+
+- b1165ba: `AKAN_BUILD_METAFILE=1 akan build <app>` writes the bundler's metafile for each backend entry (`main`, `server`, `rscWorker`, `console`) to `local/build-meta/<app>/<entry>.json`, which says which inputs put how many bytes into which output. Outside `dist/`, so an image never carries it, and off by default, since a server metafile is the size of its module graph.
+- bb71ed3: `akan build` bakes into its page and CSR bundles the `AKAN_PUBLIC_REPO_NAME` and `AKAN_PUBLIC_SERVE_DOMAIN` its Dockerfile carries, read from the workspace `.env` as `AKAN_PUBLIC_ENV` already was. A shell that exported a different value used to win in the bundles alone, so a cloud CSR bundle or native app dialed `<app>-<env>.<the shell's domain>` while the image served the `.env`'s. When the `.env` outranks a value the shell exported for one of the three, the build now says which ones and what it used (`AKAN_PUBLIC_ENV` from `--env` excepted).
+- 2082ccd: Akan.js now requires Bun 1.4.4: every package's `engines.bun` reads `>=1.4.4`. akan-native's doctor fails on an older Bun and warns on any other, with `bun upgrade --version 1.4.4` as the fix. Before 1.4.4, bun:sqlite counted the rows a full-text index's triggers wrote, so `updateManyByQuery` and `removeManyByQuery` on a model with search fields reported far more `matchedCount` and `modifiedCount` than the documents they changed.
+
+  Upgrade note: 3.0.2 accepted Bun 1.4.0; run `bun upgrade --version 1.4.4` first.
+
+- 8ba25ec: A failed `akan typecheck` or `akan build` prints its diagnostics once, on stderr. The CLI's error handler printed them a second time on stdout, so anything reading both streams got every diagnostic twice.
+- ce817b6: CLI fixes:
+
+  - **No prompt on a piped or closed stdin.** A missing argument, option, app, library, package or module fails at once with an error that names it. Before, the prompt read the piped input as its answer and printed it: `echo "$TOKEN" | akan upload-secret` without a NAME echoed the token into the log.
+  - **`akan build`** bakes the build's own environment into the route and CSR bundles. That is the root `.env`'s `AKAN_PUBLIC_ENV` (`--env` on a desktop or mobile build): the same environment the server env plugin and the Dockerfile use. A shell `AKAN_PUBLIC_ENV` that named another one used to make SSR throw "env/env.server.<env>.ts is not in this build".
+  - **A workspace on an older akanjs.** A workspace whose native API is older than 0.12.0 is refused with "install matching versions of akanjs and @akanjs/cli", instead of crashing on a missing function.
+
+  Upgrade note: a CI step that relied on answering a prompt through stdin now fails fast; pass the argument on the command line.
+
+- ce817b6: Security: a server-side call to another server no longer carries the visitor's session. Server code answering a visitor's request used to send the visitor's `Authorization` header or auth cookie, and their `x-real-ip`, with every call it made, so a `fetch.clone({ origin })` toward another origin handed that server the visitor's token for this one. Now only a call to this server forwards them; a clone toward another origin, any clone of one, and a call given another `{ origin }` send only the client's own `jwt`, the one `fetch.clone({ jwt })` was given. Upgrade note: a server that relied on the forwarded session now receives a signed-out call; give the clone the token it should send (`fetch.clone({ origin, jwt })`).
+- ce817b6: `akan` cloud commands read `--host` and the root `cloud.host` the same way: as the URL's origin and path, with a trailing slash removed, so a trailing slash, an uppercase host or a default port no longer names a separate sign-in. Upgrade note: a login saved under a host spelled with a trailing slash, in uppercase or with `:443` is not found under the normalized spelling; run `akan login` once more.
+- 18f0bd8: Fixes from a CodeQL code-scanning and code-quality pass:
+
+  - The `"use client"` check that the build runs on every module no longer backtracks exponentially on leading block comments (about 30 one-line comments hung the build), and it no longer reads `/* a */ x /* b */ "use client"` as a directive.
+  - A package `exports` wildcard target with more than one `*` has every `*` replaced, as Node does, in the build's resolver and the barrel-imports plugin.
+  - A tunnel agent ignores a gateway heartbeat outside 1 s to 5 min and keeps the 30 s default; Bun runs a NaN, negative or over-2^31 interval every millisecond.
+  - The in-page agent's screen text prints no `data:` or `vbscript:` link, in any letter case, as it already printed no `javascript:` one.
+  - A markdown link label or a mention label no longer spans a `[` or `@[` where another one starts: `[a [b](u)` links `b`.
+  - `web_fetch` decodes `&amp;` last, so `&amp;lt;` reads as `&lt;`, and strips `</script >`-style end tags.
+  - Native: `google_services.xml` escapes backslashes, a share refuses a `vbscript:` link, and the dev shim escapes `<`, `>`, U+2028 and U+2029 in the values it inlines.
+  - `trimSlashes` and `trimTrailingSlashes` in `akanjs/common` trim in linear time; the framework's slash, email, translation and route-parsing regexes are now linear with the same results.
+
+- 9c87ed3: `akan lint` checks React's own hooks. Biome's `useHookAtTopLevel` runs on every `.tsx` under `apps/` and `libs/` except tests, and reports a `useState`, `useEffect` or other `use…` call behind a condition, in a loop or after an early `return`. The shared Biome config had it off, so such a call passed lint and broke the hook order only at runtime.
+
+  `no-conditional-st-hook` judges an `st` hook by the nearest function around it. An `st` hook at the top of a component defined inside `useMemo` or picked by a module-level ternary passes, as does one in a `for` loop's initializer, which runs once. The rule now also reports an `st` hook in a default value, on the right of `||=`, `&&=` or `??=`, in the arguments of an optional call such as `props.format?.(st.use.x())`, written with computed access such as `st["use"].x()`, and in a render function passed by name, such as `renderList={renderList}`.
+
+  Upgrade note: a workspace whose components call a React hook conditionally now fails `akan lint` until the hook moves to the top of the component.
+
+- 50afb48: A Tailwind class with a bracket nested inside its arbitrary part, such as `[[data-theme=light]_&]:block`, `has-[[aria-expanded=true]]:opacity-100`, `[&_[data-slot=x]]:p-2` or `[&:has([data-state=open])]:p-1`, now compiles. The source scanner cut each one at the inner `]`, so Tailwind never saw the class and its rule was left out of the built CSS without a warning. The candidate cache's version is bumped, so the scanner reads every file again on the next build instead of reusing the cut classes.
+- bd6f9e6: Dependency refresh for the published packages:
+
+  - **React 19.3.1** (`react`, `react-dom`, `react-server-dom-webpack`), together with the 19.0.9 / 19.1.10 / 19.2.9 backports of the same day.
+  - **Majors**: `chalk` 6, `commander` 15, `fontaine` 1, `firebase` 13 (optional peer), `happy-dom` / `@happy-dom/global-registrator` 21 (optional peers; CSS and iframe loading are now off by default).
+  - **Minors and patches**: `lexical` and every `@lexical/*` 0.52, `typebox` 1.3.37, `@biomejs/biome` 2.5.14, `@inquirer/prompts`, `@tailwindcss/node` / `tailwindcss` 4.3.3, `dayjs`, `immer`, `ignore`, `ora`, `string-width`, `subset-font`, `tailwind-merge`, `tailwind-variants`, `protobufjs`, `react-icons`, `@react-spring/web`, `@playwright/test`, `@types/bun`, and `bullmq` / `ioredis` to their latest 5.x.
+
+  Held back on purpose: `typescript` 7 (no compiler API, which devkit's scanners and transforms need), `ink` 7/8 (drop bracketed-paste markers and mouse reports from `useInput`, which `akan code`'s paste and wheel scrolling read), `ioredis` 6 (RESP3 by default) and `bullmq` 6 (backend rewrite), which need the conformance suite against real Redis, and `@biomejs/biome` 2.5.15 (reports `Object.keys(…).sort()` and other string sorts under `useArraySortCompare`).
+
+  Upgrade note: a workspace pins `react` / `react-dom` to `19.3.1` to match the `akanjs` peer range.
+
+- d9cfc2d: `akan subspace push` keeps whatever root `Jenkinsfile` and `akan.config.ts` a subspace has, a `Jenkinsfile` an earlier push left there included, and never delivers the workspace's.
+
+  `akan build` reads the workspace `.env` as Bun's own loader does: an unquoted value ends at its first `#`, and a quoted one at its closing quote. An inline comment used to stay in the value, so `AKAN_PUBLIC_SERVE_DOMAIN=example.com # prod domain` reached the app's domains and its Dockerfile, whose `ENV` line Docker refused (`can't find = in "#"`). The image, its bundles and its domains now take `example.com`.
+
+  Upgrade note: a subspace no longer receives the workspace's `Jenkinsfile`, which 3.0.2 pushed into every subspace. The copy an earlier push left becomes the subspace's own, so change it there. Quote a `.env` value that holds a `#`, as Bun's own loader already required.
+
+- ce817b6: An external view shows `native.backgroundColor` until its page's first frame, and a Windows app's executable names the app as its company when `desktop.publisher` is unset instead of keeping Bun's own ("Oven"), which Explorer and Windows Firewall's prompt showed.
+- 9ee3a60: Guideline text (`akan guideline show <name>`, MCP `get_guideline`) catches up with 3.1.0:
+
+  - `workspaceOnboarding`, `conventions` and `ssrRule` gate a signed-in layout with `.guard(() => signedIn())` from `@libs/shared/webkit`, which a new workspace has only with `create-workspace --libs true`. `ssrRule` says a crawler gets a late redirect as a real 3xx.
+  - `queryRule` and `workspaceRecipes` count `purge<Filter>` among a filter's methods, and `queryRule` says which queries a purge refuses.
+  - `workspaceRecipes` and the `akan-store` skill list `invalidate<Model>()`, and the `workspaceRecipes` page sample no longer awaits its view.
+  - `transportRule` adds a 408 and a 409 `idempotencyInFlight` to what `retry` retries.
+  - `modelDocument` points search at a `text` role rather than a `"text"` index.
+  - `runtimeRule` says an edge server starts with `/mcp` off and that `operationMode` scopes whole modules.
+  - `workspaceOnboarding` says only `--sign true` code-signs a `publish-update` release.
+  - `conventions`, `runtimeRule` and the READMEs name Bun 1.4.4, and the `mcp`, `apps` and `modern` server options describe the edge default and MCP Apps as shipped.
+
+- ce817b6: Windows desktop apps:
+  - An uninstall no longer leaves the app's exe behind when a watchdog starts the app again meanwhile. The stop step kills whatever starts from the folder until nothing runs, and deletes the exe in that same pass.
+  - A setup no longer fails when a watchdog starts the app again between the stop and the folder swap. The stop step moves the install folder to `<folder>.setup-old` in the pass that finds nothing running; the setup then checks the unpacked files and moves the folder back when they are incomplete, before the second rename puts the new files in place.
+  - A setup run with `/S` shows no "Verifying installer" window over a kiosk. NSIS shows it whatever `/S` says, so the setup no longer CRC-checks itself.
+  - Two launches from different kinds of session no longer both run as the first instance. Before, a launch from an SSH or service-started session and one from the desktop each started their own server on the same data, because the single-instance pipe name hashed USERDOMAIN, which differs between those sessions. The pipe name now comes from the account SID in the process token, read through `bun:ffi`, and from the profile folder only where the token cannot be read. A running instance of the older build is not found across the upgrade, but the setup stops it first anyway.
+  - A gate plugin is waited for up to 30 s, not 3, so a slow single-instance check can no longer let a second launch start its server before it exits.
+  - The launch phase's own deadline, on every desktop OS, is 45 s, the gate, setup and ready waits added up, where it was 18 s, so a launch whose gate is still deciding is no longer ended early.
+  - A setup's or uninstall's stop step that hangs is ended after a minute and counts as a failed stop. A setup then reports the app in use, where before it waited as long as the stop did.
+  - The running instance logs one line when another launch hands over to it, with the argument count only, so a launch with no console of its own still leaves a trace.
+- ce817b6: `native.backgroundColor` (one color or `{ light, dark }`) is what a native window shows before its page paints, and the splash's default, so a dark screen no longer flashes white. `native.desktop.publisher` names a Windows app's publisher in Apps & features, in its setup program and in its executable. On Windows, `window.setCursorVisible(false)` hides the pointer over the window's external views too, in every document they load, until it is shown again.
+- 645b859: A native plugin's `ios.sources` and `android.sources` accept the extglob forms Bun 1.4.4's glob added: `!(…)`, `@(…)` and `+(…)` (for example `ios/!(Preview).swift`). They used to be read as one literal file name and failed the build with "source … not found". `?(…)`, `*(…)` and brace ranges such as `{1..3}` already reached the glob.
+- def5a20: Every native build and update pack records the `AKAN_PUBLIC_*` values its web bundle inlined in `bundle.json` as `web.publicEnv`, with a `web.publicEnvHash`; `pack.json` carries the hash too. Keys `akan.config.ts` derives are left out. A target with `updates` refuses a value an update could not carry: a key naming a secret, a non-string, a control character, or more than 256 keys or 64 KiB.
+
+  `--public-env <file>` on `release-ios`, `release-android`, `pack-update`, `push-update` and `register-binary` builds the web bundle with exactly those values, taken from a JSON map or a store build's `bundle.json`; the shell's and `.env`'s other `AKAN_PUBLIC_*` are dropped. `pack-update --against` repeats what that store build recorded, and a pack whose values differ needs a new store build (exit 2). `register-binary` repeats what the store build recorded.
+
+- ce817b6: Native app fixes:
+
+  - **Desktop updates keep the installed app's signer.**
+    - On macOS, an app signed with a Developer ID team refuses a downloaded release that the same team did not sign.
+    - On Windows, an app whose exe has a valid Authenticode signature refuses a release whose exe isn't signed by the same subject. The check runs in PowerShell, Constrained Language Mode included. Where AppLocker, SRP or WDAC keeps PowerShell from running, a signed app refuses every release, since none can be checked; update such PCs with the installer.
+    - An ad hoc or unsigned installed app takes releases as before.
+    - A refused release is recorded as failed (`NOT_ALLOWED`) and is not offered again.
+  - **Phone web updates packed on Windows** (`akan pack-update`, `akan-native update publish`) list the files in subfolders with `/`. They listed them with `\`, which phones refuse, and their web hash now matches a store build made on another OS.
+  - **iOS:** a pending web bundle becomes the trial when the first window asks for its page, not at launch. A silent push that launches the app in the background no longer starts a trial that the next launch rolls back as `relaunch`.
+  - **Android:**
+    - A destroyed activity's ready timer no longer fires after `recreate()` and rolls back the trial its new activity runs.
+    - A downloaded web bundle can no longer be pruned between its move into place and its staging.
+
+  Upgrade note: build every desktop release the way the installed app was signed, with `--sign` and the same `AKAN_NATIVE_MACOS_*` / `AKAN_NATIVE_WINDOWS_*` identity. A signed installed app now refuses an unsigned or differently signed release, so republish that release signed.
+
+- ce817b6: `router.push` / `router.replace` take `{ shallow: true }`: on an SSR page a query-only change writes the URL and the store without asking the server for the page, and back/forward between such entries stays shallow. `Tooltip` draws on the overlay layer and flips to the side with room, so it no longer clips inside a scrolling list or widens it. An SSR document links `rootLayout().manifest()` at `/manifest.webmanifest` (the basePath's own when it is visible), which the server answers, instead of a `data:` URL. An input smaller than 16px is drawn at 16px on a touch screen, where iOS would zoom into it, and a caller's own `text-*` still sets its size. `BottomSheet` reports a dismissal once and never on mount, locks the page while open, pads for the safe area, and opens on the overlay layer above the frame. Upgrade note: `Tooltip`'s bubble is no longer in the DOM until it opens; a test that read it beside its trigger reads the trigger's own text instead.
+- 07b8248: A new lint rule, `no-conditional-st-hook`, runs on every `.tsx` under `apps/` and `libs/`. It reports an `st` hook that does not run on every render:
+
+  - The hooks it checks are `st.use.*`, `st.slice.<name>.use.*`, `st.sel`, `st.ref`, and the last step of `st.tool(…)` (`.exec` / `.card`), `st.useState(…)` (`.init`) and `st.expose(…)` (`.value`).
+  - It reports them on the right of `||`, `&&` or `??`, in a ternary branch, an `if` / `else` body, a `switch` case, a loop or a `catch` block, and in a callback that a component hands to a call or a JSX prop.
+
+  Biome's `useHookAtTopLevel` cannot see these hooks, because their names do not start with `use`. A skipped call shifts every later hook by one slot, and production React does not check the order. A later `useRef` then gets another hook's frozen store value, and the screen crashes with "Cannot add property current, object is not extensible".
+
+  The fix is to read each hook into its own `const` at the top of the component, then combine the values.
+
+  The rule does not report a hook after an early `return`, or one inside a local helper the component calls.
+
+  Upgrade note: `akan lint` now fails on these call sites. One common case is a hook inside `Load.Units`' `renderList`. `Load.Units` calls it only while the list is non-empty, or when `renderEmpty={false}`. Move the hook into the component that renders `Load.Units`.
+
+- ce817b6: A server env profile build (`akan build --profile <p>`, `native.desktop.server.profile`) swaps each lib's env defaults as it swaps the app's: for the lib's `env/env.server.testing.<p>.ts`, which the build refuses when a secret-named key holds a value, or for the defaults with every secret-named value left out, named in a build warning. A secret name is one `Logger.isSecretKey` masks, and everything under such a key counts, so an `iapVerify` or service-account block is left out whole; under any key, a URL holding a password or a secret-named query parameter is a secret too. A profile file that imports the file it replaces is refused, and so is a lib default a JSON snapshot cannot hold (a function, `Map`, `Set`, `Date`, class instance, bigint or non-finite number) unless the lib has a profile file.
+
+  Upgrade note: a desktop app that carries its server is refused a release build or `publish-update`, signed or not, while that server's bundle holds a secret value of the workspace's server env files; build its server with a profile (`native.desktop.server.profile`).
+
+- 2c5b833: `LibsqlDatabase` is removed, along with the `@libsql/client` optional peer dependency, `LibsqlDatabaseConfig`, the `database.libsql` server env and the `LIBSQL_URL` / `LIBSQL_URI` / `LIBSQL_AUTH_TOKEN` variables. No database mode used it: `single` and `multiple` run on `SqliteDatabase`, `cluster` on `PostgresDatabase`. Upgrade note: an app that applied `LibsqlDatabase` itself moves to `SqliteDatabase` for a local file or to `cluster` mode for a shared server.
+- 6b5646e: - The akan CLI runs in a workspace with no root `.env`: the workspace root is the folder with `package.json`, `tsconfig.json` and an `apps/`, `libs/` or `pkgs/` folder. Unset, `AKAN_PUBLIC_REPO_NAME` falls back to the origin remote's name and `AKAN_PUBLIC_SERVE_DOMAIN` to `localhost`; `akan build` and the redis/postgres tunnels refuse either fallback for any environment but `local`.
+  - The theme contrast check reads every theme block. It used to read every other block, and none after an `@source` line, so on the framework stylesheet it checked only the light theme. `akan lint` may now report contrast failures in a `:root` or dark theme that were always there.
+  - `declaredCustomProperties` skips a whole `@theme` block, nested `@keyframes` included, and ignores tokens inside comments. Theme CSS and the generated `useClient.ts` are parsed in linear time.
+  - `akan agent install` writes an `AGENTS.md` about 60% smaller: the conventions guideline keeps the rules and points at the on-demand guidelines for the detail, and a new `pageRule` guideline covers routing.
+- 5914378: A `.loading()` on a layout that sits at a root boundary — `(group)/_layout.tsx`, or `(group)/<segment>/_layout.tsx` such as `(docs)/docs/_layout.tsx` — now reaches the route's Suspense boundaries. The generated wrapper that takes that layout's place in the route stack re-exported `NotFound`, `Error` and `pageConfig` but not `Loading`, so the stage was dropped silently: a streamed render flushed the shell around an empty content area, painting the footer directly under the header until the page arrived.
+- ee190b9: On Windows, a generated root layout named its layout files with backslashes, as in `page\_layout.tsx`. The names appear in the route-convention errors that `resolveRouteModule` and `assertGuardOnChain` throw. They now use `/` on every OS (`page/_layout.tsx`), so the generated file reads the same everywhere.
+- ce817b6: `rootLayout().viewport({ fitCover, interactiveWidget, themeColor })` writes the document's `viewport` and `theme-color` meta, on the server and in the CSR shell; a native app draws under the notch by default, and a per-theme `themeColor` follows a theme switch. Route heads now merge root first: a deeper `.head()` replaces the `<title>`, a `<meta>` with the same `name` or `property`, and a canonical, manifest or icon link, and keeps the rest. Upgrade note: a page that restated its root's manifest, icon or theme tags can drop them, and an ancestor's head now renders under every page that writes its own.
+- 17aa243: A route can check who may open it before anything on it renders. `rootLayout()`, `layout()` and `page()` take a `.guard(fn)` stage, declared at most once per route. It receives the route's typed arguments and `lang` (a layout's guard gets no `children`). It refuses with `router.redirect()` or `router.notFound()`, or with `getSelf({ unauthorize })` from a guard. The new `signedIn()` helper in `libs/shared/webkit` does the last of these.
+
+  - **Server render.** Every guard in the chain runs in order before any layout body starts, root layout first, and before the route's arguments are checked. A redirect after an awaited query is now a real 307, and a not-found is a 404. Before this, a refusal raised inside a layout body after I/O arrived as a late, in-stream redirect. A query inside a guard that the server refuses with 403 or 404 (an owner check, for example) answers not-found, so the page does not tell anyone the record exists.
+  - **Client navigation.** A page's layers wait for its guards. Their verdict is kept by what the guards read, so a move that changes only a query no guard reads keeps it. It lasts while a layer of that location is on screen. Only the page in front asks: a parked page, or the one under the current page during a swipe back, asks nothing. Back in front, a cached page included, it asks again in the background while what it drew stays; a refusal moves the router and blanks it, and a failure shows as a failed render. A legacy page keeps the props it was let in with while a new location is checked. A guard that moves the router ends the chain, and the page draws nothing. A refused or failed check runs again when its layer is retried. Root layouts are drawn once for every page and are not gated themselves, but their guards still run in each page's chain, and a legacy page under them waits for them too.
+  - **A refusal shows nothing of what it refused.** The not-found page that a guard's `router.notFound()` answers is drawn under the layouts above the refusing guard only, with no route head; a guard that throws a string is cut the same way. A path no page matches asks the guards of the layouts its not-found would be drawn under first: a redirect answers as one, and a refusal keeps only the layouts above it.
+  - **`guard` is a stage only.** A legacy module (a default function beside named exports) that exports `guard` fails to load and fails `akan build`, a legacy root layout included.
+  - **MCP.** A page prompt runs its route's guards before its bodies, so a refusal ends the prompt as a redirect or a not-found. `prompts/list` and the app tools in `tools/list` show only the screens whose guards admit the caller. In a listing, no arguments are known yet: a guard that reads one counts as admitting the caller there, and is checked again when the prompt or tool is called. If the guards do not answer within the list wait, the list is served unfiltered, and the calls are still checked. `resources/list` shows a UI host only the views of the apps it may call. A caller's listing verdict is kept for 5 seconds, so a host that lists tools, prompts and resources in a row runs the guards once.
+
+  A generated root layout passes the user layout's guard through. When there is no ancestor root, it composes the app root's guard and the user layout's guard with the new `RouteGuards.compose`.
+
+- 63479ae: The files `akan page` writes, and those of the app and library component and scalar scaffolds, now pass `biome check` as written, instead of starting with a blank line and leaving imports unsorted. The CRUD page scaffolds and the sample app's task pages hand each `fetch.init*` / `view*` / `edit*` result to its section unawaited, so the page shell is sent first and each section fills in behind its own boundary, and the single-page CRUD scaffold gives `Model.New` a `trigger` instead of a `className` it does not take. The conventions guideline's page body rule says the same: await only what the shell reads, through one `Promise.all`. Scaffolds (`akan create-*`, `akan page`, workspace and package templates) format only the files they wrote: an existing file they left alone is no longer reformatted.
+- ce817b6: The refusal a desktop build gives when its server bundle holds an env secret names the bundle file and the env file with `/` on every OS, as the rest of akan's messages do, instead of `apps\demo\env\…` on Windows.
+- 576df96: An MCP App view or CSR shell that draws `@lexical/code-prism` under a `lazy()` component no longer fails with `ReferenceError: Prism is not defined` (a host shows "The page failed to load."). These single-file bundles don't split, and Bun (1.4.4 included) runs a module that only an `import()` reaches with its ESM imports ahead of its CommonJS ones, whatever their order, so the Prism language files ran before the `prismjs` they extend. A vendor module's bare import of a module that may run late now goes through a shim that imports the same specifier, so it runs where it is written. ES module targets and packages that declare `sideEffects` are left to the bundler, so a bundle changes by the shims alone.
+- b56d305: The generated barrels (`cnst`, `db`, `dict`, `sig`, `st`, and the facet indexes) list modules in name order instead of the order the filesystem returns them, so two machines building the same commit produce the same CSR bundle. A store action or state key that two stores both define was decided by that order; it is now decided by module name.
+- ce817b6: `akan subspace push` and `akan subspace plan` name the setting behind a refused branch: `` Branch "x" is not pushable. `subspace.pushableBranches` in the workspace root akan.config.ts allows: main, develop, debug ``. The message used to say only where the subspace settings live.
+- ce817b6: `fetch.clone({ retry })` and a call's `{ retry, idempotencyKey }` retry an unreachable server, a 502/503/504 and a 429 after its Retry-After on a jittered backoff, within the call's one deadline; a mutation retries under one `Idempotency-Key`, and the server runs a mutation once per key, caller and arguments, answering a repeat with the first result (409 `base.error.idempotencyInFlight` while it runs) — a signed-out call, or one whose handler returns a `Response`, runs every time. The websocket client reconnects on a jittered exponential backoff (`ws: { reconnect, headers, tls, onStateChange, onRevoked, onError }`), sends a server-side client's token with the upgrade, numbers each room's frames, drops a repeat and calls `onResync` at a hole, and a resubscribe gets the frames it missed since its own subscribe replayed by a solo server on the built-in pub/sub (a Redis-backed or custom adaptor, and a `pubsub(Binary)` room, resync instead). `Model.upsertById(data, { preserveTimestamps })` writes a record under its own id with no hook. An insight field sums with `accumulate: { $sum: "<field>", ...condition }`. A `process` job's backoff takes `maxDelay` and its internal an `onFailed` dead-letter hook. Fixes: a live slice's `.live({ payload: "id" })` reaches its rooms; Tailwind v4's `top-(--x)` shorthand compiles; the root layout's manifest link is in the document head, where Chromium reads it.
+- Updated dependencies [4fc3902]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ed26089]
+- Updated dependencies [8aaa0c6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [b1165ba]
+- Updated dependencies [2082ccd]
+- Updated dependencies [1c577db]
+- Updated dependencies [ce817b6]
+- Updated dependencies [7cb97fa]
+- Updated dependencies [1dd54bf]
+- Updated dependencies [78e785e]
+- Updated dependencies [63479ae]
+- Updated dependencies [a597881]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [63479ae]
+- Updated dependencies [ce817b6]
+- Updated dependencies [18f0bd8]
+- Updated dependencies [b1165ba]
+- Updated dependencies [63479ae]
+- Updated dependencies [bea9eb7]
+- Updated dependencies [ce817b6]
+- Updated dependencies [a6577eb]
+- Updated dependencies [297f437]
+- Updated dependencies [531ab68]
+- Updated dependencies [8bf9f8e]
+- Updated dependencies [bd6f9e6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [2c5b833]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [77411ef]
+- Updated dependencies [70ebbb4]
+- Updated dependencies [ea39ba0]
+- Updated dependencies [b1165ba]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [b1165ba]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [b1165ba]
+- Updated dependencies [9ee3a60]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [6294981]
+- Updated dependencies [113fab2]
+- Updated dependencies [ce817b6]
+- Updated dependencies [2cb9c0f]
+- Updated dependencies [ee01a4c]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [b1165ba]
+- Updated dependencies [ce817b6]
+- Updated dependencies [0c1f96b]
+- Updated dependencies [658e59a]
+- Updated dependencies [5a94516]
+- Updated dependencies [509ba6f]
+- Updated dependencies [ce817b6]
+- Updated dependencies [b1165ba]
+- Updated dependencies [f6b70d8]
+- Updated dependencies [17aa243]
+- Updated dependencies [ce817b6]
+- Updated dependencies [3e275c2]
+- Updated dependencies [7b8c6c7]
+- Updated dependencies [63479ae]
+- Updated dependencies [50afb48]
+- Updated dependencies [4ed48d0]
+- Updated dependencies [63479ae]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [e200ce1]
+- Updated dependencies [fe1e27d]
+- Updated dependencies [ce817b6]
+- Updated dependencies [f949da0]
+- Updated dependencies [ce817b6]
+- Updated dependencies [b1165ba]
+- Updated dependencies [9bf9181]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ac753ff]
+- Updated dependencies [ce817b6]
+- Updated dependencies [17aa243]
+- Updated dependencies [6e5a402]
+- Updated dependencies [3b7e57d]
+- Updated dependencies [ce817b6]
+- Updated dependencies [1324d30]
+- Updated dependencies [329bd79]
+- Updated dependencies [2c5b833]
+- Updated dependencies [ce817b6]
+- Updated dependencies [c184074]
+- Updated dependencies [6b5646e]
+- Updated dependencies [ce817b6]
+- Updated dependencies [17aa243]
+- Updated dependencies [2c5b833]
+- Updated dependencies [6183f95]
+- Updated dependencies [8201174]
+- Updated dependencies [ce817b6]
+- Updated dependencies [fd52c2c]
+- Updated dependencies [8ba25ec]
+- Updated dependencies [ce817b6]
+- Updated dependencies [bb7a8cd]
+- Updated dependencies [f5c1f70]
+- Updated dependencies [b1165ba]
+- Updated dependencies [b7e969e]
+- Updated dependencies [471665c]
+- Updated dependencies [92a62ca]
+- Updated dependencies [6dabbf8]
+- Updated dependencies [b1165ba]
+- Updated dependencies [ce817b6]
+- Updated dependencies [181789d]
+- Updated dependencies [a1b32c7]
+- Updated dependencies [ca888e7]
+- Updated dependencies [63479ae]
+- Updated dependencies [ce817b6]
+- Updated dependencies [ce817b6]
+- Updated dependencies [587d530]
+- Updated dependencies [ce817b6]
+- Updated dependencies [b1165ba]
+- Updated dependencies [00e39db]
+- Updated dependencies [cebac7d]
+  - akanjs@3.1.0
+
 ## 3.0.2
 
 ### Minor Changes

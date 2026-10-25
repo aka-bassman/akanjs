@@ -1,5 +1,36 @@
 # use-agentic
 
+## 0.3.0
+
+### Minor Changes
+
+- ce817b6: An agent's tool call runs only as the action the screen declared when the call arrived. After the user approves, and again right before it runs, the runner requires the same declaration under that name — the same description and parameters, and the same confirm message for the approved arguments — rather than the same registration, so a list row mounting while the user decides no longer cancels an approval, and a different declaration that took the name over is refused with "<name> changed on screen before it ran, so it did not run." `st.tool(name, { label })` (use-agentic's `ToolEntryBase.label`) names an action for a person, in their language, and is never sent to the model. `Agent.useScreenActions()` returns the screen's argument-free tools for a command palette, each with its `label`, leaving out the tools a person answers with a card.
+
+  `AgentActivity` takes `keepGuides` (use-agentic): a subtree that is off screen publishes no tools or state but keeps saying its guidance, and `AgenticSurface.gated(gate, guideGate)` names the gate guidance follows.
+
+  Upgrade note: the check covers calls that need no approval too. Such a call used to run whatever registration held its name by then; it now returns that refusal to the model when the declaration under the name changed after the call arrived.
+
+- ed26089: The in-page agent can look at a picture on screen. A new built-in tool, `viewImage({ src })`, takes an image address that `readScreen({ images: true })` printed, redraws that `<img>` as a JPEG no longer than 1568px, and attaches it to the tool's result, so the model answers from the picture rather than its caption. It refuses an address no `<img>` on screen shows, and a `data:` one. A public picture the page may not read is sent by its address.
+
+  A tool result can now carry files in `ToolCallResult.attachments`, which have the same shape as a user's attachments. A tool of your own returns them with `ToolReturn.attach(result, [attachment])`, exported from `akanjs/store`. `AnthropicLlm` places them inside the `tool_result`. The OpenAI dialect sends them in a user message right after the turn's tool messages, and an MCP App hands a picture to the host's model as image content. Either way, they pass the same `accepts` check and image-type allow-list as a user's file, and one the model cannot read becomes a note in its place. They sit outside the 20,000-character result ceiling but meet the 4 MB per-file one. A file a tool returned before the user's latest message is sent as a note asking the model to call the tool again, and it is never written to stored history.
+
+  Upgrade note: `viewImage` joins the default built-ins, so `builtins={true}` and an omitted `builtins` now publish it. List the built-ins you want to leave it out.
+
+### Patch Changes
+
+- 18f0bd8: Fixes from a CodeQL code-scanning and code-quality pass:
+
+  - The `"use client"` check that the build runs on every module no longer backtracks exponentially on leading block comments (about 30 one-line comments hung the build), and it no longer reads `/* a */ x /* b */ "use client"` as a directive.
+  - A package `exports` wildcard target with more than one `*` has every `*` replaced, as Node does, in the build's resolver and the barrel-imports plugin.
+  - A tunnel agent ignores a gateway heartbeat outside 1 s to 5 min and keeps the 30 s default; Bun runs a NaN, negative or over-2^31 interval every millisecond.
+  - The in-page agent's screen text prints no `data:` or `vbscript:` link, in any letter case, as it already printed no `javascript:` one.
+  - A markdown link label or a mention label no longer spans a `[` or `@[` where another one starts: `[a [b](u)` links `b`.
+  - `web_fetch` decodes `&amp;` last, so `&amp;lt;` reads as `&lt;`, and strips `</script >`-style end tags.
+  - Native: `google_services.xml` escapes backslashes, a share refuses a `vbscript:` link, and the dev shim escapes `<`, `>`, U+2028 and U+2029 in the values it inlines.
+  - `trimSlashes` and `trimTrailingSlashes` in `akanjs/common` trim in linear time; the framework's slash, email, translation and route-parsing regexes are now linear with the same results.
+
+- 50afb48: An `@` mention whose title holds a bracket, such as "[Ops] Minutes", is now a chip and is sent with the message. `Reference.token` used to write the label as it was, and the reader stopped at its first `]`, so the token stayed raw text and the value it pointed at was dropped. A label's `\`, `[` and `]` are now backslash-escaped in the token, as in a markdown link, and `Reference.parse` and the composer read them back. A token written before this change still reads, unless its label ends in a backslash. `Reference.pointerOf(match)` turns one match of `Reference.pattern` into its pointer.
+
 ## 0.2.0
 
 ### Minor Changes
