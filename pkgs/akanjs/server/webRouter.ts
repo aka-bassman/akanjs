@@ -41,7 +41,15 @@ import {
   shouldInvalidateRouteCacheEntry,
   shouldStoreRouteCache,
 } from "./cachePolicy";
-import { type EncodedBody, encodeBody, encodedBodyResponse, encodedFileResponse } from "./contentEncoding";
+import {
+  type EncodedBody,
+  encodeBody,
+  encodedBodyResponse,
+  encodedFileResponse,
+  isCompressibleContentType,
+  matchesIfNoneMatch,
+  varyOnEncoding,
+} from "./contentEncoding";
 import { isCrawlerUserAgent } from "./crawler";
 import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import { CSR_DEV_ROUTE_PREFIX, resolveDevCsrMode, SSR_DEV_DIRNAME, SSR_DEV_ROUTE_PREFIX } from "./hmr/csrDevManifest";
@@ -756,10 +764,8 @@ export class WebRouter {
               cacheHtmlWhileStreaming(
                 htmlStream,
                 (html) => {
-                  this.#htmlCache.set(
-                    htmlCacheEntry.key,
-                    { body: encodeBody(html), ...htmlCacheMetadata },
-                    htmlStoreTtl,
+                  void encodeBody(html).then((body) =>
+                    this.#htmlCache.set(htmlCacheEntry.key, { body, ...htmlCacheMetadata }, htmlStoreTtl),
                   );
                 },
                 {
@@ -1341,6 +1347,7 @@ export class WebRouter {
     const etag = `W/"${stat.size.toString(16)}-${lastModifiedMs.toString(16)}"`;
     headers.set("ETag", etag);
     headers.set("Last-Modified", new Date(lastModifiedMs).toUTCString());
+    if (isCompressibleContentType(options.contentType)) varyOnEncoding(headers);
     if (WebRouter.#isNotModified(req, etag, lastModifiedMs)) return new Response(null, { status: 304, headers });
 
     return await encodedFileResponse(req, filePath, options.contentType, headers);
@@ -1397,12 +1404,7 @@ export class WebRouter {
   static #isNotModified(req: Request, etag: string, lastModifiedMs: number): boolean {
     if (req.method !== "GET" && req.method !== "HEAD") return false;
     const ifNoneMatch = req.headers.get("if-none-match");
-    if (ifNoneMatch) {
-      return ifNoneMatch
-        .split(",")
-        .map((value) => value.trim())
-        .some((value) => value === "*" || value === etag);
-    }
+    if (ifNoneMatch) return matchesIfNoneMatch(ifNoneMatch, etag);
 
     const ifModifiedSince = req.headers.get("if-modified-since");
     if (!ifModifiedSince) return false;

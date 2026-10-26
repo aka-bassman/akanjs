@@ -709,6 +709,10 @@ describe("WebRouter dictionary assets", () => {
         await fullSsr(
           new Request("https://example.test/fr/docs", { headers: { "x-locale": "fr", "x-path": "/docs" } }),
         );
+        await fullSsr(
+          new Request("https://example.test/docs/intro", { headers: { "x-locale": "ko", "x-path": "/intro" } }),
+        );
+        await fullSsr(new Request("https://example.test/ko/docs", { headers: { "x-locale": "constructor" } }));
       },
       { artifact: artifactWithDictionaries(), onRenderInput: (input) => inputs.push(input) },
     );
@@ -717,6 +721,8 @@ describe("WebRouter dictionary assets", () => {
       ["/_akan/dict/ko-def.js"],
       ["/_akan/dict/en-abc.js"],
       ["/_akan/dict/en-abc.js"],
+      ["/_akan/dict/ko-def.js"],
+      ["/_akan/dict/ko-def.js"],
     ]);
     expect(inputs[0]?.extraBootstrapInline).toContain('self.__AKAN_DICT_URL__="/_akan/dict/ko-def.js";');
   });
@@ -788,7 +794,9 @@ describe("WebRouter artifact folders", () => {
           return (await route(new Request(`https://example.test/_akan/${pathname}`))).status;
         };
         const escapes = ["styles", "fonts", "client", "dict"].flatMap((folder) =>
-          ["..%2Fbase-artifact.json", "..%2Fserver%2Fpages-abc.js"].map((name) => `${folder}/${name}`),
+          ["..%2Fbase-artifact.json", "..%5Cbase-artifact.json", "..%2Fserver%2Fpages-abc.js"].map(
+            (name) => `${folder}/${name}`,
+          ),
         );
 
         expect(await statusOf("styles/root-abc.css")).toBe(200);
@@ -1487,6 +1495,7 @@ describe("WebRouter full SSR cache orchestration", () => {
         const first = await fullSsr(new Request("https://example.test/docs"));
         const firstHtml = await first.text();
         expect(Buffer.byteLength(firstHtml)).toBeGreaterThan(1024);
+        await sleep(50);
 
         const hit = await fullSsr(new Request("https://example.test/docs", { headers: { "accept-encoding": "br" } }));
         expect(hit.headers.get("X-Akan-Cache")).toBe("HIT");

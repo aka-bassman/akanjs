@@ -1,14 +1,18 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import fs from "node:fs";
+import { connect } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { brotliDecompressSync, constants, gunzipSync } from "node:zlib";
 import {
+  acceptedEncodings,
   compressResponse,
   compressStreamResponse,
   encodeBody,
   encodedBodyResponse,
+  encodedFileResponse,
   isCompressibleContentType,
+  matchesIfNoneMatch,
   resolveEncodedSidecar,
 } from "./contentEncoding";
 
@@ -39,6 +43,43 @@ const resolve = (acceptEncoding: string, filePath = assetPath, contentType = "te
 
 afterEach(() => {
   process.env.AKAN_HTTP_COMPRESS = undefined;
+});
+
+describe("acceptedEncodings", () => {
+  test("takes what a client names, and lets a coding named with q=0 override `*`", () => {
+    expect(acceptedEncodings("gzip, deflate, br, zstd")).toEqual(["br", "gzip"]);
+    expect(acceptedEncodings("BR;Q=0.5")).toEqual(["br"]);
+    expect(acceptedEncodings("*")).toEqual(["br", "gzip"]);
+    expect(acceptedEncodings("*, br;q=0")).toEqual(["gzip"]);
+    expect(acceptedEncodings("*, gzip;q=0, br;q=0")).toEqual([]);
+    expect(acceptedEncodings("*;q=0, gzip")).toEqual(["gzip"]);
+    expect(acceptedEncodings("identity")).toEqual([]);
+    expect(acceptedEncodings("")).toEqual([]);
+  });
+});
+
+describe("matchesIfNoneMatch", () => {
+  test("compares weakly, so a validator a compressed answer weakened still matches", () => {
+    expect(matchesIfNoneMatch('W/"abc"', '"abc"')).toBe(true);
+    expect(matchesIfNoneMatch('"x", W/"abc"', 'W/"abc"')).toBe(true);
+    expect(matchesIfNoneMatch("*", '"abc"')).toBe(true);
+    expect(matchesIfNoneMatch('"abd"', '"abc"')).toBe(false);
+    expect(matchesIfNoneMatch(null, '"abc"')).toBe(false);
+  });
+});
+
+describe("encodedFileResponse", () => {
+  test("varies a compressible file on Accept-Encoding even when it goes out plain", async () => {
+    const plain = await encodedFileResponse(req("identity"), bareAssetPath, "text/css", new Headers());
+    const encoded = await encodedFileResponse(req("br"), assetPath, "text/css", new Headers({ Vary: "Accept" }));
+    const font = await encodedFileResponse(req("br"), bareAssetPath, "font/woff2", new Headers());
+
+    expect(plain.headers.get("Content-Encoding")).toBeNull();
+    expect(plain.headers.get("Vary")).toBe("Accept-Encoding");
+    expect(encoded.headers.get("Content-Encoding")).toBe("br");
+    expect(encoded.headers.get("Vary")).toBe("Accept, Accept-Encoding");
+    expect(font.headers.get("Vary")).toBeNull();
+  });
 });
 
 describe("compressResponse", () => {
@@ -120,6 +161,14 @@ describe("compressResponse", () => {
 
     expect(await compressResponse(req("br"), large)).toBe(large);
     expect(large.bodyUsed).toBe(false);
+  });
+
+  test("sends a handler-built body past 4 MiB as it is, though it declares no length", async () => {
+    const large = Response.json({ rows: "x".repeat(4 * 1024 * 1024 + 1) });
+    const res = await compressResponse(req("br"), large);
+
+    expect(res.headers.get("Content-Encoding")).toBeNull();
+    expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(4 * 1024 * 1024);
   });
 
   test("carries the status and the headers the handler set", async () => {
@@ -297,12 +346,56 @@ describe("compressStreamResponse", () => {
   });
 });
 
+describe("compressStreamResponse behind Bun.serve", () => {
+  test("survives clients that leave while the compressor finishes a body written at once", async () => {
+    const page = Array.from({ length: 60_000 }, (_, i) => `<p>${i} ${Bun.hash(String(i)).toString(36)}</p>`).join("");
+    const payload = new TextEncoder().encode(page);
+    const uncaught: unknown[] = [];
+    const onUncaught = (error: unknown) => uncaught.push(error);
+    process.on("uncaughtException", onUncaught);
+    const server = Bun.serve({
+      port: 0,
+      fetch: (request) => {
+        const body = new ReadableStream<Uint8Array>({
+          start: (controller) => {
+            for (let at = 0; at < payload.byteLength; at += 16_384)
+              controller.enqueue(payload.subarray(at, at + 16_384));
+            controller.close();
+          },
+        });
+        return compressStreamResponse(request, new Response(body, { headers: { "Content-Type": "text/html" } }));
+      },
+    });
+    const leaveAtFirstBytes = (encoding: string) =>
+      new Promise<void>((resolve) => {
+        const socket = connect({ port: Number(server.port), host: "127.0.0.1" });
+        socket.on("error", () => resolve());
+        socket.write(`GET / HTTP/1.1\r\nHost: x\r\nAccept-Encoding: ${encoding}\r\n\r\n`);
+        socket.once("data", () => {
+          socket.destroy();
+          setTimeout(resolve, 20);
+        });
+      });
+    try {
+      for (const encoding of ["gzip", "br", "gzip", "br", "gzip", "br"]) await leaveAtFirstBytes(encoding);
+      const whole = await fetch(`http://127.0.0.1:${server.port}/`, { headers: { "Accept-Encoding": "br" } });
+
+      expect(await whole.text()).toBe(page);
+      await Bun.sleep(50);
+      expect(uncaught).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+      server.stop(true);
+    }
+  });
+});
+
 describe("encodedBodyResponse", () => {
   const page = `<!doctype html><html><body>${"<p>안녕 cached</p>".repeat(300)}</body></html>`;
   const htmlHeaders = () => new Headers({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
 
   test("answers every request from the encodings made once, for whichever the client takes", async () => {
-    const encoded = encodeBody(page);
+    const encoded = await encodeBody(page);
     expect(encoded.byteLength).toBe(
       encoded.bytes.byteLength + (encoded.encodings.br?.byteLength ?? 0) + (encoded.encodings.gzip?.byteLength ?? 0),
     );
@@ -327,20 +420,20 @@ describe("encodedBodyResponse", () => {
   });
 
   test("keeps no encoding of a small body, or with compression switched off, and serves the bytes as they are", async () => {
-    const small = encodeBody("<p>tiny</p>");
+    const small = await encodeBody("<p>tiny</p>");
     expect(small.encodings).toEqual({});
     const response = encodedBodyResponse(req("br"), small, { headers: htmlHeaders() });
     expect(response.headers.get("Content-Encoding")).toBeNull();
     await expect(response.text()).resolves.toBe("<p>tiny</p>");
 
     process.env.AKAN_HTTP_COMPRESS = "0";
-    const off = encodeBody(page);
+    const off = await encodeBody(page);
     expect(off.encodings).toEqual({});
     expect(off.byteLength).toBe(off.bytes.byteLength);
   });
 
   test("sends the raw bytes for a status or range it would not compress", async () => {
-    const encoded = encodeBody(page);
+    const encoded = await encodeBody(page);
     const notFound = encodedBodyResponse(req("br"), encoded, { status: 404, headers: htmlHeaders() });
     expect(notFound.status).toBe(404);
     expect(notFound.headers.get("Content-Encoding")).toBeNull();

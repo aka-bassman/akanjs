@@ -886,7 +886,9 @@ describe("AkanApp", () => {
       await waitForReady(port);
       const statusOf = async (pathname: string) => (await fetch(`http://127.0.0.1:${port}/_akan/${pathname}`)).status;
       const escapes = ["styles", "fonts", "client", "dict"].flatMap((folder) =>
-        ["..%2Fbase-artifact.json", "..%2Fserver%2Fpages-abc.js"].map((name) => `${folder}/${name}`),
+        ["..%2Fbase-artifact.json", "..%5Cbase-artifact.json", "..%2Fserver%2Fpages-abc.js"].map(
+          (name) => `${folder}/${name}`,
+        ),
       );
 
       expect(await statusOf("styles/root-abc.css")).toBe(200);
