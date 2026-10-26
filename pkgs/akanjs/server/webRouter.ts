@@ -377,6 +377,8 @@ export class WebRouter {
 
     const clientServePrefix = `/_akan/client`;
     const clientOutputDir = `${this.#artifactDir}/client`;
+    const dictServePrefix = "/_akan/dict";
+    const dictOutputDir = `${this.#artifactDir}/dict`;
     const localCsrDir = path.join(process.cwd(), "csr");
     const csrOutputDir = fs.existsSync(localCsrDir) ? localCsrDir : path.join(this.#artifactDir, "csr");
     const publicDir = path.join(process.env.AKAN_APP_DIR ?? path.dirname(Bun.main), "public");
@@ -475,6 +477,16 @@ export class WebRouter {
           contentType: Bun.file(filePath).type || "font/woff2",
           cacheControl: this.#prodMode ? "public, max-age=31536000, immutable" : "no-store",
           anyOrigin: true,
+        });
+      },
+      [`${dictServePrefix}/*`]: (req) => {
+        this.#requestStats.staticAsset += 1;
+        const url = new URL(req.url);
+        const filePath = resolveStaticPath(dictOutputDir, url.pathname.slice(`${dictServePrefix}/`.length));
+        if (!filePath) return new Response("Not Found", { status: 404 });
+        return WebRouter.#fileResponse(req, filePath, {
+          contentType: "text/javascript; charset=utf-8",
+          cacheControl: this.#prodMode ? "public, max-age=31536000, immutable" : "no-store",
         });
       },
       "/_akan/image": (req) => {
@@ -1212,6 +1224,7 @@ export class WebRouter {
     return {
       ...artifact,
       cssAssets: artifact.cssAssets ?? {},
+      dictAssets: artifact.dictAssets ?? {},
       pagesBundlePath,
       rscRuntimeSsrManifest: artifact.rscRuntimeSsrManifest
         ? WebRouter.#normalizeSsrManifest(artifact.rscRuntimeSsrManifest, normalizedArtifactDir)

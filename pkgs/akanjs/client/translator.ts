@@ -91,17 +91,20 @@ export class Translator {
     const { defaultLocale } = parseAkanI18nEnv();
     return defaultLocale === lang ? undefined : Translator.#lookup(defaultLocale, key);
   }
-  // An SSR client is seeded with one locale only, so `#lookupDefault` has nothing to reach there: ship the text inside it.
   static withDefaultLocale(allDictionary: AllDictionary, lang: string): Dictionary | undefined {
     const { defaultLocale } = parseAkanI18nEnv();
-    const fallback = allDictionary[defaultLocale];
-    if (lang === defaultLocale || !fallback) return allDictionary[lang];
+    if (lang === defaultLocale || !allDictionary[defaultLocale]) return allDictionary[lang];
     const filledByLocale = Translator.#filledDicts.get(allDictionary) ?? new Map<string, Dictionary>();
     Translator.#filledDicts.set(allDictionary, filledByLocale);
-    const filled =
-      filledByLocale.get(lang) ?? (Translator.#fillGaps(allDictionary[lang] ?? {}, fallback) as Dictionary);
+    const filled = filledByLocale.get(lang) ?? Translator.fillFromDefault(allDictionary, lang, defaultLocale);
     filledByLocale.set(lang, filled);
     return filled;
+  }
+  // An SSR client is seeded with one locale only, so `#lookupDefault` has nothing to reach there: ship the text inside it.
+  static fillFromDefault(allDictionary: AllDictionary, lang: string, defaultLocale: string): Dictionary {
+    const fallback = allDictionary[defaultLocale];
+    if (lang === defaultLocale || !fallback) return allDictionary[lang] ?? {};
+    return Translator.#fillGaps(allDictionary[lang] ?? {}, fallback) as Dictionary;
   }
   static #fillGaps(own: Record<string, unknown>, fallback: Record<string, unknown>): Record<string, unknown> {
     const filled = { ...own };

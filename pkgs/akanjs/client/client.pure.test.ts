@@ -264,5 +264,10 @@ describe("Translator", () => {
     Translator.replace("en", {});
     expect(Translator.translateByLocale("ja", "libOnly.signin")).toBe("Sign In");
     expect(Translator.translateByLocale("ja", "app.title")).toBe("タイトル");
+    expect(Translator.fillFromDefault(allDictionary, "en", "ja")).toEqual({
+      libOnly: { signin: { t: "Sign In" } },
+      app: { title: { t: "Title" }, partial: { t: "Partial" }, nested: { label: { t: "Label" } } },
+    });
+    expect(Translator.fillFromDefault(allDictionary, "th", "ja")).toEqual(allDictionary.ja);
   });
 });

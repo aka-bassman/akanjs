@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { brotliDecompressSync } from "node:zlib";
+import { brotliCompressSync, brotliDecompressSync } from "node:zlib";
 import { DEFAULT_AKAN_I18N } from "akanjs/common";
 import { createRequestStore } from "akanjs/fetch";
 import type { RouteSeedIndex, RoutesManifest } from "./artifact";
@@ -629,6 +629,69 @@ describe("WebRouter firebase messaging service worker", () => {
     const routeKeys = await withFullSsrCacheHarness(async ({ renderEnvRoutes }) => Object.keys(renderEnvRoutes));
 
     expect(routeKeys).not.toContain("/firebase-messaging-sw.js");
+  });
+});
+
+describe("WebRouter dictionary assets", () => {
+  const withArtifactCwd = async <T>(run: () => Promise<T>) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "akan-webrouter-dict-"));
+    const dictDir = path.join(root, ".akan", "artifact", "dict");
+    fs.mkdirSync(dictDir, { recursive: true });
+    fs.writeFileSync(path.join(root, ".akan", "artifact", "base-artifact.json"), "{}");
+    fs.writeFileSync(path.join(dictDir, "en-abc.js"), 'export const lang = "en";');
+    fs.writeFileSync(path.join(dictDir, "en-abc.js.br"), brotliCompressSync('export const lang = "en";'));
+    const cwd = process.cwd();
+    process.chdir(root);
+    try {
+      return await run();
+    } finally {
+      process.chdir(cwd);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  };
+  const dictRoute = (renderEnvRoutes: Record<string, RouteHandler>) => {
+    const route = renderEnvRoutes["/_akan/dict/*"];
+    if (!route) throw new Error("no /_akan/dict/* route");
+    return route;
+  };
+
+  test("serves a production dictionary as immutable, from its brotli sidecar, and an unknown name as 404", async () => {
+    await withArtifactCwd(() =>
+      withFullSsrCacheHarness(async ({ renderEnvRoutes }) => {
+        const route = dictRoute(renderEnvRoutes);
+        const res = await route(
+          new Request("https://example.test/_akan/dict/en-abc.js", { headers: { "accept-encoding": "br" } }),
+        );
+        expect(res.status).toBe(200);
+        expect(res.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+        expect(res.headers.get("Content-Encoding")).toBe("br");
+        expect(res.headers.get("Content-Type")).toStartWith("text/javascript");
+        expect(brotliDecompressSync(new Uint8Array(await res.arrayBuffer())).toString()).toBe(
+          'export const lang = "en";',
+        );
+        expect((await route(new Request("https://example.test/_akan/dict/en-gone.js"))).status).toBe(404);
+        expect((await route(new Request("https://example.test/_akan/dict/..%2Fbase-artifact.json"))).status).toBe(404);
+      }),
+    );
+  });
+
+  test("keeps a dev dictionary out of the browser's HTTP cache", async () => {
+    const originalSend = process.send;
+    process.send = ((): boolean => true) as typeof process.send;
+    try {
+      await withArtifactCwd(() =>
+        withFullSsrCacheHarness(
+          async ({ renderEnvRoutes }) => {
+            const res = await dictRoute(renderEnvRoutes)(new Request("https://example.test/_akan/dict/en-abc.js"));
+            expect(res.status).toBe(200);
+            expect(res.headers.get("Cache-Control")).toBe("no-store");
+          },
+          { nodeEnv: "development", commandType: "start" },
+        ),
+      );
+    } finally {
+      process.send = originalSend;
+    }
   });
 });
 

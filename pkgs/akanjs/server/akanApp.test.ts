@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { brotliDecompressSync, constants, gunzipSync } from "node:zlib";
+import { brotliCompressSync, brotliDecompressSync, constants, gunzipSync } from "node:zlib";
 import { resetEnvCache } from "../base/baseEnv";
 import { AkanApp } from "./akanApp";
 import { AKAN_CHILD_HOST, makeAkanChildProxyHeaders } from "./akanAppHeaders";
@@ -848,6 +848,29 @@ describe("AkanApp", () => {
       expect(await font.text()).toBe("font-bytes");
       expect(font.headers.get("access-control-allow-origin")).toBe("*");
       expect(font.headers.get("x-content-type-options")).toBe("nosniff");
+    });
+  }, 20_000);
+
+  test("serves a dictionary asset as immutable from its brotli sidecar, and nothing outside dict/", async () => {
+    const { root, serverPath, runtimeDir, port } = await makeRoot("akan-app-dict-asset-");
+    const source = 'export const lang = "en";\n';
+    await Bun.write(path.join(root, ".akan/artifact/dict/en-abc.js"), source);
+    await Bun.write(path.join(root, ".akan/artifact/dict/en-abc.js.br"), brotliCompressSync(source));
+    await Bun.write(path.join(root, ".akan/artifact/base-artifact.json"), "{}");
+    await writeOkChild(serverPath, "from-child");
+
+    await withApp(serverPath, { replica: 1, runtimeDir, port }, async () => {
+      await waitForReady(port);
+      const res = await fetch(`http://127.0.0.1:${port}/_akan/dict/en-abc.js`, {
+        headers: { "accept-encoding": "br" },
+        decompress: false,
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-encoding")).toBe("br");
+      expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+      expect(brotliDecompressSync(new Uint8Array(await res.arrayBuffer())).toString()).toBe(source);
+      const escaped = await fetch(`http://127.0.0.1:${port}/_akan/dict/..%2Fbase-artifact.json`);
+      expect(escaped.status).toBe(404);
     });
   }, 20_000);
 
