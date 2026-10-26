@@ -2,8 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { brotliDecompressSync, gunzipSync } from "node:zlib";
-import { compressResponse, isCompressibleContentType, resolveEncodedSidecar } from "./contentEncoding";
+import { brotliDecompressSync, constants, gunzipSync } from "node:zlib";
+import {
+  compressResponse,
+  compressStreamResponse,
+  isCompressibleContentType,
+  resolveEncodedSidecar,
+} from "./contentEncoding";
 
 const body = JSON.stringify({ rows: Array.from({ length: 200 }, (_, i) => ({ id: i, title: "repeated title" })) });
 const json = (payload = body) => Response.json(JSON.parse(payload) as unknown);
@@ -180,6 +185,113 @@ describe("compressResponse behind Bun.serve", () => {
     } finally {
       server.stop(true);
     }
+  });
+});
+
+const shell = `<!doctype html><html><body>${'<div class="jelly-glass">shell</div>'.repeat(200)}`;
+const tail = `${"<p>streamed boundary</p>".repeat(200)}</body></html>`;
+
+interface HtmlRender {
+  response: Response;
+  finish: () => void;
+  cancelled: Promise<unknown>;
+}
+const htmlRender = (headers: Record<string, string> = {}): HtmlRender => {
+  let finish: () => void = () => undefined;
+  let onCancel: (reason: unknown) => void = () => undefined;
+  const cancelled = new Promise<unknown>((resolve) => {
+    onCancel = resolve;
+  });
+  const body = new ReadableStream<Uint8Array>({
+    start: async (controller) => {
+      controller.enqueue(new TextEncoder().encode(shell));
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      controller.enqueue(new TextEncoder().encode(tail));
+      controller.close();
+    },
+    cancel: (reason) => onCancel(reason),
+  });
+  const response = new Response(body, { headers: { "Content-Type": "text/html; charset=utf-8", ...headers } });
+  return { response, finish: () => finish(), cancelled };
+};
+
+// Waits on the render's open stream: a compressor that held the shell back would time the test out here.
+const readShell = async (reader: ReadableStreamDefaultReader<Uint8Array>, decode: (bytes: Buffer) => string) => {
+  const chunks: Uint8Array[] = [];
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) throw new Error("stream ended before the shell decoded");
+    chunks.push(value);
+    if (decode(Buffer.concat(chunks)) === shell) return chunks;
+  }
+};
+
+describe("compressStreamResponse", () => {
+  test("sends the shell, decodable, before the render finishes, then the rest", async () => {
+    for (const [encoding, decode] of [
+      ["br", (bytes: Buffer) => brotliDecompressSync(bytes, { finishFlush: constants.BROTLI_OPERATION_FLUSH })],
+      ["gzip", (bytes: Buffer) => gunzipSync(bytes, { finishFlush: constants.Z_SYNC_FLUSH })],
+    ] as const) {
+      const render = htmlRender();
+      const response = compressStreamResponse(req(encoding), render.response);
+
+      expect(response.headers.get("Content-Encoding")).toBe(encoding);
+      expect(response.headers.get("Vary")).toContain("Accept-Encoding");
+      const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+      const chunks = await readShell(reader, (bytes) => decode(bytes).toString());
+
+      render.finish();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      const whole = Buffer.concat(chunks);
+      expect((encoding === "br" ? brotliDecompressSync(whole) : gunzipSync(whole)).toString()).toBe(shell + tail);
+      expect(whole.byteLength).toBeLessThan((shell + tail).length / 10);
+    }
+  });
+
+  test("cancels the render when the client goes away", async () => {
+    const render = htmlRender();
+    const response = compressStreamResponse(req("br"), render.response);
+    const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+    await reader.read();
+
+    await reader.cancel("client gone");
+
+    expect(await render.cancelled).toBe("client gone");
+  });
+
+  test("drops the length, weakens a strong validator and keeps the status and other headers", async () => {
+    const render = htmlRender({ "Content-Length": "999", ETag: '"v1"', "Cache-Control": "no-store" });
+    const response = compressStreamResponse(req("gzip"), render.response);
+    render.finish();
+
+    expect(response.headers.get("Content-Length")).toBeNull();
+    expect(response.headers.get("ETag")).toBe('W/"v1"');
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.status).toBe(200);
+    expect(gunzipSync(Buffer.from(await response.arrayBuffer())).toString()).toBe(shell + tail);
+  });
+
+  test("leaves an encoded, incompressible, unaccepted, ranged or switched-off response as it is", async () => {
+    const ranged = new Request("http://localhost/", { headers: { "accept-encoding": "br", range: "bytes=0-9" } });
+    const cases: [Request, Response][] = [
+      [req("br"), htmlRender({ "Content-Encoding": "gzip" }).response],
+      [req("br"), new Response("x".repeat(4096), { headers: { "Content-Type": "image/png" } })],
+      [req("br"), new Response("data: tick\n\n".repeat(400), { headers: { "Content-Type": "text/event-stream" } })],
+      [req(), htmlRender().response],
+      [ranged, htmlRender().response],
+      [req("br"), new Response(null, { status: 304 })],
+    ];
+    for (const [request, response] of cases) expect(compressStreamResponse(request, response)).toBe(response);
+
+    process.env.AKAN_HTTP_COMPRESS = "0";
+    const off = htmlRender().response;
+    expect(compressStreamResponse(req("br"), off)).toBe(off);
   });
 });
 

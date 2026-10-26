@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { constants, gunzipSync } from "node:zlib";
 import { resetEnvCache } from "../base/baseEnv";
 import { AkanApp } from "./akanApp";
 import { AKAN_CHILD_HOST, makeAkanChildProxyHeaders } from "./akanAppHeaders";
@@ -1004,6 +1005,75 @@ describe("AkanApp", () => {
       const large = await fetch(`http://127.0.0.1:${port}/large`, { headers: { "accept-encoding": "br" } });
       expect(large.headers.get("content-encoding")).toBeNull();
       expect(((await large.json()) as unknown[]).length).toBe(160_000);
+    });
+  }, 20_000);
+
+  test("compresses a replica's streamed HTML for the client without holding back its shell", async () => {
+    const { serverPath, runtimeDir, port } = await makeRoot("akan-app-html-");
+
+    await Bun.write(
+      serverPath,
+      `
+          const shell = "<!doctype html><html><body>" + "<p>shell</p>".repeat(400);
+          let finish = () => {};
+          export const server = {
+            async start() {
+              const http = Bun.serve({
+                unix: process.env.AKAN_CHILD_SOCKET,
+                fetch(req) {
+                  if (new URL(req.url).pathname === "/finish") {
+                    finish();
+                    return new Response("ok");
+                  }
+                  const body = new ReadableStream({
+                    async start(controller) {
+                      controller.enqueue(new TextEncoder().encode(shell));
+                      await new Promise((resolve) => { finish = resolve; });
+                      controller.enqueue(new TextEncoder().encode("<p>late</p></body></html>"));
+                      controller.close();
+                    },
+                  });
+                  return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } });
+                },
+              });
+              process.on("message", (message) => {
+                if (!message || typeof message !== "object") return;
+                ${answerHealthPing}
+                if (message.type === "shutdown") {
+                  http.stop(true);
+                  process.exit(0);
+                }
+              });
+              ${sendReady()}
+            },
+          };
+        `,
+    );
+
+    await withApp(serverPath, { replica: 1, runtimeDir, port }, async () => {
+      await waitForReady(port);
+      const shell = `<!doctype html><html><body>${"<p>shell</p>".repeat(400)}`;
+      const page = await fetch(`http://127.0.0.1:${port}/en`, {
+        headers: { "accept-encoding": "gzip" },
+        decompress: false,
+      });
+      expect(page.headers.get("content-encoding")).toBe("gzip");
+      const reader = (page.body as ReadableStream<Uint8Array>).getReader();
+      const chunks: Uint8Array[] = [];
+      const decoded = () => gunzipSync(Buffer.concat(chunks), { finishFlush: constants.Z_SYNC_FLUSH }).toString();
+      do {
+        const { value, done } = await reader.read();
+        if (done) throw new Error("page ended before its shell decoded");
+        chunks.push(value);
+      } while (decoded() !== shell);
+
+      await fetch(`http://127.0.0.1:${port}/finish`);
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      expect(gunzipSync(Buffer.concat(chunks)).toString()).toBe(`${shell}<p>late</p></body></html>`);
     });
   }, 20_000);
 

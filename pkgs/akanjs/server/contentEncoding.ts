@@ -1,4 +1,4 @@
-import { brotliCompressSync, constants, gzipSync } from "node:zlib";
+import { brotliCompressSync, constants, createBrotliCompress, createGzip, gzipSync } from "node:zlib";
 
 const COMPRESSIBLE_TYPES = new Set([
   "application/javascript",
@@ -54,15 +54,19 @@ const isWholeBody = (req: Request, response: Response) =>
   response.status < 300 &&
   response.status !== 206;
 
+const negotiateEncoding = (req: Request, response: Response): ContentEncoding | null => {
+  if (response.headers.has("content-encoding") || !response.body) return null;
+  if (!isWholeBody(req, response)) return null;
+  if (Number(response.headers.get("content-length")) > MAX_COMPRESS_BYTES) return null;
+  if (!isCompressibleContentType(response.headers.get("content-type") ?? "")) return null;
+  if (process.env.AKAN_HTTP_COMPRESS === "false" || process.env.AKAN_HTTP_COMPRESS === "0") return null;
+  const acceptEncoding = req.headers.get("accept-encoding") ?? "";
+  return CONTENT_ENCODINGS.find(({ accept }) => acceptsEncoding(acceptEncoding, accept))?.encoding ?? null;
+};
+
 // Buffers the body: never pass a streamed response (SSR HTML, RSC flight, SSE) — it would hold the whole render.
 export const compressResponse = async (req: Request, response: Response): Promise<Response> => {
-  if (response.headers.has("content-encoding") || !response.body) return response;
-  if (!isWholeBody(req, response)) return response;
-  if (Number(response.headers.get("content-length")) > MAX_COMPRESS_BYTES) return response;
-  if (!isCompressibleContentType(response.headers.get("content-type") ?? "")) return response;
-  if (process.env.AKAN_HTTP_COMPRESS === "false" || process.env.AKAN_HTTP_COMPRESS === "0") return response;
-  const acceptEncoding = req.headers.get("accept-encoding") ?? "";
-  const encoding = CONTENT_ENCODINGS.find(({ accept }) => acceptsEncoding(acceptEncoding, accept))?.encoding;
+  const encoding = negotiateEncoding(req, response);
   if (!encoding) return response;
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.byteLength < MIN_COMPRESS_BYTES) return new Response(bytes, response);
@@ -73,6 +77,64 @@ export const compressResponse = async (req: Request, response: Response): Promis
   // Without it a shared cache can hand a br body to a client that never asked for one.
   headers.append("Vary", "Accept-Encoding");
   return new Response(compressed, { status: response.status, statusText: response.statusText, headers });
+};
+
+const STREAM_FLUSH = { br: constants.BROTLI_OPERATION_FLUSH, gzip: constants.Z_SYNC_FLUSH } as const;
+
+//? One flush per burst, not per chunk: React writes a shell as many small chunks in one task, and each flush costs
+//? framing bytes and ratio, while a burst still leaves as soon as it is written.
+const createStreamCompressor = (encoding: ContentEncoding) => {
+  const compressor =
+    encoding === "br"
+      ? createBrotliCompress({ params: { [constants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY } })
+      : createGzip({ level: GZIP_LEVEL });
+  let pendingFlush: ReturnType<typeof setImmediate> | null = null;
+  let isCancelled = false;
+  // `cancel` is in the Streams spec and Bun calls it on a client disconnect; TypeScript's DOM lib predates it.
+  const transformer: Transformer<Uint8Array, Uint8Array> & { cancel: () => void } = {
+    start: (controller) => {
+      compressor.on("data", (chunk: Uint8Array) => {
+        if (!isCancelled) controller.enqueue(chunk);
+      });
+      compressor.on("error", (error) => controller.error(error));
+    },
+    transform: (chunk) => {
+      compressor.write(chunk);
+      pendingFlush ??= setImmediate(() => {
+        pendingFlush = null;
+        compressor.flush(STREAM_FLUSH[encoding]);
+      });
+    },
+    flush: () =>
+      new Promise<void>((resolve, reject) => {
+        if (pendingFlush) clearImmediate(pendingFlush);
+        compressor.once("end", resolve).once("error", reject).end();
+      }),
+    cancel: () => {
+      isCancelled = true;
+      if (pendingFlush) clearImmediate(pendingFlush);
+      compressor.destroy();
+    },
+  };
+  return new TransformStream<Uint8Array, Uint8Array>(transformer);
+};
+
+// For SSR HTML and RSC flight: compresses as the body streams, so the shell still reaches the browser before the render ends.
+export const compressStreamResponse = (req: Request, response: Response): Response => {
+  const encoding = negotiateEncoding(req, response);
+  if (!encoding || !response.body) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Content-Encoding", encoding);
+  headers.delete("Content-Length");
+  headers.append("Vary", "Accept-Encoding");
+  const etag = headers.get("etag");
+  // The encoded bytes differ from the ones a strong validator names.
+  if (etag && !etag.startsWith("W/")) headers.set("ETag", `W/${etag}`);
+  return new Response(response.body.pipeThrough(createStreamCompressor(encoding)), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 };
 
 export interface EncodedSidecar {

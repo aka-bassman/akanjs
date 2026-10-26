@@ -9,7 +9,7 @@ import { isTraceEnabled } from "../signal/trace";
 import { AKAN_CHILD_HOST, makeAkanChildProxyHeaders } from "./akanAppHeaders";
 import type { BuilderCsrReq, BuilderCsrRes, BuilderMessage, BuilderReq, BuilderRes } from "./artifact";
 import { type AssetHeaderOptions, assetHeaders } from "./assetHeaders";
-import { compressResponse, encodedFileResponse } from "./contentEncoding";
+import { compressResponse, compressStreamResponse, encodedFileResponse } from "./contentEncoding";
 import { isPortInUseError } from "./lifecycle/portInUse";
 import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { ChildOutputReader } from "./logging/childOutputReader";
@@ -985,8 +985,10 @@ export class AkanApp {
       statusText: upstreamRes.statusText,
       headers,
     });
-    // Only this hop sees the client's Accept-Encoding. JSON only: `compressResponse` buffers; HTML/RSC must stream.
-    return AkanApp.#isProxiedJson(headers) ? await compressResponse(req, proxied) : proxied;
+    // Only this hop sees the client's Accept-Encoding. JSON compresses whole; HTML and RSC as they stream.
+    return AkanApp.#isProxiedJson(headers)
+      ? await compressResponse(req, proxied)
+      : compressStreamResponse(req, proxied);
   }
 
   static #isProxiedJson(headers: Headers): boolean {

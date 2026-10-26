@@ -2,7 +2,7 @@ import { dayjs } from "akanjs/base";
 import { type Logger, websocketAuthContract, websocketHeartbeatContract } from "akanjs/common";
 import type { InjectRegistry, LiveRegistry } from "akanjs/service";
 import { CrossSiteGuard, isExceptionLike, SignalContext, SignalFailure, type WebsocketReqData } from "akanjs/signal";
-import { compressResponse } from "../contentEncoding";
+import { compressResponse, compressStreamResponse } from "../contentEncoding";
 import type { HmrWsData, HmrWsHub } from "../hmr/wsHub";
 import { copyBunRequestFields, type WebProxyRunner } from "../proxy";
 import { SignalResolver } from "../resolver";
@@ -95,9 +95,10 @@ export class ApiRouter {
       ...Object.fromEntries(builtinEntries),
       ...(renderEnvRoutes ?? {}),
     } as NonNullHttpRoutes;
-    const served = webProxyRunner
+    const proxied = webProxyRunner
       ? ApiRouter.#wrapRoutesWithWebProxy(routeTable, webProxyRunner, prefix, endpointPaths)
       : routeTable;
+    const served = ApiRouter.#compressRenderRoutes(proxied, new Set(Object.keys(renderEnvRoutes ?? {})));
     return hostAllowlist ? ApiRouter.#guardHosts(served, hostAllowlist) : served;
   }
 
@@ -254,6 +255,21 @@ export class ApiRouter {
       const response = await handler(req);
       return response ? await compressResponse(req, response) : response;
     });
+  }
+
+  // Outside the web proxy, whose answer stands in for the page. Behind the gateway the identity Accept-Encoding skips it.
+  static #compressRenderRoutes(routes: NonNullHttpRoutes, renderPaths: Set<string>): NonNullHttpRoutes {
+    return Object.fromEntries(
+      Object.entries(routes).map(([path, route]) => [
+        path,
+        renderPaths.has(path)
+          ? ApiRouter.#mapRoute(route, (handler) => async (req) => {
+              const response = await handler(req);
+              return response ? compressStreamResponse(req, response) : response;
+            })
+          : route,
+      ]),
+    ) as NonNullHttpRoutes;
   }
 
   // Signal routes are method maps, so the preflight answers with exactly the verbs the path serves.
