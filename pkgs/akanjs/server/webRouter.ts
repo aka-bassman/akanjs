@@ -8,11 +8,13 @@ import {
   Logger,
   type LogRecord,
   parseAkanI18nEnv,
+  RequestLocale,
   resolveSubRouteHosts,
 } from "akanjs/common";
 import { type AkanRequestStore, createRequestStore, parseCookieHeader } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
 import { PageDefinition } from "../client/route/PageDefinition";
+import { type Dictionary, TranslatorState } from "../client/translatorState";
 import { getWebManifestBasePath } from "../client/webManifest";
 import type { PagePromptSource } from "../signal/mcp/pagePrompt";
 import { SignalContext } from "../signal/signalContext";
@@ -52,6 +54,7 @@ import type { McpAppShellSource } from "./mcp/McpApps";
 import { normalizeHost, resolveArtifactDir, warnIgnoredSubRouteBasePaths } from "./proxy/hostBasePathWebProxy";
 import { createDefaultRobotsTxt } from "./robots";
 import {
+  AKAN_RSC_DICTIONARY_HEADER,
   AKAN_RSC_NOT_FOUND_HEADER,
   AKAN_RSC_PATCH_HEAD_SAFE_HEADER,
   AKAN_RSC_PATCH_HEAD_SNAPSHOT_HEADER,
@@ -540,7 +543,10 @@ export class WebRouter {
           if (result.type === "not-found") return createRscNotFoundFallbackResponse();
           if (result.status && result.status >= 500)
             return this.#renderRscErrorResponse("__rsc", "Internal Server Error");
-          return createRscNavigationStreamResponse(result);
+          const response = await createRscNavigationStreamResponse(result);
+          const dictionaryUrl = this.#dictionaryUrlOf(rscHeaders, targetUrl.pathname);
+          if (dictionaryUrl) response.headers.set(AKAN_RSC_DICTIONARY_HEADER, dictionaryUrl);
+          return response;
         } catch (err) {
           return this.#renderRscErrorResponse("__rsc", err);
         }
@@ -667,10 +673,12 @@ export class WebRouter {
           // First-paint data-theme: cookie is no longer a React <html> prop (RSC cache would replay it).
           const cookieTheme = WebRouter.#cookieValue(req, "theme");
           const hostRequestStore = createRequestStore(req);
+          const dictionaryUrl = this.#dictionaryUrlOf(req.headers, url.pathname);
           const extraBootstrapInline = [
             rscResult.trace?.routeState
               ? `self.__AKAN_RSC_INITIAL_STATE__=${JSON.stringify(rscResult.trace.routeState)};`
               : "",
+            dictionaryUrl ? `self.__AKAN_DICT_URL__=${JSON.stringify(dictionaryUrl)};` : "",
             this.#ssrDevShell
               ? SsrDevShim.script(await this.#ssrDevShell.readManifest(), Object.keys(this.#artifact.vendorMap))
               : "",
@@ -684,6 +692,7 @@ export class WebRouter {
             rscStream: rscResult.stream,
             ssrManifest: manifest.ssrManifest,
             bootstrapModules: [this.#artifact.rscClientUrl],
+            modulePreloads: dictionaryUrl ? [dictionaryUrl] : undefined,
             extraBootstrapInline: extraBootstrapInline || undefined,
             importmap: this.#artifact.vendorMap,
             //? Read once the shell has rendered: the root layout's theme arrives after the stream starts.
@@ -1037,6 +1046,17 @@ export class WebRouter {
     });
   }
 
+  //? The locale the RSC worker's `usePage()` resolves from the same request, so the page and its dictionary agree.
+  #dictionaryUrlOf(headers: Headers, pathname: string): string | undefined {
+    const i18n = parseAkanI18nEnv();
+    const { locale } = RequestLocale.resolve(
+      { localeHeader: headers.get("x-locale"), pathHeader: headers.get("x-path"), pathname },
+      i18n,
+    );
+    const assets = this.#artifact.dictAssets ?? {};
+    return (assets[locale] ?? assets[i18n.defaultLocale])?.url;
+  }
+
   #renderRscErrorResponse(scope: string, err: unknown): Response {
     if (WebRouter.#isExpectedRequestAbort(err)) return WebRouter.#clientClosedResponse();
     const message = err instanceof Error ? err.message : String(err);
@@ -1185,6 +1205,7 @@ export class WebRouter {
     const builtWeb = resolveWebConfig(artifact.web);
     if (!builtWeb.ssr) return null;
     const cssBytesByUrl = await WebRouter.#loadCssBytesByUrl(artifact, artifactDir);
+    await WebRouter.#seedDictionaries(artifact, artifactDir);
     const prodMode = process.env.NODE_ENV === "production" && process.env.AKAN_COMMAND_TYPE !== "start";
     //* Production listens before the bundle loads (renders queue until `ready`) and exits if it cannot load rather
     //* than restart-loop behind a healthy API; dev awaits, as the next rebuild hands the worker a fixed bundle.
@@ -1266,6 +1287,20 @@ export class WebRouter {
           await Bun.file(path.join(normalizedArtifactDir, asset.cssRelPath)).bytes(),
         ]),
       ),
+    );
+  }
+
+  //? Fizz renders client components in this process, and no flight prop carries their dictionary.
+  static async #seedDictionaries(artifact: BaseBuildArtifact, artifactDir: string): Promise<void> {
+    const normalizedArtifactDir = path.resolve(artifactDir);
+    await Promise.all(
+      Object.values(artifact.dictAssets ?? {}).map(async (asset) => {
+        const { lang, default: dictionary } = (await import(path.join(normalizedArtifactDir, asset.relPath))) as {
+          lang: string;
+          default: Dictionary;
+        };
+        TranslatorState.replace(lang, dictionary);
+      }),
     );
   }
 

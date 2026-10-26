@@ -14,7 +14,12 @@ import {
   resolveRouteCacheStoreTtl,
   shouldStoreRouteCache,
 } from "./cachePolicy";
-import { AKAN_RSC_NOT_FOUND_HEADER, encodeAkanRouterState, encodeAkanRscPatchSegmentPath } from "./routeState";
+import {
+  AKAN_RSC_DICTIONARY_HEADER,
+  AKAN_RSC_NOT_FOUND_HEADER,
+  encodeAkanRouterState,
+  encodeAkanRscPatchSegmentPath,
+} from "./routeState";
 import type { RscRenderResult } from "./rscWorkerHost";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
 import type { SsrLateRedirect } from "./ssrTypes";
@@ -673,6 +678,68 @@ describe("WebRouter dictionary assets", () => {
         expect((await route(new Request("https://example.test/_akan/dict/..%2Fbase-artifact.json"))).status).toBe(404);
       }),
     );
+  });
+
+  const artifactWithDictionaries = (): BaseBuildArtifact => ({
+    ...createTestArtifact(),
+    dictAssets: {
+      en: { url: "/_akan/dict/en-abc.js", relPath: "dict/en-abc.js" },
+      ko: { url: "/_akan/dict/ko-def.js", relPath: "dict/ko-def.js" },
+    },
+  });
+
+  test("names the page's dictionary in a head preload and the bootstrap, by the locale the worker resolves", async () => {
+    const inputs: Array<Parameters<SsrFromRscRenderer["render"]>[0]> = [];
+    await withFullSsrCacheHarness(
+      async ({ fullSsr }) => {
+        await fullSsr(
+          new Request("https://example.test/ko/docs", { headers: { "x-locale": "ko", "x-path": "/docs" } }),
+        );
+        await fullSsr(new Request("https://example.test/docs"));
+        await fullSsr(
+          new Request("https://example.test/fr/docs", { headers: { "x-locale": "fr", "x-path": "/docs" } }),
+        );
+      },
+      { artifact: artifactWithDictionaries(), onRenderInput: (input) => inputs.push(input) },
+    );
+
+    expect(inputs.map((input) => input.modulePreloads)).toEqual([
+      ["/_akan/dict/ko-def.js"],
+      ["/_akan/dict/en-abc.js"],
+      ["/_akan/dict/en-abc.js"],
+    ]);
+    expect(inputs[0]?.extraBootstrapInline).toContain('self.__AKAN_DICT_URL__="/_akan/dict/ko-def.js";');
+  });
+
+  test("names an RSC navigation's dictionary in a header, by its target's locale", async () => {
+    const dictionaryHeaders = await withFullSsrCacheHarness(
+      async ({ renderEnvRoutes }) =>
+        await Promise.all(
+          ["%2Fko%2Fdocs", "%2Fen%2Fdocs"].map(async (target) => {
+            const res = await renderEnvRoutes["/__rsc"](new Request(`https://example.test/__rsc?url=${target}`));
+            return res.headers.get(AKAN_RSC_DICTIONARY_HEADER);
+          }),
+        ),
+      { artifact: artifactWithDictionaries() },
+    );
+
+    expect(dictionaryHeaders).toEqual(["/_akan/dict/ko-def.js", "/_akan/dict/en-abc.js"]);
+  });
+
+  test("names no dictionary for an artifact built before the asset", async () => {
+    const inputs: Array<Parameters<SsrFromRscRenderer["render"]>[0]> = [];
+    const rscHeader = await withFullSsrCacheHarness(
+      async ({ fullSsr, renderEnvRoutes }) => {
+        await fullSsr(new Request("https://example.test/en/docs"));
+        const res = await renderEnvRoutes["/__rsc"](new Request("https://example.test/__rsc?url=%2Fen%2Fdocs"));
+        return res.headers.get(AKAN_RSC_DICTIONARY_HEADER);
+      },
+      { onRenderInput: (input) => inputs.push(input) },
+    );
+
+    expect(inputs[0]?.modulePreloads).toBeUndefined();
+    expect(inputs[0]?.extraBootstrapInline ?? "").not.toContain("__AKAN_DICT_URL__");
+    expect(rscHeader).toBeNull();
   });
 
   test("keeps a dev dictionary out of the browser's HTTP cache", async () => {

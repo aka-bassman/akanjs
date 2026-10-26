@@ -39,7 +39,6 @@ const SSRProvider = ({
   layoutStyle = "web",
   reconnect = getEnv().operationMode === "local",
   wsConnect,
-  dictionary,
   allDictionary,
   of,
 }: SSRProviderProps) => {
@@ -52,8 +51,6 @@ const SSRProvider = ({
   // Every locale, fresh, on the server (never shipped): no stale keys after a dictionary edit.
   if (allDictionary) for (const [lng, dict] of Object.entries(allDictionary)) Translator.replace(lng, dict);
 
-  // Only the active locale is serialized to the client, with the default locale's text filled into its gaps.
-  const activeDictionary = (allDictionary && Translator.withDefaultLocale(allDictionary, activeLocale)) ?? dictionary;
   const pageState = getRequestFrameState<PageState>() ?? defaultPageState;
 
   return (
@@ -75,7 +72,7 @@ const SSRProvider = ({
           layoutStyle={layoutStyle}
           pageState={pageState}
         >
-          <ClientWrapper theme={theme} lang={lang} path={path} reconnect={reconnect} dictionary={activeDictionary}>
+          <ClientWrapper theme={theme} lang={lang} path={path} reconnect={reconnect} serverLocale>
             <Fragment key="children">{Children.toArray(children)}</Fragment>
             <Suspense key="client-inner" fallback={null}>
               <ClientInner />

@@ -257,7 +257,7 @@ export default page()
         props: [
           {
             name: "System.Provider",
-            type: "{ appName, params, of, children, className?, env?, theme?, prefix?, manifest?, head?, fonts?, layoutStyle?, reconnect?, wsConnect?, dictionary?, allDictionary? }",
+            type: "{ appName, params, of, children, className?, env?, theme?, prefix?, manifest?, head?, fonts?, layoutStyle?, reconnect?, wsConnect?, allDictionary? }",
             desc: l.trans({
               en: "The frame around your root `_layout.tsx`, filled from its `rootLayout()` stages.",
               ko: "root `_layout.tsx`를 감싸는 앱 프레임으로, 값은 `rootLayout()` 단계에서 정합니다.",

@@ -61,7 +61,8 @@ interface ClientWrapperProps {
   theme?: AkanTheme;
   lang?: string;
   path?: string;
-  dictionary?: Record<string, Record<string, unknown>>;
+  /** `lang` is the locale the server rendered in, whose dictionary the RSC client loads before it commits. */
+  serverLocale?: boolean;
   signals?: SerializedSignal[];
   reconnect?: boolean;
 }
@@ -70,20 +71,20 @@ export const ClientWrapper = ({
   theme,
   lang = "en",
   path,
-  dictionary,
+  serverLocale,
   signals = [],
   reconnect = true,
 }: ClientWrapperProps) => {
-  // Seeded before children render, in the SSR pass and the browser alike; CSR seeds from the build-time macro.
-  if (dictionary) {
-    Translator.replace(lang, dictionary);
-    // The server-resolved locale is the truth for `l()`: under base-path routing the URL segment is not.
-    Translator.setActiveLocale(lang);
-  }
+  // The server-resolved locale is the truth for `l()`: under base-path routing the URL segment is not.
+  if (serverLocale) Translator.setActiveLocale(lang);
   Translator.setActivePath(path);
   useEffect(() => {
     Translator.markHydrated();
   }, [path]);
+  useEffect(() => {
+    if (serverLocale && !Translator.hasLocale(lang))
+      Logger.error(`[i18n] the page was rendered in "${lang}", but that dictionary never reached the browser`);
+  }, [serverLocale, lang]);
   useLayoutEffect(() => {
     Logger.rawLog(logo);
   }, []);
