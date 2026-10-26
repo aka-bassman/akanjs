@@ -656,6 +656,30 @@ describe("WebRouter public files and the web manifest", () => {
     }
   });
 
+  test("caches a public file briefly, serves it stale while revalidating, and answers its ETag with a 304", async () => {
+    const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "akan-webrouter-public-"));
+    fs.mkdirSync(path.join(appDir, "public"), { recursive: true });
+    fs.writeFileSync(path.join(appDir, "public", "poster.webp"), "webp");
+    try {
+      await withFullSsrCacheHarness(
+        async ({ fullSsr }) => {
+          const first = await fullSsr(new Request("https://example.test/poster.webp"));
+          expect(first.headers.get("Cache-Control")).toBe("public, max-age=300, stale-while-revalidate=86400");
+          const etag = first.headers.get("ETag") ?? "";
+          expect(etag).toStartWith("W/");
+
+          const revalidated = await fullSsr(
+            new Request("https://example.test/poster.webp", { headers: { "if-none-match": etag } }),
+          );
+          expect(revalidated.status).toBe(304);
+        },
+        { appDir },
+      );
+    } finally {
+      fs.rmSync(appDir, { recursive: true, force: true });
+    }
+  });
+
   test("answers 503 for the web manifest while the RSC worker cannot, and the manifest once it can", async () => {
     const requestManifest = async (webManifest: () => Promise<unknown>) =>
       await withFullSsrCacheHarness(

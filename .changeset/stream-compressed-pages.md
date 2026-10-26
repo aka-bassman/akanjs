@@ -20,3 +20,5 @@ A font path in `rootLayout().fonts([...])` now takes `preload: false`. That weig
 The WebSocket now opens at a page's first subscribe or message instead of at load, so a page that never uses it opens no socket. `.wsConnect(true)` on the root layout still connects at load, and so does `.reconnect()`, whose overlay learns of a restart through the socket. `.wsConnect(false)` still waits for `fetch.instance.connect()`. `fetch.instance.connectOnUse()` is the new mode.
 
 A page in the HTML result cache now keeps its brotli and gzip bytes, made once when the page is stored, so a cache hit sends them instead of compressing the page again. Cache hits on the akanjs.com home page went from 4,500 to 38,800 requests a second (one process, 32 concurrent clients). `AKAN_HTML_RESULT_CACHE_MAX_BYTES` now counts those bytes too.
+
+A file from `public/` is now served with `stale-while-revalidate=86400` beside its 5-minute `max-age`, so a repeat view past those 5 minutes paints from the browser's copy while the browser revalidates it in the background.

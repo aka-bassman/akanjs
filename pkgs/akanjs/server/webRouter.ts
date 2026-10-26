@@ -586,7 +586,8 @@ export class WebRouter {
           const contentType = Bun.file(filePath).type || "application/octet-stream";
           return WebRouter.#fileResponse(req, filePath, {
             contentType,
-            cacheControl: this.#prodMode ? "public, max-age=300" : "no-store",
+            //? Unversioned paths: a short max-age lets a replaced file show, SWR keeps repeat views off the network.
+            cacheControl: this.#prodMode ? "public, max-age=300, stale-while-revalidate=86400" : "no-store",
             anyOrigin: contentType.startsWith("font/"),
           });
         }
