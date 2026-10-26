@@ -189,6 +189,7 @@ export class WsClient {
       const queued = this.#outbox;
       this.#outbox = [];
       for (const frame of queued) this.#ws?.send(frame);
+      this.#handleMessage("connect", undefined);
     };
     this.#ws.onmessage = (e) => {
       this.#lastInboundAt = Date.now();
@@ -266,7 +267,10 @@ export class WsClient {
       this.#stopHeartbeat();
       //? Only a socket that stayed up ends the streak: a gateway that upgrades and drops at once is another failure.
       if (openedAt && Date.now() - openedAt >= WsClient.stableMs) this.#reconnectAttempts = 0;
-      if (!this.#destroyed) this.#closed();
+      if (this.#destroyed) return;
+      this.#closed();
+      // After the reconnect is scheduled, so a listener that throws cannot cancel it.
+      this.#handleMessage("disconnect", { code: event.code, reason: event.reason });
     };
   }
 

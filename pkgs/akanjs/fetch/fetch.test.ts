@@ -2421,6 +2421,24 @@ describe("WsClient", () => {
     waiting.destroy();
   });
 
+  test("tells connect and disconnect listeners when the socket opens and drops, and nothing on destroy", () => {
+    setFakeWebSocket();
+    const client = new WsClient("ws://example/ws").configure({ reconnect: { min: 5, jitter: 0 } });
+    const events: unknown[] = [];
+    client.on("connect", () => events.push("connect"));
+    client.on("disconnect", (data) => events.push(data));
+    client.connect();
+    FakeWebSocket.instances[0].open();
+    FakeWebSocket.instances[0].close();
+    expect(events).toEqual(["connect", { code: 1000, reason: "closed" }]);
+    expect(client.state).toBe("closed");
+
+    client.connect();
+    FakeWebSocket.instances[1].open();
+    client.destroy();
+    expect(events).toEqual(["connect", { code: 1000, reason: "closed" }, "connect"]);
+  });
+
   test("a destroyed client no longer opens on use", async () => {
     setFakeWebSocket();
     await captureWarnings(async (warnings) => {
