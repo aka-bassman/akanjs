@@ -11,9 +11,11 @@ export interface RequestLocaleInput {
 //? one locale's text to a page rendered in another.
 export class RequestLocale {
   static resolve(
-    { localeHeader, pathHeader, pathname }: RequestLocaleInput,
+    { localeHeader: rawLocaleHeader, pathHeader, pathname }: RequestLocaleInput,
     { defaultLocale, locales }: AkanI18nConfig,
   ): { locale: string; path: string } {
+    // `x-locale` can arrive from the wire, not just the locale proxy: trust only a locale this app serves.
+    const localeHeader = rawLocaleHeader && locales.includes(rawLocaleHeader) ? rawLocaleHeader : null;
     // Proxy headers when present, else the request URL, so an unadorned dev request (`curl /en/hello`) resolves.
     if (localeHeader && pathHeader) return { locale: localeHeader, path: pathHeader };
     if (pathname === undefined) return { locale: localeHeader ?? defaultLocale, path: pathHeader ?? "/" };

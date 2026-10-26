@@ -621,9 +621,9 @@ const hydrate = () => {
   hydrateRoot(document, createElement(Root));
   scrollRestoration.restoreDocumentLoad();
 };
-//? Retried under another URL: a browser may keep a failed module fetch in its module map. Hydrating without the
-//? dictionary still beats no page, as the server HTML already holds the text.
-const initialDictionary = DictionaryAsset.load(globalThis.__AKAN_DICT_URL__)
-  .catch(() => DictionaryAsset.load(`${globalThis.__AKAN_DICT_URL__}?retry`))
-  .catch((error: unknown) => console.error(`[rscClient] the page's dictionary failed to load: ${String(error)}`));
+//? Hydrating without the dictionary still beats a dead page: client components show their keys until a navigation
+//? loads it.
+const initialDictionary = DictionaryAsset.load(globalThis.__AKAN_DICT_URL__).catch((error: unknown) =>
+  console.error(`[rscClient] the page's dictionary failed to load: ${String(error)}`),
+);
 void Promise.allSettled([initialThenable, initialDictionary]).then(hydrate);

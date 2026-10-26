@@ -75,9 +75,13 @@ export const ClientWrapper = ({
   signals = [],
   reconnect = true,
 }: ClientWrapperProps) => {
-  // The server-resolved locale is the truth for `l()`: under base-path routing the URL segment is not.
-  if (serverLocale) Translator.setActiveLocale(lang);
-  Translator.setActivePath(path);
+  //? Browser-only: Fizz renders this too, in a process whose concurrent requests share the translator state, and
+  //? there `usePage()` resolves from the request instead.
+  if (typeof window !== "undefined") {
+    // The server-resolved locale is the truth for `l()`: under base-path routing the URL segment is not.
+    if (serverLocale) Translator.setActiveLocale(lang);
+    Translator.setActivePath(path);
+  }
   useEffect(() => {
     Translator.markHydrated();
   }, [path]);

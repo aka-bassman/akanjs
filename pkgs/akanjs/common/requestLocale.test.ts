@@ -26,6 +26,17 @@ describe("RequestLocale", () => {
     });
   });
 
+  test("ignores a locale header naming a locale the app does not serve", () => {
+    expect(
+      RequestLocale.resolve({ localeHeader: "constructor", pathHeader: "/docs", pathname: "/ko/docs" }, i18n),
+    ).toEqual({ locale: "ko", path: "/docs" });
+    expect(RequestLocale.resolve({ localeHeader: "__proto__", pathname: "/docs" }, i18n)).toEqual({
+      locale: "en",
+      path: "/docs",
+    });
+    expect(RequestLocale.resolve({ localeHeader: "fr" }, i18n)).toEqual({ locale: "en", path: "/" });
+  });
+
   test("answers the default locale and the root outside a request", () => {
     expect(RequestLocale.resolve({}, i18n)).toEqual({ locale: "en", path: "/" });
     expect(RequestLocale.resolve({ localeHeader: "ko" }, i18n)).toEqual({ locale: "ko", path: "/" });

@@ -11,7 +11,8 @@ interface TranslatorStateValue {
   langDictionaryMap: Map<string, Dictionary>;
   // A seeded snapshot is one reference per build, so a repeat seed skips the merge.
   seededDicts: WeakSet<object>;
-  replacedDicts: WeakSet<object>;
+  // The snapshot each locale was last replaced with: a tab may get an older build's dictionary back mid-deploy.
+  replacedByLang: Map<string, object>;
   // Browser-only: never written on the server, where concurrent requests share this state.
   activeLocale?: string;
   // Browser-only copy of the server-resolved path, so the first client render matches SSR.
@@ -30,16 +31,16 @@ export class TranslatorState {
     globalScope[translatorStateKey] ??= {
       langDictionaryMap: new Map<string, Dictionary>(),
       seededDicts: new WeakSet<object>(),
-      replacedDicts: new WeakSet<object>(),
+      replacedByLang: new Map<string, object>(),
     };
     return globalScope[translatorStateKey];
   }
   static replace(lang: string, dict: Dictionary | undefined) {
     if (!dict) return;
     const state = TranslatorState.get();
-    if (state.replacedDicts.has(dict)) return;
+    if (state.replacedByLang.get(lang) === dict) return;
     state.seededDicts.add(dict);
-    state.replacedDicts.add(dict);
+    state.replacedByLang.set(lang, dict);
     state.langDictionaryMap.set(lang, { ...dict });
   }
 }

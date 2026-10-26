@@ -6,22 +6,28 @@ interface DictionaryModule {
 }
 
 export class DictionaryAsset {
-  static readonly #loads = new Map<string, Promise<void>>();
+  static readonly #loads = new Map<string, Promise<DictionaryModule>>();
+  static #retrySeq = 0;
 
-  static load(url: string | null | undefined): Promise<void> {
-    if (!url) return Promise.resolve();
+  static async load(url: string | null | undefined): Promise<void> {
+    if (!url) return;
     const loading = DictionaryAsset.#loads.get(url) ?? DictionaryAsset.#import(url);
     DictionaryAsset.#loads.set(url, loading);
-    return loading;
+    const { lang, default: dictionary } = await loading;
+    TranslatorState.replace(lang, dictionary);
   }
 
-  static async #import(url: string): Promise<void> {
+  //? A browser keeps a failed module fetch in its module map, so the retry imports the same file under a fresh query.
+  static async #import(url: string): Promise<DictionaryModule> {
     try {
-      const { lang, default: dictionary } = (await import(url)) as DictionaryModule;
-      TranslatorState.replace(lang, dictionary);
-    } catch (error) {
-      DictionaryAsset.#loads.delete(url);
-      throw error;
+      return (await import(url)) as DictionaryModule;
+    } catch {
+      try {
+        return (await import(`${url}?retry=${++DictionaryAsset.#retrySeq}`)) as DictionaryModule;
+      } catch (error) {
+        DictionaryAsset.#loads.delete(url);
+        throw error;
+      }
     }
   }
 }
