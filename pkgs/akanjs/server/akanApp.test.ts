@@ -874,6 +874,29 @@ describe("AkanApp", () => {
     });
   }, 20_000);
 
+  test("serves each artifact prefix from its own folder only", async () => {
+    const { root, serverPath, runtimeDir, port } = await makeRoot("akan-app-artifact-folders-");
+    await Bun.write(path.join(root, ".akan/artifact/base-artifact.json"), "{}");
+    await Bun.write(path.join(root, ".akan/artifact/server/pages-abc.js"), "export const pages = {};");
+    await Bun.write(path.join(root, ".akan/artifact/styles/root-abc.css"), "body{}");
+    await Bun.write(path.join(root, ".akan/artifact/fonts/brand.woff2"), "font-bytes");
+    await writeOkChild(serverPath, "from-child");
+
+    await withApp(serverPath, { replica: 1, runtimeDir, port }, async () => {
+      await waitForReady(port);
+      const statusOf = async (pathname: string) => (await fetch(`http://127.0.0.1:${port}/_akan/${pathname}`)).status;
+      const escapes = ["styles", "fonts", "client", "dict"].flatMap((folder) =>
+        ["..%2Fbase-artifact.json", "..%2Fserver%2Fpages-abc.js"].map((name) => `${folder}/${name}`),
+      );
+
+      expect(await statusOf("styles/root-abc.css")).toBe(200);
+      expect(await statusOf("fonts/brand.woff2")).toBe(200);
+      expect(
+        Object.fromEntries(await Promise.all(escapes.map(async (escape) => [escape, await statusOf(escape)]))),
+      ).toEqual(Object.fromEntries(escapes.map((escape) => [escape, 404])));
+    });
+  }, 20_000);
+
   test("force-kills a child that ignores graceful shutdown within the shutdown budget", async () => {
     const { serverPath, runtimeDir, port } = await makeRoot("akan-app-slow-shutdown-");
 

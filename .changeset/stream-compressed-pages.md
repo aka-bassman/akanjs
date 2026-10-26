@@ -24,3 +24,5 @@ A page in the HTML result cache now keeps its brotli and gzip bytes, made once w
 A file from `public/` is now served with `stale-while-revalidate=86400` beside its 5-minute `max-age`, so a repeat view past those 5 minutes paints from the browser's copy while the browser revalidates it in the background.
 
 A server-rendered page no longer carries its locale's dictionary in the RSC flight. A build now writes one module per locale, `/_akan/dict/<lang>-<hash>.js`, served immutable and precompressed, with any key a locale lacks taken from the default locale. The page preloads its locale's module and hydrates once that module has loaded. A navigation into another locale loads that locale's module before it commits. The browser now fetches each locale once per build, instead of again with every page and navigation. On akanjs.com, an RSC navigation drops from 22.9 KB to 16.8 KB, and the home page from 46.2 KB to 39.7 KB. `System.Provider` no longer takes a `dictionary` prop; only Akan's generated root layout passed it.
+
+`/_akan/styles/` and `/_akan/fonts/` now serve files only from the build's own `styles/` and `fonts/` folders.

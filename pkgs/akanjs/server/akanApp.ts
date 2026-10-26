@@ -646,8 +646,8 @@ export class AkanApp {
 
   static readonly #immutableArtifacts = [
     { prefix: "/_akan/client/", root: "client", strip: "/_akan/client/".length, type: "application/javascript" },
-    { prefix: "/_akan/styles/", root: "", strip: "/_akan/".length, type: "text/css; charset=utf-8" },
-    { prefix: "/_akan/fonts/", root: "", strip: "/_akan/".length, type: "font/woff2", anyOrigin: true },
+    { prefix: "/_akan/styles/", root: "styles", strip: "/_akan/styles/".length, type: "text/css; charset=utf-8" },
+    { prefix: "/_akan/fonts/", root: "fonts", strip: "/_akan/fonts/".length, type: "font/woff2", anyOrigin: true },
     { prefix: "/_akan/dict/", root: "dict", strip: "/_akan/dict/".length, type: "text/javascript; charset=utf-8" },
   ] as const;
 

@@ -382,6 +382,10 @@ export class WebRouter {
     const clientOutputDir = `${this.#artifactDir}/client`;
     const dictServePrefix = "/_akan/dict";
     const dictOutputDir = `${this.#artifactDir}/dict`;
+    const stylesServePrefix = "/_akan/styles";
+    const stylesOutputDir = `${this.#artifactDir}/styles`;
+    const fontsServePrefix = "/_akan/fonts";
+    const fontsOutputDir = `${this.#artifactDir}/fonts`;
     const localCsrDir = path.join(process.cwd(), "csr");
     const csrOutputDir = fs.existsSync(localCsrDir) ? localCsrDir : path.join(this.#artifactDir, "csr");
     const publicDir = path.join(process.env.AKAN_APP_DIR ?? path.dirname(Bun.main), "public");
@@ -448,11 +452,11 @@ export class WebRouter {
           cacheControl: this.#prodMode ? "public, max-age=31536000, immutable" : "no-store",
         });
       },
-      "/_akan/styles/*": (req) => {
+      [`${stylesServePrefix}/*`]: (req) => {
         this.#requestStats.staticAsset += 1;
         const url = new URL(req.url);
         if (this.#prodMode) {
-          const filePath = resolveStaticPath(this.#artifactDir, url.pathname.slice("/_akan/".length));
+          const filePath = resolveStaticPath(stylesOutputDir, url.pathname.slice(`${stylesServePrefix}/`.length));
           if (filePath) {
             return WebRouter.#fileResponse(req, filePath, {
               contentType: "text/css; charset=utf-8",
@@ -471,10 +475,10 @@ export class WebRouter {
           { headers },
         );
       },
-      "/_akan/fonts/*": (req) => {
+      [`${fontsServePrefix}/*`]: (req) => {
         this.#requestStats.staticAsset += 1;
         const url = new URL(req.url);
-        const filePath = resolveStaticPath(this.#artifactDir, url.pathname.slice("/_akan/".length));
+        const filePath = resolveStaticPath(fontsOutputDir, url.pathname.slice(`${fontsServePrefix}/`.length));
         if (!filePath) return new Response("Not Found", { status: 404 });
         return WebRouter.#fileResponse(req, filePath, {
           contentType: Bun.file(filePath).type || "font/woff2",

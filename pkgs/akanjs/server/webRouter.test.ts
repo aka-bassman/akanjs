@@ -637,23 +637,33 @@ describe("WebRouter firebase messaging service worker", () => {
   });
 });
 
+const withArtifactFiles = async <T>(files: Record<string, string | Uint8Array>, run: () => Promise<T>) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "akan-webrouter-artifact-"));
+  for (const [relPath, content] of Object.entries(files)) {
+    const filePath = path.join(root, ".akan", "artifact", relPath);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, content);
+  }
+  const cwd = process.cwd();
+  process.chdir(root);
+  try {
+    return await run();
+  } finally {
+    process.chdir(cwd);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+};
+
 describe("WebRouter dictionary assets", () => {
-  const withArtifactCwd = async <T>(run: () => Promise<T>) => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "akan-webrouter-dict-"));
-    const dictDir = path.join(root, ".akan", "artifact", "dict");
-    fs.mkdirSync(dictDir, { recursive: true });
-    fs.writeFileSync(path.join(root, ".akan", "artifact", "base-artifact.json"), "{}");
-    fs.writeFileSync(path.join(dictDir, "en-abc.js"), 'export const lang = "en";');
-    fs.writeFileSync(path.join(dictDir, "en-abc.js.br"), brotliCompressSync('export const lang = "en";'));
-    const cwd = process.cwd();
-    process.chdir(root);
-    try {
-      return await run();
-    } finally {
-      process.chdir(cwd);
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  };
+  const withArtifactCwd = <T>(run: () => Promise<T>) =>
+    withArtifactFiles(
+      {
+        "base-artifact.json": "{}",
+        "dict/en-abc.js": 'export const lang = "en";',
+        "dict/en-abc.js.br": brotliCompressSync('export const lang = "en";'),
+      },
+      run,
+    );
   const dictRoute = (renderEnvRoutes: Record<string, RouteHandler>) => {
     const route = renderEnvRoutes["/_akan/dict/*"];
     if (!route) throw new Error("no /_akan/dict/* route");
@@ -759,6 +769,35 @@ describe("WebRouter dictionary assets", () => {
     } finally {
       process.send = originalSend;
     }
+  });
+});
+
+describe("WebRouter artifact folders", () => {
+  test("serves styles and fonts from their own folders only", async () => {
+    const files = {
+      "base-artifact.json": "{}",
+      "server/pages-abc.js": "export const pages = {};",
+      "styles/root-abc.css": "body{}",
+      "fonts/brand-400-normal-abc.woff2": "font-bytes",
+    };
+    await withArtifactFiles(files, () =>
+      withFullSsrCacheHarness(async ({ renderEnvRoutes }) => {
+        const statusOf = async (pathname: string) => {
+          const route = renderEnvRoutes[`/_akan/${pathname.split("/")[0]}/*`];
+          if (!route) throw new Error(`no route for ${pathname}`);
+          return (await route(new Request(`https://example.test/_akan/${pathname}`))).status;
+        };
+        const escapes = ["styles", "fonts", "client", "dict"].flatMap((folder) =>
+          ["..%2Fbase-artifact.json", "..%2Fserver%2Fpages-abc.js"].map((name) => `${folder}/${name}`),
+        );
+
+        expect(await statusOf("styles/root-abc.css")).toBe(200);
+        expect(await statusOf("fonts/brand-400-normal-abc.woff2")).toBe(200);
+        expect(
+          Object.fromEntries(await Promise.all(escapes.map(async (escape) => [escape, await statusOf(escape)]))),
+        ).toEqual(Object.fromEntries(escapes.map((escape) => [escape, 404])));
+      }),
+    );
   });
 });
 
