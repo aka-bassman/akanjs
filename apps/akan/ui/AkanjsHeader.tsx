@@ -110,6 +110,11 @@ export const AkanjsHeader = ({
             <button
               type="button"
               aria-expanded={isMobileMenuOpen}
+              aria-label={
+                isMobileMenuOpen
+                  ? l.trans({ en: "Close menu", ko: "메뉴 닫기" })
+                  : l.trans({ en: "Open menu", ko: "메뉴 열기" })
+              }
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="flex cursor-pointer items-center text-2xl text-foreground transition-colors hover:text-primary"
             >
@@ -148,10 +153,20 @@ export const AkanjsHeader = ({
                 <System.SelectLanguage languages={["en", "ko"]} />
                 <JellyThemeToggle className="ml-1" />
               </div>
-              <Link target="_blank" href="https://github.com/akan-team/akanjs" className={socialLinkClassName}>
+              <Link
+                target="_blank"
+                href="https://github.com/akan-team/akanjs"
+                aria-label="GitHub"
+                className={socialLinkClassName}
+              >
                 <FaGithub />
               </Link>
-              <Link target="_blank" href="https://discord.gg/pc228BhWmM" className={socialLinkClassName}>
+              <Link
+                target="_blank"
+                href="https://discord.gg/pc228BhWmM"
+                aria-label="Discord"
+                className={socialLinkClassName}
+              >
                 <FaDiscord />
               </Link>
             </div>
@@ -160,10 +175,20 @@ export const AkanjsHeader = ({
           <div className="col-span-2 block lg:hidden">
             <div className="flex w-full items-center justify-between">
               <div className="ml-8 flex items-center gap-3">
-                <Link target="_blank" href="https://github.com/akan-team/akanjs" className={socialLinkClassName}>
+                <Link
+                  target="_blank"
+                  href="https://github.com/akan-team/akanjs"
+                  aria-label="GitHub"
+                  className={socialLinkClassName}
+                >
                   <FaGithub />
                 </Link>
-                <Link target="_blank" href="https://discord.gg/pc228BhWmM" className={socialLinkClassName}>
+                <Link
+                  target="_blank"
+                  href="https://discord.gg/pc228BhWmM"
+                  aria-label="Discord"
+                  className={socialLinkClassName}
+                >
                   <FaDiscord />
                 </Link>
               </div>

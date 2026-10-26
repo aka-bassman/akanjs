@@ -7,8 +7,6 @@ export default rootLayout()
       name: "pretendard",
       default: true,
       paths: [
-        { src: "/libs/shared/fonts/Pretendard-Thin.woff2", weight: 100 },
-        { src: "/libs/shared/fonts/Pretendard-ExtraLight.woff2", weight: 200 },
         { src: "/libs/shared/fonts/Pretendard-Light.woff2", weight: 300 },
         { src: "/libs/shared/fonts/Pretendard-Regular.woff2", weight: 400 },
         { src: "/libs/shared/fonts/Pretendard-Medium.woff2", weight: 500 },
@@ -18,12 +16,9 @@ export default rootLayout()
         { src: "/libs/shared/fonts/Pretendard-Black.woff2", weight: 900 },
       ],
     },
-    {
-      name: "lemonmilk",
-      paths: [{ src: "/libs/shared/fonts/Lemon Milk Pro Medium.otf", weight: 500 }],
-    },
   ])
   .theme("light")
+  .wsConnect(false)
   .head(
     <>
       <title>Akan.js</title>
