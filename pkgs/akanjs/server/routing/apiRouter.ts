@@ -248,8 +248,7 @@ export class ApiRouter {
     return path === "/__csr" || path === "/__rsc" || path.startsWith("/__rsc/") || path.startsWith("/_akan/");
   }
 
-  // Signal routes only: web bodies stream and `compressResponse` buffers. Behind the gateway this sees
-  // `Accept-Encoding: identity` (Bun's fetch decodes any Content-Encoding), so the gateway compresses instead.
+  // Signal routes only: web bodies stream and `compressResponse` buffers.
   static #compressRoute(route: RouteValue): RouteValue {
     return ApiRouter.#mapRoute(route, (handler) => async (req) => {
       const response = await handler(req);
@@ -257,7 +256,7 @@ export class ApiRouter {
     });
   }
 
-  // Outside the web proxy, whose answer stands in for the page. Behind the gateway the identity Accept-Encoding skips it.
+  // Outside the web proxy, whose answer stands in for the page.
   static #compressRenderRoutes(routes: NonNullHttpRoutes, renderPaths: Set<string>): NonNullHttpRoutes {
     return Object.fromEntries(
       Object.entries(routes).map(([path, route]) => [

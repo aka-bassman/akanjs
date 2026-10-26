@@ -797,6 +797,7 @@ export class AkanApp {
         body: req.method === "GET" || req.method === "HEAD" ? undefined : req.body,
         signal: req.signal,
         redirect: "manual",
+        decompress: false,
       });
       return await this.#proxyResponse(req, upstreamRes);
     } catch (error) {
@@ -974,18 +975,13 @@ export class AkanApp {
 
   async #proxyResponse(req: Request, upstreamRes: Response): Promise<Response> {
     const headers = new Headers(upstreamRes.headers);
-    // Bun fetch decompresses upstream bodies but keeps these headers, so browsers would decode twice.
-    if (headers.has("content-encoding")) {
-      headers.delete("content-encoding");
-      headers.delete("content-length");
-    }
     this.#rewriteInternalLocation(headers);
     const proxied = new Response(upstreamRes.body, {
       status: upstreamRes.status,
       statusText: upstreamRes.statusText,
       headers,
     });
-    // Only this hop sees the client's Accept-Encoding. JSON compresses whole; HTML and RSC as they stream.
+    // A body the child left unencoded is compressed here: JSON whole, HTML and RSC as they stream.
     return AkanApp.#isProxiedJson(headers)
       ? await compressResponse(req, proxied)
       : compressStreamResponse(req, proxied);

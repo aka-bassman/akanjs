@@ -6,6 +6,8 @@ import { brotliDecompressSync, constants, gunzipSync } from "node:zlib";
 import {
   compressResponse,
   compressStreamResponse,
+  encodeBody,
+  encodedBodyResponse,
   isCompressibleContentType,
   resolveEncodedSidecar,
 } from "./contentEncoding";
@@ -292,6 +294,59 @@ describe("compressStreamResponse", () => {
     process.env.AKAN_HTTP_COMPRESS = "0";
     const off = htmlRender().response;
     expect(compressStreamResponse(req("br"), off)).toBe(off);
+  });
+});
+
+describe("encodedBodyResponse", () => {
+  const page = `<!doctype html><html><body>${"<p>안녕 cached</p>".repeat(300)}</body></html>`;
+  const htmlHeaders = () => new Headers({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+
+  test("answers every request from the encodings made once, for whichever the client takes", async () => {
+    const encoded = encodeBody(page);
+    expect(encoded.byteLength).toBe(
+      encoded.bytes.byteLength + (encoded.encodings.br?.byteLength ?? 0) + (encoded.encodings.gzip?.byteLength ?? 0),
+    );
+
+    for (let i = 0; i < 2; i++) {
+      const br = encodedBodyResponse(req("gzip, br"), encoded, { headers: htmlHeaders() });
+      expect(br.headers.get("Content-Encoding")).toBe("br");
+      expect(br.headers.get("Vary")).toContain("Accept-Encoding");
+      expect(br.headers.get("Cache-Control")).toBe("no-store");
+      const bytes = Buffer.from(await br.arrayBuffer());
+      expect(br.headers.get("Content-Length")).toBe(String(bytes.byteLength));
+      expect(brotliDecompressSync(bytes).toString()).toBe(page);
+    }
+
+    const gzip = encodedBodyResponse(req("gzip"), encoded, { headers: htmlHeaders() });
+    expect(gzip.headers.get("Content-Encoding")).toBe("gzip");
+    expect(gunzipSync(Buffer.from(await gzip.arrayBuffer())).toString()).toBe(page);
+
+    const identity = encodedBodyResponse(req(), encoded, { headers: htmlHeaders() });
+    expect(identity.headers.get("Content-Encoding")).toBeNull();
+    await expect(identity.text()).resolves.toBe(page);
+  });
+
+  test("keeps no encoding of a small body, or with compression switched off, and serves the bytes as they are", async () => {
+    const small = encodeBody("<p>tiny</p>");
+    expect(small.encodings).toEqual({});
+    const response = encodedBodyResponse(req("br"), small, { headers: htmlHeaders() });
+    expect(response.headers.get("Content-Encoding")).toBeNull();
+    await expect(response.text()).resolves.toBe("<p>tiny</p>");
+
+    process.env.AKAN_HTTP_COMPRESS = "0";
+    const off = encodeBody(page);
+    expect(off.encodings).toEqual({});
+    expect(off.byteLength).toBe(off.bytes.byteLength);
+  });
+
+  test("sends the raw bytes for a status or range it would not compress", async () => {
+    const encoded = encodeBody(page);
+    const notFound = encodedBodyResponse(req("br"), encoded, { status: 404, headers: htmlHeaders() });
+    expect(notFound.status).toBe(404);
+    expect(notFound.headers.get("Content-Encoding")).toBeNull();
+
+    const ranged = new Request("http://localhost/", { headers: { "accept-encoding": "br", range: "bytes=0-9" } });
+    expect(encodedBodyResponse(ranged, encoded, { headers: htmlHeaders() }).headers.get("Content-Encoding")).toBeNull();
   });
 });
 

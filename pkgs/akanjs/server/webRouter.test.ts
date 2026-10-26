@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { brotliDecompressSync } from "node:zlib";
 import { DEFAULT_AKAN_I18N } from "akanjs/common";
 import { createRequestStore } from "akanjs/fetch";
 import type { RouteSeedIndex, RoutesManifest } from "./artifact";
@@ -152,6 +153,7 @@ async function withFullSsrCacheHarness<T>(
     prebuilt?: RoutesManifest;
     seedIndex?: RouteSeedIndex;
     onRenderInput?: (input: Parameters<SsrFromRscRenderer["render"]>[0]) => void;
+    renderBody?: (pathname: string) => string;
   } = {},
 ): Promise<T> {
   const envSnapshot = {
@@ -189,7 +191,9 @@ async function withFullSsrCacheHarness<T>(
     options.onRenderInput?.(input);
     renderCount += 1;
     const pathname = input.request ? new URL(input.request.url).pathname : "/unknown";
-    return streamOf(`<html><body>${pathname}:render-${renderCount}</body></html>`);
+    return streamOf(
+      `<html><body>${pathname}:render-${renderCount}${options.renderBody?.(pathname) ?? ""}</body></html>`,
+    );
   };
 
   const fakeWorker = options.worker ?? createFakeRscWorker();
@@ -1282,6 +1286,22 @@ describe("WebRouter full SSR cache orchestration", () => {
       await expect(second.text()).resolves.toBe(firstHtml);
       expect(fakeWorker.renderCalls).toHaveLength(1);
     });
+  });
+
+  test("answers a cache hit with the stored encoding the client takes", async () => {
+    await withFullSsrCacheHarness(
+      async ({ fullSsr }) => {
+        const first = await fullSsr(new Request("https://example.test/docs"));
+        const firstHtml = await first.text();
+        expect(Buffer.byteLength(firstHtml)).toBeGreaterThan(1024);
+
+        const hit = await fullSsr(new Request("https://example.test/docs", { headers: { "accept-encoding": "br" } }));
+        expect(hit.headers.get("X-Akan-Cache")).toBe("HIT");
+        expect(hit.headers.get("Content-Encoding")).toBe("br");
+        expect(brotliDecompressSync(Buffer.from(await hit.arrayBuffer())).toString()).toBe(firstHtml);
+      },
+      { renderBody: () => "<p>section</p>".repeat(100) },
+    );
   });
 
   test("keeps production HTML cache on by default and allows explicit env opt-out", async () => {

@@ -39,7 +39,7 @@ import {
   shouldInvalidateRouteCacheEntry,
   shouldStoreRouteCache,
 } from "./cachePolicy";
-import { encodedFileResponse } from "./contentEncoding";
+import { type EncodedBody, encodeBody, encodedBodyResponse, encodedFileResponse } from "./contentEncoding";
 import { isCrawlerUserAgent } from "./crawler";
 import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import { CSR_DEV_ROUTE_PREFIX, resolveDevCsrMode, SSR_DEV_DIRNAME, SSR_DEV_ROUTE_PREFIX } from "./hmr/csrDevManifest";
@@ -272,7 +272,7 @@ interface WebRouterOptions {
 }
 
 interface CachedHtmlResult {
-  html: string;
+  body: EncodedBody;
   pathname: string;
   routeId?: string;
   tags?: string[];
@@ -308,7 +308,7 @@ export class WebRouter {
   readonly #htmlCache = new LruTtlCache<CachedHtmlResult>(
     parsePositiveInt(process.env.AKAN_HTML_RESULT_CACHE_MAX_ENTRIES) ?? 100,
     {
-      sizeOf: (result) => result.html.length,
+      sizeOf: (result) => result.body.byteLength,
       maxBytes: LruTtlCache.parseByteCeiling(process.env.AKAN_HTML_RESULT_CACHE_MAX_BYTES),
       sweepIntervalMs: ROUTE_CACHE_SWEEP_INTERVAL_MS,
     },
@@ -641,7 +641,7 @@ export class WebRouter {
           if (cachedHtml) {
             const cachedHeaders = this.#htmlResponseHeaders(200);
             cachedHeaders.set("X-Akan-Cache", "HIT");
-            return new Response(cachedHtml, { headers: cachedHeaders });
+            return encodedBodyResponse(req, cachedHtml, { headers: cachedHeaders });
           }
           const rscResult = await this.#rsc.renderWithMeta(req, {
             clientManifest: manifest.clientManifest,
@@ -707,7 +707,7 @@ export class WebRouter {
             const headers = new Headers(responseHeaders);
             headers.set("X-Akan-Cache", "MISS");
             let htmlStoreTtl = htmlCacheEntry.ttl;
-            let htmlCacheMetadata: Omit<CachedHtmlResult, "html"> = { pathname: url.pathname };
+            let htmlCacheMetadata: Omit<CachedHtmlResult, "body"> = { pathname: url.pathname };
             const shouldCacheHtml = Promise.all([rscResult.lateControl, rscResult.cacheState]).then(
               ([control, cacheState]) => {
                 const storeTtl = resolveHtmlRouteCacheStoreTtl({
@@ -730,7 +730,11 @@ export class WebRouter {
               cacheHtmlWhileStreaming(
                 htmlStream,
                 (html) => {
-                  this.#htmlCache.set(htmlCacheEntry.key, { html, ...htmlCacheMetadata }, htmlStoreTtl);
+                  this.#htmlCache.set(
+                    htmlCacheEntry.key,
+                    { body: encodeBody(html), ...htmlCacheMetadata },
+                    htmlStoreTtl,
+                  );
                 },
                 {
                   shouldCache: () => shouldCacheHtml,
@@ -909,14 +913,14 @@ export class WebRouter {
     return decision;
   }
 
-  #getCachedHtml(cacheKey: string): string | null {
+  #getCachedHtml(cacheKey: string): EncodedBody | null {
     const cached = this.#htmlCache.get(cacheKey);
     if (!cached) {
       this.#htmlCacheMisses += 1;
       return null;
     }
     this.#htmlCacheHits += 1;
-    return cached.html;
+    return cached.body;
   }
 
   static #cookieValue(req: Request, name: string): string | undefined {

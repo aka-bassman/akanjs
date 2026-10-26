@@ -2,7 +2,7 @@
 "akanjs": patch
 ---
 
-Server-rendered HTML and RSC flight responses are now compressed with brotli, or gzip for a client that takes only gzip, as they stream. The shell still reaches the browser before the render ends, and a client that disconnects still cancels the render. Before, only JSON was compressed, so a page went out at full size; the akanjs.com home page drops from 444 KB to about 48 KB. Behind the gateway the compression happens once, at the hop that faces the client. A compressed page carries a weak `ETag` and no `Content-Length`, and `AKAN_HTTP_COMPRESS=0` still turns compression off.
+Server-rendered HTML and RSC flight responses are now compressed with brotli, or gzip for a client that takes only gzip, as they stream. The shell still reaches the browser before the render ends, and a client that disconnects still cancels the render. Before, only JSON was compressed, so a page went out at full size; the akanjs.com home page drops from 444 KB to about 48 KB. Behind the gateway each replica compresses for the client's `Accept-Encoding` and the gateway relays its bytes, compressing only what a replica left as is. A page compressed as it streams carries a weak `ETag` and no `Content-Length`, and `AKAN_HTTP_COMPRESS=0` still turns compression off.
 
 The `Clipboard` button from `akanjs/ui` now has an accessible name, `base.copy` ("Copy" / "복사"), so a screen reader no longer announces it as an unlabeled button.
 
@@ -18,3 +18,5 @@ In the browser, a Korean `RecentTime` or `dayjs().locale("ko")` no longer falls 
 A font path in `rootLayout().fonts([...])` now takes `preload: false`. That weight loads when text first uses it, instead of competing with the page for bandwidth. The akanjs.com home page now preloads 3 Pretendard weights instead of 7.
 
 The WebSocket now opens at a page's first subscribe or message instead of at load, so a page that never uses it opens no socket. `.wsConnect(true)` on the root layout still connects at load, and so does `.reconnect()`, whose overlay learns of a restart through the socket. `.wsConnect(false)` still waits for `fetch.instance.connect()`. `fetch.instance.connectOnUse()` is the new mode.
+
+A page in the HTML result cache now keeps its brotli and gzip bytes, made once when the page is stored, so a cache hit sends them instead of compressing the page again. Cache hits on the akanjs.com home page went from 4,500 to 38,800 requests a second (one process, 32 concurrent clients). `AKAN_HTML_RESULT_CACHE_MAX_BYTES` now counts those bytes too.

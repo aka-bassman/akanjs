@@ -47,19 +47,21 @@ const compressBody = (bytes: Uint8Array, encoding: ContentEncoding) =>
     : gzipSync(bytes, { level: GZIP_LEVEL });
 
 //? A Range is Bun.serve's to answer: it sends a file body it gets untouched as a 206 of exactly those bytes.
-const isWholeBody = (req: Request, response: Response) =>
+const isWholeBody = (req: Request, response: Pick<Response, "status" | "headers">) =>
   !req.headers.has("range") &&
   !response.headers.has("content-range") &&
   response.status >= 200 &&
   response.status < 300 &&
   response.status !== 206;
 
-const negotiateEncoding = (req: Request, response: Response): ContentEncoding | null => {
-  if (response.headers.has("content-encoding") || !response.body) return null;
+const isCompressionOff = () => process.env.AKAN_HTTP_COMPRESS === "false" || process.env.AKAN_HTTP_COMPRESS === "0";
+
+const negotiateEncoding = (req: Request, response: Pick<Response, "status" | "headers">): ContentEncoding | null => {
+  if (response.headers.has("content-encoding")) return null;
   if (!isWholeBody(req, response)) return null;
   if (Number(response.headers.get("content-length")) > MAX_COMPRESS_BYTES) return null;
   if (!isCompressibleContentType(response.headers.get("content-type") ?? "")) return null;
-  if (process.env.AKAN_HTTP_COMPRESS === "false" || process.env.AKAN_HTTP_COMPRESS === "0") return null;
+  if (isCompressionOff()) return null;
   const acceptEncoding = req.headers.get("accept-encoding") ?? "";
   return CONTENT_ENCODINGS.find(({ accept }) => acceptsEncoding(acceptEncoding, accept))?.encoding ?? null;
 };
@@ -67,7 +69,7 @@ const negotiateEncoding = (req: Request, response: Response): ContentEncoding | 
 // Buffers the body: never pass a streamed response (SSR HTML, RSC flight, SSE) — it would hold the whole render.
 export const compressResponse = async (req: Request, response: Response): Promise<Response> => {
   const encoding = negotiateEncoding(req, response);
-  if (!encoding) return response;
+  if (!encoding || !response.body) return response;
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.byteLength < MIN_COMPRESS_BYTES) return new Response(bytes, response);
   const compressed = compressBody(bytes, encoding);
@@ -135,6 +137,44 @@ export const compressStreamResponse = (req: Request, response: Response): Respon
     statusText: response.statusText,
     headers,
   });
+};
+
+export interface EncodedBody {
+  bytes: Uint8Array<ArrayBuffer>;
+  encodings: Partial<Record<ContentEncoding, Uint8Array<ArrayBuffer>>>;
+  /** The raw bytes and every encoding, which is what keeping it costs. */
+  byteLength: number;
+}
+
+// For a body kept to answer many requests: each encoding is made once here, not once per response.
+export const encodeBody = (body: string | Uint8Array<ArrayBuffer>): EncodedBody => {
+  const bytes = typeof body === "string" ? new TextEncoder().encode(body) : body;
+  const encodings: EncodedBody["encodings"] = {};
+  let byteLength = bytes.byteLength;
+  if (isCompressionOff() || bytes.byteLength < MIN_COMPRESS_BYTES || bytes.byteLength > MAX_COMPRESS_BYTES)
+    return { bytes, encodings, byteLength };
+  for (const { encoding } of CONTENT_ENCODINGS) {
+    const encoded = compressBody(bytes, encoding);
+    encodings[encoding] = encoded;
+    byteLength += encoded.byteLength;
+  }
+  return { bytes, encodings, byteLength };
+};
+
+export const encodedBodyResponse = (
+  req: Request,
+  body: EncodedBody,
+  init: { status?: number; headers: Headers },
+): Response => {
+  const status = init.status ?? 200;
+  const encoding = negotiateEncoding(req, { status, headers: init.headers });
+  const encoded = encoding ? body.encodings[encoding] : undefined;
+  if (!encoding || !encoded) return new Response(body.bytes, { status, headers: init.headers });
+  const headers = new Headers(init.headers);
+  headers.set("Content-Encoding", encoding);
+  headers.set("Content-Length", String(encoded.byteLength));
+  headers.append("Vary", "Accept-Encoding");
+  return new Response(encoded, { status, headers });
 };
 
 export interface EncodedSidecar {
