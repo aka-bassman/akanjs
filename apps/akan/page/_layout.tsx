@@ -18,7 +18,6 @@ export default rootLayout()
     },
   ])
   .theme("light")
-  .wsConnect(false)
   .head(
     <>
       <title>Akan.js</title>

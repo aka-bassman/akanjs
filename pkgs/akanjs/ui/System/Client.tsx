@@ -232,7 +232,7 @@ interface ClientBridgeProps {
   wsConnect?: boolean;
 }
 
-export const ClientBridge = ({ env, lang, theme, viewport, prefix, wsConnect = true }: ClientBridgeProps) => {
+export const ClientBridge = ({ env, lang, theme, viewport, prefix, wsConnect }: ClientBridgeProps) => {
   // Base env is recomputed here rather than taken from the app's `env/env.client.ts`: that file is imported
   // by a server component, so its `getEnv()` would resolve to the server's own hosts and ship them to the browser.
   (globalThis as typeof globalThis & { __AKAN_CLIENT_ENV__?: ClientEnv }).__AKAN_CLIENT_ENV__ = {
@@ -258,8 +258,10 @@ export const ClientBridge = ({ env, lang, theme, viewport, prefix, wsConnect = t
   }, []);
 
   useEffect(() => {
-    if (!wsConnect) return;
-    (fetch.instance as { connect: () => void }).connect();
+    if (wsConnect === false) return;
+    const instance = fetch.instance as { connect: () => void; connectOnUse: () => void };
+    if (wsConnect) instance.connect();
+    else instance.connectOnUse();
   }, [wsConnect]);
 
   useLayoutEffect(() => {

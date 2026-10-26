@@ -38,7 +38,7 @@ const SSRProvider = ({
   fonts,
   layoutStyle = "web",
   reconnect = getEnv().operationMode === "local",
-  wsConnect = true,
+  wsConnect,
   dictionary,
   allDictionary,
   of,
@@ -87,7 +87,8 @@ const SSRProvider = ({
                 theme={theme}
                 viewport={viewport}
                 prefix={prefix}
-                wsConnect={wsConnect}
+                //? The overlay hears of a restart only through a socket drop, so with it on the socket opens at load.
+                wsConnect={wsConnect ?? (reconnect || undefined)}
               />
               <ClientSsrBridge key="ssr-bridge" lang={lang} prefix={prefix} initialPageState={pageState} />
             </Suspense>

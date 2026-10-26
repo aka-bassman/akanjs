@@ -16,3 +16,5 @@ A server-rendered page now loads less client JavaScript. On the akanjs.com home 
 In the browser, a Korean `RecentTime` or `dayjs().locale("ko")` no longer falls back to English after hydration. The `ko` locale is now registered on the dayjs instance that `akanjs/base` exports.
 
 A font path in `rootLayout().fonts([...])` now takes `preload: false`. That weight loads when text first uses it, instead of competing with the page for bandwidth. The akanjs.com home page now preloads 3 Pretendard weights instead of 7.
+
+The WebSocket now opens at a page's first subscribe or message instead of at load, so a page that never uses it opens no socket. `.wsConnect(true)` on the root layout still connects at load, and so does `.reconnect()`, whose overlay learns of a restart through the socket. `.wsConnect(false)` still waits for `fetch.instance.connect()`. `fetch.instance.connectOnUse()` is the new mode.
