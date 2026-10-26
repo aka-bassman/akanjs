@@ -1,5 +1,3 @@
-import "dayjs/locale/ko";
-
 import { Binary } from "akanjs/base";
 import {
   type InsetBreakpoint,

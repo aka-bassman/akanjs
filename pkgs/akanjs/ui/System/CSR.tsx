@@ -470,6 +470,7 @@ const CSRPageContainer = ({ entry, prefix, layoutStyle }: CSRPageContainerProps)
         >
           <ClientPathWrapper
             id="pageContent"
+            frame={animated.div}
             wrapperRef={pageContentRef}
             bind={pageBind}
             className={cn(

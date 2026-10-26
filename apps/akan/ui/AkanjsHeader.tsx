@@ -2,7 +2,7 @@
 
 import { usePage } from "@apps/akan/client";
 import { cn } from "akanjs/client";
-import { Link, System } from "akanjs/ui";
+import { Link, SelectLanguage } from "akanjs/ui";
 import { useEffect, useState } from "react";
 import { BsArrowUpRight } from "react-icons/bs";
 import { FaBars, FaDiscord, FaGithub, FaTimes } from "react-icons/fa";
@@ -150,7 +150,7 @@ export const AkanjsHeader = ({
           <div className="hidden justify-end font-bold lg:flex">
             <div className="flex items-center justify-end gap-3 text-center text-foreground text-sm lg:text-xl">
               <div className="jelly-glass flex shrink-0 items-center rounded-full px-2 py-1">
-                <System.SelectLanguage languages={["en", "ko"]} />
+                <SelectLanguage languages={["en", "ko"]} />
                 <JellyThemeToggle className="ml-1" />
               </div>
               <Link

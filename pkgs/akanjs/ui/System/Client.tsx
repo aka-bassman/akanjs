@@ -12,6 +12,7 @@ import {
   Href,
   initAuth,
   isMcpView,
+  isNativeApp,
   type Location,
   navigateRsc,
   type PageActivity,
@@ -28,7 +29,6 @@ import {
   useCsr,
   ViewportMeta,
 } from "akanjs/client";
-import { isNativeApp } from "akanjs/client/native";
 import { Logger, parseSearchParams } from "akanjs/common";
 import type { AkanTheme } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
@@ -36,6 +36,7 @@ import { DraftStore, getBaseSearchParam, st } from "akanjs/store";
 import { useVisualViewportFrame } from "akanjs/webkit";
 import {
   Children,
+  type ElementType,
   type HTMLAttributes,
   type ReactNode,
   type RefObject,
@@ -48,7 +49,6 @@ import {
 } from "react";
 import { AgentActivity } from "use-agentic";
 import { FrameRootVars } from "../../webkit/FrameRootVars";
-import { animated } from "../animated";
 import { getFrameCssVars, isResponsiveFrame } from "./Common";
 import { Messages } from "./Messages";
 import { Reconnect } from "./Reconnect";
@@ -97,6 +97,9 @@ export const ClientWrapper = ({
 Client.Wrapper = ClientWrapper;
 
 interface ClientPathWrapperProps extends Omit<HTMLAttributes<HTMLDivElement>, "style"> {
+  //? CSR passes `animated.div` for its springs; a server-rendered page has none, so it stays a plain `div` without
+  //? react-spring in the bundle every page loads.
+  frame?: ElementType;
   bind?: () => HTMLAttributes<HTMLDivElement>;
   wrapperRef?: RefObject<HTMLDivElement | null> | null;
   pageType?: CsrPageType;
@@ -118,6 +121,7 @@ interface ClientPathWrapperProps extends Omit<HTMLAttributes<HTMLDivElement>, "s
 }
 export const ClientPathWrapper = ({
   className,
+  frame: Frame = "div",
   bind,
   wrapperRef,
   pageType = "current",
@@ -201,7 +205,7 @@ export const ClientPathWrapper = ({
       }}
     >
       <pageActivityContext.Provider value={pageActivity}>
-        <animated.div
+        <Frame
           {...bindProps}
           {...props}
           className={cn("group/path", className)}
@@ -213,7 +217,7 @@ export const ClientPathWrapper = ({
           data-akan-frame-responsive={responsiveFrame ? "" : undefined}
         >
           <AgentActivity active={activity === "current"}>{children}</AgentActivity>
-        </animated.div>
+        </Frame>
       </pageActivityContext.Provider>
     </pathContext.Provider>
   );

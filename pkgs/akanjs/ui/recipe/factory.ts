@@ -1,12 +1,12 @@
 import type { ClassNameValue as ClassValue } from "tailwind-merge";
-import { createTV } from "tailwind-variants";
-import { colorTokens, radiusTokens } from "../../client/cn";
+import { cn } from "../../client/cn";
 
-// tv carries its own tailwind-merge; without akan's tokens it would not merge them the way `cn` does.
-export const tv = createTV({ twMergeConfig: { extend: { theme: { color: colorTokens, radius: radiusTokens } } } });
+//? `lite` joins without merging: the full build inlines its own tailwind-merge copy (~30 KB) beside the one `cn`
+//? already ships, and `recipe` merges once through `cn`, which also knows akan's tokens.
+export { tv } from "tailwind-variants/lite";
 
 /** `className` takes arrays and falsy values and is merged inside, so never wrap it in `cn()`. */
 export const recipe =
   <P extends object>(styles: (props?: P) => string) =>
   (variants?: Omit<P, "class" | "className">, className?: ClassValue): string =>
-    styles({ ...variants, class: className } as unknown as P);
+    cn(styles(variants as P), className);

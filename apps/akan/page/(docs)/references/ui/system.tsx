@@ -251,8 +251,8 @@ export default page()
       {
         name: "System",
         desc: l.trans({
-          en: "The app shell. Akan mounts `Provider` for you, and `Provider` mounts `Reconnect` when you turn it on. `ThemeToggle`, `SelectLanguage` and `DevModeToggle` are controls you place yourself.",
-          ko: "앱 셸입니다. `Provider`는 Akan이 대신 마운트하고, `Reconnect`는 켜 두면 `Provider`가 마운트합니다. `ThemeToggle`, `SelectLanguage`, `DevModeToggle`은 직접 배치하는 컨트롤입니다.",
+          en: 'The app shell. Akan mounts `Provider` for you, and `Provider` mounts `Reconnect` when you turn it on. `ThemeToggle`, `SelectLanguage` and `DevModeToggle` are controls you place yourself; import them by name from `akanjs/ui`, because `System` in a `"use client"` file bundles the whole shell into that page.',
+          ko: '앱 셸입니다. `Provider`는 Akan이 대신 마운트하고, `Reconnect`는 켜 두면 `Provider`가 마운트합니다. `ThemeToggle`, `SelectLanguage`, `DevModeToggle`은 직접 배치하는 컨트롤이며, `akanjs/ui`에서 이름으로 가져옵니다. `"use client"` 파일에서 `System`을 쓰면 셸 전체가 그 페이지 번들에 들어갑니다.',
         }),
         props: [
           {
@@ -420,13 +420,13 @@ export default page()
             ),
           }),
         ],
-        code: `import { System } from "akanjs/ui";
+        code: `import { SelectLanguage, ThemeToggle } from "akanjs/ui";
 
 export const AppSettings = () => {
   return (
     <div className="flex items-center gap-4">
-      <System.SelectLanguage languages={["en", "ko"]} />
-      <System.ThemeToggle themes={["light", "dark"]} />
+      <SelectLanguage languages={["en", "ko"]} />
+      <ThemeToggle themes={["light", "dark"]} />
     </div>
   );
 };`,
