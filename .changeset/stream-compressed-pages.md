@@ -14,3 +14,5 @@ A server-rendered page now loads less client JavaScript. On the akanjs.com home 
 `akanjs/ui` exports `SelectLanguage`, `ThemeToggle` and `DevModeToggle` by name. In a `"use client"` file, import them that way: `System.ThemeToggle` there bundles the whole app shell. `akanjs/client` now also exports `isNativeApp`, `isNativeShell`, `nativePlatform`, `desktopPlatform` and `openExternalUrl`.
 
 In the browser, a Korean `RecentTime` or `dayjs().locale("ko")` no longer falls back to English after hydration. The `ko` locale is now registered on the dayjs instance that `akanjs/base` exports.
+
+A font path in `rootLayout().fonts([...])` now takes `preload: false`. That weight loads when text first uses it, instead of competing with the page for bandwidth. The akanjs.com home page now preloads 3 Pretendard weights instead of 7.

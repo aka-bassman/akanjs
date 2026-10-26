@@ -861,11 +861,11 @@ export default page()
       },
       {
         key: "paths",
-        type: "{ src, weight, style? }[]",
+        type: "{ src, weight, style?, preload? }[]",
         tags: [l.trans({ en: "required", ko: "필수" })],
         desc: l.trans({
-          en: "One file per weight and style. `src` starts with `/` and is read from `public/`.",
-          ko: "굵기·스타일마다 파일 하나입니다. `src`는 `/`로 시작하고 `public/`에서 읽습니다.",
+          en: "One file per weight and style. `src` starts with `/` and is read from `public/`. `preload: false` leaves a weight the first screen does not show to load when text first uses it.",
+          ko: "굵기·스타일마다 파일 하나입니다. `src`는 `/`로 시작하고 `public/`에서 읽습니다. 첫 화면에 없는 굵기는 `preload: false`로 두면 그 굵기를 처음 쓸 때 받습니다.",
         }),
       },
       {
