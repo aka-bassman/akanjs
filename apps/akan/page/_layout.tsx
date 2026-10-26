@@ -1,4 +1,5 @@
 import "./styles.css";
+import { JellyHopDefs } from "@apps/akan/ui";
 import { rootLayout } from "akanjs/client";
 
 export default rootLayout()
@@ -67,4 +68,9 @@ export default rootLayout()
       <meta name="theme-color" content="#f1f1ee" />
     </>,
   )
-  .render(({ children }) => children);
+  .render(({ children }) => (
+    <>
+      {children}
+      <JellyHopDefs />
+    </>
+  ));
